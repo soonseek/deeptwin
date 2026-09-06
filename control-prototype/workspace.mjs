@@ -109,7 +109,7 @@ function runEditor(state) {
   const selected = context(state);
   if (!selected.artifact) return '';
   const key = draftKey(state);
-  const hasDraft = Object.hasOwn(state.drafts, key);
+  const hasDraft = (state.drafts[key] ?? '').length > 0;
   return '<section class="alternative-editor"><h2>같은 상태에서 나의 버전</h2>'
     + artifact(selected.artifact, { selectable: true, scope: selected.scope })
     + button('원본 넓게 보기', 'overlay', 'artifact')
@@ -138,7 +138,7 @@ function runWorkspace(state) {
 function freshGrowth(state) {
   return '<section class="fresh-growth"><h2>현재 입력의 개선 영역</h2>'
     + '<p class="qualification">분석 결과 없음 · 실제 탐구·실험 엔진 미연결</p>' + sourceContext(state)
-    + `<h3>현재 맥락의 자기 버전</h3><blockquote>${e(state.drafts[draftKey(state)] ?? '현재 맥락에 작성된 자기 버전 없음')}</blockquote>`
+    + `<h3>현재 맥락의 자기 버전</h3><blockquote>${e(state.drafts[draftKey(state)] || '현재 맥락에 작성된 자기 버전 없음')}</blockquote>`
     + '<p>작성한 입력과 선택 범위를 보존하고 있습니다. 이 입력에 대한 진단·가설·후보·점수는 생성되지 않았습니다.</p>'
     + button('현재 원본으로 돌아가기', 'area', 'run')
     + button('별도의 고정 합성 사례 탐색', 'sample', 'true') + '</section>';

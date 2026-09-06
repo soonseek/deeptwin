@@ -56,6 +56,22 @@ test('fresh growth keeps the real draft context and never inherits fixed example
   for (const difference of CASE.differences) for (const hypothesis of difference.hypotheses) assert.ok(!markup.includes(e(hypothesis.claim)));
 });
 
+test('clearing a draft displays absence while preserving literal nonempty text', () => {
+  let state = select(createState(), 'draft', '작성한 자기 버전');
+  assert.ok(render(state).includes('이 정확한 맥락에 자기 버전이 있습니다.'));
+  state = select(state, 'draft', '');
+  assert.equal(state.drafts[draftKey(state)], '');
+  const cleared = render(state);
+  assert.ok(cleared.includes('이 정확한 맥락에는 아직 자기 버전이 없습니다.'));
+  assert.ok(!cleared.includes('이 정확한 맥락에 자기 버전이 있습니다.'));
+  const fresh = render(select(state, 'area', 'growth'));
+  assert.ok(fresh.includes('현재 맥락에 작성된 자기 버전 없음'));
+  assert.doesNotMatch(fresh, /data-hypothesis=|data-pair=/);
+  const spaces = select(state, 'draft', '\n ');
+  assert.ok(render(spaces).includes('이 정확한 맥락에 자기 버전이 있습니다.'));
+  assert.equal(spaces.drafts[draftKey(spaces)], '\n ');
+});
+
 test('fixed growth exposes the partial comparison and every exact paired round with its limits', () => {
   let state = select(select(createState(), 'area', 'growth'), 'sample', true);
   for (const round of ROUNDS) {
