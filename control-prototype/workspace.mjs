@@ -170,7 +170,7 @@ function fixedGrowth(state) {
   const round = chosenRound(state);
   const region = ARTIFACTS[CASE.original].regions.find(item => item.id === CASE.region);
   return '<section class="fixed-example"><h2>사전 구성된 합성 개선 사례</h2>'
-    + '<p class="synthetic-banner">현재 입력과 별개 · 실제 진단·렌즈 평가가 아님 · 표시 내용은 작성된 합성 예시입니다.</p>'
+    + '<p class="synthetic-banner">현재 입력과 별개 · 실제 진단·평가 결과가 아님 · 표시 내용은 작성된 합성 예시입니다.</p>'
     + button('현재 입력의 개선 영역으로 돌아가기', 'sample', 'false')
     + `<p>검토한 부분: ${e(region.label)} · ${e(CASE.region)}. 자기 버전이 제공되지 않은 나머지 부분은 승인되거나 수정된 것으로 보지 않습니다.</p>`
     + `<div class="artifact-pair"><section><h3>고정 예시의 원본</h3>${artifact(CASE.original)}</section>`

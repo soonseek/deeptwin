@@ -107,6 +107,19 @@ test('all areas and modes retain meaningful objects, scoped conversation and com
   }
 });
 
+test('ordinary views keep philosophy and lens terminology inside the audit view', () => {
+  for (const area of ['design', 'run', 'growth']) for (const mode of ['workspace', 'conversation', 'graph']) {
+    for (const sample of [false, true]) {
+      const state = select(select(select(createState(), 'area', area), 'mode', mode), 'sample', sample);
+      const visibleText = render(state).replace(/<[^>]*>/g, '');
+      assert.equal(/철학|렌즈/.test(visibleText), false, `${area}/${mode}/sample=${sample}`);
+    }
+  }
+  const audit = overlay(createState(), 'audit');
+  assert.ok(audit.includes('철학적 원전 검증이나 판단 오류의 독립성 증명이 아닙니다'));
+  for (const group of Object.values(CASE.audit)) for (const entry of group) assert.ok(audit.includes(e(entry)));
+});
+
 test('run inspection retains exact failure, retry, outputs and consumer identities', () => {
   let state = createState();
   const failed = origin.attempts.find(attempt => attempt.status === 'failed');
