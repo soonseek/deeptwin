@@ -365,3 +365,32 @@ test('browser: stale native selections are rejected and valid button activations
     }
   });
 });
+
+test('browser: every textarea preserves leading newlines across rerenders and edits', browserOptions, async t => {
+  await withBrowser(async page => {
+    const fields = [
+      { name: '업무 설명', scene: 'V01', mode: 'workspace', selector: '#request-draft' },
+      { name: '설계 메모', scene: 'V02', mode: 'workspace', selector: '#design-notes' },
+      { name: '내 버전', scene: 'V04', mode: 'workspace', selector: '#own-draft' },
+      { name: '대화', scene: 'V04', mode: 'conversation', selector: '#conversation-draft' },
+      { name: '증거 메모', scene: 'V05', mode: 'workspace', selector: '#evidence-note' }
+    ];
+    for (const field of fields) for (const leading of [0, 1, 3]) {
+      await t.test(`${field.name}: leading LF ${leading}`, async () => {
+        await page.locator(`nav [data-scene="${field.scene}"]`).click();
+        await page.locator(`[data-mode="${field.mode}"]`).click();
+        const value = '\n'.repeat(leading) + `${field.name} 본문`;
+        await page.locator(field.selector).fill(value);
+        assert.equal(await page.locator(field.selector).inputValue(), value);
+        await page.locator('[data-mode="graph"]').click();
+        await page.locator(`[data-mode="${field.mode}"]`).click();
+        assert.equal(await page.locator(field.selector).inputValue(), value);
+        await page.locator(field.selector).focus();
+        await page.locator(field.selector).evaluate(element => element.setSelectionRange(element.value.length, element.value.length));
+        await page.keyboard.type(' 추가');
+        await page.reload();
+        assert.equal(await page.locator(field.selector).inputValue(), value + ' 추가');
+      });
+    }
+  });
+});

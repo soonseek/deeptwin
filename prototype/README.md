@@ -18,7 +18,7 @@ node prototype/server.mjs
 node --test prototype/tests/prototype.test.mjs
 ```
 
-기본 검사는 브라우저 의존성 없이 실행됩니다. 설치된 Chrome에서 실제 DOM 회귀 검사 두 개를 함께 실행하려면 번들 Playwright 경로를 지정합니다. 이 값이 없으면 두 브라우저 검사는 건너뛰며, 패키지나 브라우저를 설치하지 않습니다.
+기본 검사는 브라우저 의존성 없이 실행됩니다. 설치된 Chrome에서 실제 DOM 회귀 검사 세 개를 함께 실행하려면 번들 Playwright 경로를 지정합니다. 다섯 입력칸의 선행 줄바꿈 0·1·3개 보존과 후속 편집·새로고침을 확인하는 15개 사례도 포함합니다. 이 값이 없으면 세 브라우저 검사는 건너뛰며, 패키지나 브라우저를 설치하지 않습니다.
 
 ```sh
 PROTOTYPE_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs node --test prototype/tests/prototype.test.mjs

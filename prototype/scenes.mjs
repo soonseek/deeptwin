@@ -6,7 +6,7 @@ import { e, button, detailButton, sceneButton, sample, paper, original, draftEdi
 function inputScene(state) {
   return `<div class="columns">${paper('업무 설명과 자료', `
     <label for="request-draft">디자인 테스트용 업무 설명</label>
-    <textarea id="request-draft" data-field="request" maxlength="20000" rows="7" placeholder="화면에서 확인하고 싶은 업무 설명을 적으세요.">${e(state.request)}</textarea>
+    <textarea id="request-draft" data-field="request" maxlength="20000" rows="7" placeholder="화면에서 확인하고 싶은 업무 설명을 적으세요.">\n${e(state.request)}</textarea>
     <p class="hint">작성한 내용으로 자료 해석·설계·실행을 만들지 않습니다. 실제 업무 실행·산출물·대안은 아직 없습니다.</p>
     <div class="source-row"><div><strong>가상의 도서관 운영 메모</strong><code>source-v1</code></div>${detailButton('원 자료 전문', 'source')}</div>
     ${sample('고정 자료는 이 시제품에서 읽을 수 있음 · 사용자가 쓴 설명과 별개')}
@@ -32,7 +32,7 @@ function designScene(state) {
     ${paper(`선택 설계 · ${selected.name}`, `<p>${e(selected.structure)}</p><p>역할: 자료 정리 / 안내문 작성 / 발행 검토. 산출물: 자료 정리 전문 / 안내문 전문 / 검토 전문.</p>
       <p>계획 도구: 텍스트 읽기·작성·대조. 실제 AI·브라우저·PDF·게시 미연결. 연결·권한·비용 검증 전.</p>
       <label for="design-notes">역할·자료·완료 조건 수정 메모</label>
-      <textarea id="design-notes" data-field="designNotes" maxlength="20000" rows="3">${e(state.designNotes[state.design] ?? '')}</textarea>
+      <textarea id="design-notes" data-field="designNotes" maxlength="20000" rows="3">\n${e(state.designNotes[state.design] ?? '')}</textarea>
       <p class="hint">수정 메모만 보관합니다. 현재 예시 설계 버전은 그대로이며 새 후보 구성은 미연결입니다.</p>
       <div class="actions">${detailButton('선택 설계 근거', 'design')}${detailButton('설계 승인 대상 미리보기', 'designApproval')}
       ${button('초기 설계 질문', 'data-exploration', 'initial')}${button('이 설계의 반례 검토', 'data-exploration', 'critic')}</div>`)}
@@ -62,7 +62,7 @@ function inquiryScene(state) {
       <h3>설명 1 · 전달에서 조건 누락</h3><p>앞선 정리에서 ‘선택’ 표시가 빠졌을 수 있습니다. 원 자료와 실제 전달본 대조가 필요합니다.</p>
       <h3>설명 2 · 읽는 순서의 차이</h3><p>조건은 전달됐으나 준비물 문장 작성에서 놓쳤을 수 있습니다. 같은 자료의 새 수행이 필요합니다.</p>
       <p class="warning">둘 다 가설입니다. 일회성 예외·사용자 대안 오류·시스템 실패 가능성도 남으며 원인은 미확정입니다.</p>
-      <label for="evidence-note">필요한 증거 또는 보류 이유 메모 · 선택</label><textarea id="evidence-note" data-field="evidence" rows="4" maxlength="20000">${e(state.evidence[evidenceKey(state)] ?? '')}</textarea>
+      <label for="evidence-note">필요한 증거 또는 보류 이유 메모 · 선택</label><textarea id="evidence-note" data-field="evidence" rows="4" maxlength="20000">\n${e(state.evidence[evidenceKey(state)] ?? '')}</textarea>
       <p class="hint">새 수행/응답 증거는 아직 없습니다. 메모만으로 변경 후보나 학습 결과를 만들지 않습니다.</p>
       <div class="actions">${detailButton('감사 상세 예시', 'audit')}${sceneButton('반복 결과 형식 보기', 'V06')}</div>`)}
     </div>`;

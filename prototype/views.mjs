@@ -59,7 +59,7 @@ export function draftEditor(state) {
   return paper('같은 범위에 내 버전 작성', `
     <p class="scope">${e(scopeLabel(state))} · 원본을 본 뒤 작성하는 디자인 테스트 초안</p>
     <label for="own-draft">내 버전 내용</label>
-    <textarea id="own-draft" maxlength="20000" rows="10" placeholder="선택한 범위에 들어갈 자기 내용을 적으세요. 이유는 쓰지 않아도 됩니다.">${e(draft.text)}</textarea>
+    <textarea id="own-draft" maxlength="20000" rows="10" placeholder="선택한 범위에 들어갈 자기 내용을 적으세요. 이유는 쓰지 않아도 됩니다.">\n${e(draft.text)}</textarea>
     <p id="draft-state" class="hint">${draft.text.trim() ? `사용자 작성 초안 · 편집 ${draft.revision}회 · 제출/비교 증거 미확정` : '사용자 대안 없음 · 초안이 비어 있습니다.'}</p>
     <p class="hint">작성 범위만 참조합니다. 실제 검토한 범위·독립 수행 여부는 미확인입니다. 작성은 실행·학습·승인을 시작하지 않습니다.</p>
     ${button('차이와 새 증거 보기', 'data-exploration', 'alternative')}`);
@@ -84,7 +84,7 @@ export function conversation(state) {
     <blockquote>${e(selectedText(state))}</blockquote>${detailButton('전체 문맥 열기', 'original')}</div>
     <p class="sample">디자인 테스트용 작성 영역 · 전송·응답 생성·학습 연결 없음</p>
     <label for="conversation-draft">이 대상에 대한 검토 메모</label>
-    <textarea id="conversation-draft" rows="4" maxlength="20000" placeholder="화면을 검토하며 남길 메모">${e(state.conversations[targetKey(state)] ?? '')}</textarea>
+    <textarea id="conversation-draft" rows="4" maxlength="20000" placeholder="화면을 검토하며 남길 메모">\n${e(state.conversations[targetKey(state)] ?? '')}</textarea>
     <p class="hint">이 메모를 자기 대안으로 추정하지 않습니다. 교체할 내용은 ‘내 버전’에서 작성하세요.</p>
     ${sceneButton('내 버전 작성 영역 열기', 'V04')}`, 'conversation-paper');
 }
