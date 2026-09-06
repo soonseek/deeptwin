@@ -1,0 +1,4 @@
+room,previous_end,setup_minutes,closes,capacity
+Quiet,14:00,0,17:00,8
+Workshop,14:30,30,17:00,20
+Hall,14:00,0,17:00,40

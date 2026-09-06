@@ -1,0 +1,1 @@
+Offer the quiet room and hall from 14:00 to 16:00, with a combined capacity of 48. Offer the workshop as a separate 15:00-17:00 option only after its setup window. Do not advertise three simultaneous rooms.
