@@ -8,7 +8,7 @@
 
 **Tech Stack:** HTML, CSS, native ES modules, Node built-in HTTP and test modules. No package installation. Use `/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node` on this machine. The README's `node` commands are portable equivalents.
 
-**Authoring status:** This document is an executable plan, not an implementation or successful test report. The user approved UI spec §9.3's prototype scope in the current conversation. The code below is complete; implementing workers must write and run it, inspect the rendered UI, and fix findings before claiming completion. Product behavior, usability, engine effects, provider connections, and production storage remain unvalidated.
+**Authoring status:** The code packet below records the pre-implementation plan committed in `aa1a27d`. Implementation is now in `prototype/`, first committed as `49bd17e`; review-driven changes are recorded at the end rather than retroactively rewriting the original packet. Checkboxes report actual execution. User usability acceptance, engine effects, provider connections, and production storage remain unvalidated.
 
 **Design direction:** A 232px charcoal `#15262C` navigation rail, cool `#F5F8F9` workspace, white reading papers, `#087F83` teal actions, `#203640` ink, and `#A86A16` amber limitations. Korean system sans at 15px supports substantive paragraphs. The persistent artifact ribbon is functional: role, exact input/output versions, and selected range. Version references alone use monospace. The three modes respectively emphasize reading/comparison, reference-bound drafting, and selectable lineage. On small screens the navigation becomes a wrapped top area and papers stack.
 
@@ -35,7 +35,7 @@ This is one cohesive task because state continuity is the acceptance boundary ac
 
 Do not stage or overwrite the existing dirty `docs/superpowers/plans/2026-09-06-deeptwin-ui-structure.md`. Use `apply_patch` for implementation edits. Do not install dependencies, create authentication, publish, or update historical review records as if actual connection/engine tests passed.
 
-- [ ] **Step 1: Write the failing tests first.** Create only `prototype/tests/prototype.test.mjs` with this complete content.
+- [x] **Step 1: Write the failing tests first.** Create only `prototype/tests/prototype.test.mjs` with this complete content.
 
 ```js
 import test from 'node:test';
@@ -254,7 +254,7 @@ test('server exposes only allowlisted GET assets with security headers', async (
 });
 ```
 
-- [ ] **Step 2: Run the tests and observe the expected failure.** Run from `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure`:
+- [x] **Step 2: Run the tests and observe the expected failure.** Run from `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure`:
 
 ```sh
 /Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --test prototype/tests/prototype.test.mjs
@@ -262,7 +262,7 @@ test('server exposes only allowlisted GET assets with security headers', async (
 
 Expected: exit nonzero with `ERR_MODULE_NOT_FOUND` for `prototype/data.mjs`; record the actual output. If implementation files already exist, inspect them and use the tests to identify the missing behavior instead of overwriting work blindly.
 
-- [ ] **Step 3: Implement the fixture and state modules.** Create `prototype/data.mjs`:
+- [x] **Step 3: Implement the fixture and state modules.** Create `prototype/data.mjs`:
 
 ```js
 export const SCENES = [
@@ -527,7 +527,7 @@ export function resetState(storage) {
 }
 ```
 
-- [ ] **Step 4: Implement reusable views and meaningful scenes.** Create `prototype/views.mjs`:
+- [x] **Step 4: Implement reusable views and meaningful scenes.** Create `prototype/views.mjs`:
 
 ```js
 import { SOURCE, ROLES, DESIGNS, ROUNDS, RECORDS, EXPLORATIONS } from './data.mjs';
@@ -792,7 +792,7 @@ export function renderShell(state) {
 }
 ```
 
-- [ ] **Step 5: Implement browser control, styling, and entry point.** Create `prototype/app.mjs`:
+- [x] **Step 5: Implement browser control, styling, and entry point.** Create `prototype/app.mjs`:
 
 ```js
 import { ROLES } from './data.mjs';
@@ -1138,7 +1138,7 @@ Create `prototype/index.html`:
 </html>
 ```
 
-- [ ] **Step 6: Add the restricted local server and operational README.** Create `prototype/server.mjs`:
+- [x] **Step 6: Add the restricted local server and operational README.** Create `prototype/server.mjs`:
 
 ```js
 import http from 'node:http';
@@ -1264,9 +1264,9 @@ node --test prototype/tests/prototype.test.mjs
 자동 브라우저 확인은 저장소 의존성을 추가하지 않고 번들 Playwright와 설치된 Chrome의 `chromium.launch({ channel: 'chrome', headless: true })`를 사용할 수 있습니다. 번들 브라우저가 없다는 이유로 설치하지 않습니다. DOM 테스트와 스크린샷은 사람의 실제 화면 선택, 연결 시험, 엔진 효과 검증을 대신하지 않습니다.
 ````
 
-- [ ] **Step 7: Run the tests and correct real failures.** Use the exact Step 2 command. Expected: all tests pass. Inspect each failure; do not weaken evidence, isolation, escaping, or server restrictions to make a test pass. Run `git diff --check` after edits.
+- [x] **Step 7: Run the tests and correct real failures.** Use the exact Step 2 command. Expected: all tests pass. Inspect each failure; do not weaken evidence, isolation, escaping, or server restrictions to make a test pass. Run `git diff --check` after edits.
 
-- [ ] **Step 8: Start the server and inspect the actual browser.** Run:
+- [x] **Step 8: Start the server and inspect the actual browser.** Run:
 
 ```sh
 /Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node prototype/server.mjs
@@ -1274,7 +1274,7 @@ node --test prototype/tests/prototype.test.mjs
 
 Use the running terminal session; open `http://127.0.0.1:4173` in the Codex browser panel. Use the README's exact browser procedure. For independent automated acceptance, root can use bundled Playwright with installed Chrome (`channel: 'chrome'`). Do not install browser/dependency packages. Check 1440px and 390px, actual DOM range selection, Korean input continuity, modal Escape/focus, role/span draft isolation, same-tab reload, blocked/quota storage, and all 24 scene/mode combinations. Save screenshots and actual results in the root worker's designated observation record; do not rewrite historical UI/engine verification fields. If visual or behavior findings require code changes, correct them and repeat only affected checks.
 
-- [ ] **Step 9: Review, commit the scoped implementation, and hand off the running UI.** Inspect `git status --short`, the explicit prototype diff, and the actual browser results. Commit only these new prototype files after tests and browser checks pass:
+- [x] **Step 9: Review, commit the scoped implementation, and hand off the running UI.** Inspect `git status --short`, the explicit prototype diff, and the actual browser results. Commit only these new prototype files after tests and browser checks pass:
 
 ```sh
 git add prototype/tests/prototype.test.mjs prototype/data.mjs prototype/state.mjs prototype/views.mjs prototype/scenes.mjs prototype/app.mjs prototype/styles.css prototype/index.html prototype/server.mjs prototype/README.md
@@ -1288,3 +1288,17 @@ The root worker decides how the approved scope/plan/observation documents are co
 The root worker read the complete plan against UI §9.3 and §§6/9. All eight scenes and three modes map to scene/render/state code and browser checks; original text, exact partial selection, empty alternative state, separate exploration entries, every queue outcome, final evidence/approval target, auxiliary return, and optional log preview are covered. No placeholder code remains. Export names, event hooks, state keys and saved range history were checked across modules. The review corrected exact-range visual highlighting and selected-design graph consistency, and retained scoped design/exploration drafts and explicit storage-size failure.
 
 Node syntax checks of all seven JavaScript blocks passed before implementation; this is not a runtime test. The existing linked worktree and old dirty plan were verified and preserved. The user's established preference is fresh implementation worker followed by independent specification and quality reviews. Execute continuously within the approved click-prototype scope; no further generic execution-choice question is needed. Actual screen observation and provider/engine verification remain separate.
+
+## Execution and review record — 2026-09-06
+
+The initial implementation of all ten files was committed in `49bd17e`. The first missing-module test failure established that the test command was wired before implementation; it was setup evidence, not a behavioral regression demonstration. Later regressions were reproduced as real assertion failures before their fixes. The original packet above is historical: the runtime source is authoritative for subsequent fixes.
+
+Root's first full verification passed 14 Node tests and 20 browser groups, including 48 viewport/scene/mode combinations. During construction, auxiliary return was strengthened from a scene-only reference to an origin mode/role/span snapshot, and unreadable initial storage now blocks automatic replacement until explicit confirmation. These changes preserve the original target/draft and storage-honesty contracts rather than expanding the product scope.
+
+A fresh independent specification reviewer re-read the code and reran 14 tests and all 48 view combinations. Two interaction findings prevented specification approval: V04's exploration link retained a previously selected initial/critic entry, and a cancelled native text selection could apply a stale range. Both were corrected with real DOM regressions in `4fad833`; the same reviewer independently reran all 16 tests (zero skipped) and returned `SPEC_PASS`. Root then passed all 16 tests and an expanded 22-group browser suite. A fresh quality reviewer follows this specification pass. User-facing engine work is not added to resolve these UI findings.
+
+Actual browser verification and its limits are recorded separately in [the observation record](../../ui/initial-ui-review-cases.md#클릭-시제품-에이전트-검증). The local server is available at [127.0.0.1:4173](http://127.0.0.1:4173/) and the visible Codex browser was opened and refreshed after code changes. Opening it does not establish user acceptance. The protected older dirty UI plan remains outside every implementation commit.
+
+The fresh quality reviewer read all ten files, independently passed 16 tests including both real-DOM cases, and returned `QUALITY_PASS` with no Critical/Important issues. One Minor was nevertheless selected for correction: HTML textarea parsing dropped a leading newline on rerender, which could become a saved edit on subsequent input. All five editable fields must preserve zero, one, and multiple leading newlines. A focused regression and final re-review follow; no new product feature is introduced.
+
+Final result: `d6dfca7` fixes that newline loss in all five fields. Root and the quality reviewer each passed all 32 reported tests (14 basic tests, three browser tests, and 15 nested field/newline cases; zero failures/skips). The quality re-review returned `QUALITY_PASS` with the Minor resolved. Root's separate 22-group browser suite, including 48 scene/mode/viewport views, also passed with no runtime errors or external requests. Code commits contain only `prototype/`; documentation tracking is committed separately. The earlier worker-owned preview server ended, so root restarted it in a PTY, confirmed HTTP 200, and refreshed the visible empty V04 writer view. No user-authored alternative was fabricated, no actual engine was connected, and no merge/push was performed. The continuing parent plan awaits user screen review, not a blanket product approval.
