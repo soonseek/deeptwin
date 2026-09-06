@@ -12,7 +12,7 @@
 
 ## Status, authority and evidence
 
-The user confirmed the integrated UI specification §11 and authorized writing this plan. **Implementation has not started.** This document plus the [fixture code packet](2026-09-06-control-workspace-fixtures.md) is one plan; its checkboxes track future execution, not authoring completion. Actual agent/model/browser-tool execution, authentication, billing, automatic learning, production export and environment promotion are out of scope.
+The user confirmed the integrated UI specification §11, then authorized this UI-only implementation with “시작해” in response to the implementation handoff. **Scoped code implementation, independent specification/quality reviews and automated/visual checks are complete; actual user screen acceptance is pending.** The final source `4954450` passed all 79 tests without failures or skips. The local server is running; the Codex open request was queued and actual visible display could not be checked because the Mac is locked. This document plus the [fixture code packet](2026-09-06-control-workspace-fixtures.md) is one plan; its checkboxes track verified execution, not authoring completion. Actual agent/model/browser-tool execution, authentication, billing, automatic learning, production export and environment promotion remain out of scope. Execution evidence is tracked in [the implementation ledger](../../ui/control-workspace-implementation.md); user UI acceptance remains unconfirmed.
 
 Source: [UI specification](../specs/2026-09-06-deeptwin-ui-structure-design.md) §10.1, §10.3–10.7 and §11; [review cases](../../ui/initial-ui-review-cases.md). Later direct user corrections outrank earlier generic UI proposals. Do not reuse the old user work description, failed manual POC, old prototype's fixed role/text data, or user alternatives as fixtures. Preserve the existing dirty UI plans and historical failed observations.
 
@@ -49,15 +49,15 @@ Tasks 2 and 3 can run independently after the fixture interfaces are committed. 
 
 **Files:** the three source/test files and generated allowlist specified in [the fixture packet](2026-09-06-control-workspace-fixtures.md). That packet contains the complete code, tests and exact RED/GREEN commands for this task; do not substitute a new fixture schema.
 
-- [ ] Follow the packet's failing-test step, verify the intended failure, add its implementation and verify the tests. Before its first asset-generation command, follow the PDF skill's authoring marker instructions once for the expected PDF outputs; do not run that marker while merely reading this plan.
-- [ ] Render generated PDF pages with the bundled PDF tooling and inspect the rendered pages beside their SVG derivatives. PDF bytes/metadata tests do not prove layout fidelity. Fix clipped or mismatched content before accepting the fixture.
-- [ ] Commit only the explicit files/assets in the packet. No actual user documents, credentials, source PDFs or prior prototype files are copied.
+- [x] Follow the packet's failing-test step, verify the intended failure, add its implementation and verify the tests. Before its first asset-generation command, follow the PDF skill's authoring marker instructions once for the expected PDF outputs; do not run that marker while merely reading this plan.
+- [x] Render generated PDF pages with the bundled PDF tooling and inspect the rendered pages beside their SVG derivatives. PDF bytes/metadata tests do not prove layout fidelity. Fix clipped or mismatched content before accepting the fixture.
+- [x] Commit only the explicit files/assets in the packet. No actual user documents, credentials, source PDFs or prior prototype files are copied.
 
 ## Task 2: Shared scoped state and honest persistence
 
 **Create:** `control-prototype/tests/state.test.mjs`, then `control-prototype/state.mjs`.
 
-- [ ] Write the failing state tests:
+- [x] Write the failing state tests:
 
 ```js
 import test from 'node:test';
@@ -105,8 +105,8 @@ test('persistence does not overwrite unread snapshots or reset on failure',()=>{
 });
 ```
 
-- [ ] Run `node --test control-prototype/tests/state.test.mjs`. Expected: FAIL because `state.mjs` does not exist. A syntax error or broken fixture is not the intended failure.
-- [ ] Add the complete state implementation:
+- [x] Run `node --test control-prototype/tests/state.test.mjs`. Expected: FAIL because `state.mjs` does not exist. A syntax error or broken fixture is not the intended failure.
+- [x] Add the complete state implementation:
 
 ```js
 import { ARTIFACTS, RUNS, DESIGNS, REVISED_DESIGN, CASE, ROUNDS, LOGS } from './fixtures.mjs';
@@ -186,14 +186,14 @@ export function save(storage,state,blocked){if(blocked)return {ok:false,message:
 export function reset(storage){try{storage.removeItem(KEY);return {ok:true};}catch{return {ok:false,message:'초기화 실패 · 현재 작성 내용 유지'};}}
 ```
 
-- [ ] Run `node --test control-prototype/tests/state.test.mjs`. Expected: all four tests PASS; no skipped tests.
-- [ ] Commit: `git add -- control-prototype/state.mjs control-prototype/tests/state.test.mjs` then `git commit -m "feat: add scoped control workspace state"`.
+- [x] Run `node --test control-prototype/tests/state.test.mjs`. Expected: all four tests PASS; no skipped tests.
+- [x] Commit: `git add -- control-prototype/state.mjs control-prototype/tests/state.test.mjs` then `git commit -m "feat: add scoped control workspace state"`.
 
 ## Task 3: Graph and typed artifact primitives
 
 **Create:** `control-prototype/tests/primitives.test.mjs`, then `control-prototype/primitives.mjs`.
 
-- [ ] Write the failing tests:
+- [x] Write the failing tests:
 
 ```js
 import test from 'node:test';
@@ -216,8 +216,8 @@ test('all formats retain original file access and distinct representation',()=>{
 });
 ```
 
-- [ ] Run `node --test control-prototype/tests/primitives.test.mjs`. Expected: missing-module FAIL.
-- [ ] Add the complete primitives:
+- [x] Run `node --test control-prototype/tests/primitives.test.mjs`. Expected: missing-module FAIL.
+- [x] Add the complete primitives:
 
 ```js
 import { ARTIFACTS } from './fixtures.mjs';
@@ -245,14 +245,14 @@ export function artifact(id,{selectable=false,scope={kind:'whole'}}={}){
 }
 ```
 
-- [ ] Run `node --test control-prototype/tests/primitives.test.mjs`. Expected: both tests PASS. The CSV renderer is deliberately limited to the controlled, unquoted fixture cells; it must not be presented as an arbitrary CSV importer.
-- [ ] Commit: `git add -- control-prototype/primitives.mjs control-prototype/tests/primitives.test.mjs` then `git commit -m "feat: render graphs and typed fixture artifacts"`.
+- [x] Run `node --test control-prototype/tests/primitives.test.mjs`. Expected: both tests PASS. The CSV renderer is deliberately limited to the controlled, unquoted fixture cells; it must not be presented as an arbitrary CSV importer.
+- [x] Commit: `git add -- control-prototype/primitives.mjs control-prototype/tests/primitives.test.mjs` then `git commit -m "feat: render graphs and typed fixture artifacts"`.
 
 ## Task 4: Connected work areas, not independent result cards
 
 **Create:** `control-prototype/tests/workspace.test.mjs`, then `control-prototype/workspace.mjs`.
 
-- [ ] Write the failing tests:
+- [x] Write the failing tests:
 
 ```js
 import test from 'node:test';
@@ -283,8 +283,8 @@ test('three modes preserve area-specific objects, not disabled tabs',()=>{
 });
 ```
 
-- [ ] Run `node --test control-prototype/tests/workspace.test.mjs`. Expected: missing-module FAIL.
-- [ ] Add this complete rendering module. All pre-authored work/diagnosis/evaluation text comes from the explicit fixture exports; fresh test input is escaped and stored separately.
+- [x] Run `node --test control-prototype/tests/workspace.test.mjs`. Expected: missing-module FAIL.
+- [x] Add this complete rendering module. All pre-authored work/diagnosis/evaluation text comes from the explicit fixture exports; fresh test input is escaped and stored separately.
 
 ```js
 import { ARTIFACTS, RUNS, DESIGNS, REVISED_DESIGN, CASE, ROUNDS, WORK_MODEL, LOGS } from './fixtures.mjs';
@@ -355,14 +355,14 @@ export function render(s){
 }
 ```
 
-- [ ] Run `node --test control-prototype/tests/workspace.test.mjs`. Expected: all three tests PASS. Do not accept string-presence checks as the final UI identity test; Task 7 exercises the actual relationships and human review.
-- [ ] Commit: `git add -- control-prototype/workspace.mjs control-prototype/tests/workspace.test.mjs` then `git commit -m "feat: connect design run and improvement workspaces"`.
+- [x] Run `node --test control-prototype/tests/workspace.test.mjs`. Expected: all three tests PASS. Do not accept string-presence checks as the final UI identity test; Task 7 exercises the actual relationships and human review.
+- [x] Commit: `git add -- control-prototype/workspace.mjs control-prototype/tests/workspace.test.mjs` then `git commit -m "feat: connect design run and improvement workspaces"`.
 
 ## Task 5: Explicit local server boundary
 
 **Create:** `control-prototype/tests/server.test.mjs`, then `control-prototype/server.mjs`.
 
-- [ ] Write the failing tests:
+- [x] Write the failing tests:
 
 ```js
 import test from 'node:test';
@@ -386,8 +386,8 @@ test('only explicit local assets can be read; no writes or traversal',async()=>{
 });
 ```
 
-- [ ] Run `node --test control-prototype/tests/server.test.mjs`. Expected: missing-module FAIL, assuming Task 1 assets are present.
-- [ ] Add the server:
+- [x] Run `node --test control-prototype/tests/server.test.mjs`. Expected: missing-module FAIL, assuming Task 1 assets are present.
+- [x] Add the server:
 
 ```js
 import http from 'node:http';
@@ -419,14 +419,14 @@ if(process.argv[1]&&pathToFileURL(resolve(process.argv[1])).href===import.meta.u
 }
 ```
 
-- [ ] Run `node --test control-prototype/tests/server.test.mjs`. Expected: PASS, including real PDF byte delivery. Server source, tests, asset generator and repository documents must remain unavailable over HTTP.
-- [ ] Commit: `git add -- control-prototype/server.mjs control-prototype/tests/server.test.mjs` then `git commit -m "feat: serve control UI on a restricted loopback endpoint"`.
+- [x] Run `node --test control-prototype/tests/server.test.mjs`. Expected: PASS, including real PDF byte delivery. Server source, tests, asset generator and repository documents must remain unavailable over HTTP.
+- [x] Commit: `git add -- control-prototype/server.mjs control-prototype/tests/server.test.mjs` then `git commit -m "feat: serve control UI on a restricted loopback endpoint"`.
 
 ## Task 6: Browser interaction and presentation
 
 **Create:** `control-prototype/tests/browser.test.mjs`, `app.mjs`, `index.html`, `styles.css`.
 
-- [ ] Write the failing DOM test below. The dependency is Task 5, not a package installation. A missing Playwright environment setting is an explicit failure, never a skipped test represented as success.
+- [x] Write the failing DOM test below. The dependency is Task 5, not a package installation. A missing Playwright environment setting is an explicit failure, never a skipped test represented as success.
 
 ```js
 import test from 'node:test';
@@ -473,15 +473,15 @@ test('real DOM preserves exact input, relationships and simulation boundary',asy
 });
 ```
 
-- [ ] Run `CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs node --test control-prototype/tests/browser.test.mjs`. Expected: FAIL because the new entry/UI does not yet exist, not because dependencies or fixture references are wrong.
-- [ ] Add `control-prototype/index.html`:
+- [x] Run `CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs node --test control-prototype/tests/browser.test.mjs`. Expected: FAIL because the new entry/UI does not yet exist, not because dependencies or fixture references are wrong.
+- [x] Add `control-prototype/index.html`:
 
 ```html
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>DeepTwin · 관제 작업대 시제품</title><link rel="stylesheet" href="/styles.css"/></head><body><div id="app"></div><dialog id="detail-dialog" aria-label="현재 대상의 상세"><button id="detail-close" type="button">닫기</button><div id="detail-body"></div></dialog><script type="module" src="/app.mjs"></script></body></html>
 ```
 
-- [ ] Add `control-prototype/app.mjs`:
+- [x] Add `control-prototype/app.mjs`:
 
 ```js
 import { ARTIFACTS, RUNS, CASE, DESIGNS, REVISED_DESIGN, ROUNDS } from './fixtures.mjs';
@@ -570,7 +570,7 @@ window.addEventListener('pageshow',showFile);
 paint();if(state.overlay)detail(state.overlay,null);
 ```
 
-- [ ] Add `control-prototype/styles.css`. The visual treatment follows the accepted control-workbench structure: dark operational canvas, high-contrast paper artifacts, restrained teal active state, amber limitations. It does not reuse the rejected document-card shell.
+- [x] Add `control-prototype/styles.css`. The visual treatment follows the accepted control-workbench structure: dark operational canvas, high-contrast paper artifacts, restrained teal active state, amber limitations. It does not reuse the rejected document-card shell.
 
 ```css
 :root{color-scheme:light dark;--bg:light-dark(#edf2f3,#0e151a);--panel:light-dark(#fff,#17232a);--ink:light-dark(#172c34,#e1edf0);--muted:light-dark(#536972,#9db2bd);--line:light-dark(#c7d5da,#3a505c);--active:light-dark(#087f83,#56d7d3);--warn:light-dark(#855e0c,#f4cb73);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;background:var(--bg);color:var(--ink)}
@@ -581,14 +581,14 @@ article[data-artifact]{background:light-dark(#fff,#f4f6f3);color:#21343b;border:
 @media(max-width:1150px){.candidates{grid-template-columns:1fr}.candidate .graph{min-width:760px}.workbench{grid-template-columns:1fr}.pair{grid-template-columns:1fr}.rail{width:auto}main{padding:16px}}@media(max-width:700px){.shell{display:block}.rail{position:static;height:auto;padding:13px;display:flex;flex-direction:row;flex-wrap:wrap;gap:3px}.rail h1,.rail p{width:100%;margin:2px 0}.utilities{margin:0;display:flex;flex-wrap:wrap}.heading{display:block}main{padding:10px}.panel,.candidate{padding:12px}.focus-bar{position:static}dl{grid-template-columns:1fr}dd{margin-bottom:9px}.graph{min-width:760px}.ribbon{font-size:11px}}
 ```
 
-- [ ] Run `CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs node --test control-prototype/tests/browser.test.mjs`. Expected: PASS. Then manually verify Korean IME composition, keyboard text selection, graph focus and modal return; automated fill is not physical-IME certification.
-- [ ] Commit: `git add -- control-prototype/app.mjs control-prototype/index.html control-prototype/styles.css control-prototype/tests/browser.test.mjs` then `git commit -m "feat: add interactive control-workspace browser shell"`.
+- [x] Run `CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs node --test control-prototype/tests/browser.test.mjs`. Expected: PASS. Automated DOM composition, Enter activation of an actual selection, graph focus and modal return were checked. Physical Korean IME and OS-level BFCache navigation remain unverified and are not inferred from these tests.
+- [x] Commit: `git add -- control-prototype/app.mjs control-prototype/index.html control-prototype/styles.css control-prototype/tests/browser.test.mjs` then `git commit -m "feat: add interactive control-workspace browser shell"`.
 
 ## Task 7: Failure-path verification and actual screen review
 
 **Create:** `control-prototype/tests/browser-review.test.mjs`, `control-prototype/README.md`, `docs/ui/control-workspace-review.md`. The tests generate screenshots under `control-prototype/review-output/`; do not stage these until they have been inspected for accidental user/private content.
 
-- [ ] Add the complete regression/visual-capture test. Each failed behavioral assertion requires a targeted failing regression followed by the minimal fix in its responsible module; it is not waived because the other views look correct.
+- [x] Add the complete regression/visual-capture test. Each failed behavioral assertion requires a targeted failing regression followed by the minimal fix in its responsible module; it is not waived because the other views look correct.
 
 ```js
 import test from 'node:test';
@@ -664,10 +664,10 @@ test('scoped selection, files, blocked storage and legible connected screens',as
 });
 ```
 
-- [ ] Run `CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs node --test control-prototype/tests/browser-review.test.mjs`. Expected: PASS and the named screenshots. This is actual UI behavior against synthetic data, not actual runtime or engine verification.
-- [ ] At 1440px and 1024px verify that candidate graphs are stacked at readable widths with a shared inspection focus, not forced into three cropped miniatures. Pair graphs also stack at these widths. A future wider-screen layout may use columns only if each full graph retains legible labels; that change needs the same screenshots and state checks.
-- [ ] Inspect each generated screenshot with the image-viewing tool. Check full node labels, directed links, readable graphs without shrinking text, current run/attempt and comparison versions, typed image/PDF page appearance, and modal content. At small widths the graph's own horizontal scroll is permitted; body overflow, unreadable reduced graphs and inaccessible selected nodes fail. Capture a focused screenshot of each graph if a full-page capture makes labels unreadable; screenshots must not substitute for actual navigation tests.
-- [ ] Write `control-prototype/README.md` with this exact initial content:
+- [x] Run `CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs node --test control-prototype/tests/browser-review.test.mjs`. Expected: PASS and the named screenshots. This is actual UI behavior against synthetic data, not actual runtime or engine verification.
+- [x] At 1440px and 1024px verify that candidate graphs are stacked at readable widths with a shared inspection focus, not forced into three cropped miniatures. Pair graphs also stack at these widths. A future wider-screen layout may use columns only if each full graph retains legible labels; that change needs the same screenshots and state checks.
+- [x] Inspect each generated screenshot with the image-viewing tool. Check full node labels, directed links, readable graphs without shrinking text, current run/attempt and comparison versions, typed image/PDF page appearance, and modal content. At small widths the graph's own horizontal scroll is permitted; body overflow, unreadable reduced graphs and inaccessible selected nodes fail. Capture a focused screenshot of each graph if a full-page capture makes labels unreadable; screenshots must not substitute for actual navigation tests.
+- [x] Write `control-prototype/README.md` with this exact initial content:
 
 ```markdown
 # DeepTwin 수정 관제 UI 시제품
@@ -701,7 +701,7 @@ test('scoped selection, files, blocked storage and legible connected screens',as
 결과는 `docs/ui/control-workspace-review.md`에 실행 근거와 관찰 한계를 구별해 남깁니다. 사용자 정체성 수용·실제 두 구독 지원·도구 수행·흡수/전이/회귀 효과는 별도 검증 대상입니다.
 ```
 
-- [ ] Create `docs/ui/control-workspace-review.md` with the following unfilled-status content, then update only rows for which actual evidence has been collected. This initial record deliberately does not claim a pass.
+- [x] Create `docs/ui/control-workspace-review.md` with the following unfilled-status content, then update only rows for which actual evidence has been collected. This initial record deliberately does not claim a pass.
 
 ```markdown
 # 수정 관제 작업대 화면 검토
@@ -725,9 +725,10 @@ test('scoped selection, files, blocked storage and legible connected screens',as
 과거 UI-01–15 관찰 및 V02/V03 정체성 실패는 그대로 보존한다. 새 코드 테스트가 과거 실패나 사용자 미확인을 덮지 않는다. 결과를 기록할 때 커밋, 명령, 실제 검사 수/실패/건너뜀, 캡처 경로, 확인한 내용과 한계를 함께 남긴다. 파일·화면 표시 검사는 DeepTwin 효과 증거가 아니다.
 ```
 
-- [ ] Run the full pure-test command and both browser tests above. Run `git diff --check`; inspect the exact changed files and protected dirty plan hash. Record actual counts rather than copying this plan's expected values. Do not infer physical IME, accessibility certification, empirical improvement or user approval from automated tests.
-- [ ] Commit the exact tested source/README/review document changes, with screenshots only after inspection: `git add -- control-prototype/tests/browser-review.test.mjs control-prototype/README.md docs/ui/control-workspace-review.md`, then inspect the staged file list and commit `test: verify revised control workspace and record review boundaries`. Any fixes in earlier modules must be explicitly staged by their names and reviewed, not swept up with `git add .`.
-- [ ] Start the local server in a persistent tool session, open the loopback URL in the user's Codex panel, and present the named screenshots with absolute local image paths. The implementing agent handles commands. Ask for the user's screen review of the specified relationships, not a work alternative or validation of engine performance. Update user-observation rows only from the actual response.
+- [x] Run the full pure-test command and both browser tests above. Run `git diff --check`; inspect the exact changed files and protected dirty plan hash. Record actual counts rather than copying this plan's expected values. Do not infer physical IME, accessibility certification, empirical improvement or user approval from automated tests.
+- [x] Commit the exact tested source/README/review document changes, with screenshots only after inspection: `git add -- control-prototype/tests/browser-review.test.mjs control-prototype/README.md docs/ui/control-workspace-review.md`, then inspect the staged file list and commit `test: verify revised control workspace and record review boundaries`. Any fixes in earlier modules must be explicitly staged by their names and reviewed, not swept up with `git add .`.
+- [x] Start the local server in a persistent tool session; `http://127.0.0.1:4183` is running. The Codex panel open request returned queued. Preserve the worktree and provide actual screenshots without asking the user to operate a CLI.
+- [ ] Confirm actual visible display after the user unlocks the Mac, then obtain the user's screen review of the specified relationships. The locked Mac prevented this check. User acceptance, physical Korean IME and OS-level BFCache remain unverified; update observations only from actual evidence.
 
 ## Spec coverage and completion boundary
 
@@ -749,4 +750,4 @@ Implementation completion requires passing actual scoped tests, inspected artifa
 - [x] Parse every JavaScript code block without evaluating it; distinguish plan syntax checks from product tests. Fourteen blocks across the two packets parsed; no module evaluation, generated assets or product tests occurred.
 - [x] Scan for missing code, unresolved placeholders and stale scope/approval language; fix substantive gaps. Full browser commands replace abbreviated commands. Native textarea restoration, fresh-input/example separation and legible graph/typed-page scroll boundaries are explicit.
 - [x] Verify spec coverage above, safe file targets and preservation of existing user changes. Existing rejected prototype and both dirty plans remain untouched; actual production capabilities remain outside this UI plan.
-- [ ] Present the finished plan and recommend subagent-driven execution with review after each task; wait for the user's implementation decision.
+- [x] Present the finished plan and recommend subagent-driven execution with review after each task; user authorized the scoped implementation with “시작해”.
