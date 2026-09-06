@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ARTIFACTS, DESIGNS, REVISED_DESIGN } from '../fixtures.mjs';
+import { ARTIFACTS, DESIGNS, REVISED_DESIGN, RUNS } from '../fixtures.mjs';
 import { e, button, list, graph, artifact } from '../primitives.mjs';
 
-const graphs = [...DESIGNS, REVISED_DESIGN];
+const graphs = [...DESIGNS, REVISED_DESIGN, ...Object.values(RUNS)];
 const attributes = markup => Object.fromEntries([...markup.matchAll(/([\w-]+)="([^"]*)"/g)].map(match => [match[1], match[2]]));
 const edgePaths = markup => [...markup.matchAll(/<path\b[^>]*data-edge="\d+"[^>]*>/g)].map(match => attributes(match[0]));
 const points = path => [...path.matchAll(/[ML]\s*(-?[\d.]+)[ ,]+(-?[\d.]+)/g)].map(match => ({ x: Number(match[1]), y: Number(match[2]) }));
@@ -18,9 +18,10 @@ test('text helpers escape content and every action attribute', () => {
   assert.equal(list(['<one>', '&two']), '<ul><li>&lt;one&gt;</li><li>&amp;two</li></ul>');
 });
 
-test('every design renders all nodes and edges with accessible focus and stable identity', () => {
+test('every fixture graph renders all nodes and edges with accessible focus and stable identity', () => {
   for (const design of graphs) {
-    const markup = graph(design, design.focus.transfer, 'designNode', `${design.id}:selected:`);
+    const selected = design.focus?.transfer ?? design.nodes.slice(0, 2).map(node => node.id);
+    const markup = graph(design, selected, 'designNode', `${design.id}:selected:`);
     assert.match(markup, /class="graph-scroll"[^>]*tabindex="0"[^>]*aria-label="관계도 가로 탐색"/);
     assert.match(markup, /<svg[^>]*class="graph"[^>]*viewBox="0 0 900 520"[^>]*role="group"[^>]*aria-label="[^"]*관계도/);
     assert.equal((markup.match(/<g class="node /g) ?? []).length, design.nodes.length);
@@ -32,7 +33,7 @@ test('every design renders all nodes and edges with accessible focus and stable 
       assert.equal(tag.role, 'button');
       assert.equal(tag.tabindex, '0');
       assert.equal(tag['aria-label'], e(node.label));
-      assert.equal(tag['aria-pressed'], String(design.focus.transfer.includes(node.id)));
+      assert.equal(tag['aria-pressed'], String(selected.includes(node.id)));
       assert.equal(tag['data-action'], 'designNode');
       assert.ok(tag.class.includes(node.kind));
     }

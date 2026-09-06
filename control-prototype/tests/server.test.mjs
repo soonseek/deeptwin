@@ -114,21 +114,22 @@ test('only GET is permitted even for existing assets', async () => {
 test('real fixture files retain bytes, declared types and restrictive headers', async () => {
   await withServer(async fetchRaw => {
     const expectedTypes = { pdf: 'application/pdf', svg: 'image/svg+xml', csv: 'text/csv; charset=utf-8', text: 'text/plain; charset=utf-8' };
-    for (const [type, contentType] of Object.entries(expectedTypes)) {
-      const file = Object.values(ARTIFACTS).find(item => item.type === type);
-      assert.ok(file, `fixture type ${type}`);
-      const response = await fetchRaw(`/${file.path}?review=true`);
-      assert.equal(response.status, 200, file.path);
-      assert.equal(response.headers['content-type'], contentType);
+    const originals = new Map(Object.values(ARTIFACTS).map(file => [file.path, expectedTypes[file.type]]));
+    const previews = new Map(Object.values(ARTIFACTS).filter(file => file.preview)
+      .map(file => [file.preview, 'image/svg+xml']));
+    const files = new Map([...originals, ...previews]);
+    assert.equal(originals.size, 84);
+    assert.equal(previews.size, 20);
+    assert.equal(files.size, 104);
+
+    for (const [path, contentType] of files) {
+      const response = await fetchRaw(`/${path}?review=true`);
+      assert.equal(response.status, 200, path);
+      assert.equal(response.headers['content-type'], contentType, path);
       assertResponseHeaders(response);
-      assert.deepEqual(response.body, await readFile(new URL(`../${file.path}`, import.meta.url)));
-      if (type === 'pdf') assert.equal(response.body.subarray(0, 5).toString(), '%PDF-');
+      assert.deepEqual(response.body, await readFile(new URL(`../${path}`, import.meta.url)), path);
+      if (contentType === 'application/pdf') assert.equal(response.body.subarray(0, 5).toString(), '%PDF-', path);
     }
-    const pdf = Object.values(ARTIFACTS).find(item => item.type === 'pdf');
-    const preview = await fetchRaw(`/${pdf.preview}`);
-    assert.equal(preview.status, 200);
-    assert.equal(preview.headers['content-type'], 'image/svg+xml');
-    assertResponseHeaders(preview);
   });
 });
 
