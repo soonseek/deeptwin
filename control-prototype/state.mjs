@@ -100,15 +100,21 @@ export function draftKey(state) {
   ]);
 }
 
+function runNoteSelection(state) {
+  const selected = context(state);
+  return selected.attempt === null
+    ? JSON.stringify([draftKey(state), selected.node])
+    : draftKey(state);
+}
+
 export function noteKey(state) {
-  const runContext = context(state);
   const selection = state.area === 'design'
     ? state.design
     : state.area === 'growth'
-      ? [state.sample, state.difference, state.round]
-      : runContext.attempt === null
-        ? JSON.stringify([draftKey(state), runContext.node])
-        : draftKey(state);
+      ? state.sample
+        ? [true, state.difference, state.round]
+        : [false, runNoteSelection(state)]
+      : runNoteSelection(state);
   return JSON.stringify([state.area, selection]);
 }
 
@@ -267,27 +273,31 @@ function validRunContextKey(key, requireArtifact, allowNoAttempt = false) {
 
 const validDraftKey = key => validRunContextKey(key, true);
 
+function validRunNoteSelection(selection) {
+  if (validRunContextKey(selection, false)) return true;
+  const resourceSelection = parseJSON(selection);
+  if (!Array.isArray(resourceSelection) || resourceSelection.length !== 2
+    || JSON.stringify(resourceSelection) !== selection
+    || !validRunContextKey(resourceSelection[0], false, true)
+    || typeof resourceSelection[1] !== 'string') return false;
+  const parsedContext = parseJSON(resourceSelection[0]);
+  const [runId, attemptId, inputs, artifactId, scope] = parsedContext;
+  return attemptId === null && sameJSON(inputs, []) && artifactId === null
+    && sameJSON(scope, { kind: 'whole' }) && RUNS[runId].nodes.some(node => node.id === resourceSelection[1])
+    && !RUNS[runId].attempts.some(attempt => attempt.node === resourceSelection[1]);
+}
+
 function validNoteKey(key) {
   if (typeof key !== 'string' || key.length > MAX_TEXT) return false;
   const parsed = parseJSON(key);
   if (!Array.isArray(parsed) || parsed.length !== 2 || JSON.stringify(parsed) !== key) return false;
   const [area, selection] = parsed;
   if (area === 'design') return DESIGN_IDS.has(selection);
-  if (area === 'run') {
-    if (validRunContextKey(selection, false)) return true;
-    const resourceSelection = parseJSON(selection);
-    if (!Array.isArray(resourceSelection) || resourceSelection.length !== 2
-      || JSON.stringify(resourceSelection) !== selection
-      || !validRunContextKey(resourceSelection[0], false, true)
-      || typeof resourceSelection[1] !== 'string') return false;
-    const parsedContext = parseJSON(resourceSelection[0]);
-    const [runId, attemptId, inputs, artifactId, scope] = parsedContext;
-    return attemptId === null && sameJSON(inputs, []) && artifactId === null
-      && sameJSON(scope, { kind: 'whole' }) && RUNS[runId].nodes.some(node => node.id === resourceSelection[1])
-      && !RUNS[runId].attempts.some(attempt => attempt.node === resourceSelection[1]);
-  }
-  return area === 'growth' && Array.isArray(selection) && selection.length === 3
-    && typeof selection[0] === 'boolean' && DIFFERENCE_IDS.has(selection[1]) && ROUND_IDS.has(selection[2]);
+  if (area === 'run') return validRunNoteSelection(selection);
+  if (area !== 'growth' || !Array.isArray(selection)) return false;
+  if (selection[0] === true) return selection.length === 3
+    && DIFFERENCE_IDS.has(selection[1]) && ROUND_IDS.has(selection[2]);
+  return selection[0] === false && selection.length === 2 && validRunNoteSelection(selection[1]);
 }
 
 function validStringMap(map, validKey) {

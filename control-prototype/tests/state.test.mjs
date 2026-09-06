@@ -276,6 +276,59 @@ test('different no-attempt resource nodes keep separate notes', () => {
   assert.equal(state.notes[modelKey], '모델 메모');
 });
 
+test('fresh growth notes follow the actual scoped run source and recover when switching back', () => {
+  let state = transition(createState(), { type: 'area', value: 'growth' });
+  const firstRun = state.run;
+  const firstKey = noteKey(state);
+  state = transition(state, { type: 'note', value: '첫 실행의 새 근거 메모' });
+
+  const nextRun = otherRun(firstRun);
+  state = transition(state, { type: 'run', value: nextRun.id });
+  const nextKey = noteKey(state);
+  assert.notEqual(nextKey, firstKey);
+  assert.equal(state.notes[nextKey], undefined);
+  state = transition(state, { type: 'note', value: '다른 실행의 새 근거 메모' });
+
+  state = transition(state, { type: 'run', value: firstRun });
+  assert.equal(noteKey(state), firstKey);
+  assert.equal(state.notes[firstKey], '첫 실행의 새 근거 메모');
+  assert.equal(state.notes[nextKey], '다른 실행의 새 근거 메모');
+});
+
+test('fresh growth notes ignore fixed-example controls while fixed examples remain round-scoped', () => {
+  let state = transition(createState(), { type: 'area', value: 'growth' });
+  const freshKey = noteKey(state);
+  state = transition(state, { type: 'note', value: '현재 실제 출처 메모' });
+  state = transition(state, { type: 'sample', value: true });
+  const fixedFirstKey = noteKey(state);
+  assert.notEqual(fixedFirstKey, freshKey);
+  state = transition(state, { type: 'note', value: '첫 고정 예시 메모' });
+  state = transition(state, { type: 'round', value: ROUNDS[1].id });
+  const fixedSecondKey = noteKey(state);
+  assert.notEqual(fixedSecondKey, fixedFirstKey);
+  state = transition(state, { type: 'sample', value: false });
+
+  assert.equal(noteKey(state), freshKey);
+  assert.equal(state.notes[freshKey], '현재 실제 출처 메모');
+  assert.equal(state.notes[fixedFirstKey], '첫 고정 예시 메모');
+
+  const storage = new MemoryStorage();
+  assert.equal(save(storage, state, false).ok, true);
+  assert.deepEqual(load(storage), {
+    state,
+    blocked: false,
+    message: '이 탭 보관본 복원 · 파일 첨부는 복원되지 않음',
+  });
+});
+
+test('fresh growth notes distinguish no-attempt resource sources', () => {
+  let state = transition(createState(), { type: 'area', value: 'growth' });
+  state = transition(state, { type: 'node', value: 'files' });
+  const filesKey = noteKey(state);
+  state = transition(state, { type: 'node', value: 'model' });
+  assert.notEqual(noteKey(state), filesKey);
+});
+
 test('safe persisted target subsets load without inventing unvisited run history', () => {
   const state = createState();
   const storage = new MemoryStorage({ [KEY]: JSON.stringify(state) });
@@ -349,6 +402,10 @@ test('unsafe snapshots are rejected rather than partially salvaged', () => {
     'run',
     JSON.stringify([valid.run, null, [], null, { kind: 'whole' }]),
   ]);
+  const legacyFreshGrowthNote = JSON.stringify([
+    'growth',
+    [false, valid.difference, valid.round],
+  ]);
   const invalidStates = [
     { ...valid, surprise: true },
     { ...valid, mode: 'invalid' },
@@ -357,6 +414,7 @@ test('unsafe snapshots are rejected rather than partially salvaged', () => {
     { ...valid, pairs: { [`${ROUNDS[0].id}:wrong`]: '@extract' } },
     { ...valid, notes: { bad: 'orphan' } },
     { ...valid, notes: { [nodeLessResourceNote]: 'legacy orphan' } },
+    { ...valid, notes: { [legacyFreshGrowthNote]: 'unscoped legacy orphan' } },
     { ...valid, run: [valid.run] },
     { ...valid, drafts: { [JSON.stringify(['missing-run', 'missing-attempt', [], 'missing', { kind: 'whole' }])]: 'orphan' } },
   ];
