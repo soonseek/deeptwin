@@ -51,6 +51,7 @@ dialog.addEventListener('close', () => {
 // Only ranges within real artifact paragraphs are accepted. Paragraph action
 // buttons are siblings and never count toward the canonical text offsets.
 function captureSelection() {
+  candidateRange = null;
   const selection = window.getSelection();
   if (!selection || selection.isCollapsed || selection.rangeCount !== 1) return;
   const range = selection.getRangeAt(0);

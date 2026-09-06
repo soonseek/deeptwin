@@ -62,7 +62,7 @@ export function draftEditor(state) {
     <textarea id="own-draft" maxlength="20000" rows="10" placeholder="선택한 범위에 들어갈 자기 내용을 적으세요. 이유는 쓰지 않아도 됩니다.">${e(draft.text)}</textarea>
     <p id="draft-state" class="hint">${draft.text.trim() ? `사용자 작성 초안 · 편집 ${draft.revision}회 · 제출/비교 증거 미확정` : '사용자 대안 없음 · 초안이 비어 있습니다.'}</p>
     <p class="hint">작성 범위만 참조합니다. 실제 검토한 범위·독립 수행 여부는 미확인입니다. 작성은 실행·학습·승인을 시작하지 않습니다.</p>
-    ${sceneButton('차이와 새 증거 보기', 'V05')}`);
+    ${button('차이와 새 증거 보기', 'data-exploration', 'alternative')}`);
 }
 export function roleGraph(state) {
   const node = role => `<div class="graph-node">${button(`${role.name} · ${role.version}`, 'data-role', role.id, state.role === role.id)}<small>텍스트 예시 ${e(role.artifact)}</small></div>`;

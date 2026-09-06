@@ -18,6 +18,12 @@ node prototype/server.mjs
 node --test prototype/tests/prototype.test.mjs
 ```
 
+기본 검사는 브라우저 의존성 없이 실행됩니다. 설치된 Chrome에서 실제 DOM 회귀 검사 두 개를 함께 실행하려면 번들 Playwright 경로를 지정합니다. 이 값이 없으면 두 브라우저 검사는 건너뛰며, 패키지나 브라우저를 설치하지 않습니다.
+
+```sh
+PROTOTYPE_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs node --test prototype/tests/prototype.test.mjs
+```
+
 서버는 명시된 HTML/CSS/브라우저 모듈만 제공합니다. 서버 소스·테스트·README·저장소 파일은 제공하지 않습니다. GET 외 요청, 경로 순회, 숨김 파일 접근은 거절합니다. CSP가 외부 연결과 인라인 스크립트를 막으며 요청 내용은 기록하지 않습니다.
 
 ## 실제 조작과 작성 내용

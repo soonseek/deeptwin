@@ -273,3 +273,95 @@ test('server exposes only allowlisted GET assets with security headers', async (
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+const browserOptions = { skip: !process.env.PROTOTYPE_PLAYWRIGHT_MODULE };
+async function withBrowser(check) {
+  const { chromium } = await import(process.env.PROTOTYPE_PLAYWRIGHT_MODULE);
+  const server = createPrototypeServer();
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  let browser;
+  try {
+    browser = await chromium.launch({ channel: 'chrome', headless: true });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    await page.goto(`http://127.0.0.1:${server.address().port}`);
+    await check(page);
+  } finally {
+    await browser?.close();
+    await new Promise(resolve => server.close(resolve));
+  }
+}
+
+test('browser: draft inquiry uses the alternative entry and keeps its exact target', browserOptions, async () => {
+  await withBrowser(async page => {
+    await page.locator('nav [data-scene="V02"]').click();
+    await page.locator('[data-exploration="critic"]').click();
+    assert.equal(await page.locator('[data-exploration][aria-pressed="true"]').getAttribute('data-exploration'), 'critic');
+    await page.locator('nav [data-scene="V04"]').click();
+    await page.locator('.role-picker [data-role="writer"]').click();
+    await page.locator('[data-paragraph="2"]').click();
+    await page.locator('#own-draft').fill('이 범위의 자기 대안');
+    const before = JSON.parse(await page.evaluate(key => sessionStorage.getItem(key), STORAGE_KEY)).state;
+    await page.getByRole('button', { name: '차이와 새 증거 보기', exact: true }).click();
+    assert.equal(await page.locator('[data-exploration][aria-pressed="true"]').getAttribute('data-exploration'), 'alternative');
+    const after = JSON.parse(await page.evaluate(key => sessionStorage.getItem(key), STORAGE_KEY)).state;
+    assert.equal(after.role, before.role);
+    assert.deepEqual(after.selections, before.selections);
+    assert.deepEqual(after.drafts, before.drafts);
+    for (const entry of ['initial', 'critic']) {
+      await page.locator('nav [data-scene="V02"]').click();
+      await page.locator(`[data-exploration="${entry}"]`).click();
+      assert.equal(await page.locator('[data-exploration][aria-pressed="true"]').getAttribute('data-exploration'), entry);
+    }
+  });
+});
+
+test('browser: stale native selections are rejected and valid button activations remain exact', browserOptions, async () => {
+  await withBrowser(async page => {
+    await page.locator('nav [data-scene="V04"]').click();
+    const text = await page.locator('#original-text p').first().textContent();
+    const select = async () => page.evaluate(async () => {
+      const captured = new Promise(resolve => document.addEventListener('selectionchange', resolve, { once: true }));
+      const paragraph = document.querySelector('#original-text p');
+      const range = document.createRange();
+      const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
+      const point = offset => {
+        walker.currentNode = paragraph;
+        let node;
+        while ((node = walker.nextNode())) {
+          if (offset <= node.length) return [node, offset];
+          offset -= node.length;
+        }
+        throw new Error('Missing text offset');
+      };
+      range.setStart(...point(3));
+      range.setEnd(...point(8));
+      const selection = getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      await captured;
+    });
+    await select();
+    await page.evaluate(() => getSelection().collapseToEnd());
+    await page.locator('#select-range').click();
+    assert.equal(await page.locator('#original-text mark').count(), 0);
+    assert.match(await page.locator('#selection-feedback').textContent(), /먼저 선택/);
+    await select();
+    await page.evaluate(() => {
+      const range = document.createRange();
+      range.selectNodeContents(document.querySelector('#scene-title'));
+      getSelection().removeAllRanges();
+      getSelection().addRange(range);
+    });
+    await page.locator('#select-range').click();
+    assert.equal(await page.locator('#original-text mark').count(), 0);
+    for (const activation of ['click', 'Enter', 'Space']) {
+      await select();
+      if (activation === 'click') await page.locator('#select-range').click();
+      else {
+        await page.locator('#select-range').focus();
+        await page.keyboard.press(activation);
+      }
+      assert.equal(await page.locator('#original-text mark').textContent(), text.slice(3, 8));
+    }
+  });
+});
