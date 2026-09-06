@@ -62,6 +62,21 @@ test('graph instances have distinct marker IDs and escaped graph content', () =>
   assert.ok(!escaped.includes('<script>'));
 });
 
+test('graph legends identify actual edge kinds without labels overlapping narrow node gaps', () => {
+  for (const model of graphs) {
+    const markup = graph(model);
+    assert.match(markup, /class="graph-legend"[^>]*aria-label="관계선 종류"/);
+    const keys = [...markup.matchAll(/class="edge-key ([^"]+)"/g)].map(match => match[1]);
+    assert.deepEqual(keys, [...new Set(model.edges.map(edge => edge.kind))]);
+    assert.doesNotMatch(markup, /class="edge-label"/);
+    for (const edge of model.edges) {
+      const source = model.nodes.find(node => node.id === edge.from);
+      const target = model.nodes.find(node => node.id === edge.to);
+      assert.ok(markup.includes(`<title>${e(source.label)} → ${e(target.label)} · `));
+    }
+  }
+});
+
 test('direction-aware routes avoid node interiors and distinguish opposite directions', () => {
   const kindLabels = { task: '산출물', control: '통제', memory: '기억', tool: '도구·모델', telemetry: '관측', revisit: '되돌아감' };
   for (const design of graphs) {

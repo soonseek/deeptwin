@@ -103,18 +103,17 @@ export function graph(g, selected = [], action = 'node', prefix = '') {
     const source = g.nodes.find(node => node.id === edge.from);
     const target = g.nodes.find(node => node.id === edge.to);
     const label = `${source.label} → ${target.label} · ${edgeKinds[edge.kind] ?? edge.kind}`;
-    const segments = route.slice(1).map((point, step) => [route[step], point]);
-    segments.sort((left, right) => distance(...right) - distance(...left));
-    const [a, b] = segments[0];
-    return `<path data-edge="${index}" class="edge ${e(edge.kind)}" d="${e(path)}" fill="none" marker-end="url(#${marker})" role="img" aria-label="${e(label)}"><title>${e(label)}</title></path>`
-      + `<text class="edge-label" x="${(a.x + b.x) / 2}" y="${(a.y + b.y) / 2 - 6}" text-anchor="middle">${e(edgeKinds[edge.kind] ?? edge.kind)}</text>`;
+    return `<path data-edge="${index}" class="edge ${e(edge.kind)}" d="${e(path)}" fill="none" marker-end="url(#${marker})" role="img" aria-label="${e(label)}"><title>${e(label)}</title></path>`;
   }).join('');
   const nodes = g.nodes.map(node => {
     const active = selected.includes(node.id);
     return `<g class="node ${e(node.kind)}${active ? ' selected' : ''}" transform="translate(${e(node.x)} ${e(node.y)})" role="button" tabindex="0" aria-label="${e(node.label)}" aria-pressed="${active}" data-action="${e(action)}" data-value="${e(prefix + node.id)}">`
       + `<rect width="140" height="48" rx="6"/><text x="12" y="20">${e(node.label)}</text><text class="kind" x="12" y="37">${e(nodeKinds[node.kind] ?? node.kind)}</text></g>`;
   }).join('');
-  return `<div class="graph-scroll" tabindex="0" aria-label="관계도 가로 탐색" data-graph-id="${e(identity)}">`
+  const legend = [...new Set(g.edges.map(edge => edge.kind))]
+    .map(kind => `<span class="edge-key ${e(kind)}" role="listitem">${e(edgeKinds[kind] ?? kind)}</span>`).join('');
+  return `<div class="graph-legend" role="list" aria-label="관계선 종류">${legend}</div>`
+    + `<div class="graph-scroll" tabindex="0" aria-label="관계도 가로 탐색" data-graph-id="${e(identity)}">`
     + `<svg class="graph" viewBox="0 0 900 520" role="group" aria-label="${e(g.label ?? g.id)} 관계도">`
     + `<defs><marker id="${marker}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker></defs>`
     + edges + nodes + '</svg></div>';

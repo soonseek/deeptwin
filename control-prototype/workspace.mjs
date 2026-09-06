@@ -38,6 +38,18 @@ function sourceContext(state) {
   ]);
 }
 
+function sourceSummary(state) {
+  const selected = context(state);
+  const run = RUNS[selected.run];
+  const attempt = run.attempts.find(item => item.id === selected.attempt);
+  const file = ARTIFACTS[selected.artifact];
+  const scope = selected.scope;
+  const range = scope.kind === 'region' ? file?.regions.find(region => region.id === scope.id)?.label
+    : scope.kind === 'text' ? `문자 ${scope.start}–${scope.end}` : '전체';
+  return ['현재 선택', run.nodes.find(node => node.id === selected.node)?.label,
+    attempt ? attemptLabel(attempt) : '실제 수행 기록 없음', file?.type ?? '출력 없음', range].join(' · ');
+}
+
 function ribbon(state) {
   if (state.area === 'design') {
     const design = chosenDesign(state);
@@ -63,9 +75,10 @@ function designDetails(design, focus, instance) {
 function designWorkspace(state) {
   const selected = chosenDesign(state);
   return '<section class="work-model"><h2>업무 모델</h2>'
+    + `<details class="work-model-details"${state.mode === 'graph' ? '' : ' open'}><summary>업무 목적·자료·작성 내용</summary>`
     + facts([['목적', WORK_MODEL.purpose], ['완료 조건', WORK_MODEL.done], ['입력 자료', WORK_MODEL.source], ['아직 모르는 것', WORK_MODEL.unknown]])
     + field('workText', '내 업무의 목적·입력·완료 조건', state.workText)
-    + '<p>작성 내용은 이 탭에만 남습니다. 업무 모델 자동 분석은 연결되지 않았습니다.</p></section>'
+    + '<p>작성 내용은 이 탭에만 남습니다. 업무 모델 자동 분석은 연결되지 않았습니다.</p></details></section>'
     + `<nav class="focus-bar" aria-label="설계 비교 관점">${Object.entries(focuses).map(([value, label]) => button(label, 'focus', value, state.focus === value)).join('')}</nav>`
     + `<div class="candidates">${DESIGNS.map(design => `<section class="candidate" data-design="${e(design.id)}">`
       + designDetails(design, state.focus, 'candidate') + button('이 설계 살펴보기', 'design', design.id, state.design === design.id) + '</section>').join('')}</div>`
@@ -129,7 +142,8 @@ function runWorkspace(state) {
   const attempt = run.attempts.find(item => item.id === selected.attempt) ?? null;
   return `<details class="run-picker"><summary>실행 선택 · ${e(runLabel(run))}</summary><nav aria-label="합성 실행 선택">`
     + Object.values(RUNS).map(item => button(runLabel(item), 'run', item.id, state.run === item.id)).join('') + '</nav></details>'
-    + `<section class="run-workbench" data-run="${e(run.id)}"><h2>${e(jobs[run.job])}</h2>${sourceContext(state)}`
+    + `<section class="run-workbench" data-run="${e(run.id)}"><h2>${e(jobs[run.job])}</h2>`
+    + `<details class="run-context"${state.mode === 'graph' ? '' : ' open'}><summary>${e(sourceSummary(state))}</summary>${sourceContext(state)}</details>`
     + `<details class="run-graph"${state.mode === 'graph' ? ' open' : ''}><summary>실행 환경의 전체 관계도</summary>${graph(run, [selected.node])}</details>`
     + '<p class="trace-boundary">계획된 연결과 실제 산출물 전달은 다릅니다. 실제 전달 기록도 적절한 사용이나 인과관계의 증명이 아닙니다.</p>'
     + `<div class="run-columns">${inspection(run, node, attempt, { historyAction: 'attempt', consumerAction: 'consumer' })}${runEditor(state)}</div></section>`;

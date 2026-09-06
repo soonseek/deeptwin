@@ -168,6 +168,26 @@ test('graph mode keeps the full graph open and all run choices in a compact pick
   for (const run of Object.values(RUNS)) assert.ok(markup.includes(`data-action="run" data-value="${run.id}"`));
 });
 
+test('graph-first views keep detailed context accessible without preceding the graph with an open editor', () => {
+  for (const mode of ['graph', 'workspace', 'conversation']) {
+    const state = select(createState(), 'mode', mode);
+    const run = render(state);
+    const design = render(select(state, 'area', 'design'));
+    const open = mode === 'graph' ? '' : ' open';
+    assert.ok(run.includes(`<details class="run-context"${open}>`));
+    assert.ok(design.includes(`<details class="work-model-details"${open}>`));
+    assert.ok(run.includes(e(context(state).attempt)));
+    assert.ok(run.includes('정확한 시도'));
+    assert.ok(design.includes('data-field="workText"'));
+    for (const value of Object.values(WORK_MODEL)) assert.ok(design.includes(e(value)));
+  }
+  const partial = render(select(createState(), 'scope', { kind: 'region', id: CASE.region }));
+  const summary = partial.match(/<details class="run-context"><summary>([^<]*)<\/summary>/)?.[1];
+  assert.ok(summary.includes(e(ARTIFACTS[CASE.original].regions.find(region => region.id === CASE.region).label)));
+  const empty = render(select(createState(), 'node', 'files'));
+  assert.match(empty, /<details class="run-context"><summary>[^<]*실제 수행 기록 없음/);
+});
+
 test('sample inspection shows exact attempt versions, full files and receivers without touching state', () => {
   const state = createState();
   const before = JSON.stringify(state);
