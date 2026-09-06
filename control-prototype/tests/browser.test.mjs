@@ -175,6 +175,11 @@ test('sample modal navigation explores frozen origin history without retargeting
 test('graph scroll and expanded state survive repaint while the selected node stays visible', async t => {
   const page = await openPage(t, { viewport: { width: 720, height: 820 } });
   const details = page.locator('details.run-graph');
+  await details.locator(':scope > summary').click();
+  assert.equal(await details.getAttribute('open'), null);
+  await action(page, 'scope', 'whole').click();
+  assert.equal(await details.getAttribute('open'), null);
+  await details.locator(':scope > summary').click();
   const scroller = details.locator('.graph-scroll');
   await scroller.evaluate(node => { node.scrollLeft = node.scrollWidth; });
   await action(page, 'node', 'approve').click();
@@ -199,6 +204,7 @@ test('local files stay memory-only, reject invalid replacements, and disappear o
   assert.equal(await page.locator('#file-status img').count(), 1);
   assert.equal((await page.evaluate(key => sessionStorage.getItem(key), KEY)).includes('증거.png'), false);
   await action(page, 'currentGrowth', '').click();
+  assert.match(await page.locator('.fresh-growth blockquote').textContent(), /텍스트 자기 버전 없음/);
   assert.match(await page.locator('.fresh-growth .local-file-context').textContent(), /로컬 첨부 파일 있음 · 증거.png/);
   assert.match(await page.locator('.fresh-growth .local-file-context').textContent(), /메모리에만 유지 · 분석되지 않음/);
   await action(page, 'area', 'run').click();

@@ -12,6 +12,7 @@ const FILE_EXTENSIONS = new Set(['pdf', 'png', 'jpg', 'jpeg', 'svg', 'csv', 'md'
 const DIRECT_ACTIONS = new Set(['area', 'mode', 'run', 'attempt', 'node', 'artifact', 'design', 'focus', 'round', 'difference']);
 const scrollPositions = new Map();
 const expandedRunGraphs = new Map();
+const latestRunGraphState = new Map();
 const expandedDetails = new Map();
 const attachments = new Map();
 let detail = null;
@@ -36,6 +37,7 @@ let status = restored.message;
 
 const currentRound = () => ROUNDS.find(round => round.id === state.round);
 const origin = Object.values(RUNS).find(run => run.attempts.some(attempt => attempt.outputs.includes(CASE.original)));
+const runGraphKey = (runId, mode) => JSON.stringify([runId, mode]);
 
 function revokeAttachment(entry) {
   if (entry?.url) URL.revokeObjectURL(entry.url);
@@ -52,7 +54,11 @@ function rememberView() {
   }
   const graphDetails = root.querySelector('details.run-graph');
   const runId = root.querySelector('.run-workbench')?.dataset.run;
-  if (graphDetails && runId) expandedRunGraphs.set(runId, graphDetails.open);
+  const mode = root.querySelector('.shell')?.dataset.mode;
+  if (graphDetails && runId && mode) {
+    expandedRunGraphs.set(runGraphKey(runId, mode), graphDetails.open);
+    latestRunGraphState.set(runId, graphDetails.open);
+  }
   for (const item of root.querySelectorAll('details:not(.run-picker):not(.run-graph)')) {
     expandedDetails.set(detailsKey(item), item.open);
   }
@@ -142,9 +148,11 @@ function updateFreshAttachment() {
   if (!output || !context(state).artifact) return;
   const key = draftKey(state);
   const draft = state.drafts[key] ?? '';
-  output.textContent = draft || '현재 맥락에 작성된 자기 버전 없음';
-  root.querySelector('.fresh-growth .local-file-context')?.remove();
   const entry = attachments.get(key);
+  output.textContent = draft || (entry
+    ? '현재 맥락의 텍스트 자기 버전 없음 · 파일 대안은 아래에 별도 표시'
+    : '현재 맥락에 작성된 자기 버전 없음');
+  root.querySelector('.fresh-growth .local-file-context')?.remove();
   if (!entry) return;
   const file = document.createElement('p');
   file.className = 'local-file-context';
@@ -159,8 +167,10 @@ function restoreView(identity, ensureSelected) {
   const graphDetails = root.querySelector('details.run-graph');
   const runId = root.querySelector('.run-workbench')?.dataset.run;
   if (graphDetails && runId) {
-    if (state.mode === 'graph') graphDetails.open = true;
-    else if (expandedRunGraphs.has(runId)) graphDetails.open = expandedRunGraphs.get(runId);
+    const key = runGraphKey(runId, state.mode);
+    if (expandedRunGraphs.has(key)) graphDetails.open = expandedRunGraphs.get(key);
+    else if (state.mode === 'graph') graphDetails.open = true;
+    else if (latestRunGraphState.has(runId)) graphDetails.open = latestRunGraphState.get(runId);
   }
   for (const item of root.querySelectorAll('details:not(.run-picker):not(.run-graph)')) {
     if (expandedDetails.has(detailsKey(item))) item.open = expandedDetails.get(detailsKey(item));
