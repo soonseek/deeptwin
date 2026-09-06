@@ -103,6 +103,8 @@ test('run targets are created lazily and inherited object property names are rej
   const before = state;
   assert.equal(transition(state, { type: 'run', value: 'toString' }), state);
   assert.equal(transition(state, { type: 'attempt', run: 'toString', value: 'anything' }), state);
+  assert.equal(transition(state, { type: 'run', value: [state.run] }), state);
+  assert.equal(transition(state, { type: 'attempt', run: [state.run], value: context(state).attempt }), state);
 
   const nextRun = otherRun(state.run);
   state = transition(state, { type: 'run', value: nextRun.id });
@@ -161,16 +163,34 @@ test('whole, declared region, and valid text scopes have distinct keys and draft
   const regionKey = draftKey(state);
   assert.notEqual(regionKey, wholeKey);
 
-  if (artifact.type === 'text') {
-    state = transition(state, { type: 'scope', value: { kind: 'text', start: 0, end: 1 } });
-    assert.notEqual(draftKey(state), regionKey);
-  }
-
   state = transition(state, { type: 'sample', value: true });
   assert.equal(state.sample, true);
   state = transition(state, { type: 'draft', value: '\n새 부분 초안' });
   assert.equal(state.sample, false);
   assert.equal(state.drafts[draftKey(state)], '\n새 부분 초안');
+});
+
+test('text scope uses exact UTF-16 indices and rejects every invalid range', () => {
+  let state = createState();
+  const run = RUNS[state.run];
+  const attempt = run.attempts.find(item => item.outputs.some(id => ARTIFACTS[id]?.type === 'text'));
+  const artifactId = attempt.outputs.find(id => ARTIFACTS[id]?.type === 'text');
+  const artifact = ARTIFACTS[artifactId];
+  assert.ok(attempt && artifact, 'fixture must expose an actual text output');
+
+  state = transition(state, { type: 'attempt', value: attempt.id });
+  state = transition(state, { type: 'artifact', value: artifactId });
+  const start = artifact.body.length - 1;
+  state = transition(state, { type: 'scope', value: { kind: 'text', start, end: artifact.body.length } });
+  assert.deepEqual(context(state).scope, { kind: 'text', start, end: artifact.body.length });
+  assert.equal(artifact.body.slice(context(state).scope.start, context(state).scope.end).length, 1);
+
+  for (const value of [
+    { kind: 'text', start: -1, end: 1 },
+    { kind: 'text', start: 1, end: 1 },
+    { kind: 'text', start: 0, end: artifact.body.length + 1 },
+    { kind: 'text', start: 0.5, end: 2 },
+  ]) assert.equal(transition(state, { type: 'scope', value }), state);
 });
 
 test('all bounded controls validate references and invalid actions return the original object', () => {
@@ -284,6 +304,19 @@ test('broken snapshots block automatic writes without replacing the original raw
   assert.notEqual(storage.values.get(KEY), broken);
 });
 
+test('oversized serialized state is not reported saved and cannot replace a good snapshot', () => {
+  const prior = JSON.stringify(createState());
+  const storage = new MemoryStorage({ [KEY]: prior });
+  const oversized = { ...createState(), padding: 'x'.repeat(2_000_000) };
+
+  assert.deepEqual(save(storage, oversized, false), {
+    ok: false,
+    message: '보관 실패 · 현재 입력은 메모리에 남음 · 새로고침 주의',
+  });
+  assert.equal(storage.values.get(KEY), prior);
+  assert.equal(storage.calls.filter(([method]) => method === 'setItem').length, 0);
+});
+
 test('reset deletes only the state key', () => {
   const storage = new MemoryStorage({ [KEY]: '{}', unrelated: 'keep' });
   assert.deepEqual(reset(storage), { ok: true });
@@ -312,6 +345,10 @@ test('storage read, write, and delete exceptions return the documented honest me
 
 test('unsafe snapshots are rejected rather than partially salvaged', () => {
   const valid = createState();
+  const nodeLessResourceNote = JSON.stringify([
+    'run',
+    JSON.stringify([valid.run, null, [], null, { kind: 'whole' }]),
+  ]);
   const invalidStates = [
     { ...valid, surprise: true },
     { ...valid, mode: 'invalid' },
@@ -319,6 +356,8 @@ test('unsafe snapshots are rejected rather than partially salvaged', () => {
     { ...valid, records: [LOGS[0].id, LOGS[0].id] },
     { ...valid, pairs: { [`${ROUNDS[0].id}:wrong`]: '@extract' } },
     { ...valid, notes: { bad: 'orphan' } },
+    { ...valid, notes: { [nodeLessResourceNote]: 'legacy orphan' } },
+    { ...valid, run: [valid.run] },
     { ...valid, drafts: { [JSON.stringify(['missing-run', 'missing-attempt', [], 'missing', { kind: 'whole' }])]: 'orphan' } },
   ];
 

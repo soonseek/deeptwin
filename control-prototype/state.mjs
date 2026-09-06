@@ -25,9 +25,10 @@ const exactFields = (object, fields) => isObject(object)
   && fields.every(field => own(object, field));
 const boundedString = value => typeof value === 'string' && value.length <= MAX_TEXT;
 const sameJSON = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+const validRunId = value => typeof value === 'string' && own(RUNS, value);
 
 function attemptFor(runId, attemptId) {
-  return own(RUNS, runId)
+  return validRunId(runId)
     ? RUNS[runId].attempts.find(attempt => attempt.id === attemptId) ?? null
     : null;
 }
@@ -129,7 +130,7 @@ export function transition(state, action) {
     case 'mode':
       return MODES.has(action.value) ? { ...state, mode: action.value } : state;
     case 'run':
-      if (!own(RUNS, action.value)) return state;
+      if (!validRunId(action.value)) return state;
       return own(state.targets, action.value)
         ? { ...state, run: action.value }
         : replaceTarget(state, action.value, firstTarget(RUNS[action.value]));
@@ -224,6 +225,7 @@ function validScope(scope, artifactId) {
 
 function validTarget(runId, target) {
   if (!exactFields(target, TARGET_FIELDS)) return false;
+  if (!validRunId(runId)) return false;
   const run = RUNS[runId];
   if (!run || !run.nodes.some(node => node.id === target.node)) return false;
   if (target.attempt === null) return target.artifact === null
@@ -237,7 +239,7 @@ function validTarget(runId, target) {
 }
 
 function validPairValue(runId, value) {
-  if (typeof value !== 'string') return false;
+  if (!validRunId(runId) || typeof value !== 'string') return false;
   const run = RUNS[runId];
   if (value.startsWith('@')) return run.nodes.some(node => node.id === value.slice(1));
   return run.attempts.some(attempt => attempt.id === value);
@@ -247,13 +249,14 @@ function parseJSON(value) {
   try { return JSON.parse(value); } catch { return null; }
 }
 
-function validRunContextKey(key, requireArtifact) {
+function validRunContextKey(key, requireArtifact, allowNoAttempt = false) {
   if (typeof key !== 'string' || key.length > MAX_TEXT) return false;
   const parsed = parseJSON(key);
   if (!Array.isArray(parsed) || parsed.length !== 5 || JSON.stringify(parsed) !== key) return false;
   const [runId, attemptId, inputs, artifactId, scope] = parsed;
-  if (!own(RUNS, runId)) return false;
-  if (attemptId === null) return !requireArtifact && sameJSON(inputs, []) && artifactId === null
+  if (!validRunId(runId)) return false;
+  if (attemptId === null) return allowNoAttempt && !requireArtifact
+    && sameJSON(inputs, []) && artifactId === null
     && sameJSON(scope, { kind: 'whole' });
   const attempt = attemptFor(runId, attemptId);
   if (!attempt || !sameJSON(inputs, attempt.inputs ?? [])) return false;
@@ -275,7 +278,7 @@ function validNoteKey(key) {
     const resourceSelection = parseJSON(selection);
     if (!Array.isArray(resourceSelection) || resourceSelection.length !== 2
       || JSON.stringify(resourceSelection) !== selection
-      || !validRunContextKey(resourceSelection[0], false)
+      || !validRunContextKey(resourceSelection[0], false, true)
       || typeof resourceSelection[1] !== 'string') return false;
     const parsedContext = parseJSON(resourceSelection[0]);
     const [runId, attemptId, inputs, artifactId, scope] = parsedContext;
@@ -304,14 +307,14 @@ function validPairs(pairs) {
 
 function validState(state) {
   if (!exactFields(state, STATE_FIELDS) || state.version !== 1) return false;
-  if (!AREAS.has(state.area) || !MODES.has(state.mode) || !own(RUNS, state.run)) return false;
+  if (!AREAS.has(state.area) || !MODES.has(state.mode) || !validRunId(state.run)) return false;
   if (!DESIGN_IDS.has(state.design) || !FOCUSES.has(state.focus) || !ROUND_IDS.has(state.round)) return false;
   if (typeof state.sample !== 'boolean' || !DIFFERENCE_IDS.has(state.difference)) return false;
   if (!boundedString(state.workText) || !boundedString(state.designText)) return false;
   if (!(state.overlay === null || OVERLAYS.has(state.overlay)) || typeof state.redact !== 'boolean') return false;
   const targetEntries = isObject(state.targets) ? Object.entries(state.targets) : [];
   if (targetEntries.length === 0 || !own(state.targets, state.run)
-    || !targetEntries.every(([runId, target]) => own(RUNS, runId) && validTarget(runId, target))) return false;
+    || !targetEntries.every(([runId, target]) => validRunId(runId) && validTarget(runId, target))) return false;
   if (!validStringMap(state.drafts, validDraftKey) || !validStringMap(state.notes, validNoteKey)) return false;
   if (!validPairs(state.pairs) || !Array.isArray(state.records)
     || new Set(state.records).size !== state.records.length || !state.records.every(id => LOG_IDS.has(id))) return false;
@@ -340,7 +343,11 @@ export function load(storage) {
 export function save(storage, state, blocked) {
   if (blocked) return { ok: false, message: '자동 보관 중지 · 기존 보관본 유지' };
   try {
-    storage.setItem(KEY, JSON.stringify(state));
+    const raw = JSON.stringify(state);
+    if (typeof raw !== 'string' || raw.length > MAX_RAW) {
+      return { ok: false, message: '보관 실패 · 현재 입력은 메모리에 남음 · 새로고침 주의' };
+    }
+    storage.setItem(KEY, raw);
     return { ok: true, message: '이 탭에만 보관 · 파일 첨부는 메모리에만 있음' };
   } catch {
     return { ok: false, message: '보관 실패 · 현재 입력은 메모리에 남음 · 새로고침 주의' };
