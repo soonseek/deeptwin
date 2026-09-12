@@ -10,9 +10,9 @@ const permanentClose = document.querySelector('#detail-close');
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const FILE_EXTENSIONS = new Set(['pdf', 'png', 'jpg', 'jpeg', 'svg', 'csv', 'md', 'txt']);
 const DIRECT_ACTIONS = new Set(['area', 'mode', 'run', 'attempt', 'node', 'artifact', 'design', 'focus', 'round', 'difference']);
+const RESULT_ACTIONS = new Set(['attempt', 'node', 'artifact']);
 const scrollPositions = new Map();
 const expandedRunGraphs = new Map();
-const latestRunGraphState = new Map();
 const expandedDetails = new Map();
 const attachments = new Map();
 let detail = null;
@@ -50,6 +50,7 @@ function clearAttachments() {
 
 function rememberView() {
   for (const scroller of root.querySelectorAll('.graph-scroll[data-graph-id]')) {
+    if (!visibleGraph(scroller)) continue;
     scrollPositions.set(scroller.dataset.graphId, scroller.scrollLeft);
   }
   const graphDetails = root.querySelector('details.run-graph');
@@ -57,16 +58,20 @@ function rememberView() {
   const mode = root.querySelector('.shell')?.dataset.mode;
   if (graphDetails && runId && mode) {
     expandedRunGraphs.set(runGraphKey(runId, mode), graphDetails.open);
-    latestRunGraphState.set(runId, graphDetails.open);
   }
   for (const item of root.querySelectorAll('details:not(.run-picker):not(.run-graph)')) {
     expandedDetails.set(detailsKey(item), item.open);
   }
 }
 
+function visibleGraph(scroller) {
+  return scroller && !scroller.closest('[hidden], details:not([open])') && scroller.getClientRects().length > 0;
+}
+
 function detailsKey(item) {
   const shell = item.closest('.shell');
   const contextId = item.closest('[data-inspected-attempt]')?.dataset.inspectedAttempt
+    ?? item.closest('[data-hypothesis]')?.dataset.hypothesis
     ?? item.closest('[data-artifact]')?.dataset.artifact
     ?? item.closest('[data-run]')?.dataset.run
     ?? '';
@@ -144,7 +149,7 @@ function updateFileStatus(message = fileMessage) {
 }
 
 function updateFreshAttachment() {
-  const output = root.querySelector('.fresh-growth h3 + blockquote');
+  const output = root.querySelector('.fresh-growth .user-version-content');
   if (!output || !context(state).artifact) return;
   const key = draftKey(state);
   const draft = state.drafts[key] ?? '';
@@ -161,30 +166,34 @@ function updateFreshAttachment() {
 }
 
 function restoreView(identity, ensureSelected) {
-  for (const scroller of root.querySelectorAll('.graph-scroll[data-graph-id]')) {
-    if (scrollPositions.has(scroller.dataset.graphId)) scroller.scrollLeft = scrollPositions.get(scroller.dataset.graphId);
-  }
   const graphDetails = root.querySelector('details.run-graph');
   const runId = root.querySelector('.run-workbench')?.dataset.run;
   if (graphDetails && runId) {
     const key = runGraphKey(runId, state.mode);
     if (expandedRunGraphs.has(key)) graphDetails.open = expandedRunGraphs.get(key);
-    else if (state.mode === 'graph') graphDetails.open = true;
-    else if (latestRunGraphState.has(runId)) graphDetails.open = latestRunGraphState.get(runId);
   }
   for (const item of root.querySelectorAll('details:not(.run-picker):not(.run-graph)')) {
     if (expandedDetails.has(detailsKey(item))) item.open = expandedDetails.get(detailsKey(item));
   }
+  // A closed disclosure has no scrollable geometry. Restore its exact viewport on
+  // the same DOM instance before returning it to the remembered closed state.
+  const restoreClosedRunGraph = graphDetails && !graphDetails.open;
+  if (restoreClosedRunGraph) graphDetails.open = true;
+  for (const scroller of root.querySelectorAll('.graph-scroll[data-graph-id]')) {
+    if (!visibleGraph(scroller)) continue;
+    if (scrollPositions.has(scroller.dataset.graphId)) scroller.scrollLeft = scrollPositions.get(scroller.dataset.graphId);
+  }
   if (ensureSelected) {
     const selected = root.querySelector('.run-graph .node.selected');
     const scroller = selected?.closest('.graph-scroll');
-    if (selected && scroller) {
+    if (selected && visibleGraph(scroller)) {
       const box = selected.getBoundingClientRect();
       const frame = scroller.getBoundingClientRect();
       if (box.left < frame.left) scroller.scrollLeft -= frame.left - box.left + 20;
       else if (box.right > frame.right) scroller.scrollLeft += box.right - frame.right + 20;
     }
   }
+  if (restoreClosedRunGraph) graphDetails.open = false;
   if (identity) {
     const matched = findIdentity(identity, root);
     const target = matched?.getClientRects().length ? matched : root.querySelector('#page-title');
@@ -313,6 +322,20 @@ function rootTransition(action, { ensureSelected = false } = {}) {
   paint({ ensureSelected });
 }
 
+function focusSurface(selector) {
+  const target = root.querySelector(selector);
+  if (!target) return;
+  for (let details = target.closest('details'); details; details = details.parentElement?.closest('details')) {
+    details.open = true;
+  }
+  target.scrollIntoView({ block: 'start', inline: 'nearest' });
+  target.focus({ preventScroll: true });
+}
+
+function revealNarrowResult() {
+  if (innerWidth < 1200) focusSurface('#selection-workspace');
+}
+
 function pairChoice(side, nodeId) {
   const round = currentRound();
   const run = RUNS[side === 'baseline' ? round.baselineRun : round.candidateRun];
@@ -325,6 +348,7 @@ function activate(target) {
   const value = target.dataset.value ?? '';
   if (DIRECT_ACTIONS.has(type)) {
     rootTransition({ type, value }, { ensureSelected: type === 'attempt' || type === 'node' });
+    if (RESULT_ACTIONS.has(type)) revealNarrowResult();
   } else if (type === 'scope') {
     rootTransition({ type: 'scope', value: value === 'whole' ? { kind: 'whole' } : { kind: 'region', id: value } });
   } else if (type === 'textScope') {
@@ -335,7 +359,10 @@ function activate(target) {
     }
   } else if (type === 'consumer') {
     const receiver = RUNS[state.run].attempts.find(attempt => attempt.id === value);
-    if (receiver) rootTransition({ type: 'attempt', run: state.run, value: receiver.id }, { ensureSelected: true });
+    if (receiver) {
+      rootTransition({ type: 'attempt', run: state.run, value: receiver.id }, { ensureSelected: true });
+      revealNarrowResult();
+    }
   } else if (type === 'designNode') {
     rootTransition({ type: 'design', value: value.split(':')[0] });
   } else if (type === 'pairNode') {
@@ -369,6 +396,14 @@ function activate(target) {
     }
   } else if (type === 'evidence') {
     if (Object.hasOwn(ARTIFACTS, value)) openDetail({ kind: 'evidence', artifact: value }, target);
+  } else if (type === 'inspect') {
+    focusSurface('#selection-workspace');
+  } else if (type === 'graphBack') {
+    const graph = root.querySelector('details.run-graph');
+    if (graph) graph.open = true;
+    focusSurface('#run-graph-target');
+  } else if (type === 'compose') {
+    focusSurface('#draft-input');
   } else if (type === 'close') {
     closeDetail();
   } else if (type === 'clearFile') {
@@ -458,5 +493,5 @@ window.addEventListener('pageshow', event => {
   }
 });
 
-paint({ restoreFocus: false });
+paint({ restoreFocus: false, ensureSelected: true });
 if (state.overlay) openDetail({ kind: 'normal' }, root.querySelector('#page-title'));

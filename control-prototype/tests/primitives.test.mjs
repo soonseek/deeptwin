@@ -114,7 +114,8 @@ test('every artifact uses its complete typed contents and its actual original fi
   for (const file of Object.values(ARTIFACTS)) {
     const markup = artifact(file.id);
     assert.ok(markup.includes(`data-artifact="${file.id}"`));
-    assert.ok(markup.includes(`<strong>${e(file.label)}</strong>`));
+    assert.ok(markup.includes(`<strong>${e(file.label.replace(/ · synthetic UI fixture$/, ''))}</strong>`));
+    assert.ok(markup.includes(`<header title="${e(file.label)}">`), 'exact fixture label remains available');
     assert.ok(markup.includes(`href="${file.path}" target="_blank" rel="noopener" download`));
     assert.ok(markup.includes('원본 파일 열기/받기'));
     assert.doesNotMatch(markup, /<(?:object|iframe)\b/);

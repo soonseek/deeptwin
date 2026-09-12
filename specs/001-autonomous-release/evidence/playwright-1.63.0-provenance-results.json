@@ -1,0 +1,44 @@
+{
+  "assurance_boundary": "The pinned npm output supplies cryptographically verified Sigstore bundles; the DeepTwin postcheck binds their certificate and statements to the exact Playwright allowlist and executes under Node bytes authenticated separately by the Node release verifier. The amd64 run was emulated and is not native Chromium runtime evidence.",
+  "audit_input": {
+    "bytes": 18341,
+    "sha256": "fafe76609e95cb7e95470fa424e212bbe0dcf10f0247d11f6179902b109addfe"
+  },
+  "network_used": false,
+  "platforms": [
+    {
+      "container_platform": "linux/amd64",
+      "execution_mode": "emulated-on-linux-arm64-vm",
+      "exit_code": 0,
+      "observed_postcheck_node_architecture": "x64",
+      "observed_postcheck_node_executable_sha256": "89af8424dd53e560b1933f87ba650d8bf57c83ca5a04600eefb31f416aabbae7",
+      "observed_postcheck_node_platform": "linux",
+      "observed_postcheck_node_version": "24.20.0",
+      "policy_verified": true,
+      "release_blockers": [],
+      "runtime_policy_ready": true
+    },
+    {
+      "container_platform": "linux/arm64",
+      "execution_mode": "native-linux-arm64-vm",
+      "exit_code": 0,
+      "observed_postcheck_node_architecture": "arm64",
+      "observed_postcheck_node_executable_sha256": "23a5637c2470fde09fcc1acc77c1b92e04e3d7e3e6e80ff7df6f5831958d1477",
+      "observed_postcheck_node_platform": "linux",
+      "observed_postcheck_node_version": "24.20.0",
+      "policy_verified": true,
+      "release_blockers": [],
+      "runtime_policy_ready": true
+    }
+  ],
+  "runtime_image": "node@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e",
+  "runtime_restrictions": {
+    "capabilities_dropped": "ALL",
+    "network": "none",
+    "no_new_privileges": true,
+    "read_only_root": true,
+    "uid": 1000
+  },
+  "schema_version": "deeptwin-playwright-provenance-platform-results-v1",
+  "verified_package": "playwright-core@1.63.0"
+}

@@ -1,0 +1,75 @@
+{
+  "schema_version": "deeptwin-model-lock-v1",
+  "status": "bytes_verified_not_runtime_qualified",
+  "model_id": "Systran/faster-whisper-small",
+  "revision": "2ec96c5472da50d38d40c0cfe0602af2e94b4c8a",
+  "source_base": "https://huggingface.co/Systran/faster-whisper-small/resolve/2ec96c5472da50d38d40c0cfe0602af2e94b4c8a/",
+  "license_declared_by_model_card": "MIT",
+  "download_at_runtime": false,
+  "allow_extra_files": false,
+  "allow_symlinks": false,
+  "files": [
+    {
+      "path": ".gitattributes",
+      "size_bytes": 1477,
+      "sha256": "db7c0371f46f0840b8f25794c1e3321c9b5820a8cb6ba9694a46fc64b8fae5a6",
+      "runtime_required": false,
+      "hash_basis": "downloaded bytes"
+    },
+    {
+      "path": "README.md",
+      "size_bytes": 2002,
+      "sha256": "083ab179902cac7dfdc8608b22f26130388adbedc7d8bf4a9309ef9077d47abe",
+      "runtime_required": false,
+      "hash_basis": "downloaded bytes"
+    },
+    {
+      "path": "config.json",
+      "size_bytes": 2370,
+      "sha256": "b55496ac7940a7ae47d2c01eab40edfd8701feec1229d9cce3b40014383fb828",
+      "runtime_required": true,
+      "hash_basis": "downloaded bytes"
+    },
+    {
+      "path": "model.bin",
+      "size_bytes": 483546902,
+      "sha256": "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671",
+      "runtime_required": true,
+      "hash_basis": "downloaded bytes; independently matched Hugging Face LFS oid"
+    },
+    {
+      "path": "tokenizer.json",
+      "size_bytes": 2203239,
+      "sha256": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+      "runtime_required": true,
+      "hash_basis": "downloaded bytes"
+    },
+    {
+      "path": "vocabulary.txt",
+      "size_bytes": 459861,
+      "sha256": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913",
+      "runtime_required": true,
+      "hash_basis": "downloaded bytes"
+    }
+  ],
+  "verification": {
+    "verified_at": "2026-09-08T10:25:00+09:00",
+    "method": "HTTPS download of every revision member followed by local SHA-256 and byte-count verification",
+    "total_size_bytes": 486215851,
+    "result": "all_expected_bytes_match"
+  },
+  "license_inputs": [
+    {
+      "component": "OpenAI Whisper",
+      "source_commit": "86098128c0b4f24f0e2aa2994de830614b474227",
+      "source_url": "https://raw.githubusercontent.com/openai/whisper/86098128c0b4f24f0e2aa2994de830614b474227/LICENSE",
+      "source_sha256": "b5d65a59060e68c4ff940e1eddfa6f94b2d68fdf58ed7f4dd57721c997e35e9d",
+      "vendored_path": "deploy/locks/licenses/OpenAI-Whisper-MIT.txt"
+    }
+  ],
+  "provenance_limitations": [
+    "The converted model repository does not contain a LICENSE file at this revision; the model card declares MIT.",
+    "The model card identifies openai/whisper-small and a conversion command but does not pin the original model revision or exact converter version.",
+    "The OpenAI Whisper commit above pins the bundled license text, not an unproven claim that this exact commit produced the converted weights."
+  ]
+}

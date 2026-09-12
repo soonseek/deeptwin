@@ -1,0 +1,156 @@
+{
+  "schema_version": "deeptwin-age-qualification-evidence-v1",
+  "status": "technical_checks_pass_production_integration_pending",
+  "executed_on": "2026-09-08",
+  "account_or_credentials_used": false,
+  "upstream_inputs": {
+    "go1.27.0_source": {
+      "bytes": 35080395,
+      "sha256": "7002403d7cc44529ef6d26f69a44818263395ead7c16c05a5808ae047ebeb0e5",
+      "official_release_metadata_matched": true,
+      "license_bytes": 1453,
+      "license_sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+    },
+    "source": {
+      "bytes": 2402764,
+      "sha256": "c160d6f907992561413a28818f7d7585b35977cdbc449f3e96c4f8c99d22d21e"
+    },
+    "linux/amd64": {
+      "archive_bytes": 19405817,
+      "archive_sha256": "cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10",
+      "sigsum_proof_bytes": 1921,
+      "sigsum_proof_sha256": "98402fa59b4e433426156b4a7e74a32e44902e0434c61158f7de18ffc84f1f97",
+      "age_sha256": "eb7dd1b518f0a307c99cd97782623c5321da049154b04acd2d98d21aa7bc9b2c",
+      "age_keygen_sha256": "0a0009db842259d6717f7eeb30acb6b90d2a2eb924c6acd0a0db0ca1f1537899"
+    },
+    "linux/arm64": {
+      "archive_bytes": 17771923,
+      "archive_sha256": "6b8dc4333c53a5a57c9e5834e3a48f92605d7154014cd07269ff3327db5d37f4",
+      "sigsum_proof_bytes": 1921,
+      "sigsum_proof_sha256": "a174de2bf22a72efedd1a779cbee8b7d5605b41a25fae085807003b4abf5688e",
+      "age_sha256": "41b072352f4561018949623c674d16ef704019b9108a9bbdbd21292efebfc94f",
+      "age_keygen_sha256": "00b549cebf68302893fc489830f37e706712689ca877f84d85439d700d2997c7"
+    }
+  },
+  "offline_verification": {
+    "status": "pass",
+    "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "exact_runtime_inventory": [
+      "LICENSE",
+      "age",
+      "age-keygen"
+    ],
+    "upstream_members_forbidden_from_runtime": [
+      "age-inspect",
+      "age-plugin-batchpass",
+      "age-plugin-pq",
+      "age-plugin-tag",
+      "age-plugin-tagpq"
+    ],
+    "go_build": {
+      "version": "go1.27.0",
+      "cgo_enabled": false,
+      "trimpath": true,
+      "source_commit": "b74dce4cdbe35b5e5f66c06d9612b72f89028758",
+      "age_dependency_count": 6,
+      "age_keygen_dependency_count": 4
+    },
+    "license_bundle": {
+      "component_count": 8,
+      "unique_exact_license_text_count": 3,
+      "external_module_source_archive_byte_equivalence": true,
+      "go_runtime_source_archive_byte_equivalence": true,
+      "legal_approval": false
+    }
+  },
+  "native_canaries": [
+    {
+      "platform": "linux/amd64",
+      "status": "pass",
+      "qualification_carrier_image": "sha256:ed350e0a35f5db9320366b8279fa6f98d44135e340d40e5f56fcdd546d346997",
+      "base_image": "python@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254",
+      "container_exit_code": 0,
+      "uid": 65532,
+      "read_only_rootfs": true,
+      "network_mode": "none",
+      "capabilities_dropped": [
+        "ALL"
+      ],
+      "security_options": [
+        "no-new-privileges"
+      ],
+      "log_bytes": 1483,
+      "log_sha256": "6467b66ff59fb01e07e232b87e433165b622d3302ceca474379bb42dc1cd1c66"
+    },
+    {
+      "platform": "linux/arm64",
+      "status": "pass",
+      "qualification_carrier_image": "sha256:90c47a5a7d75a857d8e1d0460a07294ae561831ddbbcb3f5742cfa71284ceeb8",
+      "base_image": "python@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254",
+      "container_exit_code": 0,
+      "uid": 65532,
+      "read_only_rootfs": true,
+      "network_mode": "none",
+      "capabilities_dropped": [
+        "ALL"
+      ],
+      "security_options": [
+        "no-new-privileges"
+      ],
+      "log_bytes": 1483,
+      "log_sha256": "b56153aca544e001a1c516849e51e44384c054a2a6c065958ff40eb2071f27fd"
+    }
+  ],
+  "native_assertions": {
+    "age_and_age_keygen_version": "v1.3.2",
+    "x25519_roundtrip": "pass",
+    "plaintext_bytes": 79,
+    "plaintext_sha256": "41596ef8a1feebf6e41c6e1bf6cf719f4d79c011f92903b280d37a3e0a6590fe",
+    "wrong_identity_exit_nonzero_and_zero_plaintext": true,
+    "tamper_exit_nonzero_and_zero_plaintext": true,
+    "plugin_recipient_and_identity_rejected_before_spawn": true,
+    "ssh_and_github_recipients_rejected_before_spawn": true,
+    "raw_github_recipient_rejected_by_upstream": true,
+    "path_sentinels_executed": [],
+    "network_interfaces": [
+      "lo"
+    ],
+    "external_connect": "denied",
+    "identity_in_argv": false,
+    "identity_transport": "owned pipe descriptor via /proc/self/fd/N",
+    "secret_material_emitted": false
+  },
+  "repository_artifacts": {
+    "offline_verifier": {
+      "path": "deploy/locks/verify_age_runtime.py",
+      "bytes": 22176,
+      "sha256": "ba9f2ae9b66c38958d87843efffbe89f28922f3d7c6e4119990448b44958ef1f"
+    },
+    "native_canary": {
+      "path": "deploy/tests/age_runtime_canary.py",
+      "bytes": 12127,
+      "sha256": "a902788d1cafd1999693c22b38d92faf23119c48886aa86383f743261c0df55b"
+    },
+    "unit_tests": {
+      "path": "deploy/tests/test_age_runtime.py",
+      "bytes": 5492,
+      "sha256": "89e4cff1027a16f1ce53a16834bddcc9eb03380f52c0e87e7a57ad99e1c0cb1c",
+      "tests_passed": 7
+    },
+    "license_manifest": {
+      "path": "deploy/manifests/age-1.3.2-runtime-licenses.json",
+      "bytes": 4811,
+      "sha256": "360bdcf1c972a858afbf72961ccf9e841e236b3ab5e01ef44cafe2c0ca0e9ee8"
+    }
+  },
+  "assurance_boundary": "The upstream binary still contains plugin support. The canary proves that a minimal restricted caller can deny non-X25519 inputs before spawn under a network-none sandbox; release qualification still requires that same boundary to be the only production-reachable entrypoint.",
+  "remaining_release_blockers": [
+    "Integrate the restricted X25519-only caller into the product runtime and make raw age binaries unreachable to agent-controlled argv or PATH.",
+    "Encode the exact archive, Sigsum, license-bundle and native dual-platform checks in hermetic release CI rather than relying on local temp inputs.",
+    "Obtain project legal review of age, Go runtime and third-party redistribution notices; the technical SPDX inventory is not legal approval.",
+    "Build and inspect the actual final runtime image, then repeat inventory, non-root, read-only, seccomp, no-network and negative tests against that image."
+  ]
+}

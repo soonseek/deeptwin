@@ -1,0 +1,6 @@
+# Direct dependencies verified with Python 3.12.13 on 2026-09-07.
+# This is a development slice, not the final web-release dependency lock.
+fastapi==0.141.1
+uvicorn==0.52.4
+python-docx==1.2.0
+pydantic==2.13.5

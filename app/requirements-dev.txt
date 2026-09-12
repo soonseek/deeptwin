@@ -1,0 +1,5 @@
+-r requirements.txt
+# Offline unit/fixture tests only by default. Live runs require a separate bounded RunPlan;
+# no credentials or real-account defaults belong in this dependency file.
+pytest==9.1.1
+httpx==0.28.1

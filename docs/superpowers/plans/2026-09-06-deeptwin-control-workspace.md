@@ -1,5 +1,10 @@
 # DeepTwin Control Workspace UI Implementation Plan
 
+> **역사적 시제품 경계:** 그래프/산출물/대안 관계를 검토한 기록은 보존하지만, 제공자와
+> 배포 경계는 후속 정본이 대체한다. 현재 제품은 자체 호스팅 웹 기반 오픈소스 프레임워크와
+> 공식 브라우저 UI이며, Claude는 API-only, Codex 구독은 서버 소유 관리형 실행기를 사용한다.
+> 아래 양쪽 구독 또는 로컬 앱 표현은 현재 구현 요구가 아니다.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the revised, graph-first Korean control-workspace prototype so a nondeveloper can inspect candidate structures, exact typed outputs, alternative evidence and paired prior-queue examples without mistaking simulated states for a working DeepTwin engine.
@@ -345,7 +350,7 @@ export function overlay(s,id){
   }
   if(id==='connection')return `<h2>연결·도구·복구</h2><p>현재 대상: ${e(ribbon(s))}</p><table><tr><th>실행 경로</th><th>현재 상태</th></tr><tr><td>Claude 본인 구독</td><td>제품 필수 요구 · 공식 통합 미검증/미연결</td></tr><tr><td>Codex 본인 구독</td><td>제품 필수 요구 · 공식 통합 미검증/미연결</td></tr><tr><td>사용자가 선택하는 API</td><td>미연결 · 자동 과금 전환 없음</td></tr></table><p>브라우저·파일 생성 도구는 프레임워크가 관리할 대상입니다. 이 시제품은 도구를 호출하지 않습니다.</p><p>예시 복구 조건: 권한 부족 작업만 대기; 결과 미확인 외부 쓰기는 확인 전 반복하지 않음; 확인된 저장 경계 밖 복원은 미확인.</p><p>초안의 실제 탭 보관 상태는 주 화면 하단에서 확인합니다. 로그인 버튼이나 성공 애니메이션은 제공하지 않습니다.</p>`;
   if(id==='audit')return `<h2>감사 예시 · 실제 엔진 미연결</h2><p>미세렌즈 정의·조합·탈락·예측은 합성 이력이며 철학 원전 검증·오류 독립성 증거가 아닙니다.</p>${['generation','critic','diagnosis'].map((key,i)=>`<h3>${['초기 설계 생성','별도 크리틱 검토','대안 이후 차이 탐구'][i]}</h3>${list(CASE.audit[key])}`).join('')}<p>해석 기록은 감사용입니다. 후보의 근거에는 별도의 새 업무 증거가 필요하며 원 수행 입력에 대안·사후 해석을 넣지 않습니다.</p>`;
-  if(id==='logs')return `<h2>기록 선택·가림 미리보기</h2><p>설치 직후부터 요청·설계·변경·실행·대안·탐구·실패·승인 기록을 연결할 제품 요구입니다. 아래는 고정 합성 목록입니다.</p>${LOGS.map(x=>`<label class="record"><input type="checkbox" data-record="${e(x.id)}" ${s.records.includes(x.id)?'checked':''}/> ${e(x.label)} <small>${e(s.redact?'출처 가림 예시':x.source)}</small></label>`).join('')}<label><input type="checkbox" id="redact" ${s.redact?'checked':''}/> 출처 표지만 가림 · 본문 자동 가림 아님</label><p>선택 ${s.records.length}개 · 이 시제품은 실제 묶음 추출/전송을 하지 않습니다. 원문 결손·재현 한계는 숨기지 않습니다.</p><button disabled>실제 추출 미연결</button><button disabled>제작자 전달 미연결</button><p>추출과 전송은 별개이며 공유 없이도 업무를 이용할 수 있습니다.</p>`;
+  if(id==='logs')return `<h2>기록 선택·가림 미리보기</h2><p>배포 후 프레임워크가 관측 가능한 첫 제어 사건부터 요청·설계·변경·실행·대안·탐구·실패·승인 기록을 연결할 제품 요구입니다. 아래는 고정 합성 목록입니다.</p>${LOGS.map(x=>`<label class="record"><input type="checkbox" data-record="${e(x.id)}" ${s.records.includes(x.id)?'checked':''}/> ${e(x.label)} <small>${e(s.redact?'출처 가림 예시':x.source)}</small></label>`).join('')}<label><input type="checkbox" id="redact" ${s.redact?'checked':''}/> 출처 표지만 가림 · 본문 자동 가림 아님</label><p>선택 ${s.records.length}개 · 이 시제품은 실제 묶음 추출/전송을 하지 않습니다. 원문 결손·재현 한계는 숨기지 않습니다.</p><button disabled>실제 추출 미연결</button><button disabled>제작자 전달 미연결</button><p>추출과 전송은 별개이며 공유 없이도 업무를 이용할 수 있습니다.</p>`;
   return '<p>선택한 상세 없음</p>';
 }
 export function render(s){

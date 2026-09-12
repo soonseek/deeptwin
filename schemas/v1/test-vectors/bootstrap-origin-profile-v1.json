@@ -1,0 +1,467 @@
+{
+  "schema_version": "bootstrap-origin-profile-v1",
+  "bootstrap_helper_sha256": "64b36d5c642db0b57bde44351cd8d82306dc6b0d02c9c19291cc321e1d01d017",
+  "idna_profile": {
+    "python_package": "idna==3.19",
+    "unicode_version": "17.0.0",
+    "pvalid_range_count": 1237,
+    "pvalid_table_sha256": "828f8f0585adb99dff2e58e7a0e921d8378cc98f3c4a794f30622665517ced59",
+    "python_unicodedata_version": "15.0.0",
+    "context_policy": "pvalid-only-v1",
+    "mapping_policy": "unicode15-lower-nfc-idna2008-v1",
+    "bidi_range_count": 1486,
+    "bidi_table_sha256": "92dcbee050c70a01dae0c50e234853a975f5675e1b561a5d18a88682b1dc34a5",
+    "bidi_classes": ["R", "AL", "AN", "L", "EN", "ES", "CS", "ET", "ON", "BN", "NSM"]
+  },
+  "portable_instance_id": "11223344556677889900aabbccddeeff",
+  "capability_vectors": [
+    {
+      "name": "zero-bytes",
+      "raw_capability_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "raw_capability_b64u": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "verifier_b64u": "Zmh6rfhivXdsj8GLjp-OIAiXFIVu4jOzkCpZHQ1fKSU"
+    },
+    {
+      "name": "ascending-bytes",
+      "raw_capability_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "raw_capability_b64u": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "verifier_b64u": "Yw3NKWbEM2aRElRIu7JbT_QSpJxzLbLIq8G4WBvXEN0"
+    },
+    {
+      "name": "high-bytes",
+      "raw_capability_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "raw_capability_b64u": "__________________________________________8",
+      "verifier_b64u": "r5YTdg9yY1-9tEpaCmPDnxKvMPlQpu5clxvhiOicQFE"
+    }
+  ],
+  "invalid_capability_b64u": [
+    "",
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+",
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/",
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB"
+  ],
+  "origin_profile_vectors": [
+    {
+      "name": "local-nondefault-port",
+      "constructor": "local",
+      "input": {
+        "instance_id": "00112233445566778899aabbccddeeff",
+        "path_id": "ffeeddccbbaa99887766554433221100",
+        "port": 4183
+      },
+      "canonical_preimage_utf8": "{\"base_path\":\"/ffeeddccbbaa99887766554433221100/\",\"deployment_profile_id\":\"local-no-terminal-v1\",\"host\":\"00112233445566778899aabbccddeeff.localhost\",\"instance_id\":\"00112233445566778899aabbccddeeff\",\"mode\":\"local_loopback\",\"origin_base\":\"http://00112233445566778899aabbccddeeff.localhost:4183/ffeeddccbbaa99887766554433221100/\",\"port\":4183,\"scheme\":\"http\"}",
+      "profile": {
+        "deployment_profile_id": "local-no-terminal-v1",
+        "instance_id": "00112233445566778899aabbccddeeff",
+        "mode": "local_loopback",
+        "scheme": "http",
+        "host": "00112233445566778899aabbccddeeff.localhost",
+        "port": 4183,
+        "base_path": "/ffeeddccbbaa99887766554433221100/",
+        "origin_base": "http://00112233445566778899aabbccddeeff.localhost:4183/ffeeddccbbaa99887766554433221100/",
+        "digest": "98f116fc13700d4b7ae3a2817dc6bb3bdd93946e2e054d7ddf9fa30d652aad2a"
+      }
+    },
+    {
+      "name": "local-default-port-omitted-from-origin",
+      "constructor": "local",
+      "input": {
+        "instance_id": "0123456789abcdef0123456789abcdef",
+        "path_id": "abcdef0123456789abcdef0123456789",
+        "port": 80
+      },
+      "canonical_preimage_utf8": "{\"base_path\":\"/abcdef0123456789abcdef0123456789/\",\"deployment_profile_id\":\"local-no-terminal-v1\",\"host\":\"0123456789abcdef0123456789abcdef.localhost\",\"instance_id\":\"0123456789abcdef0123456789abcdef\",\"mode\":\"local_loopback\",\"origin_base\":\"http://0123456789abcdef0123456789abcdef.localhost/abcdef0123456789abcdef0123456789/\",\"port\":80,\"scheme\":\"http\"}",
+      "profile": {
+        "deployment_profile_id": "local-no-terminal-v1",
+        "instance_id": "0123456789abcdef0123456789abcdef",
+        "mode": "local_loopback",
+        "scheme": "http",
+        "host": "0123456789abcdef0123456789abcdef.localhost",
+        "port": 80,
+        "base_path": "/abcdef0123456789abcdef0123456789/",
+        "origin_base": "http://0123456789abcdef0123456789abcdef.localhost/abcdef0123456789abcdef0123456789/",
+        "digest": "f0fe0d556fba09f3d3e03c5aed4bd8a6252d913353c86725623a80265dcb7423"
+      }
+    },
+    {
+      "name": "portable-default-port-and-host-case",
+      "constructor": "portable",
+      "input": {
+        "instance_id": "11223344556677889900aabbccddeeff",
+        "url": "HTTPS://DeepTwin.Example.COM:443/"
+      },
+      "canonical_preimage_utf8": "{\"base_path\":\"/\",\"deployment_profile_id\":\"portable-compose-v1\",\"host\":\"deeptwin.example.com\",\"instance_id\":\"11223344556677889900aabbccddeeff\",\"mode\":\"portable_https\",\"origin_base\":\"https://deeptwin.example.com/\",\"port\":443,\"scheme\":\"https\"}",
+      "profile": {
+        "deployment_profile_id": "portable-compose-v1",
+        "instance_id": "11223344556677889900aabbccddeeff",
+        "mode": "portable_https",
+        "scheme": "https",
+        "host": "deeptwin.example.com",
+        "port": 443,
+        "base_path": "/",
+        "origin_base": "https://deeptwin.example.com/",
+        "digest": "1c0bab3ee1f2b26ed5710bbcda8565b4afafc21dd98b7863ec111bda00183c89"
+      }
+    },
+    {
+      "name": "portable-omitted-default-port",
+      "constructor": "portable",
+      "input": {
+        "instance_id": "11223344556677889900aabbccddeeff",
+        "url": "https://deeptwin.example.com"
+      },
+      "canonical_preimage_utf8": "{\"base_path\":\"/\",\"deployment_profile_id\":\"portable-compose-v1\",\"host\":\"deeptwin.example.com\",\"instance_id\":\"11223344556677889900aabbccddeeff\",\"mode\":\"portable_https\",\"origin_base\":\"https://deeptwin.example.com/\",\"port\":443,\"scheme\":\"https\"}",
+      "profile": {
+        "deployment_profile_id": "portable-compose-v1",
+        "instance_id": "11223344556677889900aabbccddeeff",
+        "mode": "portable_https",
+        "scheme": "https",
+        "host": "deeptwin.example.com",
+        "port": 443,
+        "base_path": "/",
+        "origin_base": "https://deeptwin.example.com/",
+        "digest": "1c0bab3ee1f2b26ed5710bbcda8565b4afafc21dd98b7863ec111bda00183c89"
+      }
+    },
+    {
+      "name": "portable-idna-and-nondefault-port",
+      "constructor": "portable",
+      "input": {
+        "instance_id": "aabbccddeeff00112233445566778899",
+        "url": "https://BÜCHER.Example:8443/"
+      },
+      "canonical_preimage_utf8": "{\"base_path\":\"/\",\"deployment_profile_id\":\"portable-compose-v1\",\"host\":\"xn--bcher-kva.example\",\"instance_id\":\"aabbccddeeff00112233445566778899\",\"mode\":\"portable_https\",\"origin_base\":\"https://xn--bcher-kva.example:8443/\",\"port\":8443,\"scheme\":\"https\"}",
+      "profile": {
+        "deployment_profile_id": "portable-compose-v1",
+        "instance_id": "aabbccddeeff00112233445566778899",
+        "mode": "portable_https",
+        "scheme": "https",
+        "host": "xn--bcher-kva.example",
+        "port": 8443,
+        "base_path": "/",
+        "origin_base": "https://xn--bcher-kva.example:8443/",
+        "digest": "9c8aa49d79dcaa43ef36f7f03b6c4162a6e967c76a0f2816e9333c10cb9b317f"
+      }
+    },
+    {
+      "name": "portable-korean-idna",
+      "constructor": "portable",
+      "input": {
+        "instance_id": "deadbeefdeadbeefdeadbeefdeadbeef",
+        "url": "https://딥트윈.한국/"
+      },
+      "canonical_preimage_utf8": "{\"base_path\":\"/\",\"deployment_profile_id\":\"portable-compose-v1\",\"host\":\"xn--k01b625apqi.xn--3e0b707e\",\"instance_id\":\"deadbeefdeadbeefdeadbeefdeadbeef\",\"mode\":\"portable_https\",\"origin_base\":\"https://xn--k01b625apqi.xn--3e0b707e/\",\"port\":443,\"scheme\":\"https\"}",
+      "profile": {
+        "deployment_profile_id": "portable-compose-v1",
+        "instance_id": "deadbeefdeadbeefdeadbeefdeadbeef",
+        "mode": "portable_https",
+        "scheme": "https",
+        "host": "xn--k01b625apqi.xn--3e0b707e",
+        "port": 443,
+        "base_path": "/",
+        "origin_base": "https://xn--k01b625apqi.xn--3e0b707e/",
+        "digest": "d8132fc2082c517500686435100c9d91406d2c2daf6ab65db836afeba3066295"
+      }
+    },
+    {
+        "name": "portable-pinned-idna-arabic-a",
+        "constructor": "portable",
+        "input": {
+            "instance_id": "11223344556677889900aabbccddeeff",
+            "url": "https://ࢫࢲࢵࢹ.example/"
+        },
+        "canonical_preimage_utf8": "{\"base_path\":\"/\",\"deployment_profile_id\":\"portable-compose-v1\",\"host\":\"xn--0ybojq.example\",\"instance_id\":\"11223344556677889900aabbccddeeff\",\"mode\":\"portable_https\",\"origin_base\":\"https://xn--0ybojq.example/\",\"port\":443,\"scheme\":\"https\"}",
+        "profile": {
+            "deployment_profile_id": "portable-compose-v1",
+            "instance_id": "11223344556677889900aabbccddeeff",
+            "mode": "portable_https",
+            "scheme": "https",
+            "host": "xn--0ybojq.example",
+            "port": 443,
+            "base_path": "/",
+            "origin_base": "https://xn--0ybojq.example/",
+            "digest": "bce155b7c53e5fa8f0360061135a543b4c3a5a6d15d6b3193793fb84e5429375"
+        }
+    },
+    {
+        "name": "portable-pinned-idna-arabic-b",
+        "constructor": "portable",
+        "input": {
+            "instance_id": "11223344556677889900aabbccddeeff",
+            "url": "https://ࢶࢵ.example/"
+        },
+        "canonical_preimage_utf8": "{\"base_path\":\"/\",\"deployment_profile_id\":\"portable-compose-v1\",\"host\":\"xn--bzbb.example\",\"instance_id\":\"11223344556677889900aabbccddeeff\",\"mode\":\"portable_https\",\"origin_base\":\"https://xn--bzbb.example/\",\"port\":443,\"scheme\":\"https\"}",
+        "profile": {
+            "deployment_profile_id": "portable-compose-v1",
+            "instance_id": "11223344556677889900aabbccddeeff",
+            "mode": "portable_https",
+            "scheme": "https",
+            "host": "xn--bzbb.example",
+            "port": 443,
+            "base_path": "/",
+            "origin_base": "https://xn--bzbb.example/",
+            "digest": "a296c95e9d6d1b42667348d4fea4475b6e1e33010932a4ef8c403cf6f934c02c"
+        }
+    },
+    {
+        "name": "portable-pinned-idna-arabic-c",
+        "constructor": "portable",
+        "input": {
+            "instance_id": "11223344556677889900aabbccddeeff",
+            "url": "https://ࣄ࣓࣏.example/"
+        },
+        "canonical_preimage_utf8": "{\"base_path\":\"/\",\"deployment_profile_id\":\"portable-compose-v1\",\"host\":\"xn--qzbwl.example\",\"instance_id\":\"11223344556677889900aabbccddeeff\",\"mode\":\"portable_https\",\"origin_base\":\"https://xn--qzbwl.example/\",\"port\":443,\"scheme\":\"https\"}",
+        "profile": {
+            "deployment_profile_id": "portable-compose-v1",
+            "instance_id": "11223344556677889900aabbccddeeff",
+            "mode": "portable_https",
+            "scheme": "https",
+            "host": "xn--qzbwl.example",
+            "port": 443,
+            "base_path": "/",
+            "origin_base": "https://xn--qzbwl.example/",
+            "digest": "9c6cb6f213bb5b2cbf09aaf6bfe16cf6b47cbee52d8bff88318587ed24efacb6"
+        }
+    }
+  ],
+  "invalid_local_inputs": [
+    {
+      "name": "uppercase-instance",
+      "input": {
+        "instance_id": "00112233445566778899AABBCCDDEEFF",
+        "path_id": "ffeeddccbbaa99887766554433221100",
+        "port": 4183
+      }
+    },
+    {
+      "name": "short-path",
+      "input": {
+        "instance_id": "00112233445566778899aabbccddeeff",
+        "path_id": "ffee",
+        "port": 4183
+      }
+    },
+    {
+      "name": "boolean-port",
+      "input": {
+        "instance_id": "00112233445566778899aabbccddeeff",
+        "path_id": "ffeeddccbbaa99887766554433221100",
+        "port": true
+      }
+    },
+    {
+      "name": "string-port",
+      "input": {
+        "instance_id": "00112233445566778899aabbccddeeff",
+        "path_id": "ffeeddccbbaa99887766554433221100",
+        "port": "4183"
+      }
+    },
+    {
+      "name": "zero-port",
+      "input": {
+        "instance_id": "00112233445566778899aabbccddeeff",
+        "path_id": "ffeeddccbbaa99887766554433221100",
+        "port": 0
+      }
+    },
+    {
+      "name": "oversize-port",
+      "input": {
+        "instance_id": "00112233445566778899aabbccddeeff",
+        "path_id": "ffeeddccbbaa99887766554433221100",
+        "port": 65536
+      }
+    }
+  ],
+  "invalid_portable_urls": [
+    {"name": "empty", "url": ""},
+    {"name": "http", "url": "http://deeptwin.example.com/"},
+    {"name": "userinfo", "url": "https://owner@deeptwin.example.com/"},
+    {"name": "query", "url": "https://deeptwin.example.com/?"},
+    {"name": "fragment", "url": "https://deeptwin.example.com/#setup"},
+    {"name": "ipv4", "url": "https://127.0.0.1/"},
+    {"name": "ipv6", "url": "https://[::1]/"},
+    {"name": "numeric-ip-alias", "url": "https://0x7f.0x0.0x0.0x1/"},
+    {"name": "duplicate-slash", "url": "https://deeptwin.example.com//"},
+    {"name": "dot-segment", "url": "https://deeptwin.example.com/./"},
+    {"name": "encoded-separator", "url": "https://deeptwin.example.com/%2f"},
+    {"name": "non-root-path", "url": "https://deeptwin.example.com/app/"},
+    {"name": "leading-zero-port", "url": "https://deeptwin.example.com:0443/"},
+    {"name": "trailing-dot", "url": "https://deeptwin.example.com./"},
+    {"name": "single-label", "url": "https://deeptwin/"},
+    {"name": "disallowed-idna-symbol", "url": "https://☃.example/"},
+    {"name": "contextual-joiner", "url": "https://a‍b.example/"},
+    {"name": "division-slash-host", "url": "https://owner∕example.com:8443/"},
+    {"name": "fraction-slash-host", "url": "https://owner⁄example.com/"},
+    {"name": "std3-double-hyphen", "url": "https://ab--cd.example/"},
+    {"name": "u-label-leading-hyphen", "url": "https://-ü.example:443/"},
+    {"name": "u-label-trailing-hyphen", "url": "https://ü-.example:443/"},
+    {"name": "crafted-a-label-leading-hyphen", "url": "https://xn----eha.example/"},
+    {"name": "crafted-a-label-trailing-hyphen", "url": "https://xn----dha.example/"},
+    {"name": "whatwg-hex-tld-empty", "url": "https://a.0x/"},
+    {"name": "whatwg-hex-tld", "url": "https://a.0xa/"},
+    {"name": "whatwg-zero-hex-tld", "url": "https://a.0x0/"},
+    {"name": "contexto-misuse", "url": "https://aŀb.example/"},
+    {"name": "disallowed-jamo", "url": "https://aᄰb.example/"},
+    {"name": "disallowed-combiner", "url": "https://a⃩b.example/"},
+    {"name": "mixed-bidi-label", "url": "https://aࡰb.example/"},
+    {"name": "invalid-punycode-scalar", "url": "https://xn--a.example/"},
+    {"name": "overflow-punycode", "url": "https://xn--zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.example/"},
+    {"name": "contexto-valid-but-outside-v1", "url": "https://l·l.example/"},
+    {"name": "contextj-zwj-valid-but-outside-v1", "url": "https://क्‍ष.example/"},
+    {"name": "contextj-zwnj-valid-but-outside-v1", "url": "https://क्‌ष.example/"},
+    {"name": "hebrew-context-valid-but-outside-v1", "url": "https://א׳.example/"},
+    {"name": "katakana-context-valid-but-outside-v1", "url": "https://カ・タ.example/"},
+    {"name": "surrounding-space", "url": " https://deeptwin.example.com/"},
+    {"name": "backslash", "url": "https://deeptwin.example.com\\setup"}
+  ],
+  "invalid_origin_profiles": [
+    {
+      "deployment_profile_id": "portable-compose-v1",
+      "instance_id": "11223344556677889900aabbccddeeff",
+      "mode": "portable_https",
+      "scheme": "https",
+      "host": "xn----eha.example",
+      "port": 443,
+      "base_path": "/",
+      "origin_base": "https://xn----eha.example/",
+      "digest": "b7d40ebe080882068ff23dbcce7ae2ca421505ade4c03d51e98f810955bb3f4b"
+    },
+    {
+      "deployment_profile_id": "portable-compose-v1",
+      "instance_id": "11223344556677889900aabbccddeeff",
+      "mode": "portable_https",
+      "scheme": "https",
+      "host": "xn----dha.example",
+      "port": 443,
+      "base_path": "/",
+      "origin_base": "https://xn----dha.example/",
+      "digest": "241c632c7883318b41f436dc4843029a9ba5d47c259bc1dde48a5b94537da811"
+    },
+    {
+      "deployment_profile_id": "portable-compose-v1",
+      "instance_id": "11223344556677889900aabbccddeeff",
+      "mode": "portable_https",
+      "scheme": "https",
+      "host": "a.0x",
+      "port": 443,
+      "base_path": "/",
+      "origin_base": "https://a.0x/",
+      "digest": "0d619065efaafbcc861f69bf55b673c1f1ffa6ac7923f175d8d115d9d5dc1f95"
+    },
+    {
+      "deployment_profile_id": "portable-compose-v1",
+      "instance_id": "11223344556677889900aabbccddeeff",
+      "mode": "portable_https",
+      "scheme": "https",
+      "host": "a.0xa",
+      "port": 443,
+      "base_path": "/",
+      "origin_base": "https://a.0xa/",
+      "digest": "912c1af8bb686ce92e5192269f972146d329847eae0845dd3d2799d6e446768d"
+    },
+    {
+      "deployment_profile_id": "portable-compose-v1",
+      "instance_id": "11223344556677889900aabbccddeeff",
+      "mode": "portable_https",
+      "scheme": "https",
+      "host": "a.0x0",
+      "port": 443,
+      "base_path": "/",
+      "origin_base": "https://a.0x0/",
+      "digest": "a9275386081badc63c9fe12a2b15f7fcd962008069d834503a68340917162e63"
+    },
+      {
+            "deployment_profile_id": "portable-compose-v1",
+            "instance_id": "11223344556677889900aabbccddeeff",
+            "mode": "portable_https",
+            "scheme": "https",
+            "host": "xn--a.example",
+            "port": 443,
+            "base_path": "/",
+            "origin_base": "https://xn--a.example/",
+            "digest": "82b0b12b58e1193801d65a50ad484cdb7cd21a1e65a56e084de6be392b5a28f5"
+      },
+      {
+            "deployment_profile_id": "portable-compose-v1",
+            "instance_id": "11223344556677889900aabbccddeeff",
+            "mode": "portable_https",
+            "scheme": "https",
+            "host": "xn--zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.example",
+            "port": 443,
+            "base_path": "/",
+            "origin_base": "https://xn--zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.example/",
+            "digest": "3bdf7ad0034e862ed987f8691ac41b4e6f638970f2761434431d20498fa4347c"
+      },
+      {
+            "deployment_profile_id": "portable-compose-v1",
+            "instance_id": "11223344556677889900aabbccddeeff",
+            "mode": "portable_https",
+            "scheme": "https",
+            "host": "xn--ab-h8e.example",
+            "port": 443,
+            "base_path": "/",
+            "origin_base": "https://xn--ab-h8e.example/",
+            "digest": "64a48eafe047e2f024f4e4adc976417ef989eb4dc6938cd17587ca981fade6c6"
+      },
+      {
+            "deployment_profile_id": "portable-compose-v1",
+            "instance_id": "11223344556677889900aabbccddeeff",
+            "mode": "portable_https",
+            "scheme": "https",
+            "host": "xn--ll-0ea.example",
+            "port": 443,
+            "base_path": "/",
+            "origin_base": "https://xn--ll-0ea.example/",
+            "digest": "662af4e98d050e194dcfe3a272e8d7e5fe2281959ac2892a0fb08676e64c81a6"
+      },
+      {
+            "deployment_profile_id": "portable-compose-v1",
+            "instance_id": "11223344556677889900aabbccddeeff",
+            "mode": "portable_https",
+            "scheme": "https",
+            "host": "xn--11b2ezcw70k.example",
+            "port": 443,
+            "base_path": "/",
+            "origin_base": "https://xn--11b2ezcw70k.example/",
+            "digest": "3a1df21d3667a971a0195443d829352d9bbd53f8ad733f276dca00133d711769"
+      },
+      {
+            "deployment_profile_id": "portable-compose-v1",
+            "instance_id": "11223344556677889900aabbccddeeff",
+            "mode": "portable_https",
+            "scheme": "https",
+            "host": "xn--11b2ezcs70k.example",
+            "port": 443,
+            "base_path": "/",
+            "origin_base": "https://xn--11b2ezcs70k.example/",
+            "digest": "6caa18d756de5fa2d0f8ec93e6e6a674953db8e167665146991655898a258850"
+      },
+      {
+            "deployment_profile_id": "portable-compose-v1",
+            "instance_id": "11223344556677889900aabbccddeeff",
+            "mode": "portable_https",
+            "scheme": "https",
+            "host": "xn--4db4e.example",
+            "port": 443,
+            "base_path": "/",
+            "origin_base": "https://xn--4db4e.example/",
+            "digest": "d8a8ff375b58eba6f1e8a0b8217a315e138441ba079b41e925f05b6c06e32be1"
+      },
+      {
+            "deployment_profile_id": "portable-compose-v1",
+            "instance_id": "11223344556677889900aabbccddeeff",
+            "mode": "portable_https",
+            "scheme": "https",
+            "host": "xn--lckxb3k.example",
+            "port": 443,
+            "base_path": "/",
+            "origin_base": "https://xn--lckxb3k.example/",
+            "digest": "261fd78f24ff21cd4ec0c7be71f383fb5c1021614afec93f505999fa1f8050ab"
+      }
+  ]
+}

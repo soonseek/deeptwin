@@ -1,0 +1,125 @@
+{
+  "schema_version": "deeptwin-static-go-license-bundle-v1",
+  "status": "candidate_technical_inventory_not_legal_approval",
+  "tool": "age",
+  "version": "1.3.2",
+  "go_version": "go1.27.0",
+  "go_source": {
+    "url": "https://go.dev/dl/go1.27.0.src.tar.gz",
+    "release_metadata_url": "https://go.dev/dl/?mode=json&include=all",
+    "bytes": 35080395,
+    "sha256": "7002403d7cc44529ef6d26f69a44818263395ead7c16c05a5808ae047ebeb0e5",
+    "license_member": "go/LICENSE",
+    "license_bytes": 1453,
+    "license_sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+  },
+  "source_archive_sha256": "c160d6f907992561413a28818f7d7585b35977cdbc449f3e96c4f8c99d22d21e",
+  "release_archive_license": {
+    "member": "age/LICENSE",
+    "bytes": 2975,
+    "sha256": "afbdb4e07a359499db587ae632815809b1fc1670a92d5449af112ce9a67833a2"
+  },
+  "license_files": [
+    {
+      "path": "deploy/locks/licenses/age-1.3.2/filippo.io-age-BSD-3-Clause.txt",
+      "bytes": 1516,
+      "sha256": "c5d65279d02955c0fc2294ae417c3add650d228f4f5c82bd6d531fc26c89cd96",
+      "source_member": "age/LICENSE"
+    },
+    {
+      "path": "deploy/locks/licenses/age-1.3.2/filippo.io-edwards25519-BSD-3-Clause.txt",
+      "bytes": 1479,
+      "sha256": "2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067",
+      "source_member": "age/vendor/filippo.io/edwards25519/LICENSE"
+    },
+    {
+      "path": "deploy/locks/licenses/age-1.3.2/go-authors-BSD-3-Clause.txt",
+      "bytes": 1453,
+      "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+      "source_member": "age/vendor/filippo.io/hpke/LICENSE"
+    }
+  ],
+  "components": [
+    {
+      "module": "go-runtime-and-standard-library",
+      "version": "go1.27.0",
+      "module_sum": null,
+      "license_spdx": "BSD-3-Clause",
+      "license_file": "deploy/locks/licenses/age-1.3.2/go-authors-BSD-3-Clause.txt",
+      "source_license_member": null
+    },
+    {
+      "module": "filippo.io/age",
+      "version": "v1.3.2",
+      "module_sum": null,
+      "license_spdx": "BSD-3-Clause",
+      "license_file": "deploy/locks/licenses/age-1.3.2/filippo.io-age-BSD-3-Clause.txt",
+      "source_license_member": "age/LICENSE"
+    },
+    {
+      "module": "filippo.io/edwards25519",
+      "version": "v1.2.0",
+      "module_sum": "h1:crnVqOiS4jqYleHd9vaKZ+HKtHfllngJIiOpNpoJsjo=",
+      "license_spdx": "BSD-3-Clause",
+      "license_file": "deploy/locks/licenses/age-1.3.2/filippo.io-edwards25519-BSD-3-Clause.txt",
+      "source_license_member": "age/vendor/filippo.io/edwards25519/LICENSE"
+    },
+    {
+      "module": "filippo.io/hpke",
+      "version": "v0.4.0",
+      "module_sum": "h1:p575VVQ6ted4pL+it6M00V/f2qTZITO0zgmdKCkd5+A=",
+      "license_spdx": "BSD-3-Clause",
+      "license_file": "deploy/locks/licenses/age-1.3.2/go-authors-BSD-3-Clause.txt",
+      "source_license_member": "age/vendor/filippo.io/hpke/LICENSE"
+    },
+    {
+      "module": "filippo.io/nistec",
+      "version": "v0.0.4",
+      "module_sum": "h1:F14ZHT5htWlMnQVPndX9ro9arf56cBhQxq4LnDI491s=",
+      "license_spdx": "BSD-3-Clause",
+      "license_file": "deploy/locks/licenses/age-1.3.2/go-authors-BSD-3-Clause.txt",
+      "source_license_member": "age/vendor/filippo.io/nistec/LICENSE"
+    },
+    {
+      "module": "golang.org/x/crypto",
+      "version": "v0.55.0",
+      "module_sum": "h1:+KWHjbgOaAQ66dh/YlkZKHlz9ZUlq61AFirAR9ntP8M=",
+      "license_spdx": "BSD-3-Clause",
+      "license_file": "deploy/locks/licenses/age-1.3.2/go-authors-BSD-3-Clause.txt",
+      "source_license_member": "age/vendor/golang.org/x/crypto/LICENSE"
+    },
+    {
+      "module": "golang.org/x/sys",
+      "version": "v0.47.0",
+      "module_sum": "h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=",
+      "license_spdx": "BSD-3-Clause",
+      "license_file": "deploy/locks/licenses/age-1.3.2/go-authors-BSD-3-Clause.txt",
+      "source_license_member": "age/vendor/golang.org/x/sys/LICENSE"
+    },
+    {
+      "module": "golang.org/x/term",
+      "version": "v0.45.0",
+      "module_sum": "h1:NwWyBmoJCbfTHpxrWoZ9C6/VxOf7ic219I8xZZFdrf0=",
+      "license_spdx": "BSD-3-Clause",
+      "license_file": "deploy/locks/licenses/age-1.3.2/go-authors-BSD-3-Clause.txt",
+      "source_license_member": "age/vendor/golang.org/x/term/LICENSE"
+    }
+  ],
+  "executable_module_sets": {
+    "age": [
+      "filippo.io/edwards25519",
+      "filippo.io/hpke",
+      "filippo.io/nistec",
+      "golang.org/x/crypto",
+      "golang.org/x/sys",
+      "golang.org/x/term"
+    ],
+    "age-keygen": [
+      "filippo.io/hpke",
+      "golang.org/x/crypto",
+      "golang.org/x/sys",
+      "golang.org/x/term"
+    ]
+  },
+  "assurance_boundary": "This exact technical inventory and bundled license text are inputs to release legal review. SPDX labels are not legal advice or approval."
+}

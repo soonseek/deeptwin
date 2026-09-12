@@ -1,0 +1,80 @@
+{
+  "schema_version": "deeptwin-upstream-image-provenance-results-v1",
+  "verified_at": "2026-09-08T03:48:22Z",
+  "network_used": true,
+  "registry": "registry-1.docker.io/v2",
+  "method": "The exact OCI index was inspected by digest, each selected unknown/unknown attestation manifest was inspected by digest, and every SPDX and SLSA in-toto blob was fetched by its descriptor digest. Statement subjects were required to resolve to one exact selected runnable platform manifest digest.",
+  "images": [
+    {
+      "image_id": "python-service-base",
+      "repository": "docker.io/library/python",
+      "index_digest": "sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254",
+      "platforms": [
+        {
+          "platform": "linux/amd64",
+          "runnable_manifest_digest": "sha256:9c47360a2a0355e2da18516d0b1c2126ec22c195d2185e97347c9d98398c5bef",
+          "attestation_manifest": {"digest": "sha256:53c4d2b5bc4738547933a1665005e5e86608b47008548432ef67a5363fcd73a9", "bytes": 841},
+          "config": {"digest": "sha256:341ee29c94bfec17d00d5d124f2bfa8a79a0065c082a67f3e73245fec6718b05", "bytes": 241},
+          "spdx": {"digest": "sha256:23b3283dd3bf812c45bc863c519fecc0363b9f2ab6ecbf9a0e1f154d147f2b1a", "bytes": 2575043, "statement_type": "https://in-toto.io/Statement/v0.1", "predicate_type": "https://spdx.dev/Document", "subject_digest": "sha256:9c47360a2a0355e2da18516d0b1c2126ec22c195d2185e97347c9d98398c5bef", "spdx_version": "SPDX-2.3", "package_count": 153, "file_count": 3229},
+          "slsa": {"digest": "sha256:ef18699e0e3dc0f0b0f71baa3a5fa453b82f411d30efc7d08009549af5c2a528", "bytes": 23677, "statement_type": "https://in-toto.io/Statement/v0.1", "predicate_type": "https://slsa.dev/provenance/v0.2", "subject_digest": "sha256:9c47360a2a0355e2da18516d0b1c2126ec22c195d2185e97347c9d98398c5bef", "builder_id": "https://github.com/docker-library", "config_source": "https://github.com/docker-library/python.git#688a0b86bb44289df16a363e9f41d90514c1a5f9:3.12/slim-bookworm", "entry_point": "Dockerfile", "materials_count": 5}
+        },
+        {
+          "platform": "linux/arm64",
+          "runnable_manifest_digest": "sha256:d04f49f5882f49a3b91f874e75e19f0c265f7222da8659741a9d7eab148f22a9",
+          "attestation_manifest": {"digest": "sha256:e10f0ebebe5802bb60b6431b54604f0f4acf2fc6662c96c0f8ed08605a51e265", "bytes": 841},
+          "config": {"digest": "sha256:2ae4a7b08208b3573572244074409bbc076c1e8ddc075b003835756396ed181e", "bytes": 241},
+          "spdx": {"digest": "sha256:8a1f07dfe003ac637d681ba0653963e86ea59c8ee59c62ce8ee25ba2e8ee5616", "bytes": 2575292, "statement_type": "https://in-toto.io/Statement/v0.1", "predicate_type": "https://spdx.dev/Document", "subject_digest": "sha256:d04f49f5882f49a3b91f874e75e19f0c265f7222da8659741a9d7eab148f22a9", "spdx_version": "SPDX-2.3", "package_count": 153, "file_count": 3228},
+          "slsa": {"digest": "sha256:138d0c29e252560597a2b027552bac53e0b44c068c8147390836338b80869bd8", "bytes": 23787, "statement_type": "https://in-toto.io/Statement/v0.1", "predicate_type": "https://slsa.dev/provenance/v0.2", "subject_digest": "sha256:d04f49f5882f49a3b91f874e75e19f0c265f7222da8659741a9d7eab148f22a9", "builder_id": "https://github.com/docker-library", "config_source": "https://github.com/docker-library/python.git#688a0b86bb44289df16a363e9f41d90514c1a5f9:3.12/slim-bookworm", "entry_point": "Dockerfile", "materials_count": 5}
+        }
+      ]
+    },
+    {
+      "image_id": "browser-node-base",
+      "repository": "docker.io/library/node",
+      "index_digest": "sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e",
+      "platforms": [
+        {
+          "platform": "linux/amd64",
+          "runnable_manifest_digest": "sha256:6642ef280aebc09c4541bee0b15c9f89f0f3f3c247ddee79ae1d37eddfdcbbaa",
+          "attestation_manifest": {"digest": "sha256:e4629ce16afadf66c8766cd164745221677379636f095b5b10f226bd69171943", "bytes": 841},
+          "config": {"digest": "sha256:9ba12d708d98032aa115a5857a344373151aca287bc959fbda2d278bd02cd5b7", "bytes": 241},
+          "spdx": {"digest": "sha256:77ee43dec873759bf69aa9db56a5bee395f1896dbb5ffae9cc6130371d5287ae", "bytes": 2573668, "statement_type": "https://in-toto.io/Statement/v0.1", "predicate_type": "https://spdx.dev/Document", "subject_digest": "sha256:6642ef280aebc09c4541bee0b15c9f89f0f3f3c247ddee79ae1d37eddfdcbbaa", "spdx_version": "SPDX-2.3", "package_count": 274, "file_count": 3135},
+          "slsa": {"digest": "sha256:f71591d3af468a28f5b79cd269f8487ebbf8c9f19b7b1c12643b11982468fe6a", "bytes": 27197, "statement_type": "https://in-toto.io/Statement/v0.1", "predicate_type": "https://slsa.dev/provenance/v0.2", "subject_digest": "sha256:6642ef280aebc09c4541bee0b15c9f89f0f3f3c247ddee79ae1d37eddfdcbbaa", "builder_id": "https://github.com/docker-library", "config_source": "https://github.com/nodejs/docker-node.git#c4eb0858f5c522521768d5b6dc1d9f1631d4854d:24/bookworm-slim", "entry_point": "Dockerfile", "materials_count": 5}
+        },
+        {
+          "platform": "linux/arm64",
+          "runnable_manifest_digest": "sha256:e9b5516b06baeaea9a8e65a7aec6a85fbb960a30b52b66968f2c8092b3e2a3eb",
+          "attestation_manifest": {"digest": "sha256:3e398475fe6c354a7c1f05936c3c15d339f8494493b12e419d5fe99cb301a75c", "bytes": 841},
+          "config": {"digest": "sha256:ebf0008dcc52b46073176ec69b6b96148c12fe367f093069a10d5b347544b66e", "bytes": 241},
+          "spdx": {"digest": "sha256:1fdbd758a6a4941e794dcc5a6c939e12fcc90141eac88046b8da6a43acccce93", "bytes": 2573991, "statement_type": "https://in-toto.io/Statement/v0.1", "predicate_type": "https://spdx.dev/Document", "subject_digest": "sha256:e9b5516b06baeaea9a8e65a7aec6a85fbb960a30b52b66968f2c8092b3e2a3eb", "spdx_version": "SPDX-2.3", "package_count": 274, "file_count": 3134},
+          "slsa": {"digest": "sha256:cc46352174747b42fa364a7ad0307e105507ab24989a92d141e5a688fa68565d", "bytes": 27403, "statement_type": "https://in-toto.io/Statement/v0.1", "predicate_type": "https://slsa.dev/provenance/v0.2", "subject_digest": "sha256:e9b5516b06baeaea9a8e65a7aec6a85fbb960a30b52b66968f2c8092b3e2a3eb", "builder_id": "https://github.com/docker-library", "config_source": "https://github.com/nodejs/docker-node.git#c4eb0858f5c522521768d5b6dc1d9f1631d4854d:24/bookworm-slim", "entry_point": "Dockerfile", "materials_count": 5}
+        }
+      ]
+    },
+    {
+      "image_id": "portable-edge-upstream",
+      "repository": "docker.io/library/caddy",
+      "index_digest": "sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648",
+      "platforms": [
+        {
+          "platform": "linux/amd64",
+          "runnable_manifest_digest": "sha256:98eb57d882ccd5213d1688764db10c1ca2c58a1ca3a6717a3411ad798f7a423a",
+          "attestation_manifest": {"digest": "sha256:ac93e0dc57158bf4e7bfeb068df1aaf7faeda5675bf6549c32cb20112e804db2", "bytes": 840},
+          "config": {"digest": "sha256:4e944dd2922a565c9021b63caf22ab470156069942351bf1cd5dabf2268b25f4", "bytes": 241},
+          "spdx": {"digest": "sha256:a39a20466be46fdee3ae825e32040ebd50155a64516772585a4a214a7fad4eb1", "bytes": 314461, "statement_type": "https://in-toto.io/Statement/v0.1", "predicate_type": "https://spdx.dev/Document", "subject_digest": "sha256:98eb57d882ccd5213d1688764db10c1ca2c58a1ca3a6717a3411ad798f7a423a", "spdx_version": "SPDX-2.3", "package_count": 185, "file_count": 224},
+          "slsa": {"digest": "sha256:7fccd04675d0f07dd45c595d13955410e7214c29cc8bc012c27714ce29f32a13", "bytes": 18430, "statement_type": "https://in-toto.io/Statement/v0.1", "predicate_type": "https://slsa.dev/provenance/v0.2", "subject_digest": "sha256:98eb57d882ccd5213d1688764db10c1ca2c58a1ca3a6717a3411ad798f7a423a", "builder_id": "https://github.com/docker-library", "config_source": "https://github.com/caddyserver/caddy-docker.git#fba2853501d36e8a72f946ac8cb7ff64d07e48f2:2.11/alpine", "entry_point": "Dockerfile", "materials_count": 5}
+        },
+        {
+          "platform": "linux/arm64",
+          "runnable_manifest_digest": "sha256:1172d4213087d3fc30bafc7ff2c2896180eb0c41ff7f75f315568fb36cabdcba",
+          "attestation_manifest": {"digest": "sha256:334d2f19856452896dcb5584a12badc9bde3a9a70c6ffe037958a269a5c332e8", "bytes": 840},
+          "config": {"digest": "sha256:b6e57a588096fc10aa6be02c455125829dec1c372cc06e10b693853e9640077c", "bytes": 241},
+          "spdx": {"digest": "sha256:19862c58d4d5f35d41dc92cc36e978545770d9ed6d572d3b5128e2f2c6f9e6ed", "bytes": 313915, "statement_type": "https://in-toto.io/Statement/v0.1", "predicate_type": "https://spdx.dev/Document", "subject_digest": "sha256:1172d4213087d3fc30bafc7ff2c2896180eb0c41ff7f75f315568fb36cabdcba", "spdx_version": "SPDX-2.3", "package_count": 185, "file_count": 223},
+          "slsa": {"digest": "sha256:20475686c5ba314a35167ae648d5b8449ddc85f81642ec71a87655bc5c081a5c", "bytes": 18611, "statement_type": "https://in-toto.io/Statement/v0.1", "predicate_type": "https://slsa.dev/provenance/v0.2", "subject_digest": "sha256:1172d4213087d3fc30bafc7ff2c2896180eb0c41ff7f75f315568fb36cabdcba", "builder_id": "https://github.com/docker-library", "config_source": "https://github.com/caddyserver/caddy-docker.git#fba2853501d36e8a72f946ac8cb7ff64d07e48f2:2.11/alpine", "entry_point": "Dockerfile", "materials_count": 5}
+        }
+      ]
+    }
+  ],
+  "verified": true,
+  "qualification_boundary": "This records exact published build-input provenance and subject linkage. It is not a signature verification, a vulnerability finding, a final DeepTwin image SBOM, or the T082 release-builder reproduction result."
+}

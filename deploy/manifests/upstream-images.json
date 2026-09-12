@@ -1,0 +1,227 @@
+{
+  "schema_version": "deeptwin-upstream-image-locks-v1",
+  "status": "candidate_not_release_qualified",
+  "descriptor_rule": "pull and verify repository@top_descriptor.digest; display_tag is non-authoritative",
+  "provenance_verification": {
+    "path": "specs/001-autonomous-release/evidence/upstream-image-provenance-results.json",
+    "bytes": 9612,
+    "sha256": "286e84590a84a396bc04b528e61ca900db08a4216503f0070f8165a86e8785f6",
+    "verified": true,
+    "scope": "Published SPDX and SLSA descriptor inventory and exact statement-subject linkage for the selected linux/amd64 and linux/arm64 runnable manifests"
+  },
+  "images": [
+    {
+      "image_id": "python-service-base",
+      "repository": "docker.io/library/python",
+      "display_tag": "3.12.14-slim-bookworm",
+      "source_repository": "https://github.com/docker-library/python",
+      "source_commit": "688a0b86bb44289df16a363e9f41d90514c1a5f9",
+      "source_path": "3.12/slim-bookworm/Dockerfile",
+      "source_sha256": "858f10051e8839e5f3d7229cc4c2c7568f55e0477a780e9224f8f1f0746fc8b2",
+      "top_descriptor": {
+        "media_type": "application/vnd.oci.image.index.v1+json",
+        "digest": "sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254",
+        "size_bytes": 6546
+      },
+      "platforms": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "manifest": {
+            "media_type": "application/vnd.oci.image.manifest.v1+json",
+            "digest": "sha256:9c47360a2a0355e2da18516d0b1c2126ec22c195d2185e97347c9d98398c5bef",
+            "size_bytes": 1752
+          },
+          "config": {
+            "media_type": "application/vnd.oci.image.config.v1+json",
+            "digest": "sha256:59bf1d95c965f12dfc14afaf5af778fc1dbe5b372bd5c281645fc34d4c75d4e7",
+            "size_bytes": 5684
+          },
+          "layers": [
+            {"position": 1, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:a8ac7f6c67abc236e4c745052c404112b8fab6fe8ac3a329d1ef3b867ad67c71", "size_bytes": 28232655},
+            {"position": 2, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:268fd66f673d556a271a784d33c4541102f05dde43657861a8e793eb30ef38dd", "size_bytes": 3533349},
+            {"position": 3, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:ec613f6df89286159c101a9b15264bc627366aaf788a9ea9c3a456ad9b9b2b3e", "size_bytes": 13672032},
+            {"position": 4, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:35ef2f664a5c3b1e1408a24bd668ef33b82a89a534709e1c03aac6d50012d51a", "size_bytes": 249}
+          ]
+        },
+        {
+          "os": "linux",
+          "architecture": "arm64",
+          "variant": "v8",
+          "manifest": {
+            "media_type": "application/vnd.oci.image.manifest.v1+json",
+            "digest": "sha256:d04f49f5882f49a3b91f874e75e19f0c265f7222da8659741a9d7eab148f22a9",
+            "size_bytes": 1754
+          },
+          "config": {
+            "media_type": "application/vnd.oci.image.config.v1+json",
+            "digest": "sha256:a74ddf067736251b63204a4d7a26411cffa3da75600b4e67ad54c9c79f3f81cb",
+            "size_bytes": 5693
+          },
+          "layers": [
+            {"position": 1, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:75782e20ea1f4a9d9259bc20a5ecbbea8d5943bf5370bf0f5727900728f1cc9a", "size_bytes": 28117289},
+            {"position": 2, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:8662a60b808caf0f481c858e870db63699ac351820bd1577fb560dc553e72c38", "size_bytes": 3368479},
+            {"position": 3, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:4e1d2fc0dabb6394acabd86d1fd491fb5ed1dbec8818a32cd064357348bb1323", "size_bytes": 13602803},
+            {"position": 4, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:2df4c82f5bdbf667d202cadaffe51eeee7b81febb397af587551022611d12740", "size_bytes": 249}
+          ]
+        }
+      ],
+      "provenance_descriptors": [
+        {
+          "platform": "linux/amd64",
+          "subject_manifest_digest": "sha256:9c47360a2a0355e2da18516d0b1c2126ec22c195d2185e97347c9d98398c5bef",
+          "manifest": {"media_type": "application/vnd.oci.image.manifest.v1+json", "digest": "sha256:53c4d2b5bc4738547933a1665005e5e86608b47008548432ef67a5363fcd73a9", "size_bytes": 841},
+          "config": {"media_type": "application/vnd.oci.image.config.v1+json", "digest": "sha256:341ee29c94bfec17d00d5d124f2bfa8a79a0065c082a67f3e73245fec6718b05", "size_bytes": 241},
+          "artifacts": [
+            {"artifact_type": "https://spdx.dev/Document", "media_type": "application/vnd.in-toto+json", "digest": "sha256:23b3283dd3bf812c45bc863c519fecc0363b9f2ab6ecbf9a0e1f154d147f2b1a", "size_bytes": 2575043},
+            {"artifact_type": "https://slsa.dev/provenance/v0.2", "media_type": "application/vnd.in-toto+json", "digest": "sha256:ef18699e0e3dc0f0b0f71baa3a5fa453b82f411d30efc7d08009549af5c2a528", "size_bytes": 23677}
+          ]
+        },
+        {
+          "platform": "linux/arm64",
+          "subject_manifest_digest": "sha256:d04f49f5882f49a3b91f874e75e19f0c265f7222da8659741a9d7eab148f22a9",
+          "manifest": {"media_type": "application/vnd.oci.image.manifest.v1+json", "digest": "sha256:e10f0ebebe5802bb60b6431b54604f0f4acf2fc6662c96c0f8ed08605a51e265", "size_bytes": 841},
+          "config": {"media_type": "application/vnd.oci.image.config.v1+json", "digest": "sha256:2ae4a7b08208b3573572244074409bbc076c1e8ddc075b003835756396ed181e", "size_bytes": 241},
+          "artifacts": [
+            {"artifact_type": "https://spdx.dev/Document", "media_type": "application/vnd.in-toto+json", "digest": "sha256:8a1f07dfe003ac637d681ba0653963e86ea59c8ee59c62ce8ee25ba2e8ee5616", "size_bytes": 2575292},
+            {"artifact_type": "https://slsa.dev/provenance/v0.2", "media_type": "application/vnd.in-toto+json", "digest": "sha256:138d0c29e252560597a2b027552bac53e0b44c068c8147390836338b80869bd8", "size_bytes": 23787}
+          ]
+        }
+      ]
+    },
+    {
+      "image_id": "browser-node-base",
+      "repository": "docker.io/library/node",
+      "display_tag": "24.20.0-bookworm-slim",
+      "source_repository": "https://github.com/nodejs/docker-node",
+      "source_commit": "c4eb0858f5c522521768d5b6dc1d9f1631d4854d",
+      "source_path": "24/bookworm-slim/Dockerfile",
+      "source_sha256": "c0ef036f040b5d2d2d21e18532f791c97a7c77d376f03c2958970e1e7aed8026",
+      "top_descriptor": {
+        "media_type": "application/vnd.oci.image.index.v1+json",
+        "digest": "sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e",
+        "size_bytes": 3929
+      },
+      "platforms": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "manifest": {"media_type": "application/vnd.oci.image.manifest.v1+json", "digest": "sha256:6642ef280aebc09c4541bee0b15c9f89f0f3f3c247ddee79ae1d37eddfdcbbaa", "size_bytes": 1929},
+          "config": {"media_type": "application/vnd.oci.image.config.v1+json", "digest": "sha256:59c575db86dccc264e6b71c316548f05a5c3c7a9aa1c112dc019807e651fd06b", "size_bytes": 6761},
+          "layers": [
+            {"position": 1, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:a8ac7f6c67abc236e4c745052c404112b8fab6fe8ac3a329d1ef3b867ad67c71", "size_bytes": 28232655},
+            {"position": 2, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:013634040cec61eda7919c9682291bc50456a54539f410ef5233821fb9a8c4d9", "size_bytes": 3318},
+            {"position": 3, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:a82db95c01928dce3a29c0d23bcd2588dafeba6f24ae23115195e3e3d6cc5437", "size_bytes": 50779298},
+            {"position": 4, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:9803e0ff8c3d881aa142790ec91f17a1a6fa25189d082c58f4e66cbba4253b66", "size_bytes": 1713026},
+            {"position": 5, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:2254049a7d7763ea7d56bf06d9a6d5cb882d88b136a84c18c254ead00ac5c874", "size_bytes": 448}
+          ]
+        },
+        {
+          "os": "linux",
+          "architecture": "arm64",
+          "variant": "v8",
+          "manifest": {"media_type": "application/vnd.oci.image.manifest.v1+json", "digest": "sha256:e9b5516b06baeaea9a8e65a7aec6a85fbb960a30b52b66968f2c8092b3e2a3eb", "size_bytes": 1931},
+          "config": {"media_type": "application/vnd.oci.image.config.v1+json", "digest": "sha256:e78747b1818f158edd6a6831a501906608a85354559b0649355eec904aee78c7", "size_bytes": 6777},
+          "layers": [
+            {"position": 1, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:75782e20ea1f4a9d9259bc20a5ecbbea8d5943bf5370bf0f5727900728f1cc9a", "size_bytes": 28117289},
+            {"position": 2, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:b001d77f103ca534804cf6015474352b04ea0cd977a9f80f9cb94b4e30f9d2b2", "size_bytes": 3313},
+            {"position": 3, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:b85ae889122592d18c76947d03ece48ceeeee2b971339dbbb8fe4c5f8144a630", "size_bytes": 50749374},
+            {"position": 4, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:ef4e835a4d0b741ed9d371354ca6c4c2a189260ab373a933944c5bcc4721e12a", "size_bytes": 1712862},
+            {"position": 5, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:a419fe0f8b59b67b4885b402c95b9ed6ad3cf3ff9ef921676bb889606044bd1e", "size_bytes": 446}
+          ]
+        }
+      ],
+      "provenance_descriptors": [
+        {
+          "platform": "linux/amd64",
+          "subject_manifest_digest": "sha256:6642ef280aebc09c4541bee0b15c9f89f0f3f3c247ddee79ae1d37eddfdcbbaa",
+          "manifest": {"media_type": "application/vnd.oci.image.manifest.v1+json", "digest": "sha256:e4629ce16afadf66c8766cd164745221677379636f095b5b10f226bd69171943", "size_bytes": 841},
+          "config": {"media_type": "application/vnd.oci.image.config.v1+json", "digest": "sha256:9ba12d708d98032aa115a5857a344373151aca287bc959fbda2d278bd02cd5b7", "size_bytes": 241},
+          "artifacts": [
+            {"artifact_type": "https://spdx.dev/Document", "media_type": "application/vnd.in-toto+json", "digest": "sha256:77ee43dec873759bf69aa9db56a5bee395f1896dbb5ffae9cc6130371d5287ae", "size_bytes": 2573668},
+            {"artifact_type": "https://slsa.dev/provenance/v0.2", "media_type": "application/vnd.in-toto+json", "digest": "sha256:f71591d3af468a28f5b79cd269f8487ebbf8c9f19b7b1c12643b11982468fe6a", "size_bytes": 27197}
+          ]
+        },
+        {
+          "platform": "linux/arm64",
+          "subject_manifest_digest": "sha256:e9b5516b06baeaea9a8e65a7aec6a85fbb960a30b52b66968f2c8092b3e2a3eb",
+          "manifest": {"media_type": "application/vnd.oci.image.manifest.v1+json", "digest": "sha256:3e398475fe6c354a7c1f05936c3c15d339f8494493b12e419d5fe99cb301a75c", "size_bytes": 841},
+          "config": {"media_type": "application/vnd.oci.image.config.v1+json", "digest": "sha256:ebf0008dcc52b46073176ec69b6b96148c12fe367f093069a10d5b347544b66e", "size_bytes": 241},
+          "artifacts": [
+            {"artifact_type": "https://spdx.dev/Document", "media_type": "application/vnd.in-toto+json", "digest": "sha256:1fdbd758a6a4941e794dcc5a6c939e12fcc90141eac88046b8da6a43acccce93", "size_bytes": 2573991},
+            {"artifact_type": "https://slsa.dev/provenance/v0.2", "media_type": "application/vnd.in-toto+json", "digest": "sha256:cc46352174747b42fa364a7ad0307e105507ab24989a92d141e5a688fa68565d", "size_bytes": 27403}
+          ]
+        }
+      ]
+    },
+    {
+      "image_id": "portable-edge-upstream",
+      "repository": "docker.io/library/caddy",
+      "display_tag": "2.11.4-alpine",
+      "source_repository": "https://github.com/caddyserver/caddy-docker",
+      "source_commit": "fba2853501d36e8a72f946ac8cb7ff64d07e48f2",
+      "source_path": "2.11/alpine/Dockerfile",
+      "source_sha256": "a136ea392ba96ff5b45b4833ee194d74551cff9018ff4e981eb3f0b018983058",
+      "top_descriptor": {
+        "media_type": "application/vnd.oci.image.index.v1+json",
+        "digest": "sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648",
+        "size_bytes": 8987
+      },
+      "platforms": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "manifest": {"media_type": "application/vnd.oci.image.manifest.v1+json", "digest": "sha256:98eb57d882ccd5213d1688764db10c1ca2c58a1ca3a6717a3411ad798f7a423a", "size_bytes": 1917},
+          "config": {"media_type": "application/vnd.oci.image.config.v1+json", "digest": "sha256:af555904a0961945f16bb323a501457b13a4f7e9bde969b145b97da80b38ecbe", "size_bytes": 6961},
+          "layers": [
+            {"position": 1, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:e6f31ffc071e5560b82a8685fba8214954e5721e3e49269d00958316edbe89fe", "size_bytes": 3844421},
+            {"position": 2, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:f8432a27d0751eb996e29e368c282dbfd2d97e5b744ad940ed9a08b6300318af", "size_bytes": 2760570},
+            {"position": 3, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:ee31d5a470f0e64a85c28c82ad55a5bd6b5359db59197c76b9daba7f36c288e9", "size_bytes": 7502},
+            {"position": 4, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:a0449c657909db1625317d13589fcd22909d657bdc6357101428c90acce4e929", "size_bytes": 17294758},
+            {"position": 5, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1", "size_bytes": 32}
+          ]
+        },
+        {
+          "os": "linux",
+          "architecture": "arm64",
+          "variant": "v8",
+          "manifest": {"media_type": "application/vnd.oci.image.manifest.v1+json", "digest": "sha256:1172d4213087d3fc30bafc7ff2c2896180eb0c41ff7f75f315568fb36cabdcba", "size_bytes": 1919},
+          "config": {"media_type": "application/vnd.oci.image.config.v1+json", "digest": "sha256:6b08c1b9858ca9a7d99c1da13c3695081e0e604c6cf214ca26a7ce0e2c4fd9b4", "size_bytes": 6977},
+          "layers": [
+            {"position": 1, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:14a4754c352fba4c6c0da8e4f01bb990463c19f7ff63e090073c385bd2bc5046", "size_bytes": 4181860},
+            {"position": 2, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:5234ca7f3797bc54cb3d089627b05ec61155afce6c8f56fbe6c6418313094197", "size_bytes": 2778920},
+            {"position": 3, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:69233c7df76137fb66dc55c3d6d3ec73fcd89debf099cf13bf8560501f9fc7a9", "size_bytes": 7501},
+            {"position": 4, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:dfdc903a2c2e6ebdf4385a74bb2d827a571394644693aafa675635a4cb28cfb8", "size_bytes": 15754399},
+            {"position": 5, "media_type": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": "sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1", "size_bytes": 32}
+          ]
+        }
+      ],
+      "provenance_descriptors": [
+        {
+          "platform": "linux/amd64",
+          "subject_manifest_digest": "sha256:98eb57d882ccd5213d1688764db10c1ca2c58a1ca3a6717a3411ad798f7a423a",
+          "manifest": {"media_type": "application/vnd.oci.image.manifest.v1+json", "digest": "sha256:ac93e0dc57158bf4e7bfeb068df1aaf7faeda5675bf6549c32cb20112e804db2", "size_bytes": 840},
+          "config": {"media_type": "application/vnd.oci.image.config.v1+json", "digest": "sha256:4e944dd2922a565c9021b63caf22ab470156069942351bf1cd5dabf2268b25f4", "size_bytes": 241},
+          "artifacts": [
+            {"artifact_type": "https://spdx.dev/Document", "media_type": "application/vnd.in-toto+json", "digest": "sha256:a39a20466be46fdee3ae825e32040ebd50155a64516772585a4a214a7fad4eb1", "size_bytes": 314461},
+            {"artifact_type": "https://slsa.dev/provenance/v0.2", "media_type": "application/vnd.in-toto+json", "digest": "sha256:7fccd04675d0f07dd45c595d13955410e7214c29cc8bc012c27714ce29f32a13", "size_bytes": 18430}
+          ]
+        },
+        {
+          "platform": "linux/arm64",
+          "subject_manifest_digest": "sha256:1172d4213087d3fc30bafc7ff2c2896180eb0c41ff7f75f315568fb36cabdcba",
+          "manifest": {"media_type": "application/vnd.oci.image.manifest.v1+json", "digest": "sha256:334d2f19856452896dcb5584a12badc9bde3a9a70c6ffe037958a269a5c332e8", "size_bytes": 840},
+          "config": {"media_type": "application/vnd.oci.image.config.v1+json", "digest": "sha256:b6e57a588096fc10aa6be02c455125829dec1c372cc06e10b693853e9640077c", "size_bytes": 241},
+          "artifacts": [
+            {"artifact_type": "https://spdx.dev/Document", "media_type": "application/vnd.in-toto+json", "digest": "sha256:19862c58d4d5f35d41dc92cc36e978545770d9ed6d572d3b5128e2f2c6f9e6ed", "size_bytes": 313915},
+            {"artifact_type": "https://slsa.dev/provenance/v0.2", "media_type": "application/vnd.in-toto+json", "digest": "sha256:20475686c5ba314a35167ae648d5b8449ddc85f81642ec71a87655bc5c081a5c", "size_bytes": 18611}
+          ]
+        }
+      ]
+    }
+  ],
+  "release_blockers": [
+    "T084 must review the Debian and Alpine package-license data in the pinned platform SPDX inputs and assemble the publishable notice/source-offer disposition.",
+    "T082 must reproduce the recorded dual-architecture pull-by-digest, descriptor and statement-subject verification inside the immutable release builder."
+  ]
+}

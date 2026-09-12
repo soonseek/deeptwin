@@ -1,0 +1,489 @@
+{
+  "schema_version": "deeptwin-managed-runner-build-input-v3",
+  "status": "candidate_not_release_qualified",
+  "version": "0.153.4",
+  "tag": "rust-v0.153.4",
+  "source_commit": "3d2ee51ca2d5db578f328aa75e20aa22c0197c9a",
+  "target_platforms": [
+    "linux/amd64",
+    "linux/arm64"
+  ],
+  "signature_policy": {
+    "offline": true,
+    "subject_scope": "extracted executable only",
+    "certificate_identity": "https://github.com/openai/codex/.github/workflows/rust-release.yml@refs/tags/rust-v0.153.4",
+    "certificate_oidc_issuer": "https://token.actions.githubusercontent.com",
+    "verifier_bootstrap": {
+      "name": "cosign",
+      "version": "3.1.2",
+      "certificate_identity": "keyless@projectsigstore.iam.gserviceaccount.com",
+      "certificate_oidc_issuer": "https://accounts.google.com",
+      "checksum_manifest": {
+        "url": "https://github.com/sigstore/cosign/releases/download/v3.1.2/cosign_checksums.txt",
+        "filename": "cosign_checksums.txt",
+        "bytes": 3906,
+        "sha256": "3ef5d389c3f508b96025fd1b92744a305c46e95951c91242b57467567d5622db",
+        "sigstore_bundle": {
+          "url": "https://github.com/sigstore/cosign/releases/download/v3.1.2/cosign_checksums.txt.sigstore.json",
+          "filename": "cosign_checksums.txt.sigstore.json",
+          "bytes": 6578,
+          "sha256": "be73ee422be126a70190ee24bf88a1b078cde1f954f076ddf9c0901de4136362",
+          "verified": true
+        },
+        "signature_chain_verified": true
+      },
+      "release_build_verifiers": [
+        {
+          "platform": "linux/amd64",
+          "executable": {
+            "url": "https://github.com/sigstore/cosign/releases/download/v3.1.2/cosign-linux-amd64",
+            "filename": "cosign-linux-amd64",
+            "bytes": 141150460,
+            "sha256": "f7622ed3cf22e55e1ae6377c080979ff77a22da9981c11df222a2e444991e7cf",
+            "mode": "0755"
+          },
+          "sigstore_bundle": {
+            "url": "https://github.com/sigstore/cosign/releases/download/v3.1.2/cosign-linux-amd64.sigstore.json",
+            "filename": "cosign-linux-amd64.sigstore.json",
+            "bytes": 6433,
+            "sha256": "fdaa1c168d67041cd0d8f5782f8136ac5d148827b6911ba8bb577cbc7e13de2c",
+            "verified": true
+          },
+          "checksum_manifest_match": true,
+          "signature_chain_verified": true
+        },
+        {
+          "platform": "linux/arm64",
+          "executable": {
+            "url": "https://github.com/sigstore/cosign/releases/download/v3.1.2/cosign-linux-arm64",
+            "filename": "cosign-linux-arm64",
+            "bytes": 132737437,
+            "sha256": "90e7ae0b5dfd60f20816b52c012addf7fc055ebcc7bea4ce81c428ca8518c302",
+            "mode": "0755"
+          },
+          "sigstore_bundle": {
+            "url": "https://github.com/sigstore/cosign/releases/download/v3.1.2/cosign-linux-arm64.sigstore.json",
+            "filename": "cosign-linux-arm64.sigstore.json",
+            "bytes": 6543,
+            "sha256": "e5cb6bc66d703b69c3dc629e77a600cbb67ca6e4bd81e7d690f2c52a73247d10",
+            "verified": true
+          },
+          "checksum_manifest_match": true,
+          "signature_chain_verified": true
+        }
+      ],
+      "audit_observations": [
+        {
+          "label": "darwin-arm64-audit-only",
+          "platform": "darwin/arm64",
+          "eligible_for_release_build": false,
+          "executable": {
+            "url": "https://github.com/sigstore/cosign/releases/download/v3.1.2/cosign-darwin-arm64",
+            "filename": "cosign-darwin-arm64",
+            "bytes": 139584002,
+            "sha256": "dec1c3f802320b19c2fbcf2dc7bcfb3f258e1c181a046c23a1a074bdf932f10a",
+            "mode": "0755"
+          },
+          "sigstore_bundle": {
+            "url": "https://github.com/sigstore/cosign/releases/download/v3.1.2/cosign-darwin-arm64.sigstore.json",
+            "filename": "cosign-darwin-arm64.sigstore.json",
+            "bytes": 6574,
+            "sha256": "ffbec621bbef3c1e02f05633e74892bd874f2b1157ea57bcb0c7449113966500",
+            "verified": true
+          },
+          "checksum_manifest_match": true,
+          "signature_chain_verified": true
+        }
+      ]
+    }
+  },
+  "runtime_layout": {
+    "install_root": "/opt/deeptwin/codex",
+    "codex_path": "/opt/deeptwin/codex/bin/codex",
+    "code_mode_host_path": "/opt/deeptwin/codex/bin/codex-code-mode-host",
+    "bubblewrap_path": "/opt/deeptwin/codex/bin/bwrap",
+    "bash_path": "/bin/bash",
+    "path_env": "/opt/deeptwin/codex/bin:/usr/bin:/bin",
+    "required_internal_sandbox_profiles": [
+      "read-only",
+      "workspace-write"
+    ],
+    "codex_home_policy": "isolated_per_run"
+  },
+  "platform_inputs": [
+    {
+      "platform": "linux/amd64",
+      "target": "x86_64-unknown-linux-musl",
+      "components": [
+        {
+          "name": "codex",
+          "archive": {
+            "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-x86_64-unknown-linux-musl.tar.gz",
+            "filename": "codex-x86_64-unknown-linux-musl.tar.gz",
+            "bytes": 98582872,
+            "sha256": "f479424eca092484dc40d87ae28c44f4cc40234a60045d6131e493800d814a30",
+            "member_path": "codex-x86_64-unknown-linux-musl"
+          },
+          "executable": {
+            "installed_path": "/opt/deeptwin/codex/bin/codex",
+            "bytes": 258659424,
+            "sha256": "56ef98ab4032d317ab26e9b5e5a175650717351edb16ed9cde0cb6d1734d62da",
+            "mode": "0755"
+          },
+          "sigstore_bundle": {
+            "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-x86_64-unknown-linux-musl.sigstore",
+            "filename": "codex-x86_64-unknown-linux-musl.sigstore",
+            "bytes": 8585,
+            "sha256": "0dc1cab06eade46e05659b84289751a9425f7bb7886c5a10ddc3d6f5735cfaa2",
+            "verified": true
+          },
+          "signature_scope": "extracted executable only"
+        },
+        {
+          "name": "codex-code-mode-host",
+          "archive": {
+            "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
+            "filename": "codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
+            "bytes": 25733165,
+            "sha256": "f95830a869590957664bbfc67bccb08773806b693670baf15908176f89b4cd31",
+            "member_path": "codex-code-mode-host-x86_64-unknown-linux-musl"
+          },
+          "executable": {
+            "installed_path": "/opt/deeptwin/codex/bin/codex-code-mode-host",
+            "bytes": 69460032,
+            "sha256": "3e85d67471825f73d02ff5f7e047ca1f6ca8caa3f59e4c6e8d9ca6ca7302cb45",
+            "mode": "0755"
+          },
+          "sigstore_bundle": {
+            "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-code-mode-host-x86_64-unknown-linux-musl.sigstore",
+            "filename": "codex-code-mode-host-x86_64-unknown-linux-musl.sigstore",
+            "bytes": 8585,
+            "sha256": "a31c6bc2aa530b98986207d67e61061096ba384f623b49ed9992bb628145900f",
+            "verified": true
+          },
+          "signature_scope": "extracted executable only"
+        },
+        {
+          "name": "bubblewrap",
+          "archive": {
+            "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/bwrap-x86_64-unknown-linux-musl.tar.gz",
+            "filename": "bwrap-x86_64-unknown-linux-musl.tar.gz",
+            "bytes": 261563,
+            "sha256": "e7d65c75e05637e42b93f6abf9222fa0d26b537648a7a34c122b75021d41756d",
+            "member_path": "bwrap-x86_64-unknown-linux-musl"
+          },
+          "executable": {
+            "installed_path": "/opt/deeptwin/codex/bin/bwrap",
+            "bytes": 529776,
+            "sha256": "77360cb751ccedc5971391444ac86a8a33c15b04d6b4a6fe45f5d25496e62c4c",
+            "mode": "0755"
+          },
+          "sigstore_bundle": {
+            "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/bwrap-x86_64-unknown-linux-musl.sigstore",
+            "filename": "bwrap-x86_64-unknown-linux-musl.sigstore",
+            "bytes": 8565,
+            "sha256": "4e0e55799310ed3655041bc06246b3ab4b7917a04fc821b8b010d73c23fd53f0",
+            "verified": true
+          },
+          "signature_scope": "extracted executable only"
+        }
+      ],
+      "runtime_image": {
+        "distribution": "debian",
+        "suite": "bookworm",
+        "repository": "docker.io/library/debian",
+        "tag": "bookworm-20260824-slim",
+        "created_at": "2026-08-24T00:00:00Z",
+        "snapshot": "20260824T000000Z",
+        "source_repository": "https://github.com/debuerreotype/docker-debian-artifacts.git",
+        "source_revision": "bae6d64d90b4068b09ff9d8b564c2773ef5d8d83",
+        "index": {
+          "media_type": "application/vnd.oci.image.index.v1+json",
+          "digest": "sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171",
+          "bytes": 5651
+        },
+        "manifest": {
+          "media_type": "application/vnd.oci.image.manifest.v1+json",
+          "digest": "sha256:5ae3c39ebd15e229dcedd5cee596b2497182493d41ff162e824ba13fc1b2b867",
+          "bytes": 1021
+        },
+        "config": {
+          "media_type": "application/vnd.oci.image.config.v1+json",
+          "digest": "sha256:160466e67bb85a4099d9d9c2356b4a6a64747b281a22c142efbd4539db1b8525",
+          "bytes": 453
+        },
+        "layers": [
+          {
+            "position": 1,
+            "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:a8ac7f6c67abc236e4c745052c404112b8fab6fe8ac3a329d1ef3b867ad67c71",
+            "bytes": 28232655
+          }
+        ],
+        "bash": {
+          "package": "bash",
+          "package_version": "5.2.15-2+b13",
+          "source_package": "bash",
+          "source_version": "5.2.15-2",
+          "installed_path": "/bin/bash",
+          "mode": "0755",
+          "binary_package": {
+            "filename": "bash_5.2.15-2+b13_amd64.deb",
+            "url": "https://snapshot.debian.org/file/c3d560d63523ba240e565376b57724de72e89e6b",
+            "bytes": 1490652,
+            "sha256": "82130bb6a560cd2a7234d8018baf73f188f5dd56413d5aa0accc987b2197a6a1"
+          },
+          "package_member": {
+            "path": "bin/bash",
+            "installed_path": "/bin/bash",
+            "bytes": 1265648,
+            "sha256": "55b89ab22bee4792a210f493a53fb066accd5d30b69837c28d98be5ff863efcf",
+            "mode": "0755"
+          },
+          "license_member": {
+            "path": "usr/share/doc/bash/copyright",
+            "bytes": 9764,
+            "sha256": "06319d84c3e5ed096036f6a9310a030c7e84e50dff2b8a6792285c83ec0ada73"
+          },
+          "source_inputs": [
+            {
+              "filename": "bash_5.2.15-2.dsc",
+              "url": "https://snapshot.debian.org/file/1c8463de9b96f5e72d178a50c49f80242e48d8c7",
+              "bytes": 2317,
+              "sha256": "f51753e946af43eb58549c81e03b35a47af9fe6c6364179ccd4ef862b7c3b2d3"
+            },
+            {
+              "filename": "bash_5.2.15.orig.tar.gz",
+              "url": "https://snapshot.debian.org/file/87f4eb879578479049306f3b721ff38aa17cfa1d",
+              "bytes": 9997221,
+              "sha256": "7a315bc0e9d90713159e4390ec1096a41e4f33cd8cc3d1a749a8e5ad56600f51"
+            },
+            {
+              "filename": "bash_5.2.15-2.debian.tar.xz",
+              "url": "https://snapshot.debian.org/file/d922d9f78e120a6068105ebfe7c15cbadddc31a0",
+              "bytes": 97380,
+              "sha256": "998f8ea5b754a734ae7d8306e149c43d713ddfcf49623a036004b729237dbcca"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "platform": "linux/arm64",
+      "target": "aarch64-unknown-linux-musl",
+      "components": [
+        {
+          "name": "codex",
+          "archive": {
+            "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-aarch64-unknown-linux-musl.tar.gz",
+            "filename": "codex-aarch64-unknown-linux-musl.tar.gz",
+            "bytes": 90899740,
+            "sha256": "5cda6182bd94c3a30f2eb63a495489ebf7f691fddb14d70f48c6c1a5071b6cde",
+            "member_path": "codex-aarch64-unknown-linux-musl"
+          },
+          "executable": {
+            "installed_path": "/opt/deeptwin/codex/bin/codex",
+            "bytes": 222567456,
+            "sha256": "4d76e542c222ea8c75861d8c4ade60a1a332a63255ce1c60bdaebf7c2a2869e6",
+            "mode": "0755"
+          },
+          "sigstore_bundle": {
+            "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-aarch64-unknown-linux-musl.sigstore",
+            "filename": "codex-aarch64-unknown-linux-musl.sigstore",
+            "bytes": 8565,
+            "sha256": "847b47e73068f86635c23ab5501647a93fab9ad0c450d6661a88481dfcd6d759",
+            "verified": true
+          },
+          "signature_scope": "extracted executable only"
+        },
+        {
+          "name": "codex-code-mode-host",
+          "archive": {
+            "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
+            "filename": "codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
+            "bytes": 24358441,
+            "sha256": "d8047b8d33370d6090e729d27eb76de60a2686baa1c143c138c9b05dc70d813b",
+            "member_path": "codex-code-mode-host-aarch64-unknown-linux-musl"
+          },
+          "executable": {
+            "installed_path": "/opt/deeptwin/codex/bin/codex-code-mode-host",
+            "bytes": 63381656,
+            "sha256": "d677dedf8179ca28ceb869a2e0b60d3ffad3d26f6e7738f7617d34500128a369",
+            "mode": "0755"
+          },
+          "sigstore_bundle": {
+            "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-code-mode-host-aarch64-unknown-linux-musl.sigstore",
+            "filename": "codex-code-mode-host-aarch64-unknown-linux-musl.sigstore",
+            "bytes": 8585,
+            "sha256": "def3aaaf54077d58f2aa41667d374c4b9c0695ef4d6fb0b7645fdbf0badbe408",
+            "verified": true
+          },
+          "signature_scope": "extracted executable only"
+        },
+        {
+          "name": "bubblewrap",
+          "archive": {
+            "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/bwrap-aarch64-unknown-linux-musl.tar.gz",
+            "filename": "bwrap-aarch64-unknown-linux-musl.tar.gz",
+            "bytes": 254882,
+            "sha256": "2c6ea97dfb0a936b695ece6df058b89d4dfd53774a9ad852b3e4c98e6bbdfd20",
+            "member_path": "bwrap-aarch64-unknown-linux-musl"
+          },
+          "executable": {
+            "installed_path": "/opt/deeptwin/codex/bin/bwrap",
+            "bytes": 529168,
+            "sha256": "c547cbdc762a70ed216789ffaa4c6c0e7d2beabe32245a498f8e365a9fc8dab4",
+            "mode": "0755"
+          },
+          "sigstore_bundle": {
+            "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/bwrap-aarch64-unknown-linux-musl.sigstore",
+            "filename": "bwrap-aarch64-unknown-linux-musl.sigstore",
+            "bytes": 8585,
+            "sha256": "de750905a97468d3fca09304dddf26fefe4427692a316a1486b7eb6f74273f6e",
+            "verified": true
+          },
+          "signature_scope": "extracted executable only"
+        }
+      ],
+      "runtime_image": {
+        "distribution": "debian",
+        "suite": "bookworm",
+        "repository": "docker.io/library/debian",
+        "tag": "bookworm-20260824-slim",
+        "created_at": "2026-08-24T00:00:00Z",
+        "snapshot": "20260824T000000Z",
+        "source_repository": "https://github.com/debuerreotype/docker-debian-artifacts.git",
+        "source_revision": "f73bd086e8d0e5e1c8b838ccc442bf24eb3ea205",
+        "index": {
+          "media_type": "application/vnd.oci.image.index.v1+json",
+          "digest": "sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171",
+          "bytes": 5651
+        },
+        "manifest": {
+          "media_type": "application/vnd.oci.image.manifest.v1+json",
+          "digest": "sha256:6bd27d44e6c32a66bbd72d7cb2b76a8ae3497ec2e5274a81abd1b37f6013fa1f",
+          "bytes": 1041
+        },
+        "config": {
+          "media_type": "application/vnd.oci.image.config.v1+json",
+          "digest": "sha256:32d322b19846336d25f755f73618a448e3621982d52c48064e95af8b3dcbc2d9",
+          "bytes": 468
+        },
+        "layers": [
+          {
+            "position": 1,
+            "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:75782e20ea1f4a9d9259bc20a5ecbbea8d5943bf5370bf0f5727900728f1cc9a",
+            "bytes": 28117289
+          }
+        ],
+        "bash": {
+          "package": "bash",
+          "package_version": "5.2.15-2+b13",
+          "source_package": "bash",
+          "source_version": "5.2.15-2",
+          "installed_path": "/bin/bash",
+          "mode": "0755",
+          "binary_package": {
+            "filename": "bash_5.2.15-2+b13_arm64.deb",
+            "url": "https://snapshot.debian.org/file/2b5075a3983b5d1b4d6288bcccf0371ebc0fccd3",
+            "bytes": 1444200,
+            "sha256": "fdb470b5ec1773b90014138bfc1deda4505c1c23e7f5731e8b527c636ac03385"
+          },
+          "package_member": {
+            "path": "bin/bash",
+            "installed_path": "/bin/bash",
+            "bytes": 1346480,
+            "sha256": "f5918390c5b15392ad8835e8368a79c1ee9937fbb19f2349cccf5d4524183299",
+            "mode": "0755"
+          },
+          "license_member": {
+            "path": "usr/share/doc/bash/copyright",
+            "bytes": 9764,
+            "sha256": "06319d84c3e5ed096036f6a9310a030c7e84e50dff2b8a6792285c83ec0ada73"
+          },
+          "source_inputs": [
+            {
+              "filename": "bash_5.2.15-2.dsc",
+              "url": "https://snapshot.debian.org/file/1c8463de9b96f5e72d178a50c49f80242e48d8c7",
+              "bytes": 2317,
+              "sha256": "f51753e946af43eb58549c81e03b35a47af9fe6c6364179ccd4ef862b7c3b2d3"
+            },
+            {
+              "filename": "bash_5.2.15.orig.tar.gz",
+              "url": "https://snapshot.debian.org/file/87f4eb879578479049306f3b721ff38aa17cfa1d",
+              "bytes": 9997221,
+              "sha256": "7a315bc0e9d90713159e4390ec1096a41e4f33cd8cc3d1a749a8e5ad56600f51"
+            },
+            {
+              "filename": "bash_5.2.15-2.debian.tar.xz",
+              "url": "https://snapshot.debian.org/file/d922d9f78e120a6068105ebfe7c15cbadddc31a0",
+              "bytes": 97380,
+              "sha256": "998f8ea5b754a734ae7d8306e149c43d713ddfcf49623a036004b729237dbcca"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "omitted_components": [
+    "codex-package.json",
+    "full-package-tar",
+    "ripgrep",
+    "zsh"
+  ],
+  "runtime_mutation_policy": {
+    "browser_download_at_runtime": false,
+    "model_download_at_runtime": false,
+    "package_install_at_runtime": false,
+    "package_resolution_at_runtime": false,
+    "tool_download_at_runtime": false
+  },
+  "build_input_gate": "satisfied",
+  "build_input_blockers": [],
+  "release_gate": "not_satisfied",
+  "downstream_release_blockers": [
+    {
+      "blocker_id": "codex-runner-worker-isolation",
+      "owner_task": "T018",
+      "gate_id": "t018-managed-runner-worker-isolation",
+      "summary": "Managed-runner worker and IPC isolation remain unqualified."
+    },
+    {
+      "blocker_id": "codex-provider-authority-recovery",
+      "owner_task": "T025",
+      "gate_id": "t025-provider-authority-recovery",
+      "summary": "Provider authorization, secret custody, and restart recovery remain open."
+    },
+    {
+      "blocker_id": "codex-security-provenance-qualification",
+      "owner_task": "T079",
+      "gate_id": "t079-integrated-security-qualification",
+      "summary": "Integrated isolation and unsigned upstream provenance risk remain unqualified."
+    },
+    {
+      "blocker_id": "codex-final-image-runtime-canaries",
+      "owner_task": "T081",
+      "gate_id": "t081-final-image-runtime-canaries",
+      "summary": "Final dual-platform runner images and sandbox canaries remain open."
+    },
+    {
+      "blocker_id": "codex-packaged-provenance-sbom",
+      "owner_task": "T082",
+      "gate_id": "t082-packaged-provenance-sbom",
+      "summary": "Packaged SBOM, source-to-binary linkage, and authorized signing remain open."
+    },
+    {
+      "blocker_id": "codex-redistribution-publication-approval",
+      "owner_task": "T084",
+      "gate_id": "t084-redistribution-publication-approval",
+      "summary": "Third-party notices, redistribution, legal, and publication approval remain open."
+    },
+    {
+      "blocker_id": "codex-native-subscription-qualification",
+      "owner_task": "T088",
+      "gate_id": "t088-native-subscription-qualification",
+      "summary": "Native dual-platform and authorized subscription-runner qualification remain open."
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+# Build/test overlay, not an end-user installation requirement.
+-r requirements-release.in
+py2app==0.28.10
+pytest==9.1.1
+pip==26.2.1
+build==1.6.0
+wheel==0.48.0
+pyproject-hooks==1.2.0
+setuptools==84.0.0

@@ -1,0 +1,916 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'none'; frame-src 'none'; object-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'">
+  <title>DeepTwin 최초 소유자 설정 준비</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, sans-serif; }
+    body { margin: 0; color: #152229; background: #edf4f2; }
+    main { width: min(44rem, calc(100% - 2rem)); margin: 2rem auto; }
+    .panel { padding: clamp(1.25rem, 4vw, 2rem); border: 1px solid #b7cbc6; border-radius: 1rem; background: white; box-shadow: 0 1rem 3rem #17342c18; }
+    h1 { margin-top: 0; font-size: clamp(1.65rem, 5vw, 2.4rem); line-height: 1.15; }
+    p, label, legend { line-height: 1.55; }
+    fieldset { margin: 1.5rem 0; padding: 1rem; border: 1px solid #b7cbc6; border-radius: .65rem; }
+    label { display: block; margin-top: 1rem; font-weight: 650; }
+    select, input, button { box-sizing: border-box; width: 100%; min-height: 2.8rem; margin-top: .35rem; padding: .65rem .75rem; border: 1px solid #78928c; border-radius: .45rem; font: inherit; }
+    button { margin-top: 1rem; color: white; background: #05685f; border-color: #05685f; font-weight: 750; cursor: pointer; }
+    button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: .2rem solid #e5a128; outline-offset: .15rem; }
+    button:disabled { opacity: .6; cursor: wait; }
+    .hint { color: #4d625d; font-size: .94rem; }
+    .warning { padding: .8rem; border-left: .3rem solid #b86800; background: #fff7e8; }
+    .output { margin-top: 1.25rem; }
+    code, pre { display: block; max-width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; padding: .9rem; border-radius: .45rem; background: #10221f; color: #effbf8; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel" aria-labelledby="page-title">
+      <h1 id="page-title">최초 소유자 설정 준비</h1>
+      <p>이 파일은 네트워크에 연결하지 않는 배포 보조 도구입니다. 배포 유형을 확인하고 최초 설정에 필요한 값을 이 브라우저 안에서 생성합니다.</p>
+
+      <fieldset>
+        <legend>배포 주소</legend>
+        <label for="deployment-mode">배포 유형</label>
+        <select id="deployment-mode">
+          <option value="local_loopback">이 컴퓨터의 로컬 배포</option>
+          <option value="portable_https">HTTPS 서버 배포</option>
+        </select>
+
+        <div id="local-fields">
+          <label for="local-port">DeepTwin 포트</label>
+          <input id="local-port" type="number" inputmode="numeric" min="1" max="65535" step="1" value="4183" autocomplete="off">
+          <p class="hint">Docker 또는 Portainer에서 공개할 로컬 포트와 같아야 합니다.</p>
+        </div>
+
+        <div id="portable-fields" hidden>
+          <label for="portable-url">전용 HTTPS 주소</label>
+          <input id="portable-url" type="url" inputmode="url" placeholder="https://deeptwin.example.com/" autocomplete="off" spellcheck="false" disabled>
+          <p class="hint">이 인스턴스만 사용하는 호스트 이름과 루트 경로를 입력하세요.</p>
+        </div>
+      </fieldset>
+
+      <button id="generate" type="button">안전한 설정 값 만들기</button>
+      <p id="status" role="status" aria-live="polite">아직 값을 만들지 않았습니다.</p>
+
+      <section id="results" class="output" aria-labelledby="result-title" hidden>
+        <h2 id="result-title">생성 결과</h2>
+        <p class="warning"><strong>최초 설정 값은 한 번만 표시됩니다.</strong> 아래 값을 DeepTwin의 같은 주소에서 열리는 최초 설정 화면에 직접 입력하세요. 배포 설정 블록에는 넣지 마세요.</p>
+        <h3>최초 설정 값</h3>
+        <code id="raw-capability" tabindex="0" aria-label="한 번 표시되는 최초 설정 값"></code>
+        <h3>Portainer 또는 Compose 설정 블록</h3>
+        <pre id="configuration" tabindex="0" aria-label="비밀을 포함하지 않는 배포 설정 블록"></pre>
+      </section>
+    </section>
+  </main>
+  <noscript>이 오프라인 도구는 브라우저의 WebCrypto를 사용하므로 JavaScript가 필요합니다.</noscript>
+
+  <script type="module" data-deeptwin-bootstrap-helper>
+    const PROFILE_FIELDS = Object.freeze([
+      "deployment_profile_id", "instance_id", "mode", "scheme", "host", "port",
+      "base_path", "origin_base",
+    ]);
+    const SERIALIZED_FIELDS = Object.freeze([...PROFILE_FIELDS, "digest"]);
+    const HEX_128 = /^[0-9a-f]{32}$/;
+    const HEX_256 = /^[0-9a-f]{64}$/;
+    const B64U_32 = /^[A-Za-z0-9_-]{43}$/;
+    const DNS_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+    // Delta/length unsigned-LEB128 ranges generated from idna 3.19 / Unicode 17 PVALID.
+    const IDNA_PROFILE = Object.freeze({
+      python_package: "idna==3.19",
+      unicode_version: "17.0.0",
+      pvalid_range_count: 1237,
+      pvalid_table_sha256: "828f8f0585adb99dff2e58e7a0e921d8378cc98f3c4a794f30622665517ced59",
+      python_unicodedata_version: "15.0.0",
+      context_policy: "pvalid-only-v1",
+      mapping_policy: "unicode15-lower-nfc-idna2008-v1",
+      bidi_range_count: 1486,
+      bidi_table_sha256: "92dcbee050c70a01dae0c50e234853a975f5675e1b561a5d18a88682b1dc34a5",
+      bidi_classes: Object.freeze(["R", "AL", "AN", "L", "EN", "ES", "CS", "ET", "ON", "BN", "NSM"]),
+    });
+    const PVALID_DELTA_B64U =
+      [
+        "LQECCicaZBgBCAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAwEBAgEBAQEBAQMBAQEB",
+        "AQEBAgEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQIBAQEBAQEBAgEBAQIBAwIEAQIBAwMCAQIB",
+        "AQEBAQIBAQIBAQIBAwEBAQIDAQcKAQEBAQEBAQEBAQEBAQECAQEBAQEBAQEBAQEBAQEBAQECBAEDAQEBAQEBAQEBAQEBAQEBAQEB",
+        "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQcCAQICAQEEAQEBAQEBAQFhCQkEDBoBAQERQAIBAwkBIAEB",
+        "AQEDAQMDEgEbIwgBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAwEEAQICMzABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB",
+        "AQEBAQUDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQECAQEBAQEBAQEBAQEBAgEB",
+        "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB",
+        "AQEBAQEBAQEBAQEBAQEBAQEBASkBBicBAQgtAQEBAgECAQEIGwQEHQsFIAEfDgcEWwEIAgoBBgoGEDsCZQ42BwECLhIcBAsFGAEH",
+        "B0sBdQgEAgoBEwEIAgICFgEHAQEDBAIJAgICBAgBCAQCDAoBAQECAwEGBAICFgEHAQECAQICAgEBBQQCAgMDAQoBCRALAwEJAQMB",
+        "FgEHAQIBBQIKAQMBAwIBDwQCCgkHAQMBCAICAhYBBwECAQUCCQICAgMHAwcFAgoBARACAQYDAwEEAwIBAQECAwIDAwMMBAUDAwEE",
+        "AgEGAQ4KEA0BAwEXARACCQEDAQQHAgEDAQICBAIKEAQBCAEDARcBCgEFAgkBAwEEBwIFAwEEAgoBAwwNAQMBMwEDAQUFBAcFAgoK",
+        "BgEDARIDGAEJAQECBwMBBAYBAQEIBgoCAg0yAQcFDwEKJwIBAQEFARgBAQEMAQoCBQEBAQcBCgQCIAEKAQwCBgoLAQEBAQEEBQEE",
+        "AQQBBAEEAQQBDAEDBAIBAQUHAQMBDQEEAQQBBAEEAQQBDAEDCQE5SgZOMisCA4ACSQEEAgcBAQEEAikBBAIhAQQCBwEBAQQCDwE5",
+        "AQQCQwIDIBAQVgvsBAIRARoFSwYIBxYJFgsUDA0BAwECDDQCHgMBBAICCiYKBlkHKwVGCh8BDAQMCigCBQssBBoGCiYcBD8BHQIL",
+        "BgoNAQgOAR8CDBRNAwoRCQx0DDgICgMxDAFFAwEnBSwDAQsBEgEcDQEiJUABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB",
+        "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB",
+        "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQUCAgEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB",
+        "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEJCAYKCAgI",
+        "CAYKCAgICAEBAQEBAQEBAQEBAQEzAgQBDwEJAwMCCAMBBA4B1wIBNQGrFTABAQMCAQEBAQEBBAEBAgEGBQEBAQEBAQEBAQEBAQEB",
+        "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB",
+        "AQEBAQEBAQEBAgcBAQQBAQwmAQEFAQI4FxgJBwEHAQcBBwEHAQcBBwEHASAvAdUDAyIEDgEEVgICAgICWgEDBitwIDAQgATAM0CN",
+        "rQFDLgKNAgMcFQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAwQKAQEBAQEBAQEBAQEBAQEBAQEB",
+        "AQEBAQEBAQEBAQEBAkgKAiUJAwEBAQEBAQEBAQEBAQMBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB",
+        "AQEBAQEBAQEBAQEBAQEBAQEBAQEIAQEBAQIBAQEBAQEBAQIDAQECAQEBAwEBAQEBAQEBAQEBAQEBAQEBAQEBBQEFAQEBAQEBAQEB",
+        "AQEBAQEBBAEBAQIBAQEBAQEBAQEBAQEBAQEaAgIuBAETNAxGCgoGGAMBATECJCxBDgsGHwE3CQ4CCgYXA0kYAwIQAgUKBgIGAgYJ",
+        "BwEHASsFCVcrAQICCgakV-pEAgEBAQIKAQEBAQICA_QBAYEGEEMBjAMMARoBEwECAQ8CDiJ7ggIBggEdAzEPAR8gDRQBCAYrBR4C",
+        "JAQIWHYCCi4kBCgINDMLAQ8BBwECAzQMtwIJFgoIGAF_BgIBASwBAgMBAhcKFwkfQRMBAgoWChoGGiY4BgJABAECBQgBAwEdAgME",
+        "ASAdAx0jCAEeGTYKFgoTDRJuSXczDSgICgYQGQUBF_oBKgECAwIQBjIjCgEIIR8WKhUbFwlHHxAJPAcBDRkHCgY1AQoEBAgkAgEJ",
+        "RQQEAQ0BASMSASUGBD4HAQEBBAEPAQoHOwUKBgQBCAICAhYBBwECAQUBCgICAgMCAQYBBQcCBwMFCwoBAQIBASYBCgEBAgEBBAEI",
+        "DQIdSwUKBAQeRgEBCAqmATYCCRcGIkEDAQsKJjkHCgYUHBsCDwQKBge5ATuFASoVCAIBAggBAgEeAQICCQwKRggCLgIIAQIbPwgB",
+        "CEoDARJJZwhYIQ8KBgkBLQEJDwoYHgIWAQ5JBwECASwDAQECAQkICgYGAQIBJQECAQYHCgYsBAr2ARcJEQEpAwUNC1UBT5oH5gHE",
+        "AcwUYQ-wCBAWCpsfBccEuTU6xg25BAcfAQoGTwEKBh4CBQs3CQQMCgkVBROwAy0DCuYBIDsZLEsEOQcRQAIBAgsEDNY5KSBhc_1D",
+        "BAEHAQIBowIPAR0DAgEOBAiMA4QSawUNAwkHCgMC4SQuAhe5FTcEMggBDgEWBQEP0AgfBgbVAQcBEQIHAQIBBWQBcC0DDgIKBAHB",
+        "Ah8ROtYDKtYBK8UBHwEWCALgAQcBBAECAQ8BxQELB0sqBAqmLeDNAiCeIgKOLQKxOg_uBKIjyyYFqkI",
+      ].join("");
+
+    const BIDI_DELTA_B64U =
+      [
+        "AAkJBQ4JBQIIAAMHAAUIAAEFAAEGAAEFAAIGAAoEAAEGAAYIABoDAAYIABoDAAQIAAYJARoJAAEGAAEIAAQHAAQIAAEDAAIIAAEJ",
+        "AAIIAAIHAAIEAAEIAAEDAAMIAAEEAAEDAAUIABcDAAEIAB8DAAEIAMEDAwACCAAHAwAOCAACAwAOCAAFAwAJCAABAwARCABwCgAE",
+        "AwACCAACAwIEAwABCAABAwQCCAABAwABCAADAwEBAwEUAwFTAwABCACMAQMABwoApgEDASYDAjEDAAEIAgIIAAEHAS0KAAEAAAEK",
+        "AAEAAAIKAAEAAAIKAAEAAAEKCBsABAYACwYCAAIIAAEBAAIHAAEBAAEGAAEBAAIIAAsKADABABUKAAoCAAEHAAICAAMBAAEKAGUB",
+        "AAcKAAECAAEIAAYKAAIBAAIKAAEIAAQKAAIBAAoEABQBAQIBAAEKAB4BABsKAlkBAAsKAAEBDisAAAkKAAIAAAQIAAEAAgEKABgA",
+        "AAQKAAEAAAkKAAEAAAMKAAEAAAUKAg8AARkAAAMKAgEAAQsBBR8BAQICBggKACoBABgKAAECACAKADcDAAEKAAEDAAEKAAQDAAgK",
+        "AAQDAAEKAAMDAAcKAAoDAAIKAB0DAAEKAAIDAQgDAgIDAhYDAQcDAQEDAwQDAgEKAAQDAAQKAgIDAgIDAAEKAAEDCAEDBAIDAQMD",
+        "AAIKAgwDAAIHAAcDAAEHAAIDAAEKAgIKAAEDAQYDBAIDAhYDAQcDAQIDAQIDAQIDAgEKAQMDAAIKBAIKAgMKAwEKBwQDAQEDBwoD",
+        "AAIKAAMDAAEKAAEDCgIKAAEDAQkDAQMDARYDAQcDAQIDAQUDAgEKAAQDAAUKAQIKAAEDAQIDAAEKAgEDDwIDAAIKAgsDAAEHBwED",
+        "AAYKAQEKAAIDAQgDAgIDAhYDAQcDAQIDAQUDAgEKAAIDAAEKAAEDAAQKAgIDAgIDAAEKBwIKAAEDBAIDAQMDAAIKAhIDCgEKAAED",
+        "AQYDAwMDAQQDAwIDAQEDAQIDAwIDAwMDAwwDBAIDAAEKAAIDAwMDAQMDAAEKAgEDBgEDDg0DAAYIAAEHAAEIBQEKAAMDAAEKAAgD",
+        "AQMDARcDARADAgEKAAEDAAMKAAQDAQMKAQQKBwIKAQMDAgEDAgIDAAIKAgoDBwEDAAcIAAIDAAEKAAsDAQMDARcDAQoDAQUDAgEK",
+        "AAgDAQMDAQIDAAIKBwIDBgIDAQIDAAIKAgoDAQMDDAIKAAsDAQMDASkDAAIKAAQDAAQKAQMDAQMDAAEKAAIDBA4DAAIKAhoDAQEK",
+        "AAIDARIDAxgDAQkDAQEDAgcDAwEKBAMDAAMKAQEKAQgDBgoDAgMDDDADAAEKAAIDAAcKBAEHAAcDAAgKAA0DJQIDAQEDAQUDARgD",
+        "AQEDAQoDAAEKAAIDAAkKAAEDAgUDAQEDAQcKAQoDAgQDIBgDAAIKABsDAAEKAAEDAAEKAAEDAAEKAAQIAAoDASQDBA4KAAEDAAUK",
+        "AAEDAAIKAAUDAAsKASQKAQgDAAEKAAYDAQ0DJS0DAAQKAAEDAAYKAAEDAAIKAAIDAAIKABkDAAIKAAQDAAMKABADAAQKAA0DAAEK",
+        "AAIDAAIKAAYDAAEKAA8DAAEKACgDAQEDBQEDAvkCAwEEAwIHAwEBAwEEAwIpAwEEAwIhAwEEAwIHAwEBAwEEAwIPAwE5AwEEAwJD",
+        "AwIDCgAdAwMQAwAKCAZWAwIGAwIBCAD_BAMBGgMAAggDWQMHEgMAAwoAAQMJEwMAAgoAAwMJEgMAAgoMDQMBAwMBAgoMNAMAAgoA",
+        "AQMABwoACAMAAQoAAgMACwoABwMAAQcAAQMAAQoCCgMGCggGCwgAAwoAAQkAAQoACgMGWQMHBQMAAgoAIgMAAQoAAQMFRgMKHwMB",
+        "AwoABAMAAgoAAwMEAgMAAQoABgMAAwoEAQgDAggAKAMCBQMLLAMEGgMGCwMDIggAFwMAAgoAAgMAAQoCOAMAAQoAAQMABwoBAQoA",
+        "AQMAAQoAAgMACAoABgMACgoCAQoACgMGCgMGDgMCHwoxBAoAMAMAAQoAAQMABQoAAQMAAQoABQMAAQoACgMDGwMACQoACwMBAgoA",
+        "IAMABAoAAgMAAgoAAQMAAwoAOAMAAQoAAQMAAgoAAwMAAQoAAQMAAwoAAgMIMAMACAoAAgMAAgoDDwMDPAMHKwMCCwMIAwoAAQMA",
+        "DQoAAQMABwoABAMAAQoABgMAAQoAAwMAAgoAAQMFwAEDAEAKAJYCAwIGAwImAwIGAwIIAwEBAwEBAwEBAwEfAwI1AwEHAwABCAAB",
+        "AwADCAADAwEHAwADCAAEAwIGAwEDCAANAwADCAIDAwEHAwACCAwDCQABAwABAAAYCAcBBgAFBwAPCAABBgAaCAEFCQUGCQABBAAB",
+        "AwIGBAACBQADCAABAwAKBAACBQADCAENAwMhBw8hCg8CCAABAwAECAABAwACCAAKAwABCAABAwADCAAFAwAGCAABAwABCAABAwAB",
+        "CAABAwABCAAEAwABBwALAwACCAAEAwAFCAAFAwAECAACAwAQCAApAwADCASCAQgAAQUAAQcAogIIAEUDABoIAAEDAJEBCBkLCBUo",
+        "CAAUBABOAwDCAwgAAQMA0wIIAIACAwD0BAgCIAgBaQgA5QEDAAYIAAQDAAMKAAIDBQcIACYDAQEDBQEDAjgDBwIDDgEKABcDCQcD",
+        "AQcDAQcDAQcDAQcDAQcDAQcDAQcDASAKAF4IIhoIAVkIDNYBCBoMCAUECAADAwAZCAAJAwAECgACAwABCAAFAwACCAAFAwADCAFW",
+        "AwICCgACCAADAwABCABaAwABCAAEAwUrAwFeAwEwAwAkCAwtAwACCAEwAwAQCAAcAwADCAAyAwAPCAAMAwAECACnAQMABAgAYwMA",
+        "AggAHwMAAQgAwDMDAEAIAI2tAQMDNwgJvQIDAAMIABwDFC8DAAQKAAEIAAoKAAIIAB4DAAIKAFADAAIKAAYDCCIIAGYDAAEIAEID",
+        "BQIDAQEDAQUDGBADAAEKAAMDAAEKAAQDAAEKABkDAAIKAAEDAAQIAAEKAwgDAAIHBjQDAAQICEQDAAIKCAwDBhIKAA0DAAEKACYD",
+        "AAgKABkDAAsKAAIDCx4DAwMKADADAAEKAAIDAAQKAAIDAAIKABADAQsDBAcDAAEKABkDASkDAAYKAAIDAAIKAAIDAAIKCQMDAAEK",
+        "AAgDAAEKAAEDAgoDAiADAAEKADMDAAEKAAEDAAMKAAIDAAIKAAUDAAIKAAEDAAEKAAEDGBEDAAIKAAgDAAEKCgYDAgYDAgYDCQcD",
+        "AQcDAToDAAIIBHUDAAEKAAIDAAEKAAQDAAEKAgoDBqRXAwwXAwQxAwTuRAMCagMmBwMMBQMFAQAAAQoACgAAAQUADQABBQABAQAB",
+        "AgABAgABCgAAcwEQ6wIBABIIAEABAjYBBwEIIA0BAAMIABAKAAoIBhAKACAIAAEGAAEIAAEGAQEIAAEGAAkIAAEHAAIIAAIFAAMI",
+        "AQEIAAIHAAEIBAUBAYcBAQIBCQECCAADBwAFCAABBQABBgABBQACBgAKBAABBgAGCAAaAwAGCAAaAwALCABZAwMGAwIGAwIGAwID",
+        "AwMCBwADCAACBwEHCAoFCAIMAwEaAwETAwECAwEPAwIOAyJ7AwUBAwABCAABAwQtAwMJAwBNCAACAwENCAMBCC8tAwABCoIBHQMD",
+        "MQMPAQoAGwQEJAMJHgMFJgMABQoFHgMBJQMEDgMqngEDAgoDBiQDBCQDBCgDCDQDCwwDAQ8DAQcDAQIDAQsDAQ8DAQcDAQIDQ7cC",
+        "AwkWAwoIAxgGAwEqAwEJA0UGAAIBAAEsAAECAAMBAAIXAAFIAAgJADATAAECAAUhAAMBCAAaAAUBAEA4AAQUAAIvAAADCgECCgUE",
+        "CgAEAAEDAAEdAAIDCgQBCgAJAAcJAAdAACAlAAACCgQMAAk2AAMHCAAWAAIbAAUaAAcEAAwHAFBJADczAA0zAAcGAAAkAQAECggK",
+        "AqYCHwIBKgABAgoAAQACAgBLAwoAKAAIFgEACwoACQEWEgAABAoABAAmHAAUFwAJAQMAAQoANgMADwoABwMEFAgACgMAAQoAAgMA",
+        "AgoAAQMJAwoAMQMABAoAAgMAAgoABwMAAQoKAQMCGQMHCgMGAwoAJAMABQoAAQMACAoBEgMIIwMAAQoAAwMJAgoANAMACQoACgMA",
+        "BAoAAgMAAQoAEAMBFAMLEgMBHAMAAwoAAgMAAQoAAQMAAgoABgMAAQoAAgMAAQo-BwMBAQMBBAMBDwMBCwMGLwMAAQoAAwMACAoF",
+        "CgMGAgoAAgMBCAMCAgMCFgMBBwMBAgMBBQMBAgoAAwMAAQoABAMCAgMCAwMCAQMGAQMFBwMCBwoDBQqLATgDAAgKAAIDAAMKAAED",
+        "AAEKABUDAQEDAAEKAAMDHjMDAAYKAAEDAAEKAAQDAAIKAAEDAAIKAAQDCAoDpgEyAwAECgIEAwACCgABAwACCgAbAwACCiIzAwAI",
+        "CgACAwABCgABAwACCgAEAwsKAwYNCBMrAwABCgABAwABCgACAwAGCgABAwABCgACAwYKAzYbAwIDCgACAwAECgABAwAFCgQXA7kB",
+        "LwMACQoAAQMAAgoAAQNkUwMMCAMCAQMCCAMBAgMBHgMBAgMCAgoAAQMAAQoABAMAAQoAAwMJCgNGCAMCKgMABAoCAgoABAMAAQoA",
+        "BAMbAQMABgoAAgMAAgoAKAMABgoAAgMABAoACAMAAQoIAQMABgoAAgMAAwoALgMADQoAAQMAAgoACQMNSQMHCgP2AQkDASYDAAcK",
+        "AQYKAAgDCh0DAyADAhYKAQEDAAcKAAEDAAIKAAEDAAIKSQcDAQIDASYDAAYKAwEKAQIKAQcKAAEDAAEKCAoDBgYDAQIDASUDAQIK",
+        "AQIDAAEKAAEDAAEKAAEDBwoDtgITAwACCgAEAwcCCgAPAwEkAwAFCgMCAwABCgABAwABCgAXA1YBAw8VAwAICAAEBwARCA2bBwNm",
+        "bwMBBQMLxAEDzBRjAw3ACAMAAQoABgMADwqqH8cEA7lDuQQDBx8DAQoDBFEDAQoDBh4DAgUKAAEDCjADAAcKAA8DCgoDAQcDARUD",
+        "BRMDsAVbA2VLAwQBCgA4AwcECgANA0ACAwABCAABAwABCgsCAw74LwMI1gkDKgkD50UEAwEHAwECAwGjAgMPAQMdAwMCAQMOBAMI",
+        "jAMDhBJrAwUNAwMJAwcKAwIBAwACCgABAwAECdwkLgoCFwoJdAM89gEDCicDAj4DAAMKAAkDAAgJAAgKAAIDAAcKAB4DAAQKADsD",
+        "AAIIFUIIAAMKAAEIehQDDBQDDFcICRkDhwFVAwFHAwECAwIBAwICAwIEAwEMAwEBAwEHAwFBAwEEAwIIAwEHAwEcAwEEAwEFAwEB",
+        "AwMHAwHUAgMCMwMAAQgAOQMAAQgAOQMAAQgAOQMAAQgAOQMAAQgACAMCMgQAgAQDADcKAAQDADIKAAgDAAEKAA4DAAEKAAcDDwUK",
+        "AQ8K0AgfAwYGA9UBBwoBEQoCBwoBAgoBBQoFPgMhAQpwLQMDBwoABwMCCgMEAgPAAh4DAAEKESwDAAQKAAoDBQEH0AMcAwAECgAK",
+        "A-YFBwMBBAMBAgMBDwMBxQEAAgkAAAcKKUQAAAcKAAEABAoABAIAkQZEAUw9AcIBBAEBGwEBAgEBAQECAQEBCgEBBAEBAQEBAQEG",
+        "AQEEAQEBAQEBAQEBAwEBAgEBAQECAQEBAQEBAQEBAQEBAQEBAgEBAQECBAEBBwEBBAEBBAEBAQEBCgEBEQEFAwEBBQEBEQE0AgiO",
+        "AiwIBGQIDA8IAg8IAQ8IASUICgsEAAUIAB8DAAEIADoDAAYIAD0DAAEIOB0DDSwDBAkDBwIDDgYImgHYBwgEEQgDDQgDdwgEXwgG",
+        "DAgEAQgPDAgEOAgICggGKAgIHggCAghO1AIIDA4IAg0IAwkIBy4IAQcICA4IBAkIBwkIB5MBCAE3CCUKBIYI4M0CAyC6IAMG3gED",
+        "AoItAw6xOgOfGJ4EA-ILyyYDBeAgA9G4KwEJHmAJgAHwAQqQ_AP-_wMDAv7_AwM",
+      ].join("");
+
+
+    function invalid() {
+      return new Error("invalid bootstrap input");
+    }
+
+    function exactKeys(value, expected) {
+      if (value === null || typeof value !== "object" || Array.isArray(value)) throw invalid();
+      const keys = Object.keys(value).sort();
+      const wanted = [...expected].sort();
+      if (keys.length !== wanted.length || keys.some((key, index) => key !== wanted[index])) {
+        throw invalid();
+      }
+    }
+
+    function identifier(value) {
+      if (typeof value !== "string" || !HEX_128.test(value)) throw invalid();
+      return value;
+    }
+
+    function checkedPort(value) {
+      if (!Number.isInteger(value) || value < 1 || value > 65535) throw invalid();
+      return value;
+    }
+
+    function canonicalOrigin(scheme, host, port) {
+      const defaultPort = scheme === "http" ? 80 : 443;
+      return `${scheme}://${host}${port === defaultPort ? "" : `:${port}`}`;
+    }
+
+    function inspectCanonical(value, depth = 0, state = { count: 0 }) {
+      state.count += 1;
+      if (depth > 32 || state.count > 10000) throw invalid();
+      if (value === null || typeof value === "boolean") return value;
+      if (typeof value === "number") {
+        if (!Number.isSafeInteger(value)) throw invalid();
+        return value;
+      }
+      if (typeof value === "string") {
+        if (new TextEncoder().encode(value).length > 65536 || /[\uD800-\uDFFF]/u.test(value)) {
+          throw invalid();
+        }
+        return value;
+      }
+      if (Array.isArray(value)) {
+        return value.map((item) => inspectCanonical(item, depth + 1, state));
+      }
+      if (typeof value === "object" && value !== null) {
+        const result = {};
+        for (const key of Object.keys(value).sort()) {
+          inspectCanonical(key, depth + 1, state);
+          result[key] = inspectCanonical(value[key], depth + 1, state);
+        }
+        return result;
+      }
+      throw invalid();
+    }
+
+    function canonicalJson(value) {
+      const result = JSON.stringify(inspectCanonical(value));
+      if (new TextEncoder().encode(result).length > 1048576) throw invalid();
+      return result;
+    }
+
+    function encodeBase64url(bytes) {
+      if (!(bytes instanceof Uint8Array)) throw invalid();
+      const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+      let result = "";
+      for (let index = 0; index < bytes.length; index += 3) {
+        const first = bytes[index];
+        const second = index + 1 < bytes.length ? bytes[index + 1] : 0;
+        const third = index + 2 < bytes.length ? bytes[index + 2] : 0;
+        const word = (first << 16) | (second << 8) | third;
+        result += alphabet[(word >>> 18) & 63];
+        result += alphabet[(word >>> 12) & 63];
+        if (index + 1 < bytes.length) result += alphabet[(word >>> 6) & 63];
+        if (index + 2 < bytes.length) result += alphabet[word & 63];
+      }
+      return result;
+    }
+
+    function strictDecodeB64u32(value) {
+      if (typeof value !== "string" || !B64U_32.test(value)) throw invalid();
+      const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+      const output = [];
+      let accumulator = 0;
+      let bits = 0;
+      for (const character of value) {
+        const digit = alphabet.indexOf(character);
+        if (digit < 0) throw invalid();
+        accumulator = (accumulator << 6) | digit;
+        bits += 6;
+        if (bits >= 8) {
+          bits -= 8;
+          output.push((accumulator >>> bits) & 255);
+          accumulator &= (1 << bits) - 1;
+        }
+      }
+      const bytes = new Uint8Array(output);
+      if (bytes.length !== 32 || accumulator !== 0 || encodeBase64url(bytes) !== value) {
+        throw invalid();
+      }
+      return bytes;
+    }
+
+    function decodeBase64url(value) {
+      if (typeof value !== "string" || value.length % 4 === 1
+          || !/^[A-Za-z0-9_-]+$/.test(value)) {
+        throw invalid();
+      }
+      const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+      const output = [];
+      let accumulator = 0;
+      let bits = 0;
+      for (const character of value) {
+        const digit = alphabet.indexOf(character);
+        if (digit < 0) throw invalid();
+        accumulator = (accumulator * 64) + digit;
+        bits += 6;
+        while (bits >= 8) {
+          bits -= 8;
+          output.push(Math.floor(accumulator / (2 ** bits)));
+          accumulator %= 2 ** bits;
+        }
+      }
+      if (accumulator !== 0) throw invalid();
+      return new Uint8Array(output);
+    }
+
+    const PVALID_TABLE_BYTES = decodeBase64url(PVALID_DELTA_B64U);
+
+    function decodeUnsignedLeb128(bytes, state) {
+      let value = 0;
+      let scale = 1;
+      for (let count = 0; count < 8; count += 1) {
+        if (state.offset >= bytes.length) throw invalid();
+        const byte = bytes[state.offset];
+        state.offset += 1;
+        value += (byte & 127) * scale;
+        if (!Number.isSafeInteger(value)) throw invalid();
+        if ((byte & 128) === 0) return value;
+        scale *= 128;
+      }
+      throw invalid();
+    }
+
+    function decodePvalidRanges(bytes) {
+      const state = { offset: 0 };
+      const ranges = [];
+      let previousEnd = 0;
+      while (state.offset < bytes.length) {
+        const start = previousEnd + decodeUnsignedLeb128(bytes, state);
+        const end = start + decodeUnsignedLeb128(bytes, state);
+        if (start < previousEnd || end <= start || end > 0x110000) throw invalid();
+        ranges.push(Object.freeze([start, end]));
+        previousEnd = end;
+      }
+      if (ranges.length !== IDNA_PROFILE.pvalid_range_count) throw invalid();
+      return Object.freeze(ranges);
+    }
+
+    const PVALID_RANGES = decodePvalidRanges(PVALID_TABLE_BYTES);
+
+    const BIDI_TABLE_BYTES = decodeBase64url(BIDI_DELTA_B64U);
+
+    function decodeBidiRanges(bytes) {
+      const state = { offset: 0 };
+      const ranges = [];
+      let previousEnd = 0;
+      while (state.offset < bytes.length) {
+        const start = previousEnd + decodeUnsignedLeb128(bytes, state);
+        const end = start + decodeUnsignedLeb128(bytes, state);
+        if (state.offset >= bytes.length) throw invalid();
+        const classId = bytes[state.offset];
+        state.offset += 1;
+        if (start < previousEnd || end <= start || end > 0x110000
+            || classId >= IDNA_PROFILE.bidi_classes.length) {
+          throw invalid();
+        }
+        ranges.push(Object.freeze([start, end, IDNA_PROFILE.bidi_classes[classId]]));
+        previousEnd = end;
+      }
+      if (ranges.length !== IDNA_PROFILE.bidi_range_count) throw invalid();
+      return Object.freeze(ranges);
+    }
+
+    const BIDI_RANGES = decodeBidiRanges(BIDI_TABLE_BYTES);
+
+    function isPvalidCodePoint(codePoint) {
+      if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff) return false;
+      let low = 0;
+      let high = PVALID_RANGES.length;
+      while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        const [start, end] = PVALID_RANGES[middle];
+        if (codePoint < start) high = middle;
+        else if (codePoint >= end) low = middle + 1;
+        else return true;
+      }
+      return false;
+    }
+
+    function bidiClassForCodePoint(codePoint) {
+      if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff) return "";
+      let low = 0;
+      let high = BIDI_RANGES.length;
+      while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        const [start, end, bidiClass] = BIDI_RANGES[middle];
+        if (codePoint < start) high = middle;
+        else if (codePoint >= end) low = middle + 1;
+        else return bidiClass;
+      }
+      return "";
+    }
+
+    function validateBidiLabel(label) {
+      const directions = [...label].map((character) => bidiClassForCodePoint(character.codePointAt(0)));
+      if (directions.some((direction) => !direction)) throw invalid();
+      if (!directions.some((direction) => ["R", "AL", "AN"].includes(direction))) return;
+
+      const rtl = ["R", "AL"].includes(directions[0]);
+      if (!rtl && directions[0] !== "L") throw invalid();
+      const allowed = new Set(rtl
+        ? ["R", "AL", "AN", "EN", "ES", "CS", "ET", "ON", "BN", "NSM"]
+        : ["L", "EN", "ES", "CS", "ET", "ON", "BN", "NSM"]);
+      const validEndings = new Set(rtl ? ["R", "AL", "EN", "AN"] : ["L", "EN"]);
+      let validEnding = false;
+      let numberType = "";
+      for (const direction of directions) {
+        if (!allowed.has(direction)) throw invalid();
+        if (validEndings.has(direction)) validEnding = true;
+        else if (direction !== "NSM") validEnding = false;
+        if (rtl && ["AN", "EN"].includes(direction)) {
+          if (!numberType) numberType = direction;
+          else if (numberType !== direction) throw invalid();
+        }
+      }
+      if (!validEnding) throw invalid();
+    }
+
+    function punycodeDigit(character) {
+      const codePoint = character.codePointAt(0);
+      if (codePoint >= 97 && codePoint <= 122) return codePoint - 97;
+      if (codePoint >= 48 && codePoint <= 57) return codePoint - 22;
+      throw invalid();
+    }
+
+    function encodePunycodeDigit(value) {
+      if (!Number.isInteger(value) || value < 0 || value >= 36) throw invalid();
+      return String.fromCodePoint(value < 26 ? value + 97 : value + 22);
+    }
+
+    function adaptPunycodeBias(delta, pointCount, firstTime) {
+      let adjusted = firstTime ? Math.floor(delta / 700) : Math.floor(delta / 2);
+      adjusted += Math.floor(adjusted / pointCount);
+      let steps = 0;
+      while (adjusted > 455) {
+        adjusted = Math.floor(adjusted / 35);
+        steps += 36;
+      }
+      return steps + Math.floor((36 * adjusted) / (adjusted + 38));
+    }
+
+    function decodePunycode(payload) {
+      if (typeof payload !== "string" || !payload || !/^[a-z0-9-]+$/.test(payload)) {
+        throw invalid();
+      }
+      const output = [];
+      const delimiter = payload.lastIndexOf("-");
+      let inputOffset = 0;
+      if (delimiter >= 0) {
+        for (const character of payload.slice(0, delimiter)) {
+          const codePoint = character.codePointAt(0);
+          if (codePoint >= 128) throw invalid();
+          output.push(codePoint);
+        }
+        inputOffset = delimiter + 1;
+      }
+
+      let codePoint = 128;
+      let insertion = 0;
+      let bias = 72;
+      while (inputOffset < payload.length) {
+        const previousInsertion = insertion;
+        let weight = 1;
+        for (let thresholdIndex = 36; ; thresholdIndex += 36) {
+          if (inputOffset >= payload.length) throw invalid();
+          const digit = punycodeDigit(payload[inputOffset]);
+          inputOffset += 1;
+          if (digit > Math.floor((Number.MAX_SAFE_INTEGER - insertion) / weight)) {
+            throw invalid();
+          }
+          insertion += digit * weight;
+          const threshold = thresholdIndex <= bias
+            ? 1 : thresholdIndex >= bias + 26 ? 26 : thresholdIndex - bias;
+          if (digit < threshold) break;
+          const baseMinusThreshold = 36 - threshold;
+          if (weight > Math.floor(Number.MAX_SAFE_INTEGER / baseMinusThreshold)) throw invalid();
+          weight *= baseMinusThreshold;
+        }
+        const pointCount = output.length + 1;
+        bias = adaptPunycodeBias(
+          insertion - previousInsertion,
+          pointCount,
+          previousInsertion === 0,
+        );
+        const increment = Math.floor(insertion / pointCount);
+        if (increment > 0x10ffff - codePoint) throw invalid();
+        codePoint += increment;
+        insertion %= pointCount;
+        if (codePoint >= 0xd800 && codePoint <= 0xdfff) throw invalid();
+        output.splice(insertion, 0, codePoint);
+        insertion += 1;
+      }
+      if (!output.some((value) => value >= 128)) throw invalid();
+      return String.fromCodePoint(...output);
+    }
+
+    function encodePunycode(label) {
+      const input = [...label].map((character) => character.codePointAt(0));
+      const output = input
+        .filter((codePoint) => codePoint < 128)
+        .map((codePoint) => String.fromCodePoint(codePoint));
+      const basicLength = output.length;
+      let handled = basicLength;
+      if (basicLength > 0 && handled < input.length) output.push("-");
+      let codePoint = 128;
+      let delta = 0;
+      let bias = 72;
+
+      while (handled < input.length) {
+        const next = Math.min(...input.filter((value) => value >= codePoint));
+        const pointCount = handled + 1;
+        if (!Number.isFinite(next)
+            || next - codePoint > Math.floor((Number.MAX_SAFE_INTEGER - delta) / pointCount)) {
+          throw invalid();
+        }
+        delta += (next - codePoint) * pointCount;
+        codePoint = next;
+        for (const value of input) {
+          if (value < codePoint) {
+            delta += 1;
+            if (!Number.isSafeInteger(delta)) throw invalid();
+          }
+          if (value === codePoint) {
+            let remainder = delta;
+            for (let thresholdIndex = 36; ; thresholdIndex += 36) {
+              const threshold = thresholdIndex <= bias
+                ? 1 : thresholdIndex >= bias + 26 ? 26 : thresholdIndex - bias;
+              if (remainder < threshold) break;
+              const baseMinusThreshold = 36 - threshold;
+              output.push(encodePunycodeDigit(
+                threshold + ((remainder - threshold) % baseMinusThreshold),
+              ));
+              remainder = Math.floor((remainder - threshold) / baseMinusThreshold);
+            }
+            output.push(encodePunycodeDigit(remainder));
+            bias = adaptPunycodeBias(delta, pointCount, handled === basicLength);
+            delta = 0;
+            handled += 1;
+          }
+        }
+        delta += 1;
+        codePoint += 1;
+      }
+      return output.join("");
+    }
+
+    function validateCanonicalLabel(label) {
+      if (!DNS_LABEL.test(label)) throw invalid();
+      if (label.slice(2, 4) === "--" && !label.startsWith("xn--")) throw invalid();
+      if (!label.startsWith("xn--")) return;
+
+      const unicodeLabel = decodePunycode(label.slice(4));
+      const points = [...unicodeLabel];
+      if (unicodeLabel.normalize("NFC") !== unicodeLabel
+          || points[0] === "-" || points.at(-1) === "-"
+          || (points[2] === "-" && points[3] === "-")
+          || /^\p{Mark}/u.test(unicodeLabel)
+          || points.some((character) => {
+            const value = character.codePointAt(0);
+            return value !== 45 && !isPvalidCodePoint(value);
+          })) {
+        throw invalid();
+      }
+      validateBidiLabel(unicodeLabel);
+      if (`xn--${encodePunycode(unicodeLabel)}` !== label) throw invalid();
+    }
+
+    function canonicalizeRawPortableHost(rawHost) {
+      const normalized = rawHost.toLowerCase().normalize("NFC");
+      const labels = normalized.split(".");
+      const canonicalLabels = labels.map((label) => {
+        if (!label || label.startsWith("-") || label.endsWith("-")
+            || (label.slice(2, 4) === "--" && !label.startsWith("xn--"))) {
+          throw invalid();
+        }
+        if (/^[a-z0-9-]+$/.test(label)) {
+          validateCanonicalLabel(label);
+          return label;
+        }
+        const points = [...label];
+        if (/^\p{Mark}/u.test(label)
+            || points.some((character) => {
+              const value = character.codePointAt(0);
+              return value !== 45 && !isPvalidCodePoint(value);
+            })) {
+          throw invalid();
+        }
+        validateBidiLabel(label);
+        const canonical = `xn--${encodePunycode(label)}`;
+        validateCanonicalLabel(canonical);
+        return canonical;
+      });
+      return canonicalPortableHost(canonicalLabels.join("."));
+    }
+
+    async function digestBytes(bytes) {
+      if (!(bytes instanceof Uint8Array)) throw invalid();
+      return new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+    }
+
+    async function digestHex(text) {
+      const bytes = await digestBytes(new TextEncoder().encode(text));
+      return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
+    }
+
+    async function deriveCapabilityVerifier(rawCapabilityB64u) {
+      return encodeBase64url(await digestBytes(strictDecodeB64u32(rawCapabilityB64u)));
+    }
+
+    function constantTimeEqual(left, right) {
+      if (typeof left !== "string" || typeof right !== "string") return false;
+      let difference = left.length ^ right.length;
+      const count = Math.max(left.length, right.length);
+      for (let index = 0; index < count; index += 1) {
+        difference |= (left.charCodeAt(index % (left.length || 1)) || 0)
+          ^ (right.charCodeAt(index % (right.length || 1)) || 0);
+      }
+      return difference === 0;
+    }
+
+    async function verifyBootstrapCapability(candidateB64u, verifierB64u) {
+      strictDecodeB64u32(verifierB64u);
+      return constantTimeEqual(await deriveCapabilityVerifier(candidateB64u), verifierB64u);
+    }
+
+    function canonicalPortableHost(host) {
+      if (typeof host !== "string" || host.length > 253 || !host.includes(".")
+          || host.endsWith(".") || host.includes("_") || host.includes("%")
+          || host !== host.toLowerCase() || !/^[a-z0-9.-]+$/.test(host)) {
+        throw invalid();
+      }
+      const labels = host.split(".");
+      labels.forEach(validateCanonicalLabel);
+      if (!/[a-z]/.test(labels.at(-1)) || /^0x[0-9a-f]*$/.test(labels.at(-1))) throw invalid();
+      if (labels.every((label) => /^(?:0x[0-9a-f]+|[0-9]+)$/.test(label))) throw invalid();
+      return host;
+    }
+
+    function normalizePortableUrl(value) {
+      if (typeof value !== "string" || value.length < 1 || value.length > 2048
+          || value !== value.trim() || /[\u0000-\u0020\u007f]/u.test(value)
+          || value.includes("\\") || value.includes("?") || value.includes("#")
+          || !/^https:\/\//i.test(value)) {
+        throw invalid();
+      }
+      const rest = value.slice(value.indexOf("://") + 3);
+      const slash = rest.indexOf("/");
+      const authority = slash < 0 ? rest : rest.slice(0, slash);
+      const rawPath = slash < 0 ? "" : rest.slice(slash);
+      if (rawPath !== "" && rawPath !== "/") throw invalid();
+      if (!authority || /[@\[\]%]/u.test(authority)
+          || [...authority].filter((character) => character === ":").length > 1) {
+        throw invalid();
+      }
+      const separator = authority.lastIndexOf(":");
+      const rawHost = separator < 0 ? authority : authority.slice(0, separator);
+      const portText = separator < 0 ? "" : authority.slice(separator + 1);
+      const allowedRawHostCharacter = (character) => /^[A-Za-z0-9.-]$/.test(character)
+        || /^[\p{Letter}\p{Mark}]$/u.test(character);
+      if (rawHost.endsWith(".") || [...rawHost].some((character) => !allowedRawHostCharacter(character))) {
+        throw invalid();
+      }
+      const rawLabels = rawHost.split(".");
+      if (rawLabels.some((label) => !label || label.startsWith("-") || label.endsWith("-"))
+          || rawLabels.some((label) => label.slice(2, 4) === "--"
+            && !label.toLowerCase().startsWith("xn--"))) {
+        throw invalid();
+      }
+      let port = 443;
+      if (separator >= 0) {
+        if (!/^[1-9][0-9]{0,4}$/.test(portText)) throw invalid();
+        port = checkedPort(Number(portText));
+      }
+      const host = canonicalizeRawPortableHost(rawHost);
+      return Object.freeze({ host, port, origin_base: `${canonicalOrigin("https", host, port)}/` });
+    }
+
+    function profileFields(value) {
+      return Object.fromEntries(PROFILE_FIELDS.map((name) => [name, value[name]]));
+    }
+
+    function validateProfileStructure(value) {
+      exactKeys(value, SERIALIZED_FIELDS);
+      identifier(value.instance_id);
+      checkedPort(value.port);
+      if (typeof value.digest !== "string" || !HEX_256.test(value.digest)) throw invalid();
+      if (value.mode === "local_loopback") {
+        if (value.deployment_profile_id !== "local-no-terminal-v1" || value.scheme !== "http"
+            || value.host !== `${value.instance_id}.localhost`
+            || typeof value.base_path !== "string"
+            || !/^\/[0-9a-f]{32}\/$/.test(value.base_path)) {
+          throw invalid();
+        }
+      } else if (value.mode === "portable_https") {
+        if (value.deployment_profile_id !== "portable-compose-v1" || value.scheme !== "https"
+            || value.base_path !== "/" || canonicalPortableHost(value.host) !== value.host) {
+          throw invalid();
+        }
+      } else {
+        throw invalid();
+      }
+      if (value.origin_base !== `${canonicalOrigin(value.scheme, value.host, value.port)}${value.base_path}`) {
+        throw invalid();
+      }
+      return value;
+    }
+
+    async function validateOriginProfile(value) {
+      validateProfileStructure(value);
+      const expected = await digestHex(canonicalJson(profileFields(value)));
+      if (!constantTimeEqual(expected, value.digest)) throw invalid();
+      return Object.freeze({ ...value });
+    }
+
+    async function createLocalOriginProfile(input) {
+      exactKeys(input, ["instance_id", "path_id", "port"]);
+      const instanceId = identifier(input.instance_id);
+      const pathId = identifier(input.path_id);
+      const port = checkedPort(input.port);
+      const host = `${instanceId}.localhost`;
+      const basePath = `/${pathId}/`;
+      const fields = {
+        deployment_profile_id: "local-no-terminal-v1",
+        instance_id: instanceId,
+        mode: "local_loopback",
+        scheme: "http",
+        host,
+        port,
+        base_path: basePath,
+        origin_base: `${canonicalOrigin("http", host, port)}${basePath}`,
+      };
+      return Object.freeze({ ...fields, digest: await digestHex(canonicalJson(fields)) });
+    }
+
+    async function createPortableOriginProfile(input) {
+      exactKeys(input, ["instance_id", "url"]);
+      const instanceId = identifier(input.instance_id);
+      const normalized = normalizePortableUrl(input.url);
+      const fields = {
+        deployment_profile_id: "portable-compose-v1",
+        instance_id: instanceId,
+        mode: "portable_https",
+        scheme: "https",
+        host: normalized.host,
+        port: normalized.port,
+        base_path: "/",
+        origin_base: normalized.origin_base,
+      };
+      return Object.freeze({ ...fields, digest: await digestHex(canonicalJson(fields)) });
+    }
+
+    async function buildBootstrapConfiguration(input) {
+      exactKeys(input, ["profile", "verifier_b64u", "recovery_epoch"]);
+      if (input.recovery_epoch !== 1) throw invalid();
+      strictDecodeB64u32(input.verifier_b64u);
+      const profile = await validateOriginProfile(input.profile);
+      return Object.freeze({
+        verifier_b64u: input.verifier_b64u,
+        recovery_epoch: 1,
+        origin_profile: profile,
+      });
+    }
+
+    function randomBytes(length) {
+      const value = new Uint8Array(length);
+      crypto.getRandomValues(value);
+      return value;
+    }
+
+    function hex(bytes) {
+      return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
+    }
+
+    async function generateBootstrapBundle(input) {
+      exactKeys(input, input.mode === "local_loopback" ? ["mode", "port"] : ["mode", "url"]);
+      let profile;
+      if (input.mode === "local_loopback") {
+        checkedPort(input.port);
+        profile = await createLocalOriginProfile({
+          instance_id: hex(randomBytes(16)),
+          path_id: hex(randomBytes(16)),
+          port: input.port,
+        });
+      } else if (input.mode === "portable_https") {
+        normalizePortableUrl(input.url);
+        profile = await createPortableOriginProfile({
+          instance_id: hex(randomBytes(16)),
+          url: input.url,
+        });
+      } else {
+        throw invalid();
+      }
+      const rawCapabilityB64u = encodeBase64url(randomBytes(32));
+      const verifierB64u = await deriveCapabilityVerifier(rawCapabilityB64u);
+      const configuration = await buildBootstrapConfiguration({
+        profile,
+        verifier_b64u: verifierB64u,
+        recovery_epoch: 1,
+      });
+      return Object.freeze({ rawCapabilityB64u, configuration });
+    }
+
+    globalThis.DeepTwinBootstrap = Object.freeze({
+      buildBootstrapConfiguration,
+      canonicalJson,
+      createLocalOriginProfile,
+      createPortableOriginProfile,
+      deriveCapabilityVerifier,
+      generateBootstrapBundle,
+      bidiClassForCodePoint,
+      idnaProfile: IDNA_PROFILE,
+      idnaBidiTableBytes: () => BIDI_TABLE_BYTES.slice(),
+      idnaPvalidTableBytes: () => PVALID_TABLE_BYTES.slice(),
+      isPvalidCodePoint,
+      strictDecodeB64u32,
+      validateOriginProfile,
+      verifyBootstrapCapability,
+    });
+
+    if (typeof document !== "undefined") {
+      const mode = document.getElementById("deployment-mode");
+      const localFields = document.getElementById("local-fields");
+      const portableFields = document.getElementById("portable-fields");
+      const localPort = document.getElementById("local-port");
+      const portableUrl = document.getElementById("portable-url");
+      const generate = document.getElementById("generate");
+      const status = document.getElementById("status");
+      const results = document.getElementById("results");
+      const rawOutput = document.getElementById("raw-capability");
+      const configOutput = document.getElementById("configuration");
+      let busy = false;
+      let generationRevision = 0;
+
+      function clearResults(message) {
+        results.hidden = true;
+        rawOutput.textContent = "";
+        configOutput.textContent = "";
+        status.textContent = message;
+      }
+
+      function syncControls() {
+        const portable = mode.value === "portable_https";
+        mode.disabled = busy;
+        generate.disabled = busy;
+        localPort.disabled = busy || portable;
+        portableUrl.disabled = busy || !portable;
+      }
+
+      function invalidateResults() {
+        generationRevision += 1;
+        clearResults("입력을 확인한 뒤 설정 값을 만드세요.");
+      }
+
+      function showMode() {
+        const portable = mode.value === "portable_https";
+        localFields.hidden = portable;
+        portableFields.hidden = !portable;
+        invalidateResults();
+        syncControls();
+      }
+
+      mode.addEventListener("change", showMode);
+      localPort.addEventListener("input", invalidateResults);
+      portableUrl.addEventListener("input", invalidateResults);
+      generate.addEventListener("click", async () => {
+        const revision = generationRevision + 1;
+        generationRevision = revision;
+        busy = true;
+        syncControls();
+        clearResults("브라우저 안에서 설정 값을 만드는 중입니다.");
+        try {
+          let input;
+          if (mode.value === "local_loopback") {
+            if (!/^[1-9][0-9]{0,4}$/.test(localPort.value)) throw invalid();
+            input = { mode: mode.value, port: Number(localPort.value) };
+          } else {
+            input = { mode: mode.value, url: portableUrl.value };
+          }
+          const bundle = await generateBootstrapBundle(input);
+          if (generationRevision !== revision) return;
+          rawOutput.textContent = bundle.rawCapabilityB64u;
+          configOutput.textContent = JSON.stringify(bundle.configuration, null, 2);
+          results.hidden = false;
+          status.textContent = "설정 값이 준비되었습니다. 안내된 두 위치를 구분해 사용하세요.";
+          rawOutput.focus();
+        } catch {
+          if (generationRevision === revision) {
+            clearResults("입력값을 확인할 수 없습니다. 주소와 포트를 다시 확인하세요.");
+          }
+        } finally {
+          busy = false;
+          syncControls();
+        }
+      });
+      showMode();
+    }
+  </script>
+</body>
+</html>

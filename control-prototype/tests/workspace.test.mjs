@@ -13,11 +13,13 @@ test('design comparison retains three full graphs, true focus contracts and a se
   for (const focus of ['transfer', 'approval', 'memory', 'evaluation']) {
     state = select(state, 'focus', focus);
     const markup = render(state);
-    const candidates = [...markup.matchAll(/<section class="candidate" data-design="([^"]+)">([\s\S]*?)<\/section>/g)];
+    const candidates = [...markup.matchAll(/<section\b(?=[^>]*class="[^"]*\bcandidate\b[^"]*")(?=[^>]*data-design="([^"]+)")[^>]*>([\s\S]*?)<\/section>/g)];
     assert.equal(candidates.length, DESIGNS.length);
     for (const design of DESIGNS) {
       const candidate = candidates.find(match => match[1] === design.id)?.[2];
       assert.ok(candidate, design.id);
+      const tag = candidates.find(match => match[1] === design.id)[0].split('>')[0];
+      assert.equal(/\bhidden(?:\s|=|$)/.test(tag), design.id !== state.design, `${design.id}: only the inspected candidate is visible`);
       assert.equal((candidate.match(/data-edge=/g) ?? []).length, design.edges.length);
       assert.ok(candidate.includes(e(design.contracts[focus])));
       for (const node of design.nodes) assert.ok(candidate.includes(`data-value="${design.id}:candidate:${node.id}"`));
@@ -28,7 +30,7 @@ test('design comparison retains three full graphs, true focus contracts and a se
       }
       assert.ok(candidate.includes(e(design.review)));
     }
-    assert.ok(markup.includes(`${state.design}:selected:`));
+    assert.equal((markup.match(/<svg\b[^>]*class="graph"/g) ?? []).length, DESIGNS.length, 'the selected candidate does not duplicate its full graph');
     for (const field of ['purpose', 'done', 'source', 'unknown']) assert.ok(markup.includes(e(WORK_MODEL[field])));
     assert.ok(markup.includes('data-field="workText"'));
     assert.ok(markup.includes('data-field="designText"'));
@@ -51,6 +53,7 @@ test('fresh growth keeps the real draft context and never inherits fixed example
   assert.ok(markup.includes('분석 결과 없음 · 실제 탐구·실험 엔진 미연결'));
   assert.ok(markup.includes(e(state.drafts[key])));
   assert.ok(markup.includes(e(context(state).attempt)));
+  assert.ok(markup.includes(`data-artifact="${context(state).artifact}"`), 'fresh growth retains the exact original beside the alternative');
   assert.ok(markup.includes('별도의 고정 합성 사례 탐색'));
   assert.doesNotMatch(markup, /data-hypothesis=|data-pair=|data-round=/);
   for (const difference of CASE.differences) for (const hypothesis of difference.hypotheses) assert.ok(!markup.includes(e(hypothesis.claim)));
@@ -164,17 +167,21 @@ test('graph mode keeps the full graph open and all run choices in a compact pick
   const state = createState();
   const markup = render(state);
   assert.match(markup, /<details class="run-picker"><summary>[^<]*run-j1-origin/);
-  assert.match(markup, /<details class="run-graph" open>/);
+  assert.match(markup, /<details\b(?=[^>]*class="[^"]*\brun-graph\b)(?=[^>]*\sopen(?:\s|>|=))[^>]*>/);
   for (const run of Object.values(RUNS)) assert.ok(markup.includes(`data-action="run" data-value="${run.id}"`));
 });
 
-test('graph-first views keep detailed context accessible without preceding the graph with an open editor', () => {
+test('run context stays collapsed while graph defaults follow the selected mode', () => {
   for (const mode of ['graph', 'workspace', 'conversation']) {
     const state = select(createState(), 'mode', mode);
     const run = render(state);
     const design = render(select(state, 'area', 'design'));
     const open = mode === 'graph' ? '' : ' open';
-    assert.ok(run.includes(`<details class="run-context"${open}>`));
+    assert.match(run, /<details\b(?=[^>]*class="[^"]*\brun-context\b)[^>]*>/);
+    const runContext = run.match(/<details\b(?=[^>]*class="[^"]*\brun-context\b)[^>]*>/)[0];
+    assert.doesNotMatch(runContext, /\sopen(?:\s|>|=)/);
+    const graphDetails = run.match(/<details\b(?=[^>]*class="[^"]*\brun-graph\b)[^>]*>/)[0];
+    assert.equal(/\sopen(?:\s|>|=)/.test(graphDetails), mode === 'graph');
     assert.ok(design.includes(`<details class="work-model-details"${open}>`));
     assert.ok(run.includes(e(context(state).attempt)));
     assert.ok(run.includes('정확한 시도'));

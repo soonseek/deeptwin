@@ -1,0 +1,444 @@
+{
+  "$comment": "Structural data only. Schema validity, discovery, import, or a source label never grants installation, execution, secret, network, human, or deployment authority.",
+  "$id": "urn:deeptwin:schemas:v1:extensions:qualification",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifact_digest": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "conformance_suite": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$",
+      "type": "string"
+    },
+    "conformance_version": {
+      "maxLength": 32,
+      "minLength": 1,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    },
+    "declared_capabilities_digest": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "evidence_refs": {
+      "items": {
+        "maxLength": 64,
+        "minLength": 1,
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "maxItems": 256,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "evidence_verified": {
+      "type": "boolean"
+    },
+    "expires_at": {
+      "maximum": 9223372036854775807,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "extension_api_version": {
+      "maxLength": 32,
+      "minLength": 1,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    },
+    "failure_details": {
+      "additionalProperties": false,
+      "properties": {
+        "compatibility": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+          "type": "string"
+        },
+        "egress": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+          "type": "string"
+        },
+        "isolation": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+          "type": "string"
+        },
+        "permission": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+          "type": "string"
+        },
+        "secret": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "framework_version": {
+      "maxLength": 32,
+      "minLength": 1,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    },
+    "installation_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "installation_record_digest": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "installation_revision": {
+      "maximum": 9223372036854775807,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "manifest_digest": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "observed_capabilities_digest": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "platform_digest": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "qualification_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "qualified_at": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "qualified_scope": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "work_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "work_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "environment_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "environment_id"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "node_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "node_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "environment_id": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "environment_id",
+              "work_id"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "environment_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 1,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instance_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "node_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 1,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "purpose": {
+          "anyOf": [
+            {
+              "enum": [
+                "diagnosis",
+                "evaluation_development",
+                "evaluation_sealed",
+                "inquiry_audit",
+                "operational",
+                "release_evidence"
+              ],
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "work_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 1,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "instance_id",
+        "environment_id",
+        "work_id",
+        "node_id",
+        "purpose"
+      ],
+      "type": "object"
+    },
+    "recheck_triggers": {
+      "items": false,
+      "maxItems": 7,
+      "minItems": 7,
+      "prefixItems": [
+        {
+          "const": "artifact_change",
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "const": "framework_change",
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "const": "permission_change",
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "const": "platform_change",
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "const": "runtime_change",
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "const": "schema_change",
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "const": "expiry",
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      ],
+      "type": "array",
+      "uniqueItems": true
+    },
+    "results": {
+      "additionalProperties": false,
+      "properties": {
+        "compatibility": {
+          "enum": [
+            "failed",
+            "passed",
+            "unknown"
+          ],
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "egress": {
+          "enum": [
+            "failed",
+            "passed",
+            "unknown"
+          ],
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "isolation": {
+          "enum": [
+            "failed",
+            "passed",
+            "unknown"
+          ],
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "permission": {
+          "enum": [
+            "failed",
+            "passed",
+            "unknown"
+          ],
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "secret": {
+          "enum": [
+            "failed",
+            "passed",
+            "unknown"
+          ],
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "permission",
+        "isolation",
+        "egress",
+        "secret",
+        "compatibility"
+      ],
+      "type": "object"
+    },
+    "runtime_digest": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "extension-qualification-v1",
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema_version_bound": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "failed",
+        "qualified"
+      ],
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "qualification_id",
+    "installation_id",
+    "installation_revision",
+    "installation_record_digest",
+    "manifest_digest",
+    "artifact_digest",
+    "platform_digest",
+    "runtime_digest",
+    "framework_version",
+    "extension_api_version",
+    "schema_version_bound",
+    "conformance_suite",
+    "conformance_version",
+    "declared_capabilities_digest",
+    "observed_capabilities_digest",
+    "results",
+    "failure_details",
+    "evidence_refs",
+    "qualified_scope",
+    "evidence_verified",
+    "qualified_at",
+    "expires_at",
+    "recheck_triggers",
+    "status"
+  ],
+  "title": "DeepTwin extension qualification v1",
+  "type": "object"
+}

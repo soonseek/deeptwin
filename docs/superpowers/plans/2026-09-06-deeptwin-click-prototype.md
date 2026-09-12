@@ -1,5 +1,10 @@
 # DeepTwin Local Click Prototype Implementation Plan
 
+> **역사적 시제품 경계:** 이 계획의 로컬 정적 시제품·제공자 표시는 현재 제품 아키텍처가
+> 아니다. 현행 정본은 자체 호스팅 웹 기반 오픈소스 프레임워크, 공식 브라우저 UI,
+> Claude API-only와 서버 소유 Codex 구독 실행기다. 아래 상충 문구는 합성 시제품 이력이며
+> 릴리스 요구나 지원 완료 증거로 사용하지 않는다.
+
 > **For agentic workers:** REQUIRED: use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan. Steps use checkbox syntax for tracking.
 
 **Goal:** Build a Korean local click prototype of the approved A shell and V-01–08, with readable fictional artifacts, real range selection, editable drafts, and continuous context across workspace, conversation, and graph modes.

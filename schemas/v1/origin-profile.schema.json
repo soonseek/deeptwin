@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deeptwin.invalid/schemas/v1/origin-profile.schema.json",
+  "title": "DeepTwin OriginProfile v1",
+  "$comment": "Structural interchange schema only. Every authority boundary MUST additionally validate cross-field origin consistency, canonical IDNA, default-port rules, and digest through OriginProfile.from_dict or its exact JavaScript equivalent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "deployment_profile_id",
+    "instance_id",
+    "mode",
+    "scheme",
+    "host",
+    "port",
+    "base_path",
+    "origin_base",
+    "digest"
+  ],
+  "properties": {
+    "deployment_profile_id": {
+      "enum": ["local-no-terminal-v1", "portable-compose-v1"]
+    },
+    "instance_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "mode": {
+      "enum": ["local_loopback", "portable_https"]
+    },
+    "scheme": {
+      "enum": ["http", "https"]
+    },
+    "host": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[a-z0-9.-]+$"
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "base_path": {
+      "type": "string"
+    },
+    "origin_base": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "deployment_profile_id": {"const": "local-no-terminal-v1"},
+        "mode": {"const": "local_loopback"},
+        "scheme": {"const": "http"},
+        "host": {"pattern": "^[0-9a-f]{32}\\.localhost$"},
+        "base_path": {"pattern": "^/[0-9a-f]{32}/$"},
+        "origin_base": {"pattern": "^http://[0-9a-f]{32}\\.localhost(?::[1-9][0-9]{0,4})?/[0-9a-f]{32}/$"}
+      }
+    },
+    {
+      "properties": {
+        "deployment_profile_id": {"const": "portable-compose-v1"},
+        "mode": {"const": "portable_https"},
+        "scheme": {"const": "https"},
+        "host": {
+          "pattern": "^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+        },
+        "base_path": {"const": "/"},
+        "origin_base": {"pattern": "^https://[a-z0-9.-]+(?::[1-9][0-9]{0,4})?/$"}
+      }
+    }
+  ]
+}

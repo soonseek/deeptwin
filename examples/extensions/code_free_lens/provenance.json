@@ -1,0 +1,6 @@
+{
+  "artifact_path": "definition.json",
+  "artifact_sha256": "13e614f5dd1946918d378daa700e55b3aa5075b0b69bc77766efc351c2cd1e68",
+  "claim": "example-source-only",
+  "schema_version": "deeptwin-example-provenance-v1"
+}

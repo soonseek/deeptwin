@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, readFile } from 'node:fs/promises';
+import { resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer } from '../server.mjs';
 import { ARTIFACTS, CASE, DESIGNS, REVISED_DESIGN, ROUNDS, RUNS } from '../fixtures.mjs';
@@ -9,7 +10,9 @@ import { KEY, createState } from '../state.mjs';
 const modulePath = process.env.CONTROL_PLAYWRIGHT_MODULE;
 if (!modulePath) throw new Error('CONTROL_PLAYWRIGHT_MODULE is required; browser review cannot silently skip.');
 const { chromium } = await import(pathToFileURL(modulePath).href);
-const output = fileURLToPath(new URL('../review-output/', import.meta.url));
+const output = process.env.CONTROL_REVIEW_OUTPUT_DIR
+  ? resolve(process.env.CONTROL_REVIEW_OUTPUT_DIR) + sep
+  : fileURLToPath(new URL('../review-output/', import.meta.url));
 const origin = Object.values(RUNS).find(run => run.attempts.some(attempt => attempt.outputs.includes(CASE.original)));
 const originalAttempt = origin.attempts.find(attempt => attempt.outputs.includes(CASE.original));
 const action = (scope, name, value = '') => scope.locator(`[data-action="${name}"][data-value="${value}"]`).first();
@@ -70,6 +73,18 @@ async function ensureOpen(details) {
   if (!(await details.evaluate(node => node.open))) await details.locator(':scope > summary').click();
 }
 
+async function reveal(locator) {
+  // Open the real disclosure controls from outermost to innermost, rather
+  // than force-clicking content that the user cannot currently see.
+  for (const details of await locator.locator('xpath=ancestor::details').all()) await ensureOpen(details);
+}
+
+async function clickAction(scope, name, value = '') {
+  const target = action(scope, name, value);
+  await reveal(target);
+  await target.click();
+}
+
 async function chooseAttempt(page, run, attempt) {
   await action(page, 'area', 'run').click();
   await ensureOpen(page.locator('details.run-picker'));
@@ -82,6 +97,7 @@ async function chooseAttempt(page, run, attempt) {
 
 async function choosePairAttempt(page, side, attempt) {
   let pair = page.locator(`[data-pair="${side}"]`);
+  await reveal(pair);
   await action(pair, 'pairNode', `${side}:${attempt.node}`).click();
   pair = page.locator(`[data-pair="${side}"]`);
   await action(pair.locator('.attempt-history'), 'pairAttempt', `${side}:${attempt.id}`).click();
@@ -109,7 +125,10 @@ async function decodeImages(page) {
 
 async function capture(page, name, locator) {
   await decodeImages(page);
-  if (locator) await locator.screenshot({ path: `${output}${name}.png` });
+  if (locator) {
+    await reveal(locator);
+    await locator.screenshot({ path: `${output}${name}.png` });
+  }
   else await page.screenshot({ path: `${output}${name}.png`, fullPage: false });
 }
 
@@ -117,7 +136,7 @@ test('native source Range, exact partial drafts and scoped notes survive navigat
   const page = await openPage(t);
   const inputAttempt = origin.attempts.find(attempt => attempt.inputs.includes('source-policy'));
   await chooseAttempt(page, origin, inputAttempt);
-  await action(page, 'artifact', 'source-policy').click();
+  await clickAction(page, 'artifact', 'source-policy');
   const selectedText = ARTIFACTS['source-policy'].body.slice(3, 28);
   await page.locator('#original-body').evaluate(node => {
     const range = document.createRange();
@@ -162,7 +181,7 @@ test('typed original links download real complete files without executing a page
     const attempt = origin.attempts.find(item => [...item.inputs, ...item.outputs].some(id => ARTIFACTS[id].type === type));
     const id = [...attempt.inputs, ...attempt.outputs].find(value => ARTIFACTS[value].type === type);
     await chooseAttempt(page, origin, attempt);
-    await action(page, 'artifact', id).click();
+    await clickAction(page, 'artifact', id);
     const original = page.locator(`.alternative-editor [data-artifact="${id}"]`);
     if (type === 'text') assert.equal(await original.locator('pre').textContent(), ARTIFACTS[id].body);
     if (type === 'csv') assert.equal(await original.locator('tr').count(), ARTIFACTS[id].body.trimEnd().split('\n').length);
@@ -247,7 +266,7 @@ test('every comparison round exposes exact side histories, full files and actual
         if (!attempt.outputs.length) assert.match(await pair.textContent(), /출력 없음/);
         for (const consumer of attempt.consumers) {
           pair = await choosePairAttempt(page, side, attempt);
-          await action(pair.locator('.consumers'), 'pairAttempt', `${side}:${consumer.attempt}`).click();
+          await clickAction(pair.locator('.consumers'), 'pairAttempt', `${side}:${consumer.attempt}`);
           assert.equal(await pair.locator('[data-inspected-attempt]').getAttribute('data-inspected-attempt'), consumer.attempt);
           const recipient = run.attempts.find(item => item.id === consumer.attempt);
           assert.ok(recipient.inputs.includes(consumer.artifact));
@@ -285,13 +304,14 @@ test('sample modal follows exact attempts and consumers without retargeting the 
   await action(page, 'sample', 'true').click();
   for (const attempt of origin.attempts) {
     const trigger = action(page, 'sampleNode', attempt.node);
+    await reveal(trigger);
     await trigger.click();
     await action(page.locator('#detail-body'), 'sampleAttempt', attempt.id).click();
     assert.equal(await page.locator('#detail-body [data-inspected-attempt]').getAttribute('data-inspected-attempt'), attempt.id);
     await verifyFiles(page.locator('#detail-body'), [...attempt.inputs, ...attempt.outputs]);
     for (const consumer of attempt.consumers) {
       await action(page.locator('#detail-body'), 'sampleAttempt', attempt.id).click();
-      await action(page.locator('#detail-body .consumers'), 'sampleConsumer', consumer.attempt).click();
+      await clickAction(page.locator('#detail-body .consumers'), 'sampleConsumer', consumer.attempt);
       assert.equal(await page.locator('#detail-body [data-inspected-attempt]').getAttribute('data-inspected-attempt'), consumer.attempt);
       const recipient = origin.attempts.find(item => item.id === consumer.attempt);
       await verifyFiles(page.locator('#detail-body'), [...recipient.inputs, ...recipient.outputs]);
@@ -304,7 +324,9 @@ test('sample modal follows exact attempts and consumers without retargeting the 
     assert.equal(await trigger.evaluate(node => node === document.activeElement), true);
     assert.deepEqual(await persistedSource(page), source);
   }
-  await action(page, 'sampleNode', 'files').click();
+  const resourceTrigger = action(page, 'sampleNode', 'files');
+  await reveal(resourceTrigger);
+  await resourceTrigger.click();
   assert.match(await page.locator('#detail-body').textContent(), /실제 수행 기록 없음/);
   assert.equal(await page.locator('#detail-body [data-artifact]').count(), 0);
   await page.locator('#detail-close').click();
@@ -330,7 +352,8 @@ test('narrow graph selection, details state and dialog focus survive repaint', a
   assert.equal(selectedIsVisible, true);
   const position = await scroller.evaluate(node => node.scrollLeft);
   await action(page, 'mode', 'conversation').click();
-  assert.equal(await graphDetails.evaluate(node => node.open), true);
+  assert.equal(await graphDetails.evaluate(node => node.open), false, 'conversation first entry keeps the result pane primary');
+  await ensureOpen(graphDetails);
   assert.ok(Math.abs(await scroller.evaluate(node => node.scrollLeft) - position) <= 1);
   const trigger = action(page, 'overlay', 'connection');
   await trigger.click();
@@ -423,16 +446,23 @@ test('named review captures show design, fresh input, inquiry, exact pairs and r
   assert.equal(await page.locator('.candidates .candidate').count(), DESIGNS.length);
   for (const design of DESIGNS) {
     const candidate = page.locator(`.candidate[data-design="${design.id}"]`);
+    await page.locator(`[data-action="design"][data-value="${design.id}"]:visible`).first().click();
+    assert.equal(await page.locator('.candidates .candidate:visible').count(), 1);
+    assert.equal(await candidate.isVisible(), true);
     assert.equal(await candidate.locator('.node.selected').count(), design.focus.approval.length);
   }
+  await page.locator(`[data-action="design"][data-value="${DESIGNS[0].id}"]:visible`).first().click();
   await page.evaluate(() => scrollTo(0, 0));
   await capture(page, '01-design');
-  for (const design of DESIGNS) await capture(page, `01-design-${design.id}-graph`, page.locator(`.candidate[data-design="${design.id}"]`));
+  for (const design of DESIGNS) {
+    await page.locator(`[data-action="design"][data-value="${design.id}"]:visible`).first().click();
+    await capture(page, `01-design-${design.id}-graph`, page.locator(`.candidate[data-design="${design.id}"]`));
+  }
   await action(page, 'design', REVISED_DESIGN.id).click();
   assert.match(await page.locator('.selected-design').textContent(), new RegExp(REVISED_DESIGN.version));
-  await capture(page, '01-merged-design-graph', page.locator('.selected-design .graph-scroll'));
+  await capture(page, '01-merged-design-graph', page.locator('.merged-design .graph-scroll'));
   await chooseAttempt(page, origin, originalAttempt);
-  await action(page, 'artifact', CASE.original).click();
+  await clickAction(page, 'artifact', CASE.original);
   await action(page, 'scope', CASE.region).click();
   await page.locator('[data-field="draft"]').fill('동시에 이용 가능한 공간과 각각의 시간 선택지를 구분하는 시험용 부분 문구');
   await capture(page, '02-run-graph', page.locator('details.run-graph .graph-scroll'));
@@ -444,15 +474,19 @@ test('named review captures show design, fresh input, inquiry, exact pairs and r
   await action(page, 'sample', 'true').click();
   await page.evaluate(() => scrollTo(0, 0));
   await capture(page, '04-fixed-inquiry');
-  await capture(page, '04-inquiry-graph', page.locator('.fixed-example > .graph-scroll'));
+  await capture(page, '04-inquiry-graph', page.locator('.fixed-example .investigation-trace .graph-scroll'));
+  for (const details of await page.locator('.hypotheses details').all()) await ensureOpen(details);
   await capture(page, '04-competing-explanations', page.locator('.hypotheses'));
   await action(page, 'round', ROUNDS[0].id).click();
+  await reveal(page.locator('.paired-runs'));
   await page.locator('.paired-runs').evaluate(node => node.scrollIntoView({ block: 'start' }));
   await capture(page, '05-paired-review');
   for (const side of ['baseline', 'candidate']) await capture(page, `05-${side}-graph`, page.locator(`[data-pair="${side}"] .graph-scroll`));
   await capture(page, '05-partial-outside-effects', page.locator('.round-checks'));
   for (const name of ['connection', 'logs', 'audit', 'approval']) {
-    await action(page, 'overlay', name).click();
+    const trigger = action(page, 'overlay', name);
+    await reveal(trigger);
+    await trigger.click();
     await capture(page, `06-${name}`);
     await page.locator('#detail-close').click();
   }
@@ -473,6 +507,23 @@ test('all areas and modes fit 1440, 1024 and 390 widths in both themes with vali
       const dimensions = await page.evaluate(() => ({ width: innerWidth, root: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
       assert.ok(dimensions.root <= width + 1 && dimensions.body <= width + 1, `${label}: body overflow ${JSON.stringify(dimensions)}`);
       await decodeImages(page);
+      if (area === 'design') {
+        const selectedDesign = await page.locator('.candidate:visible').getAttribute('data-design');
+        // Hidden candidates retain all graph data. Check their rendered label
+        // geometry by selecting each one, not by accepting zero-size boxes.
+        for (const design of DESIGNS) {
+          await page.locator(`.design-comparison [data-action="design"][data-value="${design.id}"]`).click();
+          const candidate = page.locator(`.candidate[data-design="${design.id}"]`);
+          assert.equal(await candidate.isVisible(), true);
+          assert.equal(await candidate.locator('.graph .node').evaluateAll(nodes => nodes.every(node =>
+            [...node.querySelectorAll('text')].every(text => {
+              const box = text.getBBox();
+              return box.width > 0 && box.height > 0 && box.x >= 0 && box.x + box.width <= 140 && box.y >= 0 && box.y + box.height <= 48;
+            }))), true, `${label}/${design.id}: visible node label exceeds its box`);
+        }
+        await page.locator(`.design-comparison [data-action="design"][data-value="${selectedDesign}"]`).click();
+        await page.evaluate(() => scrollTo(0, 0));
+      }
       for (const node of await page.locator('.graph .node').all()) {
         const fits = await node.evaluate(element => [...element.querySelectorAll('text')].every(text => {
           const box = text.getBBox();

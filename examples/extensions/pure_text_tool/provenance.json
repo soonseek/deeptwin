@@ -1,0 +1,6 @@
+{
+  "artifact_path": "handler.py",
+  "artifact_sha256": "5c1574c162a8d68be4b7adf74d730802d74a78a898d0dfc1b5001a252755f7bd",
+  "claim": "example-source-only",
+  "schema_version": "deeptwin-example-provenance-v1"
+}

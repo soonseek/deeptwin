@@ -52,6 +52,18 @@ async function openPage(t, { init, viewport = { width: 1280, height: 900 }, colo
 
 const action = (page, type, value) => page.locator(`[data-action="${type}"][data-value="${value}"]`).first();
 
+async function reveal(locator) {
+  for (const details of await locator.locator('xpath=ancestor::details').all()) {
+    if (!(await details.evaluate(node => node.open))) await details.locator(':scope > summary').click();
+  }
+}
+
+async function clickAction(page, type, value) {
+  const target = action(page, type, value);
+  await reveal(target);
+  await target.click();
+}
+
 test('entry shell starts in run control with the required external module document', async t => {
   const page = await openPage(t);
   assert.equal(await page.title(), 'DeepTwin · 관제 작업대 시제품');
@@ -134,7 +146,7 @@ test('the actual PDF route returns PDF bytes and failed attempts never get an ed
 
 test('text Range selection becomes an exact scope and stale selections are cleared', async t => {
   const page = await openPage(t);
-  await action(page, 'artifact', 'review-j1-origin-v1').click();
+  await clickAction(page, 'artifact', 'review-j1-origin-v1');
   await page.locator('#original-body').evaluate(node => {
     const range = document.createRange();
     range.setStart(node.firstChild, 2);
@@ -156,7 +168,9 @@ test('sample modal navigation explores frozen origin history without retargeting
   const before = await page.locator('.ribbon').textContent();
   await action(page, 'area', 'growth').click();
   await action(page, 'sample', 'true').click();
-  await action(page, 'sampleNode', 'draft').click();
+  const sampleTrigger = action(page, 'sampleNode', 'draft');
+  await reveal(sampleTrigger);
+  await sampleTrigger.click();
   await page.locator('#detail-dialog[open]').waitFor();
   await page.locator('#detail-body [data-action="sampleAttempt"]').first().evaluate(button => {
     button.dataset.value = 'run-j1-origin-extract-1';
@@ -165,7 +179,7 @@ test('sample modal navigation explores frozen origin history without retargeting
   assert.equal(await page.locator('#detail-body [data-inspected-attempt="run-j1-origin-extract-1"]').count(), 0);
   await action(page, 'sampleAttempt', 'run-j1-origin-draft-1-complete').click();
   assert.match(await page.locator('#detail-body').textContent(), /run-j1-origin-draft-1-complete/);
-  await action(page, 'sampleConsumer', 'run-j1-origin-review-1').click();
+  await clickAction(page, 'sampleConsumer', 'run-j1-origin-review-1');
   assert.match(await page.locator('#detail-body').textContent(), /run-j1-origin-review-1/);
   await page.locator('#detail-close').click();
   await action(page, 'sample', 'false').click();
@@ -192,7 +206,9 @@ test('graph scroll and expanded state survive repaint while the selected node st
   assert.equal(visible, true);
   assert.ok(await scroller.evaluate(node => node.scrollLeft > 0));
   await action(page, 'mode', 'conversation').click();
-  assert.equal(await details.getAttribute('open'), '');
+  assert.equal(await details.getAttribute('open'), null, 'conversation enters with the graph collapsed');
+  await details.locator(':scope > summary').click();
+  assert.ok(await scroller.evaluate(node => node.scrollLeft > 0), 'opening the graph retains the same instance scroll position');
 });
 
 test('local files stay memory-only, reject invalid replacements, and disappear on reload', async t => {

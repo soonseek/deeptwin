@@ -1,0 +1,449 @@
+{
+  "schema_version": "deeptwin-browser-build-input-v1",
+  "status": "candidate_not_release_qualified",
+  "worker_runtime": "node",
+  "node": {
+    "version": "24.20.0",
+    "release_line": "24-krypton-lts",
+    "base_image": {
+      "repository": "docker.io/library/node",
+      "display_tag": "24.20.0-bookworm-slim",
+      "source_commit": "c4eb0858f5c522521768d5b6dc1d9f1631d4854d",
+      "source_directory": "24/bookworm-slim",
+      "dockerfile_sha256": "c0ef036f040b5d2d2d21e18532f791c97a7c77d376f03c2958970e1e7aed8026",
+      "top_descriptor": {
+        "media_type": "application/vnd.oci.image.index.v1+json",
+        "bytes": 3929,
+        "digest": "sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e"
+      },
+      "platforms": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "manifest": {
+            "media_type": "application/vnd.oci.image.manifest.v1+json",
+            "bytes": 1929,
+            "digest": "sha256:6642ef280aebc09c4541bee0b15c9f89f0f3f3c247ddee79ae1d37eddfdcbbaa"
+          },
+          "config": {
+            "media_type": "application/vnd.oci.image.config.v1+json",
+            "bytes": 6761,
+            "digest": "sha256:59c575db86dccc264e6b71c316548f05a5c3c7a9aa1c112dc019807e651fd06b"
+          },
+          "layers": [
+            {
+              "position": 1,
+              "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+              "bytes": 28232655,
+              "digest": "sha256:a8ac7f6c67abc236e4c745052c404112b8fab6fe8ac3a329d1ef3b867ad67c71"
+            },
+            {
+              "position": 2,
+              "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+              "bytes": 3318,
+              "digest": "sha256:013634040cec61eda7919c9682291bc50456a54539f410ef5233821fb9a8c4d9"
+            },
+            {
+              "position": 3,
+              "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+              "bytes": 50779298,
+              "digest": "sha256:a82db95c01928dce3a29c0d23bcd2588dafeba6f24ae23115195e3e3d6cc5437"
+            },
+            {
+              "position": 4,
+              "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+              "bytes": 1713026,
+              "digest": "sha256:9803e0ff8c3d881aa142790ec91f17a1a6fa25189d082c58f4e66cbba4253b66"
+            },
+            {
+              "position": 5,
+              "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+              "bytes": 448,
+              "digest": "sha256:2254049a7d7763ea7d56bf06d9a6d5cb882d88b136a84c18c254ead00ac5c874"
+            }
+          ]
+        },
+        {
+          "os": "linux",
+          "architecture": "arm64",
+          "variant": "v8",
+          "manifest": {
+            "media_type": "application/vnd.oci.image.manifest.v1+json",
+            "bytes": 1931,
+            "digest": "sha256:e9b5516b06baeaea9a8e65a7aec6a85fbb960a30b52b66968f2c8092b3e2a3eb"
+          },
+          "config": {
+            "media_type": "application/vnd.oci.image.config.v1+json",
+            "bytes": 6777,
+            "digest": "sha256:e78747b1818f158edd6a6831a501906608a85354559b0649355eec904aee78c7"
+          },
+          "layers": [
+            {
+              "position": 1,
+              "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+              "bytes": 28117289,
+              "digest": "sha256:75782e20ea1f4a9d9259bc20a5ecbbea8d5943bf5370bf0f5727900728f1cc9a"
+            },
+            {
+              "position": 2,
+              "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+              "bytes": 3313,
+              "digest": "sha256:b001d77f103ca534804cf6015474352b04ea0cd977a9f80f9cb94b4e30f9d2b2"
+            },
+            {
+              "position": 3,
+              "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+              "bytes": 50749374,
+              "digest": "sha256:b85ae889122592d18c76947d03ece48ceeeee2b971339dbbb8fe4c5f8144a630"
+            },
+            {
+              "position": 4,
+              "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+              "bytes": 1712862,
+              "digest": "sha256:ef4e835a4d0b741ed9d371354ca6c4c2a189260ab373a933944c5bcc4721e12a"
+            },
+            {
+              "position": 5,
+              "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+              "bytes": 446,
+              "digest": "sha256:a419fe0f8b59b67b4885b402c95b9ed6ad3cf3ff9ef921676bb889606044bd1e"
+            }
+          ]
+        }
+      ]
+    },
+    "official_release_provenance": {
+      "source_repository": "https://github.com/nodejs/node",
+      "source_tag": "v24.20.0",
+      "source_commit": "71b8b174857e25106d39b61a9e6f30d927da8b01",
+      "signed_checksums": {
+        "url": "https://nodejs.org/dist/v24.20.0/SHASUMS256.txt.asc",
+        "path": "deploy/locks/nodejs/node-v24.20.0-SHASUMS256.txt.asc",
+        "bytes": 3449,
+        "sha256": "8cc4c2dc94d07c7bfd4898ff1ca641d09e65e465becb50baecb4578ed93d95dc",
+        "openpgp_verified": true,
+        "signer_fingerprint": "5BE8A3F6C8A5C01D106C0AD820B1A390B168D356",
+        "signature_time_utc": "2026-08-26T14:25:36Z"
+      },
+      "verification_keyring": {
+        "source_repository": "https://github.com/nodejs/release-keys",
+        "source_commit": "5b7f55f4a7e35d1176d27a6b81b0c3c3b794216b",
+        "source_path": "gpg/pubring.kbx",
+        "path": "deploy/locks/nodejs/release-keys-5b7f55f4a7e35d1176d27a6b81b0c3c3b794216b.kbx",
+        "bytes": 95960,
+        "sha256": "2733c3959ac2843194801dd7a17162439a996a1471e007624c27f2dda30206a6"
+      },
+      "platforms": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "archive_url": "https://nodejs.org/dist/v24.20.0/node-v24.20.0-linux-x64.tar.xz",
+          "archive_bytes": 31838904,
+          "archive_sha256": "2f2c0da162318f0de47665410c7c8c2ed3d36c8f3105de4bbc61176c70a7cbf2",
+          "executable_path": "node-v24.20.0-linux-x64/bin/node",
+          "executable_bytes": 126458664,
+          "executable_sha256": "89af8424dd53e560b1933f87ba650d8bf57c83ca5a04600eefb31f416aabbae7",
+          "base_image_executable_sha256_match": true
+        },
+        {
+          "os": "linux",
+          "architecture": "arm64",
+          "archive_url": "https://nodejs.org/dist/v24.20.0/node-v24.20.0-linux-arm64.tar.xz",
+          "archive_bytes": 30778928,
+          "archive_sha256": "5f4ddab610c1ab2016b3c227cebdbf6d9495161487e4739c7b90090595f465f7",
+          "executable_path": "node-v24.20.0-linux-arm64/bin/node",
+          "executable_bytes": 122678944,
+          "executable_sha256": "23a5637c2470fde09fcc1acc77c1b92e04e3d7e3e6e80ff7df6f5831958d1477",
+          "base_image_executable_sha256_match": true
+        }
+      ],
+      "license": {
+        "path": "deploy/locks/licenses/Node-24.20.0-LICENSE.txt",
+        "bytes": 157609,
+        "sha256": "5888dbb9a1d2b18f2c3e6c5f6af1b39de658372b402a0577b002777f14c62ace",
+        "identical_in_both_platform_archives": true
+      },
+      "offline_release_verifier": {
+        "path": "deploy/locks/verify_node_release.py",
+        "bytes": 36317,
+        "sha256": "490da6edc3563ac6e5510f350f5e32911fc273b2ff37c174749a481da1f222b2",
+        "test_path": "deploy/tests/test_node_release_verifier.py",
+        "test_bytes": 19762,
+        "test_sha256": "24aedf4ac573dffd09f0fabd3d3be55e5ca3c7e1d8ef2c1c63cf72cacdb8f1fd",
+        "offline_test_count": 20,
+        "result_path": "specs/001-autonomous-release/evidence/node-24.20.0-release-results.json",
+        "result_bytes": 2996,
+        "result_sha256": "b6115fe3a4f3b45e756ce78060f747cf233aef8d9e8056919b3491e7c83f5403",
+        "runtime_image": "python@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254",
+        "network_during_verification": false,
+        "verified": true
+      },
+      "verification_scope": "The Node project OpenPGP signature authenticates the checksum list; the offline verifier validates both complete platform archive structures and exact node/LICENSE members; each extracted node executable separately matches /usr/local/bin/node in the corresponding pinned OCI platform image. This authenticates the selected binary bytes, not every other OCI layer, the verifier image itself, gpgv upstream provenance or a reproducible source build."
+    }
+  },
+  "playwright_core": {
+    "version": "1.63.0",
+    "node_requirement": ">=20",
+    "runtime_dependencies": [],
+    "url": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.63.0.tgz",
+    "bytes": 3123044,
+    "unpacked_bytes": 13453369,
+    "sha256": "208593d4e1bcd8f8fe5f869cad1cc332dc7f1d70dc1d58c102dc3ac36e30f26c",
+    "sha512_sri": "sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg==",
+    "source_commit": "1b025d7e20a026371cd5f98ba0cdce48892737c8",
+    "license": {
+      "spdx": "Apache-2.0",
+      "bytes": 11601,
+      "sha256": "45873d00a0dd243596deb4aa23b2493b3d1f0671921bf2538ea431d7380220eb"
+    },
+    "notice": {
+      "bytes": 254,
+      "sha256": "6d602191187b35b9b01d2cffa01c8469c2c8d9de8a96f1bf868e0f264f51c81d"
+    },
+    "third_party_notices": {
+      "bytes": 676,
+      "sha256": "a549d329bad8806fe279f0ecae0fc0270dec7e7c2dc8ec10f90e394f7c32b144"
+    },
+    "npm_attestations": {
+      "url": "https://registry.npmjs.org/-/npm/v1/attestations/playwright-core@1.63.0",
+      "bytes": 15084,
+      "sha256": "cd87562d3380bb32463ba4f8e3bf52b039f37eda3fc4e556783da01296581ff1",
+      "publish_statement_sha256": "8e7c4f1416f0d1ffb2ef6b42d8af066a9f471d8449d8607538aee783f7dfb4a9",
+      "slsa_statement_sha256": "b61970d85efa2da5c7d8c758f0f3cc9b9b9d7a438dfe86361891d4f3cc8759da",
+      "source_ref": "refs/tags/v1.63.0",
+      "workflow": ".github/workflows/publish_release.yml",
+      "github_actions_run": "33926504498/attempts/1",
+      "subject": {
+        "name": "pkg:npm/playwright-core@1.63.0",
+        "sha512": "ad80ac045fcce478d4721e766dbb5538d1058efe97bbcb26f21ef674d951e5bcc81357ef0bf6f182ca7392349f53e3307843263ccf0a25e6c6ea79f2c68e660a",
+        "package_bytes_match": true
+      },
+      "predicate_types": [
+        "https://github.com/npm/attestation/tree/main/specs/publish/v0.1",
+        "https://slsa.dev/provenance/v1"
+      ],
+      "verified": true,
+      "cryptographic_verification": {
+        "command": "npm audit signatures --json --include-attestations",
+        "isolated_install": "npm install --ignore-scripts --no-audit --no-fund --save-exact playwright-core@1.63.0",
+        "exit_code": 0,
+        "invalid": [],
+        "missing": [],
+        "verified_package": "playwright-core@1.63.0",
+        "output_bytes": 18341,
+        "output_sha256": "fafe76609e95cb7e95470fa424e212bbe0dcf10f0247d11f6179902b109addfe"
+      },
+      "verifier": {
+        "name": "npm",
+        "version": "12.0.2",
+        "source_repository": "https://github.com/npm/cli",
+        "source_ref": "refs/tags/v12.0.2",
+        "source_commit": "b888cc9a9ff34a8b023ff47b784692396635397b",
+        "url": "https://registry.npmjs.org/npm/-/npm-12.0.2.tgz",
+        "bytes": 3045132,
+        "sha256": "5dbb86c71d07a1957f2e90734092dd6a58bdcd9ebc2d8d41ca1c6e6a21d364e1",
+        "sha512_sri": "sha512-uIXokLlBj6FpNUTQX1PmT5pz7BlIN9QlixX+zdaSNHsd0qUXsbDLr50xzY6Sw7cJVr0uzHKDOle0swmPW/p5Qw==",
+        "official_registry_integrity_matched": true,
+        "runtime": {
+          "name": "node",
+          "version": "22.23.1",
+          "release_provenance_verified": false
+        },
+        "license": {
+          "spdx": "Artistic-2.0",
+          "bytes": 9742,
+          "sha256": "7610d223851f421d315df5e77974f1c68a04b97e02060e5bbbcf13d95e3ca257"
+        }
+      },
+      "slsa_allowlist_postcheck": {
+        "required": true,
+        "observed_matches_expected": true,
+        "release_enforcement_implemented": true,
+        "implementation": {
+          "path": "deploy/locks/verify_playwright_provenance.mjs",
+          "bytes": 29871,
+          "sha256": "cb122e241441f8b063ae747957031b38aab85cbd5aaa952fd39b203a6ee29e31",
+          "test_path": "deploy/tests/test_playwright_provenance_verifier.mjs",
+          "test_bytes": 14306,
+          "test_sha256": "16aa4fedd68b6239c76cb62aaa312ddfcdfb1525ff95fec3f334641fae387ac4",
+          "policy_pass_exit_code_before_runtime_qualification": 3,
+          "release_success_exit_code": 0
+        },
+        "runtime_qualification": {
+          "node_version": "24.20.0",
+          "node_release_provenance_ref": "node.official_release_provenance",
+          "runtime_image": "node@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e",
+          "result_path": "specs/001-autonomous-release/evidence/playwright-1.63.0-provenance-results.json",
+          "result_bytes": 1920,
+          "result_sha256": "386c95c9dedac0e582226bcd97dd3a46bd8b50223b3b8ef3d0f7ebfd0ce2d7ee",
+          "platforms_passed": [
+            "linux/amd64",
+            "linux/arm64"
+          ],
+          "network_during_verification": false,
+          "read_only_root": true,
+          "no_new_privileges": true,
+          "capabilities_dropped": "ALL",
+          "exact_signed_node_executable_match": true,
+          "qualified": true
+        },
+        "expected": {
+          "certificate_identity": "https://github.com/microsoft/playwright/.github/workflows/publish_release.yml@refs/tags/v1.63.0",
+          "certificate_oidc_issuer": "https://token.actions.githubusercontent.com",
+          "subject_name": "pkg:npm/playwright-core@1.63.0",
+          "subject_sha512": "ad80ac045fcce478d4721e766dbb5538d1058efe97bbcb26f21ef674d951e5bcc81357ef0bf6f182ca7392349f53e3307843263ccf0a25e6c6ea79f2c68e660a",
+          "repository": "https://github.com/microsoft/playwright",
+          "workflow_path": ".github/workflows/publish_release.yml",
+          "source_ref": "refs/tags/v1.63.0",
+          "source_commit": "1b025d7e20a026371cd5f98ba0cdce48892737c8",
+          "event_name": "release",
+          "repository_id": "221981891",
+          "repository_owner_id": "6154722",
+          "builder_id": "https://github.com/actions/runner/github-hosted",
+          "invocation_id": "https://github.com/microsoft/playwright/actions/runs/33926504498/attempts/1"
+        },
+        "policy": "After npm cryptographic verification succeeds, retain its exact JSON bytes, run the pinned postcheck, decode the verified publish and SLSA payloads and require exact equality for every expected statement and Fulcio certificate field. npm exit code 0 alone is insufficient. Postcheck exit 0 additionally requires Node 24.20.0 and the running executable SHA-256 to match the separately OpenPGP-authenticated platform release bytes; exit 3 remains an unqualified-runtime policy pass."
+      }
+    }
+  },
+  "chromium_headless_shell": {
+    "version": "153.0.8010.12",
+    "playwright_revision": "1243",
+    "mode": "headless-shell-only",
+    "assets": [
+      {
+        "platform": "linux/amd64",
+        "url": "https://cdn.playwright.dev/builds/cft/153.0.8010.12/linux64/chrome-headless-shell-linux64.zip",
+        "bytes": 119809080,
+        "sha256": "a9da028861a0cf789ff25c2fed45f5f1aaf969ed9247835b6a7821a4f7af9d1d",
+        "executable_path": "chrome-headless-shell-linux64/chrome-headless-shell",
+        "executable_bytes": 197422408,
+        "executable_sha256": "ded93a9c9a53a1ae040f08124badcca95c938e9d5015ff340c3b5538c41bf39e"
+      },
+      {
+        "platform": "linux/arm64",
+        "url": "https://cdn.playwright.dev/builds/cft/153.0.8010.12/linux-arm64/chrome-headless-shell-linux-arm64.zip",
+        "bytes": 120278638,
+        "sha256": "d433c45172c7836e38124fe545f767b02210bfb43a6262f08a297473a8e91c99",
+        "executable_path": "chrome-headless-shell-linux-arm64/chrome-headless-shell",
+        "executable_bytes": 189402512,
+        "executable_sha256": "f5d89353cc9ef8dc1541268bbee1f05ee40a31ce3d9799b3a274e5147f6a8cdb"
+      }
+    ],
+    "member_count_each": 287,
+    "about_sha256": "34d078ce3003087a8374e7c6156fda374769b8047d6ddaf419d66414aa48edfb",
+    "license_headless_shell": {
+      "bytes": 2257005,
+      "sha256": "b92247f7a44c14627ef5cbbe0aa6dcca4e4422b7c05e6f2c660054061a5e3da7"
+    },
+    "widevine_present": false,
+    "mirrored_by_deeptwin": false
+  },
+  "debian12_runtime_roots": [
+    "libasound2",
+    "libatk-bridge2.0-0",
+    "libatk1.0-0",
+    "libatspi2.0-0",
+    "libcairo2",
+    "libcups2",
+    "libdbus-1-3",
+    "libdrm2",
+    "libgbm1",
+    "libglib2.0-0",
+    "libnspr4",
+    "libnss3",
+    "libpango-1.0-0",
+    "libx11-6",
+    "libxcb1",
+    "libxcomposite1",
+    "libxdamage1",
+    "libxext6",
+    "libxfixes3",
+    "libxkbcommon0",
+    "libxrandr2"
+  ],
+  "rendering_font_roots": [
+    "fonts-noto-color-emoji",
+    "fonts-unifont",
+    "libfontconfig1",
+    "libfreetype6",
+    "xfonts-scalable",
+    "fonts-liberation",
+    "fonts-ipafont-gothic",
+    "fonts-wqy-zenhei",
+    "fonts-tlwg-loma-otf",
+    "fonts-freefont-ttf"
+  ],
+  "debian_runtime_lock": {
+    "path": "deploy/manifests/browser-debian-bookworm.json",
+    "sha256": "191f88c1ab982b67dff13f62f96910355271133f69a6e9bd8a50714a2fc286cf",
+    "snapshot": "20260907T000000Z",
+    "package_count": 105,
+    "install_delta_count_each_platform": 73,
+    "openpgp_verified_both_platforms": true
+  },
+  "runtime_security": {
+    "non_root": true,
+    "chromium_sandbox": true,
+    "reject_no_sandbox": true,
+    "no_new_privileges": true,
+    "read_only_root": true,
+    "ephemeral_worker": true,
+    "host_mounts": false,
+    "docker_socket": false,
+    "provider_credentials": false,
+    "egress": "authenticated_destination_broker_only",
+    "linux_capabilities": {
+      "drop": "ALL",
+      "add": [],
+      "forbidden": [
+        "SYS_ADMIN",
+        "SYS_PTRACE"
+      ]
+    },
+    "seccomp_profile": {
+      "path": "deploy/locks/browser-worker-seccomp.json",
+      "bytes": 17006,
+      "sha256": "8878c8683ef98daaaf9f296767581084d87969111e36d18a61bb70a8e3eff22a",
+      "base": {
+        "path": "deploy/locks/moby-default-seccomp-61eaf326.json",
+        "bytes": 13470,
+        "sha256": "536529b665dd0972c37bfb569f5d4ac8a53592e7b00752bc39ff063ca9864c74",
+        "source_url": "https://raw.githubusercontent.com/moby/moby/61eaf32614c7c71b60bd8927d3e6a4ffc8ff1f31/profiles/seccomp/default.json",
+        "source_commit": "61eaf32614c7c71b60bd8927d3e6a4ffc8ff1f31"
+      },
+      "patch": {
+        "operation": "prepend_exact_syscall_rule",
+        "canonical_rule_sha256": "ed7d3a2f86df38ed26fc39bdfc56741570507cd643fb0a41481726233d9a02bb"
+      },
+      "sandbox_syscalls": [
+        "clone",
+        "setns",
+        "unshare",
+        "chroot"
+      ]
+    },
+    "runtime_canary": {
+      "path": "deploy/tests/browser_worker_canary.mjs",
+      "bytes": 28919,
+      "sha256": "704f3e435790ae9af1e0d78047179c34ffc85cecee5d7b322c996a094402bee2",
+      "expected_playwright_version": "1.63.0",
+      "expected_browser_version": "153.0.8010.12",
+      "requires": [
+        "non-root identity",
+        "network-none fixture",
+        "forbidden sandbox-bypass argument rejection",
+        "CDP renderer to NSpid cross-mapping",
+        "renderer NoNewPrivs=1 and Seccomp=2",
+        "Korean DOM and canvas rendering",
+        "PNG, PDF and Playwright trace validation"
+      ]
+    }
+  },
+  "release_blockers": [
+    "Repeat the observed offline install, 160-package final count, ldd and font verification inside immutable release images and on a native linux/amd64 host; the current amd64 Docker execution is emulated on arm64.",
+    "Reproduce the passing Node OpenPGP/archive verification and exact Playwright SLSA allowlist postcheck in the immutable release build and bind the result to T082 provenance.",
+    "Complete Chrome for Testing/third-party notice release disposition in T084.",
+    "Run the passing non-root sandbox/Korean PNG/PDF/trace canary on native linux/amd64, then qualify cancellation and authenticated destination-broker egress on both native architectures; no-sandbox fallback is forbidden."
+  ]
+}

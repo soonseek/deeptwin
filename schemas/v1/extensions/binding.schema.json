@@ -1,0 +1,247 @@
+{
+  "$comment": "Structural data only. Schema validity, discovery, import, or a source label never grants installation, execution, secret, network, human, or deployment authority.",
+  "$id": "urn:deeptwin:schemas:v1:extensions:binding",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "binding_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "config_ref": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "credential_handle_refs": {
+      "items": {
+        "maxLength": 64,
+        "minLength": 1,
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "maxItems": 256,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "enabled_revision": {
+      "maximum": 9223372036854775807,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "extension_kind": {
+      "enum": [
+        "artifact_codec",
+        "credential_vault",
+        "evaluator",
+        "export_sink",
+        "lens",
+        "model_runtime",
+        "provider",
+        "storage",
+        "tool"
+      ],
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "grant_refs": {
+      "items": {
+        "maxLength": 64,
+        "minLength": 1,
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "maxItems": 256,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "installation_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "manifest_digest": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "qualification_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "extension-binding-v1",
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "scope": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "work_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "work_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "environment_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "environment_id"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "node_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "node_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "environment_id": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "environment_id",
+              "work_id"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "environment_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 1,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instance_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "node_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 1,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "purpose": {
+          "anyOf": [
+            {
+              "enum": [
+                "diagnosis",
+                "evaluation_development",
+                "evaluation_sealed",
+                "inquiry_audit",
+                "operational",
+                "release_evidence"
+              ],
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "work_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 1,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "instance_id",
+        "environment_id",
+        "work_id",
+        "node_id",
+        "purpose"
+      ],
+      "type": "object"
+    },
+    "transmit_authorized": {
+      "const": false,
+      "type": "boolean"
+    },
+    "trust_tier": {
+      "enum": [
+        "definition_package",
+        "deployment_trusted",
+        "managed_provider_runner",
+        "runtime_worker"
+      ],
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "binding_id",
+    "installation_id",
+    "qualification_id",
+    "manifest_digest",
+    "extension_kind",
+    "trust_tier",
+    "scope",
+    "config_ref",
+    "credential_handle_refs",
+    "grant_refs",
+    "enabled_revision",
+    "transmit_authorized"
+  ],
+  "title": "DeepTwin extension binding v1",
+  "type": "object"
+}

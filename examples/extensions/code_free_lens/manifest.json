@@ -1,0 +1,22 @@
+{
+  "artifact": {"sha256": "13e614f5dd1946918d378daa700e55b3aa5075b0b69bc77766efc351c2cd1e68", "type": "definition"},
+  "compatibility": {"extension_api": "1.0.0", "framework_max": "0.1.99", "framework_min": "0.1.0", "schema_versions": ["domain-v1"]},
+  "config_schema": {"additionalProperties": false, "type": "object"},
+  "declared_grants": [],
+  "declared_resources": [],
+  "entrypoint": {"name": "main", "protocol": "definition-v1"},
+  "extension_id": "org.deeptwin.examples.counter-reading",
+  "extension_kind": "lens",
+  "extension_version": "1.0.0",
+  "filesystem_needs": [],
+  "input_schema": {"additionalProperties": false, "type": "object"},
+  "isolation_profile": "definition-package-v1",
+  "license_expression": "CC0-1.0",
+  "migration_policy": "none",
+  "network_needs": [],
+  "output_schema": {"additionalProperties": false, "type": "object"},
+  "schema_version": "extension-manifest-v1",
+  "secret_needs": [],
+  "source": {"kind": "third_party", "locator": "examples/extensions/code_free_lens", "provenance_sha256": "d318b2b665bbe2c33cf87f77cd1d7d9030e27d510ae23f8a8ca9e5ecb82225fa"},
+  "uninstall_policy": "retain_records"
+}

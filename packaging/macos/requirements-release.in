@@ -1,0 +1,27 @@
+# Direct roots; exact transitive artifact lock follows local complete resolution.
+# macOS arm64 Python3.12, no optional provider tracing or GUI extras.
+fastapi==0.141.1
+starlette==1.6.0
+uvicorn==0.52.4
+python-docx==1.2.0
+pydantic==2.13.5
+httpx==0.28.1
+anthropic==1.4.0
+langgraph==1.2.11
+langgraph-checkpoint-sqlite==3.1.1
+playwright==1.62.0
+pywebview==6.2.1
+pypdf==6.17.0
+pypdfium2==5.13.0
+Pillow==12.3.0
+reportlab==5.0.1
+pyobjc-core==12.2.2
+pyobjc-framework-Cocoa==12.2.2
+pyobjc-framework-Quartz==12.2.2
+pyobjc-framework-WebKit==12.2.2
+pyobjc-framework-Security==12.2.2
+pyobjc-framework-UniformTypeIdentifiers==12.2.2
+langchain-core==1.6.2
+langsmith==0.12.2
+bottle==0.13.4
+proxy_tools==0.1.0

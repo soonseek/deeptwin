@@ -1,0 +1,548 @@
+{
+  "schema": "dirty-baseline-v1",
+  "head": "f9ea189de00db436d41d01260401a86a951d8925",
+  "branch": "codex/ui-structure",
+  "scope": "Pre-existing modified/untracked app, prototype source/tests, eval and documentation files. Generated review-output and unrelated tmp fixtures excluded.",
+  "files": [
+    {
+      "path": "app/.gitignore",
+      "sha256": "936bdc9ac6b1b4f6ec57922a5ba17ece54148eba6e05f849470e9f5e3b068a36",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/README.md",
+      "sha256": "496f8e9f7d5ce44aca11d947186270ef2f55cff240fca2d674c20f4f01ccac32",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/__init__.py",
+      "sha256": "2254f9c9e731ece2be2047852558c1fb3bc6327fb2c5c14e3d83a56885d142cc",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/codex_connection.py",
+      "sha256": "3fb7b1a0fa70d234b577940a9d49d3450802f040b49cfc8d35cbc350cd97e478",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/codex_critic.py",
+      "sha256": "2380d1efefec4fb381fc111227401c97914b4db7ada1b31c460af931a07bb0fc",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/codex_rpc.py",
+      "sha256": "a5bde6d9633305b94ede83cff9759c100b8cfca44d73b1a24731f182292ce245",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/codex_understanding.py",
+      "sha256": "fd2bc1172ad8a4d5fd5c95fac1d3e5eb932c0b1b5fa31f65a8e474a498fede64",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/critic_audit.py",
+      "sha256": "da017ad27be1a47b3b7d9711afc532ed2449e729521f882391bb8127cd9bbd9b",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/critic_contract.py",
+      "sha256": "fd5179f08fc5f33269dae0aeecd76a9c43e6f4ea356dbda6502cd8f83b09df0d",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/critic_trial.py",
+      "sha256": "db8142faa0d07156aade83671933c96cb7aaecb84f825ce2dbdeb622e5748cb6",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/generation_profiles.py",
+      "sha256": "9b42cbd79fade3f649c71c0ba403865bacb13160bdc464ddf1ea819e10e2ddfe",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/ingestion.py",
+      "sha256": "cec5282c94cc8a7683597e8d87c0e4af104b32e8d0c14ab1c3487651d4d4cbd5",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/model_catalog.py",
+      "sha256": "4fe3cbd62942e028245111f5656c8f05a403257007aaf1b2d8278d88ebf356ae",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/model_selection.py",
+      "sha256": "27a900639e56f774bdab360f34197ec99e8209b36896c64bc7727ddfe10bfede",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/native/speech_worker.cpp",
+      "sha256": "614450228aba68868220eb5f565968dbe89454da6d3621cfb94b64ecd6e91513",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/providers.py",
+      "sha256": "e811903b7e5d47bc4765740f15daa100a3b9d17d9642269371e0e6872c2c01c3",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/requests.py",
+      "sha256": "443995a5d18246d07119671016f64d3cfb876e3f75ab53d0cb5bd96958908708",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/requirements-dev.txt",
+      "sha256": "d8051f37f45da475d5b993671bf8c0e87d980a5bcd5ca9aa3e7e3ce99079e1d3",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/requirements.txt",
+      "sha256": "57fe96903dc901359cba8f6a594cbafc657493ce4fc9615a88a6cded91c93146",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/scripts/setup_local_speech.py",
+      "sha256": "ba3597778489a75086cbd2793dbaa1aac9240edce50539f0e4aefb1a80e5babe",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/server.py",
+      "sha256": "991e53928f3c03fbe44ddaa6c99049e5c57c1ab5dba9b460db86f3b33da1cb67",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/speech.py",
+      "sha256": "0959c6a24d63818e4cade8f557c1fb7e65431c930b05ba663d90107dd16c7d2f",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/speech_sessions.py",
+      "sha256": "f65815909391b5a41f4407cd5018e82157dfedd852b1ed7342129c394c58a0a9",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/static/app.mjs",
+      "sha256": "3e5484079354d645fdaee41b3cf2a99073050c9a4b475d97ac47b2b0f8f9513f",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/static/audio-capture-worklet.mjs",
+      "sha256": "1110a6d49fe180e2a358b6e3d044f3ddd8bbb8a5aba57eb0be0bdc6ff73be8ed",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/static/index.html",
+      "sha256": "02b7388dc8e041548884dd981b6489bae3755a931d1c06f041878b5788bea20d",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/static/speech-input.mjs",
+      "sha256": "98f4b69a7a39487907072a9a6d2f643afa8e228082863c140b0f2cbff063f750",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/static/styles.css",
+      "sha256": "728e9342a7d24b26758b49f53e5d3c9342b48578c193a4c83e4800128068273c",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/storage.py",
+      "sha256": "d5f2d357d72cc15671af6993ce2e867dae40412bcdd9564597db84c1b96ca6a2",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/browser-codex-connection.test.mjs",
+      "sha256": "25b57b4270ea5e20b3d63ad6f95af1aabbcc9a23ab64646097190f9f1be63c81",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/browser-first-use.test.mjs",
+      "sha256": "af3c52d4d3a891f2fe1261d4a3164f52a0ba28a9f64ef66e3e1b078cb4cf51f0",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/browser-model-selection.test.mjs",
+      "sha256": "8b41a5b4e626cddaaf043c65f43c8c98e83f6da9f38f73974b0bb662adbb7003",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/browser-speech-input.test.mjs",
+      "sha256": "9c669790daff04c56b18251b1c9ef3e8928ffd92dd2820ecd984bce02ff6dbcc",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/browser-state-review.test.mjs",
+      "sha256": "335a57d49b1873587ec158f0a2bbc8accdcc637800320565eb9e02c11ec66ea1",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/browser-understanding.test.mjs",
+      "sha256": "94b71303bc63fbee652b54a71746b3e2c17d254ae60bebcb32b929e825da58f7",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/fixtures/connection_server.py",
+      "sha256": "d598b07d4c2a11c8a8aa579718c0656971e6cbd83b9de41a9311b625d50ee862",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/fixtures/fake_codex_rpc.py",
+      "sha256": "dc4e5d1355aa04635643d498deb0c7638fd64282dd77cd33e3c6d7423b384427",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/fixtures/speech_server.py",
+      "sha256": "c7e3d87694f7b7ab1b85f333d462ddb69cad9077842759374d31914ff2ef356a",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/fixtures/understanding_server.py",
+      "sha256": "67bbc3b7f12be09149295d5eb91ce25146b29f8eae0fe04f51c0be5269758330",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/helpers/model-selection.mjs",
+      "sha256": "0f032b5092168cdb022003a328192dfec3675e3ccfe0b7fe0bdde4d61bcf7838",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_codex_api.py",
+      "sha256": "ab169d098ffeea69149cbaf724ad0e938b7dbda7c5b1016fc49b2c6b2449bc87",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_codex_boundary_review.py",
+      "sha256": "01bf9b8bde8b8ecbee4f8a2829da26e86d3a0f10db809cab72e9c0f24218a877",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_codex_completion_safety.py",
+      "sha256": "1cbec606fd116b1a9c95b9d8aca7d3427e52ba32fd3c1c35a4e9eb30202c1b9b",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_codex_connection.py",
+      "sha256": "9979e7f79ea77672eaa7985bf391f841e9772ff4377eedc022617becb6b0c1cd",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_codex_critic.py",
+      "sha256": "9ecc40c170516905b0696e778284ad780a8dbeb4857f287da34f1bdaaced8dea",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_codex_environmentless.py",
+      "sha256": "8683857a4d1e8441f889058ef880c9e9795131986b1147282595d352b38f046e",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_codex_generation_profiles.py",
+      "sha256": "7ddf369931e5a3ee56932ed754fcd5f4f53e66882f20e6b39a45172b61d8f639",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_codex_rpc.py",
+      "sha256": "d6337e91b62fc041af00a3bcc78716968844a721c1a99af89792dd0f5666cb5f",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_codex_understanding.py",
+      "sha256": "3bfe2bbe6d9d1aca43ebd4458b9074919b4a6369e96abb52eb85e479c221ecc1",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_critic_audit.py",
+      "sha256": "7412373ff5d4a632d7cb798456ad9392b174faf20977f4c4a5c8dba23f5ab5e3",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_critic_contract.py",
+      "sha256": "2f0c1533a31a51f16da6fd8bd726cff050b7661f8590bda70a8aa76fb6912025",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_critic_trial.py",
+      "sha256": "9fe74b112d060b1c49f8adc7b263bcf9bcb8773b0b9eaf99670a3c8df22b4ee5",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_generation_process_environment.py",
+      "sha256": "4193d7851ddab63d439f653aafcbcefa672a1310d9ccf04435abf16b6e60f600",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_generation_profiles.py",
+      "sha256": "83ecc8e7cb669f2152ecca062a9cdfc79f60c6f0f2517e483c4ff6773eccb896",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_ingestion.py",
+      "sha256": "d3eb6b55842380d570c3d9061474504087591841aefe63417292038382e22425",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_model_catalog.py",
+      "sha256": "d4155e759671de5a2dbae0f4090c42ac0e08e784c7c964dd00b666f3be97bc5b",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_model_selection.py",
+      "sha256": "5b8535f66eb61aaf934931aea5f82902874e4961f32291194d87a4ecca2cdb90",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_model_selection_api.py",
+      "sha256": "2a47a81086857a345d79512da2547620a92b3c44bb92a864c79edfe9b55631f2",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_providers.py",
+      "sha256": "ca9f8936044c7c493437f4ab05dbb8a3cf74fc84174f9944c685915b9401dcd1",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_runtime_profile_audit.py",
+      "sha256": "841f4fd2cbeb9ceb161a2aff164fec4c4ad00cc4f94afb995ec2db41c6e9e3a1",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_server.py",
+      "sha256": "8af2bd8de777e11c8c839308e95324507d48eb52b00e3d288a8bd0e39ac3e23a",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_speech.py",
+      "sha256": "4d2e20bbc3add86b824dcf6847b19f82bd5f3a81bf84836bc6fa44b7c9f5e821",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_speech_api.py",
+      "sha256": "c58833c2a0ae0aefda4c047d51b1e786d54f4d2fa4f8586a0913f2310630c8bf",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_speech_sessions.py",
+      "sha256": "aa07e7b058f13ffe42f60d352e4d2ab9572e9da6317182b55e379e84e4750baa",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_storage.py",
+      "sha256": "eca54409e6877179383e953cfcae1b78621c4ab8fef2f84acdbf134d9f396fce",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_understanding.py",
+      "sha256": "53135c823b99f4c8eb4757ca9972799db5ddfba840247e8d0fd097e625bdcbd0",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_understanding_boundary_review.py",
+      "sha256": "317736ec4c21adc067472b2b551d3618722afe327670a665cd927d372be1f72e",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/tests/test_understanding_readiness.py",
+      "sha256": "dcb65a984a8c9ed8278f76c41d2bb76c6dcc3d2f0bdbbe96ca39229b93177cfd",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "app/understanding.py",
+      "sha256": "9f4d2f52ba6c5253ee9c109f58f51cc494e6fc3dc71574c99e2b294e050d5424",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "control-prototype/tests/comparison-ux.test.mjs",
+      "sha256": "c9652f6a812342a47155b9f5aadc3fa72b01583e0637e3b795786dcf49f872f4",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "control-prototype/tests/ux-interactions.test.mjs",
+      "sha256": "d35f4ce15c6f79919eb10d4245216d5e8d547f592246f169b8727551f68b2238",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "control-prototype/tests/ux-layout.test.mjs",
+      "sha256": "1502f4669c124c391df07f1c2ee6ce3c06ea8eee8b1cfdb2b8e56175970c94d8",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "control-prototype/tests/workspace-ux.test.mjs",
+      "sha256": "35d10714189e066c83aefeda5f59882f1e9f8550a6f71346b598c3cc282807e9",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/lenses/composition-contract.md",
+      "sha256": "ae046a60ea2025386efcefef325d5fa6d656b3fc877d32060115bb57635a12d6",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/lenses/definition-candidates.md",
+      "sha256": "4c183d846e481c8252ad7e00e7edf9efbd0b61b90135ae6d45259ef8fe95dd88",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/lenses/review-cases.md",
+      "sha256": "6532e8335649329a03c3218ec12923cfb763f3e4cc0e64b2521269a65e2892ed",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/lenses/review-report.md",
+      "sha256": "ae816c552b835f167d435dd93c46459b76bb9cc4e6656ad16c3d56a427978aa9",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/lenses/source-map.md",
+      "sha256": "43174bc3bc98543cb8ee4892ad84ae2f7a1162e499999e1b28f61936b84bb78e",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-07-deeptwin-critic-audit-ledger.md",
+      "sha256": "de9595e990700ad5685d888febb62b925334aac12d0eb7851a4670409a963330",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-07-deeptwin-critic-evaluation.md",
+      "sha256": "7f65e5e6055e3b003f61b76a716af3a7cb4061820727c33b901c9a0f3c9f2e27",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-07-deeptwin-critic-input-contract.md",
+      "sha256": "23fb324e89d594e61ac7ba633f3b847359cef023703518393ffc00e9c4f824fb",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-07-deeptwin-critic-transport.md",
+      "sha256": "940ad21190674cd2839e3c02b8ec138b5b18c543f4766c5149d77b9949e67608",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-07-deeptwin-lens-definition-contract.md",
+      "sha256": "0a6f4ad26465ccd3218e624382a7161d08f3e22b6596ab38fcca71f95635eb53",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-09-07-deeptwin-graph-generation-design.md",
+      "sha256": "1bb8cdbbb2b34cf4176180d3bf15933d44bb11429630d6907bcf7ff77875c302",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-09-07-deeptwin-verification-selection-design.md",
+      "sha256": "6bb10e7a2490c6b6d7be946c57cf1991f5d0187774943273b7f0bfc5fc65a76d",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/ui/2026-09-07-codex-connection.md",
+      "sha256": "325552d8d425e8c7d4e1062136d7c529acff7b76fe52d0b2c5111d2fe1e33901",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/ui/2026-09-07-control-workspace-ux-critique.md",
+      "sha256": "20206e83b658f4ce72329a9894edb7688c0e2a4850f9c6f43dd51f9a80fe4034",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/ui/2026-09-07-control-workspace-ux-revision.md",
+      "sha256": "27a4ccec7d4f83ad38696d9cb0e973e5bb34a642ccad55b35f1fed897e53ad04",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/ui/2026-09-07-first-use-experience.md",
+      "sha256": "2ad741547470b1ed0c01afb36e43e507da02e71537371595bbb9285f0eec7bad",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/ui/2026-09-07-first-use-implementation.md",
+      "sha256": "e1fc2fbc35badc2844d1147c509ec620b9308544ff14896d4295159e406af7b9",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/ui/2026-09-07-live-understanding.md",
+      "sha256": "7ab78d1a1cb64a5a5900ecfbdc11355a1fd61f10cc7c518ee55635993509257b",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/ui/2026-09-07-model-control-and-voice.md",
+      "sha256": "77be23d272896b570ccbdc59654e3f9ea5524da4fd362082c91126224c4fe541",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/ui/2026-09-07-provider-integration-findings.md",
+      "sha256": "dab63cc7fcbcb9dff22a93bab28722829fe92fd3ce7b511ae4ee5611b45fd6df",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/ui/2026-09-07-work-understanding.md",
+      "sha256": "abb5a8da5d313485cb5210f587e3f4ebb3ae7deb86ef58e28dd8c3efa2d9f3c3",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "evals/deeptwin/__pycache__/q01_materials.cpython-312.pyc",
+      "sha256": "2cf2bda4dd9e1c85944496e9127038d5b00e98f4bf33c51311cbde7805cbc256",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "evals/deeptwin/q01_lenses.json",
+      "sha256": "d6b36c5c9f74459472ece18248164dcd35d2ec8cf12c482ca1eedd9db74226e1",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "evals/deeptwin/q01_materials.py",
+      "sha256": "65dca348bdaca2b174c591723d9a69bee359fb0f3e1bbb51abd8c7ddaff7f374",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "evals/deeptwin/tasks/v01-q01/Task.md",
+      "sha256": "0f8331b1242cba7640a5000a2c79d51c09609094b6352f7809d06849fc94e509",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "control-prototype/app.mjs",
+      "sha256": "cf0e3a335b22073b8c202d6e2a57ead52d1ba4878f69ab8cbff0c7bd318c6808",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "control-prototype/primitives.mjs",
+      "sha256": "422f84b4c66f7b8d5aabab1d2a09ba412f89fef14943af15431d47e354e9f318",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "control-prototype/styles.css",
+      "sha256": "78a09c75fa6b25deaf5c53fb0e7b6a1c0a479ee50c28ee241722685226bd5137",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "control-prototype/tests/browser-review.test.mjs",
+      "sha256": "1a6d2282fecf94032de3635adea1136a13c02a3d71bf5940631b736a89d7796d",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "control-prototype/tests/browser.test.mjs",
+      "sha256": "0d11db3af26b0aa815dd25a9454173e086f4570dd621966f9d070c74fbac78e0",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "control-prototype/tests/primitives.test.mjs",
+      "sha256": "6ea123cee8a48e1092af828981026d10bcf4da3da7c013ad2771f5c360e14c73",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "control-prototype/tests/workspace.test.mjs",
+      "sha256": "db30189771f90d21ad40718b32d7b30f2ab866ee518802c361ab95f6e3b47dec",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "control-prototype/workspace.mjs",
+      "sha256": "9e2223422ea84f605ca3ec1bab4494f77e58848c48c7ea68c82d869dcd408be0",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-06-deeptwin-experience-execution-design.md",
+      "sha256": "54c26c56cf0762c0b661b49091ed97e8644efcae9616183ed2136579a7ddbff5",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-06-deeptwin-ui-structure.md",
+      "sha256": "644ef086895b606a4c6134f8a9a3ab6186430354902964dce034b8dd603e7489",
+      "ownership": "pre-existing before autonomous implementation; preserve"
+    }
+  ]
+}

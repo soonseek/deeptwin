@@ -1,0 +1,756 @@
+# Tasks: DeepTwin web-based open-source multi-agent framework release candidate
+
+**Input**: this feature's spec, plan, research, data model, source trace and seven contracts.
+**Status**: the first ADR-009–012/T086 web-framework review is historical and T089's exact multi-
+architecture build-input closure remains closed. ADR-014 reopened T086 for extension-framework
+remediation and independent review. Earlier transport-neutral implementation is preserved; no
+architecture-dependent task may claim design closure while this gate remains open.
+**Tests**: explicitly required by the user and spec. Write/observe relevant failures first,
+then implement, run focused tests, integrate regressions and record evidence. Existing passes
+are historical until rerun. Do not modify a test merely to make a deficient implementation pass.
+
+Each task has an exact destination; paths are repository-relative unless explicitly marked as
+private local evidence. Tasks can be split into
+smaller substeps with the same acceptance scope. A checkbox requires linked evidence, not code
+existence. `[P]` applies only after earlier shared prerequisites and with disjoint file ownership.
+No task authorizes publication, new paid calls, credential extraction or destructive user changes.
+Every feature's completion includes its required event emissions and public/private evidence
+tests BEFORE that feature's first live trial. T068 is the comprehensive coverage audit, not
+the first deployment of logging after user work has already occurred.
+
+Cross-cutting product boundary: every task targets a self-hosted, web-based, open-source multi-agent framework whose
+bundled browser UI is the supported end-user product/control surface. Docker/Compose/Portainer are
+external deployment/operator mechanisms; native launchers, DMGs, embedded WebViews and end-user CLI
+flows are excluded. Claude is API-only. Codex subscription uses the server-owned managed adapter/
+runner, with Codex API as a separate explicit option. Agent browser/external-tool execution and
+multi-format original artifacts remain framework-managed capabilities surfaced and audited in the
+browser UI.
+
+## Phase 1: Setup and design gate
+
+Goal: close the whole design before new product implementation and preserve known baseline.
+
+- [x] T001 Review all contracts/source mappings and record resolved defects plus V0 decision in specs/001-autonomous-release/evidence/design-review.md; run Spec Kit analysis after this task list is validated (FR-033).
+- [x] T086 Re-run the complete Spec Kit cross-artifact and independent architecture review against
+  constitution v3.0.1/ADR-009–014 and record the fresh result separately in
+  specs/001-autonomous-release/evidence/adr014-independent-review-r7.md before dependent work claims
+  design closure (FR-001/032/033). `web-framework-design-review.md` and its first 2026-09-08 DESIGN
+  CLEAR remain historical inputs. ADR-014 independent reviews rejected revisions 1–6 and remain
+  historical. Revision 7 subsequently closed this gate without changing the implementation,
+  release, effect, legal or human-acceptance gates. Close all six original ADR-014 findings plus the five
+  revision-1 and four revision-2 review blockers: semantic port
+  matrix, durable requalification/binding, external operator-staged OCI services, browser extension
+  management, separately installable extension-author/HTTP clients with real-server parity, and
+  recursive core dependency enforcement including `app/extensions/**`; stable binding slots and
+  core-owned capability selectors; exact separate stage/replace/current-uninstall/superseded-
+  retirement request/result arms, separate rollback-retention heads plus owner release, reachable
+  A→B→release→strict-ancestor-retirement with preserved history/current head,
+  and acyclic request→receipt→postcondition→record/head→consumption/event order; field-complete base
+  schemas, exhaustive operation×terminal result artifact cardinality and a separate all-52-operation
+  request artifact-input contract (11 non-empty-capable/41 exact-empty), including exact byte-bearing
+  export-sink snapshot/prepared-delivery profiles over bounded broker streaming; closed result
+  role/media/omissions metadata and one exhaustive terminal/effect/outcome truth; exact
+  `{tool_call_ref,result_ref}` tool success output with any output-level effect receipt forbidden; one exact five-field
+  `BindingSlotKeyV1` object+digest across config/binding/command/result/event/retention; exact
+  T025 router-composition/T087 route-contribution ownership; and portable-HTTPS-only bearer client
+  parity with HTTP-loopback pre-parser route denial. Verify no manifest↔service-
+  descriptor digest cycle and distinct managed-provider-runner semantics.
+  Run a document-structure guard that enumerates exactly eleven normative `*-port-v1` rows and
+  proves each is inside a contiguous Markdown pipe table whose header is immediately followed by its
+  separator; prose between port rows or any isolated pipe row fails before schema generation.
+  Before review, freeze the exact post-ADR-014 input bytes in
+  evidence/adr014-review-input-manifest-r7.md; the frozen r1/r2/r3/r4/r5/r6 manifests are not overwritten, the
+  review output is not its own input and T075's later implementation-era manifest cannot substitute.
+  Do not mark complete until a fresh independent
+  reviewer finds no P1/P2 design contradiction;
+  implementation, release, effect, license and human-acceptance gates remain separately open.
+  Evidence: `evidence/adr014-independent-review-r7.md` records the independent ACCEPT against the
+  exact 35-entry r7 manifest (`57c80f1cec6bf674d91f0cd3da802f93fbca1386574558e546ad39c90676f08f`),
+  with P1=0, P2=0 and one nonblocking status-wording P3. This checkbox and its status prose are
+  post-verdict bookkeeping; no accepted semantic input was changed.
+- [x] T002 Snapshot existing dirty-file ownership and rerun baseline Python/browser suites without live calls; record actual results/commands in specs/001-autonomous-release/evidence/baseline.md (FR-031).
+- [x] T003 Resolve exact tested platform dependencies in app/requirements-release.lock and the historical packaging manifest, including hashes/licenses; use a scoped build environment and no runtime latest installs (R7, OPS-AC10).
+  Evidence: evidence/dependency-lock.md. Exact 67-runtime/80-combined Python closure is locked. Seven native source/archive selections remain historical experiment evidence after ADR-009 and are not web-release dependencies; worker isolation, supply-chain notices and distribution qualification remain in T018/T079/T081–T084.
+- [x] T089 Resolve and lock the complete ADR-010–013 Linux arm64+amd64 release **build-input** closure
+  in deploy/locks/ and deploy/manifests/. Include existing server/LangGraph/Anthropic/document/PDF/
+  image dependencies and native libraries; PyNaCl 1.6.2/libsodium; argon2-cffi 25.1.0;
+  upstream faster-whisper 1.2.1 plus the separately named reproducible PCM-only
+  `deeptwin-faster-whisper 1.2.1+deeptwin.1`, CTranslate2/tokenizer/NumPy and actual transitives;
+  lock the exact input/patch/output hashes and tests proving PyAV/FFmpeg/ONNX Runtime/Silero ONNX
+  are intentionally absent while upstream and Silero license notices remain;
+  every `Systran/faster-whisper-small` revision file/hash/license; exact Node 24 LTS,
+  `playwright-core` 1.63.0/npm provenance, paired Chromium headless-shell and Debian runtime/font closure,
+  edge/proxy/base images and browser seccomp; the ADR-013 minimal Codex managed-runner closure of
+  separately signed `codex` + adjacent `codex-code-mode-host` + OpenAI `bubblewrap` for both targets,
+  an exact trusted Debian Bookworm `/bin/bash` closure and fixed PATH, while omitting zsh-fork,
+  `codex-package.json` and mandatory `rg`; separately labelled App Server preview assets only if retained;
+  and official age 1.3.2 including Linux binaries, archive/member hashes, Go module notices and
+  plugin/network-discovery denial. For each upstream base/tool/third-party image used to build or run
+  the distribution, pin one multi-architecture OCI index or Docker manifest-list descriptor and
+  every selected platform manifest/config/layer descriptor, including media type, digest and byte
+  size. Produce wheel/binary/upstream-image/model hashes, SBOM, license and
+  provenance inputs as one `BuildInputLockManifest` with a content-derived
+  `build_input_lock_set_digest`; fail on source-only or missing-architecture closure and prohibit
+  runtime installs/model downloads. Separate stable-ID `build_input_blockers[]` owned by T089 from
+  `downstream_release_blockers[]` owned by T018/T025/T079/T081–T084/T088; locking the input set requires
+  the former to be empty and MUST remain possible while the latter keep every release claim open.
+  This task MUST NOT claim final DeepTwin service-image digests:
+  T081 owns those only after the mandatory implementations exist. T003's macOS lock is historical
+  pre-web evidence and cannot satisfy this task.
+  Evidence: `deploy/manifests/build-input-lock.json` is structurally verified `locked` with semantic
+  digest `2fb6fd8b108ce31f1cc49a9d9ffd3a335584cde677b63de6dceb683731708b24` and file SHA-256
+  `212eb478026a2e38b40d882c2525fcee6a3945ed258dbb0d89b615489e62e0bd`. The content-bound
+  Codex receipt binds all 17 input files and six Sigstore outcomes; 257 recursive report-shape
+  mutations are rejected. Root and independent verification passed 223 Python deploy tests,
+  19 Node provenance tests, all aggregate/component/Rust verifier CLIs and deterministic
+  same-timestamp regeneration without receipt mutation. The receipt is not a signed creator
+  attestation, and the separately owned T018/T025/T079/T081–T084/T088 release gates remain open;
+  see `evidence/t089-supply-chain-verification.md`.
+- [x] T004 Create module/test scaffolding and secret-free offline configuration in app/domain/__init__.py, app/runtime/__init__.py, app/services/__init__.py, app/adapters/__init__.py, app/operations/__init__.py and app/requirements-dev.txt; preserve existing imports/tests.
+
+## Phase 2: Foundational contracts and authority
+
+Goal: durable evidence/permission/dispatch substrate. All story implementations depend on this
+phase. Web session and isolated-worker feasibility are tested here before extensive integration.
+
+- [x] T005 [P] Add strict ref/schema/immutable version/decimal/actor fixtures in app/tests/test_domain_contracts.py, including missing/cross-vault refs and spoofed human actors (data-model §1). Integrated missing/foreign/spoof tests are completed across the contract, storage and permission suites; evidence/domain-foundation.md records the 867-test focused run.
+- [x] T006 Implement typed immutable refs/schemas/event registry in app/domain/refs.py, app/domain/schemas.py and app/domain/events.py; export versioned schemas under schemas/v1/ (FR-017/027/032). Evidence: evidence/domain-foundation.md; runtime/export parity and exact event allowlists pass.
+- [x] T007 Add migration/CAS/crash/snapshot tests preserving legacy revision/file IDs in app/tests/test_domain_storage.py (data-model §2, OPS-AC05/07). Evidence: evidence/domain-storage.md and evidence/domain-storage-review.md; 57 focused tests pass after four reproduced review defects were fixed.
+- [x] T008 Implement additive migration ledger, content-addressed staging/sealing and indexed entity relationships in app/domain/store.py and app/storage.py; no old-byte deletion or second writable truth (FR-029/030). Evidence: evidence/domain-storage.md and evidence/domain-storage-review.md; 84 focused, 898 related and 1,882 app tests pass, with an independent final storage audit. Shared command/domain/budget/runtime atomicity remains T014/T016.
+- [x] T009 [P] Add purpose/actor/object/firewall tests in app/tests/test_domain_permissions.py for operational/diagnosis/inquiry/heldout boundaries (G-05, R11). Evidence: evidence/domain-permissions.md; 34 process-local boundary tests pass.
+- [x] T010 Implement grant/purpose/ref authorization and explicit compiler-input projections in app/domain/permissions.py (FR-017/020/029). Evidence: evidence/domain-permissions.md and evidence/domain-permissions-persistent.md; 69 focused and 248 shared tests pass, an independent final review cleared the persistent descriptor/grant/projection and same-transaction authorization boundaries, and the independently reviewed 23-test T016 coordinator suite confirms the private integration seam. Authenticated HTTP command enforcement remains owned by T016.
+- [x] T011 Add reserve/send/result/cancel/late-result/lease/checkpoint fault tests in app/tests/test_runtime_ledger.py, preserving unknown effects instead of retrying (R07/08). Evidence: evidence/runtime-ledger.md; 35 focused tests and an independent final audit pass.
+- [x] T012 Implement durable run/execution/attempt ownership, dispatch gates and idempotent result acceptance in app/runtime/ledger.py (runtime §4). The bounded ledger scope is complete; cross-module budget/permission/dispatcher atomicity remains T014/T016 integration, not an exactly-once claim.
+- [x] T013 [P] Add concurrent budget reservation, unknown usage, retries/deadlines and restart tests in app/tests/test_runtime_budgets.py (R10, P10/11). Evidence: evidence/runtime-budgets.md; 61 focused tests and an independent final audit pass.
+- [x] T014 Implement finite shared budgets/deadlines/reservations in app/runtime/budgets.py; apply separate product design/execution/growth policies and no automatic API cap (FR-011/013/024). Evidence: evidence/runtime-budgets.md; 112 focused tests pass and an independent final audit cleared the atomic budget+send-intent, restart, cap-reset, path and trigger boundaries at recorded hashes.
+- [x] T015 [P] Preserve process-local session/bootstrap/Origin/CSRF/GET-no-dispatch/SSE-canary
+  feasibility tests in app/tests/test_local_session.py and app/tests/test_public_events.py (A01–A04).
+  Evidence: evidence/local-session.md; 52 focused Python and 63 browser tests pass. This was not an
+  ADR-009 loopback or HTTPS release profile; all release auth/first-owner coverage remains T025.
+- [x] T016 Implement strict command envelopes/idempotency/public projections and resumable event
+  reads with the preserved process-local session feasibility in app/api/session.py,
+  app/api/commands.py, app/api/views.py and app/server.py (FR-009/027/029). Evidence:
+  evidence/server-api-v1.md; 25 focused, 300 exact integration, 202 storage/domain and 68 browser
+  checks pass. This does not qualify either ADR-009 release session profile in T025.
+- [x] T017 Preserve the former native worker/packaging feasibility canaries as explicitly superseded historical experiments in packaging/macos/tests/test_native_boundary.py and specs/001-autonomous-release/evidence/native-feasibility.md. They do not qualify the ADR-009 web release.
+- [ ] T018 Implement and qualify ADR-010's self-hosted boundary in app/workers/broker.py,
+  app/runtime/worker_coordinator.py, deploy/compose.yaml, deploy/security/browser-seccomp.json and
+  deploy/tests/test_worker_boundary.py: data-mount-free edge as the only published port (portable
+  mode may mount only pinned config and read-only TLS secrets); internal/no-egress
+  control plane; separate provider/fetch/Codex egress; networkless browser/document/speech/evaluation/
+  runtime-extension workers; pair-specific UDS, fixed UID/peer credential/channel nonce, typed size/
+  backpressure/restart reconciliation. Prove non-root Chromium userns+sandbox is active with pinned
+  seccomp/init/shm/pids/memory/CPU/FD limits and reject `--no-sandbox`, privileged, SYS_ADMIN,
+  Docker-socket, direct network, product/runtime-initiated host-path/post-start/unmanifested mount and
+  wrong-peer bypasses. Descriptor/request-declared dedicated extension sockets/named volumes are
+  created only by the external operator at service staging. Artifacts stream by digest/
+  bounded IPC rather than sharing the whole store; the product manages logical work, never container
+  lifecycle. No native launcher, DMG or embedded-WebView dependency (FR-001/014/029).
+  T018-A/B/B2/C checkpoints: the independently reviewed authenticated bounded UDS protocol v2 uses
+  distinct requester/responder boot identities; the exact-capability coordinator rechecks the
+  selected operational-read grant, immutable envelope, budget/lease/deadline and worker generation
+  around one non-retrying exchange; and the Compose artifact now records an independently audited,
+  deliberately non-runtime-qualified IPC/network/state isolation skeleton. B2 additionally closes
+  the bounded authenticated HTTP→root-command→registered-coordinator handoff and durable redacted
+  transport observation/status/fail-closed uncertainty across `app/runtime/{ledger,worker_dispatch}.py`,
+  `app/api/{transaction,routes}.py` and `app/server.py`. The focused coordinator suite passes 15 tests,
+  broker+static topology passes 75 plus 21 subtests (one non-Linux skip), B2's final independent
+  focused set passes 127, and the latest shared suites pass 2,298 application (one skip) and 298
+  deploy tests. See
+  evidence/worker-broker-t018a.md, evidence/worker-coordinator-t018b.md and
+  evidence/worker-dispatch-t018b2.md and evidence/static-topology-t018c.md. The checkbox remains open
+  for actual Linux UID/peer paths and service images/initializers, actual worker implementations,
+  bounded artifact streaming and semantic graph execution, runtime container/network/mount/resource
+  enforcement, non-root Chromium sandbox/seccomp qualification and both clean deployment profiles.
+  Interpret this unchanged task through two in-task gates, not two new tasks. `T018-foundation`
+  requires actual Linux IPC initializers/listeners, peer-credential/channel handshake, bounded
+  digest/chunk/receiver-credit artifact streaming and externally staged sandbox/channel enforcement;
+  only that foundation is a prerequisite for T087/T090/T024/T043/T044/T070/T081 semantic/runtime
+  integration. `T018-final` is the later convergence point: after those owners connect real semantic
+  workers, graph/artifact paths and staged isolation, and after T083 supplies its separately owned
+  two-clean-host repetition, this single checkbox may close. The whole T018 checkbox is not a
+  reverse prerequisite for its downstream semantic implementations, and T083 retains clean-host
+  ownership.
+- [ ] T087 Implement ADR-014's versioned semantic extension framework in app/extensions/, the domain
+  store/migrations, schemas/v1/extensions/, app/api/extension_routes.py,
+  app/api/route_contributions/extensions-v1.json,
+  app/operations/extension_deployment.py, app/static/extensions.mjs,
+  sdk/python/deeptwin_ext/ and sdk/python/deeptwin_client/ (FR-001/030/032; A13; R16; UX-AC11).
+  Replace the generic-envelope-as-SPI assumption with the closed kind↔artifact↔port-contract-version
+  ↔trust-tier↔staging-authority matrix and core-owned per-kind operation/base schema/effect/
+  idempotency/cancel/outcome/artifact semantics. Generate the 44 exact core-owned
+  `schemas/v1/extensions/ports/<port>/{config,request,result,error}.schema.json` artifacts from
+  `contracts/extension-ports.md`, including exact scalar/collection/nesting/byte bounds, typed nested
+  objects, closed operation input/output arms and terminal/core/port errors. Generate and enumerate
+  all 208 operation×candidate-terminal pairs, emitting exactly 127 allowed branches and rejecting
+  exactly 81 disallowed pairs with no missing or duplicate candidate;
+  enforce `artifacts=[]` for all allowed non-success terminals (especially cancelled codec) and every
+  success empty/variable/exact-one output-ref/role/count/byte invariant. Separately enumerate all 52
+  request operations and enforce the 11 non-empty-capable frozen/tool/codec/storage/export profiles
+  plus 41 exact `artifact_inputs=[]` profiles from §3.9. Export `prepare` and `transmit` must receive
+  the exact ordered snapshot/prepared-delivery artifact bindings via the T018 bounded stream; refs or
+  shared-store mounts cannot substitute. Codec and storage operation input objects carry no
+  competing source/value ref; tool arguments recursively carry no artifact/selector ref; provider/
+  model/runner lists equal their frozen records. Test extra/missing/over-bound/wrong-role/media/
+  selector, hidden/conflicting ref, frozen/export-list mismatch and missing/widened core ToolDefinition
+  profiles, including explicit public-fetch/browser/multimodal/document mappings. Test these plus every required,
+  missing, unknown, over-bound, wrong-type, wrong-operation and refinement case in
+  `app/tests/test_extension_port_schemas.py`. Validate the closed result role/media/omissions
+  matrix, codec target-media/output-omissions equalities and tool output contracts. Treat
+  `result.effect` as the sole outcome truth, forbid an error-level duplicate state, generate every
+  allowed terminal/effect-family tuple and reject every unlisted tuple, including succeeded external
+  unknown/unconfirmed and failed unknown/retryable. Reject an `invoke_tool` success output containing
+  `effect_receipt_ref` or an alias even when it equals the common effect receipt; preserve
+  `ToolResultArtifactBindingV1` under `result_ref`;
+  repeat the eleven-row/zero-isolated-pipe contract-source structure guard before generating schemas;
+  the author SDK writes manifests/permitted refinements and only consumes hash-equal read-only base
+  bindings. Extension schemas may refine but never replace them.
+  Reject all wrong tuples, including a tool using a deployment port, and keep the provider API port
+  distinct from the built-in managed-provider-runner agent-loop port.
+
+  T087 owns durable manifest, verified artifact installation history/head, target-installation-keyed
+  service-retirement history/head, repeatable qualification history/head, binding revision/head,
+  target-binding-keyed rollback-retention revision/head and
+  public-event persistence in the applicable DB/CAS transaction. Key
+  installation heads by stable extension identity, qualification heads by installation digest plus
+  exact qualification-context fingerprint, and binding heads by semantic port plus exact target-
+  exact five-field `BindingSlotKeyV1` and its canonical digest. Every config, binding record/head,
+  command/result/event and rollback-retention record must preserve that same object+digest; test all
+  eleven config roundtrips plus four-field, sibling/nested port-version, binding-ref and digest
+  mismatches. Different port versions/slots/selectors under the same scope/purpose coexist; only exact
+  same-slot candidates compete, and extension identity remains the candidate rather than an implicit
+  key. Carry the exact key and old/new candidate through commands, stale-head/concurrency events,
+  rollback, UI projections and `app/tests/test_extension_binding_slots.py`. Supersession/disable must
+  atomically create a `retained` head for the displaced exact binding revision; rollback consumes it.
+  Implement the closed owner-only release command/result/event and fixed extension route in
+  `app/extensions/persistence.py`, `app/api/extension_routes.py` and
+  `app/tests/test_extension_rollback_retention.py`: exact five-field slot+digest/current binding/target binding+
+  installation/expected retention head, `retained→released` CAS, unchanged binding/installation heads,
+  preserved immutable history, and rejection of current/cross-slot/stale/repeated/mismatched release
+  or rollback through released/consumed targets. Keep a
+  verified installation independent from qualification/binding so expiry or runtime/platform/
+  framework/API/schema/port/capability change permits a fresh qualification without reinstalling
+  bytes; implement atomic binding supersession/disable/rollback, startup rehydrate/reconcile and
+  crash/concurrency/stale-head/suspend/revoke/uninstall/retirement tests. T018 owns only authenticated isolated
+  transport/execution, not extension lifecycle persistence.
+
+  Implement code-free owner import plus read/bind/disable/rollback/rollback-retention-release routes
+  after T025 authority, and
+  `Settings > Extensions` source/license/port/trust/qualification/failure/scope/grant/affected-
+  environment observability. Executable extension staging remains external deployment-operator
+  authority: consume exact manifest plus acyclic OCI service descriptor and verified one-use signed
+  deployment receipt, then require arm-specific postcondition and qualification. Implement the four
+  separate closed request/result schema pairs from data-model §3.2 in
+  `schemas/v1/extensions/deployment/` and `app/operations/extension_deployment.py`: stage has no
+  reachable current service and accepts only never-installed absence or an exact uninstall tombstone
+  with monotonic next revision; replace uses expected current head+next revision, current-uninstall targets exactly
+  the current tuple and appends a tombstone, while superseded-retirement names an existing strict
+  ancestor and preserves the descendant current head. No arm accepts a future record ref. For all extension kinds require the common-envelope
+  `preconditions` to be the closed constant `{}` and reject duplicated/overriding/future state there;
+  the arm `effect_payload` is the only precondition truth. Enforce exact request↔result equality for
+  extension ID/applicable revision/arm, every repeated head/target/proof/snapshot digest and each
+  new/current/superseded five-field service tuple. Current-uninstall never accepts old absent;
+  retirement failure/unknown never accepts target-after absent. Enforce present/absent/unknown arms
+  and one-way request→receipt→postcondition→record/head→consumption/event transactions in
+  `app/tests/test_extension_deployment.py`, including A stage→B replace→release every A rollback-
+  retention head→retire A with B binding/installation heads byte-identical/dispatchable, A history
+  preserved and A rollback denied; then, in a conformance slot with no active-environment refs,
+  disable B→release the resulting B retention→verify all dependency sets empty→B current-uninstall→
+  C stage from the exact B
+  tombstone at the next monotonic revision, with C handshake/qualification/binding/dispatch and no
+  revival of A/B. Also cover non-ancestor/cross-extension target, remaining binding/
+  rollback/environment dependency, stale preserved/retirement head, tuple mismatch, current-vs-
+  ancestor arm confusion, failure/unknown reconciliation and cancel/replay/crash atomicity; product code never
+  downloads images/code, controls Docker/containers, creates host-path/post-start/unmanifested
+  mounts or rebuilds core. Only the external operator may create descriptor/request-declared
+  dedicated socket/named-volume mounts during service staging. Replacement stages a new digest under
+  a distinct service identity while the old one remains reachable, then handshakes, qualifies and
+  CAS-supersedes the binding; ancestor retirement is the later dependency-checked request and current
+  uninstall remains a separate destructive arm.
+
+  Produce separate PEP 517 package roots, metadata and wheel/sdist artifacts for the Python
+  extension-author and HTTP/OpenAPI client; install each into a fresh environment rather than
+  importing the repository source tree. The
+  alternate-client test must install the client in another process/environment that cannot import
+  `app`, call T025's actually mounted TLS-bearer HTTPS server routes through its frozen router-
+  composition seam, and match the browser path's durable
+  receipt/revision/authority/event ordering across restart/concurrency in
+  `app/tests/test_extension_client_blackbox.py`. T087 owns extension-specific client methods,
+  `app/api/extension_routes.py`, `app/api/route_contributions/extensions-v1.json` and
+  `app/tests/test_extension_route_registration.py`; it must register through T025's seam without
+  editing `app/server.py` or `app/api/router_composition.py`. It does not own common service-client
+  credential/auth/rate-limit/server composition.
+  Enforce the core boundary in `app/tests/test_extension_architecture.py` by recursively walking the
+  transitive import graph from `app/domain/**`, `app/services/**`, `app/runtime/**`,
+  `app/operations/**` and `app/extensions/**`; reject direct/indirect API/static/server presentation,
+  FastAPI/Starlette/Jinja and resolvable dynamic-import bypasses.
+  With T018, invoke one repository-out-of-tree OCI tool fixture through the actual broker without a
+  core rebuild. T087 owns its separate private conformance-fixture source/build recipe, one exact OCI
+  index descriptor with closed Linux arm64+amd64 platform manifest/config/layer entries, manifest/
+  service descriptor, SBOM/provenance and license inventory; each host request binds one entry,
+  this is neither a T089 core build input nor a T081 core image lock, and T084 gates any publication.
+  T081/T083 later own the core distribution and two clean-host repetition and are not prerequisites
+  for closing T087. T025 owns common authenticated command/deployment receipt primitives plus the
+  frozen service-client auth/router-composition seam; T087 alone owns its fixed extension route
+  contribution, extension commands/lifecycle store and client parity over that actual surface.
+
+  Historical pure-contract checkpoint (2026-09-08): inert manifests, non-durable lifecycle values,
+  exported schemas, source-tree Python helpers/examples and unmounted in-process client surfaces
+  passed their recorded tests in evidence/extension-spi-pure-contracts.md. That checkpoint is
+  preserved but does not satisfy ADR-014 or make this task complete. Runtime integration waits only
+  for `T018-foundation`; semantic worker/graph integration then feeds `T018-final` rather than waiting
+  for the whole T018 checkbox. Durable authenticated routes wait for T025; T086 must independently clear the amended design
+  before T087 claims architectural completion.
+
+## Phase 3: US1 — Browser first use, providers and speech (P1)
+
+Independent test: clean web instance and new test vault, browser UI only, description/files/STT, exact model path and stored
+understanding; failure/restart preserves input. Fixture and live proofs remain separate.
+
+- [x] T019 [P] [US1] Add Claude API-only/secret/catalog/SSE/stop/retry fake-server contracts in app/tests/test_claude_api.py (P01–P12). Evidence: evidence/claude-api.md; 106 focused and 152 Claude/Codex cross-mode offline tests pass at the recorded hashes, with no live network, Keychain, or paid calls and an independent adversarial adapter audit.
+- [x] T020 [US1] Implement the credential-vault abstraction plus a local Keychain adapter and direct Claude API connection/catalog/model-step adapter in app/adapters/keychain.py and app/adapters/claude_api.py, with hidden retries off and no subscription discovery (FR-010–012/029). Evidence: evidence/claude-api.md; direct API-only action guards, credential/catalog invalidation, bounded SSE/tool handling, redaction and fixed transport policy pass the final independent adapter audit. A production web-deployment secret-store binding, product command/consent, durable dispatch/budget and live-provider E2E remain later integration work and are not claimed here.
+- [x] T021 [US1] Implement explicitly isolated optional Codex API mode and auth/catalog boundary tests in app/adapters/codex_api.py and app/tests/test_codex_api_mode.py; do not mutate shared subscription credentials (FR-011). Evidence: evidence/codex-api-mode.md; 44 focused and 106 Codex+Claude offline tests pass, with a separate final audit at the recorded hashes and no live calls.
+- [x] T022 [US1] Extend actual catalog/capability/default/per-purpose/per-agent choices in app/model_catalog.py, app/model_selection.py and app/providers.py; remove current Claude-subscription readiness wording without relabeling old history (FR-010/FR-011/FR-012). Evidence: evidence/model-catalog-selection.md; 65 focused, 512 bounded integration and 8 browser checks pass, followed by an independent clear row/pointer/epoch/provider-mode review.
+- [ ] T023 [US1] Add provider/key/model/budget GUI and same-space first-input recovery in
+  app/static/index.html, app/static/settings.mjs, app/static/app.mjs and app/api/routes.py; implement secret-safe provider
+  command receipts plus `pending intent → gateway store_at → binding CAS → terminal receipt` in
+  app/services/provider_connections.py with lost-response/concurrent/restart/orphan-quarantine/
+  changed-envelope tests in app/tests/test_provider_connections.py, never journaling or comparing
+  key material or reapplying a newly supplied secret under a consumed command ID. Raw create/rotate
+  secrets may exist only in bounded no-store request/UDS memory until the gateway receipt; forbid
+  journal/log/error/export/metric copies and release references best-effort after response. GET
+  connection/status/catalog must be persisted redacted snapshot only with zero vault/gateway/
+  provider/network/refresh; only explicit mutation refreshes. UI shows create/rotate/delete durable
+  state, `secret_input_lost`, cleanup pending/failure, and distinguishes local DeepTwin erasure from
+  provider-side API-key revocation; test changed binding invalidates old catalog/model choice and no
+  credential mutation implicitly checks, refreshes or runs a model. Implement actual shared conversation/messages/referenced-object commands in
+  app/services/conversation.py and app/static/chat.mjs, with ambiguous/spoofed approval rejection
+  tests in app/tests/test_conversation.py; preserve mixed text/file/source revisions, partial/
+  unreadable ingestion states and input recovery without mandatory multi-account setup or implicit
+  inference. Replace the loopback prototype's “이 컴퓨터에 저장됨/이 컴퓨터의 Codex 로그인과
+  공유” and native-app/install-launcher wording with exact instance-scoped storage and managed-runner state; never
+  imply that the user's browser device, local CLI or provider app is the DeepTwin host/product
+  (FR-002/FR-009/FR-029, API §4, UX-AC01/03).
+- [ ] T090 [US1] Implement `CredentialedProviderTransport` and its dedicated gateway in
+  app/runtime/provider_transport.py and app/workers/provider_gateway.py with fake-server tests in
+  app/tests/test_provider_transport.py: opaque handle resolution, exact provider/origin/method/path/
+  projection/budget binding, auth injection at send time, redirect/SSRF/header/proxy/log/error/
+  crash canaries, T087-qualified provider-transport manifest/binding, idempotent
+  `query_record`/`store_at`/binding reconciliation, bounded redacted responses and no
+  credential exposure to provider/model workers or control-plane imports of the vault implementation.
+  Explicit create/rotate ingress may pass a raw secret once through bounded no-store control-plane
+  request memory to authenticated gateway UDS after exactly one decimal Content-Length ≤96 KiB,
+  no Transfer-/Content-Encoding and ≤65,536-byte UTF-8 secret checks; missing/duplicate/framing/
+  oversize fails before intent/vault. Normal dispatch/storage uses opaque handles only.
+  Test GET/status/catalog snapshot zero vault/gateway/provider/network effect; strict malformed-wire
+  zero-effect canaries; create/rotate/delete lost-response and race cases; missing-record
+  `secret_input_lost`; create orphan/rotated predecessor/delete retirement; revoke-before-send,
+  restart/rollback cleanup and `cleanup_pending → erasure_completed` only after verified removal of
+  all locally managed superseded/staging copies. Create/rotate/delete themselves make zero provider
+  check/catalog/model/runtime calls; rotate invalidates the predecessor catalog/model authority and
+  a new catalog exists only after explicit refresh. UI/tests distinguish local erasure from remote
+  provider credential revocation (FR-010–014/029, runtime §6).
+- [ ] T024 [US1] Migrate browser MediaDevices/AudioWorklet capture and the existing cumulative
+  whisper.cpp POST path to ADR-011's versioned non-overlapping one-second PCM PUT/SSE sessions in
+  app/speech.py, app/speech_sessions.py, app/api/speech_routes.py, app/workers/speech.py and
+  app/static/speech-input.mjs. Implement RFC 9530 Content-Digest/idempotent sample ranges,
+  `SpeechUtterance` finalize boundaries, `SpeechSegment` revisions/edit-epoch CAS, two-window stable
+  hint, separate final pass and `ephemeral_only` browser-memory/container-tmpfs staging; ordinary
+  chunks are exactly 16,000 samples and one utterance-final tail of 1..16,000 real unpadded samples
+  is allowed. Gaps fail the utterance rather than becoming silence; silence finalize can start the
+  next utterance. Precheck headers/range, hash uncommitted streamed bytes, commit/enqueue only after
+  Content-Digest match; state the host/swap/crash-capture limit and ensure restart marks unfinalized audio interrupted/raw-unavailable and never
+  overwrites user edits. Keep the old POST for one major compatibility window only through the
+  same auth/CSRF/digest semantics and a separate ≤1,920,000-byte cumulative cap. Map its existing
+  sequence/utterance/final query exactly into a per-utterance accumulator, require its prior body as
+  exact prefix, append only the suffix, emit only complete 16,000-sample internal chunks, and on
+  final emit one remaining tail or zero-tail finalize. Identical non-final is replay; identical final
+  may finalize with zero suffix; changed prefix conflicts and restart fails. The bundled UI cannot
+  use it. Construct exactly `WhisperModel(local_model_path,device="cpu",compute_type="int8",
+  cpu_threads=4,num_workers=1,local_files_only=True)` and call `transcribe(language="ko",
+  task="transcribe",beam_size=5,temperature=0.0,condition_on_previous_text=False,
+  word_timestamps=True,vad_filter=False,initial_prompt=None,prefix=None,hotwords=None)`, capturing all
+  other upstream faster-whisper 1.2.1 defaults plus the downstream distribution/hash in the hashed
+  profile. Convert each even-length exact s16le range through validated `<i2` to contiguous 1-D
+  float32 times `1/32768.0`; test -32768/0/32767 boundaries and reject raw bytes/int16 arrays.
+  Test network-disabled/missing local model, non-NumPy/path/BinaryIO input, VAD enablement,
+  permission denial, insecure origin, Korean IME/edit, queue/cancel/finalize/partial-tail/empty-tail/
+  track-ended/restart/gap/overlap and no external fallback. RFC 9530 cases include duplicate/trailer
+  field, duplicate/member/extra algorithm or params, malformed SF/base64, 31/33-byte digest,
+  Content-Encoding, mismatch staging erase/no metadata commit, and identical-vs-changed replay in app/tests/test_speech_api.py,
+  app/tests/test_speech_segments.py and app/tests/browser-speech-input.test.mjs. UI copy must
+  distinguish microphone capture in the current browser from transcription in the instance-owned
+  worker rather than claiming both happen on “이 컴퓨터” (UX-AC09, API §2).
+- [ ] T025 [US1] Implement web first-owner/auth/deployment-authority foundations in
+  app/operations/setup.py, app/services/deployment_control.py,
+  app/operations/deployment_control.py, app/services/service_clients.py,
+  app/services/service_client_auth.py, app/api/service_clients.py, app/api/session.py,
+  app/api/wire.py, app/api/router_composition.py, app/server.py, DB migrations and exported v1 schemas.
+  The common offline `deploy/bootstrap/index.html` must generate strict base64url-no-pad 32-byte
+  capability/verifier plus lowercase-hex instance/path IDs and an exact `OriginProfile` for both
+  local random-host/path and portable dedicated-host `/`; freeze JS/Python URL/default-port/IDNA/
+  digest/capability vectors and reject ambiguous or cross-profile inputs. Portainer/Compose sees
+  only verifier/epoch/profile; raw capability is one-time form input, never GET/log/query.
+  Implement the 10-minute/five-attempt bootstrap, `OwnerAccount`, exact Argon2id profile and cheap-
+  first admission: 8-KiB JSON request/1,024 UTF-8 password-byte cap, independent trusted-source and
+  account buckets each burst5/refill1 per 6s, bounded expiring maps plus unknown-account sentinel,
+  then one deployment-wide hash, FIFO three waiters and 10s admission. Add login/logout/password,
+  32-byte sessions, idle12h/absolute7d and exact session-root HMAC CSRF carried once as
+  `X-DeepTwin-CSRF`; test duplicate/comma-folded/noncanonical fields, cookie/Host/Origin/cross-port/
+  proxy spoofing and all security headers for both profiles. The common strict JSON/query/header
+  parser must reject invalid UTF-8/BOM/duplicate/unknown/top-level/nonfinite/trailing/oversize and
+  perform zero mutation/vault/network/Argon work on rejection.
+  Persist `ServiceClient` principals and immutable credential revision/head records; implement owner-
+  only create/rotate/revoke, expiry≤24h, one-time bearer display, digest-only storage, last-used CAS,
+  recovery revocation and predecessor invalidation. Implement a frozen core-owned first-party route-
+  composition port in `app/api/router_composition.py` and invoke it exactly once from `app/server.py`.
+  It loads only fixed build-installed descriptors from `app/api/route_contributions/*.json`, validates
+  unique contribution/route IDs, exact `/api/v1`, auth policy/scope, `app.api.*` factory allowlist,
+  rejects duplicates/missing factories/late mutation, and never loads operator/user extension code.
+  Mount/register the common routes through that seam; authenticate only an exact single TLS Bearer header with no browser-cookie fallback,
+  enforce allowed-network profile and scope before the command service, and apply bounded independent
+  client/source/route rate buckets. Add cold-restart, generic composition/route-registration,
+  descriptor/path/module/auth/scope/duplicate/freeze failure, create/rotate/revoke/expiry,
+  concurrent rotate/use/recovery and rate-limit tests in `app/tests/test_service_clients.py` and
+  `app/tests/test_service_client_routes.py` and `app/tests/test_router_composition.py`. T087 owns
+  `app/api/extension_routes.py`, its fixed contribution descriptor and extension black-box parity only
+  after this common surface is real; T087 does not edit server/composition files.
+  Implement update-safe `session-root-init` and stopped-control-plane maintenance: absent→O_EXCL+
+  fsync, exact valid existing→verify/no-op, malformed/ownership/epoch mismatch→fail without replace;
+  initial genesis is explicit, later recovery requires the matching immutable request-bound signed
+  receipt, separate lifecycle/consumption CAS and strictly higher epoch before restricted atomic
+  revocation of every authenticator, BrowserSession, ServiceClient, unconsumed human/bootstrap
+  capability+verifier and pending approval/consent challenge while historical evidence stays
+  non-authoritative. Implement request/receipt canonical preimages, Ed25519/base64url/trust-set vectors,
+  separate sealed request/signed receipt channels and prepare/cancel/import/verify/consume logic;
+  test bad key/signature/schema, stale/replay, cross-instance/origin, cancel-vs-import and crash.
+  Implement `CredentialVault`/`CredentialRootPort` only in app/workers/credential_vault.py and
+  credential_root.py with typed app/services/credential_client.py: exact ADR-012 envelope/global
+  nonce, update-safe init, crash-safe rotation and retirement maintenance, no control-plane import/
+  mount or env/DB/plaintext fallback. Test create-orphan/rotate-predecessor/delete cleanup, rollback,
+  all locally managed generation removal before erasure complete, cold restart/tamper/RNG collision,
+  and recovery in app/tests/test_owner_sessions.py, test_session_security.py,
+  test_bootstrap_delivery.py, test_deployment_control.py and test_credential_vault.py
+  (FR-001/027/029/030).
+- [ ] T088 [US1] Implement the server-owned Codex subscription runner with the official documented
+  `codex login --device-auth` and version-qualified `codex exec --json` paths for the first-release
+  Codex authentication/execution profile: verification URL, user code, expiry, bounded status/cancel/reconnect
+  and credential separation in app/services/codex_subscription.py and app/api/codex_routes.py;
+  DeepTwin exposes authenticated start/status/cancel only, no unauthenticated provider callback and
+  no assumption that a container loopback callback reaches the host browser. Callback/PKCE requires
+  a future separately qualified runner profile. Register the built-in runner as a `provider`
+  extension in the distinct `managed_provider_runner` trust/isolation tier with a versioned manifest,
+  isolation profile, qualification and binding; it gets no deployment/vault/work-data authority and
+  must pass the same T087 lifecycle/compatibility/event conformance rather than receiving ambient privilege.
+  Run against a DeepTwin-projected workspace and dedicated `CODEX_HOME` with explicit model,
+  sandbox/approval and versioned DeepTwin-only MCP/IPC configuration; ignore ambient user config/rules,
+  hooks, skills, MCP and workspace content, parse bounded JSONL into normalized events and fail closed on
+  unknown/mismatched models or incomplete terminals. Treat this as a managed-provider agent loop rather
+  than raw model-step parity. App Server is an optional experimental preview for catalog/event UX only,
+  never a production execution dependency; without it show the runner-preflight-reported default plus exact user-entered model
+  IDs only after actual runner preflight, never a fabricated account catalog.
+  Emit exact managed-login requested/pending/completed/cancelled/expired/failed events and add fake-
+  runner lifecycle/token-canary tests in app/tests/test_codex_subscription_runner.py; the
+  browser UI never becomes a disguised Codex/CLI shell. Remove the release path's ambient host-PATH/
+  existing-user-auth discovery through `app/codex_connection.py`; if retained for development
+  compatibility it stays explicitly disabled outside that profile (FR-010–012/029).
+- [ ] T026 [US1] Run first-use/model/secret/UI integration against the staged ADR-010 service
+  topology for both local-loopback and portable-HTTPS origin modes, and authorized actual-provider understanding checks in
+  app/tests/browser-first-use-release.test.mjs; verify Claude API and the exact server-side Codex
+  device-authorization runner separately, mixed text/readable+unreadable files/source revisions/STT,
+  T087-qualified runner binding, and record server/browser matrix, scope and remaining live
+  authorization in specs/001-autonomous-release/evidence/us1.md. This qualifies US1 integration
+  against staged topology, not the immutable clean-host distribution reserved for T081/T083
+  (FR-002, SC-001).
+
+## Phase 4: US2 — Real lens-informed graph design and critique (P1)
+
+Independent test: fixed synthetic work → real design decisions/candidates → separate critique
+→ graph comparison and exact preparation; missing candidates/qualification are visible.
+
+- [ ] T027 [P] [US2] Add graph schema, producers/types/gates/cycles/join contract tests in app/tests/test_graph_contract.py (R01, SC-003).
+- [ ] T028 [US2] Implement graph functional schema/compiler and structural-diversity projection in app/runtime/graph.py and app/domain/graph_schema.py; preserve original node/edge responsibility (FR-005/FR-007/FR-013).
+- [x] T029 [US2] Load/version the existing 17 atomic lens definitions, use qualifications/composition/conflict/abstention rules in app/services/lenses.py and app/tests/test_lens_registry.py; preserve academic/effect status distinctions (FR-004/019/031). Evidence: evidence/lens-registry.md; 26 focused and 1,875 full app tests pass after independent adversarial review, while production graph/qualification verification and actual scholarly/effect/independence evidence remain T030/T035/T036/T056/T076/T077.
+- [ ] T030 [US2] Implement common-work confirmation → lens design decisions → real functional
+  candidate generation in app/services/design.py and app/generation_profiles.py, with explicit tests
+  in app/tests/test_work_model_confirmation.py and app/tests/test_design_generation.py proving
+  goal/completion/authority/risk/unknown confirmation, single/deterministic suitability, immutable
+  accepted target and rejection of fixed three-template substitution or onboarding-as-feedback
+  (FR-003–005).
+- [ ] T031 [US2] Complete B4 lifecycle deadline/cancel from preflight through actual owned process termination in app/codex_understanding.py, app/codex_rpc.py and app/tests/test_provider_lifecycle.py; retain B1 prepared-input contract (verification §5).
+- [ ] T032 [US2] Bind counterexample/validity/candidate-response exact hashes and parent provenance in app/critic_audit.py and app/tests/test_critic_lineage.py; reject forged cross-call evidence (B4).
+- [ ] T033 [US2] Build the real isolated Q01 harness adapter/environment under evals/deeptwin/tasks/v01-q01/ and evals/deeptwin/harness/ after reading eval-engineering implementation/environment references; preserve exact Task truth and keep verifier/World Skill/secrets out of agent inputs (B4).
+- [ ] T034 [US2] Implement independent semantic verifier and six boundary outcome classes in evals/deeptwin/verifiers/critic.py and evals/deeptwin/tests/test_critic_verifier.py; invalid/no-score is not an agent capability zero (B4).
+- [ ] T035 [US2] Freeze initial calibration/scoped qualification/IndependenceProfile and bounded proposed live RunPlan in evals/deeptwin/qualification/calibration/; seek only genuinely missing live authority, execute authorized trials, record joint errors/abstention/valid alternatives without inventing guarantees; any observed/tuned cases cannot be release heldout (FR-006/031, V2/V3).
+- [ ] T036 [US2] Implement independent candidate reviews, hard gates/ranking/diversity and bounded supplementation in app/services/design_review.py and app/tests/test_design_selection.py; explicitly connect production critic qualified lens routing/composition→LensPack→counterexample→independent validity/response, record contribution/abstention and test input isolation in app/tests/test_critic_lens_pipeline.py. Add immutable select/merge/edit versions, mandatory re-review, exact `DesignApproval`, and preparation of the same `EnvironmentVersion` by CAS in app/services/environments.py with stale/hash/run-binding tests; this prepares a design but does not operationally promote it. Q01 fixtures are not this production implementation and unknown critical qualification cannot pass (FR-004/FR-006/FR-007/FR-008, Constitution VI).
+- [ ] T037 [US2] Implement large readable graph comparison, same-focus differences, model/tool details and edit/merge/review/prepare commands in app/static/graph.mjs and app/static/workspace.mjs (UX-AC01, FR-005/FR-008/FR-009).
+- [ ] T038 [US2] Exercise real generation→critique→selection and 0/1/2/3 valid-candidate/revision/cancel paths in app/tests/browser-design.test.mjs and specs/001-autonomous-release/evidence/us2.md; no fixture scores presented as live (SC-003/SC-005).
+
+## Phase 5: US3 — Actual graph execution, tools and artifacts (P1)
+
+Independent test: accepted graph with mixed shapes actually browses a controlled source,
+creates files and passes full artifacts to later roles; trace survives cancel/restart.
+
+- [ ] T039 [P] [US3] Add sequential/parallel/router/closed-join/loop/retry/restart scheduling tests in app/tests/test_graph_execution.py (R02/07/08).
+- [ ] T040 [US3] Implement LangGraph scheduling adapter with persistent opaque cursors and ledger-reconciled idempotent nodes in app/runtime/scheduler.py; never stream raw private graph state (FR-013/030).
+- [ ] T041 [US3] Implement sealed branch activation, atomic join winner, visit-vs-attempt IDs and dependency-scoped failure in app/runtime/scheduling_state.py and app/tests/test_graph_execution.py (runtime §2/4).
+- [ ] T042 [US3] Implement provider-neutral multimodal frozen turns and Codex environmentless tool-step bridge in app/runtime/gateway.py and app/adapters/codex_step.py; add actual-page/image/table marker contracts in app/tests/test_model_payloads.py (R04–R06).
+- [ ] T043 [US3] Implement controlled egress fetch and sandboxed Chromium navigation/read/screenshot via typed IPC in app/adapters/browser.py and app/runtime/egress.py; enforce source/recipient grants, DNS/IP/redirect and byte limits (R09, PK-06/07).
+- [ ] T044 [P] [US3] Implement bounded declarative DOCX/CSV/JSON/PDF/image creation and safe format validation in app/adapters/documents.py and app/tests/test_document_tools.py; use PDF skill and actual render inspection, not file-exists-only checks (SC-004).
+- [ ] T045 [US3] Implement purpose-scoped artifact storage/preview/range reads and multi-format viewers in app/services/artifacts.py and app/static/artifacts.mjs; preserve originals and disclose derived/unsupported coverage (FR-015).
+- [ ] T046 [US3] Implement whole-artifact handoff readiness/delivery/receipt and observed-use lineage in app/services/handoffs.py and app/tests/test_handoffs.py; no producer/consumer acknowledgment deadlock (R06).
+- [ ] T047 [US3] Implement schema-registered dispatcher/grants/effect approvals and replay policies in app/runtime/tools.py; test path/symlink/race/injection/renderer/egress denial in app/tests/test_tool_boundary.py (FR-014/FR-032).
+- [ ] T048 [US3] Connect live graph/role visits/attempts/inputs/outputs/tools/cancel/recovery to common UI in app/static/runtime.mjs and app/api/routes.py; keep past attempts distinct (UX-AC04/10).
+- [ ] T049 [US3] Run actual controlled browser/PDF/table/image producer→consumer E2E, then finite authorized Claude/Codex paths, in app/tests/browser-runtime.test.mjs and specs/001-autonomous-release/evidence/us3.md (SC-001/004).
+
+## Phase 6: US4 — Whole or partial own artifacts (P1)
+
+Independent test: a prior original exists; a real GUI action submits test-actor own content,
+whole/partial selectors bind exact original, unreviewed area and impact remain separate.
+
+- [ ] T050 [P] [US4] Add original chronology/actor/selector/alignment/partial-scope tests in app/tests/test_alternatives.py, including onboarding/comments/empty drafts as non-alternatives (G-01/02).
+- [ ] T051 [US4] Implement immutable alternative drafts/freeze/original links and separate evidence/change/impact scopes in app/services/alternatives.py (FR-016/017/022).
+- [ ] T052 [US4] Implement in-place text and table own-version editors with revision-safe autosave in app/static/alternatives.mjs; reasons/instructions not mandatory and synthetic full preview not human whole-work (UX-AC05).
+- [ ] T053 [US4] Add PDF/image/structured/time selector and alternative-file flows to app/static/artifacts.mjs and app/api/routes.py; unsupported semantic alignment remains explicit (FR-015/016).
+- [ ] T054 [US4] Test three-view switch/refresh/conflict/stale-range recovery in app/tests/browser-alternatives.test.mjs and record synthetic-vs-real evidence in specs/001-autonomous-release/evidence/us4.md (SC-006).
+
+## Phase 7: US5 — Difference investigation and grounded change (P1)
+
+Independent test: preserved original/alternative → observed difference → competing explanations,
+eligible lens questions frozen before new evidence → typed candidate or justified no-change.
+
+- [ ] T055 [US5] Implement format-aware differences/trace slicing and system/expert/exception/error/no-generalization hypotheses in app/services/diagnosis.py and app/tests/test_diagnosis.py; no unsupported single-cause claim (FR-018).
+- [ ] T056 [US5] Implement qualified SPLI routing, frozen contrasting predictions, actual fresh evidence, abstain/decline and H_exp update in app/services/inquiry.py and app/tests/test_inquiry.py (FR-019, G-03/04).
+- [ ] T057 [US5] Implement restore/learn/protect typed patch compilation with per-field behavior provenance and semantic/source leak checks in app/runtime/compiler.py and app/tests/test_change_compiler.py; prevent H_phi/current-alternative copying (FR-020/021).
+- [ ] T058 [US5] Implement active conditional knowledge registry, authority/scope/time/conflict/revalidation and prompt-derived compilation in app/runtime/memory.py and app/services/knowledge.py; ordinary authorized workflow changes remain possible (FR-021/032).
+- [ ] T059 [US5] Run cross-purpose retrieval/prompt/derived-input adversarial tests including hidden heldout and sensitive personal-profile rejection in app/tests/test_growth_firewall.py (G-05, OPS-AC09).
+- [ ] T060 [US5] Connect observation/competing evidence/new questions/change candidates and audit details in app/static/inquiry.mjs, app/api/routes.py and app/tests/browser-inquiry.test.mjs; no forced philosophy quiz or fabricated human answer (UX-AC05/07).
+
+## Phase 8: US6 — Previous queues, product plateau and human promotion (P1)
+
+Independent test: frozen comparable paired runs, all plateau/invalid/restart cases, separate
+heldout validation and exact authenticated human promotion; no automatic operating change.
+
+- [ ] T061 [US6] Implement frozen related-queue/baseline/candidate/reset/evaluator/budget plans and isolated paired execution in app/services/comparisons.py and app/tests/test_comparisons.py; trace partial-scope downstream effects (FR-022/FR-023/FR-025).
+- [ ] T062 [P] [US6] Add exact decimal plateau tests for every growth §6.4 sequence, first-floor=0, cumulative small gains, real failure vs invalid, duplicate/restart/lineage changes in app/tests/test_growth_loop.py (SC-007).
+- [ ] T063 [US6] Implement best_observed/progress_reference/patience/stop-reason state and atomic one-result application in app/services/growth.py; product-only no-development-stop semantics (FR-024).
+- [ ] T064 [US6] Implement candidate freeze, dataset exposure tracking and heldout/boundary/regression/shadow/limited gates in app/services/validation.py and app/tests/test_validation.py; seen data never relabeled unseen (FR-025).
+- [ ] T065 [US6] Implement authenticated exact-hash approval/activation CAS/rollback compatibility in app/services/promotion.py and app/tests/test_promotion.py; preserve separate validation/deployment/lifecycle axes (FR-026).
+- [ ] T066 [US6] Implement paired execution/round/artifact comparison, actual stop explanations and human version approval/rollback UI in app/static/experiments.mjs and app/static/versions.mjs (UX-AC06).
+- [ ] T067 [US6] Run G-06–G-15 end-to-end recovery/loop/heldout/approval cases in app/tests/browser-growth.test.mjs and specs/001-autonomous-release/evidence/us6.md; label test-actor/synthetic vs actual user evidence (SC-007/SC-008).
+
+## Phase 9: US7 — Complete records and optional creator feedback (P1)
+
+Independent test: setup-to-promotion records, selectable raw/redacted/metadata export with
+preview, missing evidence and no network send; backup/restore without original deletion.
+
+- [ ] T068 [US7] Audit and close aggregate event coverage for every OPS §4.2 category/failure/
+  rejection in app/operations/audit.py and app/tests/test_event_coverage.py, including auth recovery,
+  service-client, extension qualification/binding, deployment request/cancel/receipt, managed-login
+  lifecycle, credential retirement/cleanup/erasure/failure and speech interrupted/raw-unavailable;
+  public projections expose no record handle/secret/provider raw body. Prerequisite feature tasks
+  emit their events before live trials (FR-027).
+- [ ] T069 [US7] Implement manual-only core retention, bounded cache/debug pruning and explicit deletion preview/tombstone/impact in app/operations/retention.py and app/tests/test_retention.py (OPS-AC06).
+- [ ] T070 [US7] Implement consistent age encryption through a networkless backup-crypto worker and
+  separate `BackupKeyPort`/backup-key volume in app/operations/backup.py, app/workers/backup_crypto.py
+  and app/tests/test_backup.py. Never mount provider credential root/records there; exclude restored
+  provider/session/backup/deployment-receipt private roots, Codex auth volume/token,
+  authenticators/sessions/service clients,
+  pending challenges, every unconsumed human/bootstrap capability+verifier and credential handle;
+  use exact `instance_backup_key|portable_recovery` manifest modes, require new-owner
+  `restored_review` and explicit environment reactivation, and test portable one-shot identity,
+  key/volume loss, corruption, stream interruption and external receipt. `backup-key-init` follows
+  absent O_EXCL+fsync / exact-existing verify-no-op / malformed fail-without-replace semantics and
+  is tested across stack-update reruns (OPS-AC07).
+- [ ] T071 [US7] Implement snapshot preview/redaction/pseudonyms/rights/missing-evidence manifest and safe archive validation in app/operations/export.py and app/tests/test_export.py; no self-referential archive hash (FR-028/029).
+- [ ] T072 [US7] Integrate the T025 `DeploymentControlPort` into verified web-release update/recovery
+  guidance, backup-before-migration and safe state in app/operations/updates.py,
+  app/operations/recovery.py and app/tests/test_update_recovery.py. Bind exact manifest/origin/image-
+  lock/epoch request, lifecycle CAS and unique receipt consumption to the same migration/recovery
+  transaction; test cancel-vs-receipt, replay/restart, missing component handshake and backup gate.
+  No runtime pip/npm, browser-uploaded recovery receipt or silent new-data loss (FR-030).
+- [ ] T073 [US7] Implement anywhere-accessible log/export/backup/retention GUI with actual included-content preview and consent in app/static/records.mjs and app/static/settings.mjs; no mandatory final export step (UX-AC08).
+- [ ] T074 [US7] Run setup/source/candidate/lens/failed-run/alternative/round/approval export, secret canaries, PDF redaction and interrupted restore cases in app/tests/browser-records.test.mjs and specs/001-autonomous-release/evidence/us7.md (SC-009).
+
+## Phase 10: Integrated qualification and release evidence
+
+All US phases are required. This is not permission to stop at an onboarding MVP or to change
+unmet features to out-of-scope. Empirical user/effect/signing evidence stays separate.
+
+- [ ] T075 Produce the complete requirement→task→test→observed-result matrix and all invalid/failed/missing evidence in specs/001-autonomous-release/evidence/implementation.md; refresh source hashes/supersession map after final design edits and audit the stable-weight progress numerator, uncertainty and ETA-support state (FR-034, SC-002).
+- [ ] T076 Freeze and audit final release qualification version/IndependenceProfile/effect evaluation designs in evals/deeptwin/qualification/release-v1/ and evals/deeptwin/effects/ before any release-heldout access; use new datasets not exposed in T035 calibration, preserve both versions, and do not invent actual user alternatives or universal independence thresholds (V3/V6).
+- [ ] T077 Execute authorized bounded actual-provider/critic/multimodal/lens-controlled comparisons and audit all failures/suspicious passes in specs/001-autonomous-release/evidence/live-qualification.md; lack of applicable authority remains explicit, not waived (SC-001/005/006).
+- [ ] T078 After T087's extension UI and the frozen T081 candidate exist, perform final visual/
+  keyboard/screen-reader/360px/1024px/
+  wide/IME/three-mode usability checks and actual rendered artifact QA in
+  app/tests/browser-accessibility.test.mjs and specs/001-autonomous-release/evidence/ui-review.md.
+  Include `Settings > Extensions` source/license/port/qualification/binding/failure/affected-
+  environment inspection, server-supplied exact five-field slot key (including port version)+digest,
+  logical slot/capability-selector and same-port coexistence/same-slot competition, exact expected-head
+  code-free import/bind/disable/rollback, separate immutable-history/
+  rollback-retention state and warned owner-only release, plus operator-only staging handoff
+  without exposing Docker/CLI as product UX; use relevant frontend/critique/PDF skills
+  (UX-AC01–11).
+- [ ] T079 Against the frozen T081 candidate, run integrated fault/security/isolation/permissions/secret/license/dependency checks in
+  app/tests/test_release_security.py and specs/001-autonomous-release/evidence/security-review.md;
+  include random-host/path cookie cross-port and XSS/artifact canaries, forwarding-header spoofing,
+  Chromium sandbox positive probe, UDS wrong-peer/backpressure, control-plane/Docker-socket/direct-
+  egress, gateway/backup-root separation, wrong extension tuple/schema, executable runtime download/
+  dynamic-mount/core-rebuild bypass, receipt/handshake confusion and no automatic transmission
+  (OPS-AC04–11).
+- [ ] T080 Measure browser command/event/graph/STT responsiveness under plan.md workload and preserve
+  server/browser/hardware/sample/latency evidence in specs/001-autonomous-release/evidence/performance.md.
+  For STT freeze Korean fixture length/transcript, speech/silence/noise, cold vs warm model, CPU/
+  thread/concurrent load and sample count; report recognition error separately from provisional/final
+  latency, fix material UI stalls and disclose every unmeasured quality claim (FR-002/013/031).
+- [ ] T081 Build the reproducible open-source web distribution and versioned service images under
+  deploy/ for both ADR-010 profiles. The Portainer CE no-terminal descriptor/workflow must verify an
+  immutable source commit plus exact Compose digest (tag is display-only) and service-keyed OCI
+  index+platform manifest/config/layer locks, using named volumes/explicit networks/security/
+  resources with no `build:`, host-relative bind/config, submodule, mutable Git ref, GitOps or
+  webhook. Prove the exact CE UI can supply the pinned Chromium seccomp; if its immutable source or
+  security profile cannot be applied without terminal/host edits, this mandatory profile is release-
+  blocked until a different no-terminal artifact-upload/template path is designed and qualified.
+  Package common `deploy/bootstrap/index.html`, both exact OriginProfiles and pinned portable HTTPS
+  edge with read-only operator TLS secrets/no implicit ACME. Add update-safe
+  `deployment-receipt-root-init`/`deployment-receipt-job`, physically separate private-signing/
+  public-verify volumes with job-private-only/CP-public-only mounts, versioned trust set, sealed-request/
+  signed-receipt volumes, atomic exchange and exact PlatformSupportManifest edge/image locks.
+  Build/export every final DeepTwin core/built-in service image for Linux amd64+arm64 from T089's
+  exact `build_input_lock_set_digest`; produce its multi-architecture OCI index v1 in the local/private
+  qualification registry or export plus
+  exact platform manifest/config/layer media type/digest/size descriptors, and populate the final
+  `PlatformSupportManifest.image_locks[]`, preserving SBOM/attestation descriptors separately from
+  runnable platform manifests. Package the ADR-014 acyclic `ExtensionServiceDescriptor` schema and
+  all core-owned `extension-ports-v1` schema artifacts plus the external operator staging/receipt
+  workflow without baking a third-party extension or the private
+  T087 conformance fixture into the core image or giving the product a Docker socket. Arbitrary
+  future operator-supplied descriptors never enter the core release lock. Build the Linux amd64 portable path and verify dependency closure, manifests, migrations,
+  licenses, health/component handshakes and no developer absolute paths. Scaffolding may begin after
+  T089/T018-foundation/T025, but this checkbox closes only when final images contain every required implemented
+  DeepTwin core/built-in service and worker plus the testable configuration/schema inputs named in
+  Dependencies. T078/T079/T083 qualify the candidate after it is frozen; public publication remains
+  gated by T084 and explicit copyright-owner license approval.
+- [ ] T082 Produce checksums, per-final-DeepTwin-image SBOM/provenance, the exact T089
+  `build_input_lock_set_digest` linkage and release-verification scripts for source and packaged
+  artifacts under deploy/manifests/; execute external artifact signing only with applicable
+  authority and never portray unsigned/unverified output as qualified.
+- [ ] T083 Test two fresh hosts independently: macOS arm64 Docker Desktop+Portainer CE entirely
+  through the no-terminal operator UI, and Linux amd64 Docker Engine/Compose with the release-pinned
+  edge terminating HTTPS from operator TLS secrets. On both, verify the common bootstrap helper,
+  exact OriginProfile/CSRF/cookie isolation, first browser setup, microphone/providers/tools,
+  edge/internal network, worker crash/restart, browser close and update/migration/restore flow.
+  Exercise request cancel/import races, bad/replayed/cross-instance receipt, trust-set and independent
+  component gates; verify the common service-keyed OCI index-lock/source/Compose/schema set plus each
+  expected platform manifest/config/layer digest. On both, run one shared
+  bounded US1→US7 browser smoke through graph preparation, run/artifact handoff, own alternative,
+  inquiry/change, prior-queue comparison, exact test-actor promotion and export. Reuse frozen
+  qualified semantic/effect fixtures rather than claiming a second OS effect evaluation; record exact runtime/Portainer/browser limits in deploy/tests/ and
+  specs/001-autonomous-release/evidence/deployment-report.md. Do not duplicate semantic lens/effect
+  evaluation merely for OS coverage, but do run every deployment/security boundary on both
+  (SC-001). On both hosts, externally stage the same repository-out-of-tree tool OCI extension by
+  exact descriptor and signed receipt, prove actual T018 broker invocation plus restart,
+  requalification, different-slot coexistence, same-slot binding rollback and
+  A→B→release-A-retention→retire-A preserved-current behavior in `Settings > Extensions`, then
+  B-disable→release-B-retention→B-uninstall→exact-tombstone→C-restage/dispatch, with no active-
+  environment refs in that conformance slot. Verify all packaged core port-schema digests and
+  operation-terminal result cardinality plus the 52-operation request artifact-input profiles and
+  five-field binding-key schema/digest, and on the portable HTTPS host run the separately
+  installed HTTP/OpenAPI client process with no `app` import against the actual T025-composed TLS-
+  bearer server routes to match browser durable receipts/revisions/authority/events. On the HTTP-only
+  loopback host send no real bearer; use only a fixed non-secret Authorization canary to verify that
+  bearer automation is unregistered or denied before bearer parsing and no cookie/plaintext fallback exists
+  (R16, OPS-AC11, UX-AC11, V8).
+- [ ] T084 Prepare browser user guide, instance-operator deployment/backup guide, framework
+  architecture/contribution/extension-authoring/API-compatibility/security/third-party notices and
+  source-license inventory in docs/release/, LICENSES/ and NOTICE; prepare the repository license
+  recommendation and require the copyright owner's explicit license approval before adding/
+  publishing it; scrub developer usernames, absolute workstation/temp paths and private source
+  locations from publishable source/docs/evidence. Document and verify the boundary among (1) the
+  official browser product/control surface, (2) external instance deployment/operator tooling,
+  (3) server-owned internal CLI/worker implementation artifacts and (4) optional API/SDK integration;
+  separately document the installable extension-author SDK, installable HTTP/OpenAPI client and
+  external operator OCI-extension staging boundary. Include their license/NOTICE/source-offer
+  closure, but publish none before the copyright owner's explicit repository-license approval. The
+  browser guide and quickstart must not expose a native-app or end-user CLI journey. No user
+  private PDFs/data/keys/history may leak and no automatic public push is allowed
+  (FR-001/032).
+- [ ] T085 Run full regression plus quickstart.md acceptance, reconcile every checkbox/result and produce specs/001-autonomous-release/evidence/release-report.md separating engineering/live/effect/human/signing readiness and checking final progress/ETA claims against actual task evidence; mark the goal complete only if the latest required delivery is genuinely achieved (FR-034, SC-010).
+
+## Dependencies and parallel work
+
+T001 is preserved V0 history; ADR-014 reopened the all-design architecture gate and revision 7's
+fresh independent review closed T086 with P1=0/P2=0. Its first DESIGN CLEAR and rejected revisions
+1–6 are historical. T002–T004 precede foundational
+implementation, and completed transport-neutral work is not discarded.
+Within foundations, test then implementation pairs are T005→T006, T007→T008, T009→T010,
+T011→T012, T013→T014; T018 and T087 follow the common authority and schema foundation.
+T015→T016 is the preserved local-profile command/session foundation, while T017 is completed
+historical native-feasibility evidence and is not a prerequisite for either web task. Ledger/
+budgets/session integrate after refs/store/permissions. No two agents edit shared server/schema files.
+
+The current web-release critical path re-enters T086, then uses the already closed T089 build-input
+scope and proceeds through T018-foundation/T025/T087. T018-foundation means actual Linux IPC
+initializers/listeners/peer handshake, bounded artifact stream and staged sandbox/channel enforcement;
+it is not the whole T018 checkbox. T090 requires the qualified T018-foundation IPC, T025 vault/
+deployment foundation and T087 semantic provider ports. T023 may build conversation/UI
+against fakes earlier but cannot close provider mutation before T025/T090. T024 requires the
+T018-foundation speech channel; T043/T044/T070 and T088 likewise integrate through that foundation
+with their own semantic worker responsibilities; T088 also requires T025/T087. T026 follows
+T023/T024/T025/T087/T088/T090 and is staged-
+topology US1 evidence only. T081 may scaffold containers from T089's build-input lock after
+T089/T018-foundation/T025, but final closure waits for every mandatory service/story implementation through
+T073 plus T087/T088/T090 and packages T087's extension-service descriptor/receipt schema and
+operator workflow. It freezes the candidate and uniquely closes only DeepTwin core/built-in service
+`image_locks[]`; it does not bundle or lock arbitrary third-party services or T087's separately
+locked private conformance fixture. T082 follows the final T081 artifact and binds its core-image
+provenance to T089's build-input lock. T078 final UX qualification follows both T087's extension UI
+and the frozen T081 candidate; T079 security qualification also runs against that candidate, so
+neither is a prerequisite for T081.
+T083 follows complete US1–US7 integration/evidence (T026/T067/T074), semantic/live and UI gates
+(T076–T079), T087's locally integrated out-of-tree extension/client proof, and T081/T082. T083—not
+T087—owns two-host extension repetition plus portable-HTTPS client parity/loopback denial, avoiding a
+T087↔T081/T083 cycle. T075's
+final matrix refresh follows T083, while T084 documentation and T085 final report follow the final
+artifact/evidence. Dependency arrows gate completion, not harmless contract-first test work.
+After the downstream semantic/runtime owners and T081 have connected their paths, `T018-final`
+reconciles the unchanged T018 acceptance set; T083 alone retains the two-clean-host repetition used
+for final closure. Thus T018-final is a convergence gate and never a prerequisite of the work whose
+evidence it consumes.
+
+After foundations: US1 supplies actual provider bindings; US2 supplies approved graphs; US3
+supplies original execution; US4 supplies alternatives; US5 supplies changes; US6 proves
+comparisons/promotion. US7 export depends on all event categories but retention/backup modules
+can be built independently against frozen store contracts. Integration retains this order.
+Separate story test fixtures let components be tested before predecessors' live qualification,
+but fixture-only predecessors cannot establish whole-journey completion.
+
+Parallel examples (after common prerequisites, with explicit file ownership):
+
+- US1: T019 Claude fake tests alongside T024 isolated STT tests; integration is root-owned.
+- US2: T027 graph tests alongside lens registry source work; B4 ledger/harness/verifier get
+  separate files, and no scored C run precedes their checks.
+- US3: T039 scheduler tests alongside T044 document tools; gateway and sandbox broker integrate
+  after each independently passes its contract.
+- US4: selector/backend tests alongside artifact-editor UI using frozen API fixtures.
+- US5: diagnostic unit cases alongside inquiry UI; compiler/permissions are reviewed separately.
+- US6: T062 plateau pure-state tests alongside validation fixtures; activation waits for both.
+- US7: backup, export and retention modules can be separate owners after store/ref contracts.
+
+## Implementation strategy and evidence rules
+
+For each task: read its contracts and existing code → write the smallest behavior test and
+observe a relevant failure → implement → focused checks → separate spec/quality review → record
+exact result and limitations. Run story E2E then whole regression at integration points. Tests
+of irreversible effects use dedicated fixtures/sandboxes, never the user's active services.
+
+The suggested first increment is US1 on the completed foundation, followed by each story's
+explicitly assigned integration tests; any substitute boundary is fixture-labeled and does not
+prove the real predecessor. US1 is not a release scope or stopping point. The final delivery
+requires all seven stories. Development commands are internal agent work, not end-user
+deployment or product-use instructions. Checkpoints preserve state without asking routine approval again.
+
+Record task estimates/throughput when evidence exists and update weighted progress.md (FR-034).
+Stop and request direction only for genuinely new authority/core-intent changes; meanwhile
+continue safe independent tasks. Do not convert the product's three-round plateau into a
+development retry limit or mark an unmet requirement complete to finish the session.

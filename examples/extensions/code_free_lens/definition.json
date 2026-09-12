@@ -1,0 +1,5 @@
+{
+  "description": "Example-only contrast prompt with no executable code.",
+  "id": "org.deeptwin.examples.counter-reading",
+  "version": "1.0.0"
+}

@@ -1,0 +1,200 @@
+{
+  "$comment": "Structural data only. Schema validity, discovery, import, or a source label never grants installation, execution, secret, network, human, or deployment authority.",
+  "$id": "urn:deeptwin:schemas:v1:extensions:installation",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "actor_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "extension_kind": {
+      "enum": [
+        "artifact_codec",
+        "credential_vault",
+        "evaluator",
+        "export_sink",
+        "lens",
+        "model_runtime",
+        "provider",
+        "storage",
+        "tool"
+      ],
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "install_authority": {
+      "enum": [
+        "browser_import",
+        "deployment_operator",
+        "model",
+        "product_owner",
+        "work"
+      ],
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "installation_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "installed_artifact": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "definition",
+            "image",
+            "package"
+          ],
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "installed_at_utc": {
+      "maxLength": 27,
+      "minLength": 1,
+      "type": "string"
+    },
+    "manifest_digest": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "previous_record_digest": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "previous_state": {
+      "anyOf": [
+        {
+          "enum": [
+            "discovered",
+            "enabled",
+            "failed",
+            "qualified",
+            "removed",
+            "revoked",
+            "staged",
+            "suspended",
+            "verified"
+          ],
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "revision": {
+      "maximum": 9223372036854775807,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "scan_refs": {
+      "items": {
+        "maxLength": 64,
+        "minLength": 1,
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "maxItems": 256,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "schema_version": {
+      "const": "extension-installation-v1",
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "discovered",
+        "enabled",
+        "failed",
+        "qualified",
+        "removed",
+        "revoked",
+        "staged",
+        "suspended",
+        "verified"
+      ],
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "trust_tier": {
+      "enum": [
+        "definition_package",
+        "deployment_trusted",
+        "managed_provider_runner",
+        "runtime_worker"
+      ],
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "verification_refs": {
+      "items": {
+        "maxLength": 64,
+        "minLength": 1,
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "maxItems": 256,
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "schema_version",
+    "installation_id",
+    "manifest_digest",
+    "installed_artifact",
+    "extension_kind",
+    "trust_tier",
+    "install_authority",
+    "actor_id",
+    "installed_at_utc",
+    "state",
+    "revision",
+    "previous_state",
+    "previous_record_digest",
+    "verification_refs",
+    "scan_refs"
+  ],
+  "title": "DeepTwin extension installation v1",
+  "type": "object"
+}

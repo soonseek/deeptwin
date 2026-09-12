@@ -1,0 +1,273 @@
+{
+  "schema_version": "deeptwin-codex-sidecar-closure-proposal-v1",
+  "status": "proposal_not_manifest_integrated",
+  "version": "0.153.4",
+  "parent_manifest": {
+    "url": "repository://deploy/manifests/codex-0.153.4.json",
+    "bytes": 9031,
+    "sha256": "f3465870a6c70ba2eb900e2822310f2a28639996e4edcbc359dfe1851084781c"
+  },
+  "certificate_policy": {
+    "identity": "https://github.com/openai/codex/.github/workflows/rust-release.yml@refs/tags/rust-v0.153.4",
+    "oidc_issuer": "https://token.actions.githubusercontent.com"
+  },
+  "signed_sidecars": [
+    {
+      "platform": "linux/amd64",
+      "component": "codex-code-mode-host",
+      "package_member_path": "bin/codex-code-mode-host",
+      "standalone_archive": {
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
+        "bytes": 25733165,
+        "sha256": "f95830a869590957664bbfc67bccb08773806b693670baf15908176f89b4cd31",
+        "member_path": "codex-code-mode-host-x86_64-unknown-linux-musl",
+        "member_bytes": 69460032,
+        "member_sha256": "3e85d67471825f73d02ff5f7e047ca1f6ca8caa3f59e4c6e8d9ca6ca7302cb45"
+      },
+      "sigstore_bundle": {
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-code-mode-host-x86_64-unknown-linux-musl.sigstore",
+        "bytes": 8585,
+        "sha256": "a31c6bc2aa530b98986207d67e61061096ba384f623b49ed9992bb628145900f"
+      },
+      "cryptographic_scope": "unpacked standalone executable bound byte-for-byte to the full-package member"
+    },
+    {
+      "platform": "linux/arm64",
+      "component": "codex-code-mode-host",
+      "package_member_path": "bin/codex-code-mode-host",
+      "standalone_archive": {
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
+        "bytes": 24358441,
+        "sha256": "d8047b8d33370d6090e729d27eb76de60a2686baa1c143c138c9b05dc70d813b",
+        "member_path": "codex-code-mode-host-aarch64-unknown-linux-musl",
+        "member_bytes": 63381656,
+        "member_sha256": "d677dedf8179ca28ceb869a2e0b60d3ffad3d26f6e7738f7617d34500128a369"
+      },
+      "sigstore_bundle": {
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-code-mode-host-aarch64-unknown-linux-musl.sigstore",
+        "bytes": 8585,
+        "sha256": "def3aaaf54077d58f2aa41667d374c4b9c0695ef4d6fb0b7645fdbf0badbe408"
+      },
+      "cryptographic_scope": "unpacked standalone executable bound byte-for-byte to the full-package member"
+    },
+    {
+      "platform": "linux/amd64",
+      "component": "bubblewrap",
+      "package_member_path": "codex-resources/bwrap",
+      "standalone_archive": {
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/bwrap-x86_64-unknown-linux-musl.tar.gz",
+        "bytes": 261563,
+        "sha256": "e7d65c75e05637e42b93f6abf9222fa0d26b537648a7a34c122b75021d41756d",
+        "member_path": "bwrap-x86_64-unknown-linux-musl",
+        "member_bytes": 529776,
+        "member_sha256": "77360cb751ccedc5971391444ac86a8a33c15b04d6b4a6fe45f5d25496e62c4c"
+      },
+      "sigstore_bundle": {
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/bwrap-x86_64-unknown-linux-musl.sigstore",
+        "bytes": 8565,
+        "sha256": "4e0e55799310ed3655041bc06246b3ab4b7917a04fc821b8b010d73c23fd53f0"
+      },
+      "cryptographic_scope": "unpacked standalone executable bound byte-for-byte to the full-package member"
+    },
+    {
+      "platform": "linux/arm64",
+      "component": "bubblewrap",
+      "package_member_path": "codex-resources/bwrap",
+      "standalone_archive": {
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/bwrap-aarch64-unknown-linux-musl.tar.gz",
+        "bytes": 254882,
+        "sha256": "2c6ea97dfb0a936b695ece6df058b89d4dfd53774a9ad852b3e4c98e6bbdfd20",
+        "member_path": "bwrap-aarch64-unknown-linux-musl",
+        "member_bytes": 529168,
+        "member_sha256": "c547cbdc762a70ed216789ffaa4c6c0e7d2beabe32245a498f8e365a9fc8dab4"
+      },
+      "sigstore_bundle": {
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/bwrap-aarch64-unknown-linux-musl.sigstore",
+        "bytes": 8585,
+        "sha256": "de750905a97468d3fca09304dddf26fefe4427692a316a1486b7eb6f74273f6e"
+      },
+      "cryptographic_scope": "unpacked standalone executable bound byte-for-byte to the full-package member"
+    }
+  ],
+  "imported_sidecars": [
+    {
+      "platform": "linux/amd64",
+      "component": "ripgrep",
+      "package_member_path": "codex-path/rg",
+      "source_archive": {
+        "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz",
+        "bytes": 2265718,
+        "sha256": "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c",
+        "member_path": "ripgrep-15.2.0-x86_64-unknown-linux-musl/rg",
+        "member_bytes": 5408904,
+        "member_sha256": "e62198eb19b136b88c330af83647b5a962cb99b6b1f066758568f12de1974849"
+      },
+      "checksum_asset": {
+        "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz.sha256",
+        "bytes": 114,
+        "sha256": "650080eb90718156132c821d150d8b74818f66de47969e38eef5a2dce3e2a5e6"
+      },
+      "license_members": [
+        {
+          "path": "ripgrep-15.2.0-x86_64-unknown-linux-musl/LICENSE-MIT",
+          "bytes": 1081,
+          "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+        },
+        {
+          "path": "ripgrep-15.2.0-x86_64-unknown-linux-musl/UNLICENSE",
+          "bytes": 1211,
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
+        }
+      ],
+      "source_tag": {
+        "name": "15.2.0",
+        "commit": "e89fff89ac9af12e8d4ce9d5fd07beb408ca730f",
+        "github_tag_signature_verified": true,
+        "release_asset_binding_to_tag": "not established"
+      },
+      "license_texts_in_full_package": false,
+      "cryptographic_provenance": "not closed"
+    },
+    {
+      "platform": "linux/arm64",
+      "component": "ripgrep",
+      "package_member_path": "codex-path/rg",
+      "source_archive": {
+        "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-unknown-linux-gnu.tar.gz",
+        "bytes": 1854661,
+        "sha256": "a740b91c82eaf9914cfedd353572f2791cbe0162c84101ee0951058f4dcbc90d",
+        "member_path": "ripgrep-15.2.0-aarch64-unknown-linux-gnu/rg",
+        "member_bytes": 4506992,
+        "member_sha256": "e36d0eb52e70696bdf1781392722e05a21bb91d3b7b762ef5ec20e5df2ec687b"
+      },
+      "checksum_asset": {
+        "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-unknown-linux-gnu.tar.gz.sha256",
+        "bytes": 114,
+        "sha256": "7b3f20fe255204e11cdb79fbca5ef7ccff1a10cb4bef53b3a5add996e1792105"
+      },
+      "license_members": [
+        {
+          "path": "ripgrep-15.2.0-aarch64-unknown-linux-gnu/LICENSE-MIT",
+          "bytes": 1081,
+          "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+        },
+        {
+          "path": "ripgrep-15.2.0-aarch64-unknown-linux-gnu/UNLICENSE",
+          "bytes": 1211,
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
+        }
+      ],
+      "source_tag": {
+        "name": "15.2.0",
+        "commit": "e89fff89ac9af12e8d4ce9d5fd07beb408ca730f",
+        "github_tag_signature_verified": true,
+        "release_asset_binding_to_tag": "not established"
+      },
+      "license_texts_in_full_package": false,
+      "cryptographic_provenance": "not closed"
+    },
+    {
+      "platform": "linux/amd64",
+      "component": "zsh",
+      "package_member_path": "codex-resources/zsh/bin/zsh",
+      "source_archive": {
+        "url": "https://github.com/openai/codex/releases/download/codex-zsh-v0.1.0/codex-zsh-x86_64-unknown-linux-musl.tar.gz",
+        "bytes": 433407,
+        "sha256": "cb6ea328232cabd80f59141471a1362eb39b146a4d5e8a654d9b80cf9b7ec83c",
+        "member_path": "codex-zsh/bin/zsh",
+        "member_bytes": 898480,
+        "member_sha256": "67faaaa89242c4a332e16e508a1977cffc24bf7fca31d4411cdfd101f3831ef3"
+      },
+      "distribution_lock": {
+        "url": "https://github.com/openai/codex/releases/download/codex-zsh-v0.1.0/codex-zsh",
+        "bytes": 2486,
+        "sha256": "c534eab89dcea7e3d8a5e5b3f49c025c7c64cd4e4d9814ee24871de58a9359a1",
+        "platform_key": "linux-x86_64"
+      },
+      "source_tag": {
+        "name": "codex-zsh-v0.1.0",
+        "commit": "891f1f4c8584a082fc4658cabd48f1a8b01354e0",
+        "signed": false
+      },
+      "upstream_source": {
+        "repository": "https://git.code.sf.net/p/zsh/code",
+        "commit": "77045ef899e53b9598bebc5a41db93a548a40ca6",
+        "patch_sha256": "696b7d923b8071554d00e811afb9a08fcad4baada796f7314d12ecd72d06152c",
+        "license_path": "LICENCE",
+        "license_bytes": 1963,
+        "license_sha256": "d06fdf3ef9b1ec69d6b9e170b0a9516fbad3523261ff1668bde3bfea6e0ef5f5"
+      },
+      "license_texts_in_source_archive": false,
+      "license_texts_in_full_package": false,
+      "cryptographic_provenance": "not closed"
+    },
+    {
+      "platform": "linux/arm64",
+      "component": "zsh",
+      "package_member_path": "codex-resources/zsh/bin/zsh",
+      "source_archive": {
+        "url": "https://github.com/openai/codex/releases/download/codex-zsh-v0.1.0/codex-zsh-aarch64-unknown-linux-musl.tar.gz",
+        "bytes": 411652,
+        "sha256": "2968a278581e4e7937212c9b14d634e318c7bd13d17c20c549a1ecbae673a121",
+        "member_path": "codex-zsh/bin/zsh",
+        "member_bytes": 878056,
+        "member_sha256": "7feeacd883e1dc749847936948c378653c80a69ec4a9542f0f126b411882c179"
+      },
+      "distribution_lock": {
+        "url": "https://github.com/openai/codex/releases/download/codex-zsh-v0.1.0/codex-zsh",
+        "bytes": 2486,
+        "sha256": "c534eab89dcea7e3d8a5e5b3f49c025c7c64cd4e4d9814ee24871de58a9359a1",
+        "platform_key": "linux-aarch64"
+      },
+      "source_tag": {
+        "name": "codex-zsh-v0.1.0",
+        "commit": "891f1f4c8584a082fc4658cabd48f1a8b01354e0",
+        "signed": false
+      },
+      "upstream_source": {
+        "repository": "https://git.code.sf.net/p/zsh/code",
+        "commit": "77045ef899e53b9598bebc5a41db93a548a40ca6",
+        "patch_sha256": "696b7d923b8071554d00e811afb9a08fcad4baada796f7314d12ecd72d06152c",
+        "license_path": "LICENCE",
+        "license_bytes": 1963,
+        "license_sha256": "d06fdf3ef9b1ec69d6b9e170b0a9516fbad3523261ff1668bde3bfea6e0ef5f5"
+      },
+      "license_texts_in_source_archive": false,
+      "license_texts_in_full_package": false,
+      "cryptographic_provenance": "not closed"
+    }
+  ],
+  "redistribution_inputs": [
+    {
+      "component": "codex",
+      "source_path": "LICENSE",
+      "bytes": 10926,
+      "sha256": "d17f227e4df5da1600391338865ce0f3055211760a36688f816941d58232d8dc",
+      "included_in_full_package": false
+    },
+    {
+      "component": "codex-notice",
+      "source_path": "NOTICE",
+      "bytes": 242,
+      "sha256": "9d71575ecfd9a843fc1677b0efb08053c6ba9fd686a0de1a6f5382fd3c220915",
+      "included_in_full_package": false
+    },
+    {
+      "component": "bubblewrap",
+      "source_path": "codex-rs/vendor/bubblewrap/COPYING",
+      "bytes": 25383,
+      "sha256": "b7993225104d90ddd8024fd838faf300bea5e83d91203eab98e29512acebd69c",
+      "included_in_full_package": false,
+      "legal_review_required": true
+    }
+  ],
+  "closure_limits": {
+    "package_archives": "official checksum plus exact member inventory; package tarballs are not Sigstore signed",
+    "ripgrep": "release checksum and package-member equality observed, but no cryptographic binding from the checksum asset to the signed source tag was established",
+    "zsh": "OpenAI manifest hash and package-member equality observed, but the codex-zsh tag and release archives are unsigned",
+    "licenses": "upstream license and notice texts were inventoried, but the final redistribution notice bundle and legal approval do not exist",
+    "transitive_dependencies": "the code-mode host and Codex Rust dependency license inventory is not complete",
+    "runtime": "fixture coverage is not evidence of an authenticated paid-model success path or of tool sandbox behavior"
+  },
+  "release_gate": "not_satisfied"
+}

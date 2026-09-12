@@ -1,0 +1,66 @@
+{
+  "assurance_boundary": "OpenPGP authenticates the selected archive checksums and this verifier checks archive members; the manifest's separately observed OCI executable match still depends on the pinned OCI descriptor verification",
+  "base_image_match_claim_rechecked": true,
+  "gpgv": {
+    "assurance_boundary": "exact executable observation; upstream provenance is a separate release input",
+    "bytes": 527184,
+    "path": "/usr/bin/gpgv",
+    "sha256": "26999f2766739b3df31c6c355856440bbd7377a5a19ebcf3f6cfe4cfb3c42f69",
+    "version_line": "gpgv (GnuPG) 2.2.40"
+  },
+  "license": {
+    "bytes": 157609,
+    "path": "deploy/locks/licenses/Node-24.20.0-LICENSE.txt",
+    "sha256": "5888dbb9a1d2b18f2c3e6c5f6af1b39de658372b402a0577b002777f14c62ace"
+  },
+  "network_used": false,
+  "node_version": "24.20.0",
+  "platforms": [
+    {
+      "archive_bytes": 31838904,
+      "archive_filename": "node-v24.20.0-linux-x64.tar.xz",
+      "archive_sha256": "2f2c0da162318f0de47665410c7c8c2ed3d36c8f3105de4bbc61176c70a7cbf2",
+      "declared_unpacked_bytes": 201155641,
+      "license_bytes": 157609,
+      "license_path": "node-v24.20.0-linux-x64/LICENSE",
+      "license_sha256": "5888dbb9a1d2b18f2c3e6c5f6af1b39de658372b402a0577b002777f14c62ace",
+      "member_count": 5888,
+      "node_bytes": 126458664,
+      "node_path": "node-v24.20.0-linux-x64/bin/node",
+      "node_sha256": "89af8424dd53e560b1933f87ba650d8bf57c83ca5a04600eefb31f416aabbae7",
+      "platform": "linux/amd64"
+    },
+    {
+      "archive_bytes": 30778928,
+      "archive_filename": "node-v24.20.0-linux-arm64.tar.xz",
+      "archive_sha256": "5f4ddab610c1ab2016b3c227cebdbf6d9495161487e4739c7b90090595f465f7",
+      "declared_unpacked_bytes": 197375869,
+      "license_bytes": 157609,
+      "license_path": "node-v24.20.0-linux-arm64/LICENSE",
+      "license_sha256": "5888dbb9a1d2b18f2c3e6c5f6af1b39de658372b402a0577b002777f14c62ace",
+      "member_count": 5888,
+      "node_bytes": 122678944,
+      "node_path": "node-v24.20.0-linux-arm64/bin/node",
+      "node_sha256": "23a5637c2470fde09fcc1acc77c1b92e04e3d7e3e6e80ff7df6f5831958d1477",
+      "platform": "linux/arm64"
+    }
+  ],
+  "schema_version": "deeptwin-node-release-verification-v1",
+  "signed_checksums": {
+    "bytes": 3449,
+    "path": "deploy/locks/nodejs/node-v24.20.0-SHASUMS256.txt.asc",
+    "sha256": "8cc4c2dc94d07c7bfd4898ff1ca641d09e65e465becb50baecb4578ed93d95dc",
+    "signature_time_utc": "2026-08-26T14:25:36Z",
+    "signer_fingerprint": "5BE8A3F6C8A5C01D106C0AD820B1A390B168D356"
+  },
+  "source_commit": "71b8b174857e25106d39b61a9e6f30d927da8b01",
+  "source_repository": "https://github.com/nodejs/node",
+  "source_tag": "v24.20.0",
+  "verification_keyring": {
+    "bytes": 95960,
+    "path": "deploy/locks/nodejs/release-keys-5b7f55f4a7e35d1176d27a6b81b0c3c3b794216b.kbx",
+    "sha256": "2733c3959ac2843194801dd7a17162439a996a1471e007624c27f2dda30206a6",
+    "source_commit": "5b7f55f4a7e35d1176d27a6b81b0c3c3b794216b"
+  },
+  "verified": true
+}

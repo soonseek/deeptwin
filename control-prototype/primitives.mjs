@@ -9,6 +9,8 @@ export function button(label, action, value = '', active = false) {
 }
 
 export const list = items => `<ul>${items.map(item => `<li>${e(item)}</li>`).join('')}</ul>`;
+// Presentation only: keep the exact fixture label, ID and original bytes.
+export const artifactLabel = file => file.label.replace(/ · synthetic UI fixture$/, '');
 
 const NODE_WIDTH = 140;
 const NODE_HEIGHT = 48;
@@ -126,7 +128,7 @@ function scopeControls(file, scope) {
   const excerpt = region ? region.text : textScope ? file.body.slice(scope.start, scope.end) : null;
   return '<div class="artifact-scopes">'
     + button('전체', 'scope', 'whole', !region && !textScope)
-    + file.regions.map(item => button(item.label, 'scope', item.id, region?.id === item.id)).join('')
+    + file.regions.filter(item => item.id !== 'whole').map(item => button(item.label, 'scope', item.id, region?.id === item.id)).join('')
     + (file.type === 'text' ? button('선택한 실제 문구', 'textScope', '', textScope) : '')
     + `</div><p class="scope-summary">현재 범위: ${e(current)}</p>`
     + (excerpt === null ? '' : `<blockquote data-selected-region="${e(region?.id ?? 'text')}">${e(excerpt)}</blockquote>`);
@@ -151,7 +153,7 @@ export function artifact(id, { selectable = false, scope = { kind: 'whole' } } =
     content = '<p class="preview-notice">원 PDF의 동일 조판 자료로 만든 SVG 파생 미리보기 · 원본은 아래 파일에서 확인</p>'
       + `<div class="artifact-canvas"><img class="artifact-image pdf" src="${e(file.preview)}" alt="${e(file.label)} · 원 PDF의 SVG 파생 미리보기"/></div>`;
   }
-  return `<article data-artifact="${e(file.id)}"><header><strong>${e(file.label)}</strong><small>${e(file.id)} · ${e(file.type)}</small></header>`
+  return `<article data-artifact="${e(file.id)}"><header title="${e(file.label)}"><strong>${e(artifactLabel(file))}</strong><small>${e(file.id)} · ${e(file.type)}</small></header>`
     + (selectable ? scopeControls(file, scope) : '') + content
     + `<a href="${e(file.path)}" target="_blank" rel="noopener" download>원본 파일 열기/받기</a></article>`;
 }

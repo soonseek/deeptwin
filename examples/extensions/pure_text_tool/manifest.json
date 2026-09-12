@@ -1,0 +1,22 @@
+{
+  "artifact": {"sha256": "5c1574c162a8d68be4b7adf74d730802d74a78a898d0dfc1b5001a252755f7bd", "type": "package"},
+  "compatibility": {"extension_api": "1.0.0", "framework_max": "0.1.99", "framework_min": "0.1.0", "schema_versions": ["domain-v1"]},
+  "config_schema": {"additionalProperties": false, "type": "object"},
+  "declared_grants": [],
+  "declared_resources": [],
+  "entrypoint": {"name": "main", "protocol": "worker-json-v1"},
+  "extension_id": "org.deeptwin.examples.pure-text-tool",
+  "extension_kind": "tool",
+  "extension_version": "1.0.0",
+  "filesystem_needs": [],
+  "input_schema": {"additionalProperties": false, "properties": {"text": {"maxLength": 65536, "type": "string"}}, "required": ["text"], "type": "object"},
+  "isolation_profile": "runtime-worker-v1",
+  "license_expression": "Apache-2.0",
+  "migration_policy": "none",
+  "network_needs": [],
+  "output_schema": {"additionalProperties": false, "properties": {"text": {"maxLength": 65536, "type": "string"}}, "required": ["text"], "type": "object"},
+  "schema_version": "extension-manifest-v1",
+  "secret_needs": [],
+  "source": {"kind": "third_party", "locator": "examples/extensions/pure_text_tool", "provenance_sha256": "0136810c87289b519282494f7db6880b2a109f1fb77cef1661662c0aabecec69"},
+  "uninstall_policy": "retain_records"
+}

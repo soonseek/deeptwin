@@ -1,0 +1,461 @@
+{
+  "name": "deeptwin-ipc-network-isolation-skeleton",
+  "x-deeptwin-contract": {
+    "status": "candidate_not_runtime_qualified",
+    "scope": "ipc_network_isolation_skeleton",
+    "runtime_evidence": false,
+    "image_requirement": "Each image variable must resolve to an exact OCI reference containing @sha256:.",
+    "required_control_listener_target": "http://control:8080",
+    "profile_selection": {
+      "required_exactly_one": ["local", "portable"],
+      "compose_limitation": "Compose profiles do not prevent selecting both; deployment validation must reject zero or multiple edge profiles."
+    },
+    "open_gates": [
+      "T025 must implement a control entrypoint that owns /var/lib/deeptwin and listens on the internal target http://control:8080; current app.server loopback behavior does not satisfy this.",
+      "T025/T081 must validate exactly one edge profile and bind the exact OriginProfile across edge, control, session, CSRF, and receipts.",
+      "Compose may interpolate global portable config/TLS resource variables before applying the local profile; T081 must split validated profile descriptors/overrides or qualify a full-resource model before this single-file skeleton is runnable.",
+      "T081 must verify pinned external portable proxy configuration and operator TLS certificate/key content digests before startup.",
+      "T018 must qualify state-root and per-boot IPC-secret initialization, rotation, crash behavior, Linux ownership, and SO_PEERCRED handshakes.",
+      "T018/T081 must qualify each bounded tmpfs path against the final read-only service image and deny fallback writes to IPC volumes.",
+      "T025/T081 must qualify provider credential, session-root, Codex device-auth ownership, and deployment-receipt secret lifecycles; this skeleton declares only IPC boot secrets, Codex auth state, portable edge TLS, and backup public-recipient input.",
+      "T070/T081 must implement and qualify backup archive streaming, public-recipient validation, output atomicity, private restore identity handling, and restore verification.",
+      "T025 must keep browser owner setup as the user entrypoint; Docker/Compose are external deployment operator mechanisms, not a product launcher or end-user CLI.",
+      "T079/T081/T083 must supply exact final images and complete integrated security, dual-platform, and fresh-host runtime evidence."
+    ]
+  },
+  "services": {
+    "edge-local": {
+      "image": "${EDGE_LOCAL_IMAGE:?T081 exact @sha256 image required}",
+      "user": "20101:20101",
+      "read_only": true,
+      "init": true,
+      "privileged": false,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "tty": false,
+      "stdin_open": false,
+      "pids_limit": 128,
+      "mem_limit": "256m",
+      "cpus": 0.5,
+      "ulimits": {"nofile": {"soft": 1024, "hard": 1024}},
+      "restart": "unless-stopped",
+      "profiles": ["local"],
+      "networks": ["edge-control"],
+      "ports": ["127.0.0.1:${DEEPTWIN_LOCAL_PORT:-8080}:8080"],
+      "environment": {"DEEPTWIN_CONTROL_UPSTREAM": "http://control:8080"},
+      "tmpfs": ["/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1770,uid=20101,gid=20101"]
+    },
+    "control": {
+      "image": "${CONTROL_IMAGE:?T081 exact @sha256 image required}",
+      "user": "20102:20102",
+      "read_only": true,
+      "init": true,
+      "privileged": false,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "tty": false,
+      "stdin_open": false,
+      "pids_limit": 256,
+      "mem_limit": "1g",
+      "cpus": 1.0,
+      "ulimits": {"nofile": {"soft": 4096, "hard": 4096}},
+      "restart": "unless-stopped",
+      "networks": ["edge-control"],
+      "group_add": ["21101", "21102", "21103", "21104", "21105", "21106", "21107", "21108", "21109"],
+      "depends_on": {
+        "ipc-root-init": {"condition": "service_completed_successfully"},
+        "state-root-init": {"condition": "service_completed_successfully"}
+      },
+      "tmpfs": ["/tmp:rw,noexec,nosuid,nodev,size=128m,mode=1770,uid=20102,gid=20102"],
+      "volumes": [
+        {"type": "volume", "source": "deeptwin-state", "target": "/var/lib/deeptwin", "read_only": false, "volume": {"nocopy": true}},
+        {"type": "volume", "source": "ipc-cp-provider", "target": "/run/deeptwin/ipc/cp-provider", "read_only": true},
+        {"type": "volume", "source": "ipc-cp-fetch", "target": "/run/deeptwin/ipc/cp-fetch", "read_only": true},
+        {"type": "volume", "source": "ipc-cp-codex", "target": "/run/deeptwin/ipc/cp-codex", "read_only": true},
+        {"type": "volume", "source": "ipc-cp-browser", "target": "/run/deeptwin/ipc/cp-browser", "read_only": true},
+        {"type": "volume", "source": "ipc-cp-document", "target": "/run/deeptwin/ipc/cp-document", "read_only": true},
+        {"type": "volume", "source": "ipc-cp-speech", "target": "/run/deeptwin/ipc/cp-speech", "read_only": true},
+        {"type": "volume", "source": "ipc-cp-evaluation", "target": "/run/deeptwin/ipc/cp-evaluation", "read_only": true},
+        {"type": "volume", "source": "ipc-cp-runtime", "target": "/run/deeptwin/ipc/cp-runtime", "read_only": true},
+        {"type": "volume", "source": "ipc-cp-backup", "target": "/run/deeptwin/ipc/cp-backup", "read_only": true}
+      ]
+    },
+    "provider": {
+      "image": "${PROVIDER_IMAGE:?T081 exact @sha256 image required}",
+      "user": "20103:20103",
+      "read_only": true,
+      "init": true,
+      "privileged": false,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "tty": false,
+      "stdin_open": false,
+      "pids_limit": 128,
+      "mem_limit": "512m",
+      "cpus": 1.0,
+      "ulimits": {"nofile": {"soft": 2048, "hard": 2048}},
+      "restart": "unless-stopped",
+      "networks": ["provider-egress"],
+      "group_add": ["21101"],
+      "depends_on": {"ipc-root-init": {"condition": "service_completed_successfully"}},
+      "tmpfs": ["/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1770,uid=20103,gid=20103"],
+      "volumes": [
+        {"type": "volume", "source": "ipc-cp-provider", "target": "/run/deeptwin/ipc/cp-provider", "read_only": false}
+      ]
+    },
+    "fetch": {
+      "image": "${FETCH_IMAGE:?T081 exact @sha256 image required}",
+      "user": "20104:20104",
+      "read_only": true,
+      "init": true,
+      "privileged": false,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "tty": false,
+      "stdin_open": false,
+      "pids_limit": 128,
+      "mem_limit": "512m",
+      "cpus": 1.0,
+      "ulimits": {"nofile": {"soft": 2048, "hard": 2048}},
+      "restart": "unless-stopped",
+      "networks": ["fetch-egress"],
+      "group_add": ["21102", "21110"],
+      "depends_on": {"ipc-root-init": {"condition": "service_completed_successfully"}},
+      "tmpfs": ["/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1770,uid=20104,gid=20104"],
+      "volumes": [
+        {"type": "volume", "source": "ipc-cp-fetch", "target": "/run/deeptwin/ipc/cp-fetch", "read_only": false},
+        {"type": "volume", "source": "ipc-browser-fetch", "target": "/run/deeptwin/ipc/browser-fetch", "read_only": false}
+      ]
+    },
+    "browser": {
+      "image": "${BROWSER_IMAGE:?T081 exact @sha256 image required}",
+      "user": "20105:20105",
+      "read_only": true,
+      "init": true,
+      "privileged": false,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true", "seccomp=./security/browser-seccomp.json"],
+      "tty": false,
+      "stdin_open": false,
+      "pids_limit": 256,
+      "mem_limit": "1g",
+      "cpus": 1.0,
+      "shm_size": "256m",
+      "ulimits": {"nofile": {"soft": 4096, "hard": 4096}},
+      "restart": "unless-stopped",
+      "network_mode": "none",
+      "group_add": ["21104", "21110"],
+      "depends_on": {"ipc-root-init": {"condition": "service_completed_successfully"}},
+      "tmpfs": [
+        "/tmp:rw,noexec,nosuid,nodev,size=128m,mode=1770,uid=20105,gid=20105",
+        "/run/deeptwin/browser-profile:rw,noexec,nosuid,nodev,size=256m,mode=0700,uid=20105,gid=20105"
+      ],
+      "volumes": [
+        {"type": "volume", "source": "ipc-cp-browser", "target": "/run/deeptwin/ipc/cp-browser", "read_only": false},
+        {"type": "volume", "source": "ipc-browser-fetch", "target": "/run/deeptwin/ipc/browser-fetch", "read_only": true}
+      ]
+    },
+    "document": {
+      "image": "${DOCUMENT_IMAGE:?T081 exact @sha256 image required}",
+      "user": "20106:20106",
+      "read_only": true,
+      "init": true,
+      "privileged": false,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "tty": false,
+      "stdin_open": false,
+      "pids_limit": 128,
+      "mem_limit": "768m",
+      "cpus": 1.0,
+      "ulimits": {"nofile": {"soft": 2048, "hard": 2048}},
+      "restart": "unless-stopped",
+      "network_mode": "none",
+      "group_add": ["21105"],
+      "depends_on": {"ipc-root-init": {"condition": "service_completed_successfully"}},
+      "tmpfs": ["/tmp:rw,noexec,nosuid,nodev,size=256m,mode=1770,uid=20106,gid=20106"],
+      "volumes": [
+        {"type": "volume", "source": "ipc-cp-document", "target": "/run/deeptwin/ipc/cp-document", "read_only": false}
+      ]
+    },
+    "speech": {
+      "image": "${SPEECH_IMAGE:?T081 exact @sha256 image required}",
+      "user": "20107:20107",
+      "read_only": true,
+      "init": true,
+      "privileged": false,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "tty": false,
+      "stdin_open": false,
+      "pids_limit": 128,
+      "mem_limit": "2g",
+      "cpus": 2.0,
+      "ulimits": {"nofile": {"soft": 2048, "hard": 2048}},
+      "restart": "unless-stopped",
+      "network_mode": "none",
+      "group_add": ["21106"],
+      "depends_on": {"ipc-root-init": {"condition": "service_completed_successfully"}},
+      "tmpfs": ["/tmp:rw,noexec,nosuid,nodev,size=256m,mode=1770,uid=20107,gid=20107"],
+      "volumes": [
+        {"type": "volume", "source": "ipc-cp-speech", "target": "/run/deeptwin/ipc/cp-speech", "read_only": false}
+      ]
+    },
+    "evaluation": {
+      "image": "${EVALUATION_IMAGE:?T081 exact @sha256 image required}",
+      "user": "20108:20108",
+      "read_only": true,
+      "init": true,
+      "privileged": false,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "tty": false,
+      "stdin_open": false,
+      "pids_limit": 128,
+      "mem_limit": "1g",
+      "cpus": 1.0,
+      "ulimits": {"nofile": {"soft": 2048, "hard": 2048}},
+      "restart": "unless-stopped",
+      "network_mode": "none",
+      "group_add": ["21107"],
+      "depends_on": {"ipc-root-init": {"condition": "service_completed_successfully"}},
+      "tmpfs": ["/tmp:rw,noexec,nosuid,nodev,size=128m,mode=1770,uid=20108,gid=20108"],
+      "volumes": [
+        {"type": "volume", "source": "ipc-cp-evaluation", "target": "/run/deeptwin/ipc/cp-evaluation", "read_only": false}
+      ]
+    },
+    "runtime-extension": {
+      "image": "${RUNTIME_EXTENSION_IMAGE:?T081 exact @sha256 image required}",
+      "user": "20109:20109",
+      "read_only": true,
+      "init": true,
+      "privileged": false,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "tty": false,
+      "stdin_open": false,
+      "pids_limit": 128,
+      "mem_limit": "1g",
+      "cpus": 1.0,
+      "ulimits": {"nofile": {"soft": 2048, "hard": 2048}},
+      "restart": "unless-stopped",
+      "network_mode": "none",
+      "group_add": ["21108"],
+      "depends_on": {"ipc-root-init": {"condition": "service_completed_successfully"}},
+      "tmpfs": ["/tmp:rw,noexec,nosuid,nodev,size=128m,mode=1770,uid=20109,gid=20109"],
+      "volumes": [
+        {"type": "volume", "source": "ipc-cp-runtime", "target": "/run/deeptwin/ipc/cp-runtime", "read_only": false}
+      ]
+    },
+    "codex": {
+      "image": "${CODEX_IMAGE:?T081 exact @sha256 image required}",
+      "user": "20110:20110",
+      "read_only": true,
+      "init": true,
+      "privileged": false,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "tty": false,
+      "stdin_open": false,
+      "pids_limit": 256,
+      "mem_limit": "2g",
+      "cpus": 2.0,
+      "ulimits": {"nofile": {"soft": 4096, "hard": 4096}},
+      "restart": "unless-stopped",
+      "networks": ["codex-egress"],
+      "group_add": ["21103"],
+      "depends_on": {
+        "ipc-root-init": {"condition": "service_completed_successfully"},
+        "state-root-init": {"condition": "service_completed_successfully"}
+      },
+      "tmpfs": ["/tmp:rw,noexec,nosuid,nodev,size=512m,mode=1770,uid=20110,gid=20110"],
+      "volumes": [
+        {"type": "volume", "source": "ipc-cp-codex", "target": "/run/deeptwin/ipc/cp-codex", "read_only": false},
+        {"type": "volume", "source": "codex-auth", "target": "/var/lib/deeptwin/codex-auth", "read_only": false, "volume": {"nocopy": true}}
+      ]
+    },
+    "backup": {
+      "image": "${BACKUP_IMAGE:?T081 exact @sha256 image required}",
+      "user": "20111:20111",
+      "read_only": true,
+      "init": true,
+      "privileged": false,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "tty": false,
+      "stdin_open": false,
+      "pids_limit": 128,
+      "mem_limit": "512m",
+      "cpus": 1.0,
+      "ulimits": {"nofile": {"soft": 2048, "hard": 2048}},
+      "restart": "unless-stopped",
+      "network_mode": "none",
+      "group_add": ["21109"],
+      "depends_on": {
+        "ipc-root-init": {"condition": "service_completed_successfully"},
+        "state-root-init": {"condition": "service_completed_successfully"}
+      },
+      "tmpfs": ["/tmp:rw,noexec,nosuid,nodev,size=256m,mode=1770,uid=20111,gid=20111"],
+      "secrets": [
+        {"source": "backup-public-key", "target": "/run/secrets/deeptwin-backup-recipient.txt", "uid": "20111", "gid": "20111", "mode": 288}
+      ],
+      "volumes": [
+        {"type": "volume", "source": "ipc-cp-backup", "target": "/run/deeptwin/ipc/cp-backup", "read_only": false},
+        {"type": "volume", "source": "backup-output", "target": "/var/lib/deeptwin/backup-output", "read_only": false, "volume": {"nocopy": true}}
+      ]
+    },
+    "edge-portable": {
+      "image": "${EDGE_PORTABLE_IMAGE:?T081 exact @sha256 image required}",
+      "user": "20112:20112",
+      "read_only": true,
+      "init": true,
+      "privileged": false,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "tty": false,
+      "stdin_open": false,
+      "pids_limit": 128,
+      "mem_limit": "256m",
+      "cpus": 0.5,
+      "ulimits": {"nofile": {"soft": 1024, "hard": 1024}},
+      "restart": "unless-stopped",
+      "profiles": ["portable"],
+      "networks": ["edge-control"],
+      "ports": ["${DEEPTWIN_PORTABLE_BIND:-0.0.0.0}:${DEEPTWIN_PORTABLE_PORT:-8443}:8443"],
+      "environment": {
+        "DEEPTWIN_CONTROL_UPSTREAM": "http://control:8080",
+        "DEEPTWIN_PORTABLE_EDGE_CONFIG_SHA256": "${PORTABLE_EDGE_CONFIG_SHA256:?T081 pinned external edge config sha256 required}",
+        "DEEPTWIN_PORTABLE_TLS_CERT_SHA256": "${PORTABLE_EDGE_TLS_CERT_SHA256:?T081 operator TLS certificate sha256 required}",
+        "DEEPTWIN_PORTABLE_TLS_KEY_SHA256": "${PORTABLE_EDGE_TLS_KEY_SHA256:?T081 operator TLS key sha256 required}"
+      },
+      "tmpfs": ["/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1770,uid=20112,gid=20112"],
+      "configs": [
+        {"source": "portable-edge-config", "target": "/etc/deeptwin/edge/edge.conf", "uid": "20112", "gid": "20112", "mode": 288}
+      ],
+      "secrets": [
+        {"source": "portable-edge-tls-certificate", "target": "/run/secrets/deeptwin-edge-tls.crt", "uid": "20112", "gid": "20112", "mode": 288},
+        {"source": "portable-edge-tls-key", "target": "/run/secrets/deeptwin-edge-tls.key", "uid": "20112", "gid": "20112", "mode": 256}
+      ]
+    },
+    "state-root-init": {
+      "image": "${STATE_ROOT_INIT_IMAGE:?T081 exact @sha256 image required}",
+      "user": "0:0",
+      "read_only": true,
+      "init": true,
+      "privileged": false,
+      "cap_drop": ["ALL"],
+      "cap_add": ["CHOWN"],
+      "security_opt": ["no-new-privileges:true"],
+      "tty": false,
+      "stdin_open": false,
+      "pids_limit": 32,
+      "mem_limit": "64m",
+      "cpus": 0.25,
+      "ulimits": {"nofile": {"soft": 256, "hard": 256}},
+      "restart": "no",
+      "network_mode": "none",
+      "command": [
+        "--root=/var/lib/deeptwin",
+        "--owner=20102:20102",
+        "--root-mode=0700",
+        "--existing-policy=verify-or-initialize-empty",
+        "--root=/var/lib/deeptwin/codex-auth",
+        "--owner=20110:20110",
+        "--root-mode=0700",
+        "--existing-policy=verify-or-initialize-empty",
+        "--root=/var/lib/deeptwin/backup-output",
+        "--owner=20111:20111",
+        "--root-mode=0700",
+        "--existing-policy=verify-or-initialize-empty"
+      ],
+      "volumes": [
+        {"type": "volume", "source": "deeptwin-state", "target": "/var/lib/deeptwin", "read_only": false, "volume": {"nocopy": true}},
+        {"type": "volume", "source": "codex-auth", "target": "/var/lib/deeptwin/codex-auth", "read_only": false, "volume": {"nocopy": true}},
+        {"type": "volume", "source": "backup-output", "target": "/var/lib/deeptwin/backup-output", "read_only": false, "volume": {"nocopy": true}}
+      ]
+    },
+    "ipc-root-init": {
+      "image": "${IPC_ROOT_INIT_IMAGE:?T081 exact @sha256 image required}",
+      "user": "0:0",
+      "read_only": true,
+      "init": true,
+      "privileged": false,
+      "cap_drop": ["ALL"],
+      "cap_add": ["CHOWN", "FOWNER", "FSETID"],
+      "security_opt": ["no-new-privileges:true"],
+      "tty": false,
+      "stdin_open": false,
+      "pids_limit": 32,
+      "mem_limit": "64m",
+      "cpus": 0.25,
+      "ulimits": {"nofile": {"soft": 256, "hard": 256}},
+      "restart": "no",
+      "network_mode": "none",
+      "command": [
+        "--channel=cp-provider", "--root=/run/deeptwin/ipc/cp-provider", "--root-owner=0:21101", "--root-mode=0710", "--endpoint=endpoint", "--endpoint-owner=20103:21101", "--endpoint-mode=02710", "--generation-lock=generation.lock", "--generation-lock-owner=0:21101", "--generation-lock-mode=0640", "--socket=worker.sock", "--socket-owner=20103:21101", "--socket-mode=0660", "--boot-secret=boot-secret", "--boot-secret-owner=0:21101", "--boot-secret-mode=0640", "--boot-secret-bytes=32", "--boot-secret-policy=generate-or-overwrite-per-boot",
+        "--channel=cp-fetch", "--root=/run/deeptwin/ipc/cp-fetch", "--root-owner=0:21102", "--root-mode=0710", "--endpoint=endpoint", "--endpoint-owner=20104:21102", "--endpoint-mode=02710", "--generation-lock=generation.lock", "--generation-lock-owner=0:21102", "--generation-lock-mode=0640", "--socket=worker.sock", "--socket-owner=20104:21102", "--socket-mode=0660", "--boot-secret=boot-secret", "--boot-secret-owner=0:21102", "--boot-secret-mode=0640", "--boot-secret-bytes=32", "--boot-secret-policy=generate-or-overwrite-per-boot",
+        "--channel=cp-codex", "--root=/run/deeptwin/ipc/cp-codex", "--root-owner=0:21103", "--root-mode=0710", "--endpoint=endpoint", "--endpoint-owner=20110:21103", "--endpoint-mode=02710", "--generation-lock=generation.lock", "--generation-lock-owner=0:21103", "--generation-lock-mode=0640", "--socket=worker.sock", "--socket-owner=20110:21103", "--socket-mode=0660", "--boot-secret=boot-secret", "--boot-secret-owner=0:21103", "--boot-secret-mode=0640", "--boot-secret-bytes=32", "--boot-secret-policy=generate-or-overwrite-per-boot",
+        "--channel=cp-browser", "--root=/run/deeptwin/ipc/cp-browser", "--root-owner=0:21104", "--root-mode=0710", "--endpoint=endpoint", "--endpoint-owner=20105:21104", "--endpoint-mode=02710", "--generation-lock=generation.lock", "--generation-lock-owner=0:21104", "--generation-lock-mode=0640", "--socket=worker.sock", "--socket-owner=20105:21104", "--socket-mode=0660", "--boot-secret=boot-secret", "--boot-secret-owner=0:21104", "--boot-secret-mode=0640", "--boot-secret-bytes=32", "--boot-secret-policy=generate-or-overwrite-per-boot",
+        "--channel=cp-document", "--root=/run/deeptwin/ipc/cp-document", "--root-owner=0:21105", "--root-mode=0710", "--endpoint=endpoint", "--endpoint-owner=20106:21105", "--endpoint-mode=02710", "--generation-lock=generation.lock", "--generation-lock-owner=0:21105", "--generation-lock-mode=0640", "--socket=worker.sock", "--socket-owner=20106:21105", "--socket-mode=0660", "--boot-secret=boot-secret", "--boot-secret-owner=0:21105", "--boot-secret-mode=0640", "--boot-secret-bytes=32", "--boot-secret-policy=generate-or-overwrite-per-boot",
+        "--channel=cp-speech", "--root=/run/deeptwin/ipc/cp-speech", "--root-owner=0:21106", "--root-mode=0710", "--endpoint=endpoint", "--endpoint-owner=20107:21106", "--endpoint-mode=02710", "--generation-lock=generation.lock", "--generation-lock-owner=0:21106", "--generation-lock-mode=0640", "--socket=worker.sock", "--socket-owner=20107:21106", "--socket-mode=0660", "--boot-secret=boot-secret", "--boot-secret-owner=0:21106", "--boot-secret-mode=0640", "--boot-secret-bytes=32", "--boot-secret-policy=generate-or-overwrite-per-boot",
+        "--channel=cp-evaluation", "--root=/run/deeptwin/ipc/cp-evaluation", "--root-owner=0:21107", "--root-mode=0710", "--endpoint=endpoint", "--endpoint-owner=20108:21107", "--endpoint-mode=02710", "--generation-lock=generation.lock", "--generation-lock-owner=0:21107", "--generation-lock-mode=0640", "--socket=worker.sock", "--socket-owner=20108:21107", "--socket-mode=0660", "--boot-secret=boot-secret", "--boot-secret-owner=0:21107", "--boot-secret-mode=0640", "--boot-secret-bytes=32", "--boot-secret-policy=generate-or-overwrite-per-boot",
+        "--channel=cp-runtime", "--root=/run/deeptwin/ipc/cp-runtime", "--root-owner=0:21108", "--root-mode=0710", "--endpoint=endpoint", "--endpoint-owner=20109:21108", "--endpoint-mode=02710", "--generation-lock=generation.lock", "--generation-lock-owner=0:21108", "--generation-lock-mode=0640", "--socket=worker.sock", "--socket-owner=20109:21108", "--socket-mode=0660", "--boot-secret=boot-secret", "--boot-secret-owner=0:21108", "--boot-secret-mode=0640", "--boot-secret-bytes=32", "--boot-secret-policy=generate-or-overwrite-per-boot",
+        "--channel=cp-backup", "--root=/run/deeptwin/ipc/cp-backup", "--root-owner=0:21109", "--root-mode=0710", "--endpoint=endpoint", "--endpoint-owner=20111:21109", "--endpoint-mode=02710", "--generation-lock=generation.lock", "--generation-lock-owner=0:21109", "--generation-lock-mode=0640", "--socket=worker.sock", "--socket-owner=20111:21109", "--socket-mode=0660", "--boot-secret=boot-secret", "--boot-secret-owner=0:21109", "--boot-secret-mode=0640", "--boot-secret-bytes=32", "--boot-secret-policy=generate-or-overwrite-per-boot",
+        "--channel=browser-fetch", "--root=/run/deeptwin/ipc/browser-fetch", "--root-owner=0:21110", "--root-mode=0710", "--endpoint=endpoint", "--endpoint-owner=20104:21110", "--endpoint-mode=02710", "--generation-lock=generation.lock", "--generation-lock-owner=0:21110", "--generation-lock-mode=0640", "--socket=worker.sock", "--socket-owner=20104:21110", "--socket-mode=0660", "--boot-secret=boot-secret", "--boot-secret-owner=0:21110", "--boot-secret-mode=0640", "--boot-secret-bytes=32", "--boot-secret-policy=generate-or-overwrite-per-boot"
+      ],
+      "volumes": [
+        {"type": "volume", "source": "ipc-cp-provider", "target": "/run/deeptwin/ipc/cp-provider", "read_only": false},
+        {"type": "volume", "source": "ipc-cp-fetch", "target": "/run/deeptwin/ipc/cp-fetch", "read_only": false},
+        {"type": "volume", "source": "ipc-cp-codex", "target": "/run/deeptwin/ipc/cp-codex", "read_only": false},
+        {"type": "volume", "source": "ipc-cp-browser", "target": "/run/deeptwin/ipc/cp-browser", "read_only": false},
+        {"type": "volume", "source": "ipc-cp-document", "target": "/run/deeptwin/ipc/cp-document", "read_only": false},
+        {"type": "volume", "source": "ipc-cp-speech", "target": "/run/deeptwin/ipc/cp-speech", "read_only": false},
+        {"type": "volume", "source": "ipc-cp-evaluation", "target": "/run/deeptwin/ipc/cp-evaluation", "read_only": false},
+        {"type": "volume", "source": "ipc-cp-runtime", "target": "/run/deeptwin/ipc/cp-runtime", "read_only": false},
+        {"type": "volume", "source": "ipc-cp-backup", "target": "/run/deeptwin/ipc/cp-backup", "read_only": false},
+        {"type": "volume", "source": "ipc-browser-fetch", "target": "/run/deeptwin/ipc/browser-fetch", "read_only": false}
+      ]
+    }
+  },
+  "networks": {
+    "edge-control": {"internal": true},
+    "provider-egress": {},
+    "fetch-egress": {},
+    "codex-egress": {}
+  },
+  "volumes": {
+    "ipc-cp-provider": {},
+    "ipc-cp-fetch": {},
+    "ipc-cp-codex": {},
+    "ipc-cp-browser": {},
+    "ipc-cp-document": {},
+    "ipc-cp-speech": {},
+    "ipc-cp-evaluation": {},
+    "ipc-cp-runtime": {},
+    "ipc-cp-backup": {},
+    "ipc-browser-fetch": {},
+    "deeptwin-state": {},
+    "codex-auth": {},
+    "backup-output": {}
+  },
+  "configs": {
+    "portable-edge-config": {
+      "external": true,
+      "name": "${PORTABLE_EDGE_CONFIG_RESOURCE:?T081 pinned external edge config resource required}"
+    }
+  },
+  "secrets": {
+    "portable-edge-tls-certificate": {
+      "external": true,
+      "name": "${PORTABLE_EDGE_TLS_CERT_RESOURCE:?T081 operator TLS certificate resource required}"
+    },
+    "portable-edge-tls-key": {
+      "external": true,
+      "name": "${PORTABLE_EDGE_TLS_KEY_RESOURCE:?T081 operator TLS key resource required}"
+    },
+    "backup-public-key": {
+      "external": true,
+      "name": "${BACKUP_PUBLIC_KEY_RESOURCE:?T070 backup public key resource required}"
+    }
+  }
+}

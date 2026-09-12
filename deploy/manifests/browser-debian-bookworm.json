@@ -1,0 +1,4965 @@
+{
+  "closure": {
+    "alternative_decisions": [
+      {
+        "group": "debconf (>= 0.5) | debconf-2.0",
+        "parent": "fontconfig-config",
+        "selected": "debconf"
+      },
+      {
+        "group": "fonts-dejavu-core | ttf-bitstream-vera | fonts-liberation | fonts-liberation2 | fonts-croscore | fonts-freefont-otf | fonts-freefont-ttf | fonts-urw-base35 | fonts-texgyre",
+        "parent": "fontconfig-config",
+        "selected": "fonts-dejavu-core"
+      }
+    ],
+    "edge_direction": "package_to_dependency",
+    "package_count": 105,
+    "packages": [
+      {
+        "name": "at-spi2-common",
+        "source": "at-spi2-core=2.46.0-5",
+        "version": "2.46.0-5"
+      },
+      {
+        "name": "debconf",
+        "source": "debconf=1.5.82",
+        "version": "1.5.82"
+      },
+      {
+        "name": "dpkg",
+        "source": "dpkg=1.21.23",
+        "version": "1.21.23"
+      },
+      {
+        "name": "fontconfig",
+        "source": "fontconfig=2.14.1-4",
+        "version": "2.14.1-4"
+      },
+      {
+        "name": "fontconfig-config",
+        "source": "fontconfig=2.14.1-4",
+        "version": "2.14.1-4"
+      },
+      {
+        "name": "fonts-dejavu-core",
+        "source": "fonts-dejavu=2.37-6",
+        "version": "2.37-6"
+      },
+      {
+        "name": "fonts-freefont-ttf",
+        "source": "fonts-freefont=20120503-10",
+        "version": "20120503-10"
+      },
+      {
+        "name": "fonts-ipafont-gothic",
+        "source": "fonts-ipafont=00303-23",
+        "version": "00303-23"
+      },
+      {
+        "name": "fonts-liberation",
+        "source": "fonts-liberation=1:1.07.4-11",
+        "version": "1:1.07.4-11"
+      },
+      {
+        "name": "fonts-noto-color-emoji",
+        "source": "fonts-noto-color-emoji=2.042-0+deb12u1",
+        "version": "2.042-0+deb12u1"
+      },
+      {
+        "name": "fonts-tlwg-loma-otf",
+        "source": "fonts-tlwg=1:0.7.3-1",
+        "version": "1:0.7.3-1"
+      },
+      {
+        "name": "fonts-unifont",
+        "source": "unifont=1:15.0.01-2",
+        "version": "1:15.0.01-2"
+      },
+      {
+        "name": "fonts-wqy-zenhei",
+        "source": "fonts-wqy-zenhei=0.9.45-8",
+        "version": "0.9.45-8"
+      },
+      {
+        "name": "gcc-12-base",
+        "source": "gcc-12=12.2.0-14+deb12u1",
+        "version": "12.2.0-14+deb12u1"
+      },
+      {
+        "name": "libacl1",
+        "source": "acl=2.3.1-3",
+        "version": "2.3.1-3"
+      },
+      {
+        "name": "libasound2",
+        "source": "alsa-lib=1.2.8-1",
+        "version": "1.2.8-1+b1"
+      },
+      {
+        "name": "libasound2-data",
+        "source": "alsa-lib=1.2.8-1",
+        "version": "1.2.8-1"
+      },
+      {
+        "name": "libatk-bridge2.0-0",
+        "source": "at-spi2-core=2.46.0-5",
+        "version": "2.46.0-5"
+      },
+      {
+        "name": "libatk1.0-0",
+        "source": "at-spi2-core=2.46.0-5",
+        "version": "2.46.0-5"
+      },
+      {
+        "name": "libatspi2.0-0",
+        "source": "at-spi2-core=2.46.0-5",
+        "version": "2.46.0-5"
+      },
+      {
+        "name": "libavahi-client3",
+        "source": "avahi=0.8-10+deb12u1",
+        "version": "0.8-10+deb12u1"
+      },
+      {
+        "name": "libavahi-common-data",
+        "source": "avahi=0.8-10+deb12u1",
+        "version": "0.8-10+deb12u1"
+      },
+      {
+        "name": "libavahi-common3",
+        "source": "avahi=0.8-10+deb12u1",
+        "version": "0.8-10+deb12u1"
+      },
+      {
+        "name": "libblkid1",
+        "source": "util-linux=2.38.1-5+deb12u3",
+        "version": "2.38.1-5+deb12u3"
+      },
+      {
+        "name": "libbrotli1",
+        "source": "brotli=1.0.9-2",
+        "version": "1.0.9-2+b6"
+      },
+      {
+        "name": "libbsd0",
+        "source": "libbsd=0.11.7-2",
+        "version": "0.11.7-2"
+      },
+      {
+        "name": "libbz2-1.0",
+        "source": "bzip2=1.0.8-5",
+        "version": "1.0.8-5+b1"
+      },
+      {
+        "name": "libc6",
+        "source": "glibc=2.36-9+deb12u14",
+        "version": "2.36-9+deb12u14"
+      },
+      {
+        "name": "libcairo2",
+        "source": "cairo=1.16.0-7",
+        "version": "1.16.0-7"
+      },
+      {
+        "name": "libcap2",
+        "source": "libcap2=1:2.66-4+deb12u3",
+        "version": "1:2.66-4+deb12u3+b1"
+      },
+      {
+        "name": "libcom-err2",
+        "source": "e2fsprogs=1.47.0-2",
+        "version": "1.47.0-2+b2"
+      },
+      {
+        "name": "libcups2",
+        "source": "cups=2.4.2-3+deb12u9",
+        "version": "2.4.2-3+deb12u9"
+      },
+      {
+        "name": "libdatrie1",
+        "source": "libdatrie=0.2.13-2",
+        "version": "0.2.13-2+b1"
+      },
+      {
+        "name": "libdbus-1-3",
+        "source": "dbus=1.14.10-1~deb12u1",
+        "version": "1.14.10-1~deb12u1"
+      },
+      {
+        "name": "libdrm-common",
+        "source": "libdrm=2.4.114-1",
+        "version": "2.4.114-1"
+      },
+      {
+        "name": "libdrm2",
+        "source": "libdrm=2.4.114-1",
+        "version": "2.4.114-1+b1"
+      },
+      {
+        "name": "libexpat1",
+        "source": "expat=2.5.0-1+deb12u3",
+        "version": "2.5.0-1+deb12u3"
+      },
+      {
+        "name": "libffi8",
+        "source": "libffi=3.4.4-1",
+        "version": "3.4.4-1"
+      },
+      {
+        "name": "libfontconfig1",
+        "source": "fontconfig=2.14.1-4",
+        "version": "2.14.1-4"
+      },
+      {
+        "name": "libfontenc1",
+        "source": "libfontenc=1:1.1.4-1",
+        "version": "1:1.1.4-1"
+      },
+      {
+        "name": "libfreetype6",
+        "source": "freetype=2.12.1+dfsg-5+deb12u4",
+        "version": "2.12.1+dfsg-5+deb12u4"
+      },
+      {
+        "name": "libfribidi0",
+        "source": "fribidi=1.0.8-2.1",
+        "version": "1.0.8-2.1"
+      },
+      {
+        "name": "libgbm1",
+        "source": "mesa=22.3.6-1+deb12u2",
+        "version": "22.3.6-1+deb12u2"
+      },
+      {
+        "name": "libgcc-s1",
+        "source": "gcc-12=12.2.0-14+deb12u1",
+        "version": "12.2.0-14+deb12u1"
+      },
+      {
+        "name": "libgcrypt20",
+        "source": "libgcrypt20=1.10.1-3+deb12u1",
+        "version": "1.10.1-3+deb12u1"
+      },
+      {
+        "name": "libglib2.0-0",
+        "source": "glib2.0=2.74.6-2+deb12u9",
+        "version": "2.74.6-2+deb12u9"
+      },
+      {
+        "name": "libgmp10",
+        "source": "gmp=2:6.2.1+dfsg1-1.1",
+        "version": "2:6.2.1+dfsg1-1.1"
+      },
+      {
+        "name": "libgnutls30",
+        "source": "gnutls28=3.7.9-2+deb12u7",
+        "version": "3.7.9-2+deb12u7"
+      },
+      {
+        "name": "libgpg-error0",
+        "source": "libgpg-error=1.46-1",
+        "version": "1.46-1"
+      },
+      {
+        "name": "libgraphite2-3",
+        "source": "graphite2=1.3.14-1+deb12u1",
+        "version": "1.3.14-1+deb12u1"
+      },
+      {
+        "name": "libgssapi-krb5-2",
+        "source": "krb5=1.20.1-2+deb12u5",
+        "version": "1.20.1-2+deb12u5"
+      },
+      {
+        "name": "libharfbuzz0b",
+        "source": "harfbuzz=6.0.0+dfsg-3",
+        "version": "6.0.0+dfsg-3"
+      },
+      {
+        "name": "libhogweed6",
+        "source": "nettle=3.8.1-2",
+        "version": "3.8.1-2"
+      },
+      {
+        "name": "libidn2-0",
+        "source": "libidn2=2.3.3-1",
+        "version": "2.3.3-1+b1"
+      },
+      {
+        "name": "libk5crypto3",
+        "source": "krb5=1.20.1-2+deb12u5",
+        "version": "1.20.1-2+deb12u5"
+      },
+      {
+        "name": "libkeyutils1",
+        "source": "keyutils=1.6.3-2",
+        "version": "1.6.3-2"
+      },
+      {
+        "name": "libkrb5-3",
+        "source": "krb5=1.20.1-2+deb12u5",
+        "version": "1.20.1-2+deb12u5"
+      },
+      {
+        "name": "libkrb5support0",
+        "source": "krb5=1.20.1-2+deb12u5",
+        "version": "1.20.1-2+deb12u5"
+      },
+      {
+        "name": "liblz4-1",
+        "source": "lz4=1.9.4-1",
+        "version": "1.9.4-1"
+      },
+      {
+        "name": "liblzma5",
+        "source": "xz-utils=5.4.1-1+deb12u1",
+        "version": "5.4.1-1+deb12u1"
+      },
+      {
+        "name": "libmd0",
+        "source": "libmd=1.0.4-2",
+        "version": "1.0.4-2"
+      },
+      {
+        "name": "libmount1",
+        "source": "util-linux=2.38.1-5+deb12u3",
+        "version": "2.38.1-5+deb12u3"
+      },
+      {
+        "name": "libnettle8",
+        "source": "nettle=3.8.1-2",
+        "version": "3.8.1-2"
+      },
+      {
+        "name": "libnspr4",
+        "source": "nspr=2:4.35-1",
+        "version": "2:4.35-1"
+      },
+      {
+        "name": "libnss3",
+        "source": "nss=2:3.87.1-1+deb12u4",
+        "version": "2:3.87.1-1+deb12u4"
+      },
+      {
+        "name": "libp11-kit0",
+        "source": "p11-kit=0.24.1-2",
+        "version": "0.24.1-2"
+      },
+      {
+        "name": "libpango-1.0-0",
+        "source": "pango1.0=1.50.12+ds-1",
+        "version": "1.50.12+ds-1"
+      },
+      {
+        "name": "libpcre2-8-0",
+        "source": "pcre2=10.42-1+deb12u1",
+        "version": "10.42-1+deb12u1"
+      },
+      {
+        "name": "libpixman-1-0",
+        "source": "pixman=0.42.2-1",
+        "version": "0.42.2-1"
+      },
+      {
+        "name": "libpng16-16",
+        "source": "libpng1.6=1.6.39-2+deb12u5",
+        "version": "1.6.39-2+deb12u5"
+      },
+      {
+        "name": "libselinux1",
+        "source": "libselinux=3.4-1",
+        "version": "3.4-1+b6"
+      },
+      {
+        "name": "libsqlite3-0",
+        "source": "sqlite3=3.40.1-2+deb12u2",
+        "version": "3.40.1-2+deb12u2"
+      },
+      {
+        "name": "libssl3",
+        "source": "openssl=3.0.20-1~deb12u2",
+        "version": "3.0.20-1~deb12u2"
+      },
+      {
+        "name": "libsystemd0",
+        "source": "systemd=252.39-1~deb12u2",
+        "version": "252.39-1~deb12u2"
+      },
+      {
+        "name": "libtasn1-6",
+        "source": "libtasn1-6=4.19.0-2+deb12u1",
+        "version": "4.19.0-2+deb12u1"
+      },
+      {
+        "name": "libthai-data",
+        "source": "libthai=0.1.29-1",
+        "version": "0.1.29-1"
+      },
+      {
+        "name": "libthai0",
+        "source": "libthai=0.1.29-1",
+        "version": "0.1.29-1"
+      },
+      {
+        "name": "libudev1",
+        "source": "systemd=252.39-1~deb12u2",
+        "version": "252.39-1~deb12u2"
+      },
+      {
+        "name": "libunistring2",
+        "source": "libunistring=1.0-2",
+        "version": "1.0-2"
+      },
+      {
+        "name": "libwayland-server0",
+        "source": "wayland=1.21.0-1",
+        "version": "1.21.0-1"
+      },
+      {
+        "name": "libx11-6",
+        "source": "libx11=2:1.8.4-2+deb12u2",
+        "version": "2:1.8.4-2+deb12u2"
+      },
+      {
+        "name": "libx11-data",
+        "source": "libx11=2:1.8.4-2+deb12u2",
+        "version": "2:1.8.4-2+deb12u2"
+      },
+      {
+        "name": "libxau6",
+        "source": "libxau=1:1.0.9-1",
+        "version": "1:1.0.9-1"
+      },
+      {
+        "name": "libxcb-render0",
+        "source": "libxcb=1.15-1",
+        "version": "1.15-1"
+      },
+      {
+        "name": "libxcb-shm0",
+        "source": "libxcb=1.15-1",
+        "version": "1.15-1"
+      },
+      {
+        "name": "libxcb1",
+        "source": "libxcb=1.15-1",
+        "version": "1.15-1"
+      },
+      {
+        "name": "libxcomposite1",
+        "source": "libxcomposite=1:0.4.5-1",
+        "version": "1:0.4.5-1"
+      },
+      {
+        "name": "libxdamage1",
+        "source": "libxdamage=1:1.1.6-1",
+        "version": "1:1.1.6-1"
+      },
+      {
+        "name": "libxdmcp6",
+        "source": "libxdmcp=1:1.1.2-3",
+        "version": "1:1.1.2-3"
+      },
+      {
+        "name": "libxext6",
+        "source": "libxext=2:1.3.4-1",
+        "version": "2:1.3.4-1+b1"
+      },
+      {
+        "name": "libxfixes3",
+        "source": "libxfixes=1:6.0.0-2",
+        "version": "1:6.0.0-2"
+      },
+      {
+        "name": "libxi6",
+        "source": "libxi=2:1.8-1",
+        "version": "2:1.8-1+b1"
+      },
+      {
+        "name": "libxkbcommon0",
+        "source": "libxkbcommon=1.5.0-1",
+        "version": "1.5.0-1"
+      },
+      {
+        "name": "libxrandr2",
+        "source": "libxrandr=2:1.5.2-2",
+        "version": "2:1.5.2-2+b1"
+      },
+      {
+        "name": "libxrender1",
+        "source": "libxrender=1:0.9.10-1.1",
+        "version": "1:0.9.10-1.1"
+      },
+      {
+        "name": "libzstd1",
+        "source": "libzstd=1.5.4+dfsg2-5",
+        "version": "1.5.4+dfsg2-5"
+      },
+      {
+        "name": "lsb-base",
+        "source": "lsb=11.6",
+        "version": "11.6"
+      },
+      {
+        "name": "sysvinit-utils",
+        "source": "sysvinit=3.06-4",
+        "version": "3.06-4"
+      },
+      {
+        "name": "tar",
+        "source": "tar=1.34+dfsg-1.2+deb12u1",
+        "version": "1.34+dfsg-1.2+deb12u1"
+      },
+      {
+        "name": "x11-common",
+        "source": "xorg=1:7.7+23",
+        "version": "1:7.7+23"
+      },
+      {
+        "name": "xfonts-encodings",
+        "source": "xfonts-encodings=1:1.0.4-2.2",
+        "version": "1:1.0.4-2.2"
+      },
+      {
+        "name": "xfonts-scalable",
+        "source": "xfonts-scalable=1:1.0.3-1.3",
+        "version": "1:1.0.3-1.3"
+      },
+      {
+        "name": "xfonts-utils",
+        "source": "xfonts-utils=1:7.7+6",
+        "version": "1:7.7+6"
+      },
+      {
+        "name": "xkb-data",
+        "source": "xkeyboard-config=2.35.1-1",
+        "version": "2.35.1-1"
+      },
+      {
+        "name": "zlib1g",
+        "source": "zlib=1:1.2.13.dfsg-1",
+        "version": "1:1.2.13.dfsg-1"
+      }
+    ],
+    "packages_sha256": "6d5690fe65e9c5c8ac3316844be67db83b0062875f2b3c09a8a14f8019c8bba8",
+    "unresolved": []
+  },
+  "platforms": {
+    "amd64": {
+      "base_dpkg_inventory": {
+        "closure_packages_satisfied": [
+          {
+            "base_version": "1.5.82",
+            "name": "debconf",
+            "version": "1.5.82"
+          },
+          {
+            "base_version": "1.21.23",
+            "name": "dpkg",
+            "version": "1.21.23"
+          },
+          {
+            "base_version": "12.2.0-14+deb12u1",
+            "name": "gcc-12-base",
+            "version": "12.2.0-14+deb12u1"
+          },
+          {
+            "base_version": "2.3.1-3",
+            "name": "libacl1",
+            "version": "2.3.1-3"
+          },
+          {
+            "base_version": "2.38.1-5+deb12u3",
+            "name": "libblkid1",
+            "version": "2.38.1-5+deb12u3"
+          },
+          {
+            "base_version": "1.0.8-5+b1",
+            "name": "libbz2-1.0",
+            "version": "1.0.8-5+b1"
+          },
+          {
+            "base_version": "2.36-9+deb12u14",
+            "name": "libc6",
+            "version": "2.36-9+deb12u14"
+          },
+          {
+            "base_version": "1:2.66-4+deb12u3+b1",
+            "name": "libcap2",
+            "version": "1:2.66-4+deb12u3+b1"
+          },
+          {
+            "base_version": "1.47.0-2+b2",
+            "name": "libcom-err2",
+            "version": "1.47.0-2+b2"
+          },
+          {
+            "base_version": "3.4.4-1",
+            "name": "libffi8",
+            "version": "3.4.4-1"
+          },
+          {
+            "base_version": "12.2.0-14+deb12u1",
+            "name": "libgcc-s1",
+            "version": "12.2.0-14+deb12u1"
+          },
+          {
+            "base_version": "1.10.1-3+deb12u1",
+            "name": "libgcrypt20",
+            "version": "1.10.1-3+deb12u1"
+          },
+          {
+            "base_version": "2:6.2.1+dfsg1-1.1",
+            "name": "libgmp10",
+            "version": "2:6.2.1+dfsg1-1.1"
+          },
+          {
+            "base_version": "3.7.9-2+deb12u7",
+            "name": "libgnutls30",
+            "version": "3.7.9-2+deb12u7"
+          },
+          {
+            "base_version": "1.46-1",
+            "name": "libgpg-error0",
+            "version": "1.46-1"
+          },
+          {
+            "base_version": "3.8.1-2",
+            "name": "libhogweed6",
+            "version": "3.8.1-2"
+          },
+          {
+            "base_version": "2.3.3-1+b1",
+            "name": "libidn2-0",
+            "version": "2.3.3-1+b1"
+          },
+          {
+            "base_version": "1.9.4-1",
+            "name": "liblz4-1",
+            "version": "1.9.4-1"
+          },
+          {
+            "base_version": "5.4.1-1+deb12u1",
+            "name": "liblzma5",
+            "version": "5.4.1-1+deb12u1"
+          },
+          {
+            "base_version": "1.0.4-2",
+            "name": "libmd0",
+            "version": "1.0.4-2"
+          },
+          {
+            "base_version": "2.38.1-5+deb12u3",
+            "name": "libmount1",
+            "version": "2.38.1-5+deb12u3"
+          },
+          {
+            "base_version": "3.8.1-2",
+            "name": "libnettle8",
+            "version": "3.8.1-2"
+          },
+          {
+            "base_version": "0.24.1-2",
+            "name": "libp11-kit0",
+            "version": "0.24.1-2"
+          },
+          {
+            "base_version": "3.4-1+b6",
+            "name": "libselinux1",
+            "version": "3.4-1+b6"
+          },
+          {
+            "base_version": "252.39-1~deb12u2",
+            "name": "libsystemd0",
+            "version": "252.39-1~deb12u2"
+          },
+          {
+            "base_version": "4.19.0-2+deb12u1",
+            "name": "libtasn1-6",
+            "version": "4.19.0-2+deb12u1"
+          },
+          {
+            "base_version": "252.39-1~deb12u2",
+            "name": "libudev1",
+            "version": "252.39-1~deb12u2"
+          },
+          {
+            "base_version": "1.0-2",
+            "name": "libunistring2",
+            "version": "1.0-2"
+          },
+          {
+            "base_version": "1.5.4+dfsg2-5",
+            "name": "libzstd1",
+            "version": "1.5.4+dfsg2-5"
+          },
+          {
+            "base_version": "3.06-4",
+            "name": "sysvinit-utils",
+            "version": "3.06-4"
+          },
+          {
+            "base_version": "1.34+dfsg-1.2+deb12u1",
+            "name": "tar",
+            "version": "1.34+dfsg-1.2+deb12u1"
+          },
+          {
+            "base_version": "1:1.2.13.dfsg-1",
+            "name": "zlib1g",
+            "version": "1:1.2.13.dfsg-1"
+          }
+        ],
+        "installed_count": 88,
+        "status_sha256": "f837965a67204a8e632f02d3de84aea3155fcd2cfa6d75627e7aa039ad8b222c"
+      },
+      "base_oci": {
+        "architecture": "amd64",
+        "config": {
+          "bytes": 6761,
+          "digest": "sha256:59c575db86dccc264e6b71c316548f05a5c3c7a9aa1c112dc019807e651fd06b",
+          "media_type": "application/vnd.oci.image.config.v1+json"
+        },
+        "layers": [
+          {
+            "bytes": 28232655,
+            "digest": "sha256:a8ac7f6c67abc236e4c745052c404112b8fab6fe8ac3a329d1ef3b867ad67c71",
+            "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "position": 1
+          },
+          {
+            "bytes": 3318,
+            "digest": "sha256:013634040cec61eda7919c9682291bc50456a54539f410ef5233821fb9a8c4d9",
+            "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "position": 2
+          },
+          {
+            "bytes": 50779298,
+            "digest": "sha256:a82db95c01928dce3a29c0d23bcd2588dafeba6f24ae23115195e3e3d6cc5437",
+            "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "position": 3
+          },
+          {
+            "bytes": 1713026,
+            "digest": "sha256:9803e0ff8c3d881aa142790ec91f17a1a6fa25189d082c58f4e66cbba4253b66",
+            "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "position": 4
+          },
+          {
+            "bytes": 448,
+            "digest": "sha256:2254049a7d7763ea7d56bf06d9a6d5cb882d88b136a84c18c254ead00ac5c874",
+            "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "position": 5
+          }
+        ],
+        "manifest": {
+          "bytes": 1929,
+          "digest": "sha256:6642ef280aebc09c4541bee0b15c9f89f0f3f3c247ddee79ae1d37eddfdcbbaa",
+          "media_type": "application/vnd.oci.image.manifest.v1+json"
+        },
+        "os": "linux"
+      },
+      "dependency_graph": {
+        "edge_count": 219,
+        "edges": [
+          [
+            "dpkg",
+            "libbz2-1.0",
+            "libbz2-1.0"
+          ],
+          [
+            "dpkg",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "dpkg",
+            "liblzma5",
+            "liblzma5 (>= 5.4.0)"
+          ],
+          [
+            "dpkg",
+            "libmd0",
+            "libmd0 (>= 0.0.0)"
+          ],
+          [
+            "dpkg",
+            "libselinux1",
+            "libselinux1 (>= 3.1~)"
+          ],
+          [
+            "dpkg",
+            "libzstd1",
+            "libzstd1 (>= 1.5.2)"
+          ],
+          [
+            "dpkg",
+            "tar",
+            "tar (>= 1.28-1)"
+          ],
+          [
+            "dpkg",
+            "zlib1g",
+            "zlib1g (>= 1:1.1.4)"
+          ],
+          [
+            "fontconfig",
+            "fontconfig-config",
+            "fontconfig-config"
+          ],
+          [
+            "fontconfig",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "fontconfig",
+            "libfontconfig1",
+            "libfontconfig1 (>= 2.13.0)"
+          ],
+          [
+            "fontconfig",
+            "libfreetype6",
+            "libfreetype6 (>= 2.2.1)"
+          ],
+          [
+            "fontconfig-config",
+            "debconf",
+            "debconf (>= 0.5) | debconf-2.0"
+          ],
+          [
+            "fontconfig-config",
+            "fonts-dejavu-core",
+            "fonts-dejavu-core | ttf-bitstream-vera | fonts-liberation | fonts-liberation2 | fonts-croscore | fonts-freefont-otf | fonts-freefont-ttf | fonts-urw-base35 | fonts-texgyre"
+          ],
+          [
+            "fonts-ipafont-gothic",
+            "dpkg",
+            "dpkg (>= 1.15.6~)"
+          ],
+          [
+            "fonts-wqy-zenhei",
+            "fontconfig",
+            "fontconfig (>= 2.3.1-1)"
+          ],
+          [
+            "libacl1",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libasound2",
+            "libasound2-data",
+            "libasound2-data (>= 1.2.8-1)"
+          ],
+          [
+            "libasound2",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libatk-bridge2.0-0",
+            "libatk1.0-0",
+            "libatk1.0-0 (>= 2.33.1)"
+          ],
+          [
+            "libatk-bridge2.0-0",
+            "libatspi2.0-0",
+            "libatspi2.0-0 (>= 2.9.90)"
+          ],
+          [
+            "libatk-bridge2.0-0",
+            "libc6",
+            "libc6 (>= 2.7)"
+          ],
+          [
+            "libatk-bridge2.0-0",
+            "libdbus-1-3",
+            "libdbus-1-3 (>= 1.9.14)"
+          ],
+          [
+            "libatk-bridge2.0-0",
+            "libglib2.0-0",
+            "libglib2.0-0 (>= 2.62)"
+          ],
+          [
+            "libatk1.0-0",
+            "at-spi2-common",
+            "at-spi2-common"
+          ],
+          [
+            "libatk1.0-0",
+            "libc6",
+            "libc6 (>= 2.4)"
+          ],
+          [
+            "libatk1.0-0",
+            "libglib2.0-0",
+            "libglib2.0-0 (>= 2.62)"
+          ],
+          [
+            "libatspi2.0-0",
+            "libc6",
+            "libc6 (>= 2.7)"
+          ],
+          [
+            "libatspi2.0-0",
+            "libdbus-1-3",
+            "libdbus-1-3 (>= 1.9.14)"
+          ],
+          [
+            "libatspi2.0-0",
+            "libglib2.0-0",
+            "libglib2.0-0 (>= 2.62)"
+          ],
+          [
+            "libatspi2.0-0",
+            "libx11-6",
+            "libx11-6 (>= 2:1.2.99.901)"
+          ],
+          [
+            "libatspi2.0-0",
+            "libxi6",
+            "libxi6 (>= 2:1.2.99.4)"
+          ],
+          [
+            "libavahi-client3",
+            "libavahi-common3",
+            "libavahi-common3 (= 0.8-10+deb12u1)"
+          ],
+          [
+            "libavahi-client3",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libavahi-client3",
+            "libdbus-1-3",
+            "libdbus-1-3 (>= 1.9.14)"
+          ],
+          [
+            "libavahi-common3",
+            "libavahi-common-data",
+            "libavahi-common-data (= 0.8-10+deb12u1)"
+          ],
+          [
+            "libavahi-common3",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libblkid1",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libbrotli1",
+            "libc6",
+            "libc6 (>= 2.29)"
+          ],
+          [
+            "libbsd0",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libbsd0",
+            "libmd0",
+            "libmd0 (>= 1.0.3-2)"
+          ],
+          [
+            "libbz2-1.0",
+            "libc6",
+            "libc6 (>= 2.4)"
+          ],
+          [
+            "libc6",
+            "libgcc-s1",
+            "libgcc-s1"
+          ],
+          [
+            "libcairo2",
+            "libc6",
+            "libc6 (>= 2.35)"
+          ],
+          [
+            "libcairo2",
+            "libfontconfig1",
+            "libfontconfig1 (>= 2.12.6)"
+          ],
+          [
+            "libcairo2",
+            "libfreetype6",
+            "libfreetype6 (>= 2.9.1)"
+          ],
+          [
+            "libcairo2",
+            "libpixman-1-0",
+            "libpixman-1-0 (>= 0.30.0)"
+          ],
+          [
+            "libcairo2",
+            "libpng16-16",
+            "libpng16-16 (>= 1.6.2-1)"
+          ],
+          [
+            "libcairo2",
+            "libx11-6",
+            "libx11-6"
+          ],
+          [
+            "libcairo2",
+            "libxcb-render0",
+            "libxcb-render0"
+          ],
+          [
+            "libcairo2",
+            "libxcb-shm0",
+            "libxcb-shm0"
+          ],
+          [
+            "libcairo2",
+            "libxcb1",
+            "libxcb1 (>= 1.6)"
+          ],
+          [
+            "libcairo2",
+            "libxext6",
+            "libxext6"
+          ],
+          [
+            "libcairo2",
+            "libxrender1",
+            "libxrender1"
+          ],
+          [
+            "libcairo2",
+            "zlib1g",
+            "zlib1g (>= 1:1.1.4)"
+          ],
+          [
+            "libcap2",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libcom-err2",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libcups2",
+            "libavahi-client3",
+            "libavahi-client3 (>= 0.6.16)"
+          ],
+          [
+            "libcups2",
+            "libavahi-common3",
+            "libavahi-common3 (>= 0.6.16)"
+          ],
+          [
+            "libcups2",
+            "libc6",
+            "libc6 (>= 2.36)"
+          ],
+          [
+            "libcups2",
+            "libgnutls30",
+            "libgnutls30 (>= 3.7.5)"
+          ],
+          [
+            "libcups2",
+            "libgssapi-krb5-2",
+            "libgssapi-krb5-2 (>= 1.17)"
+          ],
+          [
+            "libcups2",
+            "zlib1g",
+            "zlib1g (>= 1:1.2.0)"
+          ],
+          [
+            "libdatrie1",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "libdbus-1-3",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libdbus-1-3",
+            "libsystemd0",
+            "libsystemd0"
+          ],
+          [
+            "libdrm2",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libdrm2",
+            "libdrm-common",
+            "libdrm-common (>= 2.4.114-1)"
+          ],
+          [
+            "libexpat1",
+            "libc6",
+            "libc6 (>= 2.36)"
+          ],
+          [
+            "libffi8",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libfontconfig1",
+            "fontconfig-config",
+            "fontconfig-config (>= 2.14.1-4)"
+          ],
+          [
+            "libfontconfig1",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libfontconfig1",
+            "libexpat1",
+            "libexpat1 (>= 2.0.1)"
+          ],
+          [
+            "libfontconfig1",
+            "libfreetype6",
+            "libfreetype6 (>= 2.9.1)"
+          ],
+          [
+            "libfontenc1",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "libfontenc1",
+            "zlib1g",
+            "zlib1g (>= 1:1.1.4)"
+          ],
+          [
+            "libfreetype6",
+            "libbrotli1",
+            "libbrotli1 (>= 0.6.0)"
+          ],
+          [
+            "libfreetype6",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libfreetype6",
+            "libpng16-16",
+            "libpng16-16 (>= 1.6.2-1)"
+          ],
+          [
+            "libfreetype6",
+            "zlib1g",
+            "zlib1g (>= 1:1.1.4)"
+          ],
+          [
+            "libfribidi0",
+            "libc6",
+            "libc6 (>= 2.3.4)"
+          ],
+          [
+            "libgbm1",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libgbm1",
+            "libdrm2",
+            "libdrm2 (>= 2.4.75)"
+          ],
+          [
+            "libgbm1",
+            "libexpat1",
+            "libexpat1 (>= 2.0.1)"
+          ],
+          [
+            "libgbm1",
+            "libwayland-server0",
+            "libwayland-server0 (>= 1.15.0)"
+          ],
+          [
+            "libgcc-s1",
+            "gcc-12-base",
+            "gcc-12-base (= 12.2.0-14+deb12u1)"
+          ],
+          [
+            "libgcc-s1",
+            "libc6",
+            "libc6 (>= 2.35)"
+          ],
+          [
+            "libgcrypt20",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libgcrypt20",
+            "libgpg-error0",
+            "libgpg-error0 (>= 1.27)"
+          ],
+          [
+            "libglib2.0-0",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libglib2.0-0",
+            "libffi8",
+            "libffi8 (>= 3.4)"
+          ],
+          [
+            "libglib2.0-0",
+            "libmount1",
+            "libmount1 (>= 2.35.2-7~)"
+          ],
+          [
+            "libglib2.0-0",
+            "libpcre2-8-0",
+            "libpcre2-8-0 (>= 10.22)"
+          ],
+          [
+            "libglib2.0-0",
+            "libselinux1",
+            "libselinux1 (>= 3.1~)"
+          ],
+          [
+            "libglib2.0-0",
+            "zlib1g",
+            "zlib1g (>= 1:1.2.2)"
+          ],
+          [
+            "libgmp10",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "libgnutls30",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libgnutls30",
+            "libgmp10",
+            "libgmp10 (>= 2:6.2.1+dfsg1)"
+          ],
+          [
+            "libgnutls30",
+            "libhogweed6",
+            "libhogweed6 (>= 3.6)"
+          ],
+          [
+            "libgnutls30",
+            "libidn2-0",
+            "libidn2-0 (>= 2.0.0)"
+          ],
+          [
+            "libgnutls30",
+            "libnettle8",
+            "libnettle8 (>= 3.7~)"
+          ],
+          [
+            "libgnutls30",
+            "libp11-kit0",
+            "libp11-kit0 (>= 0.23.18.1)"
+          ],
+          [
+            "libgnutls30",
+            "libtasn1-6",
+            "libtasn1-6 (>= 4.14)"
+          ],
+          [
+            "libgnutls30",
+            "libunistring2",
+            "libunistring2 (>= 0.9.7)"
+          ],
+          [
+            "libgpg-error0",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libgraphite2-3",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "libgssapi-krb5-2",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libgssapi-krb5-2",
+            "libcom-err2",
+            "libcom-err2 (>= 1.43.9)"
+          ],
+          [
+            "libgssapi-krb5-2",
+            "libk5crypto3",
+            "libk5crypto3 (>= 1.20)"
+          ],
+          [
+            "libgssapi-krb5-2",
+            "libkrb5-3",
+            "libkrb5-3 (= 1.20.1-2+deb12u5)"
+          ],
+          [
+            "libgssapi-krb5-2",
+            "libkrb5support0",
+            "libkrb5support0 (>= 1.15~beta1)"
+          ],
+          [
+            "libharfbuzz0b",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libharfbuzz0b",
+            "libfreetype6",
+            "libfreetype6 (>= 2.11.0)"
+          ],
+          [
+            "libharfbuzz0b",
+            "libglib2.0-0",
+            "libglib2.0-0 (>= 2.31.8)"
+          ],
+          [
+            "libharfbuzz0b",
+            "libgraphite2-3",
+            "libgraphite2-3 (>= 1.2.2)"
+          ],
+          [
+            "libhogweed6",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "libhogweed6",
+            "libgmp10",
+            "libgmp10 (>= 2:6.2.1+dfsg1)"
+          ],
+          [
+            "libhogweed6",
+            "libnettle8",
+            "libnettle8"
+          ],
+          [
+            "libidn2-0",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "libidn2-0",
+            "libunistring2",
+            "libunistring2 (>= 0.9.7)"
+          ],
+          [
+            "libk5crypto3",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libk5crypto3",
+            "libkrb5support0",
+            "libkrb5support0 (>= 1.20)"
+          ],
+          [
+            "libkeyutils1",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "libkrb5-3",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libkrb5-3",
+            "libcom-err2",
+            "libcom-err2 (>= 1.43.9)"
+          ],
+          [
+            "libkrb5-3",
+            "libk5crypto3",
+            "libk5crypto3 (>= 1.20)"
+          ],
+          [
+            "libkrb5-3",
+            "libkeyutils1",
+            "libkeyutils1 (>= 1.5.9)"
+          ],
+          [
+            "libkrb5-3",
+            "libkrb5support0",
+            "libkrb5support0 (= 1.20.1-2+deb12u5)"
+          ],
+          [
+            "libkrb5-3",
+            "libssl3",
+            "libssl3 (>= 3.0.0)"
+          ],
+          [
+            "libkrb5support0",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "liblz4-1",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "liblzma5",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libmd0",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libmount1",
+            "libblkid1",
+            "libblkid1 (>= 2.17.2)"
+          ],
+          [
+            "libmount1",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libmount1",
+            "libselinux1",
+            "libselinux1 (>= 3.1~)"
+          ],
+          [
+            "libnettle8",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libnspr4",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libnss3",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libnss3",
+            "libnspr4",
+            "libnspr4 (>= 2:4.34)"
+          ],
+          [
+            "libnss3",
+            "libsqlite3-0",
+            "libsqlite3-0 (>= 3.5.9)"
+          ],
+          [
+            "libp11-kit0",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libp11-kit0",
+            "libffi8",
+            "libffi8 (>= 3.4)"
+          ],
+          [
+            "libpango-1.0-0",
+            "fontconfig",
+            "fontconfig (>= 2.13.0)"
+          ],
+          [
+            "libpango-1.0-0",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "libpango-1.0-0",
+            "libfribidi0",
+            "libfribidi0 (>= 1.0.6)"
+          ],
+          [
+            "libpango-1.0-0",
+            "libglib2.0-0",
+            "libglib2.0-0 (>= 2.67.3)"
+          ],
+          [
+            "libpango-1.0-0",
+            "libharfbuzz0b",
+            "libharfbuzz0b (>= 5.1.0)"
+          ],
+          [
+            "libpango-1.0-0",
+            "libthai0",
+            "libthai0 (>= 0.1.25)"
+          ],
+          [
+            "libpcre2-8-0",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libpixman-1-0",
+            "libc6",
+            "libc6 (>= 2.29)"
+          ],
+          [
+            "libpng16-16",
+            "libc6",
+            "libc6 (>= 2.29)"
+          ],
+          [
+            "libpng16-16",
+            "zlib1g",
+            "zlib1g (>= 1:1.2.11.dfsg)"
+          ],
+          [
+            "libselinux1",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libselinux1",
+            "libpcre2-8-0",
+            "libpcre2-8-0 (>= 10.22)"
+          ],
+          [
+            "libsqlite3-0",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libssl3",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libsystemd0",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libsystemd0",
+            "libcap2",
+            "libcap2 (>= 1:2.10)"
+          ],
+          [
+            "libsystemd0",
+            "libgcrypt20",
+            "libgcrypt20 (>= 1.10.0)"
+          ],
+          [
+            "libsystemd0",
+            "liblz4-1",
+            "liblz4-1 (>= 0.0~r122)"
+          ],
+          [
+            "libsystemd0",
+            "liblzma5",
+            "liblzma5 (>= 5.1.1alpha+20120614)"
+          ],
+          [
+            "libsystemd0",
+            "libzstd1",
+            "libzstd1 (>= 1.5.2)"
+          ],
+          [
+            "libtasn1-6",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "libthai0",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "libthai0",
+            "libdatrie1",
+            "libdatrie1 (>= 0.2.0)"
+          ],
+          [
+            "libthai0",
+            "libthai-data",
+            "libthai-data (>= 0.1.10)"
+          ],
+          [
+            "libudev1",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libunistring2",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libwayland-server0",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libwayland-server0",
+            "libffi8",
+            "libffi8 (>= 3.4)"
+          ],
+          [
+            "libx11-6",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libx11-6",
+            "libx11-data",
+            "libx11-data"
+          ],
+          [
+            "libx11-6",
+            "libxcb1",
+            "libxcb1 (>= 1.11.1)"
+          ],
+          [
+            "libxau6",
+            "libc6",
+            "libc6 (>= 2.4)"
+          ],
+          [
+            "libxcb-render0",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "libxcb-render0",
+            "libxcb1",
+            "libxcb1 (>= 1.8)"
+          ],
+          [
+            "libxcb-shm0",
+            "libc6",
+            "libc6 (>= 2.4)"
+          ],
+          [
+            "libxcb-shm0",
+            "libxcb1",
+            "libxcb1 (>= 1.12)"
+          ],
+          [
+            "libxcb1",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "libxcb1",
+            "libxau6",
+            "libxau6 (>= 1:1.0.9)"
+          ],
+          [
+            "libxcb1",
+            "libxdmcp6",
+            "libxdmcp6"
+          ],
+          [
+            "libxcomposite1",
+            "libc6",
+            "libc6 (>= 2.4)"
+          ],
+          [
+            "libxcomposite1",
+            "libx11-6",
+            "libx11-6 (>= 2:1.4.99.1)"
+          ],
+          [
+            "libxdamage1",
+            "libc6",
+            "libc6 (>= 2.4)"
+          ],
+          [
+            "libxdamage1",
+            "libx11-6",
+            "libx11-6 (>= 2:1.4.99.1)"
+          ],
+          [
+            "libxdmcp6",
+            "libbsd0",
+            "libbsd0 (>= 0.2.0)"
+          ],
+          [
+            "libxdmcp6",
+            "libc6",
+            "libc6 (>= 2.4)"
+          ],
+          [
+            "libxext6",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "libxext6",
+            "libx11-6",
+            "libx11-6 (>= 2:1.6.0)"
+          ],
+          [
+            "libxfixes3",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "libxfixes3",
+            "libx11-6",
+            "libx11-6 (>= 2:1.6.0)"
+          ],
+          [
+            "libxi6",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "libxi6",
+            "libx11-6",
+            "libx11-6 (>= 2:1.6.0)"
+          ],
+          [
+            "libxi6",
+            "libxext6",
+            "libxext6"
+          ],
+          [
+            "libxkbcommon0",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libxkbcommon0",
+            "xkb-data",
+            "xkb-data"
+          ],
+          [
+            "libxrandr2",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "libxrandr2",
+            "libx11-6",
+            "libx11-6 (>= 2:1.6.0)"
+          ],
+          [
+            "libxrandr2",
+            "libxext6",
+            "libxext6"
+          ],
+          [
+            "libxrandr2",
+            "libxrender1",
+            "libxrender1"
+          ],
+          [
+            "libxrender1",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "libxrender1",
+            "libx11-6",
+            "libx11-6 (>= 2:1.6.0)"
+          ],
+          [
+            "libzstd1",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "lsb-base",
+            "sysvinit-utils",
+            "sysvinit-utils (>= 3.05-4~)"
+          ],
+          [
+            "sysvinit-utils",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "tar",
+            "libacl1",
+            "libacl1 (>= 2.2.23)"
+          ],
+          [
+            "tar",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "tar",
+            "libselinux1",
+            "libselinux1 (>= 3.1~)"
+          ],
+          [
+            "x11-common",
+            "lsb-base",
+            "lsb-base (>= 1.3-9ubuntu2)"
+          ],
+          [
+            "xfonts-encodings",
+            "x11-common",
+            "x11-common"
+          ],
+          [
+            "xfonts-scalable",
+            "xfonts-utils",
+            "xfonts-utils"
+          ],
+          [
+            "xfonts-utils",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ],
+          [
+            "xfonts-utils",
+            "libfontenc1",
+            "libfontenc1"
+          ],
+          [
+            "xfonts-utils",
+            "libfreetype6",
+            "libfreetype6 (>= 2.2.1)"
+          ],
+          [
+            "xfonts-utils",
+            "x11-common",
+            "x11-common"
+          ],
+          [
+            "xfonts-utils",
+            "xfonts-encodings",
+            "xfonts-encodings"
+          ],
+          [
+            "xfonts-utils",
+            "zlib1g",
+            "zlib1g (>= 1:1.1.4)"
+          ],
+          [
+            "zlib1g",
+            "libc6",
+            "libc6 (>= 2.14)"
+          ]
+        ],
+        "edges_sha256": "86cf3307ba01236b2993dfc69fef5ccc8bb62edc403fe92dc0a372acfb377c28"
+      },
+      "elf_needed_audit": {
+        "additional_base_package_assertion": "libudev1=252.39-1~deb12u2",
+        "bundle_members": [
+          "chrome-headless-shell",
+          "libEGL.so",
+          "libGLESv2.so",
+          "libvulkan.so.1",
+          "libvk_swiftshader.so"
+        ],
+        "files": [
+          {
+            "bytes": 197422408,
+            "member": "chrome-headless-shell-linux64/chrome-headless-shell",
+            "needed": [
+              "libdl.so.2",
+              "libpthread.so.0",
+              "libglib-2.0.so.0",
+              "libgobject-2.0.so.0",
+              "libnspr4.so",
+              "libnss3.so",
+              "libnssutil3.so",
+              "libgio-2.0.so.0",
+              "libatk-1.0.so.0",
+              "libatk-bridge-2.0.so.0",
+              "libdbus-1.so.3",
+              "libm.so.6",
+              "libX11.so.6",
+              "libXcomposite.so.1",
+              "libXdamage.so.1",
+              "libXext.so.6",
+              "libXfixes.so.3",
+              "libXrandr.so.2",
+              "libgbm.so.1",
+              "libexpat.so.1",
+              "libxcb.so.1",
+              "libxkbcommon.so.0",
+              "libudev.so.1",
+              "libasound.so.2",
+              "libatspi.so.0",
+              "libgcc_s.so.1",
+              "libc.so.6",
+              "ld-linux-x86-64.so.2"
+            ],
+            "sha256": "ded93a9c9a53a1ae040f08124badcca95c938e9d5015ff340c3b5538c41bf39e"
+          },
+          {
+            "bytes": 230712,
+            "member": "chrome-headless-shell-linux64/libEGL.so",
+            "needed": [
+              "libpthread.so.0",
+              "libgcc_s.so.1",
+              "libc.so.6",
+              "ld-linux-x86-64.so.2"
+            ],
+            "sha256": "532800b1f5882fb0034a72582233edaf50ed6433e3911c43f88cbcfcb24708d1"
+          },
+          {
+            "bytes": 230712,
+            "member": "chrome-headless-shell-linux64/libGLESv2.so",
+            "needed": [
+              "libpthread.so.0",
+              "libgcc_s.so.1",
+              "libc.so.6",
+              "ld-linux-x86-64.so.2"
+            ],
+            "sha256": "17370d7cc22d0bc4048cc851b7f8fdbb5e51c4f4b0f53d6c68b8770fb6a8ab00"
+          },
+          {
+            "bytes": 3980504,
+            "member": "chrome-headless-shell-linux64/libvk_swiftshader.so",
+            "needed": [
+              "libdl.so.2",
+              "libpthread.so.0",
+              "libm.so.6",
+              "libgcc_s.so.1",
+              "libc.so.6",
+              "ld-linux-x86-64.so.2"
+            ],
+            "sha256": "1d5d7ab9c4c1499041aa44ea7a2ae3da3ca9812cd8bda9b5ac920ae158adb163"
+          },
+          {
+            "bytes": 689840,
+            "member": "chrome-headless-shell-linux64/libvulkan.so.1",
+            "needed": [
+              "libdl.so.2",
+              "libpthread.so.0",
+              "libgcc_s.so.1",
+              "libc.so.6",
+              "ld-linux-x86-64.so.2"
+            ],
+            "sha256": "c53295a113b0bb075be6624ced1a5056acabefc4d49c2d2ff3fbbc76854880ea"
+          }
+        ],
+        "glibc_provided": [
+          "ld-linux-x86-64.so.2",
+          "libc.so.6",
+          "libdl.so.2",
+          "libm.so.6",
+          "libpthread.so.0"
+        ]
+      },
+      "install_delta": {
+        "package_count": 73,
+        "packages": [
+          {
+            "action": "add",
+            "bytes": 161668,
+            "filename": "pool/main/a/at-spi2-core/at-spi2-common_2.46.0-5_all.deb",
+            "name": "at-spi2-common",
+            "sha256": "441bc1c6cefdc01f519310abf55823deb868898480dee09a05aa44e8c83cabc2",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/at-spi2-core/at-spi2-common_2.46.0-5_all.deb",
+            "version": "2.46.0-5"
+          },
+          {
+            "action": "add",
+            "bytes": 449212,
+            "filename": "pool/main/f/fontconfig/fontconfig_2.14.1-4_amd64.deb",
+            "name": "fontconfig",
+            "sha256": "010e57c24a983eecc39aab8a84219a716c10901e03bacd1927331388656f890f",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fontconfig/fontconfig_2.14.1-4_amd64.deb",
+            "version": "2.14.1-4"
+          },
+          {
+            "action": "add",
+            "bytes": 314864,
+            "filename": "pool/main/f/fontconfig/fontconfig-config_2.14.1-4_amd64.deb",
+            "name": "fontconfig-config",
+            "sha256": "281c66e46b95f045a0282a6c7a03b33de0e9a08d016897a759aaf4a04adfddbe",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fontconfig/fontconfig-config_2.14.1-4_amd64.deb",
+            "version": "2.14.1-4"
+          },
+          {
+            "action": "add",
+            "bytes": 1067728,
+            "filename": "pool/main/f/fonts-dejavu/fonts-dejavu-core_2.37-6_all.deb",
+            "name": "fonts-dejavu-core",
+            "sha256": "8892669e51aab4dc56682c8e39d8ddb7d70fad83c369344e1e240bf3ca22bb76",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fonts-dejavu/fonts-dejavu-core_2.37-6_all.deb",
+            "version": "2.37-6"
+          },
+          {
+            "action": "add",
+            "bytes": 2552432,
+            "filename": "pool/main/f/fonts-freefont/fonts-freefont-ttf_20120503-10_all.deb",
+            "name": "fonts-freefont-ttf",
+            "sha256": "4ca1c21ebc479198a3a5879d236c8317d6f7b2f1c403f7890e24c02eead05615",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fonts-freefont/fonts-freefont-ttf_20120503-10_all.deb",
+            "version": "20120503-10"
+          },
+          {
+            "action": "add",
+            "bytes": 3514948,
+            "filename": "pool/main/f/fonts-ipafont/fonts-ipafont-gothic_00303-23_all.deb",
+            "name": "fonts-ipafont-gothic",
+            "sha256": "5f8e0270654fec6577fffa96015067352440065c0b49bbc8b076745a6b4bf3d3",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fonts-ipafont/fonts-ipafont-gothic_00303-23_all.deb",
+            "version": "00303-23"
+          },
+          {
+            "action": "add",
+            "bytes": 827812,
+            "filename": "pool/main/f/fonts-liberation/fonts-liberation_1.07.4-11_all.deb",
+            "name": "fonts-liberation",
+            "sha256": "efd381517f958b01969343634ffcbdd60056be7779af84c6f53a005090430204",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fonts-liberation/fonts-liberation_1.07.4-11_all.deb",
+            "version": "1:1.07.4-11"
+          },
+          {
+            "action": "add",
+            "bytes": 9893872,
+            "filename": "pool/main/f/fonts-noto-color-emoji/fonts-noto-color-emoji_2.042-0+deb12u1_all.deb",
+            "name": "fonts-noto-color-emoji",
+            "sha256": "a5ab0f69c7938423862320d9aca5dd187b3fd879d6a9a57dd52e17c3fa8d2751",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fonts-noto-color-emoji/fonts-noto-color-emoji_2.042-0+deb12u1_all.deb",
+            "version": "2.042-0+deb12u1"
+          },
+          {
+            "action": "add",
+            "bytes": 147048,
+            "filename": "pool/main/f/fonts-tlwg/fonts-tlwg-loma-otf_0.7.3-1_all.deb",
+            "name": "fonts-tlwg-loma-otf",
+            "sha256": "a775452dfa77de3176bbb2b06f1fa61d5a95177a74a460a768ae82940e9407fc",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fonts-tlwg/fonts-tlwg-loma-otf_0.7.3-1_all.deb",
+            "version": "1:0.7.3-1"
+          },
+          {
+            "action": "add",
+            "bytes": 2019152,
+            "filename": "pool/main/u/unifont/fonts-unifont_15.0.01-2_all.deb",
+            "name": "fonts-unifont",
+            "sha256": "cd46245f1b228d1277ed2b453ce893fde1cf4bf4ec317e82b0079395bdc9c2b5",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/u/unifont/fonts-unifont_15.0.01-2_all.deb",
+            "version": "1:15.0.01-2"
+          },
+          {
+            "action": "add",
+            "bytes": 7478908,
+            "filename": "pool/main/f/fonts-wqy-zenhei/fonts-wqy-zenhei_0.9.45-8_all.deb",
+            "name": "fonts-wqy-zenhei",
+            "sha256": "cfed2c29164ff2f133e40ed2046610b172b8618d174840936ac4ec9b6fd668e7",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fonts-wqy-zenhei/fonts-wqy-zenhei_0.9.45-8_all.deb",
+            "version": "0.9.45-8"
+          },
+          {
+            "action": "add",
+            "bytes": 361788,
+            "filename": "pool/main/a/alsa-lib/libasound2_1.2.8-1+b1_amd64.deb",
+            "name": "libasound2",
+            "sha256": "44c77b076a7b11ae99712439022d822245b1994c435da564ebd320bb676faf4c",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/alsa-lib/libasound2_1.2.8-1+b1_amd64.deb",
+            "version": "1.2.8-1+b1"
+          },
+          {
+            "action": "add",
+            "bytes": 20488,
+            "filename": "pool/main/a/alsa-lib/libasound2-data_1.2.8-1_all.deb",
+            "name": "libasound2-data",
+            "sha256": "fe0780d2d3674b2977e0acb0d48b448ad72ba1642564b7dc537f55e839984c2d",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/alsa-lib/libasound2-data_1.2.8-1_all.deb",
+            "version": "1.2.8-1"
+          },
+          {
+            "action": "add",
+            "bytes": 64592,
+            "filename": "pool/main/a/at-spi2-core/libatk-bridge2.0-0_2.46.0-5_amd64.deb",
+            "name": "libatk-bridge2.0-0",
+            "sha256": "fbb07714fdd3fdee7b63fd8595053f4fa8021d8e350a5de6281c6ce7cd4f158f",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/at-spi2-core/libatk-bridge2.0-0_2.46.0-5_amd64.deb",
+            "version": "2.46.0-5"
+          },
+          {
+            "action": "add",
+            "bytes": 49628,
+            "filename": "pool/main/a/at-spi2-core/libatk1.0-0_2.46.0-5_amd64.deb",
+            "name": "libatk1.0-0",
+            "sha256": "909dd661e03760a9ba1529bfc772f259cec8431999ee38b7c5521186237cdd98",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/at-spi2-core/libatk1.0-0_2.46.0-5_amd64.deb",
+            "version": "2.46.0-5"
+          },
+          {
+            "action": "add",
+            "bytes": 75404,
+            "filename": "pool/main/a/at-spi2-core/libatspi2.0-0_2.46.0-5_amd64.deb",
+            "name": "libatspi2.0-0",
+            "sha256": "1c0332f3b712a8e5ee56800bbcab83a8f92098874094f2b0bdfd6b7fd45e8b83",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/at-spi2-core/libatspi2.0-0_2.46.0-5_amd64.deb",
+            "version": "2.46.0-5"
+          },
+          {
+            "action": "add",
+            "bytes": 45756,
+            "filename": "pool/main/a/avahi/libavahi-client3_0.8-10+deb12u1_amd64.deb",
+            "name": "libavahi-client3",
+            "sha256": "a99d635f07a49cfbd24de151155c4f815a5adf867855e7ba13ecc3b25ffa52b9",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/avahi/libavahi-client3_0.8-10+deb12u1_amd64.deb",
+            "version": "0.8-10+deb12u1"
+          },
+          {
+            "action": "add",
+            "bytes": 107164,
+            "filename": "pool/main/a/avahi/libavahi-common-data_0.8-10+deb12u1_amd64.deb",
+            "name": "libavahi-common-data",
+            "sha256": "b21e33c3797c834e9a9ce0f1085e6d3f721db496d550505ab2f364d52097fe6f",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/avahi/libavahi-common-data_0.8-10+deb12u1_amd64.deb",
+            "version": "0.8-10+deb12u1"
+          },
+          {
+            "action": "add",
+            "bytes": 42112,
+            "filename": "pool/main/a/avahi/libavahi-common3_0.8-10+deb12u1_amd64.deb",
+            "name": "libavahi-common3",
+            "sha256": "0c12791afe1be09d8362161244d7a51e82a67a55f3909f4c29ee3dd424c3a5f1",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/avahi/libavahi-common3_0.8-10+deb12u1_amd64.deb",
+            "version": "0.8-10+deb12u1"
+          },
+          {
+            "action": "add",
+            "bytes": 275248,
+            "filename": "pool/main/b/brotli/libbrotli1_1.0.9-2+b6_amd64.deb",
+            "name": "libbrotli1",
+            "sha256": "563b4caec1aa5e876bd3355b36e7a38e1484baf5a293b48d1e8bd22db786e4d7",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/b/brotli/libbrotli1_1.0.9-2+b6_amd64.deb",
+            "version": "1.0.9-2+b6"
+          },
+          {
+            "action": "add",
+            "bytes": 117416,
+            "filename": "pool/main/libb/libbsd/libbsd0_0.11.7-2_amd64.deb",
+            "name": "libbsd0",
+            "sha256": "bb31cc8b40f962a85b2cec970f7f79cc704a1ae4bad24257a822055404b2c60b",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libb/libbsd/libbsd0_0.11.7-2_amd64.deb",
+            "version": "0.11.7-2"
+          },
+          {
+            "action": "add",
+            "bytes": 574676,
+            "filename": "pool/main/c/cairo/libcairo2_1.16.0-7_amd64.deb",
+            "name": "libcairo2",
+            "sha256": "927fa059f8b5791d0cd744d4e3a8c57fa872ef849ce14434dc2222ac8a076a69",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/c/cairo/libcairo2_1.16.0-7_amd64.deb",
+            "version": "1.16.0-7"
+          },
+          {
+            "action": "add",
+            "bytes": 245180,
+            "filename": "pool/main/c/cups/libcups2_2.4.2-3+deb12u9_amd64.deb",
+            "name": "libcups2",
+            "sha256": "8dbfd3b7cd81166a2d79bb7e3898b0203fec05c7e927f60e207122a1e36b95c8",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/c/cups/libcups2_2.4.2-3+deb12u9_amd64.deb",
+            "version": "2.4.2-3+deb12u9"
+          },
+          {
+            "action": "add",
+            "bytes": 43320,
+            "filename": "pool/main/libd/libdatrie/libdatrie1_0.2.13-2+b1_amd64.deb",
+            "name": "libdatrie1",
+            "sha256": "f021f193384929989b2dfd19f606a8cebe54b5f209fe387fc40683e810e01ebe",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libd/libdatrie/libdatrie1_0.2.13-2+b1_amd64.deb",
+            "version": "0.2.13-2+b1"
+          },
+          {
+            "action": "add",
+            "bytes": 201240,
+            "filename": "pool/main/d/dbus/libdbus-1-3_1.14.10-1~deb12u1_amd64.deb",
+            "name": "libdbus-1-3",
+            "sha256": "18ee0ce5fab9f7b671e87da1e9fa18660e36e04a3402f24bdb8635e0ba1d35f6",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/d/dbus/libdbus-1-3_1.14.10-1~deb12u1_amd64.deb",
+            "version": "1.14.10-1~deb12u1"
+          },
+          {
+            "action": "add",
+            "bytes": 7112,
+            "filename": "pool/main/libd/libdrm/libdrm-common_2.4.114-1_all.deb",
+            "name": "libdrm-common",
+            "sha256": "32f9664138b38b224383c6986457d5ad2ec8efd559b1a0ce7749405f7a451aad",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libd/libdrm/libdrm-common_2.4.114-1_all.deb",
+            "version": "2.4.114-1"
+          },
+          {
+            "action": "add",
+            "bytes": 37472,
+            "filename": "pool/main/libd/libdrm/libdrm2_2.4.114-1+b1_amd64.deb",
+            "name": "libdrm2",
+            "sha256": "be18fb670797ba32da9628cf3e8acd83160d8db8c8dd842501dd8e401c3b5371",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libd/libdrm/libdrm2_2.4.114-1+b1_amd64.deb",
+            "version": "2.4.114-1+b1"
+          },
+          {
+            "action": "add",
+            "bytes": 103756,
+            "filename": "pool/updates/main/e/expat/libexpat1_2.5.0-1+deb12u3_amd64.deb",
+            "name": "libexpat1",
+            "sha256": "04405c19b977d19c5e0fd7210e452b8044a065cb45a82012d45046738920ca75",
+            "url": "https://snapshot.debian.org/archive/debian-security/20260907T000000Z/pool/updates/main/e/expat/libexpat1_2.5.0-1+deb12u3_amd64.deb",
+            "version": "2.5.0-1+deb12u3"
+          },
+          {
+            "action": "add",
+            "bytes": 385664,
+            "filename": "pool/main/f/fontconfig/libfontconfig1_2.14.1-4_amd64.deb",
+            "name": "libfontconfig1",
+            "sha256": "16ee38d374e064f534116dc442b086ef26f9831f1c0af7e5fb4fe4512e700649",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fontconfig/libfontconfig1_2.14.1-4_amd64.deb",
+            "version": "2.14.1-4"
+          },
+          {
+            "action": "add",
+            "bytes": 24328,
+            "filename": "pool/main/libf/libfontenc/libfontenc1_1.1.4-1_amd64.deb",
+            "name": "libfontenc1",
+            "sha256": "1d0aa6ea16a34a8de1ea170360c4cb699f3239aeddb292df2d2c4eb6e835de4b",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libf/libfontenc/libfontenc1_1.1.4-1_amd64.deb",
+            "version": "1:1.1.4-1"
+          },
+          {
+            "action": "add",
+            "bytes": 397736,
+            "filename": "pool/main/f/freetype/libfreetype6_2.12.1+dfsg-5+deb12u4_amd64.deb",
+            "name": "libfreetype6",
+            "sha256": "8043e479f73f29992d652e3f9dfe8b17f9780c7ea6330afe379ec5f9f188ac44",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/freetype/libfreetype6_2.12.1+dfsg-5+deb12u4_amd64.deb",
+            "version": "2.12.1+dfsg-5+deb12u4"
+          },
+          {
+            "action": "add",
+            "bytes": 64952,
+            "filename": "pool/main/f/fribidi/libfribidi0_1.0.8-2.1_amd64.deb",
+            "name": "libfribidi0",
+            "sha256": "87fce56627aab7b2968501d370aa3ed6d1c792119efa765e71a690bdfe570e62",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fribidi/libfribidi0_1.0.8-2.1_amd64.deb",
+            "version": "1.0.8-2.1"
+          },
+          {
+            "action": "add",
+            "bytes": 38132,
+            "filename": "pool/main/m/mesa/libgbm1_22.3.6-1+deb12u2_amd64.deb",
+            "name": "libgbm1",
+            "sha256": "4323840f2b7b3e108990848529125d99c0956ae5a854c1e0568ed08c8faeaa2e",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/m/mesa/libgbm1_22.3.6-1+deb12u2_amd64.deb",
+            "version": "22.3.6-1+deb12u2"
+          },
+          {
+            "action": "add",
+            "bytes": 1403216,
+            "filename": "pool/main/g/glib2.0/libglib2.0-0_2.74.6-2+deb12u9_amd64.deb",
+            "name": "libglib2.0-0",
+            "sha256": "7ff85197685d89e150e342b29a59aab1beee400050ba7da73de81cd999ffee5a",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/g/glib2.0/libglib2.0-0_2.74.6-2+deb12u9_amd64.deb",
+            "version": "2.74.6-2+deb12u9"
+          },
+          {
+            "action": "add",
+            "bytes": 74564,
+            "filename": "pool/main/g/graphite2/libgraphite2-3_1.3.14-1+deb12u1_amd64.deb",
+            "name": "libgraphite2-3",
+            "sha256": "c19a7f6ba9298db7eef041ae27b08985f2c02009e418063f8bccdb5bc5e858dc",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/g/graphite2/libgraphite2-3_1.3.14-1+deb12u1_amd64.deb",
+            "version": "1.3.14-1+deb12u1"
+          },
+          {
+            "action": "add",
+            "bytes": 135168,
+            "filename": "pool/main/k/krb5/libgssapi-krb5-2_1.20.1-2+deb12u5_amd64.deb",
+            "name": "libgssapi-krb5-2",
+            "sha256": "d8b87aea91b956b416c01a28c44ff6228315ae3b73de40acddac3dc5043607d2",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/k/krb5/libgssapi-krb5-2_1.20.1-2+deb12u5_amd64.deb",
+            "version": "1.20.1-2+deb12u5"
+          },
+          {
+            "action": "add",
+            "bytes": 1945396,
+            "filename": "pool/main/h/harfbuzz/libharfbuzz0b_6.0.0+dfsg-3_amd64.deb",
+            "name": "libharfbuzz0b",
+            "sha256": "bfce132b7ee67b9c2d2166075b1936a25c8cc6866b6a049f99b8e94baa916e71",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/h/harfbuzz/libharfbuzz0b_6.0.0+dfsg-3_amd64.deb",
+            "version": "6.0.0+dfsg-3"
+          },
+          {
+            "action": "add",
+            "bytes": 79712,
+            "filename": "pool/main/k/krb5/libk5crypto3_1.20.1-2+deb12u5_amd64.deb",
+            "name": "libk5crypto3",
+            "sha256": "7b6e47d15c5c9cdcd456137533d8308aeba608a54cec73b28bd59bfc4b54cf06",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/k/krb5/libk5crypto3_1.20.1-2+deb12u5_amd64.deb",
+            "version": "1.20.1-2+deb12u5"
+          },
+          {
+            "action": "add",
+            "bytes": 8808,
+            "filename": "pool/main/k/keyutils/libkeyutils1_1.6.3-2_amd64.deb",
+            "name": "libkeyutils1",
+            "sha256": "cfac89e6a7a54ff3c6a4f843310e25efeddaa771baeae470bd98bd588c373563",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/k/keyutils/libkeyutils1_1.6.3-2_amd64.deb",
+            "version": "1.6.3-2"
+          },
+          {
+            "action": "add",
+            "bytes": 332280,
+            "filename": "pool/main/k/krb5/libkrb5-3_1.20.1-2+deb12u5_amd64.deb",
+            "name": "libkrb5-3",
+            "sha256": "c90801be09701af221b54dd502a59cb378b7284ff31e480738baca317d2f7653",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/k/krb5/libkrb5-3_1.20.1-2+deb12u5_amd64.deb",
+            "version": "1.20.1-2+deb12u5"
+          },
+          {
+            "action": "add",
+            "bytes": 33212,
+            "filename": "pool/main/k/krb5/libkrb5support0_1.20.1-2+deb12u5_amd64.deb",
+            "name": "libkrb5support0",
+            "sha256": "8b9c05f2d8d461a10d657b118f572af5bf8fd6c8f93dcef81e852c5ab0f428ab",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/k/krb5/libkrb5support0_1.20.1-2+deb12u5_amd64.deb",
+            "version": "1.20.1-2+deb12u5"
+          },
+          {
+            "action": "add",
+            "bytes": 113108,
+            "filename": "pool/main/n/nspr/libnspr4_4.35-1_amd64.deb",
+            "name": "libnspr4",
+            "sha256": "6cca09767e94e4b5d2888ef31ad797bd3e7cec27fbbe98b49b10d4884746ce77",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/n/nspr/libnspr4_4.35-1_amd64.deb",
+            "version": "2:4.35-1"
+          },
+          {
+            "action": "add",
+            "bytes": 1330556,
+            "filename": "pool/updates/main/n/nss/libnss3_3.87.1-1+deb12u4_amd64.deb",
+            "name": "libnss3",
+            "sha256": "666bce4768414a6a79d2dacb1549f922cedb1facd373790a477e12739878284e",
+            "url": "https://snapshot.debian.org/archive/debian-security/20260907T000000Z/pool/updates/main/n/nss/libnss3_3.87.1-1+deb12u4_amd64.deb",
+            "version": "2:3.87.1-1+deb12u4"
+          },
+          {
+            "action": "add",
+            "bytes": 211788,
+            "filename": "pool/main/p/pango1.0/libpango-1.0-0_1.50.12+ds-1_amd64.deb",
+            "name": "libpango-1.0-0",
+            "sha256": "851720de07441ae6bb6a7f51fc0f2edb4db7aa6f25b5bf1bf7b72dcab8947b7f",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/p/pango1.0/libpango-1.0-0_1.50.12+ds-1_amd64.deb",
+            "version": "1.50.12+ds-1"
+          },
+          {
+            "action": "upgrade_or_replace",
+            "bytes": 261352,
+            "filename": "pool/updates/main/p/pcre2/libpcre2-8-0_10.42-1+deb12u1_amd64.deb",
+            "name": "libpcre2-8-0",
+            "sha256": "81c5502941118a24d47af69a17b8b0b9548d75cc6d72b3eb3fe01047b46fa10e",
+            "url": "https://snapshot.debian.org/archive/debian-security/20260907T000000Z/pool/updates/main/p/pcre2/libpcre2-8-0_10.42-1+deb12u1_amd64.deb",
+            "version": "10.42-1+deb12u1"
+          },
+          {
+            "action": "add",
+            "bytes": 545588,
+            "filename": "pool/main/p/pixman/libpixman-1-0_0.42.2-1_amd64.deb",
+            "name": "libpixman-1-0",
+            "sha256": "9ed75ef81b6b1eba9e1357f8b0ce01d31112b0e07b2b685bee2cf627a8932892",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/p/pixman/libpixman-1-0_0.42.2-1_amd64.deb",
+            "version": "0.42.2-1"
+          },
+          {
+            "action": "add",
+            "bytes": 276660,
+            "filename": "pool/main/libp/libpng1.6/libpng16-16_1.6.39-2+deb12u5_amd64.deb",
+            "name": "libpng16-16",
+            "sha256": "a56d64bfaa9da12aafb83347909e62e6fd5fd251e6b34c194065911a30359978",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libp/libpng1.6/libpng16-16_1.6.39-2+deb12u5_amd64.deb",
+            "version": "1.6.39-2+deb12u5"
+          },
+          {
+            "action": "add",
+            "bytes": 838808,
+            "filename": "pool/main/s/sqlite3/libsqlite3-0_3.40.1-2+deb12u2_amd64.deb",
+            "name": "libsqlite3-0",
+            "sha256": "a8d78b40e9b4e422224aeebfe0e4dfc243f6acf3532490b0c05480d4283d41e2",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/s/sqlite3/libsqlite3-0_3.40.1-2+deb12u2_amd64.deb",
+            "version": "3.40.1-2+deb12u2"
+          },
+          {
+            "action": "add",
+            "bytes": 2036016,
+            "filename": "pool/main/o/openssl/libssl3_3.0.20-1~deb12u2_amd64.deb",
+            "name": "libssl3",
+            "sha256": "89be24b41bff568ee6e7caf5680a3d808e80315ed92e407056ce0fa7a5bda025",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/o/openssl/libssl3_3.0.20-1~deb12u2_amd64.deb",
+            "version": "3.0.20-1~deb12u2"
+          },
+          {
+            "action": "add",
+            "bytes": 176200,
+            "filename": "pool/main/libt/libthai/libthai-data_0.1.29-1_all.deb",
+            "name": "libthai-data",
+            "sha256": "eed65a75269411e47d7b393d82bc30471da5c499e9f311abbfd8c54ca1a42d9e",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libt/libthai/libthai-data_0.1.29-1_all.deb",
+            "version": "0.1.29-1"
+          },
+          {
+            "action": "add",
+            "bytes": 57468,
+            "filename": "pool/main/libt/libthai/libthai0_0.1.29-1_amd64.deb",
+            "name": "libthai0",
+            "sha256": "37cd66bef851ea0e4af807797ba3ad14d43226f7c4954c1d0a19478e11815bae",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libt/libthai/libthai0_0.1.29-1_amd64.deb",
+            "version": "0.1.29-1"
+          },
+          {
+            "action": "add",
+            "bytes": 35876,
+            "filename": "pool/main/w/wayland/libwayland-server0_1.21.0-1_amd64.deb",
+            "name": "libwayland-server0",
+            "sha256": "df0396221d7b794496a687ec61fae82b6465648bc0ab6501ba0a5ed7f56eb8d6",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/w/wayland/libwayland-server0_1.21.0-1_amd64.deb",
+            "version": "1.21.0-1"
+          },
+          {
+            "action": "add",
+            "bytes": 759544,
+            "filename": "pool/main/libx/libx11/libx11-6_1.8.4-2+deb12u2_amd64.deb",
+            "name": "libx11-6",
+            "sha256": "d88c973e79fd9b65838d77624142952757e47a6eb1a58602acf0911cf35989f4",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libx11/libx11-6_1.8.4-2+deb12u2_amd64.deb",
+            "version": "2:1.8.4-2+deb12u2"
+          },
+          {
+            "action": "add",
+            "bytes": 291884,
+            "filename": "pool/main/libx/libx11/libx11-data_1.8.4-2+deb12u2_all.deb",
+            "name": "libx11-data",
+            "sha256": "987a848aeb1c358e4186368871b0526f10bb14c6b53214ab3bf8b69abb830191",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libx11/libx11-data_1.8.4-2+deb12u2_all.deb",
+            "version": "2:1.8.4-2+deb12u2"
+          },
+          {
+            "action": "add",
+            "bytes": 19720,
+            "filename": "pool/main/libx/libxau/libxau6_1.0.9-1_amd64.deb",
+            "name": "libxau6",
+            "sha256": "679db1c4579ec7c61079adeaae8528adeb2e4bf5465baa6c56233b995d714750",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxau/libxau6_1.0.9-1_amd64.deb",
+            "version": "1:1.0.9-1"
+          },
+          {
+            "action": "add",
+            "bytes": 115012,
+            "filename": "pool/main/libx/libxcb/libxcb-render0_1.15-1_amd64.deb",
+            "name": "libxcb-render0",
+            "sha256": "29c32cc76be9393f409378be79a0f534b9f07dea06ae52fa80a7f27e298de239",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxcb/libxcb-render0_1.15-1_amd64.deb",
+            "version": "1.15-1"
+          },
+          {
+            "action": "add",
+            "bytes": 105472,
+            "filename": "pool/main/libx/libxcb/libxcb-shm0_1.15-1_amd64.deb",
+            "name": "libxcb-shm0",
+            "sha256": "c1afcef29dc78b95c475159b181b28b1dedaf1d5aa06efd2fa6d90c73bfbe0e5",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxcb/libxcb-shm0_1.15-1_amd64.deb",
+            "version": "1.15-1"
+          },
+          {
+            "action": "add",
+            "bytes": 144052,
+            "filename": "pool/main/libx/libxcb/libxcb1_1.15-1_amd64.deb",
+            "name": "libxcb1",
+            "sha256": "fdc61332a3892168f3cc9cfa1fe9cf11a91dc3e0acacbc47cbc50ebaa234cc71",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxcb/libxcb1_1.15-1_amd64.deb",
+            "version": "1.15-1"
+          },
+          {
+            "action": "add",
+            "bytes": 16608,
+            "filename": "pool/main/libx/libxcomposite/libxcomposite1_0.4.5-1_amd64.deb",
+            "name": "libxcomposite1",
+            "sha256": "4c26ebf519d2ebc22fc1416dee45e12c4c4ef68aa9b2ed890356830df42b652a",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxcomposite/libxcomposite1_0.4.5-1_amd64.deb",
+            "version": "1:0.4.5-1"
+          },
+          {
+            "action": "add",
+            "bytes": 15144,
+            "filename": "pool/main/libx/libxdamage/libxdamage1_1.1.6-1_amd64.deb",
+            "name": "libxdamage1",
+            "sha256": "fcdf7e4c29b307ba8711c864e1e646d76315a8f55121198143653e56592fa8a7",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxdamage/libxdamage1_1.1.6-1_amd64.deb",
+            "version": "1:1.1.6-1"
+          },
+          {
+            "action": "add",
+            "bytes": 26344,
+            "filename": "pool/main/libx/libxdmcp/libxdmcp6_1.1.2-3_amd64.deb",
+            "name": "libxdmcp6",
+            "sha256": "ecb8536f5fb34543b55bb9dc5f5b14c9dbb4150a7bddb3f2287b7cab6e9d25ef",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxdmcp/libxdmcp6_1.1.2-3_amd64.deb",
+            "version": "1:1.1.2-3"
+          },
+          {
+            "action": "add",
+            "bytes": 52932,
+            "filename": "pool/main/libx/libxext/libxext6_1.3.4-1+b1_amd64.deb",
+            "name": "libxext6",
+            "sha256": "504b7be9d7df4f6f4519e8dd4d6f9d03a9fb911a78530fa23a692fba3058cba6",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxext/libxext6_1.3.4-1+b1_amd64.deb",
+            "version": "2:1.3.4-1+b1"
+          },
+          {
+            "action": "add",
+            "bytes": 22684,
+            "filename": "pool/main/libx/libxfixes/libxfixes3_6.0.0-2_amd64.deb",
+            "name": "libxfixes3",
+            "sha256": "1cd616396ff2ecae77e6e8b5b7695d414f0146de2d147837a2a02165f99e1a2c",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxfixes/libxfixes3_6.0.0-2_amd64.deb",
+            "version": "1:6.0.0-2"
+          },
+          {
+            "action": "add",
+            "bytes": 84208,
+            "filename": "pool/main/libx/libxi/libxi6_1.8-1+b1_amd64.deb",
+            "name": "libxi6",
+            "sha256": "6c2fb5f241b311788990122c6e693915867cd8ed9d6da2e3524aec7ed3cdb4c0",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxi/libxi6_1.8-1+b1_amd64.deb",
+            "version": "2:1.8-1+b1"
+          },
+          {
+            "action": "add",
+            "bytes": 106108,
+            "filename": "pool/main/libx/libxkbcommon/libxkbcommon0_1.5.0-1_amd64.deb",
+            "name": "libxkbcommon0",
+            "sha256": "e3fe045b9a33a101de1c5a912a4a10928db055c3f68930f47eccbb44d7c7d54e",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxkbcommon/libxkbcommon0_1.5.0-1_amd64.deb",
+            "version": "1.5.0-1"
+          },
+          {
+            "action": "add",
+            "bytes": 39240,
+            "filename": "pool/main/libx/libxrandr/libxrandr2_1.5.2-2+b1_amd64.deb",
+            "name": "libxrandr2",
+            "sha256": "e2e10b672085ddf1d294cd689ed21bde5899325fd13626c2614b7d7b2d49a808",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxrandr/libxrandr2_1.5.2-2+b1_amd64.deb",
+            "version": "2:1.5.2-2+b1"
+          },
+          {
+            "action": "add",
+            "bytes": 33228,
+            "filename": "pool/main/libx/libxrender/libxrender1_0.9.10-1.1_amd64.deb",
+            "name": "libxrender1",
+            "sha256": "b2a6d160578f359220101947c8d67059b44704a251e688de1d0b744fefedfd1a",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxrender/libxrender1_0.9.10-1.1_amd64.deb",
+            "version": "1:0.9.10-1.1"
+          },
+          {
+            "action": "add",
+            "bytes": 4584,
+            "filename": "pool/main/l/lsb/lsb-base_11.6_all.deb",
+            "name": "lsb-base",
+            "sha256": "f8bedd167280e76636df3a1bc023cd2906d458916c1af4c1d7912c5b971fc642",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/l/lsb/lsb-base_11.6_all.deb",
+            "version": "11.6"
+          },
+          {
+            "action": "add",
+            "bytes": 252272,
+            "filename": "pool/main/x/xorg/x11-common_7.7+23_all.deb",
+            "name": "x11-common",
+            "sha256": "fc97c2f4495eb33a77501c7960928c0d2001e5c4b2aa438f1713e2082c23bacd",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/x/xorg/x11-common_7.7+23_all.deb",
+            "version": "1:7.7+23"
+          },
+          {
+            "action": "add",
+            "bytes": 577104,
+            "filename": "pool/main/x/xfonts-encodings/xfonts-encodings_1.0.4-2.2_all.deb",
+            "name": "xfonts-encodings",
+            "sha256": "56143f317d241b6dee0275aa1066df936a776810d3bb83fe58563965d9bbe3d3",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/x/xfonts-encodings/xfonts-encodings_1.0.4-2.2_all.deb",
+            "version": "1:1.0.4-2.2"
+          },
+          {
+            "action": "add",
+            "bytes": 306272,
+            "filename": "pool/main/x/xfonts-scalable/xfonts-scalable_1.0.3-1.3_all.deb",
+            "name": "xfonts-scalable",
+            "sha256": "0371d7944a7c972c715efa1e7635b636320508f433777ed575e5281de61f20cf",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/x/xfonts-scalable/xfonts-scalable_1.0.3-1.3_all.deb",
+            "version": "1:1.0.3-1.3"
+          },
+          {
+            "action": "add",
+            "bytes": 92960,
+            "filename": "pool/main/x/xfonts-utils/xfonts-utils_7.7+6_amd64.deb",
+            "name": "xfonts-utils",
+            "sha256": "20b290277caff5bae41298c4e171fb81c29560294f60f5eeb47ef50863efc0d7",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/x/xfonts-utils/xfonts-utils_7.7+6_amd64.deb",
+            "version": "1:7.7+6"
+          },
+          {
+            "action": "add",
+            "bytes": 763516,
+            "filename": "pool/main/x/xkeyboard-config/xkb-data_2.35.1-1_all.deb",
+            "name": "xkb-data",
+            "sha256": "28a79c61b785f403da93af58c39aed13c022032935e3e54362c6707169cfe982",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/x/xkeyboard-config/xkb-data_2.35.1-1_all.deb",
+            "version": "2.35.1-1"
+          }
+        ],
+        "total_bytes": 45435472
+      }
+    },
+    "arm64": {
+      "base_dpkg_inventory": {
+        "closure_packages_satisfied": [
+          {
+            "base_version": "1.5.82",
+            "name": "debconf",
+            "version": "1.5.82"
+          },
+          {
+            "base_version": "1.21.23",
+            "name": "dpkg",
+            "version": "1.21.23"
+          },
+          {
+            "base_version": "12.2.0-14+deb12u1",
+            "name": "gcc-12-base",
+            "version": "12.2.0-14+deb12u1"
+          },
+          {
+            "base_version": "2.3.1-3",
+            "name": "libacl1",
+            "version": "2.3.1-3"
+          },
+          {
+            "base_version": "2.38.1-5+deb12u3",
+            "name": "libblkid1",
+            "version": "2.38.1-5+deb12u3"
+          },
+          {
+            "base_version": "1.0.8-5+b1",
+            "name": "libbz2-1.0",
+            "version": "1.0.8-5+b1"
+          },
+          {
+            "base_version": "2.36-9+deb12u14",
+            "name": "libc6",
+            "version": "2.36-9+deb12u14"
+          },
+          {
+            "base_version": "1:2.66-4+deb12u3+b1",
+            "name": "libcap2",
+            "version": "1:2.66-4+deb12u3+b1"
+          },
+          {
+            "base_version": "1.47.0-2+b2",
+            "name": "libcom-err2",
+            "version": "1.47.0-2+b2"
+          },
+          {
+            "base_version": "3.4.4-1",
+            "name": "libffi8",
+            "version": "3.4.4-1"
+          },
+          {
+            "base_version": "12.2.0-14+deb12u1",
+            "name": "libgcc-s1",
+            "version": "12.2.0-14+deb12u1"
+          },
+          {
+            "base_version": "1.10.1-3+deb12u1",
+            "name": "libgcrypt20",
+            "version": "1.10.1-3+deb12u1"
+          },
+          {
+            "base_version": "2:6.2.1+dfsg1-1.1",
+            "name": "libgmp10",
+            "version": "2:6.2.1+dfsg1-1.1"
+          },
+          {
+            "base_version": "3.7.9-2+deb12u7",
+            "name": "libgnutls30",
+            "version": "3.7.9-2+deb12u7"
+          },
+          {
+            "base_version": "1.46-1",
+            "name": "libgpg-error0",
+            "version": "1.46-1"
+          },
+          {
+            "base_version": "3.8.1-2",
+            "name": "libhogweed6",
+            "version": "3.8.1-2"
+          },
+          {
+            "base_version": "2.3.3-1+b1",
+            "name": "libidn2-0",
+            "version": "2.3.3-1+b1"
+          },
+          {
+            "base_version": "1.9.4-1",
+            "name": "liblz4-1",
+            "version": "1.9.4-1"
+          },
+          {
+            "base_version": "5.4.1-1+deb12u1",
+            "name": "liblzma5",
+            "version": "5.4.1-1+deb12u1"
+          },
+          {
+            "base_version": "1.0.4-2",
+            "name": "libmd0",
+            "version": "1.0.4-2"
+          },
+          {
+            "base_version": "2.38.1-5+deb12u3",
+            "name": "libmount1",
+            "version": "2.38.1-5+deb12u3"
+          },
+          {
+            "base_version": "3.8.1-2",
+            "name": "libnettle8",
+            "version": "3.8.1-2"
+          },
+          {
+            "base_version": "0.24.1-2",
+            "name": "libp11-kit0",
+            "version": "0.24.1-2"
+          },
+          {
+            "base_version": "3.4-1+b6",
+            "name": "libselinux1",
+            "version": "3.4-1+b6"
+          },
+          {
+            "base_version": "252.39-1~deb12u2",
+            "name": "libsystemd0",
+            "version": "252.39-1~deb12u2"
+          },
+          {
+            "base_version": "4.19.0-2+deb12u1",
+            "name": "libtasn1-6",
+            "version": "4.19.0-2+deb12u1"
+          },
+          {
+            "base_version": "252.39-1~deb12u2",
+            "name": "libudev1",
+            "version": "252.39-1~deb12u2"
+          },
+          {
+            "base_version": "1.0-2",
+            "name": "libunistring2",
+            "version": "1.0-2"
+          },
+          {
+            "base_version": "1.5.4+dfsg2-5",
+            "name": "libzstd1",
+            "version": "1.5.4+dfsg2-5"
+          },
+          {
+            "base_version": "3.06-4",
+            "name": "sysvinit-utils",
+            "version": "3.06-4"
+          },
+          {
+            "base_version": "1.34+dfsg-1.2+deb12u1",
+            "name": "tar",
+            "version": "1.34+dfsg-1.2+deb12u1"
+          },
+          {
+            "base_version": "1:1.2.13.dfsg-1",
+            "name": "zlib1g",
+            "version": "1:1.2.13.dfsg-1"
+          }
+        ],
+        "installed_count": 88,
+        "status_sha256": "437c37c0391ace1b7376ad3ae9cae0ab55e81d111ccc72fca8f5d0f4226992c8"
+      },
+      "base_oci": {
+        "architecture": "arm64",
+        "config": {
+          "bytes": 6777,
+          "digest": "sha256:e78747b1818f158edd6a6831a501906608a85354559b0649355eec904aee78c7",
+          "media_type": "application/vnd.oci.image.config.v1+json"
+        },
+        "layers": [
+          {
+            "bytes": 28117289,
+            "digest": "sha256:75782e20ea1f4a9d9259bc20a5ecbbea8d5943bf5370bf0f5727900728f1cc9a",
+            "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "position": 1
+          },
+          {
+            "bytes": 3313,
+            "digest": "sha256:b001d77f103ca534804cf6015474352b04ea0cd977a9f80f9cb94b4e30f9d2b2",
+            "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "position": 2
+          },
+          {
+            "bytes": 50749374,
+            "digest": "sha256:b85ae889122592d18c76947d03ece48ceeeee2b971339dbbb8fe4c5f8144a630",
+            "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "position": 3
+          },
+          {
+            "bytes": 1712862,
+            "digest": "sha256:ef4e835a4d0b741ed9d371354ca6c4c2a189260ab373a933944c5bcc4721e12a",
+            "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "position": 4
+          },
+          {
+            "bytes": 446,
+            "digest": "sha256:a419fe0f8b59b67b4885b402c95b9ed6ad3cf3ff9ef921676bb889606044bd1e",
+            "media_type": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "position": 5
+          }
+        ],
+        "manifest": {
+          "bytes": 1931,
+          "digest": "sha256:e9b5516b06baeaea9a8e65a7aec6a85fbb960a30b52b66968f2c8092b3e2a3eb",
+          "media_type": "application/vnd.oci.image.manifest.v1+json"
+        },
+        "os": "linux",
+        "variant": "v8"
+      },
+      "dependency_graph": {
+        "edge_count": 219,
+        "edges": [
+          [
+            "dpkg",
+            "libbz2-1.0",
+            "libbz2-1.0"
+          ],
+          [
+            "dpkg",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "dpkg",
+            "liblzma5",
+            "liblzma5 (>= 5.4.0)"
+          ],
+          [
+            "dpkg",
+            "libmd0",
+            "libmd0 (>= 0.0.0)"
+          ],
+          [
+            "dpkg",
+            "libselinux1",
+            "libselinux1 (>= 3.1~)"
+          ],
+          [
+            "dpkg",
+            "libzstd1",
+            "libzstd1 (>= 1.5.2)"
+          ],
+          [
+            "dpkg",
+            "tar",
+            "tar (>= 1.28-1)"
+          ],
+          [
+            "dpkg",
+            "zlib1g",
+            "zlib1g (>= 1:1.1.4)"
+          ],
+          [
+            "fontconfig",
+            "fontconfig-config",
+            "fontconfig-config"
+          ],
+          [
+            "fontconfig",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "fontconfig",
+            "libfontconfig1",
+            "libfontconfig1 (>= 2.13.0)"
+          ],
+          [
+            "fontconfig",
+            "libfreetype6",
+            "libfreetype6 (>= 2.2.1)"
+          ],
+          [
+            "fontconfig-config",
+            "debconf",
+            "debconf (>= 0.5) | debconf-2.0"
+          ],
+          [
+            "fontconfig-config",
+            "fonts-dejavu-core",
+            "fonts-dejavu-core | ttf-bitstream-vera | fonts-liberation | fonts-liberation2 | fonts-croscore | fonts-freefont-otf | fonts-freefont-ttf | fonts-urw-base35 | fonts-texgyre"
+          ],
+          [
+            "fonts-ipafont-gothic",
+            "dpkg",
+            "dpkg (>= 1.15.6~)"
+          ],
+          [
+            "fonts-wqy-zenhei",
+            "fontconfig",
+            "fontconfig (>= 2.3.1-1)"
+          ],
+          [
+            "libacl1",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libasound2",
+            "libasound2-data",
+            "libasound2-data (>= 1.2.8-1)"
+          ],
+          [
+            "libasound2",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libatk-bridge2.0-0",
+            "libatk1.0-0",
+            "libatk1.0-0 (>= 2.33.1)"
+          ],
+          [
+            "libatk-bridge2.0-0",
+            "libatspi2.0-0",
+            "libatspi2.0-0 (>= 2.9.90)"
+          ],
+          [
+            "libatk-bridge2.0-0",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libatk-bridge2.0-0",
+            "libdbus-1-3",
+            "libdbus-1-3 (>= 1.9.14)"
+          ],
+          [
+            "libatk-bridge2.0-0",
+            "libglib2.0-0",
+            "libglib2.0-0 (>= 2.62)"
+          ],
+          [
+            "libatk1.0-0",
+            "at-spi2-common",
+            "at-spi2-common"
+          ],
+          [
+            "libatk1.0-0",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libatk1.0-0",
+            "libglib2.0-0",
+            "libglib2.0-0 (>= 2.62)"
+          ],
+          [
+            "libatspi2.0-0",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libatspi2.0-0",
+            "libdbus-1-3",
+            "libdbus-1-3 (>= 1.9.14)"
+          ],
+          [
+            "libatspi2.0-0",
+            "libglib2.0-0",
+            "libglib2.0-0 (>= 2.62)"
+          ],
+          [
+            "libatspi2.0-0",
+            "libx11-6",
+            "libx11-6 (>= 2:1.2.99.901)"
+          ],
+          [
+            "libatspi2.0-0",
+            "libxi6",
+            "libxi6 (>= 2:1.2.99.4)"
+          ],
+          [
+            "libavahi-client3",
+            "libavahi-common3",
+            "libavahi-common3 (= 0.8-10+deb12u1)"
+          ],
+          [
+            "libavahi-client3",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libavahi-client3",
+            "libdbus-1-3",
+            "libdbus-1-3 (>= 1.9.14)"
+          ],
+          [
+            "libavahi-common3",
+            "libavahi-common-data",
+            "libavahi-common-data (= 0.8-10+deb12u1)"
+          ],
+          [
+            "libavahi-common3",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libblkid1",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libbrotli1",
+            "libc6",
+            "libc6 (>= 2.29)"
+          ],
+          [
+            "libbsd0",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libbsd0",
+            "libmd0",
+            "libmd0 (>= 1.0.3-2)"
+          ],
+          [
+            "libbz2-1.0",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libc6",
+            "libgcc-s1",
+            "libgcc-s1"
+          ],
+          [
+            "libcairo2",
+            "libc6",
+            "libc6 (>= 2.35)"
+          ],
+          [
+            "libcairo2",
+            "libfontconfig1",
+            "libfontconfig1 (>= 2.12.6)"
+          ],
+          [
+            "libcairo2",
+            "libfreetype6",
+            "libfreetype6 (>= 2.9.1)"
+          ],
+          [
+            "libcairo2",
+            "libpixman-1-0",
+            "libpixman-1-0 (>= 0.30.0)"
+          ],
+          [
+            "libcairo2",
+            "libpng16-16",
+            "libpng16-16 (>= 1.6.2-1)"
+          ],
+          [
+            "libcairo2",
+            "libx11-6",
+            "libx11-6"
+          ],
+          [
+            "libcairo2",
+            "libxcb-render0",
+            "libxcb-render0"
+          ],
+          [
+            "libcairo2",
+            "libxcb-shm0",
+            "libxcb-shm0"
+          ],
+          [
+            "libcairo2",
+            "libxcb1",
+            "libxcb1 (>= 1.6)"
+          ],
+          [
+            "libcairo2",
+            "libxext6",
+            "libxext6"
+          ],
+          [
+            "libcairo2",
+            "libxrender1",
+            "libxrender1"
+          ],
+          [
+            "libcairo2",
+            "zlib1g",
+            "zlib1g (>= 1:1.1.4)"
+          ],
+          [
+            "libcap2",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libcom-err2",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libcups2",
+            "libavahi-client3",
+            "libavahi-client3 (>= 0.6.16)"
+          ],
+          [
+            "libcups2",
+            "libavahi-common3",
+            "libavahi-common3 (>= 0.6.16)"
+          ],
+          [
+            "libcups2",
+            "libc6",
+            "libc6 (>= 2.36)"
+          ],
+          [
+            "libcups2",
+            "libgnutls30",
+            "libgnutls30 (>= 3.7.5)"
+          ],
+          [
+            "libcups2",
+            "libgssapi-krb5-2",
+            "libgssapi-krb5-2 (>= 1.17)"
+          ],
+          [
+            "libcups2",
+            "zlib1g",
+            "zlib1g (>= 1:1.2.0)"
+          ],
+          [
+            "libdatrie1",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libdbus-1-3",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libdbus-1-3",
+            "libsystemd0",
+            "libsystemd0"
+          ],
+          [
+            "libdrm2",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libdrm2",
+            "libdrm-common",
+            "libdrm-common (>= 2.4.114-1)"
+          ],
+          [
+            "libexpat1",
+            "libc6",
+            "libc6 (>= 2.36)"
+          ],
+          [
+            "libffi8",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libfontconfig1",
+            "fontconfig-config",
+            "fontconfig-config (>= 2.14.1-4)"
+          ],
+          [
+            "libfontconfig1",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libfontconfig1",
+            "libexpat1",
+            "libexpat1 (>= 2.0.1)"
+          ],
+          [
+            "libfontconfig1",
+            "libfreetype6",
+            "libfreetype6 (>= 2.9.1)"
+          ],
+          [
+            "libfontenc1",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libfontenc1",
+            "zlib1g",
+            "zlib1g (>= 1:1.1.4)"
+          ],
+          [
+            "libfreetype6",
+            "libbrotli1",
+            "libbrotli1 (>= 0.6.0)"
+          ],
+          [
+            "libfreetype6",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libfreetype6",
+            "libpng16-16",
+            "libpng16-16 (>= 1.6.2-1)"
+          ],
+          [
+            "libfreetype6",
+            "zlib1g",
+            "zlib1g (>= 1:1.1.4)"
+          ],
+          [
+            "libfribidi0",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libgbm1",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libgbm1",
+            "libdrm2",
+            "libdrm2 (>= 2.4.75)"
+          ],
+          [
+            "libgbm1",
+            "libexpat1",
+            "libexpat1 (>= 2.0.1)"
+          ],
+          [
+            "libgbm1",
+            "libwayland-server0",
+            "libwayland-server0 (>= 1.15.0)"
+          ],
+          [
+            "libgcc-s1",
+            "gcc-12-base",
+            "gcc-12-base (= 12.2.0-14+deb12u1)"
+          ],
+          [
+            "libgcc-s1",
+            "libc6",
+            "libc6 (>= 2.35)"
+          ],
+          [
+            "libgcrypt20",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libgcrypt20",
+            "libgpg-error0",
+            "libgpg-error0 (>= 1.27)"
+          ],
+          [
+            "libglib2.0-0",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libglib2.0-0",
+            "libffi8",
+            "libffi8 (>= 3.4)"
+          ],
+          [
+            "libglib2.0-0",
+            "libmount1",
+            "libmount1 (>= 2.35.2-7~)"
+          ],
+          [
+            "libglib2.0-0",
+            "libpcre2-8-0",
+            "libpcre2-8-0 (>= 10.22)"
+          ],
+          [
+            "libglib2.0-0",
+            "libselinux1",
+            "libselinux1 (>= 3.1~)"
+          ],
+          [
+            "libglib2.0-0",
+            "zlib1g",
+            "zlib1g (>= 1:1.2.2)"
+          ],
+          [
+            "libgmp10",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libgnutls30",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libgnutls30",
+            "libgmp10",
+            "libgmp10 (>= 2:6.2.1+dfsg1)"
+          ],
+          [
+            "libgnutls30",
+            "libhogweed6",
+            "libhogweed6 (>= 3.6)"
+          ],
+          [
+            "libgnutls30",
+            "libidn2-0",
+            "libidn2-0 (>= 2.0.0)"
+          ],
+          [
+            "libgnutls30",
+            "libnettle8",
+            "libnettle8 (>= 3.7~)"
+          ],
+          [
+            "libgnutls30",
+            "libp11-kit0",
+            "libp11-kit0 (>= 0.23.18.1)"
+          ],
+          [
+            "libgnutls30",
+            "libtasn1-6",
+            "libtasn1-6 (>= 4.14)"
+          ],
+          [
+            "libgnutls30",
+            "libunistring2",
+            "libunistring2 (>= 0.9.7)"
+          ],
+          [
+            "libgpg-error0",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libgraphite2-3",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libgssapi-krb5-2",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libgssapi-krb5-2",
+            "libcom-err2",
+            "libcom-err2 (>= 1.43.9)"
+          ],
+          [
+            "libgssapi-krb5-2",
+            "libk5crypto3",
+            "libk5crypto3 (>= 1.20)"
+          ],
+          [
+            "libgssapi-krb5-2",
+            "libkrb5-3",
+            "libkrb5-3 (= 1.20.1-2+deb12u5)"
+          ],
+          [
+            "libgssapi-krb5-2",
+            "libkrb5support0",
+            "libkrb5support0 (>= 1.15~beta1)"
+          ],
+          [
+            "libharfbuzz0b",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libharfbuzz0b",
+            "libfreetype6",
+            "libfreetype6 (>= 2.11.0)"
+          ],
+          [
+            "libharfbuzz0b",
+            "libglib2.0-0",
+            "libglib2.0-0 (>= 2.31.8)"
+          ],
+          [
+            "libharfbuzz0b",
+            "libgraphite2-3",
+            "libgraphite2-3 (>= 1.2.2)"
+          ],
+          [
+            "libhogweed6",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libhogweed6",
+            "libgmp10",
+            "libgmp10 (>= 2:6.2.1+dfsg1)"
+          ],
+          [
+            "libhogweed6",
+            "libnettle8",
+            "libnettle8"
+          ],
+          [
+            "libidn2-0",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libidn2-0",
+            "libunistring2",
+            "libunistring2 (>= 0.9.7)"
+          ],
+          [
+            "libk5crypto3",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libk5crypto3",
+            "libkrb5support0",
+            "libkrb5support0 (>= 1.20)"
+          ],
+          [
+            "libkeyutils1",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libkrb5-3",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libkrb5-3",
+            "libcom-err2",
+            "libcom-err2 (>= 1.43.9)"
+          ],
+          [
+            "libkrb5-3",
+            "libk5crypto3",
+            "libk5crypto3 (>= 1.20)"
+          ],
+          [
+            "libkrb5-3",
+            "libkeyutils1",
+            "libkeyutils1 (>= 1.5.9)"
+          ],
+          [
+            "libkrb5-3",
+            "libkrb5support0",
+            "libkrb5support0 (= 1.20.1-2+deb12u5)"
+          ],
+          [
+            "libkrb5-3",
+            "libssl3",
+            "libssl3 (>= 3.0.0)"
+          ],
+          [
+            "libkrb5support0",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "liblz4-1",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "liblzma5",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libmd0",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libmount1",
+            "libblkid1",
+            "libblkid1 (>= 2.17.2)"
+          ],
+          [
+            "libmount1",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libmount1",
+            "libselinux1",
+            "libselinux1 (>= 3.1~)"
+          ],
+          [
+            "libnettle8",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libnspr4",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libnss3",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libnss3",
+            "libnspr4",
+            "libnspr4 (>= 2:4.34)"
+          ],
+          [
+            "libnss3",
+            "libsqlite3-0",
+            "libsqlite3-0 (>= 3.5.9)"
+          ],
+          [
+            "libp11-kit0",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libp11-kit0",
+            "libffi8",
+            "libffi8 (>= 3.4)"
+          ],
+          [
+            "libpango-1.0-0",
+            "fontconfig",
+            "fontconfig (>= 2.13.0)"
+          ],
+          [
+            "libpango-1.0-0",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libpango-1.0-0",
+            "libfribidi0",
+            "libfribidi0 (>= 1.0.6)"
+          ],
+          [
+            "libpango-1.0-0",
+            "libglib2.0-0",
+            "libglib2.0-0 (>= 2.67.3)"
+          ],
+          [
+            "libpango-1.0-0",
+            "libharfbuzz0b",
+            "libharfbuzz0b (>= 5.1.0)"
+          ],
+          [
+            "libpango-1.0-0",
+            "libthai0",
+            "libthai0 (>= 0.1.25)"
+          ],
+          [
+            "libpcre2-8-0",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libpixman-1-0",
+            "libc6",
+            "libc6 (>= 2.29)"
+          ],
+          [
+            "libpng16-16",
+            "libc6",
+            "libc6 (>= 2.29)"
+          ],
+          [
+            "libpng16-16",
+            "zlib1g",
+            "zlib1g (>= 1:1.2.11.dfsg)"
+          ],
+          [
+            "libselinux1",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libselinux1",
+            "libpcre2-8-0",
+            "libpcre2-8-0 (>= 10.22)"
+          ],
+          [
+            "libsqlite3-0",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libssl3",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libsystemd0",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libsystemd0",
+            "libcap2",
+            "libcap2 (>= 1:2.10)"
+          ],
+          [
+            "libsystemd0",
+            "libgcrypt20",
+            "libgcrypt20 (>= 1.10.0)"
+          ],
+          [
+            "libsystemd0",
+            "liblz4-1",
+            "liblz4-1 (>= 0.0~r122)"
+          ],
+          [
+            "libsystemd0",
+            "liblzma5",
+            "liblzma5 (>= 5.1.1alpha+20120614)"
+          ],
+          [
+            "libsystemd0",
+            "libzstd1",
+            "libzstd1 (>= 1.5.2)"
+          ],
+          [
+            "libtasn1-6",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libthai0",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libthai0",
+            "libdatrie1",
+            "libdatrie1 (>= 0.2.0)"
+          ],
+          [
+            "libthai0",
+            "libthai-data",
+            "libthai-data (>= 0.1.10)"
+          ],
+          [
+            "libudev1",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libunistring2",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libwayland-server0",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libwayland-server0",
+            "libffi8",
+            "libffi8 (>= 3.4)"
+          ],
+          [
+            "libx11-6",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "libx11-6",
+            "libx11-data",
+            "libx11-data"
+          ],
+          [
+            "libx11-6",
+            "libxcb1",
+            "libxcb1 (>= 1.11.1)"
+          ],
+          [
+            "libxau6",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libxcb-render0",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libxcb-render0",
+            "libxcb1",
+            "libxcb1 (>= 1.8)"
+          ],
+          [
+            "libxcb-shm0",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libxcb-shm0",
+            "libxcb1",
+            "libxcb1 (>= 1.12)"
+          ],
+          [
+            "libxcb1",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libxcb1",
+            "libxau6",
+            "libxau6 (>= 1:1.0.9)"
+          ],
+          [
+            "libxcb1",
+            "libxdmcp6",
+            "libxdmcp6"
+          ],
+          [
+            "libxcomposite1",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libxcomposite1",
+            "libx11-6",
+            "libx11-6 (>= 2:1.4.99.1)"
+          ],
+          [
+            "libxdamage1",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libxdamage1",
+            "libx11-6",
+            "libx11-6 (>= 2:1.4.99.1)"
+          ],
+          [
+            "libxdmcp6",
+            "libbsd0",
+            "libbsd0 (>= 0.2.0)"
+          ],
+          [
+            "libxdmcp6",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libxext6",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libxext6",
+            "libx11-6",
+            "libx11-6 (>= 2:1.6.0)"
+          ],
+          [
+            "libxfixes3",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libxfixes3",
+            "libx11-6",
+            "libx11-6 (>= 2:1.6.0)"
+          ],
+          [
+            "libxi6",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libxi6",
+            "libx11-6",
+            "libx11-6 (>= 2:1.6.0)"
+          ],
+          [
+            "libxi6",
+            "libxext6",
+            "libxext6"
+          ],
+          [
+            "libxkbcommon0",
+            "libc6",
+            "libc6 (>= 2.33)"
+          ],
+          [
+            "libxkbcommon0",
+            "xkb-data",
+            "xkb-data"
+          ],
+          [
+            "libxrandr2",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libxrandr2",
+            "libx11-6",
+            "libx11-6 (>= 2:1.6.0)"
+          ],
+          [
+            "libxrandr2",
+            "libxext6",
+            "libxext6"
+          ],
+          [
+            "libxrandr2",
+            "libxrender1",
+            "libxrender1"
+          ],
+          [
+            "libxrender1",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "libxrender1",
+            "libx11-6",
+            "libx11-6 (>= 2:1.6.0)"
+          ],
+          [
+            "libzstd1",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "lsb-base",
+            "sysvinit-utils",
+            "sysvinit-utils (>= 3.05-4~)"
+          ],
+          [
+            "sysvinit-utils",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "tar",
+            "libacl1",
+            "libacl1 (>= 2.2.23)"
+          ],
+          [
+            "tar",
+            "libc6",
+            "libc6 (>= 2.34)"
+          ],
+          [
+            "tar",
+            "libselinux1",
+            "libselinux1 (>= 3.1~)"
+          ],
+          [
+            "x11-common",
+            "lsb-base",
+            "lsb-base (>= 1.3-9ubuntu2)"
+          ],
+          [
+            "xfonts-encodings",
+            "x11-common",
+            "x11-common"
+          ],
+          [
+            "xfonts-scalable",
+            "xfonts-utils",
+            "xfonts-utils"
+          ],
+          [
+            "xfonts-utils",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ],
+          [
+            "xfonts-utils",
+            "libfontenc1",
+            "libfontenc1"
+          ],
+          [
+            "xfonts-utils",
+            "libfreetype6",
+            "libfreetype6 (>= 2.2.1)"
+          ],
+          [
+            "xfonts-utils",
+            "x11-common",
+            "x11-common"
+          ],
+          [
+            "xfonts-utils",
+            "xfonts-encodings",
+            "xfonts-encodings"
+          ],
+          [
+            "xfonts-utils",
+            "zlib1g",
+            "zlib1g (>= 1:1.1.4)"
+          ],
+          [
+            "zlib1g",
+            "libc6",
+            "libc6 (>= 2.17)"
+          ]
+        ],
+        "edges_sha256": "ae472d7b28129f323cf703787bb61ec695d4110a64a9ac512442f3c10c99503d"
+      },
+      "elf_needed_audit": {
+        "additional_base_package_assertion": "libudev1=252.39-1~deb12u2",
+        "bundle_members": [
+          "chrome-headless-shell",
+          "libEGL.so",
+          "libGLESv2.so",
+          "libvulkan.so.1",
+          "libvk_swiftshader.so"
+        ],
+        "files": [
+          {
+            "bytes": 189402512,
+            "member": "chrome-headless-shell-linux-arm64/chrome-headless-shell",
+            "needed": [
+              "libdl.so.2",
+              "libpthread.so.0",
+              "libglib-2.0.so.0",
+              "libgobject-2.0.so.0",
+              "libnspr4.so",
+              "libnss3.so",
+              "libnssutil3.so",
+              "libgio-2.0.so.0",
+              "libatk-1.0.so.0",
+              "libdbus-1.so.3",
+              "libm.so.6",
+              "libX11.so.6",
+              "libXcomposite.so.1",
+              "libXdamage.so.1",
+              "libXext.so.6",
+              "libXfixes.so.3",
+              "libXrandr.so.2",
+              "libgbm.so.1",
+              "libexpat.so.1",
+              "libxcb.so.1",
+              "libxkbcommon.so.0",
+              "libudev.so.1",
+              "libasound.so.2",
+              "libatspi.so.0",
+              "libgcc_s.so.1",
+              "libc.so.6",
+              "ld-linux-aarch64.so.1"
+            ],
+            "sha256": "f5d89353cc9ef8dc1541268bbee1f05ee40a31ce3d9799b3a274e5147f6a8cdb"
+          },
+          {
+            "bytes": 237224,
+            "member": "chrome-headless-shell-linux-arm64/libEGL.so",
+            "needed": [
+              "libpthread.so.0",
+              "libgcc_s.so.1",
+              "libc.so.6",
+              "ld-linux-aarch64.so.1"
+            ],
+            "sha256": "22bee8c947329dbd831e5ca6e5a95a8262f03d7f1a06c0081cf953e11f4d7919"
+          },
+          {
+            "bytes": 237232,
+            "member": "chrome-headless-shell-linux-arm64/libGLESv2.so",
+            "needed": [
+              "libpthread.so.0",
+              "libgcc_s.so.1",
+              "libc.so.6",
+              "ld-linux-aarch64.so.1"
+            ],
+            "sha256": "fb473532af125975e10e8da81cbf0e51c47e0b4e43d08c649ca5c26c0129d14c"
+          },
+          {
+            "bytes": 16936776,
+            "member": "chrome-headless-shell-linux-arm64/libvk_swiftshader.so",
+            "needed": [
+              "libdl.so.2",
+              "libpthread.so.0",
+              "libm.so.6",
+              "libgcc_s.so.1",
+              "libc.so.6",
+              "ld-linux-aarch64.so.1"
+            ],
+            "sha256": "dcc2e3935ab0cfb05c1a4a26222629ca69b5f8c40744c8e14c13a0db6f5c0906"
+          },
+          {
+            "bytes": 703248,
+            "member": "chrome-headless-shell-linux-arm64/libvulkan.so.1",
+            "needed": [
+              "libdl.so.2",
+              "libpthread.so.0",
+              "libgcc_s.so.1",
+              "libc.so.6",
+              "ld-linux-aarch64.so.1"
+            ],
+            "sha256": "3caabca3715b03a4930ff045e5239238db8b780bb2f26e7f4504051a3bf73b96"
+          }
+        ],
+        "glibc_provided": [
+          "ld-linux-aarch64.so.1",
+          "libc.so.6",
+          "libdl.so.2",
+          "libm.so.6",
+          "libpthread.so.0"
+        ]
+      },
+      "install_delta": {
+        "package_count": 73,
+        "packages": [
+          {
+            "action": "add",
+            "bytes": 161668,
+            "filename": "pool/main/a/at-spi2-core/at-spi2-common_2.46.0-5_all.deb",
+            "name": "at-spi2-common",
+            "sha256": "441bc1c6cefdc01f519310abf55823deb868898480dee09a05aa44e8c83cabc2",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/at-spi2-core/at-spi2-common_2.46.0-5_all.deb",
+            "version": "2.46.0-5"
+          },
+          {
+            "action": "add",
+            "bytes": 449296,
+            "filename": "pool/main/f/fontconfig/fontconfig_2.14.1-4_arm64.deb",
+            "name": "fontconfig",
+            "sha256": "5fe5ce908c360fb5e9376ce26484477948f8182c982fee495b8ab024a0f22c6f",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fontconfig/fontconfig_2.14.1-4_arm64.deb",
+            "version": "2.14.1-4"
+          },
+          {
+            "action": "add",
+            "bytes": 314864,
+            "filename": "pool/main/f/fontconfig/fontconfig-config_2.14.1-4_arm64.deb",
+            "name": "fontconfig-config",
+            "sha256": "297b5a63f9214ffebe08892cdf2effdaf2b408e719811d5e8e98870f710cd35c",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fontconfig/fontconfig-config_2.14.1-4_arm64.deb",
+            "version": "2.14.1-4"
+          },
+          {
+            "action": "add",
+            "bytes": 1067728,
+            "filename": "pool/main/f/fonts-dejavu/fonts-dejavu-core_2.37-6_all.deb",
+            "name": "fonts-dejavu-core",
+            "sha256": "8892669e51aab4dc56682c8e39d8ddb7d70fad83c369344e1e240bf3ca22bb76",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fonts-dejavu/fonts-dejavu-core_2.37-6_all.deb",
+            "version": "2.37-6"
+          },
+          {
+            "action": "add",
+            "bytes": 2552432,
+            "filename": "pool/main/f/fonts-freefont/fonts-freefont-ttf_20120503-10_all.deb",
+            "name": "fonts-freefont-ttf",
+            "sha256": "4ca1c21ebc479198a3a5879d236c8317d6f7b2f1c403f7890e24c02eead05615",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fonts-freefont/fonts-freefont-ttf_20120503-10_all.deb",
+            "version": "20120503-10"
+          },
+          {
+            "action": "add",
+            "bytes": 3514948,
+            "filename": "pool/main/f/fonts-ipafont/fonts-ipafont-gothic_00303-23_all.deb",
+            "name": "fonts-ipafont-gothic",
+            "sha256": "5f8e0270654fec6577fffa96015067352440065c0b49bbc8b076745a6b4bf3d3",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fonts-ipafont/fonts-ipafont-gothic_00303-23_all.deb",
+            "version": "00303-23"
+          },
+          {
+            "action": "add",
+            "bytes": 827812,
+            "filename": "pool/main/f/fonts-liberation/fonts-liberation_1.07.4-11_all.deb",
+            "name": "fonts-liberation",
+            "sha256": "efd381517f958b01969343634ffcbdd60056be7779af84c6f53a005090430204",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fonts-liberation/fonts-liberation_1.07.4-11_all.deb",
+            "version": "1:1.07.4-11"
+          },
+          {
+            "action": "add",
+            "bytes": 9893872,
+            "filename": "pool/main/f/fonts-noto-color-emoji/fonts-noto-color-emoji_2.042-0+deb12u1_all.deb",
+            "name": "fonts-noto-color-emoji",
+            "sha256": "a5ab0f69c7938423862320d9aca5dd187b3fd879d6a9a57dd52e17c3fa8d2751",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fonts-noto-color-emoji/fonts-noto-color-emoji_2.042-0+deb12u1_all.deb",
+            "version": "2.042-0+deb12u1"
+          },
+          {
+            "action": "add",
+            "bytes": 147048,
+            "filename": "pool/main/f/fonts-tlwg/fonts-tlwg-loma-otf_0.7.3-1_all.deb",
+            "name": "fonts-tlwg-loma-otf",
+            "sha256": "a775452dfa77de3176bbb2b06f1fa61d5a95177a74a460a768ae82940e9407fc",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fonts-tlwg/fonts-tlwg-loma-otf_0.7.3-1_all.deb",
+            "version": "1:0.7.3-1"
+          },
+          {
+            "action": "add",
+            "bytes": 2019152,
+            "filename": "pool/main/u/unifont/fonts-unifont_15.0.01-2_all.deb",
+            "name": "fonts-unifont",
+            "sha256": "cd46245f1b228d1277ed2b453ce893fde1cf4bf4ec317e82b0079395bdc9c2b5",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/u/unifont/fonts-unifont_15.0.01-2_all.deb",
+            "version": "1:15.0.01-2"
+          },
+          {
+            "action": "add",
+            "bytes": 7478908,
+            "filename": "pool/main/f/fonts-wqy-zenhei/fonts-wqy-zenhei_0.9.45-8_all.deb",
+            "name": "fonts-wqy-zenhei",
+            "sha256": "cfed2c29164ff2f133e40ed2046610b172b8618d174840936ac4ec9b6fd668e7",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fonts-wqy-zenhei/fonts-wqy-zenhei_0.9.45-8_all.deb",
+            "version": "0.9.45-8"
+          },
+          {
+            "action": "add",
+            "bytes": 327044,
+            "filename": "pool/main/a/alsa-lib/libasound2_1.2.8-1+b1_arm64.deb",
+            "name": "libasound2",
+            "sha256": "9fa889400fcee4b92c8f4a2fafbb7f2cd33444d9ec1665a71002ab67c06114bb",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/alsa-lib/libasound2_1.2.8-1+b1_arm64.deb",
+            "version": "1.2.8-1+b1"
+          },
+          {
+            "action": "add",
+            "bytes": 20488,
+            "filename": "pool/main/a/alsa-lib/libasound2-data_1.2.8-1_all.deb",
+            "name": "libasound2-data",
+            "sha256": "fe0780d2d3674b2977e0acb0d48b448ad72ba1642564b7dc537f55e839984c2d",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/alsa-lib/libasound2-data_1.2.8-1_all.deb",
+            "version": "1.2.8-1"
+          },
+          {
+            "action": "add",
+            "bytes": 61416,
+            "filename": "pool/main/a/at-spi2-core/libatk-bridge2.0-0_2.46.0-5_arm64.deb",
+            "name": "libatk-bridge2.0-0",
+            "sha256": "3f2229723e1f8337282f74c44f139eda2aab5829fc0bca9adb2976f3a8d83b44",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/at-spi2-core/libatk-bridge2.0-0_2.46.0-5_arm64.deb",
+            "version": "2.46.0-5"
+          },
+          {
+            "action": "add",
+            "bytes": 47376,
+            "filename": "pool/main/a/at-spi2-core/libatk1.0-0_2.46.0-5_arm64.deb",
+            "name": "libatk1.0-0",
+            "sha256": "c7508adb33e42c35b516e8456d801d5d246e36f1ebb2f1ebb8d2ce7a70ce1d2b",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/at-spi2-core/libatk1.0-0_2.46.0-5_arm64.deb",
+            "version": "2.46.0-5"
+          },
+          {
+            "action": "add",
+            "bytes": 70980,
+            "filename": "pool/main/a/at-spi2-core/libatspi2.0-0_2.46.0-5_arm64.deb",
+            "name": "libatspi2.0-0",
+            "sha256": "5408f7d48e84f3b140fb4496215078cb9da997937e3702086476690374d60311",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/at-spi2-core/libatspi2.0-0_2.46.0-5_arm64.deb",
+            "version": "2.46.0-5"
+          },
+          {
+            "action": "add",
+            "bytes": 44284,
+            "filename": "pool/main/a/avahi/libavahi-client3_0.8-10+deb12u1_arm64.deb",
+            "name": "libavahi-client3",
+            "sha256": "1bd0aa97b536ae39a90a44988b4fbb903352aa7c91d7cd914727b82f39ff0d81",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/avahi/libavahi-client3_0.8-10+deb12u1_arm64.deb",
+            "version": "0.8-10+deb12u1"
+          },
+          {
+            "action": "add",
+            "bytes": 107176,
+            "filename": "pool/main/a/avahi/libavahi-common-data_0.8-10+deb12u1_arm64.deb",
+            "name": "libavahi-common-data",
+            "sha256": "9fb985c54d65586b1e13d734852c9cc26d91f2ea4922b90cb6d684a52a46f449",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/avahi/libavahi-common-data_0.8-10+deb12u1_arm64.deb",
+            "version": "0.8-10+deb12u1"
+          },
+          {
+            "action": "add",
+            "bytes": 41244,
+            "filename": "pool/main/a/avahi/libavahi-common3_0.8-10+deb12u1_arm64.deb",
+            "name": "libavahi-common3",
+            "sha256": "f55666f45c6ccf6853fd444524ff2c255292cbb3c5b49d8aa0afffa3510a9d9f",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/a/avahi/libavahi-common3_0.8-10+deb12u1_arm64.deb",
+            "version": "0.8-10+deb12u1"
+          },
+          {
+            "action": "add",
+            "bytes": 269124,
+            "filename": "pool/main/b/brotli/libbrotli1_1.0.9-2+b6_arm64.deb",
+            "name": "libbrotli1",
+            "sha256": "3137de7f71952e710ee9f0df05026b3c6f463be9369a502d57c7696732f1ed22",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/b/brotli/libbrotli1_1.0.9-2+b6_arm64.deb",
+            "version": "1.0.9-2+b6"
+          },
+          {
+            "action": "add",
+            "bytes": 115116,
+            "filename": "pool/main/libb/libbsd/libbsd0_0.11.7-2_arm64.deb",
+            "name": "libbsd0",
+            "sha256": "ef00f132ddd268ee67d756998723ee18543db27ab34930c0a9f1cff75cf55382",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libb/libbsd/libbsd0_0.11.7-2_arm64.deb",
+            "version": "0.11.7-2"
+          },
+          {
+            "action": "add",
+            "bytes": 526680,
+            "filename": "pool/main/c/cairo/libcairo2_1.16.0-7_arm64.deb",
+            "name": "libcairo2",
+            "sha256": "48b5c5ae1972ea0757c6285463d611d0ca32c9c808957961e5c7924126f30289",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/c/cairo/libcairo2_1.16.0-7_arm64.deb",
+            "version": "1.16.0-7"
+          },
+          {
+            "action": "add",
+            "bytes": 229580,
+            "filename": "pool/main/c/cups/libcups2_2.4.2-3+deb12u9_arm64.deb",
+            "name": "libcups2",
+            "sha256": "41c9220d57d9eb3b5245f17038c830053f12176f6eef611c6f6941fcbf6d507f",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/c/cups/libcups2_2.4.2-3+deb12u9_arm64.deb",
+            "version": "2.4.2-3+deb12u9"
+          },
+          {
+            "action": "add",
+            "bytes": 42624,
+            "filename": "pool/main/libd/libdatrie/libdatrie1_0.2.13-2+b1_arm64.deb",
+            "name": "libdatrie1",
+            "sha256": "d7c52aa971278e7f298b7e74f8ed50ad25579f9b344212fd4a91744cffa58cc9",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libd/libdatrie/libdatrie1_0.2.13-2+b1_arm64.deb",
+            "version": "0.2.13-2+b1"
+          },
+          {
+            "action": "add",
+            "bytes": 192624,
+            "filename": "pool/main/d/dbus/libdbus-1-3_1.14.10-1~deb12u1_arm64.deb",
+            "name": "libdbus-1-3",
+            "sha256": "2a423794f44ee756f70fda67c6e47b15afe3dd22cd69e51f5d14d2ec9538f806",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/d/dbus/libdbus-1-3_1.14.10-1~deb12u1_arm64.deb",
+            "version": "1.14.10-1~deb12u1"
+          },
+          {
+            "action": "add",
+            "bytes": 7112,
+            "filename": "pool/main/libd/libdrm/libdrm-common_2.4.114-1_all.deb",
+            "name": "libdrm-common",
+            "sha256": "32f9664138b38b224383c6986457d5ad2ec8efd559b1a0ce7749405f7a451aad",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libd/libdrm/libdrm-common_2.4.114-1_all.deb",
+            "version": "2.4.114-1"
+          },
+          {
+            "action": "add",
+            "bytes": 36744,
+            "filename": "pool/main/libd/libdrm/libdrm2_2.4.114-1+b1_arm64.deb",
+            "name": "libdrm2",
+            "sha256": "f5f15a46d02cf5d9fa52d4f1c54b8cf80c398711ad771a9938b12399b8d8090c",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libd/libdrm/libdrm2_2.4.114-1+b1_arm64.deb",
+            "version": "2.4.114-1+b1"
+          },
+          {
+            "action": "add",
+            "bytes": 87944,
+            "filename": "pool/updates/main/e/expat/libexpat1_2.5.0-1+deb12u3_arm64.deb",
+            "name": "libexpat1",
+            "sha256": "3caad0fb4382e206b005737de35b3193450589a10053f8415ded216649a233bc",
+            "url": "https://snapshot.debian.org/archive/debian-security/20260907T000000Z/pool/updates/main/e/expat/libexpat1_2.5.0-1+deb12u3_arm64.deb",
+            "version": "2.5.0-1+deb12u3"
+          },
+          {
+            "action": "add",
+            "bytes": 381416,
+            "filename": "pool/main/f/fontconfig/libfontconfig1_2.14.1-4_arm64.deb",
+            "name": "libfontconfig1",
+            "sha256": "4836d9deca824883f0de33d4f8f3718ba776c6e7c80cd7c418b5a0f86c009b9e",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fontconfig/libfontconfig1_2.14.1-4_arm64.deb",
+            "version": "2.14.1-4"
+          },
+          {
+            "action": "add",
+            "bytes": 23564,
+            "filename": "pool/main/libf/libfontenc/libfontenc1_1.1.4-1_arm64.deb",
+            "name": "libfontenc1",
+            "sha256": "0ec21487b4e9b23043353fe51be8576d70a8860aef40104ca52df14bf1dc476c",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libf/libfontenc/libfontenc1_1.1.4-1_arm64.deb",
+            "version": "1:1.1.4-1"
+          },
+          {
+            "action": "add",
+            "bytes": 367860,
+            "filename": "pool/main/f/freetype/libfreetype6_2.12.1+dfsg-5+deb12u4_arm64.deb",
+            "name": "libfreetype6",
+            "sha256": "b8d32e54ebc9020637f8fa16b6afa64a5731e40845a6e01880d38d6f632237c9",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/freetype/libfreetype6_2.12.1+dfsg-5+deb12u4_arm64.deb",
+            "version": "2.12.1+dfsg-5+deb12u4"
+          },
+          {
+            "action": "add",
+            "bytes": 64880,
+            "filename": "pool/main/f/fribidi/libfribidi0_1.0.8-2.1_arm64.deb",
+            "name": "libfribidi0",
+            "sha256": "8ab3adcf64b318252d37669468fecb8e0478e1cf5f096d065611ac7dda68ccf4",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/f/fribidi/libfribidi0_1.0.8-2.1_arm64.deb",
+            "version": "1.0.8-2.1"
+          },
+          {
+            "action": "add",
+            "bytes": 37104,
+            "filename": "pool/main/m/mesa/libgbm1_22.3.6-1+deb12u2_arm64.deb",
+            "name": "libgbm1",
+            "sha256": "f5c8fdddbf365259d74af270fb10f30d7fddb3fbe7b2ff62f0fdd556f8db0dc8",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/m/mesa/libgbm1_22.3.6-1+deb12u2_arm64.deb",
+            "version": "22.3.6-1+deb12u2"
+          },
+          {
+            "action": "add",
+            "bytes": 1315904,
+            "filename": "pool/main/g/glib2.0/libglib2.0-0_2.74.6-2+deb12u9_arm64.deb",
+            "name": "libglib2.0-0",
+            "sha256": "61d92fffada7e27fc0ed9d23e047b45bca3b2e3bfe1a918f4ec16559282859f4",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/g/glib2.0/libglib2.0-0_2.74.6-2+deb12u9_arm64.deb",
+            "version": "2.74.6-2+deb12u9"
+          },
+          {
+            "action": "add",
+            "bytes": 68660,
+            "filename": "pool/main/g/graphite2/libgraphite2-3_1.3.14-1+deb12u1_arm64.deb",
+            "name": "libgraphite2-3",
+            "sha256": "fca82a3f01cb2cfe607efb6f21f489081716ddcf8a71e2f588d3d67ad39107a2",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/g/graphite2/libgraphite2-3_1.3.14-1+deb12u1_arm64.deb",
+            "version": "1.3.14-1+deb12u1"
+          },
+          {
+            "action": "add",
+            "bytes": 124152,
+            "filename": "pool/main/k/krb5/libgssapi-krb5-2_1.20.1-2+deb12u5_arm64.deb",
+            "name": "libgssapi-krb5-2",
+            "sha256": "a00678963f692a929312968f19b77a61a8fc0011690d7dc909a8a2c4810fc7b3",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/k/krb5/libgssapi-krb5-2_1.20.1-2+deb12u5_arm64.deb",
+            "version": "1.20.1-2+deb12u5"
+          },
+          {
+            "action": "add",
+            "bytes": 1914384,
+            "filename": "pool/main/h/harfbuzz/libharfbuzz0b_6.0.0+dfsg-3_arm64.deb",
+            "name": "libharfbuzz0b",
+            "sha256": "64b1d4aa672dc4eda5e11b9ff8061122060fc7aba6ad16908c89a269ffa174ee",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/h/harfbuzz/libharfbuzz0b_6.0.0+dfsg-3_arm64.deb",
+            "version": "6.0.0+dfsg-3"
+          },
+          {
+            "action": "add",
+            "bytes": 79880,
+            "filename": "pool/main/k/krb5/libk5crypto3_1.20.1-2+deb12u5_arm64.deb",
+            "name": "libk5crypto3",
+            "sha256": "8ae2c31cde0b3e6f80c573a495b0f90bf6d9efb4455d900728278bb54d9092e5",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/k/krb5/libk5crypto3_1.20.1-2+deb12u5_arm64.deb",
+            "version": "1.20.1-2+deb12u5"
+          },
+          {
+            "action": "add",
+            "bytes": 8844,
+            "filename": "pool/main/k/keyutils/libkeyutils1_1.6.3-2_arm64.deb",
+            "name": "libkeyutils1",
+            "sha256": "aac46cb6faec4e737502b3c2290b7b02f8ba04e8accd5af7fd07934df0c867b1",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/k/keyutils/libkeyutils1_1.6.3-2_arm64.deb",
+            "version": "1.6.3-2"
+          },
+          {
+            "action": "add",
+            "bytes": 315528,
+            "filename": "pool/main/k/krb5/libkrb5-3_1.20.1-2+deb12u5_arm64.deb",
+            "name": "libkrb5-3",
+            "sha256": "c3c7227f5db903a7a8b8936d47d1d79643edcda36365c4c992e1a96bcc2d4c7e",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/k/krb5/libkrb5-3_1.20.1-2+deb12u5_arm64.deb",
+            "version": "1.20.1-2+deb12u5"
+          },
+          {
+            "action": "add",
+            "bytes": 32592,
+            "filename": "pool/main/k/krb5/libkrb5support0_1.20.1-2+deb12u5_arm64.deb",
+            "name": "libkrb5support0",
+            "sha256": "3043fd4a54b945a1b503170749527f825dcfc7add2f8bf5abb4a329deeb48f4a",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/k/krb5/libkrb5support0_1.20.1-2+deb12u5_arm64.deb",
+            "version": "1.20.1-2+deb12u5"
+          },
+          {
+            "action": "add",
+            "bytes": 105324,
+            "filename": "pool/main/n/nspr/libnspr4_4.35-1_arm64.deb",
+            "name": "libnspr4",
+            "sha256": "3aa6bc5a1a3f83627f735b9712eed74ed2c345ae9148e9d876887a97982ae28d",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/n/nspr/libnspr4_4.35-1_arm64.deb",
+            "version": "2:4.35-1"
+          },
+          {
+            "action": "add",
+            "bytes": 1215528,
+            "filename": "pool/updates/main/n/nss/libnss3_3.87.1-1+deb12u4_arm64.deb",
+            "name": "libnss3",
+            "sha256": "aaa1b291b6330590079a0eb1404650c7c4f6c788f9213ab6911149dc22b2b6d0",
+            "url": "https://snapshot.debian.org/archive/debian-security/20260907T000000Z/pool/updates/main/n/nss/libnss3_3.87.1-1+deb12u4_arm64.deb",
+            "version": "2:3.87.1-1+deb12u4"
+          },
+          {
+            "action": "add",
+            "bytes": 199908,
+            "filename": "pool/main/p/pango1.0/libpango-1.0-0_1.50.12+ds-1_arm64.deb",
+            "name": "libpango-1.0-0",
+            "sha256": "88afa1481f9e520a3068e85dad776ed09a3751c7638a877333af6cec927db3ee",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/p/pango1.0/libpango-1.0-0_1.50.12+ds-1_arm64.deb",
+            "version": "1.50.12+ds-1"
+          },
+          {
+            "action": "upgrade_or_replace",
+            "bytes": 231104,
+            "filename": "pool/updates/main/p/pcre2/libpcre2-8-0_10.42-1+deb12u1_arm64.deb",
+            "name": "libpcre2-8-0",
+            "sha256": "d178d33697eef877c2c27733141b7f8520fee66a329ae5809e8c8eae3709efa3",
+            "url": "https://snapshot.debian.org/archive/debian-security/20260907T000000Z/pool/updates/main/p/pcre2/libpcre2-8-0_10.42-1+deb12u1_arm64.deb",
+            "version": "10.42-1+deb12u1"
+          },
+          {
+            "action": "add",
+            "bytes": 470200,
+            "filename": "pool/main/p/pixman/libpixman-1-0_0.42.2-1_arm64.deb",
+            "name": "libpixman-1-0",
+            "sha256": "a18db1a3bdbad168c7168b528bbb07b47316ff9fe977206a780dcc21b376e501",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/p/pixman/libpixman-1-0_0.42.2-1_arm64.deb",
+            "version": "0.42.2-1"
+          },
+          {
+            "action": "add",
+            "bytes": 270448,
+            "filename": "pool/main/libp/libpng1.6/libpng16-16_1.6.39-2+deb12u5_arm64.deb",
+            "name": "libpng16-16",
+            "sha256": "69aba3963ddfb11b98e5bf4b0d022f76b797436568884b10f2da32e0f4b8c2dd",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libp/libpng1.6/libpng16-16_1.6.39-2+deb12u5_arm64.deb",
+            "version": "1.6.39-2+deb12u5"
+          },
+          {
+            "action": "add",
+            "bytes": 785596,
+            "filename": "pool/main/s/sqlite3/libsqlite3-0_3.40.1-2+deb12u2_arm64.deb",
+            "name": "libsqlite3-0",
+            "sha256": "a690f7f2aa6435bd1fd7cbbd2216acb9acbb8c48c9721f2c195766375439eb13",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/s/sqlite3/libsqlite3-0_3.40.1-2+deb12u2_arm64.deb",
+            "version": "3.40.1-2+deb12u2"
+          },
+          {
+            "action": "add",
+            "bytes": 1823624,
+            "filename": "pool/main/o/openssl/libssl3_3.0.20-1~deb12u2_arm64.deb",
+            "name": "libssl3",
+            "sha256": "a256e03cc3abd7243ac5c6ee91a9deb56478221ef0d3c2b0748551e13140c0bf",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/o/openssl/libssl3_3.0.20-1~deb12u2_arm64.deb",
+            "version": "3.0.20-1~deb12u2"
+          },
+          {
+            "action": "add",
+            "bytes": 176200,
+            "filename": "pool/main/libt/libthai/libthai-data_0.1.29-1_all.deb",
+            "name": "libthai-data",
+            "sha256": "eed65a75269411e47d7b393d82bc30471da5c499e9f311abbfd8c54ca1a42d9e",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libt/libthai/libthai-data_0.1.29-1_all.deb",
+            "version": "0.1.29-1"
+          },
+          {
+            "action": "add",
+            "bytes": 56248,
+            "filename": "pool/main/libt/libthai/libthai0_0.1.29-1_arm64.deb",
+            "name": "libthai0",
+            "sha256": "1374f50f4e96397f2830f3fdf09e95a5fe8e4d584fdc70dd187eec5f8832d08c",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libt/libthai/libthai0_0.1.29-1_arm64.deb",
+            "version": "0.1.29-1"
+          },
+          {
+            "action": "add",
+            "bytes": 34940,
+            "filename": "pool/main/w/wayland/libwayland-server0_1.21.0-1_arm64.deb",
+            "name": "libwayland-server0",
+            "sha256": "4d99e7e0503fdaa999e67d47d8612c0465e775eafa47819573da50bdb09064f2",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/w/wayland/libwayland-server0_1.21.0-1_arm64.deb",
+            "version": "1.21.0-1"
+          },
+          {
+            "action": "add",
+            "bytes": 735284,
+            "filename": "pool/main/libx/libx11/libx11-6_1.8.4-2+deb12u2_arm64.deb",
+            "name": "libx11-6",
+            "sha256": "d1d533e983582282a9ea82c87ac5ce715a9b67bd6d1acbd2439a11c63c36549b",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libx11/libx11-6_1.8.4-2+deb12u2_arm64.deb",
+            "version": "2:1.8.4-2+deb12u2"
+          },
+          {
+            "action": "add",
+            "bytes": 291884,
+            "filename": "pool/main/libx/libx11/libx11-data_1.8.4-2+deb12u2_all.deb",
+            "name": "libx11-data",
+            "sha256": "987a848aeb1c358e4186368871b0526f10bb14c6b53214ab3bf8b69abb830191",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libx11/libx11-data_1.8.4-2+deb12u2_all.deb",
+            "version": "2:1.8.4-2+deb12u2"
+          },
+          {
+            "action": "add",
+            "bytes": 19696,
+            "filename": "pool/main/libx/libxau/libxau6_1.0.9-1_arm64.deb",
+            "name": "libxau6",
+            "sha256": "36c2bf400641a80521093771dc2562c903df4065f9eb03add50d90564337ea6c",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxau/libxau6_1.0.9-1_arm64.deb",
+            "version": "1:1.0.9-1"
+          },
+          {
+            "action": "add",
+            "bytes": 114956,
+            "filename": "pool/main/libx/libxcb/libxcb-render0_1.15-1_arm64.deb",
+            "name": "libxcb-render0",
+            "sha256": "8d431caeae9dd0f7490caef1d66de0b7a7d3817afe021b6d55bedbba7b19bf43",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxcb/libxcb-render0_1.15-1_arm64.deb",
+            "version": "1.15-1"
+          },
+          {
+            "action": "add",
+            "bytes": 105620,
+            "filename": "pool/main/libx/libxcb/libxcb-shm0_1.15-1_arm64.deb",
+            "name": "libxcb-shm0",
+            "sha256": "825931950d42f51cd795cf2e5b9399d840225491e95ec530e0c5a9145c4ba5a0",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxcb/libxcb-shm0_1.15-1_arm64.deb",
+            "version": "1.15-1"
+          },
+          {
+            "action": "add",
+            "bytes": 142664,
+            "filename": "pool/main/libx/libxcb/libxcb1_1.15-1_arm64.deb",
+            "name": "libxcb1",
+            "sha256": "041d9a68415c3ccf3ce8f4f8b88e4bbfb5dc1f0d97013c6ef8423e620ea50f84",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxcb/libxcb1_1.15-1_arm64.deb",
+            "version": "1.15-1"
+          },
+          {
+            "action": "add",
+            "bytes": 16620,
+            "filename": "pool/main/libx/libxcomposite/libxcomposite1_0.4.5-1_arm64.deb",
+            "name": "libxcomposite1",
+            "sha256": "cfe39326fdb822e9d060ed5eb3f95b14459dd6b73793c5290000f9b27f8bad37",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxcomposite/libxcomposite1_0.4.5-1_arm64.deb",
+            "version": "1:0.4.5-1"
+          },
+          {
+            "action": "add",
+            "bytes": 15248,
+            "filename": "pool/main/libx/libxdamage/libxdamage1_1.1.6-1_arm64.deb",
+            "name": "libxdamage1",
+            "sha256": "489d20cf78c8ee4428f3e26c5b3edcd87a71b5beb6bed992c45f47c6d01a1c92",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxdamage/libxdamage1_1.1.6-1_arm64.deb",
+            "version": "1:1.1.6-1"
+          },
+          {
+            "action": "add",
+            "bytes": 25358,
+            "filename": "pool/main/libx/libxdmcp/libxdmcp6_1.1.2-3_arm64.deb",
+            "name": "libxdmcp6",
+            "sha256": "e92569ac33247261aa09adfadc34ced3994ac301cf8b58de415a2d5dbf15ccfc",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxdmcp/libxdmcp6_1.1.2-3_arm64.deb",
+            "version": "1:1.1.2-3"
+          },
+          {
+            "action": "add",
+            "bytes": 51744,
+            "filename": "pool/main/libx/libxext/libxext6_1.3.4-1+b1_arm64.deb",
+            "name": "libxext6",
+            "sha256": "5e9c0ad606eb4674c645fe8e0e64330c47d2729f7a59ed569848610efd5d5b62",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxext/libxext6_1.3.4-1+b1_arm64.deb",
+            "version": "2:1.3.4-1+b1"
+          },
+          {
+            "action": "add",
+            "bytes": 22880,
+            "filename": "pool/main/libx/libxfixes/libxfixes3_6.0.0-2_arm64.deb",
+            "name": "libxfixes3",
+            "sha256": "d47bda8fed01b19b41d503e2df05d9166c58e30e2376f2f8784ceb7a834befe6",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxfixes/libxfixes3_6.0.0-2_arm64.deb",
+            "version": "1:6.0.0-2"
+          },
+          {
+            "action": "add",
+            "bytes": 82304,
+            "filename": "pool/main/libx/libxi/libxi6_1.8-1+b1_arm64.deb",
+            "name": "libxi6",
+            "sha256": "b26383c9929d8bfba051eee22301e064d17039ed022bbf31990feb0d7a03b36c",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxi/libxi6_1.8-1+b1_arm64.deb",
+            "version": "2:1.8-1+b1"
+          },
+          {
+            "action": "add",
+            "bytes": 100032,
+            "filename": "pool/main/libx/libxkbcommon/libxkbcommon0_1.5.0-1_arm64.deb",
+            "name": "libxkbcommon0",
+            "sha256": "ec518d8a19796a399ab95e7bc4dfbb6bd2ed8e151f77b222df26208db412d852",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxkbcommon/libxkbcommon0_1.5.0-1_arm64.deb",
+            "version": "1.5.0-1"
+          },
+          {
+            "action": "add",
+            "bytes": 38364,
+            "filename": "pool/main/libx/libxrandr/libxrandr2_1.5.2-2+b1_arm64.deb",
+            "name": "libxrandr2",
+            "sha256": "f0bc7f79fee182caae176652fdb1bf349d13b9591b10ad4dc1c896521da8e49f",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxrandr/libxrandr2_1.5.2-2+b1_arm64.deb",
+            "version": "2:1.5.2-2+b1"
+          },
+          {
+            "action": "add",
+            "bytes": 32004,
+            "filename": "pool/main/libx/libxrender/libxrender1_0.9.10-1.1_arm64.deb",
+            "name": "libxrender1",
+            "sha256": "f260193deb4eaf0b410a1c61e1f84804366ee3372b8bad9f38005f7dbcd89aae",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/libx/libxrender/libxrender1_0.9.10-1.1_arm64.deb",
+            "version": "1:0.9.10-1.1"
+          },
+          {
+            "action": "add",
+            "bytes": 4584,
+            "filename": "pool/main/l/lsb/lsb-base_11.6_all.deb",
+            "name": "lsb-base",
+            "sha256": "f8bedd167280e76636df3a1bc023cd2906d458916c1af4c1d7912c5b971fc642",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/l/lsb/lsb-base_11.6_all.deb",
+            "version": "11.6"
+          },
+          {
+            "action": "add",
+            "bytes": 252272,
+            "filename": "pool/main/x/xorg/x11-common_7.7+23_all.deb",
+            "name": "x11-common",
+            "sha256": "fc97c2f4495eb33a77501c7960928c0d2001e5c4b2aa438f1713e2082c23bacd",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/x/xorg/x11-common_7.7+23_all.deb",
+            "version": "1:7.7+23"
+          },
+          {
+            "action": "add",
+            "bytes": 577104,
+            "filename": "pool/main/x/xfonts-encodings/xfonts-encodings_1.0.4-2.2_all.deb",
+            "name": "xfonts-encodings",
+            "sha256": "56143f317d241b6dee0275aa1066df936a776810d3bb83fe58563965d9bbe3d3",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/x/xfonts-encodings/xfonts-encodings_1.0.4-2.2_all.deb",
+            "version": "1:1.0.4-2.2"
+          },
+          {
+            "action": "add",
+            "bytes": 306272,
+            "filename": "pool/main/x/xfonts-scalable/xfonts-scalable_1.0.3-1.3_all.deb",
+            "name": "xfonts-scalable",
+            "sha256": "0371d7944a7c972c715efa1e7635b636320508f433777ed575e5281de61f20cf",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/x/xfonts-scalable/xfonts-scalable_1.0.3-1.3_all.deb",
+            "version": "1:1.0.3-1.3"
+          },
+          {
+            "action": "add",
+            "bytes": 85604,
+            "filename": "pool/main/x/xfonts-utils/xfonts-utils_7.7+6_arm64.deb",
+            "name": "xfonts-utils",
+            "sha256": "d6decd33203119e5a373749033716a4a0d1ed3f0cc14bd34ae7ad5043c9e97e2",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/x/xfonts-utils/xfonts-utils_7.7+6_arm64.deb",
+            "version": "1:7.7+6"
+          },
+          {
+            "action": "add",
+            "bytes": 763516,
+            "filename": "pool/main/x/xkeyboard-config/xkb-data_2.35.1-1_all.deb",
+            "name": "xkb-data",
+            "sha256": "28a79c61b785f403da93af58c39aed13c022032935e3e54362c6707169cfe982",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/pool/main/x/xkeyboard-config/xkb-data_2.35.1-1_all.deb",
+            "version": "2.35.1-1"
+          }
+        ],
+        "total_bytes": 44543182
+      }
+    }
+  },
+  "required_release_gates": [
+    "Reproduce the completed dual-architecture InRelease/Release.gpg and Release-to-index verification in the immutable release build using the pinned verifier/keyring bytes.",
+    "Assert the pinned Node OCI platform manifest/config/layers and exact base dpkg-status SHA-256 before using the delta.",
+    "Fetch only the listed official snapshot .debs, verify size/SHA-256, disable network and install all 73 local delta packages with apt --no-download --no-install-recommends.",
+    "On native linux/amd64 and linux/arm64 images, require ldd/no missing NEEDED, fontconfig cache success, non-root Chromium sandbox positive evidence, Korean screenshot and PDF render, cancellation and egress containment.",
+    "Complete Chromium/Chrome-for-Testing and all Debian source/license notice disposition; extracted fields are evidence, not legal approval."
+  ],
+  "runtime_verifier": {
+    "path": "deploy/locks/verify_browser_runtime.mjs",
+    "sha256": "2509398b6bbdd33a4df989a543f01b5b83c0e11f4e05db46d9270c9b2e94e973"
+  },
+  "research_input": {
+    "bytes": 516378,
+    "embedded": false,
+    "kind": "full_read_only_resolution_audit",
+    "sha256": "c1757a2b08e699b3be4e37134f4dec37985953b79d68f7f242188354af7090b8"
+  },
+  "roots": {
+    "elf_base_assertions": [
+      "libudev1"
+    ],
+    "excluded": [
+      "xvfb"
+    ],
+    "playwright_debian12_chromium": [
+      "libasound2",
+      "libatk-bridge2.0-0",
+      "libatk1.0-0",
+      "libatspi2.0-0",
+      "libcairo2",
+      "libcups2",
+      "libdbus-1-3",
+      "libdrm2",
+      "libgbm1",
+      "libglib2.0-0",
+      "libnspr4",
+      "libnss3",
+      "libpango-1.0-0",
+      "libx11-6",
+      "libxcb1",
+      "libxcomposite1",
+      "libxdamage1",
+      "libxext6",
+      "libxfixes3",
+      "libxkbcommon0",
+      "libxrandr2"
+    ],
+    "rendering_fonts": [
+      "fonts-noto-color-emoji",
+      "fonts-unifont",
+      "libfontconfig1",
+      "libfreetype6",
+      "xfonts-scalable",
+      "fonts-liberation",
+      "fonts-ipafont-gothic",
+      "fonts-wqy-zenhei",
+      "fonts-tlwg-loma-otf",
+      "fonts-freefont-ttf"
+    ]
+  },
+  "schema_version": "deeptwin-browser-debian-bookworm-lock-v1",
+  "snapshot": {
+    "id": "20260907T000000Z",
+    "openpgp_status": "verified_both_platforms",
+    "openpgp_verification": {
+      "verified_on": "2026-09-08",
+      "verifier_container": "python@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254",
+      "verification_script": {
+        "path": "deploy/locks/verify_browser_debian_bookworm.py",
+        "sha256": "79bffd5c97e8f89a3ba9165e9bb7f062b4213dc329a124a7cf6a4032d1a78c59"
+      },
+      "network_during_verification": false,
+      "all_inrelease_signatures_verified": true,
+      "all_detached_release_signatures_verified": true,
+      "release_to_packages_and_sources_sha256_linkage_verified": true,
+      "exact_delta_artifact_sets_verified": true,
+      "debian_archive_keyring": {
+        "package": "debian-archive-keyring",
+        "version": "2023.3+deb12u2",
+        "path": "/usr/share/keyrings/debian-archive-keyring.gpg",
+        "bytes": 55918,
+        "sha256": "506b815cbb32d9b6066b4a2aa524071e071761e7e7f68c3ac74f3061ba852017"
+      },
+      "platforms": {
+        "amd64": {
+          "gpgv_package_version": "2.2.40-1.1+deb12u2",
+          "gpgv_binary_sha256": "e82416f3ae002b63c0731f311519c55fc9e7d3c8bdadbd64239833298f09a2cf",
+          "exit_code": 0
+        },
+        "arm64": {
+          "gpgv_package_version": "2.2.40-1.1+deb12u2",
+          "gpgv_binary_sha256": "26999f2766739b3df31c6c355856440bbd7377a5a19ebcf3f6cfe4cfb3c42f69",
+          "exit_code": 0
+        }
+      },
+      "accepted_signing_keys_by_suite": {
+        "bookworm": [
+          "4CB50190207B4758A3F73A796ED0E7B82643E131",
+          "B8E5F13176D2A7A75220028078DBA3BC47EF2265",
+          "4D64FEC119C2029067D6E791F8D2585B8783D481"
+        ],
+        "bookworm-security": [
+          "ED541312A33F1128F10B1C6C54404762BBB6E853",
+          "B0CAB9266E8C3929798B3EEEBDE6D2B9216EC7A8"
+        ],
+        "bookworm-updates": [
+          "4CB50190207B4758A3F73A796ED0E7B82643E131",
+          "B8E5F13176D2A7A75220028078DBA3BC47EF2265"
+        ]
+      }
+    },
+    "repositories": {
+      "bookworm": {
+        "base_url": "https://snapshot.debian.org/archive/debian/20260907T000000Z",
+        "binary_indexes": {
+          "amd64": {
+            "bytes": 8790396,
+            "sha256": "9e0b5aabb2465b3d2e7a7fe27f9913846277833f7a2826e7767acccff5b588c5",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/dists/bookworm/main/binary-amd64/Packages.xz"
+          },
+          "arm64": {
+            "bytes": 8689464,
+            "sha256": "2ddb1737692e8c45c53e8d57c0ce4cd21c78c5703b830c3226b1423566a06c00",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/dists/bookworm/main/binary-arm64/Packages.xz"
+          }
+        },
+        "inrelease": {
+          "bytes": 151075,
+          "sha256": "77737fa4b34f2693e982cc9ee35736816c35a7778fc2d326cc1bbf5b301fe1aa",
+          "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/dists/bookworm/InRelease"
+        },
+        "release": {
+          "bytes": 149266,
+          "sha256": "abcf5882746e0f68171f41adbb4ac01b74b49d62d203379befb9265804311a4f",
+          "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/dists/bookworm/Release"
+        },
+        "release_date": "Sat, 11 Jul 2026 10:16:37 UTC",
+        "release_gpg": {
+          "bytes": 1760,
+          "sha256": "a8365eb9127ca7d85dee26a74318f28fe609d9d3a5af1008329a61b753492b80",
+          "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/dists/bookworm/Release.gpg"
+        },
+        "sources_index": {
+          "bytes": 9491888,
+          "sha256": "92d11a035571df011f06f28c61cb9825130ef1d92abb2f2e0525e8674dc44af8",
+          "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/dists/bookworm/main/source/Sources.xz"
+        },
+        "valid_until": null
+      },
+      "bookworm-security": {
+        "base_url": "https://snapshot.debian.org/archive/debian-security/20260907T000000Z",
+        "binary_indexes": {
+          "amd64": {
+            "bytes": 336504,
+            "sha256": "610da1862518c2a1f69e459b6b02b579ec328697b4594244765b231b450ccc4e",
+            "url": "https://snapshot.debian.org/archive/debian-security/20260907T000000Z/dists/bookworm-security/main/binary-amd64/Packages.xz"
+          },
+          "arm64": {
+            "bytes": 334348,
+            "sha256": "e8877b244f2868a5b75039ebfcc4f73abbd16f12d1267956442ad28b27b071a7",
+            "url": "https://snapshot.debian.org/archive/debian-security/20260907T000000Z/dists/bookworm-security/main/binary-arm64/Packages.xz"
+          }
+        },
+        "inrelease": {
+          "bytes": 34770,
+          "sha256": "f88c4f45663f0387a87e2b02c61c3ab956e1129b8c6edebb4eb3c8c9c07cdfd5",
+          "url": "https://snapshot.debian.org/archive/debian-security/20260907T000000Z/dists/bookworm-security/InRelease"
+        },
+        "release": {
+          "bytes": 33120,
+          "sha256": "48370114fce2ec7b1ce8972ab371e1b7c9728407d78c2bf5012a69ca66ce291c",
+          "url": "https://snapshot.debian.org/archive/debian-security/20260907T000000Z/dists/bookworm-security/Release"
+        },
+        "release_date": "Sun, 06 Sep 2026 18:29:58 UTC",
+        "release_gpg": {
+          "bytes": 1601,
+          "sha256": "a1a0015c02c36efcaeb7a2d5cbcd8673e4e48fbaaa427dfadcd013ee7f29267b",
+          "url": "https://snapshot.debian.org/archive/debian-security/20260907T000000Z/dists/bookworm-security/Release.gpg"
+        },
+        "sources_index": {
+          "bytes": 243712,
+          "sha256": "3220c4978ed66ed56d256dc4b077e96268506f14684f2169c40caabf93c462f5",
+          "url": "https://snapshot.debian.org/archive/debian-security/20260907T000000Z/dists/bookworm-security/main/source/Sources.xz"
+        },
+        "valid_until": "Sun, 13 Sep 2026 18:29:58 UTC"
+      },
+      "bookworm-updates": {
+        "base_url": "https://snapshot.debian.org/archive/debian/20260907T000000Z",
+        "binary_indexes": {
+          "amd64": {
+            "bytes": 6924,
+            "sha256": "87e7e94047fb7fb6f4ceecc7022d4bee55b66031cc2a7666d3196f3e0aabb846",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/dists/bookworm-updates/main/binary-amd64/Packages.xz"
+          },
+          "arm64": {
+            "bytes": 6936,
+            "sha256": "5dfd52317071685ad6e58c4ef0720128b7db68624079f83be02bdf55f07ac070",
+            "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/dists/bookworm-updates/main/binary-arm64/Packages.xz"
+          }
+        },
+        "inrelease": {
+          "bytes": 55446,
+          "sha256": "da758a35b7ae6e9d88ebbb098188d8afb1e898fdbca74dcace4f3bf5a41613e8",
+          "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/dists/bookworm-updates/InRelease"
+        },
+        "release": {
+          "bytes": 53796,
+          "sha256": "6b626a7626a9fa4e9f07d37ec281d93b4e2b69d6ef185d7eda72c56c03b5c63f",
+          "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/dists/bookworm-updates/Release"
+        },
+        "release_date": "Sun, 06 Sep 2026 20:08:45 UTC",
+        "release_gpg": {
+          "bytes": 1601,
+          "sha256": "40bb6b882b35fafdd2cd54817e8099e581837923a9fc40d1c2532ca8c4676786",
+          "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/dists/bookworm-updates/Release.gpg"
+        },
+        "sources_index": {
+          "bytes": 3288,
+          "sha256": "45fcd5257b7ad716ef3b674305dd678ad2d6e6198a0dd7a8f45bb0e8d3f3a7f3",
+          "url": "https://snapshot.debian.org/archive/debian/20260907T000000Z/dists/bookworm-updates/main/source/Sources.xz"
+        },
+        "valid_until": "Sun, 13 Sep 2026 20:08:45 UTC"
+      }
+    },
+    "selection_rule": "Highest Debian version visible across bookworm, bookworm-updates and bookworm-security at the single snapshot path; alternatives are fixed below.",
+    "timestamp": "2026-09-07T00:00:00Z"
+  },
+  "source_license_evidence": {
+    "binary_count": 105,
+    "bytes": 155081,
+    "path": "deploy/manifests/browser-debian-bookworm.sources.json",
+    "sha256": "ba3120935f5ddf1e8d9942892b53c119a6adbcaebd06e54f4846e43af8bf2692",
+    "source_package_count": 85,
+    "unique_copyright_payload_sha256_count": 85
+  },
+  "status": "candidate_blocked_not_release_qualified",
+  "upstream_inputs": {
+    "node_base_image": {
+      "display_tag": "24.20.0-bookworm-slim",
+      "dockerfile_sha256": "c0ef036f040b5d2d2d21e18532f791c97a7c77d376f03c2958970e1e7aed8026",
+      "repository": "docker.io/library/node",
+      "source_commit": "c4eb0858f5c522521768d5b6dc1d9f1631d4854d",
+      "top_descriptor": {
+        "bytes": 3929,
+        "digest": "sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e",
+        "media_type": "application/vnd.oci.image.index.v1+json"
+      }
+    },
+    "playwright_core": {
+      "bytes": 3123044,
+      "core_bundle_sha256": "549070af3acabb3efcc4f55bfe6210f9f7c2fcf633cf7eaa59bfe60719969171",
+      "debian12_native_deps_section_sha256": "3c0e9c1046fc2c061d9f943a938328441838c4a60003bd4246f7435987764da0",
+      "sha256": "208593d4e1bcd8f8fe5f869cad1cc332dc7f1d70dc1d58c102dc3ac36e30f26c",
+      "source_commit": "1b025d7e20a026371cd5f98ba0cdce48892737c8",
+      "url": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.63.0.tgz",
+      "version": "1.63.0"
+    }
+  }
+}

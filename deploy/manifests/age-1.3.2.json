@@ -1,0 +1,268 @@
+{
+  "schema_version": "deeptwin-tool-build-input-v1",
+  "status": "candidate_not_release_qualified",
+  "tool": "age",
+  "version": "1.3.2",
+  "tag": "v1.3.2",
+  "source_commit": "b74dce4cdbe35b5e5f66c06d9612b72f89028758",
+  "source": {
+    "url": "https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-source.tar.gz",
+    "bytes": 2402764,
+    "sha256": "c160d6f907992561413a28818f7d7585b35977cdbc449f3e96c4f8c99d22d21e"
+  },
+  "platform_archives": [
+    {
+      "platform": "linux/amd64",
+      "url": "https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz",
+      "bytes": 19405817,
+      "sha256": "cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10",
+      "sigsum_proof": {
+        "url": "https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz.proof",
+        "bytes": 1921,
+        "sha256": "98402fa59b4e433426156b4a7e74a32e44902e0434c61158f7de18ffc84f1f97",
+        "verified": true,
+        "exit_code": 0,
+        "verifier": "sigsum-verify@v0.13.1",
+        "named_policy": "sigsum-generic-2025-1"
+      },
+      "copied_members": [
+        {
+          "path": "age/age",
+          "mode": "0755",
+          "bytes": 6977014,
+          "sha256": "eb7dd1b518f0a307c99cd97782623c5321da049154b04acd2d98d21aa7bc9b2c"
+        },
+        {
+          "path": "age/age-keygen",
+          "mode": "0755",
+          "bytes": 4051278,
+          "sha256": "0a0009db842259d6717f7eeb30acb6b90d2a2eb924c6acd0a0db0ca1f1537899"
+        },
+        {
+          "path": "age/LICENSE",
+          "mode": "0644",
+          "bytes": 2975,
+          "sha256": "afbdb4e07a359499db587ae632815809b1fc1670a92d5449af112ce9a67833a2"
+        }
+      ]
+    },
+    {
+      "platform": "linux/arm64",
+      "url": "https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-arm64.tar.gz",
+      "bytes": 17771923,
+      "sha256": "6b8dc4333c53a5a57c9e5834e3a48f92605d7154014cd07269ff3327db5d37f4",
+      "sigsum_proof": {
+        "url": "https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-arm64.tar.gz.proof",
+        "bytes": 1921,
+        "sha256": "a174de2bf22a72efedd1a779cbee8b7d5605b41a25fae085807003b4abf5688e",
+        "verified": true,
+        "exit_code": 0,
+        "verifier": "sigsum-verify@v0.13.1",
+        "named_policy": "sigsum-generic-2025-1"
+      },
+      "copied_members": [
+        {
+          "path": "age/age",
+          "mode": "0755",
+          "bytes": 6540637,
+          "sha256": "41b072352f4561018949623c674d16ef704019b9108a9bbdbd21292efebfc94f"
+        },
+        {
+          "path": "age/age-keygen",
+          "mode": "0755",
+          "bytes": 3854433,
+          "sha256": "00b549cebf68302893fc489830f37e706712689ca877f84d85439d700d2997c7"
+        },
+        {
+          "path": "age/LICENSE",
+          "mode": "0644",
+          "bytes": 2975,
+          "sha256": "afbdb4e07a359499db587ae632815809b1fc1670a92d5449af112ce9a67833a2"
+        }
+      ]
+    }
+  ],
+  "github_attestation": {
+    "bundle_bytes": 11922,
+    "bundle_sha256": "d293afadb4d43125399ca23ed4d430cc60c431726a281acd1384f9c818592e65",
+    "repository": "FiloSottile/age",
+    "signer_workflow": "FiloSottile/age/.github/workflows/build.yml",
+    "source_ref": "refs/tags/v1.3.2",
+    "source_digest": "b74dce4cdbe35b5e5f66c06d9612b72f89028758",
+    "deny_self_hosted_runners": true,
+    "verified_platforms": [
+      "linux/amd64",
+      "linux/arm64"
+    ]
+  },
+  "sigsum_policy": {
+    "tool": "sigsum-verify@v0.13.1",
+    "named_policy": "sigsum-generic-2025-1",
+    "log_id": "c03f05182be9341e33b9edd5f3f8675b08332164640203e743f4285359cace47",
+    "release_signing_key_hash": "19d64e3c4a0d84a844111ee45b742bbdf991fe1ab745bd983f510183dc0cd449",
+    "policy_key_file_sha256": "ca60c0504ac65cc43ef180a34579ce6ed8f909b9136afef0ca42c88280f42cdc",
+    "submitter_public_keys": [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM1WpnEswJLPzvXJDiswowy48U+G+G1kmgwUE2eaRHZG",
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAz2WM5CyPLqiNjk7CLl4roDXwKhQ0QExXLebukZEZFS"
+    ],
+    "upstream_instructions_sha256": "08ce1309d237f1bff07872d3e776463867a4badb0c642e290b2122d3e6576339",
+    "verification_command": "sigsum-verify -k age-sigsum-key.pub -P sigsum-generic-2025-1 <proof-file> < <archive-file>",
+    "offline_verification_completed": true,
+    "verified_on": "2026-09-08",
+    "platform_results": [
+      {
+        "platform": "linux/amd64",
+        "exit_code": 0,
+        "output": "[INFO] Found builtin policy '\"sigsum-generic-2025-1\"'",
+        "output_bytes": 54,
+        "output_sha256": "81360ee331ca3f8e347e8a001953b71a93ebd4b3feb9c0457384ca398bb7dfd1"
+      },
+      {
+        "platform": "linux/arm64",
+        "exit_code": 0,
+        "output": "[INFO] Found builtin policy '\"sigsum-generic-2025-1\"'",
+        "output_bytes": 54,
+        "output_sha256": "81360ee331ca3f8e347e8a001953b71a93ebd4b3feb9c0457384ca398bb7dfd1"
+      }
+    ],
+    "verifier": {
+      "name": "sigsum-verify",
+      "version": "0.13.1",
+      "module": "sigsum.org/sigsum-go/cmd/sigsum-verify",
+      "module_sum": "h1:q3LCLow8dWmy2hivXhEwu2uNeCwigIbLMwS1+CD35Lo=",
+      "source_repository": "https://github.com/sigsum/sigsum-go",
+      "source_ref": "refs/tags/v0.13.1",
+      "source_commit": "c537b12e18bdc787b5ed300eea630f3cb4e988bf",
+      "build_command": "go install sigsum.org/sigsum-go/cmd/sigsum-verify@v0.13.1",
+      "build_platform": "darwin/arm64",
+      "cgo_enabled": true,
+      "binary_bytes": 3834114,
+      "binary_sha256": "a887cabb731f786f028a98eb2f11969d0944ebc51e2bda8b8a5fc5ad831ed51d",
+      "license": {
+        "spdx": "BSD-2-Clause",
+        "bytes": 1336,
+        "sha256": "6a1e3378dcd18baade08ac30ec4ba33b72d1b1697c00226ef85b9c9cefdb4e65"
+      },
+      "dependencies": [
+        {
+          "module": "github.com/pborman/getopt/v2",
+          "version": "v2.1.0",
+          "module_sum": "h1:eNfR+r+dWLdWmV8g5OlpyrTYHkhVNxHBdN2cCrJmOEA=",
+          "license_spdx": "BSD-3-Clause",
+          "license_bytes": 1473,
+          "license_sha256": "72e75695bea1800e8ec33dd4131dc99fb0ba825c147359071a9b262e2ad5dc71"
+        }
+      ]
+    },
+    "bootstrap_toolchain": {
+      "name": "go",
+      "version": "1.27.1",
+      "platform": "darwin/arm64",
+      "url": "https://go.dev/dl/go1.27.1.darwin-arm64.tar.gz",
+      "release_metadata_url": "https://go.dev/dl/?mode=json&include=all",
+      "bytes": 68100347,
+      "sha256": "ee215d57e0ec269c60cc9ceca68e6bda321ba9ee5afe24f4b0988703c2d87d12",
+      "official_release_metadata_hash_matched": true,
+      "license": {
+        "spdx": "BSD-3-Clause",
+        "bytes": 1453,
+        "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+      }
+    },
+    "assurance_boundary": "Sigsum verifies that the exact archives were authorized by an age project submitter key and accepted by the named transparency-log/witness policy. It does not prove reproducibility from the v1.3.2 source tag."
+  },
+  "embedded_modules": [
+    {
+      "name": "filippo.io/age",
+      "version": "v1.3.2",
+      "license_sha256": "c5d65279d02955c0fc2294ae417c3add650d228f4f5c82bd6d531fc26c89cd96"
+    },
+    {
+      "name": "filippo.io/edwards25519",
+      "version": "v1.2.0",
+      "license_sha256": "2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067"
+    },
+    {
+      "name": "filippo.io/hpke",
+      "version": "v0.4.0",
+      "license_sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+    },
+    {
+      "name": "filippo.io/nistec",
+      "version": "v0.0.4",
+      "license_sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+    },
+    {
+      "name": "golang.org/x/crypto",
+      "version": "v0.55.0",
+      "license_sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+    },
+    {
+      "name": "golang.org/x/sys",
+      "version": "v0.47.0",
+      "license_sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+    },
+    {
+      "name": "golang.org/x/term",
+      "version": "v0.45.0",
+      "license_sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+    }
+  ],
+  "forbidden_archive_members_in_final_image": [
+    "age/age-inspect",
+    "age/age-plugin-batchpass",
+    "age/age-plugin-pq",
+    "age/age-plugin-tag",
+    "age/age-plugin-tagpq"
+  ],
+  "runtime_license_bundle": {
+    "path": "deploy/manifests/age-1.3.2-runtime-licenses.json",
+    "bytes": 4811,
+    "sha256": "360bdcf1c972a858afbf72961ccf9e841e236b3ab5e01ef44cafe2c0ca0e9ee8",
+    "component_count": 8,
+    "unique_license_file_count": 3,
+    "legal_approval": false
+  },
+  "offline_runtime_verifier": {
+    "path": "deploy/locks/verify_age_runtime.py",
+    "bytes": 22176,
+    "sha256": "ba9f2ae9b66c38958d87843efffbe89f28922f3d7c6e4119990448b44958ef1f",
+    "test_path": "deploy/tests/test_age_runtime.py",
+    "test_bytes": 5492,
+    "test_sha256": "89e4cff1027a16f1ce53a16834bddcc9eb03380f52c0e87e7a57ad99e1c0cb1c",
+    "offline_test_count": 7,
+    "status": "pass"
+  },
+  "native_runtime_canary": {
+    "path": "deploy/tests/age_runtime_canary.py",
+    "bytes": 12127,
+    "sha256": "a902788d1cafd1999693c22b38d92faf23119c48886aa86383f743261c0df55b",
+    "platforms_passed": [
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "result_path": "specs/001-autonomous-release/evidence/age-1.3.2-native-results.json",
+    "result_bytes": 6316,
+    "result_sha256": "0edcc54611d4d12e1eed627f233faf25bdbd4df0193f4d9e5f8fadb7389707fa",
+    "evidence_path": "specs/001-autonomous-release/evidence/age-1.3.2-runtime-qualification.md",
+    "evidence_bytes": 5090,
+    "evidence_sha256": "12af512c05cf814632ad10fc7a8fe390ca2d873b9eb2c7cb29284f7fcc37e7c3",
+    "production_bridge_implemented": false
+  },
+  "runtime_profile": {
+    "guarantee": "reachability_denial_not_physical_feature_removal",
+    "network": "none",
+    "shell": false,
+    "caller_argv": false,
+    "allowed_recipient": "native_x25519_age1_only",
+    "allowed_identity": "native_x25519_AGE-SECRET-KEY-1_only",
+    "secret_transport": "owned_descriptor",
+    "negative_tests_completed": true
+  },
+  "release_blockers": [
+    "Implement the restricted X25519-only production bridge as the sole reachable entrypoint; the upstream binary still contains plugin client code and the qualification caller is not product integration.",
+    "Encode the verified archive, Sigsum, Go source/license and native checks in hermetic release CI.",
+    "Obtain T084 legal approval for age, the Go runtime and embedded-module notices.",
+    "Build the T081 final image and repeat exact inventory, non-root, read-only, no-network and PATH/plugin rejection checks against it."
+  ]
+}

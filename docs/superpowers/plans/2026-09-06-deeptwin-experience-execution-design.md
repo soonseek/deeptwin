@@ -1,5 +1,10 @@
 # DeepTwin Experience and Execution Detailed Design Implementation Plan
 
+> **역사적 계획 경계:** 이 계획은 초기 UI/실행 설계 이력이다. 현재 제품·배포·인증 권위는
+> 헌법 3.0.1과 `specs/001-autonomous-release/`에 있으며, DeepTwin의 공식 제품 표면은 자체
+> 호스팅 인스턴스의 브라우저 UI다. 네이티브 앱/런처 또는 최종사용자 CLI를 이 계획에서
+> 추론하지 않는다.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 승인된 통합 UI 원칙을 실제 화면 제작에 필요한 구체 조작과 독립 실행·도구·기록의 검증 계약으로 구체화하고, 화면 검토를 먼저 시작할 수 있는 후속 작업을 만든다.
@@ -12,7 +17,7 @@
 
 ## 범위·사용자 확인·현재 상태
 
-계획 ID: EXPERIENCE-EXECUTION-DESIGN-001 · 작성일: 2026-09-06 · 상태: Task 1 완료. Task 2에서 첫 시제품 기본 골격 A와 UI §9.3 제작 범위 확인 뒤 코드 계획·시제품 제작·에이전트 동작 검사를 완료했다. 사용자 화면 검토는 대기 중이다. 실제 엔진과 Task 3–6은 미실행.
+계획 ID: EXPERIENCE-EXECUTION-DESIGN-001 · 작성일: 2026-09-06 · 상태: Task 1과 Task 2의 시제품 제작·에이전트 동작 검사는 완료했으나 후속 사용자 스크린샷 검토에서 제품 정체성 불일치가 확인됐다. 그래프 기반 환경 비교, 실행 단계·이력별 다형식 산출물 관제가 UI와 코드 계획에서 축소됐으므로 기존안을 기반으로 다음 구현을 진행하지 않는다. 관제 환경 기반 LLMOps와 철학 렌즈 기반 DeepTwin의 연결을 먼저 재검토한다. 새 세부 설계와 실제 엔진·Task 3–6은 미실행.
 
 사용자는 `f55566a`의 통합 UI 문서를 기준으로 다음 상세 설계 계획으로 넘어가는 질문에 “응”이라고 답했다. 이는 통합 원칙을 다음 설계의 기준으로 삼는 확인이다. 이후 별도 질문에서 첫 시제품의 A 기본 골격만 선택했다. 기본 모드, 대안 입력/자동화 조작, 구독 연결 기술·실행 권한을 일괄 선택한 것은 아니다.
 

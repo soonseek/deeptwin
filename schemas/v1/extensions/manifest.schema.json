@@ -1,0 +1,511 @@
+{
+  "$comment": "Structural data only. Schema validity, discovery, import, or a source label never grants installation, execution, secret, network, human, or deployment authority.",
+  "$id": "urn:deeptwin:schemas:v1:extensions:manifest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "entrypoint": {
+            "properties": {
+              "protocol": {
+                "const": "definition-v1"
+              }
+            },
+            "required": [
+              "protocol"
+            ]
+          }
+        },
+        "required": [
+          "entrypoint"
+        ]
+      },
+      "then": {
+        "allOf": [
+          {
+            "properties": {
+              "artifact": {
+                "properties": {
+                  "type": {
+                    "const": "definition"
+                  }
+                },
+                "required": [
+                  "type"
+                ]
+              }
+            },
+            "required": [
+              "artifact"
+            ]
+          },
+          {
+            "properties": {
+              "extension_kind": {
+                "enum": [
+                  "lens",
+                  "evaluator"
+                ]
+              }
+            },
+            "required": [
+              "extension_kind"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "artifact": {
+            "properties": {
+              "type": {
+                "const": "definition"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        },
+        "required": [
+          "artifact"
+        ]
+      },
+      "then": {
+        "properties": {
+          "entrypoint": {
+            "properties": {
+              "protocol": {
+                "const": "definition-v1"
+              }
+            },
+            "required": [
+              "protocol"
+            ]
+          }
+        },
+        "required": [
+          "entrypoint"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "extension_kind": {
+            "enum": [
+              "lens"
+            ]
+          }
+        },
+        "required": [
+          "extension_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "entrypoint": {
+            "properties": {
+              "protocol": {
+                "const": "definition-v1"
+              }
+            },
+            "required": [
+              "protocol"
+            ]
+          }
+        },
+        "required": [
+          "entrypoint"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "extension_kind": {
+            "enum": [
+              "storage",
+              "credential_vault"
+            ]
+          }
+        },
+        "required": [
+          "extension_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "entrypoint": {
+            "properties": {
+              "protocol": {
+                "const": "deployment-port-v1"
+              }
+            },
+            "required": [
+              "protocol"
+            ]
+          }
+        },
+        "required": [
+          "entrypoint"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "entrypoint": {
+            "properties": {
+              "protocol": {
+                "const": "managed-provider-rpc-v1"
+              }
+            },
+            "required": [
+              "protocol"
+            ]
+          }
+        },
+        "required": [
+          "entrypoint"
+        ]
+      },
+      "then": {
+        "properties": {
+          "extension_kind": {
+            "enum": [
+              "provider"
+            ]
+          }
+        },
+        "required": [
+          "extension_kind"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "artifact": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "definition",
+            "image",
+            "package"
+          ],
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "compatibility": {
+      "additionalProperties": false,
+      "properties": {
+        "extension_api": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+          "type": "string"
+        },
+        "framework_max": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+          "type": "string"
+        },
+        "framework_min": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+          "type": "string"
+        },
+        "schema_versions": {
+          "items": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "extension_api",
+        "framework_min",
+        "framework_max",
+        "schema_versions"
+      ],
+      "type": "object"
+    },
+    "config_schema": {
+      "properties": {
+        "type": {
+          "enum": [
+            "object",
+            "array",
+            "string",
+            "integer",
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "declared_grants": {
+      "items": {
+        "maxLength": 256,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 64,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "declared_resources": {
+      "items": {
+        "maxLength": 256,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 64,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "entrypoint": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$",
+          "type": "string"
+        },
+        "protocol": {
+          "enum": [
+            "definition-v1",
+            "deployment-port-v1",
+            "managed-provider-rpc-v1",
+            "worker-json-v1"
+          ],
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol",
+        "name"
+      ],
+      "type": "object"
+    },
+    "extension_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$",
+      "type": "string"
+    },
+    "extension_kind": {
+      "enum": [
+        "artifact_codec",
+        "credential_vault",
+        "evaluator",
+        "export_sink",
+        "lens",
+        "model_runtime",
+        "provider",
+        "storage",
+        "tool"
+      ],
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "extension_version": {
+      "maxLength": 32,
+      "minLength": 1,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    },
+    "filesystem_needs": {
+      "items": {
+        "maxLength": 256,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 64,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "input_schema": {
+      "properties": {
+        "type": {
+          "enum": [
+            "object",
+            "array",
+            "string",
+            "integer",
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "isolation_profile": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$",
+      "type": "string"
+    },
+    "license_expression": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "migration_policy": {
+      "enum": [
+        "compatible",
+        "none",
+        "required"
+      ],
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "network_needs": {
+      "items": {
+        "maxLength": 256,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 64,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "output_schema": {
+      "properties": {
+        "type": {
+          "enum": [
+            "object",
+            "array",
+            "string",
+            "integer",
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "extension-manifest-v1",
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "secret_needs": {
+      "items": {
+        "maxLength": 256,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 64,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "built_in",
+            "operator_deployment",
+            "third_party"
+          ],
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "locator": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "type": "string"
+        },
+        "provenance_sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "locator",
+        "provenance_sha256"
+      ],
+      "type": "object"
+    },
+    "uninstall_policy": {
+      "enum": [
+        "block_if_bound",
+        "retain_records"
+      ],
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "extension_id",
+    "extension_version",
+    "extension_kind",
+    "artifact",
+    "source",
+    "license_expression",
+    "compatibility",
+    "entrypoint",
+    "config_schema",
+    "input_schema",
+    "output_schema",
+    "declared_grants",
+    "declared_resources",
+    "network_needs",
+    "filesystem_needs",
+    "secret_needs",
+    "isolation_profile",
+    "migration_policy",
+    "uninstall_policy"
+  ],
+  "title": "DeepTwin extension manifest v1",
+  "type": "object"
+}

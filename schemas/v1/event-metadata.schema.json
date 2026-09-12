@@ -1,0 +1,1664 @@
+{
+  "$comment": "Select the exact event type through #/$defs/<category.action>. This document is a payload schema registry, not the EventEnvelope or a substitute for authenticated emission or private-detail access. All metadata observations are optional; absence means unknown.",
+  "$defs": {
+    "alternative.saved": {
+      "additionalProperties": false,
+      "properties": {
+        "partial": {
+          "type": "boolean"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "approval.decided": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "enum": [
+            "approved",
+            "rejected",
+            "expired"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "approval.requested": {
+      "additionalProperties": false,
+      "properties": {
+        "approval_kind": {
+          "enum": [
+            "design",
+            "run",
+            "action",
+            "promotion",
+            "rollback"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "artifact.missing": {
+      "additionalProperties": false,
+      "properties": {
+        "reason_code": {
+          "enum": [
+            "missing",
+            "deleted",
+            "corrupt",
+            "not_recorded",
+            "access_denied",
+            "outcome_unknown",
+            "storage_failed",
+            "unsupported",
+            "not_supplied"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "artifact.sealed": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "attempt.dispatched": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_no": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "attempt.reserved": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_no": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "attempt.terminal": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outcome": {
+          "enum": [
+            "succeeded",
+            "failed",
+            "denied",
+            "timed_out",
+            "cancelled",
+            "outcome_unknown"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "backup.created": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "object_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "verified": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "backup.verified": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "object_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "verified": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "candidate.created": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "candidate.frozen": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "catalog.invalidated": {
+      "additionalProperties": false,
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "model_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "catalog.refreshed": {
+      "additionalProperties": false,
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "model_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "connection.changed": {
+      "additionalProperties": false,
+      "properties": {
+        "auth_mode": {
+          "enum": [
+            "subscription",
+            "api"
+          ],
+          "type": "string"
+        },
+        "key_present": {
+          "type": "boolean"
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "claude"
+          ],
+          "type": "string"
+        },
+        "ready": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "connection.checked": {
+      "additionalProperties": false,
+      "properties": {
+        "auth_mode": {
+          "enum": [
+            "subscription",
+            "api"
+          ],
+          "type": "string"
+        },
+        "key_present": {
+          "type": "boolean"
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "claude"
+          ],
+          "type": "string"
+        },
+        "ready": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "design.proposed": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "design.repaired": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "design.selected": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "difference.observed": {
+      "additionalProperties": false,
+      "properties": {
+        "difference_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "evaluation.result": {
+      "additionalProperties": false,
+      "properties": {
+        "completed_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "failed_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "validity": {
+          "enum": [
+            "valid",
+            "invalid",
+            "pending"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "evaluation.started": {
+      "additionalProperties": false,
+      "properties": {
+        "case_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "round_index": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "export.created": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "gap_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "object_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "redacted_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "export.previewed": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "gap_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "object_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "redacted_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "extension.binding_changed": {
+      "additionalProperties": false,
+      "properties": {
+        "extension_kind": {
+          "enum": [
+            "provider",
+            "model_runtime",
+            "tool",
+            "artifact_codec",
+            "lens",
+            "evaluator",
+            "storage",
+            "credential_vault",
+            "export_sink"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trust_tier": {
+          "enum": [
+            "deployment_trusted",
+            "runtime_worker",
+            "definition_package",
+            "managed_provider_runner"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "extension.compatibility_failed": {
+      "additionalProperties": false,
+      "properties": {
+        "extension_kind": {
+          "enum": [
+            "provider",
+            "model_runtime",
+            "tool",
+            "artifact_codec",
+            "lens",
+            "evaluator",
+            "storage",
+            "credential_vault",
+            "export_sink"
+          ],
+          "type": "string"
+        },
+        "reason_code": {
+          "enum": [
+            "framework",
+            "extension_api",
+            "schema",
+            "runtime",
+            "platform",
+            "permission",
+            "expired",
+            "bytes"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trust_tier": {
+          "enum": [
+            "deployment_trusted",
+            "runtime_worker",
+            "definition_package",
+            "managed_provider_runner"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "extension.discovered": {
+      "additionalProperties": false,
+      "properties": {
+        "extension_kind": {
+          "enum": [
+            "provider",
+            "model_runtime",
+            "tool",
+            "artifact_codec",
+            "lens",
+            "evaluator",
+            "storage",
+            "credential_vault",
+            "export_sink"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trust_tier": {
+          "enum": [
+            "deployment_trusted",
+            "runtime_worker",
+            "definition_package",
+            "managed_provider_runner"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "extension.enabled": {
+      "additionalProperties": false,
+      "properties": {
+        "extension_kind": {
+          "enum": [
+            "provider",
+            "model_runtime",
+            "tool",
+            "artifact_codec",
+            "lens",
+            "evaluator",
+            "storage",
+            "credential_vault",
+            "export_sink"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trust_tier": {
+          "enum": [
+            "deployment_trusted",
+            "runtime_worker",
+            "definition_package",
+            "managed_provider_runner"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "extension.failed": {
+      "additionalProperties": false,
+      "properties": {
+        "extension_kind": {
+          "enum": [
+            "provider",
+            "model_runtime",
+            "tool",
+            "artifact_codec",
+            "lens",
+            "evaluator",
+            "storage",
+            "credential_vault",
+            "export_sink"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trust_tier": {
+          "enum": [
+            "deployment_trusted",
+            "runtime_worker",
+            "definition_package",
+            "managed_provider_runner"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "extension.qualified": {
+      "additionalProperties": false,
+      "properties": {
+        "extension_kind": {
+          "enum": [
+            "provider",
+            "model_runtime",
+            "tool",
+            "artifact_codec",
+            "lens",
+            "evaluator",
+            "storage",
+            "credential_vault",
+            "export_sink"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trust_tier": {
+          "enum": [
+            "deployment_trusted",
+            "runtime_worker",
+            "definition_package",
+            "managed_provider_runner"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "extension.removed": {
+      "additionalProperties": false,
+      "properties": {
+        "extension_kind": {
+          "enum": [
+            "provider",
+            "model_runtime",
+            "tool",
+            "artifact_codec",
+            "lens",
+            "evaluator",
+            "storage",
+            "credential_vault",
+            "export_sink"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trust_tier": {
+          "enum": [
+            "deployment_trusted",
+            "runtime_worker",
+            "definition_package",
+            "managed_provider_runner"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "extension.revoked": {
+      "additionalProperties": false,
+      "properties": {
+        "extension_kind": {
+          "enum": [
+            "provider",
+            "model_runtime",
+            "tool",
+            "artifact_codec",
+            "lens",
+            "evaluator",
+            "storage",
+            "credential_vault",
+            "export_sink"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trust_tier": {
+          "enum": [
+            "deployment_trusted",
+            "runtime_worker",
+            "definition_package",
+            "managed_provider_runner"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "extension.staged": {
+      "additionalProperties": false,
+      "properties": {
+        "extension_kind": {
+          "enum": [
+            "provider",
+            "model_runtime",
+            "tool",
+            "artifact_codec",
+            "lens",
+            "evaluator",
+            "storage",
+            "credential_vault",
+            "export_sink"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trust_tier": {
+          "enum": [
+            "deployment_trusted",
+            "runtime_worker",
+            "definition_package",
+            "managed_provider_runner"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "extension.suspended": {
+      "additionalProperties": false,
+      "properties": {
+        "extension_kind": {
+          "enum": [
+            "provider",
+            "model_runtime",
+            "tool",
+            "artifact_codec",
+            "lens",
+            "evaluator",
+            "storage",
+            "credential_vault",
+            "export_sink"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trust_tier": {
+          "enum": [
+            "deployment_trusted",
+            "runtime_worker",
+            "definition_package",
+            "managed_provider_runner"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "extension.verified": {
+      "additionalProperties": false,
+      "properties": {
+        "extension_kind": {
+          "enum": [
+            "provider",
+            "model_runtime",
+            "tool",
+            "artifact_codec",
+            "lens",
+            "evaluator",
+            "storage",
+            "credential_vault",
+            "export_sink"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trust_tier": {
+          "enum": [
+            "deployment_trusted",
+            "runtime_worker",
+            "definition_package",
+            "managed_provider_runner"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "handoff.acknowledged": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "omitted_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "supplied_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "handoff.delivered": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "omitted_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "supplied_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "hypothesis.updated": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "ingestion.completed": {
+      "additionalProperties": false,
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "omitted_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "supplied_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "ingestion.failed": {
+      "additionalProperties": false,
+      "properties": {
+        "reason_code": {
+          "enum": [
+            "missing",
+            "deleted",
+            "corrupt",
+            "not_recorded",
+            "access_denied",
+            "outcome_unknown",
+            "storage_failed",
+            "unsupported",
+            "not_supplied"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "inquiry.declined": {
+      "additionalProperties": false,
+      "properties": {
+        "deferred": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "inquiry.evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "inquiry.frozen": {
+      "additionalProperties": false,
+      "properties": {
+        "prediction_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "question_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "lens.abstained": {
+      "additionalProperties": false,
+      "properties": {
+        "reason_code": {
+          "enum": [
+            "out_of_scope",
+            "insufficient_evidence",
+            "conflict",
+            "unqualified",
+            "not_applicable"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "lens.composed": {
+      "additionalProperties": false,
+      "properties": {
+        "component_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "lens.selected": {
+      "additionalProperties": false,
+      "properties": {
+        "component_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "loop.stopped": {
+      "additionalProperties": false,
+      "properties": {
+        "patience_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason_code": {
+          "enum": [
+            "plateau_reached",
+            "budget_exhausted",
+            "below_floor_exhausted",
+            "evidence_blocked",
+            "safety_stop",
+            "human_stop",
+            "lineage_changed"
+          ],
+          "type": "string"
+        },
+        "round_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "loop.updated": {
+      "additionalProperties": false,
+      "properties": {
+        "best_changed": {
+          "type": "boolean"
+        },
+        "patience_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "round_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "memory.read": {
+      "additionalProperties": false,
+      "properties": {
+        "considered_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "selected_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "supplied_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "memory.written": {
+      "additionalProperties": false,
+      "properties": {
+        "item_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "model.mismatch": {
+      "additionalProperties": false,
+      "properties": {
+        "auth_mode": {
+          "enum": [
+            "subscription",
+            "api"
+          ],
+          "type": "string"
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "claude"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "model.selected": {
+      "additionalProperties": false,
+      "properties": {
+        "auth_mode": {
+          "enum": [
+            "subscription",
+            "api"
+          ],
+          "type": "string"
+        },
+        "provider": {
+          "enum": [
+            "codex",
+            "claude"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "promotion.applied": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "promotion.failed": {
+      "additionalProperties": false,
+      "properties": {
+        "reason_code": {
+          "enum": [
+            "missing",
+            "deleted",
+            "corrupt",
+            "not_recorded",
+            "access_denied",
+            "outcome_unknown",
+            "storage_failed",
+            "unsupported",
+            "not_supplied"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "record.gap": {
+      "additionalProperties": false,
+      "properties": {
+        "reason_code": {
+          "enum": [
+            "missing",
+            "deleted",
+            "corrupt",
+            "not_recorded",
+            "access_denied",
+            "outcome_unknown",
+            "storage_failed",
+            "unsupported",
+            "not_supplied"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "recovery.reconciled": {
+      "additionalProperties": false,
+      "properties": {
+        "recovered_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unknown_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "retention.changed": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "retention.deleted": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "object_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "retention.pruned": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "object_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "review.completed": {
+      "additionalProperties": false,
+      "properties": {
+        "failed_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "gate_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unknown_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "validity": {
+          "enum": [
+            "valid",
+            "invalid",
+            "not_checked"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "review.invalid": {
+      "additionalProperties": false,
+      "properties": {
+        "failed_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "gate_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unknown_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "validity": {
+          "enum": [
+            "valid",
+            "invalid",
+            "not_checked"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "rollback.applied": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "run.started": {
+      "additionalProperties": false,
+      "properties": {
+        "edge_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "node_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "run.stopped": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason_code": {
+          "enum": [
+            "completed",
+            "plateau",
+            "budget_exhausted",
+            "below_quality_floor",
+            "cancelled",
+            "safety_halt",
+            "outcome_unknown",
+            "infrastructure_failure"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "security.denied": {
+      "additionalProperties": false,
+      "properties": {
+        "reason_code": {
+          "enum": [
+            "missing",
+            "deleted",
+            "corrupt",
+            "not_recorded",
+            "access_denied",
+            "outcome_unknown",
+            "storage_failed",
+            "unsupported",
+            "not_supplied"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "service_client.created": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "scope_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "service_client.denied": {
+      "additionalProperties": false,
+      "properties": {
+        "reason_code": {
+          "enum": [
+            "credential",
+            "expired",
+            "revoked",
+            "network",
+            "scope",
+            "owner",
+            "identifier",
+            "conflict",
+            "expiry",
+            "name",
+            "state",
+            "internal"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "service_client.revoked": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "scope_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "service_client.rotated": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "scope_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "setup.component_progress": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "completed_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "setup.failed": {
+      "additionalProperties": false,
+      "properties": {
+        "reason_code": {
+          "enum": [
+            "missing",
+            "deleted",
+            "corrupt",
+            "not_recorded",
+            "access_denied",
+            "outcome_unknown",
+            "storage_failed",
+            "unsupported",
+            "not_supplied"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "setup.started": {
+      "additionalProperties": false,
+      "properties": {
+        "component_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "source.stored": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "speech.segment": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "final": {
+          "type": "boolean"
+        },
+        "segment_index": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "speech.started": {
+      "additionalProperties": false,
+      "properties": {
+        "local": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "speech.stopped": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "segment_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "tool.requested": {
+      "additionalProperties": false,
+      "properties": {
+        "effect_class": {
+          "enum": [
+            "read",
+            "local_write",
+            "external_write"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "tool.terminal": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outcome": {
+          "enum": [
+            "succeeded",
+            "failed",
+            "denied",
+            "timed_out",
+            "cancelled",
+            "outcome_unknown"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "understanding.completed": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "understanding.requested": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "update.failed": {
+      "additionalProperties": false,
+      "properties": {
+        "reason_code": {
+          "enum": [
+            "missing",
+            "deleted",
+            "corrupt",
+            "not_recorded",
+            "access_denied",
+            "outcome_unknown",
+            "storage_failed",
+            "unsupported",
+            "not_supplied"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "update.started": {
+      "additionalProperties": false,
+      "properties": {
+        "component_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "validation.completed": {
+      "additionalProperties": false,
+      "properties": {
+        "failed_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "passed_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unknown_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "work.created": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "work.revised": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$id": "urn:deeptwin:schemas:v1:event-metadata",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DeepTwin version 1 public event metadata payloads"
+}

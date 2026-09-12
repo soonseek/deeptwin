@@ -1,0 +1,95 @@
+{
+  "schema_version": "deeptwin-service-python-roots-v1",
+  "status": "candidate_not_release_qualified",
+  "python": {
+    "implementation": "CPython",
+    "version": "3.12.14",
+    "abi": "cp312",
+    "glibc_floor": "2.28",
+    "qualified_base": null
+  },
+  "target_platforms": [
+    "linux/amd64",
+    "linux/arm64"
+  ],
+  "services": {
+    "control-plane": [
+      "fastapi==0.141.1",
+      "uvicorn==0.52.4",
+      "pydantic==2.13.5",
+      "argon2-cffi==25.1.0"
+    ],
+    "runtime-and-evaluation-workers": [
+      "langgraph==1.2.11",
+      "langgraph-checkpoint-sqlite==3.1.1",
+      "langchain-core==1.6.2",
+      "sqlite-vec==0.1.9"
+    ],
+    "credentialed-provider-gateway": [
+      "anthropic==1.4.0",
+      "httpx2==2.12.0",
+      "httpx==0.28.1",
+      "PyNaCl==1.6.2"
+    ],
+    "document-worker": [
+      "python-docx==1.2.0",
+      "pypdf==6.17.0",
+      "pypdfium2==5.13.0",
+      "Pillow==12.3.0",
+      "reportlab==5.0.1"
+    ],
+    "speech-worker-downstream-inputs": [
+      "deeptwin-faster-whisper==1.2.1+deeptwin.1",
+      "ctranslate2==4.8.2",
+      "tokenizers==0.22.1",
+      "huggingface-hub==1.0.1",
+      "tqdm==4.67.1",
+      "numpy==2.3.4",
+      "PyYAML==6.0.3"
+    ]
+  },
+  "non_python_services": {
+    "browser-worker": [
+      "nodejs==24.20.0",
+      "playwright-core==1.63.0",
+      "chromium-headless-shell==153.0.8010.12-revision-1243"
+    ]
+  },
+  "derived_build_inputs": {
+    "speech-worker": {
+      "upstream": "faster-whisper==1.2.1",
+      "upstream_sha256": "79a66ad50688c0b794dd501dc340a736992a6342f7f95e5811be60b5224a26a7",
+      "builder": "build_downstream_faster_whisper.py",
+      "builder_sha256": "422e02b0f2d10e967b11bfd7176c0ccd2fdfda2371e3075032ec279666aea36d",
+      "verifier": "verify_downstream_faster_whisper.py",
+      "verifier_sha256": "a551ad7c57279f2ab05ded7b3ddef6be46007b7bd86843163faf7d8ad0a0651c",
+      "output_sha256": "145997e6be94b4f95d8792ec6675889d7fd39589f8f8fff710d8e13bd47cd956"
+    }
+  },
+  "excluded_from_web_release": {
+    "historical_native_desktop": [
+      "bottle",
+      "proxy-tools",
+      "pyobjc-core",
+      "pyobjc-framework-Cocoa",
+      "pyobjc-framework-Quartz",
+      "pyobjc-framework-Security",
+      "pyobjc-framework-UniformTypeIdentifiers",
+      "pyobjc-framework-WebKit",
+      "pywebview"
+    ],
+    "speech_not_installed": [
+      "av",
+      "onnxruntime"
+    ]
+  },
+  "notes": [
+    "The control plane currently imports ingestion code; T018/T044 must prove the final image does not retain document-worker packages by accident.",
+    "LangSmith remains a transitive package but cloud tracing is disabled and is not a DeepTwin service.",
+    "The pristine faster-whisper wheel is a verified build input only. The deterministic downstream PCM-only wheel rejects media, in-memory/remote model, tokenizer-download and VAD paths, and its two-build/PCM-boundary checks pass locally; native CPython 3.12 Linux dual-architecture qualification remains required.",
+    "The tokenizers distribution still declares huggingface-hub, so the speech closure retains a pinned cohort even though DeepTwin's patched call paths and networkless worker cannot use remote loading.",
+    "The release wheel floor is glibc 2.28 because the pinned hf-xet arm64 wheel requires manylinux_2_28; the qualified Bookworm base provides glibc 2.36, so this narrows the declared artifact floor without changing the supported image profile.",
+    "Playwright Python 1.63.0 is not published on PyPI. The browser worker therefore moves to the official Node 1.63.0 driver; exact Node base and npm closure remain pending before release qualification.",
+    "Final DeepTwin service image indexes are T081 outputs, not T089 build inputs."
+  ]
+}
