@@ -162,7 +162,7 @@ do not turn unknown external readiness into a promised date.
   static pair mounts and a root-only Linux canary; its focused suites pass 150 (one honest
   Linux-only skip, 21 subtests) and the canary refuses honestly on non-Linux hosts, while the
   actual Linux/root canary run and bounded artifact streaming remain open — see
-  evidence/worker-ipc-foundation-t018f1.md (2026-09-12). T018 remains open for
+  evidence/worker-ipc-foundation-t018f1.md (2026-09-12). The bounded digest/chunk/receiver-credit artifact stream state machine (offer/credit/chunk/end/accept, cancellation, owned scratch) is also implemented transport-agnostically with 26 unit tests; it is not yet wired into the coordinator or run over a real socket — see evidence/artifact-stream-t018f1.md (2026-09-12). T018 remains open for
   actual Linux UID/peer paths, service images/initializers, actual worker implementations, bounded
   artifact streaming and semantic graph execution, runtime container/network/mount/browser
   enforcement including non-root Chromium sandbox/seccomp, and both clean deployment profiles.
