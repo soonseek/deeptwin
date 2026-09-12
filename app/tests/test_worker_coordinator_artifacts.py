@@ -750,3 +750,69 @@ def test_a_source_failure_after_the_request_frame_is_outcome_unknown(
     assert failure.value.dispatch_effect == "outcome_unknown"
     assert subject.ledger.pending_permit_count == 0
     assert isinstance(worker_result.get("receive"), StreamCancelled)
+
+
+def test_cas_to_cas_byte_route_through_a_worker(subject, tmp_path, monkeypatch):
+    """Store -> stream -> worker -> stream -> store, all digest-first."""
+
+    from app.runtime.artifact_cas import StoredArtifactSource, store_received_artifact
+
+    coordinator = stream_coordinator(subject, tmp_path / "pair")
+    source_bytes = bytes((i * 17) % 256 for i in range(25_000))
+    input_blob = subject.domain.put_blob(source_bytes, purpose="operational")
+    expected_inputs = descriptors_for(subject.permit.command_id, source_bytes)
+    cas_inputs = (
+        worker_module.DispatchArtifactInput(
+            descriptor=expected_inputs[0],
+            source=StoredArtifactSource(
+                subject.domain, input_blob, expected_inputs[0]
+            ),
+        ),
+    )
+
+    def worker(sock, codec):
+        frame = codec.read(sock, deadline=broker.Deadline.after_ms(5_000))
+        command_id = frame.envelope.message_id
+        transport = FrameCodecTransport(
+            codec,
+            sock,
+            message_type="artifact_stream",
+            correlation_id=command_id,
+            deadline=broker.Deadline.after_ms(5_000),
+        )
+        sink = BytesSink()
+        receive_batch(transport, list(expected_inputs), [sink])
+        transformed = bytes(reversed(sink.value))
+        send_batch(
+            transport,
+            output_batch(command_id, transformed, media_type="application/pdf"),
+            [BytesSource(transformed)],
+        )
+        codec.write(
+            sock,
+            message_id=str(uuid4()),
+            correlation_id=command_id,
+            message_type="completed",
+            payload=b"{}",
+            deadline=broker.Deadline.after_ms(5_000),
+        )
+
+    harness = install_real_transport(monkeypatch, worker)
+    response = coordinator.exchange(
+        subject.permit,
+        subject.capability,
+        deadline=deadline(),
+        artifact_inputs=cas_inputs,
+        artifact_output_policy=output_policy(subject.permit.command_id),
+    )
+    join_worker(harness)
+
+    assert harness.worker_errors == []
+    assert len(response.artifacts) == 1
+    output_blob = store_received_artifact(
+        subject.domain, response.artifacts[0], purpose="operational"
+    )
+    assert (
+        subject.domain.read_blob(output_blob, purpose="operational")
+        == bytes(reversed(source_bytes))
+    )

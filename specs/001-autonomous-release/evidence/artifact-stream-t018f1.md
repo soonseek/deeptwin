@@ -266,11 +266,57 @@ a93ac51863c6472ebef403b6072d63118db089151b501d4fd402b5655973d871  app/tests/test
 e96f539ccfa077fd0382d1f23f55725ab6e4625da15627f3e7758c23b231ed48  app/tests/test_worker_artifact_stream.py
 ```
 
+## CAS binding (2026-09-12)
+
+`app/runtime/artifact_cas.py` binds the stream's endpoints to the DomainStore
+content-addressed store, closing the "opens the exact immutable object" and "import as
+immutable content" ends of the byte route:
+
+- `StoredArtifactSource(domain_store, blob, descriptor)`: a forward-only `ArtifactSource`
+  over one registered `BlobRef`. Construction fails unless the stream descriptor's
+  sha256/declared_size exactly equal the blob's registered identity; the first read loads
+  the bytes through `DomainStore.read_blob`, which independently re-verifies registration,
+  file safety, size and digest. A storage failure surfaces as a terminal
+  `ArtifactStreamError`, so `send_artifact` cancels toward the receiver (F1 barrier).
+- `store_received_artifact(domain_store, artifact, purpose)`: imports one
+  `ReceivedWorkerArtifact` through `DomainStore.put_blob` (which stages, re-hashes and
+  fsyncs under the owned 0600 CAS partition) and cross-checks the resulting `BlobRef`
+  identity against the stream descriptor before returning it.
+
+Tests: `app/tests/test_artifact_cas.py` (5 — exact blob bytes over a threaded stream,
+identity-mismatch/type rejection before any transport, a missing registered blob cancelling
+the stream terminally, import-and-read-back, import type guards) plus an end-to-end
+coordinator test (`test_cas_to_cas_byte_route_through_a_worker`) driving store → stream →
+worker transform → stream → store over the real authenticated socketpair codecs.
+
+```text
+python -m pytest -q app/tests/test_artifact_cas.py app/tests/test_worker_coordinator_artifacts.py
+20 passed
+
+ruff check app/runtime/artifact_cas.py (and both test files)
+All checks passed
+
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-12)
+2,996 passed, 2 skipped, 369 subtests passed, 1 known Starlette/AnyIO deprecation warning
+```
+
+Frozen identities (SHA-256):
+
+```text
+bedb4b557e6885e15e7d5bf94e2b0b1e5584a105ab6faea073267cc8163e622b  app/runtime/artifact_cas.py
+2fc2eff140771164934454550e0e95e702e2e775906b3febd9b35ced0287d59d  app/tests/test_artifact_cas.py
+a8ae4b5338bb3bb756ebafeaabd8df019836f92d3b8426850dc9e0761ad8b8fe  app/tests/test_worker_coordinator_artifacts.py
+```
+
+Note: `DomainStore` bounds blobs at 16 MiB (`DEFAULT_MAX_BLOB_BYTES`), tighter than the
+stream's 64 MiB ceiling; the store bound governs CAS-backed transfers.
+
 ## Not claimed
 
 `worker_dispatch.py` does not yet plumb `artifact_inputs`/`artifact_output_policy` from any
-semantic caller, sources and sinks are in-memory rather than CAS-backed store reads/writes,
-and no Linux/root canary has exercised the stream over a real UDS with SO_PEERCRED — the
-2026-09-12 attempt remains blocked by the host's Docker content-store I/O fault, not by the
-code. The audit's fix-verification (this remediation) has not itself been independently
-re-audited, though each finding carries a reproducing regression test.
+semantic caller (the CAS adapters are wired only through tests, not a semantic dispatch
+path), worker-side sinks in production will need owned-scratch staging on the worker's own
+container, and no Linux/root canary has exercised the stream over a real UDS with
+SO_PEERCRED — the 2026-09-12 attempt remains blocked by the host's Docker content-store I/O
+fault, not by the code. The audit remediation and this CAS binding have not been
+independently re-audited, though each carries reproducing regression tests.
