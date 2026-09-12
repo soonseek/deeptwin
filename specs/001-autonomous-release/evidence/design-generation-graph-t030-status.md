@@ -69,3 +69,53 @@ fresh independent adversarial re-audit of `app/runtime/graph.py` and
 `app/services/design.py` should run before T027/T028 close. T030 additionally still
 requires the live confirmation→lens→generation pipeline against a real provider path,
 which does not exist yet. No release credit is claimed beyond the recorded suites.
+
+## Live candidate-generation driver (2026-09-13)
+
+Frozen identities (SHA-256):
+
+```text
+c82d834f35b355098d5a41042efffaf1700cad995ce53b732ad28fff09cf4251  app/services/design_live.py
+3ec86c457f32cf2e437b58391a6c592f6a4c2be5bc9435cfac05d4c3ddfe7362  app/tests/test_design_live.py
+```
+
+`app/services/design_live.py` adds the first live-path slice for T027/T030: a bounded
+generation driver in which the framework keeps every authority and the model boundary is
+one caller-supplied `model_turn(system, user) -> str` callable (bindable to the Claude or
+Codex adapters later, scriptable offline today):
+
+- `render_candidate_prompt(request)` deterministically renders the exact (system, user)
+  prompt pair: the DESIGN_CANDIDATE instruction profile (restrictions + reference
+  boundary + responsibility) plus a closed output-schema clause, and a canonical-JSON
+  user payload carrying the generation request, full work model, design decisions,
+  disposition and requested count.
+- `run_candidate_generation(request, model_turn=..., model_id=...)` validates the
+  request/model identity/boundary, runs exactly one turn (a boundary exception is
+  wrapped terminally — no retry), parses the response as the exact
+  `{"candidates": [{"graph": ...}, ...]}` object (strict keys, bounded count/size), and
+  mints the `GenerationCallRecord` itself (request ref, profile digest, model id, prompt
+  and response sha256; content-ref'd as a `decision_record`). The model contributes
+  nothing but graphs — candidate identities are framework-minted UUIDs, call refs are
+  the framework's own record, and any extra key from the model is terminal. Admission
+  runs only through `accept_design_candidates`, so the compiler authority, decision
+  binding, effect realization and structural-diversity rejection all apply unchanged
+  (a renamed-twin batch from the model is rejected by the existing authority).
+
+Tests: `app/tests/test_design_live.py` (7) — exact prompt/payload/call-record binding
+against a scripted model; deterministic rendering; forged call-ref/candidate-identity
+rejection; renamed-duplicate rejection via the authority; ten malformed-output shapes
+terminal; a raising model boundary wrapped; request/model-identity validation.
+
+```text
+python -m pytest -q app/tests/test_design_live.py app/tests/test_design_generation.py
+29 passed
+ruff check app/services/design_live.py app/tests/test_design_live.py
+All checks passed
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-13)
+3,006 passed, 2 skipped, 369 subtests passed, 1 known warning
+```
+
+Not claimed: no real provider adapter is bound to `model_turn` yet (no live API calls —
+none are authorized), generation-call records and accepted candidates are not yet
+persisted as domain records, and the criticism/selection/approval stages of the journey
+remain open.
