@@ -1908,11 +1908,11 @@ def _validate_request_semantics(port: str, value: Mapping[str, Any],
         if contract.request_artifact_profile.startswith("X-export") \
                 and source.get("bounded_stream_authorized") is not True:
             raise PortSchemaValidationError("export artifact source lacks bounded-stream authority")
-        if contract.request_artifact_profile == "X-export-transmit":
-            if (not _same_ref(source.get("target_ref"), value["input"]["target_ref"])
-                    or not isinstance(source.get("expires_at"), str)
-                    or _parse_time(source["expires_at"]) <= accepted):
-                raise PortSchemaValidationError("transmit differs from active prepared delivery")
+        if contract.request_artifact_profile == "X-export-transmit" and (
+                not _same_ref(source.get("target_ref"), value["input"]["target_ref"])
+                or not isinstance(source.get("expires_at"), str)
+                or _parse_time(source["expires_at"]) <= accepted):
+            raise PortSchemaValidationError("transmit differs from active prepared delivery")
 
     if contract.request_artifact_profile == "T-tool":
         _require_context_fields(context, "tool_definition", "resolved_arguments")

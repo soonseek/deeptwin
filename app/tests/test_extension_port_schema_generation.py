@@ -21,6 +21,7 @@ from app.extensions.port_contracts import (
     REJECTED_TERMINAL_CANDIDATES,
 )
 from app.extensions.port_schema_generator import (
+    BUILTIN_TOOL_ARTIFACT_INPUT_CONTRACTS,
     PortSchemaValidationError,
     canonical_schema_bytes,
     generate_port_schemas,
@@ -176,34 +177,46 @@ def test_refinement_is_applied_after_base_and_cannot_replace_core_fields():
         "additionalProperties": False,
     }
     validate_port_payload(
-        "provider-port-v1", "config", config, refinement_schema=refinement,
+        "provider-port-v1", "config", config,
+        context=_config_context(config), refinement_schema=refinement,
     )
     wrong = deepcopy(config)
     wrong["extension_config"]["temperature"] = 3
     with pytest.raises(PortSchemaValidationError, match="refinement rejected"):
         validate_port_payload(
-            "provider-port-v1", "config", wrong, refinement_schema=refinement,
+            "provider-port-v1", "config", wrong,
+            context=_config_context(wrong), refinement_schema=refinement,
         )
     with pytest.raises(PortSchemaValidationError, match="without a frozen refinement"):
-        validate_port_payload("provider-port-v1", "config", config)
+        validate_port_payload(
+            "provider-port-v1", "config", config, context=_config_context(config),
+        )
     replaced = deepcopy(config)
     replaced["schema_version"] = 2
     with pytest.raises(PortSchemaValidationError, match="base schema rejected"):
         validate_port_payload(
-            "provider-port-v1", "config", replaced, refinement_schema=refinement,
+            "provider-port-v1", "config", replaced,
+            context=_config_context(replaced), refinement_schema=refinement,
         )
 
 
 def test_extension_error_code_requires_the_manifest_frozen_operation_enum():
+    request = _request_instance("tool-port-v1", "invoke_tool")
     error = _error_instance("tool-port-v1", "invoke_tool")
     error["code"] = "port_specific_failure"
     error["port_error_code"] = "execution_failed"
     error["extension_error_code"] = "vendor_failure"
     with pytest.raises(PortSchemaValidationError, match="manifest-frozen"):
-        validate_port_payload("tool-port-v1", "error", error)
+        validate_port_payload(
+            "tool-port-v1", "error", error,
+            context={"request": request, "extension_error_codes": {}},
+        )
     validate_port_payload(
         "tool-port-v1", "error", error,
-        context={"extension_error_codes": {"invoke_tool": ["vendor_failure"]}},
+        context={
+            "request": request,
+            "extension_error_codes": {"invoke_tool": ["vendor_failure"]},
+        },
     )
 
 
@@ -251,14 +264,20 @@ def test_actual_jsonschema_validator_rejects_unknown_missing_wrong_type_and_oper
 def test_semantic_validator_rejects_binding_digest_and_nested_port_mismatch():
     valid = _provider_config()
     with pytest.raises(PortSchemaValidationError):
-        validate_port_payload("provider-port-v1", "config", valid)
+        validate_port_payload(
+            "provider-port-v1", "config", valid, context=_config_context(valid),
+        )
     valid["binding_slot_key_digest"] = _slot_digest(valid["binding_slot_key"])
-    validate_port_payload("provider-port-v1", "config", valid)
+    validate_port_payload(
+        "provider-port-v1", "config", valid, context=_config_context(valid),
+    )
     wrong = deepcopy(valid)
     wrong["binding_slot_key"]["port_contract_version"] = "tool-port-v1"
     wrong["binding_slot_key_digest"] = _slot_digest(wrong["binding_slot_key"])
     with pytest.raises(PortSchemaValidationError):
-        validate_port_payload("provider-port-v1", "config", wrong)
+        validate_port_payload(
+            "provider-port-v1", "config", wrong, context=_config_context(wrong),
+        )
 
 
 def test_every_request_and_allowed_result_branch_has_a_real_valid_instance():
@@ -410,51 +429,51 @@ def test_artifact_profile_cardinality_role_selector_and_duplicate_guards():
 
 def test_semantic_validator_rejects_frozen_list_mismatch_and_hidden_tool_ref():
     provider = _request_instance("provider-port-v1", "model_step")
+    provider_context = _request_context("provider-port-v1", provider)
+    validate_port_payload(
+        "provider-port-v1", "request", provider, context=provider_context,
+    )
+    provider_context["frozen_record"]["artifact_input_bindings"] = [
+        _artifact_input("model_input", marker="b"),
+    ]
     with pytest.raises(PortSchemaValidationError, match="frozen source list"):
         validate_port_payload(
-            "provider-port-v1", "request", provider,
-            context={"expected_artifact_inputs": [_artifact_input("model_input", marker="b")]},
+            "provider-port-v1", "request", provider, context=provider_context,
         )
 
     tool = _request_instance("tool-port-v1", "invoke_tool")
+    tool_context = _request_context("tool-port-v1", tool)
+    validate_port_payload("tool-port-v1", "request", tool, context=tool_context)
+    tool_context["resolved_arguments"] = {"nested": {"artifact": _ref("artifact")}}
     with pytest.raises(PortSchemaValidationError, match="hidden artifact"):
-        validate_port_payload(
-            "tool-port-v1", "request", tool,
-            context={
-                "tool_definition": {
-                    "tool_id": tool["input"]["tool_id"],
-                    "version": tool["input"]["tool_version"],
-                    "artifact_input_contract": {"mode": "none"},
-                },
-                "resolved_arguments": {"nested": {"artifact": _ref("artifact")}},
-            },
-        )
+        validate_port_payload("tool-port-v1", "request", tool, context=tool_context)
 
 
 def test_semantic_validator_enforces_builtin_tool_profiles_and_export_exact_list():
     request = _request_instance("tool-port-v1", "invoke_tool")
     request["input"]["tool_id"] = "browser_upload"
     request["artifact_inputs"] = [_artifact_input("browser_upload")]
-    request["idempotency_key"] = _request_digest(request)
-    widened = {
-        "tool_id": "browser_upload", "version": request["input"]["tool_version"],
-        "artifact_input_contract": {
-            "mode": "bounded", "min_items": 0, "max_items": 32,
-            "role": "browser_upload", "allowed_media_types": ["text/plain"],
-            "selector_policy": "optional",
-        },
+    context = _request_context("tool-port-v1", request)
+    validate_port_payload("tool-port-v1", "request", request, context=context)
+    context["tool_definition"]["artifact_input_contract"] = {
+        "mode": "bounded", "min_items": 0, "max_items": 32,
+        "role": "browser_upload", "allowed_media_types": ["text/plain"],
+        "selector_policy": "optional",
     }
     with pytest.raises(PortSchemaValidationError, match="widened or changed"):
-        validate_port_payload(
-            "tool-port-v1", "request", request,
-            context={"tool_definition": widened},
-        )
+        validate_port_payload("tool-port-v1", "request", request, context=context)
 
     export = _request_instance("export-sink-port-v1", "transmit")
+    export_context = _request_context("export-sink-port-v1", export)
+    validate_port_payload(
+        "export-sink-port-v1", "request", export, context=export_context,
+    )
+    export_context["prepared_delivery_record"]["artifact_input_bindings"] = [
+        _artifact_input("export_payload", marker="b"),
+    ]
     with pytest.raises(PortSchemaValidationError, match="frozen source list"):
         validate_port_payload(
-            "export-sink-port-v1", "request", export,
-            context={"expected_artifact_inputs": [_artifact_input("export_payload", marker="b")]},
+            "export-sink-port-v1", "request", export, context=export_context,
         )
 
 
@@ -810,3 +829,170 @@ def _provider_config() -> dict:
             "supported_input_media_types": ["text/plain"],
         },
     }
+
+
+_ACCEPTED_AT = "2026-09-08T23:59:59.900Z"
+_UNEXPIRED_AT = "2027-01-01T00:00:00.000Z"
+
+
+def _config_context(config: dict) -> dict:
+    """Trusted durable-store records matching one exact validated config."""
+    return {
+        "validated_at": _ACCEPTED_AT,
+        "qualification_record": {
+            "ref": deepcopy(config["qualification_ref"]),
+            "status": "qualified",
+            "installation_digest": config["installation_digest"],
+            "port_contract_version": config["port_contract_version"],
+            "expires_at": _UNEXPIRED_AT,
+        },
+        "binding_revision_record": {
+            "ref": deepcopy(config["binding_revision_ref"]),
+            "state": "active",
+            "extension_id": config["extension_id"],
+            "installation_digest": config["installation_digest"],
+            "qualification_ref": deepcopy(config["qualification_ref"]),
+            "port_contract_version": config["port_contract_version"],
+            "binding_slot_key": deepcopy(config["binding_slot_key"]),
+            "binding_slot_key_digest": config["binding_slot_key_digest"],
+            "grant_refs": deepcopy(config["grant_refs"]),
+            "credential_handle_refs": deepcopy(config["credential_handle_refs"]),
+        },
+        "binding_head_record": {
+            "state": "active",
+            "current_binding_revision_ref": deepcopy(config["binding_revision_ref"]),
+            "binding_slot_key": deepcopy(config["binding_slot_key"]),
+            "binding_slot_key_digest": config["binding_slot_key_digest"],
+        },
+    }
+
+
+def _record_type(field: str) -> str:
+    if field.endswith("_refs"):
+        return field[:-5]
+    if field.endswith("_ref"):
+        return field[:-4]
+    return field
+
+
+def _uniquify_input_refs(request: dict) -> list[tuple[str, dict]]:
+    """Give every named operation-input ref a distinct digest, then reseal the key."""
+    named: list[tuple[str, dict]] = []
+
+    def walk(value: object, field: str) -> None:
+        if type(value) is dict:
+            if set(value) == {"kind", "id", "version", "sha256"}:
+                value["sha256"] = f"{len(named) + 1:064x}"
+                named.append((field, value))
+                return
+            for name, child in value.items():
+                walk(child, name)
+        elif type(value) is list:
+            for child in value:
+                walk(child, field)
+
+    walk(request["input"], "input")
+    request["idempotency_key"] = _request_digest(request)
+    return named
+
+
+def _request_context(port: str, request: dict) -> dict:
+    """Full trusted context under which the given request is exactly acceptable.
+
+    Mutates the request only to make its named input refs distinct records,
+    resealing the idempotency key afterwards.
+    """
+    config = _config_instance(port)
+    config["installation_digest"] = request["installation_digest"]
+    config["qualification_ref"] = deepcopy(request["qualification_ref"])
+    config["binding_revision_ref"] = deepcopy(request["binding_revision_ref"])
+    config["grant_refs"] = deepcopy(request["grant_refs"])
+    config["resource_limits"] = _limits()
+    media = sorted({item["declared_media_type"] for item in request["artifact_inputs"]})
+    for field in ("supported_input_media_types", "input_media_types",
+                  "accepted_value_media_types", "supported_media_types"):
+        if field in config["port_config"] and media:
+            config["port_config"][field] = media
+    named = _uniquify_input_refs(request)
+    context = {
+        "config": config,
+        "accepted_at": _ACCEPTED_AT,
+        "actor_record": {
+            "ref": deepcopy(request["actor_ref"]),
+            "authenticated": True,
+            "actor_type": "system",
+        },
+        "purpose_record": {
+            "ref": deepcopy(request["purpose_ref"]),
+            "active": True,
+            "purpose": config["binding_slot_key"]["purpose"],
+        },
+        "grant_records": {
+            ref["sha256"]: {
+                "ref": deepcopy(ref),
+                "active": True,
+                "purpose_ref": deepcopy(request["purpose_ref"]),
+                "allowed_operations": [request["operation"]],
+            }
+            for ref in request["grant_refs"]
+        },
+        "artifact_records": {
+            binding["artifact_ref"]["sha256"]: {
+                "ref": deepcopy(binding["artifact_ref"]),
+                "readable": True,
+                "purpose_ref": deepcopy(request["purpose_ref"]),
+                "grant_refs": deepcopy(request["grant_refs"]),
+                "media_type": binding["declared_media_type"],
+                "byte_count": 1,
+            }
+            for binding in request["artifact_inputs"]
+        },
+        "selector_records": {},
+        "input_records": {
+            ref["sha256"]: {"ref": deepcopy(ref), "record_type": _record_type(field)}
+            for field, ref in named
+        },
+    }
+    profile = OPERATION_CONTRACTS[(port, request["operation"])].request_artifact_profile
+    source = {
+        "artifact_input_bindings": deepcopy(request["artifact_inputs"]),
+        "purpose_ref": deepcopy(request["purpose_ref"]),
+        "grant_refs": deepcopy(request["grant_refs"]),
+    }
+    if profile == "F-model":
+        context["frozen_record"] = {
+            "ref": deepcopy(request["input"]["frozen_turn_ref"]), **source,
+        }
+    elif profile == "F-runner":
+        context["frozen_record"] = {
+            "ref": deepcopy(request["input"]["frozen_run_projection_ref"]), **source,
+        }
+    elif profile == "X-export-prepare":
+        context["export_snapshot_record"] = {
+            "ref": deepcopy(request["input"]["snapshot_ref"]),
+            "bounded_stream_authorized": True,
+            **source,
+        }
+    elif profile == "X-export-transmit":
+        context["prepared_delivery_record"] = {
+            "ref": deepcopy(request["input"]["prepared_delivery_ref"]),
+            "bounded_stream_authorized": True,
+            "target_ref": deepcopy(request["input"]["target_ref"]),
+            "expires_at": _UNEXPIRED_AT,
+            **source,
+        }
+    elif profile == "T-tool":
+        tool_ref = _ref("tool_definition", marker="f")
+        config["port_config"]["tool_definition_refs"] = [deepcopy(tool_ref)]
+        tool_id = request["input"]["tool_id"]
+        context["tool_definition"] = {
+            "ref": tool_ref,
+            "tool_id": tool_id,
+            "version": request["input"]["tool_version"],
+            "effect_class": request["input"]["expected_effect_class"],
+            "artifact_input_contract": deepcopy(
+                BUILTIN_TOOL_ARTIFACT_INPUT_CONTRACTS.get(tool_id, {"mode": "none"}),
+            ),
+        }
+        context["resolved_arguments"] = {}
+    return context

@@ -1,6 +1,6 @@
 # DeepTwin autonomous delivery progress
 
-Updated: 2026-09-08. Status: active; ADR-014 revision 7 independently closed the V1/T086 design
+Updated: 2026-09-12. Status: active; ADR-014 revision 7 independently closed the V1/T086 design
 gate, while T089's exact multi-architecture build-input scope remains closed and isolated runtime
 implementation remains active within its now accepted architecture boundary.
 
@@ -121,7 +121,11 @@ do not turn unknown external readiness into a promised date.
   T089 core build input or T081 core/built-in image; arbitrary third-party extensions are not bundled.
   T018 broker qualification and T025 durable web authority/routes also keep
   T087 open.
-  See evidence/extension-spi-pure-contracts.md.
+  See evidence/extension-spi-pure-contracts.md. The executable slice of the 44 base schemas
+  is additionally closed: deterministic generation to schemas/v1/extensions/ports/ with
+  artifact-input uniqueness guards, and fail-closed trusted-context semantic validation whose
+  focused suite passes 28 with full-context happy paths; see
+  evidence/extension-port-schemas-t087a1.md (2026-09-12).
 - [x] T089 exact Linux arm64+amd64 dependency, model, upstream build-input image,
   license/provenance-input and digest
   closure. Python/Node/Caddy index+platform descriptors, all model bytes, the corrected reproducible
