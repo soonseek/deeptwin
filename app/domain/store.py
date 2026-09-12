@@ -398,9 +398,13 @@ class DomainStore:
                     sidecar = os.stat("intake.sqlite3" + suffix, dir_fd=parent, follow_symlinks=False)
                 except FileNotFoundError:
                     continue
-                if (not stat.S_ISREG(sidecar.st_mode) or sidecar.st_nlink != 1
+                if (not stat.S_ISREG(sidecar.st_mode) or sidecar.st_nlink > 1
                         or stat.S_IMODE(sidecar.st_mode) != 0o600 or sidecar.st_uid != os.getuid()):
                     raise UnsafePath("Unsafe SQLite sidecar")
+                # st_nlink == 0 with otherwise healthy attributes is a sidecar another
+                # connection is concurrently unlinking on close: the inode is reachable
+                # by no other name and is treated as already absent. Hardlinked files
+                # (st_nlink > 1), symlinks, foreign owners and wrong modes still fail.
             # The legacy database already exists. ``mode=rw`` prevents SQLite's
             # pathname open from creating a file if the visible directory is swapped
             # after the no-follow stat. The connected inode is checked before any

@@ -6,6 +6,7 @@ import importlib
 import os
 from pathlib import Path
 import sqlite3
+import stat
 from uuid import uuid4
 
 import pytest
@@ -1168,3 +1169,31 @@ def test_legacy_link_listing_has_a_total_byte_bound(tmp_path, monkeypatch):
 
     with pytest.raises(module.VerificationLimit, match="byte"):
         domain.legacy_file_links()
+
+
+@pytest.mark.parametrize("nlink,accepted", [(0, True), (1, True), (2, False)])
+def test_sidecar_nlink_zero_is_a_concurrent_unlink_not_an_attack(tmp_path, monkeypatch,
+                                                                 nlink, accepted):
+    """A closing connection unlinks -wal/-shm while another opens: the observed healthy
+    sidecar with st_nlink == 0 is treated as absent, while a hardlink still fails."""
+    module, legacy, domain, roots = opened(tmp_path)
+    Path(str(legacy.path) + "-wal").write_bytes(b"")
+    os.chmod(str(legacy.path) + "-wal", 0o600)
+    real_stat = os.stat
+
+    def racing_stat(path, *args, **kwargs):
+        result = real_stat(path, *args, **kwargs)
+        if isinstance(path, str) and path.endswith("-wal"):
+            values = list(result)
+            values[stat.ST_NLINK] = nlink
+            return os.stat_result(values)
+        return result
+
+    monkeypatch.setattr(module.os, "stat", racing_stat)
+    if accepted:
+        with domain._connection() as db:
+            assert db.execute("SELECT 1").fetchone()[0] == 1
+    else:
+        with pytest.raises(module.UnsafePath, match="sidecar"):
+            with domain._connection():
+                pass
