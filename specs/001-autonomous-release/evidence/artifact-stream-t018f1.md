@@ -58,7 +58,7 @@ ruff check app/workers/artifact_stream.py app/tests/test_worker_artifact_stream.
 All checks passed
 
 python -m pytest -q app/tests deploy/tests   (full shared regression, 2026-09-12)
-2,948 passed, 2 skipped, 369 subtests passed, 1 known Starlette/AnyIO deprecation warning
+2,960 passed, 2 skipped, 369 subtests passed, 1 known Starlette/AnyIO deprecation warning
 ```
 
 ## Frozen content identities (SHA-256)
@@ -68,12 +68,36 @@ python -m pytest -q app/tests deploy/tests   (full shared regression, 2026-09-12
 1dfd909f8e19acb8a8b980d447aed05ba387e96dfd6b1a09d01352c79e3aa77b  app/tests/test_worker_artifact_stream.py
 ```
 
+## FrameCodec adapter (2026-09-12)
+
+`app/workers/artifact_stream_transport.py` adds `FrameCodecTransport`, a `StreamTransport`
+that carries each stream message as one authenticated `broker.FrameCodec` frame stamped with
+the request's correlation id; every broker transport failure surfaces as a terminal
+`ArtifactStreamError`. `app/tests/test_artifact_stream_transport.py` runs the stream over a
+real socketpair with a full broker handshake and two codecs in two threads:
+
+```text
+python -m pytest -q app/tests/test_artifact_stream_transport.py
+4 passed
+```
+
+covering a single-frame round trip, a multi-chunk transfer that exchanges real credit frames,
+a correlation-id mismatch (terminal), and adapter construction guards. This closes the
+"FrameCodec adapter not written" gap; the stream now demonstrably works over authenticated,
+replay-checked, size-bounded frames, not only the in-memory paired transport.
+
+Frozen identities (SHA-256):
+
+```text
+76acece677d402bb54b154550b634d07b1d3845a56274bc204a6f8fc3020a08c  app/workers/artifact_stream_transport.py
+7e71d08c28fc7fc37c421451ab7c15a27b091e26aaf845f6dcda8ab626229287  app/tests/test_artifact_stream_transport.py
+```
+
 ## Not claimed
 
-This is the transport-agnostic state machine and its unit surface only. It is not yet wired
-into `worker_coordinator.py`/`worker_dispatch.py` (the coordinator still performs a single
-request/response exchange), the FrameCodec adapter that carries these messages as real
-authenticated frames is not written, and no Linux/root canary exercises it over a real
-socket. Real CAS-backed sources/sinks, coordinator integration and the Linux qualification
-remain open T018-foundation work. No independent adversarial re-audit of this slice has run
-yet.
+The stream is not yet wired into `worker_coordinator.py`/`worker_dispatch.py` (the coordinator
+still performs a single request/response exchange), and no Linux/root canary has exercised it
+over a real UDS with SO_PEERCRED — an attempt on 2026-09-12 was blocked by a Docker
+content-store I/O fault on this host, not by the code. Real CAS-backed sources/sinks,
+coordinator integration and the Linux qualification remain open T018-foundation work, and no
+independent adversarial re-audit of this slice has run yet.
