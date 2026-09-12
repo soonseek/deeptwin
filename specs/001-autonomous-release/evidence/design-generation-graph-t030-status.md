@@ -119,3 +119,42 @@ Not claimed: no real provider adapter is bound to `model_turn` yet (no live API 
 none are authorized), generation-call records and accepted candidates are not yet
 persisted as domain records, and the criticism/selection/approval stages of the journey
 remain open.
+
+## Durable persistence of the generation chain (2026-09-13)
+
+`app/services/design_persistence.py` persists the live chain as immutable domain
+records with real lineage: request → generation call → graph → candidate, each a
+`decision_record`/`graph`/`design_candidate` record whose `parent_refs` are the actual
+stored record refs. Design-layer references are content hashes over design dictionaries
+— a different hash space from the store's body-hash record refs — and the DomainStore
+reserves `*_ref(s)` keys and ref-shaped dicts in content for verified record edges, so
+the codec (`encode_design_refs`/`decode_design_refs`) stores design refs as tagged
+`design-ref:` strings with suffixed key names and decodes them exactly; non-ref shapes
+(effect targets, lens-ref strings) pass through untouched. Persistence is idempotent
+(same stamp → same records), and cross-request/call binding is validated before any
+write.
+
+Tests: `app/tests/test_design_persistence.py` (5) — codec round-trip with foreign
+shapes untouched; the full generated chain persisted with exact lineage and
+content round-trip out of a real vault; idempotent re-persist; foreign request/result
+binding rejection; type guards.
+
+```text
+python -m pytest -q app/tests/test_design_persistence.py app/tests/test_design_live.py
+12 passed
+ruff check app/services/design_persistence.py app/tests/test_design_persistence.py
+All checks passed
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-13)
+3,011 passed, 2 skipped, 369 subtests passed, 1 known warning
+```
+
+Frozen identities (SHA-256):
+
+```text
+2b5216baf4d5e3d0e30eff844c8eba74d5c5cf1b1029d854f64f3aabd5c18d22  app/services/design_persistence.py
+b5cc7fc968775a59fb2b79fc8c8b2f0f3d50a333ee89a633a3c79026cb3a3a56  app/tests/test_design_persistence.py
+```
+
+Not claimed: candidates/calls are persisted but nothing consumes them yet (criticism,
+selection and approval stages remain open), no provider adapter is bound to the model
+boundary, and no policy-host registration/read-grant path covers these records.
