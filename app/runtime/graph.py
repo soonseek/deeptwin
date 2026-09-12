@@ -311,9 +311,10 @@ def _loop_regions(nodes, edges):
                  and edge.source_node_id in members
                  and edge.target_node_id not in members]
         termination = controller.as_dict()["config"]["termination"]
+        exit_condition = exits[0].as_dict()["condition"] if exits else None
         if (len(exits) != 1 or exits[0].kind != "control"
                 or exits[0].source_node_id != controller.node_id
-                or exits[0].data["condition"] != termination):
+                or canonical_json(exit_condition) != canonical_json(termination)):
             raise GraphContractError("A bounded-loop termination must control its one exact exit")
         for node_id in component:
             if node_id in membership:
@@ -617,14 +618,19 @@ def functional_projection(graph):
 
 
 def structural_diversity_projection(graph):
-    """Project the five functional comparison axes without candidate names or lens identities."""
+    """Project the five functional comparison axes without candidate names or lens identities.
+
+    Fact identity is erased structurally, never by the arbitrary fact name: aliases are
+    ordered by how each fact is actually used across the graph.  Dependency endpoints use a
+    one-round neighbourhood refinement so distinct wiring over identically-signatured nodes
+    (a sequential chain versus a parallel fan) does not collapse into one shape.
+    """
     graph = _normalized_graph(graph)
     _validate_structure(graph)
     contracts = {item.artifact_contract_id: item for item in graph.artifact_contracts}
     models = {item.binding_id: item for item in graph.model_bindings}
     tools = {item.binding_id: item for item in graph.tool_bindings}
     memory_by_id = {item.policy_id: item for item in graph.memory_policies}
-    fact_aliases = {name: f"fact-{index}" for index, name in enumerate(sorted(graph.fact_names))}
 
     def ref_signature(ref):
         return (ref.kind, ref.sha256)
@@ -640,47 +646,63 @@ def structural_diversity_projection(graph):
             "max_total_bytes": contract.max_total_bytes,
         }
 
-    def expression_signature(value):
+    def expression_signature(value, alias):
         if value is None:
             return None
         result = {}
         for key, child in value.items():
             if key == "fact":
-                result[key] = fact_aliases[child]
+                result[key] = alias(child)
             elif type(child) is dict:
-                result[key] = expression_signature(child)
+                result[key] = expression_signature(child, alias)
             elif type(child) is list:
-                result[key] = [expression_signature(item) if type(item) is dict else item
+                result[key] = [expression_signature(item, alias) if type(item) is dict else item
                                for item in child]
             else:
                 result[key] = child
         return result
 
-    node_signature = {}
-    for node in graph.nodes:
+    def facts_in(value):
+        found = set()
+        if value is None:
+            return found
+        for key, child in value.items():
+            if key == "fact":
+                found.add(child)
+            elif type(child) is dict:
+                found |= facts_in(child)
+            elif type(child) is list:
+                for item in child:
+                    if type(item) is dict:
+                        found |= facts_in(item)
+        return found
+
+    def functional_config(node, alias):
         config = node.as_dict()["config"]
-        functional_config = {}
         if node.kind == "agent":
             model = models[config["model_binding_id"]]
-            functional_config = {
+            return {
                 "required_model_capabilities": config["required_model_capabilities"],
                 "model_contract": {
                     "ref": ref_signature(model.model_choice_ref),
                     "capabilities": list(model.capabilities),
                 },
             }
-        elif node.kind == "router":
-            functional_config = {
+        if node.kind == "router":
+            return {
                 "allowed_values": config["allowed_values"],
-                "decision_fact": fact_aliases[config["decision_fact"]],
+                "decision_fact": alias(config["decision_fact"]),
             }
-        elif node.kind == "bounded_loop":
-            functional_config = {
-                "termination": expression_signature(config["termination"]),
+        if node.kind == "bounded_loop":
+            return {
+                "termination": expression_signature(config["termination"], alias),
                 "hard_iteration_cap": config["hard_iteration_cap"],
             }
-        elif node.kind not in {"join", "human_gate"}:
-            functional_config = config
+        if node.kind in {"join", "human_gate"}:
+            return {}
+        return config
+
+    def node_sig(node, alias):
         signature = {
             "kind": node.kind,
             "responsibility": node.responsibility,
@@ -690,10 +712,64 @@ def structural_diversity_projection(graph):
             "outputs": [(artifact_signature(slot.artifact_contract_id), slot.multiplicity)
                         for slot in node.output_slots],
             "failure_policy": node.failure_policy,
-            "config": functional_config,
+            "config": functional_config(node, alias),
         }
-        node_signature[node.node_id] = sha256(canonical_json(signature)).hexdigest()
-    dependencies = []
+        return sha256(canonical_json(signature)).hexdigest()
+
+    # 1) Fact-agnostic base signatures: every fact masked to one sentinel.
+    def masked(_name):
+        return "·fact·"
+
+    base_signature = {node.node_id: node_sig(node, masked) for node in graph.nodes}
+
+    # 2) Order facts by their structural usage rather than their arbitrary names, so a
+    #    consistent bijective rename (even one that inverts name sort order) is invariant.
+    def marked_expression(value, target):
+        return expression_signature(
+            value, lambda name: "·self·" if name == target else masked(name),
+        )
+
+    usage = {name: [] for name in graph.fact_names}
+    for node in graph.nodes:
+        config = node.as_dict()["config"]
+        if node.kind == "router":
+            usage[config["decision_fact"]].append(("router", base_signature[node.node_id]))
+        elif node.kind == "bounded_loop":
+            for name in facts_in(config["termination"]):
+                usage[name].append((
+                    "loop", base_signature[node.node_id],
+                    canonical_json(marked_expression(config["termination"], name)).decode(),
+                ))
+    for edge in graph.edges:
+        if edge.kind != "control":
+            continue
+        condition = edge.as_dict()["condition"]
+        for name in facts_in(condition):
+            usage[name].append((
+                "edge",
+                base_signature[edge.source_node_id],
+                base_signature[edge.target_node_id],
+                edge.loop_id is not None,
+                canonical_json(marked_expression(condition, name)).decode(),
+            ))
+
+    def fact_key(name):
+        # The name is only a deterministic tie-break between facts whose entire structural
+        # usage is identical; such facts are interchangeable, so the projection is invariant.
+        return (sorted(usage[name]), name)
+
+    fact_aliases = {name: f"fact-{index}"
+                    for index, name in enumerate(sorted(graph.fact_names, key=fact_key))}
+
+    def aliased(name):
+        return fact_aliases[name]
+
+    # 3) Aliased node signatures carry semantic role identity.
+    node_signature = {node.node_id: node_sig(node, aliased) for node in graph.nodes}
+
+    # 4) Dependency endpoints use a one-round neighbourhood refinement (topology sensitivity).
+    incident = {node.node_id: [] for node in graph.nodes}
+    edge_records = []
     for edge in graph.edges:
         if edge.kind == "observation":
             continue
@@ -705,17 +781,30 @@ def structural_diversity_projection(graph):
                 "multiplicity": data["multiplicity"],
             }
         elif edge.kind == "control":
-            semantics = {"condition": expression_signature(data["condition"])}
+            semantics = {"condition": expression_signature(data["condition"], aliased)}
         else:
             semantics = {"approval_scope": data["approval_scope"]}
-        dependencies.append((
-            edge.kind,
-            node_signature[edge.source_node_id],
-            node_signature[edge.target_node_id],
-            edge.loop_id is not None,
-            semantics,
-        ))
+        in_loop = edge.loop_id is not None
+        edge_records.append((edge.kind, edge.source_node_id, edge.target_node_id, in_loop, semantics))
+        incident[edge.source_node_id].append(
+            ("out", edge.kind, base_signature[edge.target_node_id], in_loop, semantics))
+        incident[edge.target_node_id].append(
+            ("in", edge.kind, base_signature[edge.source_node_id], in_loop, semantics))
+
+    refined = {
+        node_id: sha256(canonical_json([
+            node_signature[node_id],
+            sorted(entries, key=canonical_json),
+        ])).hexdigest()
+        for node_id, entries in incident.items()
+    }
+
+    dependencies = [
+        (kind, refined[src], refined[tgt], in_loop, semantics)
+        for kind, src, tgt, in_loop, semantics in edge_records
+    ]
     dependencies.sort(key=canonical_json)
+
     memory_access = []
     permissions = []
     for node in graph.nodes:
@@ -754,12 +843,17 @@ def structural_diversity_projection(graph):
         config = node.as_dict()["config"]
         if node.kind in {"router", "join", "human_gate", "bounded_loop"} \
                 or config.get("handler_id") is not None:
-            evaluation_placement.append((
-                node_signature[node.node_id],
-                node.kind,
-                expression_signature(config["termination"])
-                if node.kind == "bounded_loop" else config,
-            ))
+            if node.kind == "router":
+                placed = {
+                    "allowed_values": config["allowed_values"],
+                    "decision_fact": aliased(config["decision_fact"]),
+                }
+            elif node.kind == "bounded_loop":
+                placed = expression_signature(config["termination"], aliased)
+            else:
+                # join / human_gate / deterministic-handler configs carry no fact names or IDs.
+                placed = config
+            evaluation_placement.append((node_signature[node.node_id], node.kind, placed))
     for criterion in graph.completion_criteria:
         evaluation_placement.append((
             "completion",

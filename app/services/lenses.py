@@ -760,6 +760,17 @@ class LensRegistry:
             "proposed", "qualified_and_supported", qualified_evidence, qualification.status
         )
 
+    def vouches_for(self, decision: object) -> bool:
+        """True only for a LensDecision this exact registry instance issued.
+
+        The issuer token is a per-instance capability, so a reconstructed or
+        forged decision carrying a fabricated token cannot pass.
+        """
+        return (
+            isinstance(decision, LensDecision)
+            and decision._issuer_token is self.__issuer_token
+        )
+
     def bind_composition_input(
         self,
         decision: LensDecision,

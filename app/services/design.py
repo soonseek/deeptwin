@@ -633,8 +633,10 @@ def _parse_effect(value, allowed_lenses):
     )
 
 
-def accept_design_decision(target, lens_decisions: Iterable[LensDecision], value):
+def accept_design_decision(target, lens_decisions: Iterable[LensDecision], value, *, registry):
     _require_confirmed(target)
+    if not callable(getattr(registry, "vouches_for", None)):
+        raise DesignContractError("A vouching lens registry is required")
     try:
         decisions = tuple(lens_decisions)
     except TypeError as exc:
@@ -645,6 +647,8 @@ def accept_design_decision(target, lens_decisions: Iterable[LensDecision], value
         raise DesignContractError("Invalid lens decision")
     _unique(decisions, lambda item: str(item.lens_ref), "lens decision", DesignContractError)
     for item in decisions:
+        if not registry.vouches_for(item):
+            raise DesignContractError("Lens decision was not issued by the qualified registry")
         if (item.state != "proposed" or item.path != "initial_design"
                 or item.qualification_status != "qualified"
                 or item.scope_hash != target.work_model_ref.sha256

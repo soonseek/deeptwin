@@ -83,7 +83,7 @@ def proposed_lens(target):
         status="qualified",
         qualification_record_hash=QUALIFICATION_HASH,
     )
-    return registry.decide(item.ref, route, assessment, qualification)
+    return registry, registry.decide(item.ref, route, assessment, qualification)
 
 
 def graph_value(target, decision_ref, *, graph_suffix=201, agent_count=2):
@@ -323,7 +323,7 @@ def design_authority():
     )
 
 
-def design_decision(target, lens, *, responsibility=None):
+def design_decision(target, registry, lens, *, responsibility=None):
     responsibility = responsibility or "공개 출처를 탐색하고 주장별 근거와 반증을 원형 링크로 정리한다."
     return accept_design_decision(target, [lens], {
         "decision_id": "00000000-0000-4000-8000-000000000221",
@@ -339,7 +339,7 @@ def design_decision(target, lens, *, responsibility=None):
         }],
         "conflicts": [],
         "abstentions": [],
-    })
+    }, registry=registry)
 
 
 def candidate(request, graph, *, suffix=231):
@@ -356,8 +356,8 @@ def candidate(request, graph, *, suffix=231):
 
 def prepared(*, shape="multi_agent", unknown_status="acknowledged", agent_count=2):
     target = confirmed(shape=shape, unknown_status=unknown_status)
-    lens = proposed_lens(target)
-    decision = design_decision(target, lens)
+    registry, lens = proposed_lens(target)
+    decision = design_decision(target, registry, lens)
     request = create_generation_request(
         target,
         [decision],
@@ -419,8 +419,8 @@ def test_candidate_cannot_swap_the_confirmed_work_or_lens_decisions():
 
 def test_lens_effect_must_be_observable_at_the_declared_graph_target():
     target = confirmed()
-    lens = proposed_lens(target)
-    decision = design_decision(target, lens, responsibility="다른 책임 문구")
+    registry, lens = proposed_lens(target)
+    decision = design_decision(target, registry, lens, responsibility="다른 책임 문구")
     request = create_generation_request(
         target,
         [decision],
@@ -435,8 +435,8 @@ def test_lens_effect_must_be_observable_at_the_declared_graph_target():
 
 def test_blocking_unknown_and_unqualified_or_nonproposed_lens_stop_generation():
     target = confirmed(unknown_status="blocking")
-    lens = proposed_lens(target)
-    decision = design_decision(target, lens)
+    registry, lens = proposed_lens(target)
+    decision = design_decision(target, registry, lens)
     with pytest.raises(DesignContractError, match="blocking unknown"):
         create_generation_request(
             target,
@@ -447,6 +447,7 @@ def test_blocking_unknown_and_unqualified_or_nonproposed_lens_stop_generation():
         )
 
     normal = confirmed()
+    normal_registry, _ = proposed_lens(normal)
     with pytest.raises(DesignContractError, match="lens decision"):
         accept_design_decision(normal, [], {
             "decision_id": "00000000-0000-4000-8000-000000000271",
@@ -455,7 +456,7 @@ def test_blocking_unknown_and_unqualified_or_nonproposed_lens_stop_generation():
             "proposed_effects": [],
             "conflicts": [],
             "abstentions": [],
-        })
+        }, registry=normal_registry)
 
 
 @pytest.mark.parametrize(
@@ -471,13 +472,13 @@ def test_blocking_unknown_and_unqualified_or_nonproposed_lens_stop_generation():
 )
 def test_candidate_shape_must_honor_single_and_deterministic_suitability(shape, agent_count, allowed):
     target = confirmed(shape=shape)
-    lens = proposed_lens(target)
+    registry, lens = proposed_lens(target)
     responsibility = (
         "고정된 공개 자료 목록의 무결성을 결정적으로 검사한다."
         if agent_count == 0 else
         "공개 출처를 탐색하고 주장별 근거와 반증을 원형 링크로 정리한다."
     )
-    decision = design_decision(target, lens, responsibility=responsibility)
+    decision = design_decision(target, registry, lens, responsibility=responsibility)
     request = create_generation_request(
         target,
         [decision],
@@ -516,3 +517,187 @@ def test_candidate_projection_exposes_real_structural_axes_not_names_or_coordina
         "permission_and_approval_placement",
         "evaluation_placement",
     }
+
+
+# --- regression: 2026-09-12 graph-compiler adversarial audit (F1-F5) ------------------
+# Each test encodes one reproduced audit finding. F1/F2 = false diversity through fact
+# names; F3 = a genuinely different topology wrongly merged; F4 = a valid loop wrongly
+# rejected; F5 = a forged lens decision admitted.
+from app.domain.graph_schema import GraphVersion
+
+_AUDIT_RESP = "고정된 공개 자료 목록의 무결성을 결정적으로 검사한다."
+
+
+def _det(node_id, handler, responsibility="분기 결과를 결정적으로 기록한다."):
+    return {
+        "node_id": node_id, "kind": "deterministic", "responsibility": responsibility,
+        "input_slots": [], "output_slots": [], "grant_refs": [],
+        "required_approval_scopes": [], "failure_policy": "continue_optional",
+        "config": {"handler_id": handler},
+    }
+
+
+def _control(edge_id, source, target, condition=None, loop_id=None):
+    return {"edge_id": edge_id, "kind": "control", "source_node_id": source,
+            "target_node_id": target, "loop_id": loop_id, "condition": condition}
+
+
+def _eq(fact, value):
+    return {"op": "eq", "fact": fact, "value": value}
+
+
+def _audit_target():
+    target = confirmed(shape="deterministic")
+    registry, lens = proposed_lens(target)
+    decision = design_decision(target, registry, lens, responsibility=_AUDIT_RESP)
+    return registry, target, decision.decision_ref.as_dict()
+
+
+def _proj(graph_dict):
+    return structural_diversity_projection(GraphVersion.from_untrusted(graph_dict))
+
+
+def _router_twin(target, dref, fact, suffix):
+    graph = graph_value(target, dref, graph_suffix=suffix, agent_count=0)
+    graph["fact_names"] = sorted({fact})
+    graph["nodes"].append({
+        "node_id": "route", "kind": "router",
+        "responsibility": "검증 결과 열거값에 따라 후속 기록 분기를 선택한다.",
+        "input_slots": [], "output_slots": [], "grant_refs": [],
+        "required_approval_scopes": [], "failure_policy": "fail_run",
+        "config": {"decision_fact": fact, "allowed_values": ["left", "right"]},
+    })
+    graph["nodes"].append(_det("branch-a", "branch-a-v1"))
+    graph["nodes"].append(_det("branch-b", "branch-b-v1"))
+    graph["edges"].append(_control("e-to-route", "research", "route"))
+    graph["edges"].append(_control("e-arm-0", "route", "branch-a", _eq(fact, "left")))
+    graph["edges"].append(_control("e-arm-1", "route", "branch-b", _eq(fact, "right")))
+    return graph
+
+
+def _two_fact(target, dref, first, second, suffix):
+    graph = graph_value(target, dref, graph_suffix=suffix, agent_count=0)
+    graph["fact_names"] = sorted({first, second})
+    graph["nodes"].append(_det("branch-a", "branch-a-v1"))
+    graph["nodes"].append(_det("branch-b", "branch-b-v1"))
+    graph["edges"].append(_control("e-cond-a", "research", "branch-a", _eq(first, "go")))
+    graph["edges"].append(_control("e-cond-b", "research", "branch-b", _eq(second, "go")))
+    return graph
+
+
+def _shape(target, dref, chain, suffix):
+    graph = graph_value(target, dref, graph_suffix=suffix, agent_count=0)
+    for node_id in ("n1", "n2", "n3"):
+        graph["nodes"].append(_det(node_id, "same-handler-v1", "동일한 후처리 기록을 남긴다."))
+    graph["edges"].append(_control("e-r-n1", "research", "n1"))
+    graph["edges"].append(_control("e-x1", "n1", "n2"))
+    graph["edges"].append(_control("e-x2", "n2" if chain else "n1", "n3"))
+    return graph
+
+
+def test_projection_is_invariant_under_router_decision_fact_rename():
+    # F1: two graphs that differ only in the router's decision-fact name must project
+    # identically, so a rename cannot masquerade as genuine diversity.
+    _, target, dref = _audit_target()
+    assert _proj(_router_twin(target, dref, "alpha", 412)) == \
+        _proj(_router_twin(target, dref, "omega", 413))
+
+
+def test_projection_is_invariant_under_order_inverting_fact_rename():
+    # F2: a consistent bijective rename that inverts fact-name sort order must still
+    # project identically.
+    _, target, dref = _audit_target()
+    assert _proj(_two_fact(target, dref, "aa", "bb", 414)) == \
+        _proj(_two_fact(target, dref, "zz", "yy", 415))
+
+
+def test_projection_distinguishes_chain_from_fan_topology():
+    # F3: a 3-deep chain and a 1->2 fan over identically-signatured nodes are genuinely
+    # different candidates and must not collapse to one shape.
+    _, target, dref = _audit_target()
+    assert _proj(_shape(target, dref, True, 416)) != _proj(_shape(target, dref, False, 417))
+
+
+def _loop_graph(target, dref, termination, *, cap=5, facts=("done",), suffix=510):
+    graph = graph_value(target, dref, graph_suffix=suffix, agent_count=0)
+    graph["fact_names"] = sorted(set(facts))
+    graph["nodes"].append({
+        "node_id": "loop-ctl", "kind": "bounded_loop",
+        "responsibility": "반복 상한과 종료 조건을 통제한다.",
+        "input_slots": [], "output_slots": [], "grant_refs": [],
+        "required_approval_scopes": [], "failure_policy": "fail_run",
+        "config": {"loop_id": "refine", "termination": termination, "hard_iteration_cap": cap},
+    })
+    graph["nodes"].append(_det("worker", "loop-worker-v1", "반복 본문 작업을 수행한다."))
+    graph["nodes"].append(_det("after", "loop-after-v1", "반복 종료 후 기록한다."))
+    graph["edges"].append(_control("e-enter", "research", "loop-ctl"))
+    graph["edges"].append(_control("e-body", "loop-ctl", "worker", None, "refine"))
+    graph["edges"].append(_control("e-back", "worker", "loop-ctl", None, "refine"))
+    graph["edges"].append(_control("e-exit", "loop-ctl", "after", deepcopy(termination)))
+    return graph
+
+
+@pytest.mark.parametrize("termination", [
+    {"op": "eq", "fact": "done", "value": "yes"},
+    {"op": "in", "fact": "done", "values": ["no", "yes"]},
+    {"op": "and", "args": [
+        {"op": "eq", "fact": "done", "value": "yes"},
+        {"op": "exists", "fact": "done"},
+    ]},
+    {"op": "not", "arg": {"op": "eq", "fact": "done", "value": "no"}},
+])
+def test_bounded_loop_accepts_every_closed_termination_expression(termination):
+    # F4: a byte-identical exit condition and controller termination must compile even
+    # when the expression carries a list (in/and/or), not only scalar eq/not.
+    _, target, dref = _audit_target()
+    graph = _loop_graph(target, dref, termination, suffix=520)
+    compile_graph(GraphVersion.from_untrusted(graph), design_authority())
+
+
+def test_accept_design_decision_rejects_a_forged_lens_decision():
+    # F5: a reconstructed LensDecision carrying a fabricated issuer token must not pass,
+    # while the registry-issued decision does.
+    registry, target, _ = _audit_target()
+    genuine = registry.decide(
+        registry.get("L-P032-01").ref,
+        RouteEvidence.create(
+            path="initial_design",
+            scope_hash=target.work_model_ref.sha256,
+            work_revision_hash=target.work_model.work_revision_ref.sha256,
+            purpose_confirmed=True, deliverables_confirmed=True,
+            completion_confirmed=True, observable_conditions=True,
+            authorized_source_hashes=tuple(v.sha256 for v in target.work_model.source_refs),
+        ),
+        ApplicabilityAssessment.create(
+            lens_ref=registry.get("L-P032-01").ref, status="supported",
+            evidence_hashes=("e" * 64,)),
+        LensQualification.create(
+            lens_ref=registry.get("L-P032-01").ref, path="initial_design",
+            scope_hash=target.work_model_ref.sha256, status="qualified",
+            qualification_record_hash=QUALIFICATION_HASH),
+    )
+    # LensDecision is init=False; a forger reconstructs it field-by-field with a fake token.
+    forged = object.__new__(LensDecision)
+    for name, field_value in {
+        "lens_ref": genuine.lens_ref,
+        "registry_bundle_id": genuine.registry_bundle_id,
+        "path": genuine.path,
+        "scope_hash": genuine.scope_hash,
+        "alternative_scope": genuine.alternative_scope,
+        "qualification_status": "qualified",
+        "state": "proposed",
+        "reason": genuine.reason,
+        "evidence_hashes": genuine.evidence_hashes,
+        "_issuer_token": object(),
+    }.items():
+        object.__setattr__(forged, name, field_value)
+    body = {
+        "decision_id": "00000000-0000-4000-8000-000000000733",
+        "version": 1,
+        "functional_claims": ["주장"],
+        "proposed_effects": [],
+        "conflicts": [],
+        "abstentions": [],
+    }
+    with pytest.raises(DesignContractError, match="not issued by the qualified registry"):
+        accept_design_decision(target, [forged], body, registry=registry)
