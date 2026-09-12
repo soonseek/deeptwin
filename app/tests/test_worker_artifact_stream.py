@@ -562,3 +562,76 @@ def test_pushback_transport_replays_the_first_payload_once():
     assert transport.receive() == b"third"
     with pytest.raises(ArtifactStreamError):
         PushbackTransport(inner, first="not-bytes")
+
+
+# --------------------------------------------------- audit findings F1-F3
+
+
+class EvilSource:
+    """A caller-supplied source that fails with a non-stream exception."""
+
+    def read(self, size: int) -> bytes:
+        raise ValueError("boom from a caller-supplied source")
+
+
+def test_a_non_stream_source_failure_cancels_and_wraps_terminally():
+    data = b"payload"
+    desc = descriptor(data)
+    scripted = ScriptedTransport([
+        _encode({
+            "type": "artifact-credit", "batch_id": BATCH, "ordinal": 0,
+            "consumed_through": 0, "credit_through": len(data),
+        }),
+    ])
+    with pytest.raises(ArtifactStreamError):
+        send_artifact(scripted, desc, EvilSource())
+    assert scripted.sent[-1]["type"] == "artifact-cancel"
+
+
+def test_a_mid_batch_failure_aborts_every_previously_admitted_sink():
+    from app.workers.artifact_stream import receive_offered_batch
+
+    first = descriptor(b"one", ordinal=0, count=2)
+    duplicate = descriptor(b"two", ordinal=0, count=2)
+    scripted = ScriptedTransport([
+        _encode({"type": "artifact-offer", **first.as_offer_fields()}),
+        _encode({
+            "type": "artifact-chunk", "batch_id": first.batch_id, "ordinal": 0,
+            "offset": 0, "data": base64.b64encode(b"one").decode("ascii"),
+        }),
+        _encode({
+            "type": "artifact-end", "batch_id": first.batch_id, "ordinal": 0,
+            "size": 3, "sha256": first.sha256,
+        }),
+        _encode({"type": "artifact-offer", **duplicate.as_offer_fields()}),
+    ])
+    sinks = []
+
+    def factory(_descriptor):
+        sink = BytesSink()
+        sinks.append(sink)
+        return sink
+
+    with pytest.raises(ArtifactStreamError):
+        receive_offered_batch(scripted, offered_policy(), factory)
+    assert len(sinks) == 1
+    with pytest.raises(ArtifactStreamError):
+        _ = sinks[0].value  # the orphaned first artifact must be aborted, not kept
+
+
+def test_scratch_sink_abort_reverses_a_finalized_file_and_is_idempotent(tmp_path):
+    sink = ScratchFileSink(str(tmp_path), "kept.bin")
+    sink.write(0, b"bytes")
+    sink.finalize()
+    assert (tmp_path / "kept.bin").exists()
+    sink.abort()
+    assert not (tmp_path / "kept.bin").exists()
+    sink.abort()  # idempotent: no fd double-close, no OSError
+
+
+def test_scratch_sink_double_abort_is_idempotent(tmp_path):
+    sink = ScratchFileSink(str(tmp_path), "gone.bin")
+    sink.write(0, b"x")
+    sink.abort()
+    sink.abort()
+    assert not (tmp_path / "gone.bin").exists()

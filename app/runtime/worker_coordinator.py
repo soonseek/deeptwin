@@ -461,7 +461,9 @@ class WorkerCoordinator:
                         [item.source for item in artifact_inputs],
                         limits=StreamLimits(),
                     )
-                except ArtifactStreamError:
+                except Exception:  # noqa: BLE001 - effect-preserving barrier
+                    # Any failure past the request frame — a stream violation or a
+                    # foreign source/transport exception — has an unknown effect.
                     raise WorkerArtifactStreamFailed(
                         dispatch_effect="outcome_unknown"
                     ) from None
@@ -495,16 +497,16 @@ class WorkerCoordinator:
                         lambda _descriptor: BytesSink(),
                         limits=StreamLimits(),
                     )
-                except ArtifactStreamError:
+                    received_artifacts = tuple(
+                        ReceivedWorkerArtifact(
+                            descriptor=descriptor, payload=sink.value
+                        )
+                        for descriptor, sink in admitted
+                    )
+                except Exception:  # noqa: BLE001 - effect-preserving barrier
                     raise WorkerArtifactStreamFailed(
                         dispatch_effect="outcome_unknown"
                     ) from None
-                received_artifacts = tuple(
-                    ReceivedWorkerArtifact(
-                        descriptor=descriptor, payload=sink.value
-                    )
-                    for descriptor, sink in admitted
-                )
                 frame = codec.read(sock, deadline=effective)
             if (
                 type(frame) is not broker.ReceivedFrame

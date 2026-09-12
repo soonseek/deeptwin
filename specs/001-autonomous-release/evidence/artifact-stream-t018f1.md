@@ -204,11 +204,73 @@ Frozen identities (SHA-256):
 53b6b6e9c14ac6309526f13670ae155674d2fbd1fe4bfa7bf037ee026225bd75  app/tests/test_worker_artifact_stream.py
 ```
 
+## Independent adversarial audit and remediation (2026-09-12)
+
+An independent adversarial audit subagent (did not write the code) attacked the whole slice
+at c8c6547 with ~50 executed probes (4 probe scripts plus real-socketpair/authenticated-codec
+pytest cases; scripts preserved in the session scratchpad `artifact-audit/`). Verdict:
+**ACCEPT with findings** — no malicious-worker/peer-triggerable invariant violation was
+found; three trusted-side defects and one observation were reported and are now closed:
+
+- **F1 (P2, fixed):** a caller-supplied source raising a non-`ArtifactStreamError`
+  (`ValueError`/`OSError`, realistic for a future file-backed source) escaped
+  `exchange` raw after the request frame — no `dispatch_effect` at all and no cancel sent to
+  the worker. Fix: `send_artifact` now cancels toward the receiver and wraps any foreign
+  source/transport exception as a terminal `ArtifactStreamError`; both coordinator stream
+  blocks (input send and output receive, including `ReceivedWorkerArtifact` construction)
+  are now effect-preserving barriers that surface `WorkerArtifactStreamFailed`
+  (`outcome_unknown`) for *any* failure past the request frame. Regression tests: a
+  cancelling wrap at stream level and an end-to-end coordinator test asserting
+  `outcome_unknown`, permit consumed, and the worker observing `StreamCancelled`.
+- **F2 (P2, fixed):** a mid-batch failure in `receive_offered_batch` orphaned
+  already-finalized earlier sinks (partial-batch residue; library API only — the shipped
+  coordinator path used in-memory sinks). Fix: `_abort_admitted` reverses every previously
+  admitted sink on both the offer-rejection and body-failure paths, so a failed batch admits
+  nothing. Regression test: the first artifact's sink is aborted (value unreadable) after a
+  duplicate-ordinal batch failure.
+- **F3 (P3, fixed):** `ScratchFileSink.abort()` after `finalize()` (or double abort)
+  double-closed fds and raised `OSError`. Fix: abort is idempotent and now *reverses* a
+  finalized file by reopening the owned scratch directory (same ownership check, no-follow
+  dir_fd unlink). Regression tests: abort-after-finalize removes the persisted file; double
+  abort is a no-op.
+- **F4 (P3, observation — deliberate):** zero-size artifacts are admissible everywhere,
+  bounded by the batch count and policy. This is intentional: an empty artifact is a valid
+  exact object (its digest is the empty sha256) and the contract does not forbid it.
+
+Invariants the audit probed and could NOT break (probe scripts listed in the report): offer
+smuggling after a declared batch, first-offer ordinal/count crafting, duplicate ordinals,
+declared-size lies both ways, aggregate off-by-one, media-type case/parameter tricks, credit
+replay/backward/beyond-declared/stall, full-up-front-credit overrun, foreign-batch cancel,
+pushback double-processing, coordinator frame-type/correlation confusion, permit intactness
+on every pre-transport rejection, digest recomputation on the live path, worst-case frame
+headroom (30,038 B wire frame vs 65,536 limit), and `ScratchFileSink` symlink/name/collision
+defenses.
+
+```text
+python -m pytest -q (five focused suites, post-remediation)
+111 passed
+
+ruff check (four touched files)
+All checks passed
+
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-12)
+2,990 passed, 2 skipped, 369 subtests passed, 1 known Starlette/AnyIO deprecation warning
+```
+
+Frozen identities after remediation (SHA-256):
+
+```text
+c0f781b155cca94068ee9d7340930551a337ab7fc753d15a1442e7d8c963f77e  app/runtime/worker_coordinator.py
+c5f74b0a7ac68871e9bd0e6976a47c33d50b1dd47a9e171c0ed3f6d343bf6075  app/workers/artifact_stream.py
+a93ac51863c6472ebef403b6072d63118db089151b501d4fd402b5655973d871  app/tests/test_worker_coordinator_artifacts.py
+e96f539ccfa077fd0382d1f23f55725ab6e4625da15627f3e7758c23b231ed48  app/tests/test_worker_artifact_stream.py
+```
+
 ## Not claimed
 
 `worker_dispatch.py` does not yet plumb `artifact_inputs`/`artifact_output_policy` from any
 semantic caller, sources and sinks are in-memory rather than CAS-backed store reads/writes,
 and no Linux/root canary has exercised the stream over a real UDS with SO_PEERCRED — the
 2026-09-12 attempt remains blocked by the host's Docker content-store I/O fault, not by the
-code. No independent adversarial re-audit of the artifact stream or its coordinator wiring
-has run yet.
+code. The audit's fix-verification (this remediation) has not itself been independently
+re-audited, though each finding carries a reproducing regression test.

@@ -18,6 +18,7 @@ automatic retry.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -263,7 +264,7 @@ class BytesSink:
 class ScratchFileSink:
     """Write into a single owned scratch file created no-follow under a directory fd."""
 
-    __slots__ = ("_dir_fd", "_fd", "_finalized", "_name", "_received")
+    __slots__ = ("_aborted", "_dir_fd", "_fd", "_finalized", "_name", "_received", "_scratch_dir")
 
     def __init__(self, scratch_dir: str, name: str) -> None:
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", name or ""):
@@ -274,9 +275,11 @@ class ScratchFileSink:
             os.close(dir_fd)
             raise ArtifactStreamError("scratch directory is not owned by this user")
         self._dir_fd = dir_fd
+        self._scratch_dir = scratch_dir
         self._name = name
         self._received = 0
         self._finalized = False
+        self._aborted = False
         try:
             self._fd = os.open(
                 name,
@@ -303,6 +306,28 @@ class ScratchFileSink:
         os.close(self._dir_fd)
 
     def abort(self) -> None:
+        if self._aborted:
+            return
+        self._aborted = True
+        if self._finalized:
+            # Reverse an already-finalized file (a later batch member failed): the
+            # original directory fd is closed, so reopen the owned directory and
+            # unlink the exact name under it with the same ownership check.
+            try:
+                dir_fd = os.open(
+                    self._scratch_dir, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                )
+            except OSError:
+                return
+            try:
+                info = os.fstat(dir_fd)
+                if stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid():
+                    os.unlink(self._name, dir_fd=dir_fd)
+            except OSError:
+                pass
+            finally:
+                os.close(dir_fd)
+            return
         try:
             os.close(self._fd)
         except OSError:
@@ -312,7 +337,8 @@ class ScratchFileSink:
         except OSError:
             pass
         finally:
-            os.close(self._dir_fd)
+            with contextlib.suppress(OSError):
+                os.close(self._dir_fd)
 
 
 def _require(condition: bool, message: str) -> None:
@@ -361,6 +387,12 @@ def send_artifact(
     except ArtifactStreamError:
         _send_cancel(transport, descriptor, "sender_fault")
         raise
+    except Exception as exc:
+        # A source or transport failing with a foreign exception is still a terminal
+        # sender fault: cancel toward the receiver, then surface a stream error so
+        # every caller keeps the no-resume, effect-preserving contract.
+        _send_cancel(transport, descriptor, "sender_fault")
+        raise ArtifactStreamError("artifact source or transport failed") from exc
 
     transport.send(_encode({
         "type": _END,
@@ -619,6 +651,14 @@ def _descriptor_from_offer(offer: Mapping[str, object]) -> ArtifactDescriptor:
     return ArtifactDescriptor(**fields)
 
 
+def _abort_admitted(admitted: list[tuple[ArtifactDescriptor, ArtifactSink]]) -> None:
+    """A failed batch admits nothing: reverse every previously admitted sink."""
+
+    for _descriptor, sink in admitted:
+        with contextlib.suppress(Exception):
+            sink.abort()
+
+
 def receive_offered_batch(
     transport: StreamTransport,
     policy: OfferedBatchPolicy,
@@ -665,12 +705,14 @@ def receive_offered_batch(
             _require(total <= limits.max_total_bytes, "batch aggregate exceeds the total byte limit")
         except ArtifactStreamError:
             _send_cancel(transport, descriptor, "offer_rejected")
+            _abort_admitted(admitted)
             raise
         sink = sink_factory(descriptor)
         try:
             _admit_body(transport, descriptor, sink, limits)
         except ArtifactStreamError:
             sink.abort()
+            _abort_admitted(admitted)
             raise
         transport.send(_encode({
             "type": _ACCEPTED,

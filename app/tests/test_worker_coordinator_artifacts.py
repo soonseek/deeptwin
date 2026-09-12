@@ -21,6 +21,7 @@ from app.workers.artifact_stream import (
     BytesSink,
     BytesSource,
     OfferedBatchPolicy,
+    StreamCancelled,
     receive_batch,
     send_batch,
 )
@@ -701,3 +702,51 @@ def test_received_worker_artifact_recomputes_its_own_digest():
         worker_module.ReceivedWorkerArtifact(descriptor=good, payload=b"tampered")
     with pytest.raises(TypeError):
         worker_module.ReceivedWorkerArtifact(descriptor=good, payload=data + b"x")
+
+
+def test_a_source_failure_after_the_request_frame_is_outcome_unknown(
+    subject, tmp_path, monkeypatch
+):
+    """Audit F1: a non-stream source exception must not escape without effect."""
+
+    coordinator = stream_coordinator(subject, tmp_path / "pair")
+    expected = descriptors_for(subject.permit.command_id, b"payload")
+
+    class EvilSource:
+        def read(self, size: int) -> bytes:
+            raise ValueError("boom from a caller-supplied source")
+
+    evil_inputs = (
+        worker_module.DispatchArtifactInput(
+            descriptor=expected[0], source=EvilSource()
+        ),
+    )
+    worker_result: dict[str, BaseException] = {}
+
+    def worker(sock, codec):
+        frame = codec.read(sock, deadline=broker.Deadline.after_ms(5_000))
+        transport = FrameCodecTransport(
+            codec,
+            sock,
+            message_type="artifact_stream",
+            correlation_id=frame.envelope.message_id,
+            deadline=broker.Deadline.after_ms(5_000),
+        )
+        try:
+            receive_batch(transport, list(expected), [BytesSink()])
+        except BaseException as exc:  # noqa: BLE001
+            worker_result["receive"] = exc
+
+    harness = install_real_transport(monkeypatch, worker)
+    with pytest.raises(broker.BrokerError) as failure:
+        coordinator.exchange(
+            subject.permit,
+            subject.capability,
+            deadline=deadline(),
+            artifact_inputs=evil_inputs,
+        )
+    join_worker(harness)
+
+    assert failure.value.dispatch_effect == "outcome_unknown"
+    assert subject.ledger.pending_permit_count == 0
+    assert isinstance(worker_result.get("receive"), StreamCancelled)
