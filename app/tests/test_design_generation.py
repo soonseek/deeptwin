@@ -701,3 +701,45 @@ def test_accept_design_decision_rejects_a_forged_lens_decision():
     }
     with pytest.raises(DesignContractError, match="not issued by the qualified registry"):
         accept_design_decision(target, [forged], body, registry=registry)
+
+
+def _any_success_join(target, dref, first_id, second_id, suffix):
+    """Handler-x always takes the 'left' arm; only the branch node IDs vary."""
+    graph = graph_value(target, dref, graph_suffix=suffix, agent_count=0)
+    graph["fact_names"] = ["path"]
+    graph["nodes"].append({
+        "node_id": "route", "kind": "router",
+        "responsibility": "검증 결과 열거값에 따라 후속 기록 분기를 선택한다.",
+        "input_slots": [], "output_slots": [], "grant_refs": [],
+        "required_approval_scopes": [], "failure_policy": "fail_run",
+        "config": {"decision_fact": "path", "allowed_values": ["left", "right"]},
+    })
+    graph["nodes"].append(_det(first_id, "handler-x-v1", "X 계열 기록을 남긴다."))
+    graph["nodes"].append(_det(second_id, "handler-y-v1", "Y 계열 기록을 남긴다."))
+    graph["nodes"].append({
+        "node_id": "merge", "kind": "join",
+        "responsibility": "먼저 성공한 분기를 채택한다.",
+        "input_slots": [], "output_slots": [], "grant_refs": [],
+        "required_approval_scopes": [], "failure_policy": "fail_run",
+        "config": {"mode": "any_success", "failure_handling": "block",
+                   "tie_break": "branch_id_lexical"},
+    })
+    graph["edges"].append(_control("e-to-route", "research", "route"))
+    graph["edges"].append(_control("e-arm-0", "route", first_id, _eq("path", "left")))
+    graph["edges"].append(_control("e-arm-1", "route", second_id, _eq("path", "right")))
+    graph["edges"].append(_control("e-j1", first_id, "merge"))
+    graph["edges"].append(_control("e-j2", second_id, "merge"))
+    return graph
+
+
+def test_any_success_tie_break_order_is_semantic_but_rename_invariant():
+    # F6: swapping the branch node IDs changes which handler wins observation ties
+    # (frozen branch-ID lexical order), so the projection must differ; an
+    # order-preserving rename changes nothing at runtime and must stay invariant.
+    _, target, dref = _audit_target()
+    baseline = _proj(_any_success_join(target, dref, "aa-branch", "zz-branch", 1050))
+    swapped = _proj(_any_success_join(target, dref, "zz-branch", "aa-branch", 1051))
+    assert baseline != swapped
+
+    order_preserving = _proj(_any_success_join(target, dref, "ab-branch", "zx-branch", 1052))
+    assert baseline == order_preserving

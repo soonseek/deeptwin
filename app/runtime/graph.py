@@ -850,8 +850,25 @@ def structural_diversity_projection(graph):
                 }
             elif node.kind == "bounded_loop":
                 placed = expression_signature(config["termination"], aliased)
+            elif node.kind == "join" and config.get("mode") == "any_success":
+                # The runtime tie-break is the frozen branch-ID lexical ordering, which is
+                # semantic even though branch IDs are erased from the projection: project
+                # the predecessor signatures in that frozen order, so an ID swap that
+                # changes the tie winner changes the projection while order-preserving
+                # renames stay invariant.
+                placed = {
+                    **config,
+                    "tie_break_branch_signatures": [
+                        node_signature[source] for source in sorted(
+                            edge.source_node_id for edge in graph.edges
+                            if edge.target_node_id == node.node_id
+                            and edge.kind != "observation"
+                        )
+                    ],
+                }
             else:
-                # join / human_gate / deterministic-handler configs carry no fact names or IDs.
+                # Other join modes / human_gate / deterministic-handler configs carry no
+                # fact names or IDs, and their branch order is not semantic.
                 placed = config
             evaluation_placement.append((node_signature[node.node_id], node.kind, placed))
     for criterion in graph.completion_criteria:

@@ -23,7 +23,7 @@ confirm closure (probe4b 4/4, probe5 10/10, probe6 1/1).
 | F3 | P2 | `dependency_shape` was a flat edge multiset that could not distinguish non-isomorphic topologies over identically-signatured nodes (a 3-deep chain vs a 1→2 fan), so genuinely different candidates were rejected as duplicates. | Dependency endpoints now use a one-round neighbourhood refinement (each node's aliased signature plus the sorted multiset of its incident edges' kind/direction/neighbour-base-signature/semantics), so chain and fan differ. |
 | F4 | P2 | Loop-exit validation compared the frozen edge condition (tuples) to the thawed controller termination (lists), so any bounded loop whose termination used a list-bearing expression (`in`/`and`/`or`) was rejected even with a byte-identical exit. | The comparison is now `canonical_json(exit_condition) != canonical_json(termination)` over both thawed forms. |
 | F5 | P2 | `accept_design_decision` checked `type(item) is LensDecision` but never verified the registry issuer token, so a reconstructed decision with a fabricated token, bundle id and content hash flowed through to an accepted candidate. | `LensRegistry.vouches_for(decision)` exposes the per-instance issuer-token check; `accept_design_decision` now requires a vouching `registry` and rejects any decision it did not issue. |
-| F6 | P3 | `any_success` join tie-break (`branch_id_lexical`) is semantically meaningful but references node IDs that the projection correctly erases, so an ID swap changes runtime tie order while projecting identically. | Not changed. Documented design tension; capturing branch-order rename-invariantly needs a separate signature axis. Not release-blocking. |
+| F6 | P3 | `any_success` join tie-break (`branch_id_lexical`) is semantically meaningful but references node IDs that the projection correctly erases, so an ID swap changes runtime tie order while projecting identically. | Closed on 2026-09-12 (follow-up): an `any_success` join's placement now carries its predecessor signatures in the frozen branch-ID lexical order, so an order-changing ID swap (a different tie winner) projects differently while an order-preserving rename stays invariant. Regression: `test_any_success_tie_break_order_is_semantic_but_rename_invariant`; probe8 confirms the swapped pair now differs. |
 
 The fact-ordering and refinement changes preserve the existing invariants: ID renames still
 project identically, condition-format and real-axis changes still differ, and identical
@@ -65,6 +65,6 @@ a70917d3545eaf1d9081dbb4cd4f183f322e3fccc0213d94be0d8dd89b4a81db  app/services/l
 
 ## Still open
 
-The audit covered the structural projection, compiler and decision boundary only. T030's
-live confirmation → lens → generation pipeline against a real provider, and F6's tie-break
-axis, remain open. No release credit is claimed beyond the recorded suites.
+The audit covered the structural projection, compiler and decision boundary only. All six
+findings including F6 are now closed; T030's live confirmation → lens → generation pipeline
+against a real provider remains open. No release credit is claimed beyond the recorded suites.
