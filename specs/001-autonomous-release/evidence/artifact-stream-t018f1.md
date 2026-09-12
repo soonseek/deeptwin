@@ -311,12 +311,60 @@ a8ae4b5338bb3bb756ebafeaabd8df019836f92d3b8426850dc9e0761ad8b8fe  app/tests/test
 Note: `DomainStore` bounds blobs at 16 MiB (`DEFAULT_MAX_BLOB_BYTES`), tighter than the
 stream's 64 MiB ceiling; the store bound governs CAS-backed transfers.
 
+## Dispatch-layer plumbing (2026-09-13)
+
+`WorkerDispatchService` now carries the byte route end to end for semantic callers:
+
+- `accept(...)` gained keyword-only `artifact_inputs: tuple[DispatchArtifactInput, ...] = ()`
+  and `artifact_output_policy: OfferedBatchPolicy | None = None`. Shape validation joins the
+  existing `committed` gate, so a malformed argument raises `WorkerDispatchUnavailable`
+  *before* any reservation/queue state changes and leaves the permit pending; deep identity
+  validation (request-id binding, batch shape) remains the coordinator's pre-consumption
+  authority.
+- `_DispatchItem` threads both values to `coordinator.exchange` in the profile worker
+  thread.
+- On a successful exchange, every returned artifact is imported into the vault CAS
+  (`store_received_artifact`, operational partition) *before* the permit is discarded and
+  the redacted transport observation is written: an attempt may not claim clean
+  `transport_accepted` while its output bytes are unpersisted. An import failure records
+  the honest `outcome_unknown` recovery observation through the existing `_record_failure`
+  path (no process-wide inhibition latch for a scoped storage rejection); observation-write
+  failure semantics are unchanged.
+- The observation schema itself is untouched (it remains a redacted transport fact); the
+  durable artifact linkage is content addressing — descriptors carry exact sha256/size, so
+  any consumer holding the semantic result can `read_blob` the registered content.
+
+Tests (3, real socketpair worker over authenticated codecs): a dispatch whose inputs stream
+to the worker and whose returned output becomes registered CAS content with
+`transport_accepted` status; malformed artifact arguments rejected with no state change
+(permit still pending, reservation releasable); a doomed CAS import recording
+`outcome_unknown`/`recovery_pending` instead of clean acceptance. Three existing exchange
+stubs across the dispatch/server suites were widened to accept the new keywords.
+
+```text
+python -m pytest -q app/tests/test_worker_dispatch.py
+43 passed
+python -m pytest -q app/tests/test_server_api_v1.py
+26 passed
+ruff check app/runtime/worker_dispatch.py app/tests/test_worker_dispatch.py
+All checks passed
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-13)
+2,999 passed, 2 skipped, 369 subtests passed, 1 known Starlette/AnyIO deprecation warning
+```
+
+Frozen identities (SHA-256):
+
+```text
+d3ad7b08c86f36ca8eaae7114518436740cd84e0d45eec54d1b948dc3494e3cc  app/runtime/worker_dispatch.py
+ea4a49eb5c0df2f195cc5f9b914ca25cefe8d7108f996493aa7d5f555e8d5d1f  app/tests/test_worker_dispatch.py
+```
+
 ## Not claimed
 
-`worker_dispatch.py` does not yet plumb `artifact_inputs`/`artifact_output_policy` from any
-semantic caller (the CAS adapters are wired only through tests, not a semantic dispatch
-path), worker-side sinks in production will need owned-scratch staging on the worker's own
-container, and no Linux/root canary has exercised the stream over a real UDS with
-SO_PEERCRED — the 2026-09-12 attempt remains blocked by the host's Docker content-store I/O
-fault, not by the code. The audit remediation and this CAS binding have not been
+No HTTP/semantic route yet *supplies* artifact inputs or output policies (the transaction
+API's callers pass none, so live commands still dispatch artifact-free); worker-side sinks
+in production will need owned-scratch staging on the worker's own container; and no
+Linux/root canary has exercised the stream over a real UDS with SO_PEERCRED — the
+2026-09-12 attempt remains blocked by the host's Docker content-store I/O fault, not by the
+code. The audit remediation, CAS binding and this dispatch plumbing have not been
 independently re-audited, though each carries reproducing regression tests.

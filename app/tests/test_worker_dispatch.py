@@ -788,7 +788,7 @@ def test_claim_failure_after_worker_becomes_active_is_unknown_without_leak(
     began = Event()
     finish = Event()
 
-    def exchange(permit, _capability, *, deadline):
+    def exchange(permit, _capability, *, deadline, **_artifact_kwargs):
         began.set()
         assert finish.wait(deadline.require())
         return worker_module.AuthenticatedWorkerResponse(
@@ -1233,7 +1233,7 @@ def test_capacity_is_one_active_plus_the_declared_bounded_queue(
     started = Event()
     finish = Event()
 
-    def exchange(permit, capability, *, deadline):
+    def exchange(permit, capability, *, deadline, **_artifact_kwargs):
         del capability
         started.set()
         assert finish.wait(deadline.require())
@@ -1414,7 +1414,7 @@ def test_close_drains_accepted_queue_without_new_deadline_or_send(
     release = Event()
     calls = []
 
-    def exchange(permit, capability, *, deadline):
+    def exchange(permit, capability, *, deadline, **_artifact_kwargs):
         del capability
         calls.append(permit.command_id)
         began.set()
@@ -1462,3 +1462,178 @@ def test_close_drains_accepted_queue_without_new_deadline_or_send(
     assert queued_status["state"] == "outcome_unknown"
     assert queued_status["dispatch"]["effect"] == "outcome_unknown"
     assert all(not thread.is_alive() for thread in dispatcher._threads)
+
+
+# ---------------------------------------------- artifact byte-route plumbing
+
+from app.domain.store import BlobRef, StorageError
+from app.tests.test_worker_coordinator_artifacts import (
+    descriptors_for,
+    inputs_for,
+    install_real_transport,
+    join_worker,
+    output_batch,
+    output_policy,
+    stream_coordinator,
+)
+from app.workers.artifact_stream import (
+    BytesSink,
+    BytesSource,
+    receive_batch,
+    send_batch,
+)
+from app.workers.artifact_stream_transport import FrameCodecTransport
+
+
+def stream_service(value, tmp_path):
+    return dispatch_module.WorkerDispatchService(
+        runtime_ledger=value.ledger,
+        coordinators=(stream_coordinator(value, tmp_path / "dispatch-pair"),),
+    )
+
+
+def echo_worker(expected_inputs, seen):
+    def worker(sock, codec):
+        frame = codec.read(sock, deadline=broker.Deadline.after_ms(5_000))
+        command_id = frame.envelope.message_id
+        transport = FrameCodecTransport(
+            codec,
+            sock,
+            message_type="artifact_stream",
+            correlation_id=command_id,
+            deadline=broker.Deadline.after_ms(5_000),
+        )
+        sink = BytesSink()
+        receive_batch(transport, list(expected_inputs), [sink])
+        seen["input"] = sink.value
+        transformed = sink.value + b" transformed"
+        seen["output"] = transformed
+        send_batch(
+            transport,
+            output_batch(command_id, transformed, media_type="text/plain"),
+            [BytesSource(transformed)],
+        )
+        codec.write(
+            sock,
+            message_id=identifier(),
+            correlation_id=command_id,
+            message_type="completed",
+            payload=b"{}",
+            deadline=broker.Deadline.after_ms(5_000),
+        )
+    return worker
+
+
+def test_accept_threads_the_artifact_byte_route_to_the_worker(
+    subject, tmp_path, monkeypatch,
+):
+    source_bytes = b"dispatch-plumbed input bytes"
+    expected_inputs = descriptors_for(subject.permit.command_id, source_bytes)
+    seen: dict[str, bytes] = {}
+    harness = install_real_transport(monkeypatch, echo_worker(expected_inputs, seen))
+    dispatcher = stream_service(subject, tmp_path)
+    dispatcher.start()
+    try:
+        route_deadline = deadline()
+        reservation = dispatcher.reserve(
+            subject.permit.command_id,
+            subject.records.profile.ref,
+            deadline=route_deadline,
+        )
+        dispatcher.accept(
+            reservation,
+            outcome(subject),
+            deadline=route_deadline,
+            artifact_inputs=inputs_for(subject.permit.command_id, source_bytes),
+            artifact_output_policy=output_policy(subject.permit.command_id),
+        )
+        dispatcher.wait_idle(deadline())
+        join_worker(harness)
+    finally:
+        dispatcher.close()
+
+    assert harness.worker_errors == []
+    assert seen["input"] == source_bytes
+    import hashlib as _hashlib
+    output_blob = BlobRef(
+        subject.domain.vault_id,
+        "operational",
+        _hashlib.sha256(seen["output"]).hexdigest(),
+        len(seen["output"]),
+    )
+    assert subject.domain.read_blob(output_blob, purpose="operational") == seen["output"]
+    status = subject.ledger.dispatch_status(subject.permit.command_id)
+    assert status["state"] == "running"
+    assert status["dispatch"]["effect"] == "transport_accepted"
+
+
+def test_accept_rejects_malformed_artifact_arguments_without_state_change(
+    subject, tmp_path, monkeypatch,
+):
+    dispatcher = stream_service(subject, tmp_path)
+    dispatcher.start()
+    try:
+        route_deadline = deadline()
+        reservation = dispatcher.reserve(
+            subject.permit.command_id,
+            subject.records.profile.ref,
+            deadline=route_deadline,
+        )
+        for bad_kwargs in (
+            {"artifact_inputs": [*inputs_for(subject.permit.command_id, b"x")]},
+            {"artifact_inputs": (object(),)},
+            {"artifact_output_policy": object()},
+        ):
+            with pytest.raises(dispatch_module.WorkerDispatchUnavailable):
+                dispatcher.accept(
+                    reservation,
+                    outcome(subject),
+                    deadline=route_deadline,
+                    **bad_kwargs,
+                )
+        assert subject.ledger.pending_permit_count == 1
+        dispatcher.release(reservation)
+    finally:
+        dispatcher.close()
+
+
+def test_a_failed_artifact_import_records_unknown_not_clean_acceptance(
+    subject, tmp_path, monkeypatch,
+):
+    source_bytes = b"input for a doomed import"
+    expected_inputs = descriptors_for(subject.permit.command_id, source_bytes)
+    seen: dict[str, bytes] = {}
+    harness = install_real_transport(monkeypatch, echo_worker(expected_inputs, seen))
+
+    def doomed_import(*_args, **_kwargs):
+        raise StorageError("the vault rejected the import")
+
+    monkeypatch.setattr(dispatch_module, "store_received_artifact", doomed_import)
+    dispatcher = stream_service(subject, tmp_path)
+    dispatcher.start()
+    try:
+        route_deadline = deadline()
+        reservation = dispatcher.reserve(
+            subject.permit.command_id,
+            subject.records.profile.ref,
+            deadline=route_deadline,
+        )
+        dispatcher.accept(
+            reservation,
+            outcome(subject),
+            deadline=route_deadline,
+            artifact_inputs=inputs_for(subject.permit.command_id, source_bytes),
+            artifact_output_policy=output_policy(subject.permit.command_id),
+        )
+        dispatcher.wait_idle(deadline())
+        join_worker(harness)
+    finally:
+        dispatcher.close()
+
+    status = subject.ledger.dispatch_status(subject.permit.command_id)
+    assert status["state"] == "outcome_unknown"
+    assert status["dispatch"] == {
+        "state": "recovery_pending",
+        "effect": "outcome_unknown",
+    }
+    assert subject.ledger.pending_permit_count == 0

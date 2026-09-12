@@ -16,9 +16,12 @@ from hashlib import sha256
 
 from ..domain.refs import DomainContractError, EntityRef, uuid_string
 from ..workers import broker
+from ..workers.artifact_stream import OfferedBatchPolicy
+from .artifact_cas import store_received_artifact
 from .ledger import DispatchPermit, LedgerError, RuntimeLedger, TransportObservation
 from .worker_coordinator import (
     AuthenticatedWorkerResponse,
+    DispatchArtifactInput,
     SelectedDispatchReadCapability,
     WorkerCoordinator,
 )
@@ -276,6 +279,8 @@ class _DispatchItem:
     capability: SelectedDispatchReadCapability
     deadline: broker.Deadline
     slot_token: object
+    artifact_inputs: tuple[DispatchArtifactInput, ...] = ()
+    artifact_output_policy: OfferedBatchPolicy | None = None
 
 
 class WorkerDispatchService:
@@ -463,12 +468,23 @@ class WorkerDispatchService:
             self._condition.notify_all()
 
     def accept(self, reservation: DispatchReservation, outcome: DispatchOutcome, *,
-               deadline: broker.Deadline) -> DispatchAcceptance:
+               deadline: broker.Deadline,
+               artifact_inputs: tuple[DispatchArtifactInput, ...] = (),
+               artifact_output_policy: OfferedBatchPolicy | None = None,
+               ) -> DispatchAcceptance:
         committed = (
             type(outcome) is DispatchOutcome
             and not outcome.replayed
             and type(outcome.permit) is DispatchPermit
             and type(outcome.read_capability) is SelectedDispatchReadCapability
+            and type(artifact_inputs) is tuple
+            and all(
+                type(item) is DispatchArtifactInput for item in artifact_inputs
+            )
+            and (
+                artifact_output_policy is None
+                or type(artifact_output_policy) is OfferedBatchPolicy
+            )
         )
         if not committed:
             raise WorkerDispatchUnavailable()
@@ -506,6 +522,8 @@ class WorkerDispatchService:
                     capability,
                     deadline,
                     reservation._slot_token,
+                    artifact_inputs,
+                    artifact_output_policy,
                 ))
                 self._issued_acceptances[reservation._slot_token] = acceptance
                 self._condition.notify_all()
@@ -772,6 +790,8 @@ class WorkerDispatchService:
                             permit,
                             item.capability,
                             deadline=item.deadline,
+                            artifact_inputs=item.artifact_inputs,
+                            artifact_output_policy=item.artifact_output_policy,
                         )
                     except broker.BrokerError as exc:
                         self._record_failure(permit, exc.dispatch_effect)
@@ -779,13 +799,25 @@ class WorkerDispatchService:
                         self._record_failure(permit, "outcome_unknown")
                     else:
                         try:
-                            RuntimeLedger.discard_dispatch_permit(self._ledger, permit)
-                            self._record_observation(
-                                permit,
-                                self._observation_for_response(permit, response),
-                            )
-                        except BaseException:  # noqa: BLE001 - durable-write failure latch
-                            _inhibit_runtime_dispatch(self._ledger)
+                            # Returned bytes must be registered content before the
+                            # attempt may claim clean transport acceptance.
+                            for artifact in response.artifacts:
+                                store_received_artifact(
+                                    coordinator._domain,
+                                    artifact,
+                                    purpose="operational",
+                                )
+                        except BaseException:  # noqa: BLE001 - unpersisted output fails closed
+                            self._record_failure(permit, "outcome_unknown")
+                        else:
+                            try:
+                                RuntimeLedger.discard_dispatch_permit(self._ledger, permit)
+                                self._record_observation(
+                                    permit,
+                                    self._observation_for_response(permit, response),
+                                )
+                            except BaseException:  # noqa: BLE001 - durable-write failure latch
+                                _inhibit_runtime_dispatch(self._ledger)
             finally:
                 with self._condition:
                     self._active_items[profile_ref] = None

@@ -743,7 +743,7 @@ def test_injected_trusted_context_runs_the_real_root_once_and_returns_202(
             worker_boot_id=f"document-boot-{len(dispatcher_generations) + 1}",
         )
 
-        def exchange_worker(permit, capability, *, deadline):
+        def exchange_worker(permit, capability, *, deadline, **_artifact_kwargs):
             assert capability.permit_id == permit.permit_id
             assert type(deadline) is broker.Deadline
             return AuthenticatedWorkerResponse(
