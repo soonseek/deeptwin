@@ -83,6 +83,9 @@ do not turn unknown external readiness into a promised date.
   cases, notices, source offers, license selection and redistribution/legal/publication approval.
 - [x] Storage/CAS, persistent permission firewall and bounded T016 transaction/API seam implemented
   with independent findings recorded; T025 still owns release auth, OriginProfile and first-owner authority.
+  The service-client registry/bearer/route-composition slice passed an independent re-audit on
+  2026-09-12 closing all six 2026-09-09 REJECT findings (two P1, three P2, one P3); see
+  evidence/service-client-auth-reaudit-t025a2a3.md.
 - [x] Preserve the former native N0 canary only as historical experiment evidence; ADR-009 requires
   a new self-hosted web worker/broker qualification and it contributes no release credit.
 - [x] Historical unbranded Chromium candidate launched through Playwright and rendered DOM/canvas/
