@@ -154,7 +154,12 @@ do not turn unknown external readiness into a promised date.
   B2's final independent focused set passes 127; current shared results are 2,298 application tests
   (one skip) and 298 deploy tests. Exact scope and hashes are in
   evidence/worker-broker-t018a.md, evidence/worker-coordinator-t018b.md and
-  evidence/worker-dispatch-t018b2.md and evidence/static-topology-t018c.md. T018 remains open for
+  evidence/worker-dispatch-t018b2.md and evidence/static-topology-t018c.md. T018-F1 additionally
+  implements the root-owned pair initializer and authenticated listener lifecycle with the ten
+  static pair mounts and a root-only Linux canary; its focused suites pass 150 (one honest
+  Linux-only skip, 21 subtests) and the canary refuses honestly on non-Linux hosts, while the
+  actual Linux/root canary run and bounded artifact streaming remain open — see
+  evidence/worker-ipc-foundation-t018f1.md (2026-09-12). T018 remains open for
   actual Linux UID/peer paths, service images/initializers, actual worker implementations, bounded
   artifact streaming and semantic graph execution, runtime container/network/mount/browser
   enforcement including non-root Chromium sandbox/seccomp, and both clean deployment profiles.
