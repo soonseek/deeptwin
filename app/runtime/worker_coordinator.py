@@ -27,7 +27,11 @@ from ..workers import broker
 from ..workers.artifact_stream import (
     ArtifactDescriptor,
     ArtifactStreamError,
+    BytesSink,
+    OfferedBatchPolicy,
+    PushbackTransport,
     StreamLimits,
+    receive_offered_batch,
     send_batch,
     validate_batch,
 )
@@ -160,6 +164,23 @@ class WorkerRouteBinding:
 
 
 @dataclass(frozen=True, slots=True)
+class ReceivedWorkerArtifact:
+    """One worker-returned artifact whose bytes were verified against its offer."""
+
+    descriptor: ArtifactDescriptor
+    payload: bytes = field(repr=False)
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.descriptor) is not ArtifactDescriptor
+            or type(self.payload) is not bytes
+            or len(self.payload) != self.descriptor.declared_size
+            or sha256(self.payload).hexdigest() != self.descriptor.sha256
+        ):
+            raise TypeError("Received worker artifact is invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class AuthenticatedWorkerResponse:
     attempt_id: str
     connection_id: str
@@ -168,6 +189,7 @@ class AuthenticatedWorkerResponse:
     correlation_id: str
     message_type: str
     payload: bytes = field(repr=False)
+    artifacts: tuple[ReceivedWorkerArtifact, ...] = ()
 
     def __post_init__(self) -> None:
         try:
@@ -184,6 +206,11 @@ class AuthenticatedWorkerResponse:
             or type(self.message_type) is not str
             or _MESSAGE_TYPE.fullmatch(self.message_type) is None
             or type(self.payload) is not bytes
+            or type(self.artifacts) is not tuple
+            or any(
+                type(artifact) is not ReceivedWorkerArtifact
+                for artifact in self.artifacts
+            )
         ):
             raise TypeError("Authenticated worker response is invalid")
 
@@ -335,6 +362,20 @@ class WorkerCoordinator:
         except (ArtifactStreamError, TypeError, ValueError):
             raise WorkerArtifactRejected() from None
 
+    def _validate_artifact_output_policy(
+        self,
+        permit: DispatchPermit,
+        policy: OfferedBatchPolicy | None,
+    ) -> None:
+        if policy is None:
+            return
+        if (
+            type(policy) is not OfferedBatchPolicy
+            or self._route.artifact_stream_message_type is None
+            or policy.request_id != permit.command_id
+        ):
+            raise WorkerArtifactRejected()
+
     def exchange(
         self,
         permit: DispatchPermit,
@@ -342,6 +383,7 @@ class WorkerCoordinator:
         *,
         deadline: broker.Deadline,
         artifact_inputs: tuple[DispatchArtifactInput, ...] = (),
+        artifact_output_policy: OfferedBatchPolicy | None = None,
     ) -> AuthenticatedWorkerResponse:
         """Perform one transport exchange; semantic acceptance remains upstream."""
 
@@ -349,6 +391,7 @@ class WorkerCoordinator:
             raise WorkerCoordinatorError()
         self._validate_capability(permit, capability)
         self._validate_artifact_inputs(permit, artifact_inputs)
+        self._validate_artifact_output_policy(permit, artifact_output_policy)
         operation_deadline = deadline.bounded(
             self._route.channel_spec.max_operation_ms
         )
@@ -423,6 +466,46 @@ class WorkerCoordinator:
                         dispatch_effect="outcome_unknown"
                     ) from None
             frame = codec.read(sock, deadline=effective)
+            received_artifacts: tuple[ReceivedWorkerArtifact, ...] = ()
+            if (
+                artifact_output_policy is not None
+                and type(frame) is broker.ReceivedFrame
+                and type(frame.envelope) is broker.FrameEnvelope
+                and frame.envelope.message_type
+                == self._route.artifact_stream_message_type
+            ):
+                if frame.envelope.correlation_id != permit.command_id:
+                    raise broker.ProtocolViolation(
+                        dispatch_effect="outcome_unknown"
+                    )
+                transport = PushbackTransport(
+                    FrameCodecTransport(
+                        codec,
+                        sock,
+                        message_type=self._route.artifact_stream_message_type,
+                        correlation_id=permit.command_id,
+                        deadline=effective,
+                    ),
+                    first=frame.payload,
+                )
+                try:
+                    admitted = receive_offered_batch(
+                        transport,
+                        artifact_output_policy,
+                        lambda _descriptor: BytesSink(),
+                        limits=StreamLimits(),
+                    )
+                except ArtifactStreamError:
+                    raise WorkerArtifactStreamFailed(
+                        dispatch_effect="outcome_unknown"
+                    ) from None
+                received_artifacts = tuple(
+                    ReceivedWorkerArtifact(
+                        descriptor=descriptor, payload=sink.value
+                    )
+                    for descriptor, sink in admitted
+                )
+                frame = codec.read(sock, deadline=effective)
             if (
                 type(frame) is not broker.ReceivedFrame
                 or type(frame.envelope) is not broker.FrameEnvelope
@@ -440,6 +523,7 @@ class WorkerCoordinator:
                 correlation_id=frame.envelope.correlation_id,
                 message_type=frame.envelope.message_type,
                 payload=frame.payload,
+                artifacts=received_artifacts,
             )
         finally:
             if codec is not None:

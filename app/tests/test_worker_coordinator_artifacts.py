@@ -20,7 +20,9 @@ from app.workers.artifact_stream import (
     ArtifactDescriptor,
     BytesSink,
     BytesSource,
+    OfferedBatchPolicy,
     receive_batch,
+    send_batch,
 )
 from app.workers.artifact_stream_transport import FrameCodecTransport
 
@@ -430,3 +432,272 @@ def test_source_digest_mismatch_cancels_the_stream_and_fails_closed(
     assert harness.worker_errors == []
     assert failure.value.dispatch_effect == "outcome_unknown"
     assert "receive" in worker_result
+
+
+def output_policy(command_id, **overrides):
+    fields = {
+        "request_id": command_id,
+        "allowed_media_types": ("application/pdf", "text/plain"),
+        "max_artifacts": 4,
+    }
+    fields.update(overrides)
+    return OfferedBatchPolicy(**fields)
+
+
+def output_batch(command_id, *payloads, media_type="application/pdf"):
+    return [
+        ArtifactDescriptor(
+            batch_id=str(uuid4()),
+            request_id=command_id,
+            ordinal=index,
+            count=len(payloads),
+            media_type=media_type,
+            declared_size=len(data),
+            sha256=hashlib.sha256(data).hexdigest(),
+        )
+        for index, data in enumerate(payloads)
+    ]
+
+
+def test_output_policy_must_bind_the_exact_dispatch_command(
+    subject, tmp_path, monkeypatch
+):
+    coordinator = stream_coordinator(subject, tmp_path / "pair")
+
+    def forbidden_consume(*_args, **_kwargs):
+        raise AssertionError("an invalid output policy must not consume the permit")
+
+    monkeypatch.setattr(
+        subject.ledger, "consume_dispatch_permit_window", forbidden_consume
+    )
+    for bad_policy in (
+        output_policy(identifier()),  # foreign request id
+        object(),  # not a policy
+    ):
+        with pytest.raises(worker_module.WorkerCoordinatorError):
+            coordinator.exchange(
+                subject.permit,
+                subject.capability,
+                deadline=deadline(),
+                artifact_output_policy=bad_policy,
+            )
+    with pytest.raises(worker_module.WorkerCoordinatorError):
+        subject.coordinator.exchange(  # streamless route cannot accept outputs
+            subject.permit,
+            subject.capability,
+            deadline=deadline(),
+            artifact_output_policy=output_policy(subject.permit.command_id),
+        )
+    assert subject.ledger.pending_permit_count == 1
+
+
+def test_worker_outputs_return_through_the_digest_first_protocol(
+    subject, tmp_path, monkeypatch
+):
+    coordinator = stream_coordinator(subject, tmp_path / "pair")
+    report = bytes((i * 31) % 256 for i in range(30_000))
+    summary = b"a short text summary"
+
+    def worker(sock, codec):
+        frame = codec.read(sock, deadline=broker.Deadline.after_ms(5_000))
+        command_id = frame.envelope.message_id
+        transport = FrameCodecTransport(
+            codec,
+            sock,
+            message_type="artifact_stream",
+            correlation_id=command_id,
+            deadline=broker.Deadline.after_ms(5_000),
+        )
+        descriptors = output_batch(command_id, report, summary)
+        descriptors[1] = ArtifactDescriptor(
+            batch_id=descriptors[0].batch_id,
+            request_id=command_id,
+            ordinal=1,
+            count=2,
+            media_type="text/plain",
+            declared_size=len(summary),
+            sha256=hashlib.sha256(summary).hexdigest(),
+        )
+        descriptors[0] = ArtifactDescriptor(
+            batch_id=descriptors[0].batch_id,
+            request_id=command_id,
+            ordinal=0,
+            count=2,
+            media_type="application/pdf",
+            declared_size=len(report),
+            sha256=hashlib.sha256(report).hexdigest(),
+        )
+        send_batch(
+            transport,
+            descriptors,
+            [BytesSource(report), BytesSource(summary)],
+        )
+        codec.write(
+            sock,
+            message_id=str(uuid4()),
+            correlation_id=command_id,
+            message_type="completed",
+            payload=b"{}",
+            deadline=broker.Deadline.after_ms(5_000),
+        )
+
+    harness = install_real_transport(monkeypatch, worker)
+    response = coordinator.exchange(
+        subject.permit,
+        subject.capability,
+        deadline=deadline(),
+        artifact_output_policy=output_policy(subject.permit.command_id),
+    )
+    join_worker(harness)
+
+    assert harness.worker_errors == []
+    assert response.message_type == "completed"
+    assert len(response.artifacts) == 2
+    assert response.artifacts[0].descriptor.media_type == "application/pdf"
+    assert response.artifacts[0].payload == report
+    assert response.artifacts[1].descriptor.media_type == "text/plain"
+    assert response.artifacts[1].payload == summary
+
+
+def test_inputs_and_outputs_share_one_authenticated_session(
+    subject, tmp_path, monkeypatch
+):
+    coordinator = stream_coordinator(subject, tmp_path / "pair")
+    inbound = b"input bytes for the worker"
+    expected_inputs = descriptors_for(subject.permit.command_id, inbound)
+
+    def worker(sock, codec):
+        frame = codec.read(sock, deadline=broker.Deadline.after_ms(5_000))
+        command_id = frame.envelope.message_id
+        transport = FrameCodecTransport(
+            codec,
+            sock,
+            message_type="artifact_stream",
+            correlation_id=command_id,
+            deadline=broker.Deadline.after_ms(5_000),
+        )
+        sink = BytesSink()
+        receive_batch(transport, list(expected_inputs), [sink])
+        echoed = sink.value + b" processed"
+        send_batch(
+            transport,
+            output_batch(command_id, echoed, media_type="text/plain"),
+            [BytesSource(echoed)],
+        )
+        codec.write(
+            sock,
+            message_id=str(uuid4()),
+            correlation_id=command_id,
+            message_type="completed",
+            payload=b"{}",
+            deadline=broker.Deadline.after_ms(5_000),
+        )
+
+    harness = install_real_transport(monkeypatch, worker)
+    response = coordinator.exchange(
+        subject.permit,
+        subject.capability,
+        deadline=deadline(),
+        artifact_inputs=inputs_for(subject.permit.command_id, inbound),
+        artifact_output_policy=output_policy(subject.permit.command_id),
+    )
+    join_worker(harness)
+
+    assert harness.worker_errors == []
+    assert response.message_type == "completed"
+    assert len(response.artifacts) == 1
+    assert response.artifacts[0].payload == inbound + b" processed"
+
+
+def test_an_undeclared_worker_stream_is_a_protocol_violation(
+    subject, tmp_path, monkeypatch
+):
+    coordinator = stream_coordinator(subject, tmp_path / "pair")
+    worker_result: dict[str, BaseException] = {}
+
+    def worker(sock, codec):
+        frame = codec.read(sock, deadline=broker.Deadline.after_ms(5_000))
+        command_id = frame.envelope.message_id
+        transport = FrameCodecTransport(
+            codec,
+            sock,
+            message_type="artifact_stream",
+            correlation_id=command_id,
+            deadline=broker.Deadline.after_ms(5_000),
+        )
+        data = b"unrequested bytes"
+        try:
+            send_batch(
+                transport,
+                output_batch(command_id, data, media_type="text/plain"),
+                [BytesSource(data)],
+            )
+        except BaseException as exc:  # noqa: BLE001 - coordinator kills the channel
+            worker_result["send"] = exc
+
+    harness = install_real_transport(monkeypatch, worker)
+    with pytest.raises(broker.ProtocolViolation) as failure:
+        coordinator.exchange(
+            subject.permit, subject.capability, deadline=deadline()
+        )
+    join_worker(harness)
+    assert failure.value.dispatch_effect == "outcome_unknown"
+
+
+def test_an_output_policy_violation_cancels_and_fails_closed(
+    subject, tmp_path, monkeypatch
+):
+    coordinator = stream_coordinator(subject, tmp_path / "pair")
+    worker_result: dict[str, BaseException] = {}
+
+    def worker(sock, codec):
+        frame = codec.read(sock, deadline=broker.Deadline.after_ms(5_000))
+        command_id = frame.envelope.message_id
+        transport = FrameCodecTransport(
+            codec,
+            sock,
+            message_type="artifact_stream",
+            correlation_id=command_id,
+            deadline=broker.Deadline.after_ms(5_000),
+        )
+        data = b"forbidden media"
+        try:
+            send_batch(
+                transport,
+                output_batch(command_id, data, media_type="application/x-msdownload"),
+                [BytesSource(data)],
+            )
+        except BaseException as exc:  # noqa: BLE001
+            worker_result["send"] = exc
+
+    harness = install_real_transport(monkeypatch, worker)
+    with pytest.raises(broker.BrokerError) as failure:
+        coordinator.exchange(
+            subject.permit,
+            subject.capability,
+            deadline=deadline(),
+            artifact_output_policy=output_policy(subject.permit.command_id),
+        )
+    join_worker(harness)
+
+    assert failure.value.dispatch_effect == "outcome_unknown"
+    assert "send" in worker_result
+
+
+def test_received_worker_artifact_recomputes_its_own_digest():
+    data = b"exact artifact bytes"
+    good = ArtifactDescriptor(
+        batch_id=BATCH_ID,
+        request_id="123e4567-e89b-42d3-a456-426614174111",
+        ordinal=0,
+        count=1,
+        media_type="text/plain",
+        declared_size=len(data),
+        sha256=hashlib.sha256(data).hexdigest(),
+    )
+    artifact = worker_module.ReceivedWorkerArtifact(descriptor=good, payload=data)
+    assert artifact.payload == data
+    with pytest.raises(TypeError):
+        worker_module.ReceivedWorkerArtifact(descriptor=good, payload=b"tampered")
+    with pytest.raises(TypeError):
+        worker_module.ReceivedWorkerArtifact(descriptor=good, payload=data + b"x")

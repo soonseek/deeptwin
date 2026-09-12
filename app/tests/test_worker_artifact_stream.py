@@ -392,3 +392,173 @@ def test_scratch_file_sink_aborts_on_bad_stream(tmp_path):
     sink = ScratchFileSink(str(tmp_path), "doomed.bin")
     run_pair(wrong, data, sink)
     assert not (tmp_path / "doomed.bin").exists()
+
+
+# ------------------------------------------------------- offer-driven receiving
+
+
+def offered_policy(**overrides):
+    from app.workers.artifact_stream import OfferedBatchPolicy
+
+    fields = {
+        "request_id": REQUEST,
+        "allowed_media_types": ("text/plain", "application/pdf"),
+        "max_artifacts": 4,
+    }
+    fields.update(overrides)
+    return OfferedBatchPolicy(**fields)
+
+
+def run_offered(descs, payloads, policy, *, limits=None):
+    from app.workers.artifact_stream import receive_offered_batch
+
+    sender_side, receiver_side = make_pair()
+    errors: dict[str, BaseException] = {}
+    outcome: dict[str, object] = {}
+
+    def do_send():
+        try:
+            send_batch(sender_side, descs, [BytesSource(p) for p in payloads], limits=limits)
+        except BaseException as exc:  # noqa: BLE001
+            errors["send"] = exc
+
+    def do_recv():
+        try:
+            outcome["admitted"] = receive_offered_batch(
+                receiver_side, policy, lambda _descriptor: BytesSink(), limits=limits,
+            )
+        except BaseException as exc:  # noqa: BLE001
+            errors["recv"] = exc
+
+    ts = threading.Thread(target=do_send)
+    tr = threading.Thread(target=do_recv)
+    tr.start(); ts.start()
+    ts.join(5); tr.join(5)
+    assert not ts.is_alive() and not tr.is_alive(), "offered stream deadlocked"
+    return errors, outcome
+
+
+def test_offered_batch_round_trips_without_prior_descriptors():
+    payloads = [b"first artifact", bytes((i * 13) % 256 for i in range(40_000)), b""]
+    descs = [
+        descriptor(data, ordinal=index, count=len(payloads))
+        for index, data in enumerate(payloads)
+    ]
+    limits = StreamLimits(max_chunk_bytes=4_096, credit_window_chunks=2)
+    errors, outcome = run_offered(descs, payloads, offered_policy(), limits=limits)
+    assert errors == {}
+    admitted = outcome["admitted"]
+    assert [entry[0] for entry in admitted] == descs
+    assert [entry[1].value for entry in admitted] == payloads
+
+
+def test_offered_batch_rejects_a_foreign_request_id():
+    data = b"foreign"
+    descs = [descriptor(data)]
+    errors, outcome = run_offered(
+        descs, [data], offered_policy(request_id="123e4567-e89b-42d3-a456-426614174999"),
+    )
+    assert isinstance(errors.get("recv"), ArtifactStreamError)
+    assert "send" in errors
+    assert "admitted" not in outcome
+
+
+def test_offered_batch_rejects_a_disallowed_media_type():
+    data = b"binary"
+    descs = [descriptor(data, media_type="application/octet-stream")]
+    errors, _ = run_offered(descs, [data], offered_policy())
+    assert isinstance(errors.get("recv"), ArtifactStreamError)
+    assert "send" in errors
+
+
+def test_offered_batch_rejects_a_count_beyond_the_policy():
+    payloads = [b"a", b"b", b"c"]
+    descs = [
+        descriptor(data, ordinal=index, count=len(payloads))
+        for index, data in enumerate(payloads)
+    ]
+    errors, _ = run_offered(descs, payloads, offered_policy(max_artifacts=2))
+    assert isinstance(errors.get("recv"), ArtifactStreamError)
+    assert "send" in errors
+
+
+def test_offered_batch_rejects_an_aggregate_beyond_total_bytes():
+    payloads = [b"x" * 600, b"y" * 600]
+    descs = [
+        descriptor(data, ordinal=index, count=len(payloads))
+        for index, data in enumerate(payloads)
+    ]
+    limits = StreamLimits(max_total_bytes=1_000)
+    errors, _ = run_offered(descs, payloads, offered_policy(), limits=limits)
+    assert isinstance(errors.get("recv"), ArtifactStreamError)
+    assert "send" in errors
+
+
+def test_offered_batch_rejects_a_changed_batch_identity_mid_stream():
+    from app.workers.artifact_stream import receive_offered_batch
+
+    first = descriptor(b"one", ordinal=0, count=2)
+    imposter = descriptor(
+        b"two", ordinal=1, count=2, batch_id="123e4567-e89b-42d3-a456-426614174333",
+    )
+    accepted_digest = first.sha256
+    scripted = ScriptedTransport([
+        _encode({"type": "artifact-offer", **first.as_offer_fields()}),
+        _encode({
+            "type": "artifact-chunk", "batch_id": first.batch_id, "ordinal": 0,
+            "offset": 0, "data": base64.b64encode(b"one").decode("ascii"),
+        }),
+        _encode({
+            "type": "artifact-end", "batch_id": first.batch_id, "ordinal": 0,
+            "size": 3, "sha256": accepted_digest,
+        }),
+        _encode({"type": "artifact-offer", **imposter.as_offer_fields()}),
+    ])
+    with pytest.raises(ArtifactStreamError, match="batch identity"):
+        receive_offered_batch(scripted, offered_policy(), lambda _d: BytesSink())
+    assert scripted.sent[-1]["type"] == "artifact-cancel"
+
+
+def test_offered_batch_policy_validates_its_own_fields():
+    from app.workers.artifact_stream import OfferedBatchPolicy
+
+    with pytest.raises(ArtifactStreamError):
+        OfferedBatchPolicy(
+            request_id="not-a-uuid",
+            allowed_media_types=("text/plain",),
+            max_artifacts=1,
+        )
+    with pytest.raises(ArtifactStreamError):
+        OfferedBatchPolicy(
+            request_id=REQUEST, allowed_media_types=(), max_artifacts=1,
+        )
+    with pytest.raises(ArtifactStreamError):
+        OfferedBatchPolicy(
+            request_id=REQUEST, allowed_media_types=("Nope",), max_artifacts=1,
+        )
+    with pytest.raises(ArtifactStreamError):
+        OfferedBatchPolicy(
+            request_id=REQUEST, allowed_media_types=("text/plain",), max_artifacts=0,
+        )
+    with pytest.raises(ArtifactStreamError):
+        receive_offered_batch_with_bad_policy()
+
+
+def receive_offered_batch_with_bad_policy():
+    from app.workers.artifact_stream import receive_offered_batch
+
+    receive_offered_batch(ScriptedTransport([]), object(), lambda _d: BytesSink())
+
+
+def test_pushback_transport_replays_the_first_payload_once():
+    from app.workers.artifact_stream import PushbackTransport
+
+    inner = ScriptedTransport([b"second", b"third"])
+    transport = PushbackTransport(inner, first=b"first")
+    assert transport.receive() == b"first"
+    assert transport.receive() == b"second"
+    transport.send(_encode({"type": "artifact-cancel", "batch_id": BATCH}))
+    assert inner.sent[-1]["type"] == "artifact-cancel"
+    assert transport.receive() == b"third"
+    with pytest.raises(ArtifactStreamError):
+        PushbackTransport(inner, first="not-bytes")

@@ -480,6 +480,7 @@ def test_no_payload_argument_and_exact_immutable_envelope_bytes_are_sent(
         "capability",
         "deadline",
         "artifact_inputs",
+        "artifact_output_policy",
     )
     with pytest.raises(TypeError, match="unexpected keyword argument 'payload'"):
         subject.coordinator.exchange(

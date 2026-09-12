@@ -145,13 +145,70 @@ e5cd2588aafb1599d1d6b22ec1e21cb994569b630a7f4b493c1b895656be6d43  app/workers/ar
 c053f9b6caecc5369c1b25581905a732c209862291f5c77fc9090a3cbbcbc865  app/tests/test_worker_coordinator_artifacts.py
 ```
 
+## Coordinator wiring — output direction (2026-09-12)
+
+Workers now return artifact bytes through the same digest-first protocol with the roles
+swapped, driven by an offer-driven receive because the control plane cannot know output
+descriptors in advance:
+
+- `artifact_stream.OfferedBatchPolicy` is the receiver's bound for a sender-declared batch:
+  exact `request_id`, a closed non-empty `allowed_media_types` tuple and `max_artifacts`
+  (validated at construction). `receive_offered_batch(transport, policy, sink_factory,
+  limits)` admits an ordered batch whose descriptors arrive in the offers, enforcing per
+  offer: policy request id, allowed media type, first-offer count ≤ policy and ordinal 0,
+  frozen batch identity (batch_id/count) and exact ordinal sequence mid-stream, per-artifact
+  and running-aggregate byte ceilings. A violating offer is cancelled toward the sender and
+  terminal; the admitted body reuses the same `_admit_body` credit/chunk/end/digest path as
+  `receive_artifact` (refactored out, behavior unchanged). `PushbackTransport` replays one
+  already-received payload so a peeked frame can start the stream.
+- `WorkerCoordinator.exchange` gained keyword-only `artifact_output_policy: OfferedBatchPolicy
+  | None = None`, validated before permit consumption (exact policy type, stream-capable
+  route, `policy.request_id == permit.command_id`); the signature guard now pins the
+  five-parameter shape. After the request (and any input batch), if the next authenticated
+  frame carries the route's stream type and the exact command correlation, the coordinator
+  receives the offered batch into `BytesSink`s and then reads the terminal response frame;
+  the verified artifacts return as `AuthenticatedWorkerResponse.artifacts`, a tuple of
+  `ReceivedWorkerArtifact` whose constructor independently recomputes length and sha256
+  against the descriptor. Stream failures raise `WorkerArtifactStreamFailed`
+  (`outcome_unknown`); a worker streaming without a declared policy still dies as a
+  `ProtocolViolation` (`outcome_unknown`) through the existing response-type check.
+
+New tests: 8 stream-level (`test_worker_artifact_stream.py`: offered-batch round trip without
+prior descriptors, foreign request id, disallowed media, count over policy, aggregate over
+total bytes, changed batch identity mid-stream via scripted frames, policy field validation,
+pushback replay) and 6 coordinator-level over real socketpair codecs
+(`test_worker_coordinator_artifacts.py`: pre-consumption policy rejection; a two-artifact
+multi-chunk output return; one exchange carrying inputs *and* outputs on one authenticated
+session; an undeclared worker stream as protocol violation; a policy-violating output media
+cancelled on both ends; `ReceivedWorkerArtifact` digest recomputation).
+
+```text
+python -m pytest -q app/tests/test_worker_coordinator_artifacts.py \
+    app/tests/test_worker_coordinator.py app/tests/test_worker_artifact_stream.py \
+    app/tests/test_artifact_stream_transport.py app/tests/test_worker_dispatch.py
+106 passed
+
+ruff check (all five touched files)
+All checks passed
+
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-12)
+2,985 passed, 2 skipped, 369 subtests passed, 1 known Starlette/AnyIO deprecation warning
+```
+
+Frozen identities (SHA-256):
+
+```text
+6bb87dc2f77a56d21ff2820c8012c1f35c990a5007fac6cc86301f30cebc786e  app/runtime/worker_coordinator.py
+568db1ebc28c9c7b26139272567ed70368722c3e790486ab5c1849108ff5e093  app/workers/artifact_stream.py
+1a49c0848b3bfd26d2ef61459bd7b31e6b8d6f187b4a8a50fe3d8ae7c873aa79  app/tests/test_worker_coordinator_artifacts.py
+53b6b6e9c14ac6309526f13670ae155674d2fbd1fe4bfa7bf037ee026225bd75  app/tests/test_worker_artifact_stream.py
+```
+
 ## Not claimed
 
-The worker→control output direction is not wired: a worker cannot yet return artifact bytes
-through `exchange` (that needs an offer-driven receive bounded by route-declared constraints,
-since output descriptors are not known to the control plane in advance). `worker_dispatch.py`
-does not yet plumb `artifact_inputs` from any semantic caller, sources are caller-supplied
-rather than CAS-backed store reads, and no Linux/root canary has exercised the stream over a
-real UDS with SO_PEERCRED — the 2026-09-12 attempt remains blocked by the host's Docker
-content-store I/O fault, not by the code. No independent adversarial re-audit of the artifact
-stream or its coordinator wiring has run yet.
+`worker_dispatch.py` does not yet plumb `artifact_inputs`/`artifact_output_policy` from any
+semantic caller, sources and sinks are in-memory rather than CAS-backed store reads/writes,
+and no Linux/root canary has exercised the stream over a real UDS with SO_PEERCRED — the
+2026-09-12 attempt remains blocked by the host's Docker content-store I/O fault, not by the
+code. No independent adversarial re-audit of the artifact stream or its coordinator wiring
+has run yet.

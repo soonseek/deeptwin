@@ -23,7 +23,7 @@ import json
 import os
 import re
 import stat
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -417,44 +417,7 @@ def receive_artifact(
             {key: offer.get(key) for key in expected.as_offer_fields()} == expected.as_offer_fields(),
             "offer does not match the expected descriptor",
         )
-
-        rolling = hashlib.sha256()
-        received = 0
-        credit_through = min(limits.credit_window_bytes, expected.declared_size)
-        if expected.declared_size > 0:
-            _send_credit(transport, expected, consumed=0, credit_through=credit_through)
-
-        while received < expected.declared_size:
-            message = _decode(transport.receive())
-            if message["type"] == _CANCEL:
-                _match_ref(message, expected, batch_only=True)
-                raise StreamCancelled("sender cancelled the stream")
-            _require(message["type"] == _CHUNK, "expected a chunk")
-            _match_ref(message, expected)
-            offset = _int(message.get("offset"), minimum=0, maximum=expected.declared_size)
-            _require(offset == received, "chunk offset is not the next expected byte")
-            data = _b64_bytes(message.get("data"), limit=limits.max_chunk_bytes)
-            _require(offset + len(data) <= credit_through, "chunk exceeds granted credit")
-            _require(offset + len(data) <= expected.declared_size, "chunk exceeds declared size")
-            sink.write(offset, data)
-            rolling.update(data)
-            received += len(data)
-            new_credit = min(received + limits.credit_window_bytes, expected.declared_size)
-            if new_credit != credit_through:
-                credit_through = new_credit
-                _send_credit(transport, expected, consumed=received, credit_through=credit_through)
-
-        end = _decode(transport.receive())
-        if end["type"] == _CANCEL:
-            _match_ref(end, expected, batch_only=True)
-            raise StreamCancelled("sender cancelled the stream")
-        _require(end["type"] == _END, "expected an end marker")
-        _match_ref(end, expected)
-        _require(_int(end.get("size"), minimum=0, maximum=expected.declared_size) == received, "end size disagrees")
-        _require(received == expected.declared_size, "stream ended before the declared size")
-        digest = rolling.hexdigest()
-        _require(end.get("sha256") == expected.sha256 == digest, "end digest disagrees")
-        sink.finalize()
+        _admit_body(transport, expected, sink, limits)
     except ArtifactStreamError:
         sink.abort()
         raise
@@ -464,6 +427,53 @@ def receive_artifact(
         "ordinal": expected.ordinal,
         "sha256": expected.sha256,
     }))
+
+
+def _admit_body(
+    transport: StreamTransport,
+    expected: ArtifactDescriptor,
+    sink: ArtifactSink,
+    limits: StreamLimits,
+) -> None:
+    """Admit the credited chunk/end body for one already-validated offer."""
+
+    rolling = hashlib.sha256()
+    received = 0
+    credit_through = min(limits.credit_window_bytes, expected.declared_size)
+    if expected.declared_size > 0:
+        _send_credit(transport, expected, consumed=0, credit_through=credit_through)
+
+    while received < expected.declared_size:
+        message = _decode(transport.receive())
+        if message["type"] == _CANCEL:
+            _match_ref(message, expected, batch_only=True)
+            raise StreamCancelled("sender cancelled the stream")
+        _require(message["type"] == _CHUNK, "expected a chunk")
+        _match_ref(message, expected)
+        offset = _int(message.get("offset"), minimum=0, maximum=expected.declared_size)
+        _require(offset == received, "chunk offset is not the next expected byte")
+        data = _b64_bytes(message.get("data"), limit=limits.max_chunk_bytes)
+        _require(offset + len(data) <= credit_through, "chunk exceeds granted credit")
+        _require(offset + len(data) <= expected.declared_size, "chunk exceeds declared size")
+        sink.write(offset, data)
+        rolling.update(data)
+        received += len(data)
+        new_credit = min(received + limits.credit_window_bytes, expected.declared_size)
+        if new_credit != credit_through:
+            credit_through = new_credit
+            _send_credit(transport, expected, consumed=received, credit_through=credit_through)
+
+    end = _decode(transport.receive())
+    if end["type"] == _CANCEL:
+        _match_ref(end, expected, batch_only=True)
+        raise StreamCancelled("sender cancelled the stream")
+    _require(end["type"] == _END, "expected an end marker")
+    _match_ref(end, expected)
+    _require(_int(end.get("size"), minimum=0, maximum=expected.declared_size) == received, "end size disagrees")
+    _require(received == expected.declared_size, "stream ended before the declared size")
+    digest = rolling.hexdigest()
+    _require(end.get("sha256") == expected.sha256 == digest, "end digest disagrees")
+    sink.finalize()
 
 
 def _send_credit(
@@ -548,6 +558,131 @@ def receive_batch(
         receive_artifact(transport, descriptor, sink, limits=limits)
 
 
+@dataclass(frozen=True, slots=True)
+class OfferedBatchPolicy:
+    """Receiver-declared bounds for a batch whose descriptors arrive in the offers."""
+
+    request_id: str
+    allowed_media_types: tuple[str, ...]
+    max_artifacts: int = MAX_ARTIFACTS_PER_BATCH
+
+    def __post_init__(self) -> None:
+        if type(self.request_id) is not str or _UUID.fullmatch(self.request_id) is None:
+            raise ArtifactStreamError("policy request id is not a canonical UUID")
+        if (
+            type(self.allowed_media_types) is not tuple
+            or not self.allowed_media_types
+            or any(
+                type(media) is not str or _MEDIA_TYPE.fullmatch(media) is None
+                for media in self.allowed_media_types
+            )
+        ):
+            raise ArtifactStreamError("policy media types are invalid")
+        if (
+            type(self.max_artifacts) is not int
+            or isinstance(self.max_artifacts, bool)
+            or not 1 <= self.max_artifacts <= MAX_ARTIFACTS_PER_BATCH
+        ):
+            raise ArtifactStreamError("policy artifact count is out of bounds")
+
+
+class PushbackTransport:
+    """Replay one already-received payload, then delegate to the inner transport."""
+
+    __slots__ = ("_inner", "_pending")
+
+    def __init__(self, inner: StreamTransport, *, first: bytes) -> None:
+        if type(first) is not bytes:
+            raise ArtifactStreamError("pushback payload must be bytes")
+        self._inner = inner
+        self._pending: bytes | None = first
+
+    def send(self, payload: bytes) -> None:
+        self._inner.send(payload)
+
+    def receive(self) -> bytes:
+        pending = self._pending
+        if pending is not None:
+            self._pending = None
+            return pending
+        return self._inner.receive()
+
+
+def _descriptor_from_offer(offer: Mapping[str, object]) -> ArtifactDescriptor:
+    fields = {key: offer.get(key) for key in (
+        "batch_id", "request_id", "ordinal", "count",
+        "media_type", "declared_size", "sha256",
+    )}
+    for key in ("batch_id", "request_id", "media_type", "sha256"):
+        if type(fields[key]) is not str:
+            raise ArtifactStreamError("offer field types are invalid")
+    return ArtifactDescriptor(**fields)
+
+
+def receive_offered_batch(
+    transport: StreamTransport,
+    policy: OfferedBatchPolicy,
+    sink_factory: Callable[[ArtifactDescriptor], ArtifactSink],
+    *,
+    limits: StreamLimits | None = None,
+) -> list[tuple[ArtifactDescriptor, ArtifactSink]]:
+    """Admit a sender-declared ordered batch bounded by the receiver's policy."""
+
+    limits = limits or StreamLimits()
+    if type(policy) is not OfferedBatchPolicy:
+        raise ArtifactStreamError("an exact offered-batch policy is required")
+    admitted: list[tuple[ArtifactDescriptor, ArtifactSink]] = []
+    first: ArtifactDescriptor | None = None
+    total = 0
+    index = 0
+    count = 1
+    while index < count:
+        offer = _decode(transport.receive())
+        _require(offer["type"] == _OFFER, "expected an offer")
+        descriptor = _descriptor_from_offer(offer)
+        try:
+            _require(descriptor.request_id == policy.request_id, "offer request id is foreign")
+            _require(
+                descriptor.media_type in policy.allowed_media_types,
+                "offer media type is not allowed",
+            )
+            if first is None:
+                _require(
+                    descriptor.count <= policy.max_artifacts,
+                    "offered batch exceeds the policy count",
+                )
+                _require(descriptor.ordinal == 0, "offered batch does not start at ordinal zero")
+                first = descriptor
+                count = descriptor.count
+            else:
+                _require(
+                    descriptor.batch_id == first.batch_id and descriptor.count == first.count,
+                    "offer batch identity changed mid-stream",
+                )
+                _require(descriptor.ordinal == index, "offer ordinal is not the exact sequence")
+            _require(descriptor.declared_size <= limits.max_artifact_bytes, "artifact exceeds limit")
+            total += descriptor.declared_size
+            _require(total <= limits.max_total_bytes, "batch aggregate exceeds the total byte limit")
+        except ArtifactStreamError:
+            _send_cancel(transport, descriptor, "offer_rejected")
+            raise
+        sink = sink_factory(descriptor)
+        try:
+            _admit_body(transport, descriptor, sink, limits)
+        except ArtifactStreamError:
+            sink.abort()
+            raise
+        transport.send(_encode({
+            "type": _ACCEPTED,
+            "batch_id": descriptor.batch_id,
+            "ordinal": descriptor.ordinal,
+            "sha256": descriptor.sha256,
+        }))
+        admitted.append((descriptor, sink))
+        index += 1
+    return admitted
+
+
 __all__ = [
     "MAX_ARTIFACTS_PER_BATCH",
     "MAX_CHUNK_BYTES",
@@ -558,12 +693,15 @@ __all__ = [
     "ArtifactStreamError",
     "BytesSink",
     "BytesSource",
+    "OfferedBatchPolicy",
+    "PushbackTransport",
     "ScratchFileSink",
     "StreamCancelled",
     "StreamLimits",
     "StreamTransport",
     "receive_artifact",
     "receive_batch",
+    "receive_offered_batch",
     "send_artifact",
     "send_batch",
     "validate_batch",
