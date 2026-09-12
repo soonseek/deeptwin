@@ -158,3 +158,42 @@ b5cc7fc968775a59fb2b79fc8c8b2f0f3d50a333ee89a633a3c79026cb3a3a56  app/tests/test
 Not claimed: candidates/calls are persisted but nothing consumes them yet (criticism,
 selection and approval stages remain open), no provider adapter is bound to the model
 boundary, and no policy-host registration/read-grant path covers these records.
+
+## Critic-facing candidate projection (2026-09-13)
+
+`app/services/design_criticism.py` bridges accepted live candidates to the
+already-qualified critic pipeline: `critic_candidate_projection` renders the exact
+candidate functional contract (roles/artifacts/handoffs/control) the critic contract
+requires, validated against `critic_contract.Candidate` before return. It is
+deterministic and faithful — real agent responsibilities and slot flows, exact
+model/tool binding reference strings, artifact producer/consumer/access derived from
+the real slot topology, artifact-edge handoffs with multiplicity/mandatory modes — and
+every non-role mechanism (human gates, deterministic handlers, non-artifact edges,
+completion criteria, observation/budget bindings, fact names, approval scopes) is
+surfaced in the control notes so the critic cannot be shown less than the graph
+commits to. The projection grants no authority.
+
+Tests: `app/tests/test_design_criticism.py` (7) — contract validation over a
+live-generated candidate; determinism; faithful roles/bindings/slots (Korean
+responsibility text exact); artifact/handoff flow; control-note completeness;
+single-agent shape; type guard.
+
+```text
+python -m pytest -q app/tests/test_design_criticism.py
+7 passed
+ruff check app/services/design_criticism.py app/tests/test_design_criticism.py
+All checks passed
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-13)
+3,018 passed, 2 skipped, 369 subtests passed, 1 known warning
+```
+
+Frozen identities (SHA-256):
+
+```text
+050cdb7547fe04ebeb32e722b7dba29b9ae32887523aff6b4cf72a9c61dd9e98  app/services/design_criticism.py
+3ec89372af38b15c6f1f9ff0e1915c95bd2d177fe3c7af8636e4ed38db029e21  app/tests/test_design_criticism.py
+```
+
+Not claimed: no critic trial has yet run over a projected live candidate (the review/
+counterexample/validity/response stages still consume their own prepared inputs), and
+selection/approval over criticized candidates remains open.
