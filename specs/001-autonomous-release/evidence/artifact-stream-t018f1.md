@@ -93,11 +93,65 @@ Frozen identities (SHA-256):
 7e71d08c28fc7fc37c421451ab7c15a27b091e26aaf845f6dcda8ab626229287  app/tests/test_artifact_stream_transport.py
 ```
 
+## Coordinator wiring — input direction (2026-09-12)
+
+`WorkerCoordinator.exchange` now carries declared artifact inputs to the worker over the same
+authenticated session as the dispatch itself:
+
+- `WorkerRouteBinding.artifact_stream_message_type` (default `None`) declares the duplex
+  stream type; it must appear in *both* the requester and responder message-type sets and be
+  distinct from the request and response types, else the binding is rejected at construction.
+- `DispatchArtifactInput` pairs one exact `ArtifactDescriptor` with one byte source. `exchange`
+  gained a keyword-only `artifact_inputs: tuple[...] = ()`; the signature guard test now pins
+  the four-parameter shape and still rejects any caller-controlled `payload`.
+- Fail-closed ordering: inputs are validated *before* permit consumption — a tuple of exact
+  `DispatchArtifactInput`s, every `descriptor.request_id` equal to the permit's `command_id`,
+  and the whole batch passing `validate_batch` (now a public `artifact_stream` API) — so a
+  streamless route, a foreign stream identity, or a malformed batch leaves the permit intact
+  (`WorkerArtifactRejected`, `definitely_not_sent`).
+- After the request frame is written, the batch streams through a `FrameCodecTransport` bound
+  to the live codec/socket with `correlation_id = command_id` (the worker learns it from the
+  request frame's `message_id`). Any stream failure past that point raises
+  `WorkerArtifactStreamFailed` with `dispatch_effect="outcome_unknown"`, closing the codec,
+  socket and admission slot through the existing `finally`.
+
+`app/tests/test_worker_coordinator_artifacts.py` (7 tests) drives the coordinator over a real
+socketpair with a real broker handshake and two live frame codecs — the worker side runs
+`receive_batch` in a thread — covering: duplex/distinct route validation; pre-consumption
+rejection on a streamless route, a foreign request id and malformed input shapes; a two-artifact
+(multi-chunk + small) round trip whose request frame carries the exact immutable envelope bytes
+and whose worker sinks reproduce the exact bytes; a streamless exchange on a stream-capable
+route; a worker that abandons the stream after the request frame (`outcome_unknown`, permit
+consumed); and a lying source whose digest mismatch cancels the stream on both ends.
+
+```text
+python -m pytest -q app/tests/test_worker_coordinator_artifacts.py \
+    app/tests/test_worker_coordinator.py app/tests/test_worker_dispatch.py
+62 passed
+
+ruff check app/runtime/worker_coordinator.py app/workers/artifact_stream.py \
+    app/tests/test_worker_coordinator_artifacts.py app/tests/test_worker_coordinator.py
+All checks passed
+
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-12)
+2,971 passed, 2 skipped, 369 subtests passed, 1 known Starlette/AnyIO deprecation warning
+```
+
+Frozen identities (SHA-256):
+
+```text
+ff6ef00592120ae2cdc370224e0a27413cc800f78f96b6c5cba417cd91f46cf2  app/runtime/worker_coordinator.py
+e5cd2588aafb1599d1d6b22ec1e21cb994569b630a7f4b493c1b895656be6d43  app/workers/artifact_stream.py
+c053f9b6caecc5369c1b25581905a732c209862291f5c77fc9090a3cbbcbc865  app/tests/test_worker_coordinator_artifacts.py
+```
+
 ## Not claimed
 
-The stream is not yet wired into `worker_coordinator.py`/`worker_dispatch.py` (the coordinator
-still performs a single request/response exchange), and no Linux/root canary has exercised it
-over a real UDS with SO_PEERCRED — an attempt on 2026-09-12 was blocked by a Docker
-content-store I/O fault on this host, not by the code. Real CAS-backed sources/sinks,
-coordinator integration and the Linux qualification remain open T018-foundation work, and no
-independent adversarial re-audit of this slice has run yet.
+The worker→control output direction is not wired: a worker cannot yet return artifact bytes
+through `exchange` (that needs an offer-driven receive bounded by route-declared constraints,
+since output descriptors are not known to the control plane in advance). `worker_dispatch.py`
+does not yet plumb `artifact_inputs` from any semantic caller, sources are caller-supplied
+rather than CAS-backed store reads, and no Linux/root canary has exercised the stream over a
+real UDS with SO_PEERCRED — the 2026-09-12 attempt remains blocked by the host's Docker
+content-store I/O fault, not by the code. No independent adversarial re-audit of the artifact
+stream or its coordinator wiring has run yet.

@@ -80,8 +80,7 @@ def channel_spec(pair_root) -> broker.ChannelSpec:
     )
 
 
-@pytest.fixture
-def subject(tmp_path):
+def build_subject(tmp_path):
     legacy = Store(tmp_path / "vault")
     domain = DomainStore(legacy)
     roots = domain.initialize_vault()
@@ -263,6 +262,11 @@ def subject(tmp_path):
         route=route,
         coordinator=coordinator,
     )
+
+
+@pytest.fixture
+def subject(tmp_path):
+    return build_subject(tmp_path)
 
 
 class FakeSocket:
@@ -471,7 +475,12 @@ def test_no_payload_argument_and_exact_immutable_envelope_bytes_are_sent(
     monkeypatch,
 ):
     parameters = inspect.signature(subject.coordinator.exchange).parameters
-    assert tuple(parameters) == ("permit", "capability", "deadline")
+    assert tuple(parameters) == (
+        "permit",
+        "capability",
+        "deadline",
+        "artifact_inputs",
+    )
     with pytest.raises(TypeError, match="unexpected keyword argument 'payload'"):
         subject.coordinator.exchange(
             subject.permit,

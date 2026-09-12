@@ -499,7 +499,7 @@ def _match_ref(message: Mapping[str, object], descriptor: ArtifactDescriptor, *,
         _require(message.get("ordinal") == descriptor.ordinal, "message ordinal mismatch")
 
 
-def _validate_batch(descriptors: list[ArtifactDescriptor], limits: StreamLimits) -> None:
+def validate_batch(descriptors: list[ArtifactDescriptor], limits: StreamLimits) -> None:
     if not 1 <= len(descriptors) <= MAX_ARTIFACTS_PER_BATCH:
         raise ArtifactStreamError("batch size is out of bounds")
     first = descriptors[0]
@@ -524,7 +524,7 @@ def send_batch(
     """Stream a frozen ordered batch of 1..256 artifacts one after another."""
 
     limits = limits or StreamLimits()
-    _validate_batch(descriptors, limits)
+    validate_batch(descriptors, limits)
     if len(sources) != len(descriptors):
         raise ArtifactStreamError("each descriptor needs exactly one source")
     for descriptor, source in zip(descriptors, sources, strict=True):
@@ -541,7 +541,7 @@ def receive_batch(
     """Admit a frozen ordered batch, one artifact at a time, into owned sinks."""
 
     limits = limits or StreamLimits()
-    _validate_batch(expected, limits)
+    validate_batch(expected, limits)
     if len(sinks) != len(expected):
         raise ArtifactStreamError("each descriptor needs exactly one sink")
     for descriptor, sink in zip(expected, sinks, strict=True):
@@ -566,4 +566,5 @@ __all__ = [
     "receive_batch",
     "send_artifact",
     "send_batch",
+    "validate_batch",
 ]

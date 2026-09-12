@@ -24,6 +24,14 @@ from ..domain.refs import DomainContractError, EntityRef, uuid_string
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore, StorageError
 from ..workers import broker
+from ..workers.artifact_stream import (
+    ArtifactDescriptor,
+    ArtifactStreamError,
+    StreamLimits,
+    send_batch,
+    validate_batch,
+)
+from ..workers.artifact_stream_transport import FrameCodecTransport
 from .budgets import BudgetBook, BudgetError
 from .ledger import DispatchPermit, LedgerError, RuntimeLedger
 
@@ -39,6 +47,28 @@ class WorkerCoordinatorError(broker.BrokerError):
 
 class WorkerPayloadRejected(WorkerCoordinatorError):
     code = "worker_payload_rejected"
+
+
+class WorkerArtifactRejected(WorkerCoordinatorError):
+    code = "worker_artifact_rejected"
+
+
+class WorkerArtifactStreamFailed(WorkerCoordinatorError):
+    code = "worker_artifact_stream_failed"
+
+
+@dataclass(frozen=True, slots=True)
+class DispatchArtifactInput:
+    """One declared artifact whose bytes travel only over the bounded stream."""
+
+    descriptor: ArtifactDescriptor
+    source: object = field(repr=False)
+
+    def __post_init__(self) -> None:
+        if type(self.descriptor) is not ArtifactDescriptor or not callable(
+            getattr(self.source, "read", None)
+        ):
+            raise TypeError("Dispatch artifact input is invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +123,7 @@ class WorkerRouteBinding:
     request_message_type: str
     response_message_types: tuple[str, ...]
     max_execution_envelope_bytes: int = MAX_EXECUTION_ENVELOPE_BYTES
+    artifact_stream_message_type: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -114,6 +145,16 @@ class WorkerRouteBinding:
             <= self.max_execution_envelope_bytes
             <= MAX_EXECUTION_ENVELOPE_BYTES
             or self.channel_spec.max_frame_bytes != broker.MAX_FRAME_BYTES
+        ):
+            raise TypeError("Worker route binding is invalid")
+        stream_type = self.artifact_stream_message_type
+        if stream_type is not None and (
+            type(stream_type) is not str
+            or _MESSAGE_TYPE.fullmatch(stream_type) is None
+            or stream_type == self.request_message_type
+            or stream_type in self.response_message_types
+            or stream_type not in self.channel_spec.requester_message_types
+            or stream_type not in self.channel_spec.responder_message_types
         ):
             raise TypeError("Worker route binding is invalid")
 
@@ -270,18 +311,44 @@ class WorkerCoordinator:
             raise WorkerPayloadRejected()
         return payload
 
+    def _validate_artifact_inputs(
+        self,
+        permit: DispatchPermit,
+        artifact_inputs: tuple[DispatchArtifactInput, ...],
+    ) -> None:
+        if type(artifact_inputs) is not tuple:
+            raise WorkerArtifactRejected()
+        if not artifact_inputs:
+            return
+        if self._route.artifact_stream_message_type is None:
+            raise WorkerArtifactRejected()
+        descriptors = []
+        for item in artifact_inputs:
+            if (
+                type(item) is not DispatchArtifactInput
+                or item.descriptor.request_id != permit.command_id
+            ):
+                raise WorkerArtifactRejected()
+            descriptors.append(item.descriptor)
+        try:
+            validate_batch(descriptors, StreamLimits())
+        except (ArtifactStreamError, TypeError, ValueError):
+            raise WorkerArtifactRejected() from None
+
     def exchange(
         self,
         permit: DispatchPermit,
         capability: SelectedDispatchReadCapability,
         *,
         deadline: broker.Deadline,
+        artifact_inputs: tuple[DispatchArtifactInput, ...] = (),
     ) -> AuthenticatedWorkerResponse:
         """Perform one transport exchange; semantic acceptance remains upstream."""
 
         if type(deadline) is not broker.Deadline:
             raise WorkerCoordinatorError()
         self._validate_capability(permit, capability)
+        self._validate_artifact_inputs(permit, artifact_inputs)
         operation_deadline = deadline.bounded(
             self._route.channel_spec.max_operation_ms
         )
@@ -336,6 +403,25 @@ class WorkerCoordinator:
                 payload=payload,
                 deadline=effective,
             )
+            if artifact_inputs:
+                transport = FrameCodecTransport(
+                    codec,
+                    sock,
+                    message_type=self._route.artifact_stream_message_type,
+                    correlation_id=permit.command_id,
+                    deadline=effective,
+                )
+                try:
+                    send_batch(
+                        transport,
+                        [item.descriptor for item in artifact_inputs],
+                        [item.source for item in artifact_inputs],
+                        limits=StreamLimits(),
+                    )
+                except ArtifactStreamError:
+                    raise WorkerArtifactStreamFailed(
+                        dispatch_effect="outcome_unknown"
+                    ) from None
             frame = codec.read(sock, deadline=effective)
             if (
                 type(frame) is not broker.ReceivedFrame
