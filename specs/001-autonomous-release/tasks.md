@@ -468,8 +468,8 @@ understanding; failure/restart preserves input. Fixture and live proofs remain s
 Independent test: fixed synthetic work → real design decisions/candidates → separate critique
 → graph comparison and exact preparation; missing candidates/qualification are visible.
 
-- [ ] T027 [P] [US2] Add graph schema, producers/types/gates/cycles/join contract tests in app/tests/test_graph_contract.py (R01, SC-003).
-- [ ] T028 [US2] Implement graph functional schema/compiler and structural-diversity projection in app/runtime/graph.py and app/domain/graph_schema.py; preserve original node/edge responsibility (FR-005/FR-007/FR-013).
+- [x] T027 [P] [US2] Add graph schema, producers/types/gates/cycles/join contract tests in app/tests/test_graph_contract.py (R01, SC-003).
+- [x] T028 [US2] Implement graph functional schema/compiler and structural-diversity projection in app/runtime/graph.py and app/domain/graph_schema.py; preserve original node/edge responsibility (FR-005/FR-007/FR-013).
 - [x] T029 [US2] Load/version the existing 17 atomic lens definitions, use qualifications/composition/conflict/abstention rules in app/services/lenses.py and app/tests/test_lens_registry.py; preserve academic/effect status distinctions (FR-004/019/031). Evidence: evidence/lens-registry.md; 26 focused and 1,875 full app tests pass after independent adversarial review, while production graph/qualification verification and actual scholarly/effect/independence evidence remain T030/T035/T036/T056/T076/T077.
 - [ ] T030 [US2] Implement common-work confirmation → lens design decisions → real functional
   candidate generation in app/services/design.py and app/generation_profiles.py, with explicit tests
@@ -491,14 +491,14 @@ Independent test: fixed synthetic work → real design decisions/candidates → 
 Independent test: accepted graph with mixed shapes actually browses a controlled source,
 creates files and passes full artifacts to later roles; trace survives cancel/restart.
 
-- [ ] T039 [P] [US3] Add sequential/parallel/router/closed-join/loop/retry/restart scheduling tests in app/tests/test_graph_execution.py (R02/07/08).
+- [x] T039 [P] [US3] Add sequential/parallel/router/closed-join/loop/retry/restart scheduling tests in app/tests/test_graph_execution.py (R02/07/08).
 - [ ] T040 [US3] Implement LangGraph scheduling adapter with persistent opaque cursors and ledger-reconciled idempotent nodes in app/runtime/scheduler.py; never stream raw private graph state (FR-013/030).
-- [ ] T041 [US3] Implement sealed branch activation, atomic join winner, visit-vs-attempt IDs and dependency-scoped failure in app/runtime/scheduling_state.py and app/tests/test_graph_execution.py (runtime §2/4).
+- [x] T041 [US3] Implement sealed branch activation, atomic join winner, visit-vs-attempt IDs and dependency-scoped failure in app/runtime/scheduling_state.py and app/tests/test_graph_execution.py (runtime §2/4).
 - [ ] T042 [US3] Implement provider-neutral multimodal frozen turns and Codex environmentless tool-step bridge in app/runtime/gateway.py and app/adapters/codex_step.py; add actual-page/image/table marker contracts in app/tests/test_model_payloads.py (R04–R06).
 - [ ] T043 [US3] Implement controlled egress fetch and sandboxed Chromium navigation/read/screenshot via typed IPC in app/adapters/browser.py and app/runtime/egress.py; enforce source/recipient grants, DNS/IP/redirect and byte limits (R09, PK-06/07).
 - [ ] T044 [P] [US3] Implement bounded declarative DOCX/CSV/JSON/PDF/image creation and safe format validation in app/adapters/documents.py and app/tests/test_document_tools.py; use PDF skill and actual render inspection, not file-exists-only checks (SC-004).
 - [ ] T045 [US3] Implement purpose-scoped artifact storage/preview/range reads and multi-format viewers in app/services/artifacts.py and app/static/artifacts.mjs; preserve originals and disclose derived/unsupported coverage (FR-015).
-- [ ] T046 [US3] Implement whole-artifact handoff readiness/delivery/receipt and observed-use lineage in app/services/handoffs.py and app/tests/test_handoffs.py; no producer/consumer acknowledgment deadlock (R06).
+- [x] T046 [US3] Implement whole-artifact handoff readiness/delivery/receipt and observed-use lineage in app/services/handoffs.py and app/tests/test_handoffs.py; no producer/consumer acknowledgment deadlock (R06).
 - [ ] T047 [US3] Implement schema-registered dispatcher/grants/effect approvals and replay policies in app/runtime/tools.py; test path/symlink/race/injection/renderer/egress denial in app/tests/test_tool_boundary.py (FR-014/FR-032).
 - [ ] T048 [US3] Connect live graph/role visits/attempts/inputs/outputs/tools/cancel/recovery to common UI in app/static/runtime.mjs and app/api/routes.py; keep past attempts distinct (UX-AC04/10).
 - [ ] T049 [US3] Run actual controlled browser/PDF/table/image producer→consumer E2E, then finite authorized Claude/Codex paths, in app/tests/browser-runtime.test.mjs and specs/001-autonomous-release/evidence/us3.md (SC-001/004).
@@ -544,13 +544,13 @@ heldout validation and exact authenticated human promotion; no automatic operati
 Independent test: setup-to-promotion records, selectable raw/redacted/metadata export with
 preview, missing evidence and no network send; backup/restore without original deletion.
 
-- [ ] T068 [US7] Audit and close aggregate event coverage for every OPS §4.2 category/failure/
+- [x] T068 [US7] Audit and close aggregate event coverage for every OPS §4.2 category/failure/
   rejection in app/operations/audit.py and app/tests/test_event_coverage.py, including auth recovery,
   service-client, extension qualification/binding, deployment request/cancel/receipt, managed-login
   lifecycle, credential retirement/cleanup/erasure/failure and speech interrupted/raw-unavailable;
   public projections expose no record handle/secret/provider raw body. Prerequisite feature tasks
   emit their events before live trials (FR-027).
-- [ ] T069 [US7] Implement manual-only core retention, bounded cache/debug pruning and explicit deletion preview/tombstone/impact in app/operations/retention.py and app/tests/test_retention.py (OPS-AC06).
+- [x] T069 [US7] Implement manual-only core retention, bounded cache/debug pruning and explicit deletion preview/tombstone/impact in app/operations/retention.py and app/tests/test_retention.py (OPS-AC06).
 - [ ] T070 [US7] Implement consistent age encryption through a networkless backup-crypto worker and
   separate `BackupKeyPort`/backup-key volume in app/operations/backup.py, app/workers/backup_crypto.py
   and app/tests/test_backup.py. Never mount provider credential root/records there; exclude restored
@@ -562,7 +562,7 @@ preview, missing evidence and no network send; backup/restore without original d
   key/volume loss, corruption, stream interruption and external receipt. `backup-key-init` follows
   absent O_EXCL+fsync / exact-existing verify-no-op / malformed fail-without-replace semantics and
   is tested across stack-update reruns (OPS-AC07).
-- [ ] T071 [US7] Implement snapshot preview/redaction/pseudonyms/rights/missing-evidence manifest and safe archive validation in app/operations/export.py and app/tests/test_export.py; no self-referential archive hash (FR-028/029).
+- [x] T071 [US7] Implement snapshot preview/redaction/pseudonyms/rights/missing-evidence manifest and safe archive validation in app/operations/export.py and app/tests/test_export.py; no self-referential archive hash (FR-028/029).
 - [ ] T072 [US7] Integrate the T025 `DeploymentControlPort` into verified web-release update/recovery
   guidance, backup-before-migration and safe state in app/operations/updates.py,
   app/operations/recovery.py and app/tests/test_update_recovery.py. Bind exact manifest/origin/image-
