@@ -146,3 +146,59 @@ b3c3697bbd218d05cbbf5560119a19bbecab61bfc94b1be1439ba9e61daf4e28  app/tests/test
 Still not claimed: the ingress is not yet mounted on an authenticated HTTP route
 or forwarded over the gateway UDS, lost-response/race persistence cases remain,
 and no independent adversarial audit of the T090 slices has run.
+
+## Independent adversarial audit and remediation (2026-09-13)
+
+An independent adversarial audit subagent attacked the vault/transport/ingress trio
+at 957d8b9 (probe scripts preserved in the session scratchpad `t090-audit/`).
+Verdict: **REJECT** — one P1 and three P2, all reproduced; all four are now fixed
+with per-finding regression tests:
+
+- **F1 (P1, fixed):** a secret containing CR/LF (realistic for PEM-format keys)
+  leaked in cleartext through `http.client.putheader`'s `ValueError` message, which
+  escaped the transport's `except OSError`. Fixed in three layers: the vault and
+  the ingress now reject control characters in secrets before any effect; the
+  transport validates header-safety of the resolved secret before injection and
+  fails closed (`credential is not header-safe`); and the wire `except` now
+  catches `ValueError` with a severed cause chain (`from None`) so a framing
+  error can never carry the header value. Regression: a monkeypatched hostile
+  resolution raises a sanitized `GatewayError` with zero network effect and no
+  secret in the message or cause.
+- **F2 (P2, fixed):** a lone-surrogate secret crashed the ingress with an uncaught
+  `UnicodeEncodeError` carrying the offending character; the encode is now guarded
+  and control characters are rejected with sanitized errors.
+- **F3 (P2, fixed):** a crash between the secret commit and the index commit left
+  an unreferenced, un-erasable secret file. Startup reconciliation now also
+  garbage-collects committed secret files that no index record references, and the
+  regression test walks the whole vault tree for secret bytes after a simulated
+  crash.
+- **F4 (P2, fixed):** the store path was a lock-free check-then-act: concurrent
+  stores dropped committed records via stale index snapshots and one intent could
+  alias up to eight handles. All vault operations now hold a process lock;
+  regressions drive 40 parallel distinct intents (all survive reload) and 16
+  parallel replays of one intent (exactly one handle and one secret file).
+
+Invariants the audit could NOT break (its probes listed in the report):
+destination/header pinning including unicode-lowercase collisions and prefix
+confusion, handle opacity and rotation/retire/erase lifecycle including
+resurrection attempts, and every ingress framing trick attempted
+(trailing-space names, CR-tailed lengths, duplicate lengths/types, BOM bodies).
+
+```text
+python -m pytest -q (three T090 suites, post-remediation)
+30 passed
+ruff check (six touched files)
+All checks passed
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-13)
+3,070 passed, 2 skipped, 369 subtests passed, 1 known warning
+```
+
+Frozen identities after remediation (SHA-256):
+
+```text
+2f048fc0b6c9d9ed106e8cc8b58cb85bf4fe020b99521280a196263f58046018  app/workers/credential_vault.py
+1a9a0c31c72cb9a9613a43cac95499584d3646a05482164c1a66c5ad9998ad96  app/workers/provider_gateway.py
+c59ce54f35a3428da04c27047972f131a483a5016567eb5d93153a306cbda34b  app/api/credential_ingress.py
+```
+
+This remediation itself has not been independently re-audited.

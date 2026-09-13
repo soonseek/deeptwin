@@ -127,3 +127,16 @@ def test_content_type_must_be_json():
     ]
     with pytest.raises(CredentialIngressError):
         parse_credential_ingress(headers, body)
+
+
+def test_control_characters_and_surrogates_in_secrets_fail_sanitized():
+    for secret in ("sk\nmultiline", "sk\rtoken", "sk\x00token"):
+        raw = body_bytes(secret=secret)
+        with pytest.raises(CredentialIngressError) as failure:
+            parse_credential_ingress(headers_for(raw), raw)
+        assert "multiline" not in str(failure.value)
+    lone = body_bytes(secret="\ud800")
+    with pytest.raises(CredentialIngressError) as failure:
+        parse_credential_ingress(headers_for(lone), lone)
+    assert "\\ud800" not in str(failure.value)
+    assert "\ud800" not in str(failure.value)

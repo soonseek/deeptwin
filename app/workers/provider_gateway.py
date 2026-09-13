@@ -171,7 +171,16 @@ class CredentialedProviderTransport:
             secret = self._vault.resolve_for_gateway(handle)
         except CredentialVaultError as exc:
             raise GatewayError("credential handle is not usable") from exc
-        projected[binding.auth_header] = secret.decode("utf-8")
+        try:
+            auth_value = secret.decode("utf-8")
+        except UnicodeDecodeError:
+            raise GatewayError("credential is not header-safe") from None
+        if any(ord(character) < 32 or ord(character) == 127
+               for character in auth_value):
+            # A control character can never be framed as a header value; fail
+            # closed here so the secret can never surface in a framing error.
+            raise GatewayError("credential is not header-safe")
+        projected[binding.auth_header] = auth_value
 
         connection_type = (
             http.client.HTTPSConnection
@@ -186,8 +195,10 @@ class CredentialedProviderTransport:
                 response = connection.getresponse()
                 payload = response.read(binding.max_response_bytes + 1)
                 status = response.status
-            except OSError as exc:
-                raise GatewayError("provider transport failed") from exc
+            except (OSError, ValueError):
+                # `from None`: a framing ValueError embeds the raw header value,
+                # so the cause chain must be severed to keep errors secret-free.
+                raise GatewayError("provider transport failed") from None
         finally:
             connection.close()
         if 300 <= status < 400:

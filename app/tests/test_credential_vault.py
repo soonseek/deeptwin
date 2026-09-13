@@ -155,3 +155,81 @@ def test_metadata_on_disk_never_contains_secret_bytes(vault, tmp_path):
     assert SECRET not in index
     parsed = json.loads(index)
     assert type(parsed) is dict
+
+
+# ---------------------------------------------- T090 audit findings F1-F4
+
+
+import threading as _threading
+
+
+def test_control_characters_in_secrets_are_rejected(vault):
+    for secret in (b"line1\nline2", b"sk\rtoken", b"sk\x00token", b"sk\x7ftoken"):
+        with pytest.raises(CredentialVaultError) as failure:
+            vault.store(INTENT_A, PROVIDER, secret)
+        assert "line1" not in str(failure.value)
+    assert vault.health()["active"] == 0
+
+
+def test_a_crash_between_secret_commit_and_index_commit_leaves_no_orphan(
+    tmp_path, monkeypatch,
+):
+    root = str(tmp_path / "vault")
+    vault = CredentialVault(root)
+
+    original = CredentialVault._write_index
+
+    def doomed(self):
+        raise OSError("simulated crash before index commit")
+
+    monkeypatch.setattr(CredentialVault, "_write_index", doomed)
+    with pytest.raises((CredentialVaultError, OSError)):
+        vault.store(INTENT_A, PROVIDER, SECRET)
+    monkeypatch.setattr(CredentialVault, "_write_index", original)
+
+    reopened = CredentialVault(root)
+    secrets_dir = os.path.join(root, "secrets")
+    indexed = set(reopened._index["records"])
+    on_disk = set(os.listdir(secrets_dir))
+    assert on_disk <= indexed  # no unreferenced secret bytes survive
+    for base, _dirs, files in os.walk(root):
+        for name in files:
+            with open(os.path.join(base, name), "rb") as stream:
+                assert SECRET not in stream.read()
+
+
+def test_concurrent_stores_neither_lose_records_nor_alias_intents(tmp_path):
+    root = str(tmp_path / "vault")
+    vault = CredentialVault(root)
+
+    # (a) forty distinct intents in parallel: every record survives.
+    intents = [f"00000000-0000-4000-8000-0000000000{index:02x}" for index in range(40)]
+    threads = [
+        _threading.Thread(
+            target=vault.store, args=(intent, PROVIDER, SECRET),
+        )
+        for intent in intents
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(10)
+    reopened = CredentialVault(root)
+    assert len(reopened._index["records"]) == 40
+    assert len(os.listdir(os.path.join(root, "secrets"))) == 40
+
+    # (b) sixteen concurrent replays of one intent: exactly one handle.
+    root_b = str(tmp_path / "vault-b")
+    vault_b = CredentialVault(root_b)
+    handles: list = []
+
+    def replay():
+        handles.append(vault_b.store(INTENT_A, PROVIDER, SECRET).handle)
+
+    threads = [_threading.Thread(target=replay) for _ in range(16)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(10)
+    assert len(set(handles)) == 1
+    assert len(os.listdir(os.path.join(root_b, "secrets"))) == 1

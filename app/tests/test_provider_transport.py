@@ -242,3 +242,22 @@ def test_binding_validation_is_fail_closed(tmp_path):
         )
     with pytest.raises(GatewayError):
         CredentialedProviderTransport(object(), None)
+
+
+def test_a_header_unsafe_secret_fails_sanitized_with_zero_network_effect(
+    subject, monkeypatch,
+):
+    """Audit F1: a resolved secret hostile to header framing must never leak."""
+
+    vault, record, transport = subject
+    hostile = b"line1\nsk-secret-TOPSECRET-abc123"
+    monkeypatch.setattr(
+        type(vault), "resolve_for_gateway", lambda _self, _handle: hostile,
+    )
+    with pytest.raises(GatewayError) as failure:
+        send(transport, record.handle)
+    assert "TOPSECRET" not in str(failure.value)
+    assert failure.value.__cause__ is None or "TOPSECRET" not in str(
+        failure.value.__cause__
+    )
+    assert FakeProvider.seen == []

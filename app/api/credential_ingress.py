@@ -106,9 +106,14 @@ def parse_credential_ingress(
         raise CredentialIngressError("ingress provider identifier is invalid")
     if type(secret) is not str:
         raise CredentialIngressError("ingress secret is not text")
-    secret_bytes = secret.encode("utf-8")
+    try:
+        secret_bytes = secret.encode("utf-8")
+    except UnicodeEncodeError:
+        raise CredentialIngressError("ingress secret is not encodable text") from None
     if not 1 <= len(secret_bytes) <= MAX_SECRET_BYTES:
         raise CredentialIngressError("ingress secret is out of bounds")
+    if any(ord(character) < 32 or ord(character) == 127 for character in secret):
+        raise CredentialIngressError("ingress secret contains control characters")
     if rotate_from is not None and (
         type(rotate_from) is not str or _HANDLE.fullmatch(rotate_from) is None
     ):

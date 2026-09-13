@@ -22,6 +22,7 @@ import json
 import os
 import re
 import stat
+import threading
 from dataclasses import dataclass
 from hashlib import sha256
 from uuid import uuid4
@@ -56,12 +57,13 @@ class CredentialRecord:
 class CredentialVault:
     """File-backed vault: 0600 secret files, atomic index, staged commits."""
 
-    __slots__ = ("_index", "root")
+    __slots__ = ("_index", "_lock", "root")
 
     def __init__(self, root: str) -> None:
         os.makedirs(root, mode=0o700, exist_ok=True)
         os.makedirs(os.path.join(root, "secrets"), mode=0o700, exist_ok=True)
         self.root = root
+        self._lock = threading.RLock()
         self._index = self._load_index()
         self._reconcile_startup()
 
@@ -112,6 +114,14 @@ class CredentialVault:
                     os.unlink(os.path.join(self.root, name))
                 except OSError:
                     pass
+        # A crash between the secret commit and the index commit leaves a
+        # committed file no record references; such bytes must not survive.
+        for name in os.listdir(os.path.join(self.root, "secrets")):
+            if name not in self._index["records"]:
+                try:
+                    os.unlink(self._secret_path(name))
+                except OSError:
+                    pass
         changed = False
         for handle, record in self._index["records"].items():
             if record["state"] != "active":
@@ -143,6 +153,10 @@ class CredentialVault:
             secret.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise CredentialVaultError("secret bytes are not UTF-8") from exc
+        if any(byte < 32 or byte == 127 for byte in secret):
+            # Control characters can never be framed safely (headers, logs);
+            # reject them before any effect rather than leaking them later.
+            raise CredentialVaultError("secret bytes contain control characters")
         return secret
 
     # ------------------------------------------------------------ operations
@@ -151,11 +165,12 @@ class CredentialVault:
         return {"port": "credential-vault-port-v1", "operations": list(_OPERATIONS)}
 
     def health(self) -> dict:
-        counts = {"active": 0, "cleanup_pending": 0, "secret_input_lost": 0}
-        for record in self._index["records"].values():
-            if record["state"] in counts:
-                counts[record["state"]] += 1
-        return counts
+        with self._lock:
+            counts = {"active": 0, "cleanup_pending": 0, "secret_input_lost": 0}
+            for record in self._index["records"].values():
+                if record["state"] in counts:
+                    counts[record["state"]] += 1
+            return counts
 
     def store(
         self,
@@ -172,6 +187,19 @@ class CredentialVault:
         secret = self._validate_secret(secret)
         digest = sha256(secret).hexdigest()
 
+        with self._lock:
+            return self._store_locked(
+                intent_id, provider, secret, digest, rotate_from
+            )
+
+    def _store_locked(
+        self,
+        intent_id: str,
+        provider: str,
+        secret: bytes,
+        digest: str,
+        rotate_from: str | None,
+    ) -> CredentialRecord:
         existing_handle = self._index["intents"].get(intent_id)
         if existing_handle is not None:
             existing = self._record(existing_handle)
@@ -219,7 +247,8 @@ class CredentialVault:
     def resolve_for_gateway(self, handle: str) -> bytes:
         if type(handle) is not str or _HANDLE.fullmatch(handle) is None:
             raise CredentialVaultError("unknown credential handle")
-        record = self._record(handle)
+        with self._lock:
+            record = dict(self._record(handle))
         if record["state"] != "active":
             raise CredentialVaultError("credential handle is not resolvable")
         try:
@@ -237,16 +266,23 @@ class CredentialVault:
     def retire(self, handle: str) -> CredentialRecord:
         if type(handle) is not str or _HANDLE.fullmatch(handle) is None:
             raise CredentialVaultError("unknown credential handle")
-        record = self._record(handle)
-        if record["state"] != "active":
-            raise CredentialVaultError("only an active credential can be retired")
-        record["state"] = "cleanup_pending"
-        self._write_index()
-        return CredentialRecord(handle, record["provider"], "cleanup_pending")
+        with self._lock:
+            record = self._record(handle)
+            if record["state"] != "active":
+                raise CredentialVaultError(
+                    "only an active credential can be retired"
+                )
+            record["state"] = "cleanup_pending"
+            self._write_index()
+            return CredentialRecord(handle, record["provider"], "cleanup_pending")
 
     def erase(self, handle: str) -> str:
         if type(handle) is not str or _HANDLE.fullmatch(handle) is None:
             raise CredentialVaultError("unknown credential handle")
+        with self._lock:
+            return self._erase_locked(handle)
+
+    def _erase_locked(self, handle: str) -> str:
         record = self._record(handle)
         if record["state"] not in ("cleanup_pending", "secret_input_lost"):
             raise CredentialVaultError(
