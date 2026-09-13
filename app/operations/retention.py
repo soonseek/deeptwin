@@ -6,7 +6,10 @@ Core records have no expiry and are NEVER auto-deleted: `core_mode` is
 (age/byte-capped, LRU) and sensitive-free diagnostics prune by policy; an
 irreplaceable tool observation can never be classified as cache; and every
 prune returns a report of the kinds, windows and quantities it removed —
-the record the caller must persist as a core event. Explicit deletion is a
+the record the caller must persist as a core event. Byte-cap eviction is
+oldest-created-first: this value layer records no access times, so it is a
+creation-order approximation of the contract's LRU — the access layer owns
+real usage recency and may re-touch entries by re-registering derived ones. Explicit deletion is a
 two-step human act: `preview_deletion` states the exact scope, bytes and
 derived/approval impact against the ledger's current revision;
 `delete_items` must present that exact preview against the unchanged
@@ -25,6 +28,9 @@ from hashlib import sha256
 from ..domain.refs import DomainContractError, EntityRef, canonical_json
 
 CLASSIFICATIONS = frozenset({"core", "cache", "diagnostics"})
+DELETION_REASONS = frozenset({
+    "user_requested", "policy_cleanup", "rights_request", "migration",
+})
 _PRUNABLE = ("cache", "diagnostics")
 _STAMP = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z\Z"
@@ -142,6 +148,10 @@ class Tombstone:
     classification: str
     byte_length: int
     actor_id: str
+    evidence_ref: EntityRef
+    deleted_at: str
+    deletion_request_id: str
+    reason_code: str
     derived_impact: tuple[str, ...]
     approval_impact: tuple[EntityRef, ...]
 
@@ -285,7 +295,7 @@ def prune(ledger, policy, *, now):
         pool = sorted(survivors[classification], key=lambda e: e.created_at)
         total = sum(entry.byte_length for entry in pool)
         while total > cap and pool:
-            oldest = pool.pop(0)  # LRU within the window
+            oldest = pool.pop(0)  # oldest-created eviction (see docstring)
             removed[classification].append(oldest)
             total -= oldest.byte_length
         keep.extend(pool)
@@ -322,6 +332,9 @@ def preview_deletion(ledger, item_ids) -> DeletionPreview:
     _require_ledger(ledger)
     if type(item_ids) is not list or not 1 <= len(item_ids) <= 256:
         raise RetentionError("expected a bounded nonempty item list")
+    if len(set(item_ids)) != len(item_ids):
+        # A duplicated id would inflate the byte total the human is shown.
+        raise RetentionError("a deletion scope never repeats an item")
     entries = []
     for item_id in item_ids:
         entry = next(
@@ -353,8 +366,10 @@ def preview_deletion(ledger, item_ids) -> DeletionPreview:
     )
 
 
-def delete_items(ledger, preview, *, actor) -> RetentionLedger:
-    """Delete exactly the previewed scope, leaving tombstones."""
+def delete_items(
+    ledger, preview, *, actor, deleted_at, deletion_request_id, reason_code,
+) -> RetentionLedger:
+    """Delete exactly the previewed scope, leaving complete tombstones."""
 
     _require_ledger(ledger)
     if (
@@ -374,7 +389,15 @@ def delete_items(ledger, preview, *, actor) -> RetentionLedger:
         raise RetentionError("actor id is not a canonical UUID")
     if actor["authenticated"] is not True:
         raise RetentionError("deletion requires an authenticated actor")
-    _ref(actor["evidence"], "action_approval", "actor evidence")
+    evidence = _ref(actor["evidence"], "action_approval", "actor evidence")
+    _stamp(deleted_at, "deletion time")
+    if (
+        type(deletion_request_id) is not str
+        or _UUID.fullmatch(deletion_request_id) is None
+    ):
+        raise RetentionError("deletion request id is not a canonical UUID")
+    if reason_code not in DELETION_REASONS:
+        raise RetentionError("unknown deletion reason")
     scope = set(preview.item_ids)
     tombstones = list(ledger.tombstones)
     kept = []
@@ -386,6 +409,10 @@ def delete_items(ledger, preview, *, actor) -> RetentionLedger:
                 classification=entry.classification,
                 byte_length=entry.byte_length,
                 actor_id=actor_id,
+                evidence_ref=evidence,
+                deleted_at=deleted_at,
+                deletion_request_id=deletion_request_id,
+                reason_code=reason_code,
                 derived_impact=entry.derived_ids,
                 approval_impact=entry.approval_refs,
             ))
@@ -405,6 +432,7 @@ def delete_items(ledger, preview, *, actor) -> RetentionLedger:
 
 __all__ = [
     "CLASSIFICATIONS",
+    "DELETION_REASONS",
     "DeletionPreview",
     "PruneReport",
     "RetentionEntry",

@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from hashlib import sha256
+from uuid import NAMESPACE_URL, uuid5
 
 from ..domain.refs import DomainContractError, EntityRef, canonical_json
 from ..runtime.gateway import carries_host_path
@@ -160,10 +161,16 @@ class ExportManifest:
     """The manifest; it never contains the archive's own hash."""
 
     request_id: str
+    bundle_id: str
+    created_at: str
+    app_release: str
     scope: str
+    export_policy_ref: EntityRef
+    pseudonym_map_scope: str
     items: tuple[ExportItem, ...]
     missing_evidence: tuple[MissingEvidence, ...]
     redaction_summary: tuple[tuple[str, int], ...]
+    reproduction_limits: tuple[str, ...]
     checksum_algorithm: str
     _issuer_token: object = field(repr=False, compare=False)
 
@@ -171,7 +178,13 @@ class ExportManifest:
         return {
             "schema_version": "export-manifest-v1",
             "request_id": self.request_id,
+            "bundle_id": self.bundle_id,
+            "created_at": self.created_at,
+            "app_release": self.app_release,
             "scope": self.scope,
+            "export_policy_ref": self.export_policy_ref.as_dict(),
+            "pseudonym_map_scope": self.pseudonym_map_scope,
+            "reproduction_limits": list(self.reproduction_limits),
             "items": [
                 {
                     "export_id": item.export_id,
@@ -213,14 +226,37 @@ def _restricted_path(value: str) -> str:
     return value
 
 
-def _scan_canaries(payload: str, canaries) -> None:
+def _decoded_strings(value):
+    if type(value) is str:
+        yield value
+    elif type(value) is dict:
+        for key, item in value.items():
+            yield key
+            yield from _decoded_strings(item)
+    elif type(value) is list:
+        for item in value:
+            yield from _decoded_strings(item)
+
+
+def _scan_canaries(manifest_dict: dict, canaries) -> None:
+    # Scan the DECODED field values, so a secret carrying quotes,
+    # backslashes or newlines cannot hide behind JSON escaping; the
+    # encoded payload is scanned as a second belt.
+    encoded = canonical_json(manifest_dict).decode("utf-8")
     for canary in canaries:
-        if canary and canary in payload:
-            # A secret anywhere in the manifest refuses the whole build.
+        if not canary:
+            continue
+        if canary in encoded:
             raise ExportError("the manifest carries a secret canary")
+        for text in _decoded_strings(manifest_dict):
+            if canary in text:
+                raise ExportError("the manifest carries a secret canary")
 
 
-def build_export_manifest(request, items, missing, *, secret_canaries):
+def build_export_manifest(
+    request, items, missing, *, secret_canaries, created_at, app_release,
+    pseudonym_map_scope, reproduction_limits,
+):
     """Build one manifest honestly; nothing is transmitted anywhere."""
 
     if (
@@ -228,8 +264,19 @@ def build_export_manifest(request, items, missing, *, secret_canaries):
         or getattr(request, "_issuer_token", None) is not _ISSUE_TOKEN
     ):
         raise ExportError("a framework-issued export request is required")
-    if type(secret_canaries) is not list or len(secret_canaries) > 64:
+    if type(secret_canaries) is not list or len(secret_canaries) > 64 or any(
+        type(item) is not str or len(item) > 4_096 for item in secret_canaries
+    ):
         raise ExportError("secret canaries are out of bounds")
+    if type(created_at) is not str or _STAMP.fullmatch(created_at) is None:
+        raise ExportError("created time must be a canonical UTC timestamp")
+    app_release = _text(app_release, "app release", 128)
+    pseudonym_map_scope = _text(pseudonym_map_scope, "pseudonym scope", 128)
+    if type(reproduction_limits) is not list or len(reproduction_limits) > 64:
+        raise ExportError("reproduction limits are out of bounds")
+    limits = tuple(
+        _text(item, "reproduction limit", 512) for item in reproduction_limits
+    )
     if type(items) is not list or not 1 <= len(items) <= 4_096:
         raise ExportError("export items are out of bounds")
     raw_allowed = len(request.include_raw_refs) > 0
@@ -272,7 +319,8 @@ def build_export_manifest(request, items, missing, *, secret_canaries):
             raise ExportError("item size is out of bounds")
         linked = value["linked_export_ids"]
         if type(linked) is not list or len(linked) > 64 or any(
-            type(item) is not str for item in linked
+            type(item) is not str or not 1 <= len(item) <= 128
+            for item in linked
         ):
             raise ExportError("linked export ids are out of bounds")
         basis = value["license_or_share_basis"]
@@ -323,19 +371,32 @@ def build_export_manifest(request, items, missing, *, secret_canaries):
             affected_claims=tuple(claims),
             recoverable_by_user=recoverable,
         ))
+    if len({item.relative_path for item in parsed_items}) != len(parsed_items):
+        # Two entries at one archive path could never both exist in the
+        # produced archive; the manifest must match reality.
+        raise ExportError("relative paths must be unique within a manifest")
+    if len({item.export_id for item in parsed_items}) != len(parsed_items):
+        raise ExportError("export ids must be unique within a manifest")
     manifest = _issue(
         ExportManifest,
         request_id=request.request_id,
+        bundle_id=str(uuid5(
+            NAMESPACE_URL,
+            f"deeptwin:export-bundle:{request.request_id}:{created_at}",
+        )),
+        created_at=created_at,
+        app_release=app_release,
         scope=request.scope,
+        export_policy_ref=request.redaction_policy_ref,
+        pseudonym_map_scope=pseudonym_map_scope,
         items=tuple(parsed_items),
         missing_evidence=tuple(parsed_missing),
         redaction_summary=tuple(sorted(redactions.items())),
+        reproduction_limits=limits,
         checksum_algorithm="sha256",
         _issuer_token=_ISSUE_TOKEN,
     )
-    _scan_canaries(
-        canonical_json(manifest.as_dict()).decode("utf-8"), secret_canaries,
-    )
+    _scan_canaries(manifest.as_dict(), secret_canaries)
     return manifest
 
 
@@ -368,7 +429,7 @@ def seal_export(manifest, *, bundle_sha256, size_bytes, completed_at,
         raise ExportError("completed time must be a canonical UTC timestamp")
     return _issue(
         ExportReceipt,
-        bundle_id=manifest.request_id,
+        bundle_id=manifest.bundle_id,
         manifest_sha256=manifest.manifest_sha,
         bundle_sha256=bundle_sha256,
         size_bytes=size_bytes,

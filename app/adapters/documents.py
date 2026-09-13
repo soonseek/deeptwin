@@ -32,7 +32,7 @@ MAX_TABLE_COLUMNS = 50
 MAX_CSV_ROWS = 10_000
 MAX_CSV_CELL_BYTES = 4_096
 MAX_JSON_DEPTH = 32
-_FORMULA_PREFIXES = ("=", "+", "-", "@")
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 
 class DocumentToolError(ValueError):
@@ -46,11 +46,14 @@ def _issue(cls, **fields):
     return value
 
 
-def _text(value, label, maximum=MAX_TEXT_BYTES):
+def _text(value, label, maximum=MAX_TEXT_BYTES, *, allow_formula_prefix=True):
     if type(value) is not str or not 1 <= len(value.encode("utf-8")) <= maximum:
         raise DocumentToolError(f"{label} is out of bounds")
-    if "\x00" in value:
-        raise DocumentToolError(f"{label} carries a NUL byte")
+    for ch in value:
+        if ord(ch) < 0x20 and ch not in ("\n", "\t"):
+            # C0 control characters (NUL included) are refused at input
+            # time, consistently across every format.
+            raise DocumentToolError(f"{label} carries a control character")
     return value
 
 
@@ -66,6 +69,7 @@ class RenderReport:
     # mapping (table_id, row, column) -> the text actually read back
     inspected_cells: dict
     transformations: tuple[tuple[int, int, str], ...]
+    title_verified: bool
 
 
 def _digest(path: Path) -> tuple[int, str]:
@@ -147,6 +151,10 @@ def render_docx(spec, path) -> RenderReport:
             raise DocumentToolError(
                 "the produced document does not contain a declared paragraph"
             )
+    if title not in reopened_texts:
+        raise DocumentToolError(
+            "the produced document does not contain the declared title"
+        )
     byte_length, digest = _digest(path)
     cells = dict(inspected)
     return _issue(
@@ -158,6 +166,7 @@ def render_docx(spec, path) -> RenderReport:
         table_count=len(reopened.tables),
         inspected_cells=cells,
         transformations=(),
+        title_verified=True,
     )
 
 
@@ -177,7 +186,11 @@ def render_csv(rows, path, *, safe_spreadsheet=False) -> RenderReport:
     for row_index, row in enumerate(rows):
         output_row = []
         for column_index, cell in enumerate(row):
-            text = _text(cell, "csv cell", MAX_CSV_CELL_BYTES)
+            if type(cell) is not str or "\x00" in cell:
+                raise DocumentToolError("csv cell is out of bounds")
+            if len(cell.encode("utf-8")) > MAX_CSV_CELL_BYTES or not cell:
+                raise DocumentToolError("csv cell is out of bounds")
+            text = cell
             if safe_spreadsheet and text.startswith(_FORMULA_PREFIXES):
                 # The optional safe export records EVERY transformation it
                 # applies; the default writer keeps data as data.
@@ -204,6 +217,7 @@ def render_csv(rows, path, *, safe_spreadsheet=False) -> RenderReport:
         table_count=1,
         inspected_cells={},
         transformations=tuple(transformations),
+        title_verified=False,
     )
 
 
@@ -220,6 +234,8 @@ def _bounded_json(value, depth=0):
         for item in value:
             _bounded_json(item, depth + 1)
         return
+    if type(value) is str and "\x00" in value:
+        raise DocumentToolError("json never carries NUL characters")
     if type(value) is float and not math.isfinite(value):
         raise DocumentToolError("json never carries non-finite numbers")
     if value is not None and type(value) not in (str, int, bool, float):
@@ -247,20 +263,38 @@ def render_json(value, path) -> RenderReport:
         table_count=0,
         inspected_cells={},
         transformations=(),
+        title_verified=False,
     )
 
 
+MAX_VALIDATE_BYTES = 64 * 1024 * 1024
+MAX_ARCHIVE_ENTRIES = 10_000
+
+
 def validate_format(path, declared) -> bool:
-    """Sniff the real bytes; a wrong or unsupported declaration refuses."""
+    """Sniff the real bytes; a wrong or unsupported declaration refuses.
+
+    Hostile-file bounds: the input is size-capped before reading and a
+    DOCX container's central directory is entry-capped before parsing.
+    The output path of the render functions is the caller's authority;
+    this module never restricts where its caller chooses to write.
+    """
 
     path = Path(path)
+    if path.stat().st_size > MAX_VALIDATE_BYTES:
+        raise DocumentToolError("the file exceeds the validation size bound")
     data = path.read_bytes()
     if declared == "docx":
         if not data.startswith(b"PK"):
             raise DocumentToolError("the bytes are not a DOCX container")
         try:
             with zipfile.ZipFile(path) as archive:
-                names = set(archive.namelist())
+                infos = archive.infolist()
+                if len(infos) > MAX_ARCHIVE_ENTRIES:
+                    raise DocumentToolError(
+                        "the container exceeds the entry bound"
+                    )
+                names = {info.filename for info in infos}
         except zipfile.BadZipFile as exc:
             raise DocumentToolError("the container is corrupt") from exc
         if "[Content_Types].xml" not in names or not any(
@@ -278,9 +312,10 @@ def validate_format(path, declared) -> bool:
         return True
     if declared == "json":
         try:
-            json.loads(data.decode("utf-8"))
+            parsed = json.loads(data.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise DocumentToolError("the bytes are not JSON") from exc
+        _bounded_json(parsed)
         return True
     # Unsupported formats stay explicit — never silently accepted.
     raise DocumentToolError(f"format {declared!r} is not supported here")

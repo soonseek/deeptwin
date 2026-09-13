@@ -135,10 +135,16 @@ def test_explicit_deletion_needs_the_exact_preview_and_leaves_tombstones():
     assert preview.total_bytes == 1_000
     assert preview.derived_impact == ("preview-1",)
     assert len(preview.approval_impact) == 1
-    deleted = delete_items(state, preview, actor={
-        "actor_id": ACTOR, "authenticated": True,
-        "evidence": ref("action_approval", 1703),
-    })
+    deleted = delete_items(
+        state, preview,
+        actor={
+            "actor_id": ACTOR, "authenticated": True,
+            "evidence": ref("action_approval", 1703),
+        },
+        deleted_at=NOW,
+        deletion_request_id="00000000-0000-4000-8000-00000000de02",
+        reason_code="user_requested",
+    )
     remaining = {entry.item_id for entry in deleted.entries}
     assert "core-with-impact" not in remaining
     tombstone = deleted.tombstones[0]
@@ -146,34 +152,45 @@ def test_explicit_deletion_needs_the_exact_preview_and_leaves_tombstones():
     assert tombstone.derived_impact == ("preview-1",)
     with pytest.raises(RetentionError):
         # the consumed preview never deletes twice
-        delete_items(deleted, preview, actor={
-            "actor_id": ACTOR, "authenticated": True,
-            "evidence": ref("action_approval", 1703),
-        })
+        delete_items(
+            deleted, preview,
+            actor={
+                "actor_id": ACTOR, "authenticated": True,
+                "evidence": ref("action_approval", 1703),
+            },
+            deleted_at=NOW,
+            deletion_request_id="00000000-0000-4000-8000-00000000de02",
+            reason_code="user_requested",
+        )
 
 
 def test_deletion_refuses_stale_previews_and_unauthenticated_actors():
     state = ledger()
     preview = preview_deletion(state, ["cache-preview"])
     moved = register_item(state, item("late-item", "cache", created_at=NOW))
+    common = {
+        "deleted_at": NOW,
+        "deletion_request_id": "00000000-0000-4000-8000-00000000de03",
+        "reason_code": "user_requested",
+    }
     with pytest.raises(RetentionError):
         # the ledger changed since the preview: the scope must be re-shown
         delete_items(moved, preview, actor={
             "actor_id": ACTOR, "authenticated": True,
             "evidence": ref("action_approval", 1703),
-        })
+        }, **common)
     with pytest.raises(RetentionError):
         delete_items(state, preview, actor={
             "actor_id": ACTOR, "authenticated": False,
             "evidence": ref("action_approval", 1703),
-        })
+        }, **common)
     with pytest.raises(RetentionError):
         preview_deletion(state, ["never-registered"])
     with pytest.raises(RetentionError):
         delete_items(state, object(), actor={
             "actor_id": ACTOR, "authenticated": True,
             "evidence": ref("action_approval", 1703),
-        })
+        }, **common)
 
 
 def test_values_are_issued_never_constructed():

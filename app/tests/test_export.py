@@ -21,10 +21,23 @@ import pytest
 from app.operations.export import (
     EXPORT_CATEGORIES,
     ExportError,
-    build_export_manifest,
     create_export_request,
     seal_export,
 )
+from app.operations.export import (
+    build_export_manifest as _build,
+)
+
+
+def build_export_manifest(request, items, missing, *, secret_canaries):
+    return _build(
+        request, items, missing,
+        secret_canaries=secret_canaries,
+        created_at="2026-09-13T13:10:00.000000Z",
+        app_release="0.1.0-dev",
+        pseudonym_map_scope="bundle-local",
+        reproduction_limits=[],
+    )
 from app.tests.test_alternatives import ref
 
 REQUEST_ID = "00000000-0000-4000-8000-00000000ex01".replace("x", "a")
@@ -92,7 +105,8 @@ def test_source_hash_exists_only_with_explicit_raw_inclusion():
     ))
     manifest = build_export_manifest(request, [
         item_value(export_id="x-raw", content_mode="raw",
-                   source_hash_included=True, source_sha256="bb" * 32),
+                   source_hash_included=True, source_sha256="bb" * 32,
+                   relative_path="raw/original.bin"),
         item_value(),
     ], [missing_value()], secret_canaries=[])
     raw_item = manifest.items[0]
