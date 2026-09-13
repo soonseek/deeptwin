@@ -508,8 +508,8 @@ creates files and passes full artifacts to later roles; trace survives cancel/re
 Independent test: a prior original exists; a real GUI action submits test-actor own content,
 whole/partial selectors bind exact original, unreviewed area and impact remain separate.
 
-- [ ] T050 [P] [US4] Add original chronology/actor/selector/alignment/partial-scope tests in app/tests/test_alternatives.py, including onboarding/comments/empty drafts as non-alternatives (G-01/02).
-- [ ] T051 [US4] Implement immutable alternative drafts/freeze/original links and separate evidence/change/impact scopes in app/services/alternatives.py (FR-016/017/022).
+- [x] T050 [P] [US4] Add original chronology/actor/selector/alignment/partial-scope tests in app/tests/test_alternatives.py, including onboarding/comments/empty drafts as non-alternatives (G-01/02).
+- [x] T051 [US4] Implement immutable alternative drafts/freeze/original links and separate evidence/change/impact scopes in app/services/alternatives.py (FR-016/017/022).
 - [ ] T052 [US4] Implement in-place text and table own-version editors with revision-safe autosave in app/static/alternatives.mjs; reasons/instructions not mandatory and synthetic full preview not human whole-work (UX-AC05).
 - [ ] T053 [US4] Add PDF/image/structured/time selector and alternative-file flows to app/static/artifacts.mjs and app/api/routes.py; unsupported semantic alignment remains explicit (FR-015/016).
 - [ ] T054 [US4] Test three-view switch/refresh/conflict/stale-range recovery in app/tests/browser-alternatives.test.mjs and record synthetic-vs-real evidence in specs/001-autonomous-release/evidence/us4.md (SC-006).
@@ -519,9 +519,9 @@ whole/partial selectors bind exact original, unreviewed area and impact remain s
 Independent test: preserved original/alternative → observed difference → competing explanations,
 eligible lens questions frozen before new evidence → typed candidate or justified no-change.
 
-- [ ] T055 [US5] Implement format-aware differences/trace slicing and system/expert/exception/error/no-generalization hypotheses in app/services/diagnosis.py and app/tests/test_diagnosis.py; no unsupported single-cause claim (FR-018).
-- [ ] T056 [US5] Implement qualified SPLI routing, frozen contrasting predictions, actual fresh evidence, abstain/decline and H_exp update in app/services/inquiry.py and app/tests/test_inquiry.py (FR-019, G-03/04).
-- [ ] T057 [US5] Implement restore/learn/protect typed patch compilation with per-field behavior provenance and semantic/source leak checks in app/runtime/compiler.py and app/tests/test_change_compiler.py; prevent H_phi/current-alternative copying (FR-020/021).
+- [x] T055 [US5] Implement format-aware differences/trace slicing and system/expert/exception/error/no-generalization hypotheses in app/services/diagnosis.py and app/tests/test_diagnosis.py; no unsupported single-cause claim (FR-018).
+- [x] T056 [US5] Implement qualified SPLI routing, frozen contrasting predictions, actual fresh evidence, abstain/decline and H_exp update in app/services/inquiry.py and app/tests/test_inquiry.py (FR-019, G-03/04).
+- [x] T057 [US5] Implement restore/learn/protect typed patch compilation with per-field behavior provenance and semantic/source leak checks in app/runtime/compiler.py and app/tests/test_change_compiler.py; prevent H_phi/current-alternative copying (FR-020/021).
 - [ ] T058 [US5] Implement active conditional knowledge registry, authority/scope/time/conflict/revalidation and prompt-derived compilation in app/runtime/memory.py and app/services/knowledge.py; ordinary authorized workflow changes remain possible (FR-021/032).
 - [ ] T059 [US5] Run cross-purpose retrieval/prompt/derived-input adversarial tests including hidden heldout and sensitive personal-profile rejection in app/tests/test_growth_firewall.py (G-05, OPS-AC09).
 - [ ] T060 [US5] Connect observation/competing evidence/new questions/change candidates and audit details in app/static/inquiry.mjs, app/api/routes.py and app/tests/browser-inquiry.test.mjs; no forced philosophy quiz or fabricated human answer (UX-AC05/07).
@@ -531,11 +531,11 @@ eligible lens questions frozen before new evidence → typed candidate or justif
 Independent test: frozen comparable paired runs, all plateau/invalid/restart cases, separate
 heldout validation and exact authenticated human promotion; no automatic operating change.
 
-- [ ] T061 [US6] Implement frozen related-queue/baseline/candidate/reset/evaluator/budget plans and isolated paired execution in app/services/comparisons.py and app/tests/test_comparisons.py; trace partial-scope downstream effects (FR-022/FR-023/FR-025).
-- [ ] T062 [P] [US6] Add exact decimal plateau tests for every growth §6.4 sequence, first-floor=0, cumulative small gains, real failure vs invalid, duplicate/restart/lineage changes in app/tests/test_growth_loop.py (SC-007).
-- [ ] T063 [US6] Implement best_observed/progress_reference/patience/stop-reason state and atomic one-result application in app/services/growth.py; product-only no-development-stop semantics (FR-024).
-- [ ] T064 [US6] Implement candidate freeze, dataset exposure tracking and heldout/boundary/regression/shadow/limited gates in app/services/validation.py and app/tests/test_validation.py; seen data never relabeled unseen (FR-025).
-- [ ] T065 [US6] Implement authenticated exact-hash approval/activation CAS/rollback compatibility in app/services/promotion.py and app/tests/test_promotion.py; preserve separate validation/deployment/lifecycle axes (FR-026).
+- [x] T061 [US6] Implement frozen related-queue/baseline/candidate/reset/evaluator/budget plans and isolated paired execution in app/services/comparisons.py and app/tests/test_comparisons.py; trace partial-scope downstream effects (FR-022/FR-023/FR-025).
+- [x] T062 [P] [US6] Add exact decimal plateau tests for every growth §6.4 sequence, first-floor=0, cumulative small gains, real failure vs invalid, duplicate/restart/lineage changes in app/tests/test_growth_loop.py (SC-007).
+- [x] T063 [US6] Implement best_observed/progress_reference/patience/stop-reason state and atomic one-result application in app/services/growth.py; product-only no-development-stop semantics (FR-024).
+- [x] T064 [US6] Implement candidate freeze, dataset exposure tracking and heldout/boundary/regression/shadow/limited gates in app/services/validation.py and app/tests/test_validation.py; seen data never relabeled unseen (FR-025).
+- [x] T065 [US6] Implement authenticated exact-hash approval/activation CAS/rollback compatibility in app/services/promotion.py and app/tests/test_promotion.py; preserve separate validation/deployment/lifecycle axes (FR-026).
 - [ ] T066 [US6] Implement paired execution/round/artifact comparison, actual stop explanations and human version approval/rollback UI in app/static/experiments.mjs and app/static/versions.mjs (UX-AC06).
 - [ ] T067 [US6] Run G-06–G-15 end-to-end recovery/loop/heldout/approval cases in app/tests/browser-growth.test.mjs and specs/001-autonomous-release/evidence/us6.md; label test-actor/synthetic vs actual user evidence (SC-007/SC-008).
 
