@@ -206,6 +206,81 @@ class EnvironmentState:
     consumed_approvals: tuple[str, ...]
     _issuer_token: object = field(repr=False, compare=False)
 
+    def as_dict(self) -> dict:
+        return {
+            "schema_version": "environment-state-v1",
+            "environment_id": self.environment_id,
+            "head": self.head,
+            "consumed_approvals": list(self.consumed_approvals),
+        }
+
+
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+
+
+def is_issued_design_approval(value: object) -> bool:
+    """True only for an approval recorded through this module."""
+
+    return (
+        type(value) is DesignApproval
+        and getattr(value, "_issuer_token", None) is _ISSUE_TOKEN
+    )
+
+
+def is_issued_environment_version(value: object) -> bool:
+    """True only for a version prepared through this module."""
+
+    return (
+        type(value) is EnvironmentVersion
+        and getattr(value, "_issuer_token", None) is _ISSUE_TOKEN
+    )
+
+
+def is_issued_environment_state(value: object) -> bool:
+    """True only for a state issued through this module."""
+
+    return (
+        type(value) is EnvironmentState
+        and getattr(value, "_issuer_token", None) is _ISSUE_TOKEN
+    )
+
+
+def restore_environment_state(value) -> EnvironmentState:
+    """Rebuild one persisted state; trust is the store's hash chain, so the
+    payload itself is revalidated strictly and inconsistencies are refused."""
+
+    if type(value) is not dict or set(value) != {
+        "schema_version", "environment_id", "head", "consumed_approvals",
+    }:
+        raise EnvironmentContractError(
+            "expected the exact persisted environment state"
+        )
+    if value["schema_version"] != "environment-state-v1":
+        raise EnvironmentContractError("unknown environment state schema")
+    environment_id = value["environment_id"]
+    if type(environment_id) is not str or _UUID.fullmatch(environment_id) is None:
+        raise EnvironmentContractError("environment id is not a canonical UUID")
+    head = value["head"]
+    if type(head) is not int or not 0 <= head <= 1_000_000:
+        raise EnvironmentContractError("the environment head is out of bounds")
+    consumed = value["consumed_approvals"]
+    if (
+        type(consumed) is not list or len(consumed) > head
+        or any(
+            type(item) is not str or _SHA256.fullmatch(item) is None
+            for item in consumed
+        )
+        or len(set(consumed)) != len(consumed)
+    ):
+        raise EnvironmentContractError("consumed approvals are inconsistent")
+    return _issue(
+        EnvironmentState,
+        environment_id=environment_id,
+        head=head,
+        consumed_approvals=tuple(consumed),
+        _issuer_token=_ISSUE_TOKEN,
+    )
+
 
 def open_environment(environment_id) -> EnvironmentState:
     if type(environment_id) is not str or _UUID.fullmatch(environment_id) is None:
@@ -273,7 +348,11 @@ __all__ = [
     "EnvironmentContractError",
     "EnvironmentState",
     "EnvironmentVersion",
+    "is_issued_design_approval",
+    "is_issued_environment_state",
+    "is_issued_environment_version",
     "open_environment",
     "prepare_environment_version",
     "record_design_approval",
+    "restore_environment_state",
 ]

@@ -54,3 +54,23 @@ b7626bc76cb687145c9316bcac89cab306f7af3ce01e6ca158698b333db107fa  app/services/e
   driver for multiple candidates (bounded supplementation loop), the
   critic-lens pipeline test file (test_critic_lens_pipeline.py), and the
   storage binding of approvals/versions.
+
+## Addendum — storage binding (design_store.py, same date)
+
+The documented EnvironmentState storage-CAS seam is discharged:
+`persist_design_approval` stores each human approval content-addressed
+(UUIDv5 of approval_sha — an identical re-persist is idempotent, never a
+second act); `persist_environment_head` stores one record per head value
+(record version IS the head, chained to its exact predecessor, the
+consumed approval as an additional parent), so two writers preparing from
+the same head collide at the store; `resume_environment_state` rebuilds
+the issued state through the strict `restore_environment_state` path, and
+a resumed state still refuses every consumed approval. Cross-checks:
+version/state must describe the same preparation (environment id, head,
+approval_sha membership). 3 new tests; regression 3229 passed, 2 skipped.
+
+```
+71590ad21ef25db67a4387649589e96fedb6e092f26c1888729b92ead9f64800  app/services/design_store.py
+5d2fa4c312ef3858d0096a69473ed61e74a3da1bf46c26ca5ff9ce3a5a12a044  app/services/environments.py
+52fc5e44a3648a2463dbe9106f00fe8e7faa80e48cdac486ae4953fa6017fddb  app/tests/test_design_store.py
+```
