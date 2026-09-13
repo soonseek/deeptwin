@@ -99,6 +99,13 @@ class FrozenCall:
         return hashlib.sha256(canonical(self.as_dict()).encode("utf-8")).hexdigest()
 
 
+_PARENT_PURPOSES = {
+    "counterexample_proposal": "review",
+    "counterexample_validity": "counterexample_proposal",
+    "candidate_response": "counterexample_validity",
+}
+
+
 class Ledger:
     """Journal at an explicit dedicated path; callers choose synthetic audit storage.
 
@@ -139,6 +146,11 @@ class Ledger:
             db.execute("""CREATE TABLE IF NOT EXISTS events (
                 seq INTEGER PRIMARY KEY, request_id TEXT NOT NULL REFERENCES calls(id),
                 at REAL NOT NULL, kind TEXT NOT NULL, details TEXT NOT NULL
+            )""")
+            db.execute("""CREATE TABLE IF NOT EXISTS evidence (
+                request_id TEXT NOT NULL REFERENCES calls(id),
+                sha TEXT NOT NULL,
+                PRIMARY KEY (request_id, sha)
             )""")
 
     @contextmanager
@@ -188,6 +200,110 @@ class Ledger:
             db.execute("UPDATE runs SET used = used + 1 WHERE id = ?", (call.run_id,))
             db.execute("INSERT INTO events (request_id, at, kind, details) VALUES (?, ?, 'reserved', '{}')",
                        (call.request_id, now))
+
+    def register_result_evidence(self, request_id, items):
+        """Record the exact evidence hashes one COMPLETED call produced.
+
+        These hashes are the only cross-call currency: a child call may
+        bind its parent only through a hash registered here.
+        """
+        if type(items) is not list or not 1 <= len(items) <= 64 or any(
+            not isinstance(item, dict) for item in items
+        ):
+            raise ValueError("evidence must be a bounded list of objects")
+        shas = [
+            hashlib.sha256(canonical(item).encode("utf-8")).hexdigest()
+            for item in items
+        ]
+        with self._transaction() as db:
+            call = db.execute(
+                "SELECT state FROM calls WHERE id = ?", (request_id,),
+            ).fetchone()
+            if call is None:
+                raise ValueError("unknown request identifier")
+            if call["state"] != "completed":
+                # Only a completed call's result exists as evidence.
+                raise ValueError("evidence requires a completed call")
+            for sha in shas:
+                db.execute(
+                    "INSERT OR IGNORE INTO evidence (request_id, sha) VALUES (?, ?)",
+                    (request_id, sha),
+                )
+        return shas
+
+    def reserve_with_lineage(self, call, *, parent_request_id, evidence_sha):
+        """Reserve a downstream call bound to its exact parent evidence.
+
+        Forged cross-call evidence — a hash the parent never produced, a
+        parent that never completed, a parent from another run or
+        candidate, or a parent of the wrong purpose — refuses (B4).
+        """
+        if type(call) is not FrozenCall:
+            raise ValueError("reservation requires an exact FrozenCall")
+        expected_parent = _PARENT_PURPOSES.get(call.purpose)
+        if expected_parent is None:
+            raise ValueError("this purpose has no lineage parent")
+        needs_hash = call.purpose != "counterexample_proposal"
+        if needs_hash:
+            if (
+                not isinstance(evidence_sha, str)
+                or len(evidence_sha) != 64
+            ):
+                raise ValueError("a parent evidence hash is required")
+        elif evidence_sha is not None:
+            raise ValueError("a proposal binds its review by request only")
+        payload = canonical(call.as_dict())
+        with self._transaction() as db:
+            parent = db.execute(
+                "SELECT payload, state FROM calls WHERE id = ?",
+                (parent_request_id,),
+            ).fetchone()
+            if parent is None:
+                raise ValueError("the lineage parent does not exist")
+            if parent["state"] != "completed":
+                raise ValueError("the lineage parent never completed")
+            parent_call = json.loads(parent["payload"])
+            if parent_call["purpose"] != expected_parent:
+                raise ValueError("the lineage parent purpose is wrong")
+            if (
+                parent_call["run_id"] != call.run_id
+                or parent_call["candidate_id"] != call.candidate_id
+                or parent_call["candidate_version"] != call.candidate_version
+            ):
+                raise ValueError(
+                    "the lineage parent binds a different run or candidate"
+                )
+            if needs_hash:
+                recorded = db.execute(
+                    "SELECT 1 FROM evidence WHERE request_id = ? AND sha = ?",
+                    (parent_request_id, evidence_sha),
+                ).fetchone()
+                if recorded is None:
+                    raise ValueError(
+                        "the evidence hash was never produced by this parent"
+                    )
+            run = db.execute(
+                "SELECT * FROM runs WHERE id = ?", (call.run_id,),
+            ).fetchone()
+            now = self.clock()
+            if run is None or now >= run["deadline"] or run["used"] >= run["max_calls"]:
+                raise ValueError("run budget unavailable")
+            if db.execute(
+                "SELECT 1 FROM calls WHERE id = ?", (call.request_id,),
+            ).fetchone() is not None:
+                raise ValueError("request identifier already used")
+            db.execute(
+                "INSERT INTO calls (id, run_id, payload, digest, state, details) VALUES (?, ?, ?, ?, 'reserved', ?)",
+                (call.request_id, call.run_id, payload, call.digest,
+                 canonical({"lineage_parent": parent_request_id,
+                            "lineage_sha": evidence_sha})),
+            )
+            db.execute("UPDATE runs SET used = used + 1 WHERE id = ?", (call.run_id,))
+            db.execute(
+                "INSERT INTO events (request_id, at, kind, details) VALUES (?, ?, 'reserved', ?)",
+                (call.request_id, now,
+                 canonical({"lineage_parent": parent_request_id})),
+            )
 
     def remaining(self, run_id):
         with self._transaction(write=False) as db:

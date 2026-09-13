@@ -478,7 +478,7 @@ Independent test: fixed synthetic work → real design decisions/candidates → 
   accepted target and rejection of fixed three-template substitution or onboarding-as-feedback
   (FR-003–005).
 - [ ] T031 [US2] Complete B4 lifecycle deadline/cancel from preflight through actual owned process termination in app/codex_understanding.py, app/codex_rpc.py and app/tests/test_provider_lifecycle.py; retain B1 prepared-input contract (verification §5).
-- [ ] T032 [US2] Bind counterexample/validity/candidate-response exact hashes and parent provenance in app/critic_audit.py and app/tests/test_critic_lineage.py; reject forged cross-call evidence (B4).
+- [x] T032 [US2] Bind counterexample/validity/candidate-response exact hashes and parent provenance in app/critic_audit.py and app/tests/test_critic_lineage.py; reject forged cross-call evidence (B4).
 - [ ] T033 [US2] Build the real isolated Q01 harness adapter/environment under evals/deeptwin/tasks/v01-q01/ and evals/deeptwin/harness/ after reading eval-engineering implementation/environment references; preserve exact Task truth and keep verifier/World Skill/secrets out of agent inputs (B4).
 - [ ] T034 [US2] Implement independent semantic verifier and six boundary outcome classes in evals/deeptwin/verifiers/critic.py and evals/deeptwin/tests/test_critic_verifier.py; invalid/no-score is not an agent capability zero (B4).
 - [ ] T035 [US2] Freeze initial calibration/scoped qualification/IndependenceProfile and bounded proposed live RunPlan in evals/deeptwin/qualification/calibration/; seek only genuinely missing live authority, execute authorized trials, record joint errors/abstention/valid alternatives without inventing guarantees; any observed/tuned cases cannot be release heldout (FR-006/031, V2/V3).
