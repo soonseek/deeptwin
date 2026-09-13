@@ -215,3 +215,89 @@ def test_status_read_rejects_a_misbehaving_snapshot(tmp_path):
         response = client.get("/api/v1/credentials", headers=FETCH)
         assert response.status_code == 503, response.text
         assert "sk-snap-leak" not in response.text
+
+
+# --------------------------------------- end-to-end: HTTP to vault over frames
+
+
+def test_full_stack_credential_flow_over_authenticated_frames(tmp_path):
+    import socket as socket_module
+    import threading as threading_module
+
+    from app.api.credential_routes import attach_credential_gateway
+    from app.tests.test_credential_gateway_service import (
+        REQUESTER_BOOT,
+        RESPONDER_BOOT,
+        channel_spec,
+    )
+    from app.workers import broker
+    from app.workers.credential_channel import CredentialGatewayClient
+    from app.workers.credential_gateway_service import CredentialGatewayService
+    from app.workers.credential_vault import CredentialVault
+
+    vault = CredentialVault(str(tmp_path / "gateway-vault"))
+    spec = channel_spec(tmp_path / "pair")
+    boot_secret = broker.BootSecret(b"k" * broker.AUTH_SECRET_BYTES)
+    service = CredentialGatewayService(vault, spec, boot_secret)
+    threads = []
+
+    def transport_factory():
+        left, right = socket_module.socketpair(
+            socket_module.AF_UNIX, socket_module.SOCK_STREAM,
+        )
+
+        def serve():
+            session = broker._server_handshake_impl(
+                right, spec, boot_secret,
+                requester_boot_id=REQUESTER_BOOT,
+                responder_boot_id=RESPONDER_BOOT,
+                deadline=broker.Deadline.after_ms(5_000),
+                verify_peer=False,
+            )
+            codec = broker.FrameCodec(
+                spec, session, local_service=spec.responder_service,
+            )
+            try:
+                service.serve_one(
+                    right, codec, deadline=broker.Deadline.after_ms(5_000),
+                )
+            finally:
+                codec.close()
+                right.close()
+
+        thread = threading_module.Thread(target=serve)
+        thread.start()
+        threads.append(thread)
+        session = broker._client_handshake_impl(
+            left, spec, boot_secret,
+            requester_boot_id=REQUESTER_BOOT,
+            responder_boot_id=RESPONDER_BOOT,
+            deadline=broker.Deadline.after_ms(5_000),
+            verify_peer=False,
+        )
+        return left, broker.FrameCodec(
+            spec, session, local_service=spec.requester_service,
+        )
+
+    application = make_app(tmp_path)
+    attach_credential_gateway(
+        application, CredentialGatewayClient(transport_factory),
+    )
+    with LocalTestClient(application, base_url=ORIGIN) as client:
+        created = post_credentials(client, json.dumps(payload()))
+        assert created.status_code == 201, created.text
+        handle = created.json()["handle"]
+        assert SECRET not in created.text
+        assert vault.resolve_for_gateway(handle) == SECRET.encode("utf-8")
+
+        listed = client.get("/api/v1/credentials", headers=FETCH)
+        assert listed.json() == {"credentials": [
+            {"handle": handle, "provider": "claude", "state": "active"},
+        ]}
+
+        removed = delete_credential(client, handle)
+        assert removed.json() == {"handle": handle, "state": "erasure_completed"}
+        assert vault.health()["active"] == 0
+    for thread in threads:
+        thread.join(5)
+        assert not thread.is_alive()

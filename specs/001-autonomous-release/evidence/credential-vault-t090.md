@@ -326,3 +326,38 @@ UDS endpoint (connect_verified/client_handshake with SO_PEERCRED needs the Linux
 canary, blocked on the host's Docker fault), attachment of the client to the
 HTTP routes' state seams, the T087 provider-transport manifest, and an
 independent audit of the post-audit T090 additions (routes + channel).
+
+## Control-plane boundary split and end-to-end attachment (2026-09-13)
+
+The channel client moved into `app/workers/credential_channel.py`, which imports
+no vault code (verified by an import probe), so `attach_credential_gateway` in
+`app/api/credential_routes.py` can bind a client to the route state seams
+without the control plane ever transitively importing the vault implementation.
+A full-stack regression now drives the entire T090 offline chain live: an
+authenticated browser-style HTTP POST crosses the ingress wire checks, the
+frame channel with a real broker handshake, and the gateway service into the
+vault (resolution verified gateway-side); the snapshot GET lists it redacted;
+and DELETE completes retire + verified erase — with no secret bytes in any HTTP
+response.
+
+```text
+python -m pytest -q app/tests/test_credential_routes.py app/tests/test_credential_gateway_service.py
+17 passed
+ruff check (four touched files)
+All checks passed
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-13)
+3,087 passed, 2 skipped, 369 subtests passed, 1 known warning
+```
+
+Frozen identities (SHA-256):
+
+```text
+050b38b3af2640a7f1ce5e17297cf3a8fad9802e537c4125403f933bd212393b  app/workers/credential_channel.py
+9d9f93bee372ade5b6a60a247c3d3391946d70b4b37211bb9e9c2af5943ca45c  app/workers/credential_gateway_service.py
+b5de9ae5e9105e158e54e5c531ba79846ec89ccaa504d8f52139479e29803d96  app/api/credential_routes.py
+```
+
+Progress note: the weighted table's first-use/providers package moved 0.55 → 0.60
+for this once-audited T090 control-plane arc (total 38.05, user-facing roughly
+40%). Real UDS endpoint qualification, the T087 manifest, budget binding and a
+re-audit of the post-audit additions remain open.

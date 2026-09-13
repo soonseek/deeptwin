@@ -154,4 +154,23 @@ def install_credential_ingress(app) -> None:
             return _failure(exc)
 
 
-__all__ = ["install_credential_ingress"]
+__all__ = ["attach_credential_gateway", "install_credential_ingress"]
+
+
+def attach_credential_gateway(app, client) -> None:
+    """Bind a control-plane gateway client to the route state seams.
+
+    The client comes from :mod:`app.workers.credential_channel`, which imports
+    no vault code; attaching it keeps the control plane on the frame boundary.
+    """
+
+    app.state.credential_gateway_submit = lambda ingress: client.submit(
+        intent_id=ingress.intent_id,
+        provider=ingress.provider,
+        secret=ingress.secret,
+        rotate_from=ingress.rotate_from,
+    )
+    app.state.credential_gateway_retire = client.delete
+    # A snapshot is a read-only view of already-committed redacted state; it
+    # performs no vault mutation and no provider or network effect.
+    app.state.credential_status_snapshot = client.snapshot
