@@ -399,6 +399,15 @@ def is_validation_report(value: object) -> bool:
     )
 
 
+def is_frozen_candidate(value: object) -> bool:
+    """True only for a bundle issued by freeze_candidate."""
+
+    return (
+        type(value) is FrozenCandidate
+        and getattr(value, "_issuer_token", None) is _ISSUE_TOKEN
+    )
+
+
 __all__ = [
     "CLASSIFICATIONS",
     "EXPOSURE_PURPOSES",
@@ -412,6 +421,7 @@ __all__ = [
     "ValidationReport",
     "expose_dataset",
     "freeze_candidate",
+    "is_frozen_candidate",
     "is_validation_report",
     "open_dataset_ledger",
     "register_dataset",
