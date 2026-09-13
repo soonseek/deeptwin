@@ -15,6 +15,7 @@ constructed.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 
 from ..domain.refs import DomainContractError, EntityRef
@@ -57,7 +58,13 @@ def _ref(value, kind, label):
 
 
 def _normalized(value: str) -> str:
-    return _WHITESPACE.sub(" ", value).strip()
+    # NFKC folds compatibility variants (e.g. fullwidth letters) and the
+    # format-character strip removes zero-width evasion before comparison.
+    folded = unicodedata.normalize("NFKC", value)
+    visible = "".join(
+        ch for ch in folded if unicodedata.category(ch) != "Cf"
+    )
+    return _WHITESPACE.sub(" ", visible).strip()
 
 
 @dataclass(frozen=True, slots=True, init=False)

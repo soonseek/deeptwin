@@ -522,8 +522,8 @@ eligible lens questions frozen before new evidence → typed candidate or justif
 - [x] T055 [US5] Implement format-aware differences/trace slicing and system/expert/exception/error/no-generalization hypotheses in app/services/diagnosis.py and app/tests/test_diagnosis.py; no unsupported single-cause claim (FR-018).
 - [x] T056 [US5] Implement qualified SPLI routing, frozen contrasting predictions, actual fresh evidence, abstain/decline and H_exp update in app/services/inquiry.py and app/tests/test_inquiry.py (FR-019, G-03/04).
 - [x] T057 [US5] Implement restore/learn/protect typed patch compilation with per-field behavior provenance and semantic/source leak checks in app/runtime/compiler.py and app/tests/test_change_compiler.py; prevent H_phi/current-alternative copying (FR-020/021).
-- [ ] T058 [US5] Implement active conditional knowledge registry, authority/scope/time/conflict/revalidation and prompt-derived compilation in app/runtime/memory.py and app/services/knowledge.py; ordinary authorized workflow changes remain possible (FR-021/032).
-- [ ] T059 [US5] Run cross-purpose retrieval/prompt/derived-input adversarial tests including hidden heldout and sensitive personal-profile rejection in app/tests/test_growth_firewall.py (G-05, OPS-AC09).
+- [x] T058 [US5] Implement active conditional knowledge registry, authority/scope/time/conflict/revalidation and prompt-derived compilation in app/runtime/memory.py and app/services/knowledge.py; ordinary authorized workflow changes remain possible (FR-021/032).
+- [x] T059 [US5] Run cross-purpose retrieval/prompt/derived-input adversarial tests including hidden heldout and sensitive personal-profile rejection in app/tests/test_growth_firewall.py (G-05, OPS-AC09).
 - [ ] T060 [US5] Connect observation/competing evidence/new questions/change candidates and audit details in app/static/inquiry.mjs, app/api/routes.py and app/tests/browser-inquiry.test.mjs; no forced philosophy quiz or fabricated human answer (UX-AC05/07).
 
 ## Phase 8: US6 — Previous queues, product plateau and human promotion (P1)

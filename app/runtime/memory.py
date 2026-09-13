@@ -16,6 +16,7 @@ knowledge entry; only an *active* issued entry compiles anything.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 
 from ..domain.refs import DomainContractError, EntityRef
@@ -30,7 +31,10 @@ PROTECTED_REQUIREMENTS = frozenset({
     "final_human_approval", "current_test",
 })
 _FORBIDDEN_REF_KINDS = frozenset({
+    # draft/interpretation stores (H_phi, alternatives) — audit material
     "own_alternative", "difference", "hypothesis", "selector", "inquiry",
+    # judge/heldout internals — candidate authors never touch them
+    "evaluation_dataset", "rubric",
 })
 _WHITESPACE = re.compile(r"\s+")
 _ISSUE_TOKEN = object()
@@ -54,7 +58,13 @@ def _text(value, label, maximum):
 
 
 def _normalized(value: str) -> str:
-    return _WHITESPACE.sub(" ", value).strip()
+    # NFKC folds compatibility variants (e.g. fullwidth letters) and the
+    # format-character strip removes zero-width evasion before comparison.
+    folded = unicodedata.normalize("NFKC", value)
+    visible = "".join(
+        ch for ch in folded if unicodedata.category(ch) != "Cf"
+    )
+    return _WHITESPACE.sub(" ", visible).strip()
 
 
 @dataclass(frozen=True, slots=True, init=False)
