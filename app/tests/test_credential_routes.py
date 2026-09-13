@@ -112,3 +112,106 @@ def test_a_misbehaving_gateway_receipt_is_never_echoed(tmp_path):
         response = post_credentials(client, json.dumps(payload()))
         assert response.status_code == 503, response.text
         assert SECRET not in response.text
+
+
+# ----------------------------------------- delete retirement and zero-effect reads
+
+
+HANDLE = "f" * 32
+
+
+def delete_credential(client, handle):
+    return client.request(
+        "DELETE",
+        f"/api/v1/credentials/{handle}",
+        headers={**FETCH, "X-CSRF-Token": client.csrf_token},
+    )
+
+
+def test_delete_retirement_forwards_and_returns_a_redacted_receipt(tmp_path):
+    application = make_app(tmp_path)
+    retired = []
+
+    def gateway_retire(handle):
+        retired.append(handle)
+        return {"handle": handle, "state": "erasure_completed"}
+
+    application.state.credential_gateway_retire = gateway_retire
+    with LocalTestClient(application, base_url=ORIGIN) as client:
+        response = delete_credential(client, HANDLE)
+        assert response.status_code == 200, response.text
+        assert response.json() == {"handle": HANDLE, "state": "erasure_completed"}
+    assert retired == [HANDLE]
+
+
+def test_delete_requires_gateway_valid_handle_and_csrf(tmp_path):
+    application = make_app(tmp_path)
+    with LocalTestClient(application, base_url=ORIGIN) as client:
+        assert_error(
+            delete_credential(client, HANDLE),
+            status=503, code="dependency_unavailable",
+        )
+        application.state.credential_gateway_retire = lambda handle: {
+            "handle": handle, "state": "erasure_completed",
+        }
+        assert_error(
+            delete_credential(client, "not-a-handle"),
+            status=400, code="invalid_input",
+        )
+        response = client.request(
+            "DELETE", f"/api/v1/credentials/{HANDLE}", headers=FETCH,
+        )
+        assert_error(response, status=403, code="access_denied")
+
+
+def test_delete_rejects_a_misbehaving_retire_receipt(tmp_path):
+    application = make_app(tmp_path)
+    application.state.credential_gateway_retire = lambda handle: {
+        "handle": handle, "state": "erasure_completed", "secret": "sk-leak",
+    }
+    with LocalTestClient(application, base_url=ORIGIN) as client:
+        response = delete_credential(client, HANDLE)
+        assert response.status_code == 503, response.text
+        assert "sk-leak" not in response.text
+
+
+def test_status_read_is_redacted_and_makes_zero_gateway_effect(tmp_path):
+    application = make_app(tmp_path)
+    effects = []
+    application.state.credential_gateway_submit = (
+        lambda ingress: effects.append("submit")
+    )
+    application.state.credential_gateway_retire = (
+        lambda handle: effects.append("retire")
+    )
+    application.state.credential_status_snapshot = lambda: [
+        {"handle": HANDLE, "provider": "claude", "state": "active"},
+    ]
+    with LocalTestClient(application, base_url=ORIGIN) as client:
+        response = client.get("/api/v1/credentials", headers=FETCH)
+        assert response.status_code == 200, response.text
+        assert response.json() == {"credentials": [
+            {"handle": HANDLE, "provider": "claude", "state": "active"},
+        ]}
+    assert effects == []  # a snapshot read touches neither vault nor gateway
+
+
+def test_status_read_without_a_snapshot_source_is_unavailable(tmp_path):
+    application = make_app(tmp_path)
+    with LocalTestClient(application, base_url=ORIGIN) as client:
+        assert_error(
+            client.get("/api/v1/credentials", headers=FETCH),
+            status=503, code="dependency_unavailable",
+        )
+
+
+def test_status_read_rejects_a_misbehaving_snapshot(tmp_path):
+    application = make_app(tmp_path)
+    application.state.credential_status_snapshot = lambda: [
+        {"handle": HANDLE, "provider": "claude", "state": "active",
+         "secret": "sk-snap-leak"},
+    ]
+    with LocalTestClient(application, base_url=ORIGIN) as client:
+        response = client.get("/api/v1/credentials", headers=FETCH)
+        assert response.status_code == 503, response.text
+        assert "sk-snap-leak" not in response.text

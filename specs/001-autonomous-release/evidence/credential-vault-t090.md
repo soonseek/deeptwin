@@ -241,3 +241,44 @@ f17a0293e54752ebd497b36ded840d2493177d31997009c047e42668119781e1  app/tests/test
 Still not claimed: no UDS-backed gateway client exists (the state attachment point
 is honestly empty in production), GET/status/catalog zero-effect routes, delete
 retirement flow, and lost-response/race persistence cases remain open.
+
+## Delete retirement and zero-effect status reads (2026-09-13)
+
+Two more authenticated routes complete the control-plane surface:
+
+- `DELETE /api/v1/credentials/{handle}`: CSRF-gated; the handle format is
+  validated before any boundary call; the intent forwards to a host-wired
+  `credential_gateway_retire` callable (honestly unavailable by default) and the
+  receipt is validated to the exact `{handle, state}` shape with state in
+  `cleanup_pending`/`erasure_completed` — the UI can therefore distinguish local
+  erasure from remote provider revocation, and a hostile receipt is a sanitized
+  503.
+- `GET /api/v1/credentials`: a session-gated snapshot read of already-known
+  redacted state via `credential_status_snapshot`. The regression proves the
+  zero-effect rule: with submit/retire boundaries armed as spies, a status read
+  touches neither — no vault, gateway, provider or network effect — and a
+  snapshot carrying anything beyond `{handle, provider, state}` is rejected
+  without echoing.
+
+Tests: 6 more in `app/tests/test_credential_routes.py` (11 total).
+
+```text
+python -m pytest -q app/tests/test_credential_routes.py
+11 passed
+ruff check app/api/credential_routes.py app/tests/test_credential_routes.py
+All checks passed
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-13)
+3,081 passed, 2 skipped, 369 subtests passed, 1 known warning
+```
+
+Frozen identities (SHA-256):
+
+```text
+5fd725350be19b32edd252c6c4230c9da963a1b93339098e9930ee29ad4f2313  app/api/credential_routes.py
+0a3ba176b053cafe5b95ac0586ecbc1659e981e5c1515fefe1b3c5f5e50fe129  app/tests/test_credential_routes.py
+```
+
+Still not claimed: no UDS-backed gateway client/service wiring, no
+lost-response/race persistence cases, no T087 provider-transport manifest, and
+the T090 route/wiring additions since the audit (routes, delete, status) have
+not been independently audited.

@@ -11,6 +11,8 @@ returns can echo secret material to the browser.
 
 from __future__ import annotations
 
+import re
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
@@ -25,6 +27,12 @@ from .routes import (
 
 _RECEIPT_FIELDS = frozenset({"handle", "provider", "state"})
 _RECEIPT_STATES = frozenset({"active"})
+_RETIRE_FIELDS = frozenset({"handle", "state"})
+_RETIRE_STATES = frozenset({"cleanup_pending", "erasure_completed"})
+_SNAPSHOT_STATES = frozenset({
+    "active", "cleanup_pending", "secret_input_lost", "erasure_completed",
+})
+_HANDLE = re.compile(r"[0-9a-f]{32}\Z")
 
 
 def _redacted_receipt(receipt: object) -> dict:
@@ -36,6 +44,35 @@ def _redacted_receipt(receipt: object) -> dict:
     ):
         raise ApiDependencyUnavailable("credential gateway receipt is invalid")
     return {name: receipt[name] for name in ("handle", "provider", "state")}
+
+
+def _redacted_retirement(receipt: object) -> dict:
+    if (
+        type(receipt) is not dict
+        or set(receipt) != _RETIRE_FIELDS
+        or any(type(value) is not str for value in receipt.values())
+        or receipt["state"] not in _RETIRE_STATES
+    ):
+        raise ApiDependencyUnavailable("credential gateway receipt is invalid")
+    return {name: receipt[name] for name in ("handle", "state")}
+
+
+def _redacted_snapshot(entries: object) -> list[dict]:
+    if type(entries) is not list or len(entries) > 256:
+        raise ApiDependencyUnavailable("credential snapshot is invalid")
+    redacted = []
+    for entry in entries:
+        if (
+            type(entry) is not dict
+            or set(entry) != _RECEIPT_FIELDS
+            or any(type(value) is not str for value in entry.values())
+            or entry["state"] not in _SNAPSHOT_STATES
+        ):
+            raise ApiDependencyUnavailable("credential snapshot is invalid")
+        redacted.append(
+            {name: entry[name] for name in ("handle", "provider", "state")}
+        )
+    return redacted
 
 
 def install_credential_ingress(app) -> None:
@@ -70,6 +107,49 @@ def install_credential_ingress(app) -> None:
                 )
             receipt = _redacted_receipt(submit(ingress))
             return JSONResponse(status_code=201, content=receipt)
+        except Exception as exc:  # noqa: BLE001 - sanitize the public boundary
+            return _failure(exc)
+
+    @app.api_route("/api/v1/credentials/{handle}", methods=["DELETE"])
+    async def credential_delete_v1(handle: str, request: Request):
+        try:
+            _authenticated(request, read=False)
+            if type(handle) is not str or _HANDLE.fullmatch(handle) is None:
+                return api_error(
+                    status=400,
+                    code="invalid_input",
+                    message="자격증명 핸들 형식을 확인해 주세요.",
+                    retryability=NOT_RETRYABLE,
+                )
+            retire = getattr(
+                request.app.state, "credential_gateway_retire", None
+            )
+            if retire is None:
+                raise ApiDependencyUnavailable(
+                    "credential gateway is not attached"
+                )
+            receipt = _redacted_retirement(retire(handle))
+            return JSONResponse(status_code=200, content=receipt)
+        except Exception as exc:  # noqa: BLE001 - sanitize the public boundary
+            return _failure(exc)
+
+    @app.api_route("/api/v1/credentials", methods=["GET"])
+    async def credential_status_v1(request: Request):
+        try:
+            # A status read is a snapshot of already-known redacted state; it
+            # must make zero vault, gateway, provider or network effect.
+            _authenticated(request, read=True)
+            snapshot = getattr(
+                request.app.state, "credential_status_snapshot", None
+            )
+            if snapshot is None:
+                raise ApiDependencyUnavailable(
+                    "credential status snapshot is not attached"
+                )
+            return JSONResponse(
+                status_code=200,
+                content={"credentials": _redacted_snapshot(snapshot())},
+            )
         except Exception as exc:  # noqa: BLE001 - sanitize the public boundary
             return _failure(exc)
 

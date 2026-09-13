@@ -485,6 +485,8 @@ def create_app(data_dir, port=4193, *, codex_factory=None, understanding_model_f
     app.state.worker_dispatch_slot = worker_dispatch_slot
     app.state.api_v1 = api_v1
     app.state.credential_gateway_submit = None
+    app.state.credential_gateway_retire = None
+    app.state.credential_status_snapshot = None
     app.add_middleware(LocalBoundary, sessions=local_sessions)
     install_api_v1(
         app,
