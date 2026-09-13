@@ -63,3 +63,31 @@ d5e445687565a9877cc4ad44f51756f6e4c858d7a6e65ab3fe6011948e3a47ad  app/services/g
   can bind current-environment revisions the same way).
 - The evidence files us6-batch-audit.md (F4/F6) now have their seam
   obligations discharged at the store layer for loop and ledger.
+
+## Addendum — promotion-state durable CAS (same date, second slice)
+
+PromotionState now carries a monotone `revision` (open=1; each
+activation/rollback +1) and persists through
+`persist_promotion_state(domain, state, scope_id=...)` /
+`resume_promotion_state` at record id UUIDv5("deeptwin:promotion:{scope}"),
+version == revision, parent-chained. Verified: (a) a resumed state keeps its
+`consumed_decisions`, so an approval consumed before persistence can never
+re-activate after a resume+rollback; (b) two writers from one revision — a
+rollback vs a different candidate's activation — collide at the store while
+a byte-identical write stays idempotent; (c) `restore_promotion_state`
+refuses tampered payloads (revision bounds, `external_effects_reverted`
+must be False — a permanent honesty invariant, never a stored truth —
+malformed decision hashes, non-{retired,rolled_back} history lifecycles).
+Note: the rollback *reason* is not part of the state value (two rollbacks
+of the same revision are byte-identical); reasons belong to the audit event
+stream, not the CAS identity.
+
+Post-fix hashes:
+
+```
+6fb8a55f69126266d958ac54831d43fe24e9e8eb00408fc2b7baf88406734483  app/services/growth_store.py
+7291041ee5a208568c6c43cd8b89da2329c2189e9099716611f717724d506d53  app/services/promotion.py
+f968029b1a77185ce0581eff81ff08172b9fcf26b402735826543ba92faa4a31  app/tests/test_growth_store.py
+```
+
+3 new tests; full regression **3198 passed, 2 skipped** (was 3195).

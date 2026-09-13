@@ -19,6 +19,7 @@ trust comes from the store's hash-linked records, never from the payload.
 
 from __future__ import annotations
 
+import re
 from uuid import NAMESPACE_URL, uuid5
 
 from ..domain.refs import DomainContractError, EntityRef
@@ -31,6 +32,7 @@ from .growth import (
     is_issued_loop,
     restore_growth_loop,
 )
+from .promotion import is_issued_promotion_state, restore_promotion_state
 from .validation import (
     is_issued_ledger,
     is_validation_report,
@@ -41,6 +43,10 @@ RECORD_KIND = "decision_record"
 _LOOP_KIND = "growth_loop_state"
 _LEDGER_KIND = "growth_dataset_ledger"
 _REPORT_KIND = "growth_validation_report"
+_PROMOTION_KIND = "growth_promotion_state"
+_UUID_RE = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z"
+)
 
 
 class GrowthStoreError(ValueError):
@@ -226,6 +232,47 @@ def persist_validation_report(
     )
 
 
+def persist_promotion_state(
+    domain_store, state, *, scope_id, parent_ref, **headers,
+) -> EntityRef:
+    """Persist one promotion-state revision for one deployment scope."""
+
+    if not is_issued_promotion_state(state):
+        raise GrowthStoreError(
+            "a framework-issued promotion state is required"
+        )
+    if type(scope_id) is not str or _UUID_RE.fullmatch(scope_id) is None:
+        raise GrowthStoreError("scope id is not a canonical UUID")
+    record_id = str(uuid5(NAMESPACE_URL, f"deeptwin:promotion:{scope_id}"))
+    return _put(
+        domain_store,
+        record_id=record_id,
+        revision=state.revision,
+        # A promotion state may first persist mid-history (revision > 1)
+        # when the scope adopts an existing environment; later writes chain.
+        parents=_parent(
+            parent_ref, record_id=record_id, revision=state.revision,
+            first_revision_only=False,
+        ),
+        content={
+            "growth_kind": _PROMOTION_KIND,
+            "scope_id": scope_id,
+            "state": encode_design_refs(state.as_dict()),
+        },
+        **headers,
+    )
+
+
+def resume_promotion_state(domain_store, ref):
+    """Rebuild the issued promotion state stored at one exact record ref."""
+
+    content = _load(domain_store, ref, _PROMOTION_KIND)
+    try:
+        return restore_promotion_state(decode_design_refs(content["state"]))
+    except (KeyError, ValueError) as exc:
+        raise GrowthStoreError("the stored promotion state is invalid") from exc
+
+
 def resume_dataset_ledger(domain_store, ref):
     """Rebuild the issued ledger stored at one exact record ref."""
 
@@ -255,7 +302,9 @@ __all__ = [
     "advance_and_persist_loop",
     "persist_dataset_ledger",
     "persist_loop_state",
+    "persist_promotion_state",
     "persist_validation_report",
     "resume_dataset_ledger",
     "resume_loop",
+    "resume_promotion_state",
 ]

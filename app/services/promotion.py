@@ -186,14 +186,35 @@ class PromotionState:
     # consumed approval is never valid again, rollback included (G-13).
     consumed_decisions: tuple[str, ...]
     external_effects_reverted: bool
+    # Monotone per-value revision: the storage layer versions records by it
+    # and CASes concurrent writers apart.
+    revision: int
     _issuer_token: object = field(repr=False, compare=False)
+
+    def as_dict(self) -> dict:
+        return {
+            "schema_version": "promotion-state-v1",
+            "current_environment_ref": self.current_environment.as_dict(),
+            "history": [
+                [ref.as_dict(), lifecycle] for ref, lifecycle in self.history
+            ],
+            "consumed_decisions": list(self.consumed_decisions),
+            "external_effects_reverted": self.external_effects_reverted,
+            "revision": self.revision,
+        }
+
+
+def is_issued_promotion_state(value: object) -> bool:
+    """True only for a state issued through this module's functions."""
+
+    return (
+        type(value) is PromotionState
+        and getattr(value, "_issuer_token", None) is _ISSUE_TOKEN
+    )
 
 
 def _require_state(value) -> None:
-    if (
-        type(value) is not PromotionState
-        or getattr(value, "_issuer_token", None) is not _ISSUE_TOKEN
-    ):
+    if not is_issued_promotion_state(value):
         raise PromotionError("a framework-issued promotion state is required")
 
 
@@ -206,6 +227,7 @@ def open_promotion_state(current_environment) -> PromotionState:
         history=(),
         consumed_decisions=(),
         external_effects_reverted=False,
+        revision=1,
         _issuer_token=_ISSUE_TOKEN,
     )
 
@@ -248,6 +270,69 @@ def activate_candidate(state, decision, candidate) -> PromotionState:
         history=(*state.history, (state.current_environment, "retired")),
         consumed_decisions=(*state.consumed_decisions, decision_sha),
         external_effects_reverted=False,
+        revision=state.revision + 1,
+        _issuer_token=_ISSUE_TOKEN,
+    )
+
+
+_HISTORY_LIFECYCLES = frozenset({"retired", "rolled_back"})
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+
+
+def restore_promotion_state(value) -> PromotionState:
+    """Rebuild one persisted state; trust is the store's hash chain, so the
+    payload itself is revalidated strictly and inconsistencies are refused."""
+
+    if type(value) is not dict or set(value) != {
+        "schema_version", "current_environment_ref", "history",
+        "consumed_decisions", "external_effects_reverted", "revision",
+    }:
+        raise PromotionError("expected the exact persisted promotion state")
+    if value["schema_version"] != "promotion-state-v1":
+        raise PromotionError("unknown promotion state schema version")
+    revision = value["revision"]
+    if type(revision) is not int or not 1 <= revision <= 1_000_000:
+        raise PromotionError("revision is out of bounds")
+    if value["external_effects_reverted"] is not False:
+        # This flag is a permanent honesty invariant, never a stored truth.
+        raise PromotionError("external effects are never marked reverted")
+    history_value = value["history"]
+    if (
+        type(history_value) is not list
+        or len(history_value) > revision - 1
+    ):
+        raise PromotionError("promotion history is inconsistent")
+    history = []
+    for item in history_value:
+        if (
+            type(item) is not list or len(item) != 2
+            or item[1] not in _HISTORY_LIFECYCLES
+        ):
+            raise PromotionError("a history entry is malformed")
+        history.append((
+            _ref(item[0], "environment", "history environment"), item[1],
+        ))
+    consumed_value = value["consumed_decisions"]
+    if (
+        type(consumed_value) is not list
+        or len(consumed_value) > revision - 1
+        or any(
+            type(item) is not str or _SHA256.fullmatch(item) is None
+            for item in consumed_value
+        )
+        or len(set(consumed_value)) != len(consumed_value)
+    ):
+        raise PromotionError("consumed decisions are inconsistent")
+    return _issue(
+        PromotionState,
+        current_environment=_ref(
+            value["current_environment_ref"], "environment",
+            "current environment",
+        ),
+        history=tuple(history),
+        consumed_decisions=tuple(consumed_value),
+        external_effects_reverted=False,
+        revision=revision,
         _issuer_token=_ISSUE_TOKEN,
     )
 
@@ -279,6 +364,7 @@ def rollback_environment(state, reason) -> PromotionState:
         # Real-world sends and publications already happened; a rollback
         # restores the bundle, never the world.
         external_effects_reverted=False,
+        revision=state.revision + 1,
         _issuer_token=_ISSUE_TOKEN,
     )
 
@@ -291,7 +377,9 @@ __all__ = [
     "PromotionError",
     "PromotionState",
     "activate_candidate",
+    "is_issued_promotion_state",
     "open_promotion_state",
     "record_promotion_decision",
+    "restore_promotion_state",
     "rollback_environment",
 ]

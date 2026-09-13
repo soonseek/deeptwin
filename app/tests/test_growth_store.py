@@ -206,3 +206,130 @@ def test_persist_and_restore_are_strict(vault):
         with pytest.raises(GrowthLoopError):
             restore_growth_loop(profile(), {**good, **tamper})
     assert resume_loop(domain, ref1).as_dict() == good
+
+
+PROMOTION_SCOPE = "00000000-0000-4000-8000-00000000c001"
+
+
+def promoted_state():
+    from app.services.promotion import (
+        activate_candidate,
+        open_promotion_state,
+        record_promotion_decision,
+    )
+    from app.tests.test_promotion import (
+        CURRENT_ENV,
+        decision_value,
+        frozen_candidate,
+        passed_report,
+    )
+
+    candidate = frozen_candidate()
+    decision = record_promotion_decision(
+        decision_value(candidate, passed_report(candidate)),
+    )
+    opened = open_promotion_state(CURRENT_ENV)
+    return opened, activate_candidate(opened, decision, candidate), decision, candidate
+
+
+def test_promotion_state_persists_resumes_and_keeps_consumed_decisions(vault):
+    from app.services.growth_store import (
+        persist_promotion_state,
+        resume_promotion_state,
+    )
+    from app.services.promotion import (
+        PromotionError,
+        activate_candidate,
+        is_issued_promotion_state,
+        rollback_environment,
+    )
+
+    domain, roots = vault
+    opened, activated, decision, candidate = promoted_state()
+    ref1 = persist_promotion_state(
+        domain, opened, scope_id=PROMOTION_SCOPE, parent_ref=None,
+        **headers(roots),
+    )
+    ref2 = persist_promotion_state(
+        domain, activated, scope_id=PROMOTION_SCOPE, parent_ref=ref1,
+        **headers(roots),
+    )
+    assert (ref1.version, ref2.version) == (1, 2)
+    resumed = resume_promotion_state(domain, ref2)
+    assert is_issued_promotion_state(resumed)
+    assert resumed.as_dict() == activated.as_dict()
+    rolled = rollback_environment(resumed, "회귀 발견")
+    with pytest.raises(PromotionError):
+        # the consumed approval survives persistence: no replay after resume
+        activate_candidate(rolled, decision, candidate)
+
+
+def test_concurrent_promotion_writes_collide(vault):
+    from app.services.growth_store import (
+        GrowthStoreError,
+        persist_promotion_state,
+    )
+    from app.services.promotion import rollback_environment
+
+    domain, roots = vault
+    _opened, activated, _decision, _candidate = promoted_state()
+    ref = persist_promotion_state(
+        domain, activated, scope_id=PROMOTION_SCOPE, parent_ref=None,
+        **headers(roots),
+    )
+    rolled = rollback_environment(activated, "회귀")
+    persist_promotion_state(
+        domain, rolled, scope_id=PROMOTION_SCOPE, parent_ref=ref,
+        **headers(roots),
+    )
+    # a second rollback attempt is byte-identical state → idempotent, and a
+    # competing writer who instead activated a DIFFERENT candidate from the
+    # same revision collides
+    from app.services.promotion import (
+        activate_candidate,
+        record_promotion_decision,
+    )
+    from app.tests.test_alternatives import ref as entity_ref
+    from app.tests.test_promotion import (
+        decision_value,
+        frozen_candidate,
+        passed_report,
+    )
+
+    other = frozen_candidate(prompts=entity_ref("artifact", 999))
+    other_decision = record_promotion_decision(decision_value(
+        other, passed_report(other, "sealed-o"),
+        expected_current_environment=activated.current_environment.as_dict(),
+    ))
+    competing = activate_candidate(activated, other_decision, other)
+    assert competing.revision == rolled.revision
+    with pytest.raises(GrowthStoreError):
+        persist_promotion_state(
+            domain, competing, scope_id=PROMOTION_SCOPE, parent_ref=ref,
+            **headers(roots),
+        )
+
+
+def test_promotion_restore_is_strict(vault):
+    from app.services.growth_store import (
+        persist_promotion_state,
+        resume_promotion_state,
+    )
+    from app.services.promotion import PromotionError, restore_promotion_state
+
+    domain, roots = vault
+    _opened, activated, _decision, _candidate = promoted_state()
+    ref = persist_promotion_state(
+        domain, activated, scope_id=PROMOTION_SCOPE, parent_ref=None,
+        **headers(roots),
+    )
+    good = activated.as_dict()
+    for tamper in (
+        {"revision": 0},
+        {"external_effects_reverted": True},
+        {"consumed_decisions": ["zz"]},
+        {"history": [[good["history"][0][0], "active"]]},
+    ):
+        with pytest.raises(PromotionError):
+            restore_promotion_state({**good, **tamper})
+    assert resume_promotion_state(domain, ref).as_dict() == good
