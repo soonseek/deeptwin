@@ -13,11 +13,17 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from uuid import uuid4
 
 from ..domain.refs import EntityRef
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore
 from .design import DesignGenerationRequest
+from .design_criticism import (
+    CandidateVerdict,
+    DesignCriticismError,
+    fold_candidate_criticism,
+)
 from .design_live import DesignGenerationResult
 
 _REF_KEYS = frozenset({"kind", "id", "version", "sha256"})
@@ -199,10 +205,84 @@ def persist_generation_result(
     )
 
 
+def persist_candidate_criticism(
+    domain_store: DomainStore,
+    candidate_record_ref: EntityRef,
+    candidate,
+    verdict,
+    review: dict,
+    chains: list,
+    *,
+    actor_ref: EntityRef,
+    access_policy_ref: EntityRef,
+    retention_policy_ref: EntityRef,
+    created_at_utc: str,
+    record_id: str | None = None,
+) -> EntityRef:
+    """Persist one candidate's criticism and its verdict, parented to the candidate.
+
+    The verdict is never trusted as presented: the fold is recomputed from the
+    supplied review and chains and must equal it exactly, so a forged selectability
+    state cannot become a durable record.
+    """
+
+    if type(domain_store) is not DomainStore:
+        raise DesignPersistenceError("an exact domain store is required")
+    if type(candidate_record_ref) is not EntityRef:
+        raise DesignPersistenceError("an exact candidate record ref is required")
+    if type(verdict) is not CandidateVerdict:
+        raise DesignPersistenceError("an exact candidate verdict is required")
+    try:
+        recomputed = fold_candidate_criticism(candidate, review, chains)
+    except DesignCriticismError as exc:
+        raise DesignPersistenceError(
+            "the criticism results cannot be folded for persistence"
+        ) from exc
+    if recomputed != verdict:
+        raise DesignPersistenceError(
+            "the presented verdict does not match the recomputed fold"
+        )
+    stored = domain_store.get(candidate_record_ref)
+    body = stored.body
+    if (
+        body["kind"] != "design_candidate"
+        or body["id"] != verdict.candidate_id
+        or str(body["version"]) != verdict.candidate_version
+    ):
+        raise DesignPersistenceError(
+            "the candidate record does not bind this exact verdict"
+        )
+    identifier = record_id if record_id is not None else str(uuid4())
+    try:
+        record = ImmutableRecord.create(
+            kind="decision_record",
+            id=identifier,
+            version=1,
+            created_at_utc=created_at_utc,
+            actor_ref=actor_ref,
+            parent_refs=(candidate_record_ref,),
+            purpose="operational",
+            access_policy_ref=access_policy_ref,
+            retention_policy_ref=retention_policy_ref,
+            content={
+                "design_kind": "candidate_criticism",
+                "design": encode_design_refs({
+                    "verdict": verdict.as_dict(),
+                    "review": review,
+                    "chains": chains,
+                }),
+            },
+        )
+    except (TypeError, ValueError) as exc:
+        raise DesignPersistenceError("the criticism record is invalid") from exc
+    return domain_store.put(record)
+
+
 __all__ = [
     "DesignPersistenceError",
     "PersistedGenerationResult",
     "decode_design_refs",
     "encode_design_refs",
+    "persist_candidate_criticism",
     "persist_generation_result",
 ]

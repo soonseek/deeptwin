@@ -318,3 +318,38 @@ a4dfb0569c626eebaead8e169bd5f5e9573d9eb26f6996bf4ac069eaa15da4ff  app/services/d
 Not claimed: verdicts are not yet persisted as domain records, the human selection
 act and design-approval records remain unimplemented, and no live model has produced
 any criticism stage.
+
+## Criticism verdict persistence (2026-09-13)
+
+`persist_candidate_criticism` makes one candidate's criticism durable: a
+`decision_record` (design_kind `candidate_criticism`) whose content carries the
+verdict, the full review result and the counterexample chains through the design-ref
+codec, parented to the stored candidate record. The verdict is never trusted as
+presented — the fold is recomputed from the supplied review/chains and must equal it
+exactly, so a forged selectability state cannot become a durable record — and the
+candidate record is loaded and its kind/id/version verified against the verdict
+before any write. Idempotent for a fixed record id and stamp.
+
+Tests: 3 more in `app/tests/test_design_persistence.py` (8 total) — lineage/content
+round-trip with idempotent re-persist, forged-verdict rejection, and wrong candidate
+record binding rejection.
+
+```text
+python -m pytest -q app/tests/test_design_persistence.py
+8 passed
+ruff check app/services/design_persistence.py app/tests/test_design_persistence.py
+All checks passed
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-13)
+3,031 passed, 2 skipped, 369 subtests passed, 1 known warning
+```
+
+Frozen identities (SHA-256):
+
+```text
+08deeb454c81596158ffed4122f9dad2fca3f4bbff0e1b810baf77e19951ee36  app/services/design_persistence.py
+2512647b7d19a9a398ac9edd8ff0d849e65bec692a15572eb2e6ceddb7de6012  app/tests/test_design_persistence.py
+```
+
+Not claimed: the human selection act and design_approval records remain
+unimplemented (they cross the T025 web-authority boundary), and no live model has
+produced any criticism stage.

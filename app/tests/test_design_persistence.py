@@ -149,3 +149,114 @@ def test_type_guards_reject_foreign_objects(vault):
         persist(domain, roots, object(), result)
     with pytest.raises(DesignPersistenceError):
         persist(domain, roots, request, object())
+
+
+# ---------------------------------------------- criticism verdict persistence
+
+
+from dataclasses import replace
+
+from app.services.design_criticism import fold_candidate_criticism
+from app.services.design_persistence import persist_candidate_criticism
+from app.tests.test_design_criticism import _chain, _review
+
+RECORD_ID = "00000000-0000-4000-8000-000000000555"
+
+
+def criticized(request, result):
+    candidate = result.candidates[0]
+    review = _review(candidate, request, ["pass", "pass"])
+    chains = [_chain(
+        candidate, request, validity_status="valid", response_status="mitigate",
+    )]
+    verdict = fold_candidate_criticism(candidate, review, chains)
+    return candidate, review, chains, verdict
+
+
+def test_criticism_verdict_persists_with_candidate_lineage(vault):
+    domain, roots = vault
+    request, result = generated()
+    persisted = persist(domain, roots, request, result)
+    candidate, review, chains, verdict = criticized(request, result)
+
+    ref = persist_candidate_criticism(
+        domain,
+        persisted.candidate_record_refs[0],
+        candidate,
+        verdict,
+        review,
+        chains,
+        actor_ref=roots.actor,
+        access_policy_ref=roots.access_policy,
+        retention_policy_ref=roots.retention_policy,
+        created_at_utc=STAMP,
+        record_id=RECORD_ID,
+    )
+    record = domain.get(ref)
+    assert record.ref.kind == "decision_record"
+    assert record.ref.id == RECORD_ID
+    body = record.body
+    assert body["parent_refs"] == [persisted.candidate_record_refs[0].as_dict()]
+    design = decode_design_refs(body["content"]["design"])
+    assert design["verdict"]["status"] == "passed"
+    assert canonical_json(design["review"]) == canonical_json(review)
+    assert canonical_json(design["chains"]) == canonical_json(chains)
+
+    again = persist_candidate_criticism(
+        domain,
+        persisted.candidate_record_refs[0],
+        candidate,
+        verdict,
+        review,
+        chains,
+        actor_ref=roots.actor,
+        access_policy_ref=roots.access_policy,
+        retention_policy_ref=roots.retention_policy,
+        created_at_utc=STAMP,
+        record_id=RECORD_ID,
+    )
+    assert again == ref
+
+
+def test_a_forged_verdict_cannot_be_persisted(vault):
+    domain, roots = vault
+    request, result = generated()
+    persisted = persist(domain, roots, request, result)
+    candidate, _review_result, chains, verdict = criticized(request, result)
+    forged = replace(verdict, status="passed", reasons=())
+    tampered_review = _review(candidate, request, ["fail"])
+    with pytest.raises(DesignPersistenceError):
+        persist_candidate_criticism(
+            domain,
+            persisted.candidate_record_refs[0],
+            candidate,
+            forged,
+            tampered_review,  # recomputed fold would reject; verdict says passed
+            chains,
+            actor_ref=roots.actor,
+            access_policy_ref=roots.access_policy,
+            retention_policy_ref=roots.retention_policy,
+            created_at_utc=STAMP,
+            record_id=RECORD_ID,
+        )
+
+
+def test_the_candidate_record_binding_is_verified(vault):
+    domain, roots = vault
+    request, result = generated()
+    persisted = persist(domain, roots, request, result)
+    candidate, review, chains, verdict = criticized(request, result)
+    with pytest.raises(DesignPersistenceError):
+        persist_candidate_criticism(
+            domain,
+            persisted.request_record_ref,  # not the candidate record
+            candidate,
+            verdict,
+            review,
+            chains,
+            actor_ref=roots.actor,
+            access_policy_ref=roots.access_policy,
+            retention_policy_ref=roots.retention_policy,
+            created_at_utc=STAMP,
+            record_id=RECORD_ID,
+        )
