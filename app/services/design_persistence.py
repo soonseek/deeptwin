@@ -237,6 +237,8 @@ def persist_candidate_criticism(
     retention_policy_ref: EntityRef,
     created_at_utc: str,
     record_id: str | None = None,
+    call_records: list | None = None,
+    call_record_refs: tuple = (),
 ) -> EntityRef:
     """Persist one candidate's criticism and its verdict, parented to the candidate.
 
@@ -274,6 +276,13 @@ def persist_candidate_criticism(
             "the candidate record does not bind this exact verdict"
         )
     identifier = record_id if record_id is not None else str(uuid4())
+    design = {
+        "verdict": verdict.as_dict(),
+        "review": review,
+        "chains": chains,
+    }
+    if call_records is not None:
+        design["call_records"] = call_records
     try:
         record = ImmutableRecord.create(
             kind="decision_record",
@@ -281,17 +290,13 @@ def persist_candidate_criticism(
             version=1,
             created_at_utc=created_at_utc,
             actor_ref=actor_ref,
-            parent_refs=(candidate_record_ref,),
+            parent_refs=(candidate_record_ref, *call_record_refs),
             purpose="operational",
             access_policy_ref=access_policy_ref,
             retention_policy_ref=retention_policy_ref,
             content={
                 "design_kind": "candidate_criticism",
-                "design": encode_design_refs({
-                    "verdict": verdict.as_dict(),
-                    "review": review,
-                    "chains": chains,
-                }),
+                "design": encode_design_refs(design),
             },
         )
     except (TypeError, ValueError) as exc:
@@ -304,11 +309,163 @@ def persist_candidate_criticism(
         ) from exc
 
 
+@dataclass(frozen=True, slots=True)
+class PersistedCriticismRun:
+    criticism_ref: EntityRef
+    call_refs: tuple
+
+
+def _expected_prompt_hashes(candidate, request, registry, chains):
+    from hashlib import sha256 as _sha256
+
+    from .design_criticism import (
+        prepare_candidate_proposal,
+        prepare_candidate_response,
+        prepare_candidate_review,
+        prepare_candidate_validity,
+    )
+    from .design_criticism_live import render_criticism_prompt
+
+    def prompt_hash(prepared):
+        system, user = render_criticism_prompt(prepared)
+        return _sha256(
+            canonical_json({"system": system, "user": user})
+        ).hexdigest()
+
+    expected = [
+        ("review", prompt_hash(prepare_candidate_review(candidate, request))),
+        ("counterexample_proposal", prompt_hash(
+            prepare_candidate_proposal(candidate, request, registry),
+        )),
+    ]
+    for chain in chains:
+        expected.append(("counterexample_validity", prompt_hash(
+            prepare_candidate_validity(
+                candidate, request, chain["counterexample"],
+            ),
+        )))
+        if chain["response"] is not None:
+            expected.append(("candidate_response", prompt_hash(
+                prepare_candidate_response(
+                    candidate, request, chain["counterexample"],
+                    chain["validity"],
+                ),
+            )))
+    return expected
+
+
+def persist_criticism_run(
+    domain_store: DomainStore,
+    candidate_record_ref,
+    candidate,
+    request,
+    registry,
+    run,
+    *,
+    actor_ref,
+    access_policy_ref,
+    retention_policy_ref,
+    created_at_utc: str,
+    record_id: str | None = None,
+) -> PersistedCriticismRun:
+    """Persist one driven criticism run: every call record plus the verdict.
+
+    The run is never trusted as presented: every stage prompt hash is
+    recomputed from the candidate, request, registry and the run's own
+    chains, the call sequence must be exactly what the chains imply, all
+    calls must share one model identity and the exact request binding, and
+    the verdict is recomputed by persist_candidate_criticism. A forged
+    hash, a dropped or reordered call, or a forged verdict never becomes a
+    durable record.
+    """
+
+    from .design_criticism_live import CriticismCallRecord, CriticismRunResult
+
+    if type(domain_store) is not DomainStore:
+        raise DesignPersistenceError("an exact domain store is required")
+    if type(run) is not CriticismRunResult or any(
+        type(record) is not CriticismCallRecord for record in run.call_records
+    ):
+        raise DesignPersistenceError("an exact driven criticism run is required")
+    try:
+        expected = _expected_prompt_hashes(
+            candidate, request, registry, list(run.chains),
+        )
+    except Exception as exc:
+        raise DesignPersistenceError(
+            "the criticism run's stages cannot be re-rendered"
+        ) from exc
+    actual = [
+        (record.purpose, record.prompt_sha256) for record in run.call_records
+    ]
+    if actual != expected:
+        raise DesignPersistenceError(
+            "the call records do not match the run's own stage sequence"
+        )
+    model_ids = {record.model_id for record in run.call_records}
+    if len(model_ids) != 1 or any(
+        record.request_ref != request.request_ref
+        for record in run.call_records
+    ):
+        raise DesignPersistenceError(
+            "the call records do not bind one model and this exact request"
+        )
+    call_refs = []
+    for record in run.call_records:
+        try:
+            stored = ImmutableRecord.create(
+                kind="decision_record",
+                id=record.call_id,
+                version=record.version,
+                created_at_utc=created_at_utc,
+                actor_ref=actor_ref,
+                parent_refs=(candidate_record_ref,),
+                purpose="operational",
+                access_policy_ref=access_policy_ref,
+                retention_policy_ref=retention_policy_ref,
+                content={
+                    "design_kind": "criticism_call",
+                    "design": encode_design_refs(record.as_dict()),
+                },
+            )
+        except (TypeError, ValueError) as exc:
+            raise DesignPersistenceError(
+                "a criticism call record is invalid"
+            ) from exc
+        try:
+            call_refs.append(domain_store.put(stored))
+        except StorageError as exc:
+            raise DesignPersistenceError(
+                "a criticism call record could not be stored"
+            ) from exc
+    criticism_ref = persist_candidate_criticism(
+        domain_store,
+        candidate_record_ref,
+        candidate,
+        request,
+        run.verdict,
+        run.review,
+        list(run.chains),
+        actor_ref=actor_ref,
+        access_policy_ref=access_policy_ref,
+        retention_policy_ref=retention_policy_ref,
+        created_at_utc=created_at_utc,
+        record_id=record_id,
+        call_records=[record.as_dict() for record in run.call_records],
+        call_record_refs=tuple(call_refs),
+    )
+    return PersistedCriticismRun(
+        criticism_ref=criticism_ref, call_refs=tuple(call_refs),
+    )
+
+
 __all__ = [
     "DesignPersistenceError",
+    "PersistedCriticismRun",
     "PersistedGenerationResult",
     "decode_design_refs",
     "encode_design_refs",
     "persist_candidate_criticism",
+    "persist_criticism_run",
     "persist_generation_result",
 ]
