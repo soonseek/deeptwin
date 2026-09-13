@@ -22,6 +22,7 @@ import re
 from dataclasses import dataclass, field
 
 from ..domain.refs import DomainContractError, EntityRef
+from .gateway import carries_host_path
 
 EFFECT_CLASSES = frozenset({"read", "write", "external", "irreversible"})
 IDEMPOTENCY = frozenset({"idempotent", "dedup_by_request", "none"})
@@ -33,7 +34,6 @@ _UUID = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z"
 )
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
-_HOST_PATH = re.compile(r"(^[/~])|(\.\./)|(^\.\.$)")
 _ISSUE_TOKEN = object()
 
 
@@ -94,6 +94,8 @@ class DispatchEnvelope:
     effect_class: str
     arguments: tuple[tuple[str, object], ...]
     artifact_inputs: tuple[EntityRef, ...]
+    grant_ref: EntityRef
+    effect_approval_ref: EntityRef | None
     deadline_seconds: int
     _issuer_token: object = field(repr=False, compare=False)
 
@@ -157,7 +159,9 @@ def register_tool(registry, value) -> ToolRegistry:
     if (
         type(keys_value) is not dict or len(keys_value) > 32
         or any(
-            type(name) is not str or kind not in _ARGUMENT_TYPES
+            type(name) is not str
+            or not 1 <= len(name.encode("utf-8")) <= 128
+            or kind not in _ARGUMENT_TYPES
             for name, kind in keys_value.items()
         )
         or any(name.endswith(("_ref", "_refs")) for name in keys_value)
@@ -168,7 +172,8 @@ def register_tool(registry, value) -> ToolRegistry:
         ("network scope", value["network_scopes"], 16),
     ):
         if type(scopes) is not list or len(scopes) > bound or any(
-            type(item) is not str or _HOST_PATH.search(item)
+            type(item) is not str
+            or (label == "filesystem scope" and carries_host_path(item))
             for item in scopes
         ):
             raise ToolBoundaryError(f"{label}s are out of bounds")
@@ -224,7 +229,7 @@ def _validate_arguments(tool: ToolDefinition, arguments) -> tuple:
         if type(item) is str:
             if len(item.encode("utf-8")) > 4_096:
                 raise ToolBoundaryError(f"argument {name!r} is out of bounds")
-            if _HOST_PATH.search(item):
+            if carries_host_path(item):
                 # An argument never smuggles a host path into authority.
                 raise ToolBoundaryError(f"argument {name!r} carries a host path")
         parsed.append((name, item))
@@ -254,39 +259,49 @@ def dispatch_tool(registry, value):
     request_id = value["request_id"]
     if type(request_id) is not str or _UUID.fullmatch(request_id) is None:
         raise ToolBoundaryError("request id is not a canonical UUID")
-    previous = next(
-        (item for item in registry.dispatched if item[0] == request_id),
-        None,
-    )
-    if previous is not None:
-        prev_tool = next(
-            item for item in registry.definitions
-            if item.tool_id == previous[1] and item.version == previous[2]
-        )
-        if previous[3] == "unknown":
-            # An unknown external outcome holds the request entirely.
-            raise ToolBoundaryError(
-                "this request's outcome is unknown; reconcile before retry"
-            )
-        if prev_tool.idempotency == "dedup_by_request":
-            return previous[4], registry
-        raise ToolBoundaryError(
-            "this request was already dispatched and never replays"
-        )
     arguments = _validate_arguments(tool, value["arguments"])
     grant = _ref(value["grant_ref"], "grant", "grant")
     if grant != tool.required_grant:
         raise ToolBoundaryError("the grant does not match this tool")
     approval = value["effect_approval_ref"]
+    parsed_approval = None
     if tool.effect_class in _APPROVAL_EFFECTS:
         if approval is None:
             raise ToolBoundaryError(
                 f"a {tool.effect_class} effect requires an explicit approval"
             )
-        _ref(approval, "action_approval", "effect approval")
+        parsed_approval = _ref(approval, "action_approval", "effect approval")
     elif approval is not None:
         raise ToolBoundaryError(
             "this effect class carries no approval requirement"
+        )
+    previous = next(
+        (item for item in registry.dispatched if item[0] == request_id),
+        None,
+    )
+    if previous is not None:
+        stored = previous[4]
+        if previous[3] == "unknown":
+            # An unknown external outcome holds the request entirely.
+            raise ToolBoundaryError(
+                "this request's outcome is unknown; reconcile before retry"
+            )
+        if (
+            stored.tool_id != tool.tool_id
+            or stored.version != tool.version
+            or stored.arguments != arguments
+            or stored.grant_ref != grant
+            or stored.effect_approval_ref != parsed_approval
+        ):
+            # A reused request id must BE the same request: anything else
+            # is laundering a different act under an old identity.
+            raise ToolBoundaryError(
+                "the reused request id does not match its original dispatch"
+            )
+        if tool.idempotency == "dedup_by_request":
+            return stored, registry
+        raise ToolBoundaryError(
+            "this request was already dispatched and never replays"
         )
     inputs_value = value["artifact_inputs"]
     if type(inputs_value) is not list or len(inputs_value) > 64:
@@ -302,6 +317,8 @@ def dispatch_tool(registry, value):
         effect_class=tool.effect_class,
         arguments=arguments,
         artifact_inputs=inputs,
+        grant_ref=grant,
+        effect_approval_ref=parsed_approval,
         deadline_seconds=tool.timeout_seconds,
         _issuer_token=_ISSUE_TOKEN,
     )

@@ -84,13 +84,16 @@ def test_any_success_selects_exactly_one_winner_by_cas():
 
 
 def test_an_observation_tie_breaks_by_frozen_branch_order():
+    from app.runtime.scheduling_state import apply_simultaneous_results
+
     _activation, join = sealed()
-    join = apply_branch_result(join, result("b-gamma", "succeeded",
-                                            observation_index=1))
-    # the same observation index arrives for an earlier frozen branch id:
-    # the frozen ordering decides, and the successor is not scheduled twice
-    join = apply_branch_result(join, result("b-alpha", "succeeded",
-                                            observation_index=1))
+    # simultaneous observations enter as ONE batch: the frozen branch
+    # ordering decides before the single decision, and the successor is
+    # scheduled exactly once
+    join = apply_simultaneous_results(join, [
+        result("b-gamma", "succeeded", observation_index=1),
+        result("b-alpha", "succeeded", observation_index=1),
+    ])
     assert join.winner == "b-alpha"
     assert join.successor_scheduled is True
     assert len([item for item in join.evidence
@@ -110,6 +113,7 @@ def test_all_selected_waits_for_every_sealed_branch():
     # skipped is terminal, not a phantom input: the join completes but a
     # skipped branch contributes no input
     assert join.completed is True
+    assert join.satisfied is True  # nothing failed
     assert join.inputs == ("b-alpha", "b-beta")
 
 

@@ -7,7 +7,9 @@ no producer/consumer acknowledgment deadlock, and a later failure never
 retroactively erases producer output. Delivery discloses the actually
 supplied spans and every truncation; receipt is the receiver's separate
 acknowledgment; observed use requires cited parts within the supplied
-spans — a filename or hash alone is never full consumption. Availability,
+spans — a filename or hash alone is never full consumption (cited parts
+must echo a supplied span exactly; spans are opaque here, so subset claims
+belong to a structured-span layer). Availability,
 access, use and causal influence are four different evidence levels: this
 module proves at most "use" and mints no causal claim (runtime.md §5, R06).
 Values are issued, never constructed; each transition applies exactly once.
@@ -179,23 +181,33 @@ def record_delivery(handoff, value) -> Handoff:
         "supplied_spans", "truncations",
     }:
         raise HandoffError("expected the exact delivery object")
-    truncations = value["truncations"]
-    if (
-        type(truncations) is not list or len(truncations) > 32
-        or any(
-            type(item) is not str
-            or not 1 <= len(item.encode("utf-8")) <= 1_024
-            for item in truncations
-        )
-    ):
+    truncations_value = value["truncations"]
+    if type(truncations_value) is not list or len(truncations_value) > 32:
         raise HandoffError("truncations are out of bounds")
+    truncations = []
+    for item in truncations_value:
+        if type(item) is not dict or set(item) != {"artifact_index", "note"}:
+            raise HandoffError("a truncation entry is malformed")
+        index = item["artifact_index"]
+        if type(index) is not int or not 0 <= index < len(handoff.artifact_refs):
+            raise HandoffError("a truncation entry is outside the bound artifacts")
+        truncations.append((index, _text(item["note"], "truncation note", 1_024)))
+    spans = _spans(
+        value["supplied_spans"], "supplied span", len(handoff.artifact_refs),
+    )
+    covered = {index for index, _span in spans} | {
+        index for index, _note in truncations
+    }
+    if covered != set(range(len(handoff.artifact_refs))):
+        # Every bound artifact is either actually supplied or explicitly
+        # truncated — nothing vanishes silently (runtime §5).
+        raise HandoffError(
+            "every bound artifact must be supplied or explicitly truncated"
+        )
     return _reissue(
         handoff,
         status="delivered",
-        supplied_spans=_spans(
-            value["supplied_spans"], "supplied span",
-            len(handoff.artifact_refs),
-        ),
+        supplied_spans=spans,
         truncations=tuple(truncations),
     )
 

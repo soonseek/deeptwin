@@ -51,8 +51,33 @@ _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _UUID = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z"
 )
-_HOST_PATH = re.compile(r"(^[/~])|(\.\./)|(^\.\.$)")
+_DRIVE_OR_SCHEME = re.compile(r"(^[A-Za-z]:)|(://)")
+_MAX_SCAN_DEPTH = 32
 _ISSUE_TOKEN = object()
+
+
+def carries_host_path(value: str) -> bool:
+    """True when text smuggles a host path in any of its common disguises."""
+
+    if "\x00" in value or "\u0000" in value or "\0" in value:
+        return True
+    if any(ch == "\x00" for ch in value):
+        return True
+    text = value.replace("\\", "/")
+    for _ in range(3):
+        if "%" not in text:
+            break
+        from urllib.parse import unquote
+
+        decoded = unquote(text)
+        if decoded == text:
+            break
+        text = decoded.replace("\\", "/")
+    if text.startswith(("/", "~")):
+        return True
+    if _DRIVE_OR_SCHEME.search(text):
+        return True
+    return any(segment == ".." for segment in text.split("/"))
 
 
 class GatewayError(ValueError):
@@ -234,29 +259,46 @@ def freeze_turn(value) -> FrozenTurn:
     )
 
 
-def _scan_for_host_paths(value, label) -> None:
+def _detached_scan(value, label, depth=0):
+    """Refuse host paths in values AND keys, bound depth and numbers, and
+    return a detached copy so post-admit mutation cannot reach the envelope."""
+
+    if depth > _MAX_SCAN_DEPTH:
+        raise GatewayError(f"{label} exceeds the nesting depth bound")
     if type(value) is str:
-        if _HOST_PATH.search(value):
+        if len(value.encode("utf-8")) > 8_192:
+            raise GatewayError(f"{label} is out of bounds")
+        if carries_host_path(value):
             # An arbitrary host path in model output never becomes
             # execution authority.
             raise GatewayError(f"{label} carries a host path")
-        return
+        return value
     if type(value) is dict:
         if len(value) > 64:
             raise GatewayError(f"{label} is out of bounds")
+        out = {}
         for key, item in value.items():
-            if type(key) is not str:
-                raise GatewayError(f"{label} keys must be text")
-            _scan_for_host_paths(item, label)
-        return
+            if type(key) is not str or carries_host_path(key):
+                raise GatewayError(f"{label} keys must be path-free text")
+            out[key] = _detached_scan(item, label, depth + 1)
+        return out
     if type(value) is list:
         if len(value) > 128:
             raise GatewayError(f"{label} is out of bounds")
-        for item in value:
-            _scan_for_host_paths(item, label)
-        return
-    if value is not None and type(value) not in (int, bool, float):
-        raise GatewayError(f"{label} carries an unknown value type")
+        return [_detached_scan(item, label, depth + 1) for item in value]
+    if type(value) is bool or value is None:
+        return value
+    if type(value) is int:
+        if not -(2 ** 63) <= value <= 2 ** 63 - 1:
+            raise GatewayError(f"{label} carries an unbounded number")
+        return value
+    if type(value) is float:
+        import math
+
+        if not math.isfinite(value):
+            raise GatewayError(f"{label} carries a non-finite number")
+        return value
+    raise GatewayError(f"{label} carries an unknown value type")
 
 
 def validate_step_output(turn, output) -> dict:
@@ -292,25 +334,31 @@ def validate_step_output(turn, output) -> dict:
         arguments = output["arguments"]
         if type(arguments) is not dict:
             raise GatewayError("tool arguments must be an object")
-        _scan_for_host_paths(arguments, "tool arguments")
-        return {"kind": kind, "tool": tool, "arguments": arguments}
+        detached = _detached_scan(arguments, "tool arguments")
+        return {"kind": kind, "tool": tool, "arguments": detached}
     if kind == "final_artifacts":
         if set(output) != {"kind", "artifacts"}:
             raise GatewayError("expected the exact final artifacts object")
         artifacts = output["artifacts"]
         if type(artifacts) is not list or not 1 <= len(artifacts) <= 32:
             raise GatewayError("final artifacts are out of bounds")
+        detached_artifacts = []
         for item in artifacts:
             if type(item) is not dict or set(item) != {"slot", "media_type"}:
                 raise GatewayError("a final artifact spec is malformed")
-            _text(item["slot"], "artifact slot")
-            _text(item["media_type"], "artifact media type")
-        return {"kind": kind, "artifacts": artifacts}
+            slot = _text(item["slot"], "artifact slot")
+            media = _text(item["media_type"], "artifact media type")
+            if carries_host_path(slot) or carries_host_path(media):
+                # A fabricated path never satisfies a slot (runtime §5).
+                raise GatewayError("a final artifact spec carries a host path")
+            detached_artifacts.append({"slot": slot, "media_type": media})
+        return {"kind": kind, "artifacts": detached_artifacts}
     raise GatewayError("unknown step output kind")
 
 
 __all__ = [
     "EFFORTS",
+    "carries_host_path",
     "GATEWAY_PROFILES",
     "PART_TYPES",
     "PROVIDERS",

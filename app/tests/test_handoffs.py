@@ -55,7 +55,10 @@ def delivered():
             {"artifact_index": 0, "span": "pages:1-4"},
             {"artifact_index": 1, "span": "whole"},
         ],
-        "truncations": ["1301의 5쪽 이후는 이번 요청에 포함되지 않았다"],
+        "truncations": [{
+            "artifact_index": 0,
+            "note": "1301의 5쪽 이후는 이번 요청에 포함되지 않았다",
+        }],
     })
 
 
@@ -90,7 +93,7 @@ def test_delivery_discloses_spans_and_truncations():
     handoff = delivered()
     assert handoff.status == "delivered"
     assert handoff.truncations == (
-        "1301의 5쪽 이후는 이번 요청에 포함되지 않았다",
+        (0, "1301의 5쪽 이후는 이번 요청에 포함되지 않았다"),
     )
     with pytest.raises(HandoffError):
         record_delivery(handoff, {  # delivery can never repeat
@@ -104,6 +107,11 @@ def test_delivery_discloses_spans_and_truncations():
         record_delivery(bare, {
             "supplied_spans": [{"artifact_index": 9, "span": "whole"}],
             "truncations": [],  # an index outside the bound artifacts
+        })
+    with pytest.raises(HandoffError):
+        record_delivery(bare, {  # delivery can never repeat semantics ok,
+            "supplied_spans": [{"artifact_index": 0, "span": "whole"}],
+            "truncations": [],  # artifact 1 silently vanishes
         })
 
 
