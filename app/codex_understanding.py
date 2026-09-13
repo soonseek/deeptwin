@@ -36,6 +36,10 @@ _ISOLATED_FEATURES = {
     'token_budget', 'current_time_reminder', 'multi_agent_v2',
 }
 _STRUCTURED_FEATURES = {'token_budget', 'current_time_reminder', 'multi_agent_v2'}
+
+
+class _CancelledBeforeTransfer(Exception):
+    """A cancel arrived before the prepared input was transferred."""
 _SAFE_ITEM_TYPES = {'userMessage', 'agentMessage', 'reasoning'}
 _BASE_INSTRUCTIONS = profile_for(
     GenerationPurpose.WORK_UNDERSTANDING).base_instructions
@@ -395,6 +399,18 @@ class _CodexIsolatedModel:
         if (not isinstance(prompt, str) or not isinstance(schema, dict)
                 or not _valid_selection(selection)):
             raise ModelError('provider_unavailable')
+        # One deadline covers the whole lifecycle, preflight included; a
+        # cancel observed here spends no provider process at all.
+        overall_deadline = time.monotonic() + self.timeout
+
+        def _gate():
+            if cancel_event.is_set():
+                raise _CancelledBeforeTransfer
+            if time.monotonic() >= overall_deadline:
+                raise ModelError('timeout')
+
+        if cancel_event.is_set():
+            return {'text': '', 'model': 'cancelled-before-transfer'}
         executable = find_codex()
         if not executable:
             raise ModelError('provider_unavailable')
@@ -408,10 +424,14 @@ class _CodexIsolatedModel:
         actual_model = ''
         try:
             rpc.start()
+            _gate()
             if not _safe_account(rpc.call('account/read', {'refreshToken': False})):
                 raise ModelError('subscription_required')
+            _gate()
             config = rpc.call('config/read', {'cwd': str(runtime), 'includeLayers': False})
+            _gate()
             skills = rpc.call('skills/list', {'cwds': [str(runtime)], 'forceReload': True})
+            _gate()
             if not self._transport_clean(rpc):
                 raise ModelError('isolation_unavailable')
             if not (_safe_config(config) and _safe_skills(skills, runtime)):
@@ -419,20 +439,24 @@ class _CodexIsolatedModel:
                 if not overrides:
                     raise ModelError('isolation_unavailable')
                 rpc.close()
+                _gate()
                 rpc = self.rpc_factory(base_command + overrides, cwd=runtime,
                                        env=_generation_environment(), timeout=10)
                 rpc.start()
+                _gate()
                 if not _safe_account(rpc.call('account/read', {'refreshToken': False})):
                     raise ModelError('subscription_required')
+                _gate()
                 config = rpc.call('config/read', {'cwd': str(runtime), 'includeLayers': False})
+                _gate()
                 skills = rpc.call('skills/list', {'cwds': [str(runtime)], 'forceReload': True})
+                _gate()
                 if (not _safe_config(config) or not _safe_skills(skills, runtime)
                         or not self._transport_clean(rpc)):
                     raise ModelError('isolation_unavailable')
             if not _native_tool_isolation_supported(config):
                 raise ModelError('isolation_unavailable')
-            if cancel_event.is_set():
-                return {'text': '', 'model': 'cancelled-before-transfer'}
+            _gate()
 
             thread_config = {
                 'project_doc_max_bytes': 0,
@@ -496,7 +520,7 @@ class _CodexIsolatedModel:
                     or turn.get('status') != 'inProgress'):
                 raise ModelError('provider_unavailable')
             turn_id = turn['id']
-            deadline = time.monotonic() + self.timeout
+            deadline = overall_deadline
             completed_finals = {}
             while time.monotonic() < deadline:
                 if cancel_event.is_set():
@@ -562,6 +586,8 @@ class _CodexIsolatedModel:
                 time.sleep(0.01)
             self._interrupt(rpc, thread_id, turn_id)
             raise ModelError('timeout')
+        except _CancelledBeforeTransfer:
+            return {'text': '', 'model': 'cancelled-before-transfer'}
         except ModelError:
             raise
         except CodexRPCError as error:

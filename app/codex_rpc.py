@@ -26,6 +26,24 @@ class CodexRPCError(RuntimeError):
     """A deliberately generic transport failure safe for caller-visible logs."""
 
 
+def terminate_owned_process(process, grace=0.3):
+    """SIGTERM then SIGKILL the owned process; True only when its exit is confirmed."""
+    if process.poll() is not None:
+        return True
+    try:
+        process.terminate()
+        process.wait(timeout=grace)
+        return True
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    try:
+        process.kill()
+        process.wait(timeout=grace)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return process.poll() is not None
+
+
 @dataclass
 class _Pending:
     event: threading.Event
@@ -53,6 +71,7 @@ class CodexRPC:
         self._notifications = deque(maxlen=_MAX_NOTIFICATIONS)
         self._failure = None
         self._closing = False
+        self.termination_confirmed = None
         self._state_lock = threading.Lock()
         self._write_lock = threading.Lock()
 
@@ -157,17 +176,9 @@ class CodexRPC:
             process = self._process
         self._fail_pending('Codex 연결이 종료되었습니다.')
         if process is None:
+            self.termination_confirmed = True
             return
-        if process.poll() is None:
-            try:
-                process.terminate()
-                process.wait(timeout=0.3)
-            except (OSError, subprocess.TimeoutExpired):
-                try:
-                    process.kill()
-                    process.wait(timeout=0.3)
-                except (OSError, subprocess.TimeoutExpired):
-                    pass
+        self.termination_confirmed = terminate_owned_process(process)
         for stream in (process.stdin, process.stdout):
             if stream is not None:
                 try:
