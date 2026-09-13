@@ -100,3 +100,109 @@ def test_single_agent_shape_projects_one_role():
 def test_type_guard_rejects_foreign_objects():
     with pytest.raises(DesignCriticismError):
         critic_candidate_projection(object())
+
+
+# ------------------------------------------------- review-input preparation
+
+
+import json as _json
+
+from app.critic_contract import (
+    GenerationPurpose,
+    PreparedInput,
+    ResponseContractError,
+    parse_response,
+)
+from app.services.design_criticism import prepare_candidate_review
+
+
+def live_pair(**kwargs):
+    _target, _lens, _decision, request, graph = prepared(**kwargs)
+    model_turn, _ = scripted_model(model_json(graph))
+    result = run_candidate_generation(request, model_turn=model_turn, model_id=MODEL_ID)
+    return request, result.candidates[0]
+
+
+def test_review_input_prepares_from_a_live_candidate():
+    request, candidate = live_pair()
+    prepared_input = prepare_candidate_review(candidate, request)
+    assert type(prepared_input) is PreparedInput
+    assert prepared_input.purpose is GenerationPurpose.REVIEW
+    assert prepared_input.candidate_id == candidate.candidate_id
+
+    manifest = _json.loads(prepared_input.manifest_json)
+    criterion_ids = manifest["criterion_ids"]
+    decision_id = request.decisions[0].decision_ref.id
+    assert any(item.startswith(f"{decision_id}:claim:") for item in criterion_ids)
+    assert any(item.startswith(f"{decision_id}:effect:") for item in criterion_ids)
+    assert "shape:disposition" in criterion_ids
+    assert any(item.startswith("work:completion:") for item in criterion_ids)
+
+    prompt = _json.loads(prepared_input.prompt)
+    original = prompt["input"]["originals"][0]
+    assert original["id"] == request.work_target.work_model.work_model_id
+    locations = [section["location"] for section in original["sections"]]
+    assert "work_model.goals" in locations
+    assert "work_model.risks" in locations
+
+
+def test_review_preparation_is_deterministic():
+    request, candidate = live_pair()
+    assert prepare_candidate_review(candidate, request) == \
+        prepare_candidate_review(candidate, request)
+
+
+def test_review_preparation_rejects_a_foreign_request():
+    request, candidate = live_pair()
+    from app.services.design import create_generation_request
+    from app.tests.test_design_generation import design_authority
+
+    foreign = create_generation_request(
+        request.work_target,
+        list(request.decisions),
+        request_id="00000000-0000-4000-8000-000000000888",
+        requested_candidate_count=3,
+        compilation_authority=design_authority(),
+    )
+    with pytest.raises(DesignCriticismError):
+        prepare_candidate_review(candidate, foreign)
+    with pytest.raises(DesignCriticismError):
+        prepare_candidate_review(object(), request)
+
+
+def test_scripted_review_response_round_trips_through_the_parser():
+    request, candidate = live_pair()
+    prepared_input = prepare_candidate_review(candidate, request)
+    manifest = _json.loads(prepared_input.manifest_json)
+    work_model_id = request.work_target.work_model.work_model_id
+    findings = [
+        {
+            "criterion_id": criterion_id,
+            "status": "pass",
+            "evidence": [{
+                "document_id": work_model_id,
+                "version": "1",
+                "location": "work_model.goals",
+            }],
+            "reason": "목표와 산출물 계약이 그래프에 그대로 반영되어 있다.",
+            "uncertainties": [],
+        }
+        for criterion_id in manifest["criterion_ids"]
+    ]
+    result = parse_response(prepared_input, _json.dumps({
+        "candidate_id": candidate.candidate_id,
+        "candidate_version": str(candidate.version),
+        "purpose": "review",
+        "findings": findings,
+    }))
+    assert {item["criterion_id"] for item in result["findings"]} == set(
+        manifest["criterion_ids"]
+    )
+
+    with pytest.raises(ResponseContractError):
+        parse_response(prepared_input, _json.dumps({
+            "candidate_id": candidate.candidate_id,
+            "candidate_version": str(candidate.version),
+            "purpose": "review",
+            "findings": findings[:1],  # coverage violation
+        }))

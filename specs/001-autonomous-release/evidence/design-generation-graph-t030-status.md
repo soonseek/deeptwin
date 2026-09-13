@@ -197,3 +197,44 @@ Frozen identities (SHA-256):
 Not claimed: no critic trial has yet run over a projected live candidate (the review/
 counterexample/validity/response stages still consume their own prepared inputs), and
 selection/approval over criticized candidates remains open.
+
+## Review preparation and parsed round trip (2026-09-13)
+
+`prepare_candidate_review(candidate, request)` completes the offline review loop over a
+live candidate: it builds the exact bounded `ReviewInput` — the confirmed work model as
+the original document (deterministic canonical-JSON sections per field:
+goals/deliverables/completion_conditions/authorities/risks/unknowns/suitability),
+criteria derived from the request itself (one per decision functional claim, one per
+proposed effect with its declared graph target, the disposition-shape criterion, and
+one per work-model completion condition), and the candidate projection — then hands it
+to the already-qualified `prepare_input(REVIEW, ...)`, so the critic contract's own
+visibility/citation registry and manifest hashing apply unchanged. Binding is validated
+first: the candidate must belong to the exact request and work model.
+
+A scripted review response covering every derived criterion round-trips through
+`parse_response`, and a coverage-violating response is rejected by the existing
+contract — demonstrating the full offline review path over a live-generated candidate.
+
+Tests: 4 more in `app/tests/test_design_criticism.py` (11 total) — prepared-input
+shape/criteria/manifest assertions, determinism, foreign-request rejection, and the
+scripted parse round trip with coverage violation.
+
+```text
+python -m pytest -q app/tests/test_design_criticism.py
+11 passed
+ruff check app/services/design_criticism.py app/tests/test_design_criticism.py
+All checks passed
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-13)
+3,022 passed, 2 skipped, 369 subtests passed, 1 known warning
+```
+
+Frozen identities (SHA-256):
+
+```text
+9c5896d99ec6b8eea05d61df7fcffcfeae3bfe50ac675c2fb384dadeb0d71bc1  app/services/design_criticism.py
+bc6ffb3d348c606e63f754bcad691cf4cd32691e11458f0bb000b50a21d09057  app/tests/test_design_criticism.py
+```
+
+Not claimed: no model has produced a live review (the scripted response only proves the
+contract path), counterexample/validity/response stages are not yet driven from design
+context, and selection/approval over criticized candidates remains open.

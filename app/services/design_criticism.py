@@ -14,8 +14,14 @@ from __future__ import annotations
 from pydantic import ValidationError
 
 from ..critic_contract import Candidate as CriticCandidate
-from ..domain.refs import EntityRef
-from .design import DesignCandidate
+from ..critic_contract import (
+    GenerationPurpose,
+    InputContractError,
+    PreparedInput,
+    prepare_input,
+)
+from ..domain.refs import EntityRef, canonical_json
+from .design import DesignCandidate, DesignGenerationRequest
 
 
 class DesignCriticismError(ValueError):
@@ -185,4 +191,92 @@ def critic_candidate_projection(candidate: DesignCandidate) -> dict:
     return projection
 
 
-__all__ = ["DesignCriticismError", "critic_candidate_projection"]
+_WORK_MODEL_SECTIONS = (
+    "goals",
+    "deliverables",
+    "completion_conditions",
+    "authorities",
+    "risks",
+    "unknowns",
+    "suitability",
+)
+
+
+def _work_model_original(work_model) -> dict:
+    value = work_model.as_dict()
+    sections = [
+        {
+            "location": f"work_model.{name}",
+            "text": canonical_json(value[name]).decode("utf-8"),
+        }
+        for name in _WORK_MODEL_SECTIONS
+    ]
+    return {
+        "id": work_model.work_model_id,
+        "version": str(work_model.version),
+        "media_type": "application/json",
+        "availability": "text",
+        "sections": sections,
+    }
+
+
+def _review_criteria(request: DesignGenerationRequest) -> dict:
+    items = []
+    for decision in request.decisions:
+        decision_id = decision.decision_id
+        for index, claim in enumerate(decision.functional_claims):
+            items.append({"id": f"{decision_id}:claim:{index}", "text": claim})
+        for effect in decision.proposed_effects:
+            target = effect.target
+            items.append({
+                "id": f"{decision_id}:effect:{effect.effect_id}",
+                "text": (
+                    f"제안된 효과가 그래프의 선언 지점에서 실현된다 "
+                    f"(axis={effect.axis}, target={target.kind}:{target.identifier}"
+                    f".{target.field_path}): {effect.rationale}"
+                ),
+            })
+    items.append({
+        "id": "shape:disposition",
+        "text": f"설계 형상이 확인된 적합성({request.design_disposition})을 준수한다.",
+    })
+    for index, condition in enumerate(
+        request.work_target.work_model.completion_conditions
+    ):
+        items.append({"id": f"work:completion:{index}", "text": condition})
+    return {"id": f"review:{request.request_id}", "version": "1", "items": items}
+
+
+def prepare_candidate_review(
+    candidate: DesignCandidate,
+    request: DesignGenerationRequest,
+) -> PreparedInput:
+    """Prepare the exact bounded critic review input for one live candidate."""
+
+    if (
+        type(candidate) is not DesignCandidate
+        or type(request) is not DesignGenerationRequest
+        or candidate.generation_request_ref != request.request_ref
+        or candidate.work_model_ref != request.work_target.work_model_ref
+    ):
+        raise DesignCriticismError(
+            "an accepted candidate bound to this exact request is required"
+        )
+    source = {
+        "originals": [_work_model_original(request.work_target.work_model)],
+        "criteria": _review_criteria(request),
+        "candidate": critic_candidate_projection(candidate),
+    }
+    try:
+        return prepare_input(GenerationPurpose.REVIEW, source)
+    except InputContractError as exc:
+        raise DesignCriticismError(
+            "the candidate review input violates the critic contract"
+        ) from exc
+
+
+__all__ = [
+    "DesignCriticismError",
+    "critic_candidate_projection",
+    "prepare_candidate_review",
+]
