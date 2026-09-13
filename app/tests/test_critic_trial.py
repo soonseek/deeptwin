@@ -192,6 +192,39 @@ def assert_blocked(subject, call, prepared, factory):
         subject.run(replace(call, request_id="next-request"), prepared, factory)
 
 
+_LINEAGE_SEEDS = {
+    P.COUNTEREXAMPLE_PROPOSAL: [P.REVIEW],
+    P.COUNTEREXAMPLE_VALIDITY: [P.REVIEW, P.COUNTEREXAMPLE_PROPOSAL],
+    P.CANDIDATE_RESPONSE: [
+        P.REVIEW, P.COUNTEREXAMPLE_PROPOSAL, P.COUNTEREXAMPLE_VALIDITY,
+    ],
+}
+
+
+def seeded_lineage(trial, rig, purpose, source):
+    """Complete the B4 parent chain in the rig ledger; return run() lineage."""
+    parent_id = evidence_sha = None
+    for index, seed_purpose in enumerate(_LINEAGE_SEEDS.get(purpose, [])):
+        call = frozen(trial, rig, request_id=f"lineage-{index}",
+                      prepared=prepare_input(seed_purpose, source))
+        if seed_purpose is P.REVIEW:
+            rig.ledger.reserve(call)
+        else:
+            rig.ledger.reserve_with_lineage(
+                call, parent_request_id=parent_id,
+                evidence_sha=None if seed_purpose is P.COUNTEREXAMPLE_PROPOSAL
+                else evidence_sha)
+        rig.ledger.begin(call.request_id)
+        rig.ledger.finish(call.request_id, "completed", {"seed": True})
+        shas = rig.ledger.register_result_evidence(
+            call.request_id, [{"seed": seed_purpose.value}])
+        parent_id, evidence_sha = call.request_id, shas[0]
+    if parent_id is None:
+        return None
+    return (parent_id,
+            None if purpose is P.COUNTEREXAMPLE_PROPOSAL else evidence_sha)
+
+
 @pytest.mark.parametrize("purpose", PURPOSES)
 def test_offline_roundtrip_retains_contract_result_without_semantic_score(trial, rig, purpose):
     source = bound_source()
@@ -200,7 +233,8 @@ def test_offline_roundtrip_retains_contract_result_without_semantic_score(trial,
     raw = json.dumps(expected, ensure_ascii=False)
     call = frozen(trial, rig, prepared=prepared)
     factory, seen = controlled(trial, rig, text=raw)
-    record = runner(trial, rig).run(call, prepared, factory)
+    record = runner(trial, rig).run(call, prepared, factory,
+                                    lineage=seeded_lineage(trial, rig, purpose, source))
     assert record == rig.ledger.get(call.request_id)
     assert record["state"] == "completed"
     assert record["details"] == {

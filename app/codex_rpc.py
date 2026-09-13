@@ -176,7 +176,10 @@ class CodexRPC:
             process = self._process
         self._fail_pending('Codex 연결이 종료되었습니다.')
         if process is None:
-            self.termination_confirmed = True
+            # A redundant close never upgrades a recorded failure: the
+            # first close's verdict about the owned process stands.
+            if self.termination_confirmed is None:
+                self.termination_confirmed = True
             return
         self.termination_confirmed = terminate_owned_process(process)
         for stream in (process.stdin, process.stdout):

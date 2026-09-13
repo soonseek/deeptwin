@@ -20,6 +20,7 @@ injected: this module performs no live network activity of its own.
 from __future__ import annotations
 
 import ipaddress
+import re
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlsplit
 
@@ -115,8 +116,12 @@ def freeze_egress_policy(
 def _admit_url(policy: EgressPolicy, url: str) -> str:
     if type(url) is not str or not 1 <= len(url.encode("utf-8")) <= _MAX_URL_BYTES:
         raise EgressBrokerError("url is out of bounds")
-    if "\x00" in url:
-        raise EgressBrokerError("url carries a NUL byte")
+    # urlsplit strips \t\r\n and tolerates surrounding whitespace, so a
+    # policy-clean parse could otherwise hand the transport a raw URL
+    # carrying request-line/Host injection. Refuse every control character
+    # and space outright — a legal URL percent-encodes them.
+    if any(ord(ch) <= 0x20 or ord(ch) == 0x7F for ch in url):
+        raise EgressBrokerError("url carries control characters")
     parts = urlsplit(url)
     if parts.scheme != "https":
         raise EgressBrokerError(
@@ -160,11 +165,22 @@ def _resolve_public(resolver, host: str) -> tuple[str, ...]:
     return addresses
 
 
+_HEADER_TOKEN = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+\Z")
+
+
 def _admit_headers(headers) -> dict[str, str]:
     admitted = {}
     for name, value in dict(headers or {}).items():
         if type(name) is not str or type(value) is not str:
             raise EgressBrokerError("headers must be string pairs")
+        # A padded or non-token name ("Authorization ") smuggles past the
+        # blocklist; a control character in a value injects headers.
+        if _HEADER_TOKEN.fullmatch(name) is None:
+            raise EgressBrokerError(f"header name {name!r} is not a token")
+        if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value):
+            raise EgressBrokerError(
+                f"header {name!r} value carries control characters"
+            )
         if name.lower() in _FORBIDDEN_HEADERS:
             raise EgressBrokerError(
                 f"header {name!r} would inherit credentials"
@@ -193,8 +209,19 @@ def broker_fetch(
         status, response_headers, body = transport(
             method, current, addresses, admitted_headers,
         )
+        if type(status) is not int or not 100 <= status <= 599:
+            raise EgressBrokerError("transport status is not a valid code")
+        # EVERY hop's body is bounded, redirect bodies included. The check
+        # is necessarily post-materialization at this layer; streaming
+        # enforcement mid-transfer belongs to the transport itself.
+        if type(body) is not bytes or len(body) > policy.max_response_bytes:
+            raise EgressBrokerError("response body exceeds the byte limit")
         if status in _REDIRECT_STATUSES:
-            location = dict(response_headers).get("Location")
+            location = next(
+                (item for name, item in dict(response_headers).items()
+                 if type(name) is str and name.lower() == "location"),
+                None,
+            )
             if location is None:
                 raise EgressBrokerError("redirect without a destination")
             if len(chain) >= policy.max_redirects:
@@ -202,8 +229,6 @@ def broker_fetch(
             chain.append(current)
             current = urljoin(current, location)
             continue
-        if type(body) is not bytes or len(body) > policy.max_response_bytes:
-            raise EgressBrokerError("response body exceeds the byte limit")
         return _issue(
             FetchResult,
             final_url=current,

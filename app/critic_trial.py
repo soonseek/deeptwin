@@ -9,7 +9,7 @@ from threading import Event, Lock, Thread
 from time import monotonic
 
 from .codex_critic import CodexCriticTransport
-from .critic_audit import FrozenCall, Ledger, canonical, positive_seconds
+from .critic_audit import _PARENT_PURPOSES, FrozenCall, Ledger, canonical, positive_seconds
 from .critic_contract import (
     InputContractError, PreparedInput, ResponseContractError, parse_response, prepare_input,
 )
@@ -267,7 +267,7 @@ class OfflineRunner:
         self.ledger.finish(call.request_id, "timed_out", {"score": None, "remote_stop": "unconfirmed"})
         return self._read_terminal(call.request_id, active)
 
-    def run(self, call, prepared, transport_factory):
+    def run(self, call, prepared, transport_factory, *, lineage=None):
         with self._lock:
             with self._active_lock:
                 if self._quarantined:
@@ -280,7 +280,18 @@ class OfflineRunner:
                     # Serialize this final gate, reserve, registration and intent.
                     if self._quarantined:
                         raise RuntimeError("offline runner is quarantined; dispatch stopped")
-                    self.ledger.reserve(call)
+                    if call.purpose in _PARENT_PURPOSES:
+                        # A chained purpose is only ever reserved with its
+                        # exact lineage parent (B4); the runner never
+                        # smuggles one through the plain path.
+                        if type(lineage) is not tuple or len(lineage) != 2:
+                            raise ValueError("this purpose requires (parent_request_id, evidence_sha) lineage")
+                        self.ledger.reserve_with_lineage(
+                            call, parent_request_id=lineage[0], evidence_sha=lineage[1])
+                    else:
+                        if lineage is not None:
+                            raise ValueError("this purpose has no lineage parent")
+                        self.ledger.reserve(call)
                     reserving = False
                     active = _Active()
                     self._active[call.request_id] = active

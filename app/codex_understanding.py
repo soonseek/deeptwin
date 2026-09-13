@@ -504,6 +504,10 @@ class _CodexIsolatedModel:
 
             if cancel_event.is_set():
                 return {'text': '', 'model': actual_model}
+            if time.monotonic() >= overall_deadline:
+                # The budget died between thread and turn: the prompt is
+                # never transferred past the lifecycle deadline.
+                raise ModelError('timeout')
             if not self._transport_clean(rpc):
                 raise ModelError('isolation_unavailable')
 

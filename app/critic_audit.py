@@ -187,6 +187,10 @@ class Ledger:
     def reserve(self, call):
         if type(call) is not FrozenCall:
             raise ValueError("reservation requires an exact FrozenCall")
+        if call.purpose in _PARENT_PURPOSES:
+            # The B4 chain is mandatory, not opt-in: a downstream purpose
+            # can only ever be reserved through reserve_with_lineage.
+            raise ValueError("this purpose requires a lineage reservation")
         payload = canonical(call.as_dict())
         with self._transaction() as db:
             run = db.execute("SELECT * FROM runs WHERE id = ?", (call.run_id,)).fetchone()
