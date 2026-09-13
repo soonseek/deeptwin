@@ -42,6 +42,7 @@ def plan_value(**overrides):
 
 def round_value(**overrides):
     value = {
+        "round_id": "round-0",
         "round_index": 0,
         "candidate": ref("change_candidate", 920),
         "baseline_runs": [ref("run_manifest", 921), ref("run_manifest", 922)],

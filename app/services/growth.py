@@ -13,8 +13,12 @@ non-improvement but can never replace the best. Three consecutive valid
 non-improving rounds after the floor end the loop as ``plateau_reached`` — a
 stop of exploration, never a claim of operational fitness. A loop that never
 reached the floor can only end ``below_floor_exhausted``. Application of one
-round is a single, non-replayable transition; there is no API that resets
-counters or budget on restart.
+round is a single, non-replayable transition within one state value; because
+states are immutable values, replaying an old state object or re-opening a
+lineage with :func:`start_growth_loop` is not preventable here — the storage
+layer must CAS on ``revision`` per §7 and refuse a second loop for a live
+lineage. Counters and budget are never resettable through this module's own
+transitions.
 """
 
 from __future__ import annotations
@@ -84,12 +88,20 @@ def freeze_quality_profile(value) -> QualityProfile:
     patience = value["patience"]
     if type(patience) is not int or not 1 <= patience <= 100:
         raise GrowthLoopError("patience is out of bounds")
+    quality_floor = _exact_decimal(value["quality_floor"], "quality floor")
+    if quality_floor < 0:
+        raise GrowthLoopError("the quality floor must be non-negative")
+    min_delta = _exact_decimal(value["min_delta"], "min delta")
+    if min_delta <= 0:
+        # A zero or negative delta destroys plateau semantics: every tie or
+        # worsening round would count as a meaningful improvement.
+        raise GrowthLoopError("min delta must be strictly positive")
     return _issue(
         QualityProfile,
         profile_id=profile_id,
         version=version,
-        quality_floor=_exact_decimal(value["quality_floor"], "quality floor"),
-        min_delta=_exact_decimal(value["min_delta"], "min delta"),
+        quality_floor=quality_floor,
+        min_delta=min_delta,
         patience=patience,
         _issuer_token=_ISSUE_TOKEN,
     )
@@ -216,11 +228,18 @@ def apply_round(state, value) -> GrowthLoop:
     _require_loop(state)
     if state.status != "running":
         raise GrowthLoopError("a terminal loop accepts no further rounds")
-    if type(value) is not dict or not {
+    required = {
         "round_id", "validity", "utility", "mandatory_passed",
         "regression_ok", "consumed",
-    } <= set(value):
+    }
+    if (
+        type(value) is not dict
+        or not required <= set(value)
+        or set(value) - required - {"invalid_reason"}
+    ):
         raise GrowthLoopError("expected the exact round outcome object")
+    if value["validity"] not in {"valid", "invalid", "pending"}:
+        raise GrowthLoopError("round validity must be valid, invalid or pending")
     round_id = value["round_id"]
     if (
         type(round_id) is not str
@@ -232,10 +251,23 @@ def apply_round(state, value) -> GrowthLoop:
     budget = _accrue(state.consumed_budget, value["consumed"])
     completed = state.completed_round_ids + (round_id,)
 
-    if value["validity"] != "valid" or value["utility"] is None:
+    if value["validity"] != "valid":
         # Missing material, tool/evaluator failure, unresolved judgment or an
         # interrupted run is not a completed valid comparison: score stays
         # null and counters stay untouched, while real consumption accrues.
+        if value["utility"] is not None:
+            # A missing or failed measurement never smuggles in a score.
+            raise GrowthLoopError(
+                "only a valid round may carry a utility"
+            )
+        return _reissue(
+            state, completed_round_ids=completed, consumed_budget=budget,
+        )
+    if value["utility"] is None:
+        # A valid round without a completed evaluation score: the evaluator
+        # never finished, so counters stay untouched (§6.2 — a fully observed
+        # capability failure is expressed as a valid round WITH the
+        # evaluator's score, never as an absent one).
         return _reissue(
             state, completed_round_ids=completed, consumed_budget=budget,
         )

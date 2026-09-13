@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from hashlib import sha256
+from uuid import NAMESPACE_URL, uuid5
 
 from ..domain.refs import DomainContractError, EntityRef, canonical_json
 
@@ -105,11 +106,14 @@ class FrozenCandidate:
 
     @property
     def bundle_ref(self) -> EntityRef:
+        # A content-derived id: two different bundles can never share
+        # (kind, id, version) with divergent hashes.
+        digest = sha256(canonical_json(self.as_dict())).hexdigest()
         return EntityRef(
             "environment",
-            self.candidate.id,
-            self.candidate.version,
-            sha256(canonical_json(self.as_dict())).hexdigest(),
+            str(uuid5(NAMESPACE_URL, f"deeptwin:candidate-bundle:{digest}")),
+            1,
+            digest,
         )
 
 
@@ -137,6 +141,11 @@ class DatasetLedger:
     lineage_id: str
     # entries: (dataset_id, classification, manifest, seen)
     entries: tuple[tuple[str, str, EntityRef, bool], ...]
+    # Monotone per-value revision. The ledger is an immutable value, so this
+    # module cannot stop a caller replaying an old ledger object; the storage
+    # layer must CAS on the revision, and every report names the revision it
+    # consumed so replays are detectably conflicting.
+    revision: int
     _issuer_token: object = field(repr=False, compare=False)
 
 
@@ -152,7 +161,7 @@ def open_dataset_ledger(lineage_id) -> DatasetLedger:
     if type(lineage_id) is not str or _UUID.fullmatch(lineage_id) is None:
         raise GrowthValidationError("lineage id is not a canonical UUID")
     return _issue(
-        DatasetLedger, lineage_id=lineage_id, entries=(),
+        DatasetLedger, lineage_id=lineage_id, entries=(), revision=1,
         _issuer_token=_ISSUE_TOKEN,
     )
 
@@ -179,12 +188,19 @@ def register_dataset(ledger, value) -> DatasetLedger:
     if classification not in CLASSIFICATIONS:
         raise GrowthValidationError("unknown dataset classification")
     manifest = _ref(value["manifest"], "run_manifest", "dataset manifest")
+    if any(manifest == entry[2] for entry in ledger.entries):
+        # The same laundering under a fresh name: identical underlying data
+        # (the exact manifest) never re-enters the ledger at all.
+        raise GrowthValidationError(
+            "this dataset manifest is already registered"
+        )
     if len(ledger.entries) >= 1_024:
         raise GrowthValidationError("dataset ledger is full")
     return _issue(
         DatasetLedger,
         lineage_id=ledger.lineage_id,
         entries=(*ledger.entries, (dataset_id, classification, manifest, False)),
+        revision=ledger.revision + 1,
         _issuer_token=_ISSUE_TOKEN,
     )
 
@@ -213,6 +229,7 @@ def expose_dataset(ledger, dataset_id, purpose) -> DatasetLedger:
         DatasetLedger,
         lineage_id=ledger.lineage_id,
         entries=tuple(entries),
+        revision=ledger.revision + 1,
         _issuer_token=_ISSUE_TOKEN,
     )
 
@@ -245,6 +262,9 @@ class ValidationReport:
     mode: str
     status: str
     datasets: tuple[str, ...]
+    # The ledger revision this run consumed: two reports naming the same
+    # revision are a detectable replay conflict, never two unseen passes.
+    ledger_revision: int
     gates: tuple[tuple[str, GateOutcome], ...]
     approved_scope: EntityRef | None
     _issuer_token: object = field(repr=False, compare=False)
@@ -256,6 +276,7 @@ class ValidationReport:
             "mode": self.mode,
             "status": self.status,
             "dataset_ids": list(self.datasets),
+            "ledger_revision": self.ledger_revision,
             "gates": {
                 name: {
                     "status": outcome.status,
@@ -325,7 +346,10 @@ def run_validation(candidate, ledger, value):
     if mode not in MODES:
         raise GrowthValidationError("unknown validation mode")
     datasets = value["datasets"]
-    if type(datasets) is not list or len(datasets) > 64:
+    if (
+        type(datasets) is not list or len(datasets) > 64
+        or any(type(item) is not str for item in datasets)
+    ):
         raise GrowthValidationError("dataset ids are out of bounds")
     if len(set(datasets)) != len(datasets):
         raise GrowthValidationError("duplicate dataset id in one run")
@@ -383,6 +407,7 @@ def run_validation(candidate, ledger, value):
         mode=mode,
         status=status,
         datasets=tuple(datasets),
+        ledger_revision=ledger.revision,
         gates=gates,
         approved_scope=approved_scope,
         _issuer_token=_ISSUE_TOKEN,

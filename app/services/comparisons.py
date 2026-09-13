@@ -17,6 +17,7 @@ import re
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
+from uuid import NAMESPACE_URL, uuid5
 
 from ..domain.refs import DomainContractError, EntityRef, canonical_json
 
@@ -113,11 +114,15 @@ class ComparisonPlan:
 
     @property
     def plan_ref(self) -> EntityRef:
+        # A content-derived id: two plans with different conditions can
+        # never share (kind, id, version) — changed conditions are a new
+        # lineage, never a same-name variant.
+        digest = sha256(canonical_json(self.as_dict())).hexdigest()
         return EntityRef(
             "comparison_plan",
-            self.lineage_id,
+            str(uuid5(NAMESPACE_URL, f"deeptwin:comparison-plan:{digest}")),
             1,
-            sha256(canonical_json(self.as_dict())).hexdigest(),
+            digest,
         )
 
 
@@ -152,6 +157,7 @@ class ComparisonResult:
     """One paired round bound to its exact frozen plan."""
 
     plan_ref: EntityRef
+    round_id: str
     round_index: int
     candidate: EntityRef
     baseline_runs: tuple[EntityRef, ...]
@@ -169,6 +175,7 @@ class ComparisonResult:
         return {
             "schema_version": COMPARISON_RESULT_SCHEMA_VERSION,
             "plan_ref": self.plan_ref.as_dict(),
+            "round_id": self.round_id,
             "round_index": self.round_index,
             "candidate_ref": self.candidate.as_dict(),
             "baseline_run_refs": [item.as_dict() for item in self.baseline_runs],
@@ -195,11 +202,17 @@ def record_comparison_round(plan, value) -> ComparisonResult:
     ):
         raise ComparisonError("a frozen comparison plan is required")
     if type(value) is not dict or set(value) != {
-        "round_index", "candidate", "baseline_runs", "candidate_runs",
-        "validity", "validity_reasons", "mandatory_checks", "metric_vector",
-        "utility", "evidence", "usage",
+        "round_id", "round_index", "candidate", "baseline_runs",
+        "candidate_runs", "validity", "validity_reasons", "mandatory_checks",
+        "metric_vector", "utility", "evidence", "usage",
     }:
         raise ComparisonError("expected the exact comparison round object")
+    round_id = value["round_id"]
+    if (
+        type(round_id) is not str
+        or not 1 <= len(round_id.encode("utf-8")) <= 128
+    ):
+        raise ComparisonError("round id is out of bounds")
     round_index = value["round_index"]
     if type(round_index) is not int or not 0 <= round_index <= 100_000:
         raise ComparisonError("round index is out of bounds")
@@ -208,6 +221,12 @@ def record_comparison_round(plan, value) -> ComparisonResult:
     if len(baseline_runs) != len(candidate_runs):
         raise ComparisonError(
             "paired execution requires equal baseline and candidate runs"
+        )
+    if set(baseline_runs) & set(candidate_runs):
+        # A run compared against itself is not a paired execution of the
+        # baseline and candidate environments.
+        raise ComparisonError(
+            "a run can never appear on both sides of one pairing"
         )
     validity = value["validity"]
     if validity not in VALIDITIES:
@@ -266,6 +285,7 @@ def record_comparison_round(plan, value) -> ComparisonResult:
     return _issue(
         ComparisonResult,
         plan_ref=plan.plan_ref,
+        round_id=round_id,
         round_index=round_index,
         candidate=_ref(value["candidate"], "change_candidate", "candidate"),
         baseline_runs=baseline_runs,

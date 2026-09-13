@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass, field
 
 from ..domain.refs import DomainContractError, EntityRef
-from ..services.inquiry import Inquiry
+from ..services.inquiry import is_issued_inquiry
 
 CHANGE_KINDS = frozenset({"restore", "learn", "protect"})
 _FORBIDDEN_REF_KINDS = frozenset({
@@ -140,7 +140,7 @@ def _patch_field(
             raise ChangeCompilerError(
                 "the unpromoted alternative store never enters a candidate"
             )
-        if (ref.kind, ref.id, ref.sha256) not in observed:
+        if (ref.kind, ref.id, ref.version, ref.sha256) not in observed:
             raise ChangeCompilerError(
                 f"the {label} provenance must be the inquiry's fresh evidence"
             )
@@ -156,7 +156,9 @@ def compile_change_candidate(
 ) -> ChangeCandidate:
     """Compile one typed change candidate from a supported inquiry."""
 
-    if type(inquiry) is not Inquiry:
+    if not is_issued_inquiry(inquiry):
+        # A look-alike Inquiry that never went through open/observe/conclude
+        # carries none of the freeze-ordering or evidence discipline.
         raise ChangeCompilerError("a concluded inquiry is required")
     if inquiry.outcome != "supported":
         raise ChangeCompilerError(
@@ -180,23 +182,33 @@ def compile_change_candidate(
         for item in forbidden_spans
     )
     observed = {
-        (ref.kind, ref.id, ref.sha256)
+        (ref.kind, ref.id, ref.version, ref.sha256)
         for _stamp, ref in inquiry.new_evidence
     }
     clauses = {
         label: _patch_field(value[label], label, observed, forbidden)
         for label in _PATCH_FIELDS
     }
+    scopes = {}
+    for label in ("change_scope", "predicted_impact_scope"):
+        text = _text(value[label], label.replace("_", " "), 2_048)
+        flattened = _normalized(text)
+        for span in forbidden:
+            if span and span in flattened:
+                # Scope prose is downstream-visible text too; the forbidden
+                # absorption shortcut is blocked in every free-text field.
+                raise ChangeCompilerError(
+                    f"the {label} text copies forbidden source material"
+                )
+        scopes[label] = text
     return _issue(
         ChangeCandidate,
         kind=kind,
         condition=clauses["condition"],
         action=clauses["action"],
         exception=clauses["exception"],
-        change_scope=_text(value["change_scope"], "change scope", 2_048),
-        predicted_impact_scope=_text(
-            value["predicted_impact_scope"], "predicted impact scope", 2_048,
-        ),
+        change_scope=scopes["change_scope"],
+        predicted_impact_scope=scopes["predicted_impact_scope"],
         parent_environment=_ref(
             value["parent_environment"], "environment", "parent environment",
         ),

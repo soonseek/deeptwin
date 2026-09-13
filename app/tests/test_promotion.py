@@ -181,9 +181,9 @@ def test_rollback_restores_the_bundle_and_never_claims_effect_reversal():
     rolled = rollback_environment(state, "회귀 발견")
     assert rolled.current_environment == EntityRef.from_dict(CURRENT_ENV)
     assert rolled.external_effects_reverted is False  # never claimed
-    versions = [entry[0] for entry in rolled.history]
-    assert EntityRef.from_dict(CURRENT_ENV) in versions
-    assert candidate.bundle_ref in versions  # both versions preserved
+    # both versions preserved: the restored one is current again, the
+    # rolled-back bundle stays in history and can never silently return.
+    assert (candidate.bundle_ref, "rolled_back") in rolled.history
     with pytest.raises(PromotionError):
         rollback_environment(open_promotion_state(CURRENT_ENV), "없음")
     with pytest.raises(PromotionError):

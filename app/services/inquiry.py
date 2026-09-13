@@ -220,11 +220,17 @@ def open_inquiry(
 
 
 def _require_issued(inquiry) -> None:
-    if (
-        type(inquiry) is not Inquiry
-        or getattr(inquiry, "_issuer_token", None) is not _ISSUE_TOKEN
-    ):
+    if not is_issued_inquiry(inquiry):
         raise InquiryError("an opened inquiry is required")
+
+
+def is_issued_inquiry(value: object) -> bool:
+    """True only for an inquiry issued through this module's functions."""
+
+    return (
+        type(value) is Inquiry
+        and getattr(value, "_issuer_token", None) is _ISSUE_TOKEN
+    )
 
 
 def _reissue(inquiry: Inquiry, **changes) -> Inquiry:
@@ -299,6 +305,7 @@ __all__ = [
     "InquiryError",
     "OpposingPrediction",
     "conclude_inquiry",
+    "is_issued_inquiry",
     "observe_evidence",
     "open_inquiry",
 ]
