@@ -282,3 +282,47 @@ Still not claimed: no UDS-backed gateway client/service wiring, no
 lost-response/race persistence cases, no T087 provider-transport manifest, and
 the T090 route/wiring additions since the audit (routes, delete, status) have
 not been independently audited.
+
+## Gateway service and control-plane client over broker frames (2026-09-13)
+
+`app/workers/credential_gateway_service.py` closes the channel between the two
+sides. `CredentialGatewayService.serve_one` answers exactly one `credential_op`
+frame per authenticated codec with a `credential_result` frame: the closed
+operation set is store, delete (retire of an active record followed by verified
+erase), snapshot (redacted, excluding erased records), health and capabilities —
+`resolve_for_gateway` is deliberately not a channel operation; resolution stays
+inside the gateway for the provider transport alone. Vault rejections become one
+sanitized rejection code. `CredentialGatewayClient` (control plane) never
+imports the vault: it speaks frames through an injected transport factory,
+binds each response to its request's message id, and surfaces failures as
+sanitized `GatewayServiceError`s.
+
+Tests: `app/tests/test_credential_gateway_service.py` (5) over real socketpairs
+with full broker handshakes and live codecs on a dedicated
+`control-to-credential-gateway` channel — store round trip with a redacted
+receipt and gateway-side resolution; a wire log proving no outbound service
+payload ever carries secret bytes; delete performing retire+verified-erase;
+redacted read-only snapshot; and sanitized conflict/forbidden-operation/unknown-
+operation rejections with no secret in any error.
+
+```text
+python -m pytest -q app/tests/test_credential_gateway_service.py
+5 passed
+ruff check app/workers/credential_gateway_service.py app/tests/test_credential_gateway_service.py
+All checks passed
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-13)
+3,086 passed, 2 skipped, 369 subtests passed, 1 known warning
+```
+
+Frozen identities (SHA-256):
+
+```text
+5925a3224555c3ff131b0885a32e1696050b54428835bb81e2ff3acc1dff4d55  app/workers/credential_gateway_service.py
+67a51d879fd94d9f8352b9b6b24cda17fab7297c7775d37ca7bdadc19e30c472  app/tests/test_credential_gateway_service.py
+```
+
+Still not claimed: production wiring of the client's transport factory to a real
+UDS endpoint (connect_verified/client_handshake with SO_PEERCRED needs the Linux
+canary, blocked on the host's Docker fault), attachment of the client to the
+HTTP routes' state seams, the T087 provider-transport manifest, and an
+independent audit of the post-audit T090 additions (routes + channel).
