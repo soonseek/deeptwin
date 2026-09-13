@@ -148,12 +148,34 @@ class DatasetLedger:
     revision: int
     _issuer_token: object = field(repr=False, compare=False)
 
+    def as_dict(self) -> dict:
+        return {
+            "schema_version": "dataset-ledger-v1",
+            "lineage_id": self.lineage_id,
+            "revision": self.revision,
+            "entries": [
+                {
+                    "dataset_id": dataset_id,
+                    "classification": classification,
+                    "manifest": manifest.as_dict(),
+                    "seen": seen,
+                }
+                for dataset_id, classification, manifest, seen in self.entries
+            ],
+        }
+
+
+def is_issued_ledger(value: object) -> bool:
+    """True only for a ledger issued through this module's functions."""
+
+    return (
+        type(value) is DatasetLedger
+        and getattr(value, "_issuer_token", None) is _ISSUE_TOKEN
+    )
+
 
 def _require_ledger(value) -> None:
-    if (
-        type(value) is not DatasetLedger
-        or getattr(value, "_issuer_token", None) is not _ISSUE_TOKEN
-    ):
+    if not is_issued_ledger(value):
         raise GrowthValidationError("a framework-issued dataset ledger is required")
 
 
@@ -230,6 +252,63 @@ def expose_dataset(ledger, dataset_id, purpose) -> DatasetLedger:
         lineage_id=ledger.lineage_id,
         entries=tuple(entries),
         revision=ledger.revision + 1,
+        _issuer_token=_ISSUE_TOKEN,
+    )
+
+
+def restore_dataset_ledger(value) -> DatasetLedger:
+    """Rebuild one persisted ledger; trust is the store's hash chain, so the
+    payload itself is revalidated strictly and inconsistencies are refused."""
+
+    if type(value) is not dict or set(value) != {
+        "schema_version", "lineage_id", "revision", "entries",
+    }:
+        raise GrowthValidationError("expected the exact persisted ledger")
+    if value["schema_version"] != "dataset-ledger-v1":
+        raise GrowthValidationError("unknown ledger schema version")
+    lineage_id = value["lineage_id"]
+    if type(lineage_id) is not str or _UUID.fullmatch(lineage_id) is None:
+        raise GrowthValidationError("lineage id is not a canonical UUID")
+    entries_value = value["entries"]
+    if type(entries_value) is not list or len(entries_value) > 1_024:
+        raise GrowthValidationError("ledger entries are out of bounds")
+    revision = value["revision"]
+    if (
+        type(revision) is not int
+        or not len(entries_value) + 1 <= revision <= 1_000_000
+    ):
+        raise GrowthValidationError("ledger revision is inconsistent")
+    entries = []
+    for item in entries_value:
+        if type(item) is not dict or set(item) != {
+            "dataset_id", "classification", "manifest", "seen",
+        }:
+            raise GrowthValidationError("a ledger entry is malformed")
+        dataset_id = item["dataset_id"]
+        if (
+            type(dataset_id) is not str
+            or not 1 <= len(dataset_id.encode("utf-8")) <= 128
+        ):
+            raise GrowthValidationError("a ledger dataset id is out of bounds")
+        if item["classification"] not in CLASSIFICATIONS:
+            raise GrowthValidationError("a ledger classification is unknown")
+        if type(item["seen"]) is not bool:
+            raise GrowthValidationError("a ledger seen flag must be explicit")
+        entries.append((
+            dataset_id,
+            item["classification"],
+            _ref(item["manifest"], "run_manifest", "ledger manifest"),
+            item["seen"],
+        ))
+    if len({entry[0] for entry in entries}) != len(entries):
+        raise GrowthValidationError("duplicate dataset id in a ledger")
+    if len({entry[2] for entry in entries}) != len(entries):
+        raise GrowthValidationError("duplicate manifest in a ledger")
+    return _issue(
+        DatasetLedger,
+        lineage_id=lineage_id,
+        entries=tuple(entries),
+        revision=revision,
         _issuer_token=_ISSUE_TOKEN,
     )
 
@@ -447,9 +526,11 @@ __all__ = [
     "expose_dataset",
     "freeze_candidate",
     "is_frozen_candidate",
+    "is_issued_ledger",
     "is_validation_report",
     "open_dataset_ledger",
     "register_dataset",
+    "restore_dataset_ledger",
     "run_validation",
     "unseen_dataset_ids",
 ]

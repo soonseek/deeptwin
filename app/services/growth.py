@@ -154,11 +154,17 @@ class GrowthLoop:
         }
 
 
+def is_issued_loop(value: object) -> bool:
+    """True only for a state issued through this module's functions."""
+
+    return (
+        type(value) is GrowthLoop
+        and getattr(value, "_issuer_token", None) is _ISSUE_TOKEN
+    )
+
+
 def _require_loop(state) -> None:
-    if (
-        type(state) is not GrowthLoop
-        or getattr(state, "_issuer_token", None) is not _ISSUE_TOKEN
-    ):
+    if not is_issued_loop(state):
         raise GrowthLoopError("a framework-issued growth loop state is required")
 
 
@@ -325,6 +331,101 @@ def apply_round(state, value) -> GrowthLoop:
     )
 
 
+def _scored(value, completed, label):
+    if value is None:
+        return None
+    if type(value) is not dict or set(value) != {"round_id", "utility"}:
+        raise GrowthLoopError(f"{label} is malformed")
+    round_id = value["round_id"]
+    if round_id not in completed:
+        raise GrowthLoopError(f"{label} names an unknown round")
+    return (round_id, _exact_decimal(value["utility"], f"{label} utility"))
+
+
+def restore_growth_loop(profile, value) -> GrowthLoop:
+    """Rebuild one persisted state; trust is the store's hash chain, so the
+    payload itself is revalidated strictly and inconsistencies are refused."""
+
+    if (
+        type(profile) is not QualityProfile
+        or getattr(profile, "_issuer_token", None) is not _ISSUE_TOKEN
+    ):
+        raise GrowthLoopError("a frozen quality profile is required")
+    if type(value) is not dict or set(value) != {
+        "schema_version", "lineage_id", "profile_id", "profile_version",
+        "revision", "status", "floor_reached", "best_observed",
+        "progress_reference", "non_improving_valid_count",
+        "completed_round_ids", "consumed_budget", "stop_reason",
+    }:
+        raise GrowthLoopError("expected the exact persisted loop state")
+    if value["schema_version"] != "growth-loop-v1":
+        raise GrowthLoopError("unknown loop state schema version")
+    if (
+        value["profile_id"] != profile.profile_id
+        or value["profile_version"] != profile.version
+    ):
+        raise GrowthLoopError("the state does not belong to this profile")
+    lineage_id = value["lineage_id"]
+    if type(lineage_id) is not str or _UUID.fullmatch(lineage_id) is None:
+        raise GrowthLoopError("lineage id is not a canonical UUID")
+    revision = value["revision"]
+    if type(revision) is not int or not 1 <= revision <= 1_000_000:
+        raise GrowthLoopError("revision is out of bounds")
+    status = value["status"]
+    if status != "running" and status not in STOP_REASONS:
+        raise GrowthLoopError("unknown loop status")
+    stop_reason = value["stop_reason"]
+    if stop_reason != (None if status == "running" else status):
+        raise GrowthLoopError("stop reason does not match the status")
+    completed_value = value["completed_round_ids"]
+    if (
+        type(completed_value) is not list
+        or len(completed_value) > revision - 1
+        or any(
+            type(item) is not str
+            or not 1 <= len(item.encode("utf-8")) <= 128
+            for item in completed_value
+        )
+        or len(set(completed_value)) != len(completed_value)
+    ):
+        raise GrowthLoopError("completed round ids are inconsistent")
+    completed = tuple(completed_value)
+    floor_reached = value["floor_reached"]
+    if type(floor_reached) is not bool:
+        raise GrowthLoopError("floor flag must be explicit")
+    counter = value["non_improving_valid_count"]
+    if type(counter) is not int or not 0 <= counter <= profile.patience:
+        raise GrowthLoopError("the non-improvement counter is out of bounds")
+    reference = _scored(
+        value["progress_reference"], completed, "progress reference",
+    )
+    if floor_reached != (reference is not None):
+        raise GrowthLoopError("floor state and reference are inconsistent")
+    if not floor_reached and counter != 0:
+        raise GrowthLoopError("a below-floor state never counts")
+    if status == "plateau_reached" and (
+        not floor_reached or counter < profile.patience
+    ):
+        raise GrowthLoopError("a plateau state is inconsistent")
+    budget_value = value["consumed_budget"]
+    budget = _accrue((), budget_value)
+    return _issue(
+        GrowthLoop,
+        lineage_id=lineage_id,
+        profile=profile,
+        revision=revision,
+        status=status,
+        floor_reached=floor_reached,
+        best_observed=_scored(value["best_observed"], completed, "best"),
+        progress_reference=reference,
+        non_improving_valid_count=counter,
+        completed_round_ids=completed,
+        consumed_budget=budget,
+        stop_reason=stop_reason,
+        _issuer_token=_ISSUE_TOKEN,
+    )
+
+
 def stop_growth_loop(state, reason) -> GrowthLoop:
     """End one loop for an external reason; plateau is never claimable by fiat."""
 
@@ -351,6 +452,8 @@ __all__ = [
     "QualityProfile",
     "apply_round",
     "freeze_quality_profile",
+    "is_issued_loop",
+    "restore_growth_loop",
     "start_growth_loop",
     "stop_growth_loop",
 ]
