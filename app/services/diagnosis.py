@@ -15,11 +15,11 @@ exact entity references.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from hashlib import sha256
 
 from ..domain.refs import DomainContractError, EntityRef, canonical_json
-from .alternatives import OwnAlternative
+from .alternatives import is_accepted_alternative
 
 DIFFERENCE_SCHEMA_VERSION = "difference-v1"
 OBSERVATION_KINDS = frozenset({
@@ -33,6 +33,14 @@ HYPOTHESIS_FAMILIES = frozenset({
 RESOLVED_STATUSES = frozenset({"supported", "confirmed", "refuted", "unresolved"})
 _EVIDENCE_KINDS = frozenset({"comparison_result", "artifact", "handoff"})
 _OBSERVATION_ID = re.compile(r"[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*\Z")
+_ISSUE_TOKEN = object()
+
+
+def _issue(kind, **fields):
+    value = object.__new__(kind)
+    for name, item in fields.items():
+        object.__setattr__(value, name, item)
+    return value
 
 
 class DiagnosisError(ValueError):
@@ -57,10 +65,13 @@ def _text_list(value, label, *, maximum, minimum=0):
     return tuple(_text(item, label, 1_024) for item in value)
 
 
-def _evidence_refs(value, label, *, minimum):
+def _evidence_refs(value, label, *, minimum, excluded=()):
     if type(value) is not list or not minimum <= len(value) <= 64:
         raise DiagnosisError(f"expected a bounded {label} list")
+    excluded_hashes = {item.sha256 for item in excluded}
+    excluded_ids = {(item.kind, item.id) for item in excluded}
     refs = []
+    seen = set()
     for item in value:
         try:
             ref = EntityRef.from_dict(item)
@@ -72,6 +83,16 @@ def _evidence_refs(value, label, *, minimum):
             raise DiagnosisError(
                 f"a {label} reference must be comparison or behavior evidence"
             )
+        if ref.sha256 in excluded_hashes or (ref.kind, ref.id) in excluded_ids:
+            # The compared artifacts cannot serve as their own evidence, and a
+            # renamed version of the same content stays excluded.
+            raise DiagnosisError(
+                f"a {label} reference recycles the compared material"
+            )
+        key = (ref.kind, ref.id, ref.version, ref.sha256)
+        if key in seen:
+            raise DiagnosisError(f"duplicate {label} reference")
+        seen.add(key)
         refs.append(ref)
     return tuple(refs)
 
@@ -98,12 +119,16 @@ class Observation:
         if kind not in OBSERVATION_KINDS:
             raise DiagnosisError("unknown observation kind")
         locator = value["locator"]
-        if (
-            type(locator) is not dict
-            or not 1 <= len(locator) <= 16
-            or any(type(name) is not str for name in locator)
-            or len(canonical_json(locator)) > 4_096
-        ):
+        try:
+            bounded = (
+                type(locator) is dict
+                and 1 <= len(locator) <= 16
+                and all(type(name) is str for name in locator)
+                and len(canonical_json(locator)) <= 4_096
+            )
+        except DomainContractError as exc:
+            raise DiagnosisError("observation locator is out of bounds") from exc
+        if not bounded:
             raise DiagnosisError("observation locator is out of bounds")
         return cls(
             identifier,
@@ -121,9 +146,9 @@ class Observation:
         }
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class Difference:
-    """Observed differences plus stated scopes; interpretation lives elsewhere."""
+    """Observed differences plus stated scopes; issued only by record_difference."""
 
     original_artifact: EntityRef
     alternative_artifact: EntityRef
@@ -132,6 +157,8 @@ class Difference:
     evidence_scope: tuple[str, ...]
     unreviewed_scope: str
     uncertainties: tuple[str, ...]
+    excluded_evidence: tuple[EntityRef, ...] = field(repr=False)
+    _issuer_token: object = field(repr=False, compare=False)
 
     def as_dict(self) -> dict:
         return {
@@ -158,11 +185,15 @@ class Difference:
 def record_difference(alternative, observations, *, uncertainties) -> Difference:
     """Record observable differences for one accepted alternative."""
 
-    if type(alternative) is not OwnAlternative:
-        raise DiagnosisError("an accepted own alternative is required")
+    if not is_accepted_alternative(alternative):
+        # A forged instance or a synthetic wrapper's inner never enters the
+        # loop as real user material.
+        raise DiagnosisError("an accepted real own alternative is required")
     if type(observations) is not list or not 1 <= len(observations) <= 256:
         raise DiagnosisError("observations are out of bounds")
-    return Difference(
+    boundary = alternative.original
+    return _issue(
+        Difference,
         original_artifact=alternative.original_artifact,
         alternative_artifact=alternative.alternative_artifact,
         alignment=tuple(item.as_dict() for item in alternative.selectors),
@@ -172,12 +203,28 @@ def record_difference(alternative, observations, *, uncertainties) -> Difference
         evidence_scope=alternative.evidence_scope,
         unreviewed_scope=alternative.unreviewed_scope,
         uncertainties=_text_list(uncertainties, "uncertainty", maximum=64),
+        excluded_evidence=(
+            alternative.original_artifact,
+            alternative.alternative_artifact,
+            *boundary.input_refs,
+            *boundary.output_refs,
+        ),
+        _issuer_token=_ISSUE_TOKEN,
     )
 
 
-@dataclass(frozen=True, slots=True)
+def is_recorded_difference(value: object) -> bool:
+    """True only for a Difference issued by record_difference."""
+
+    return (
+        type(value) is Difference
+        and getattr(value, "_issuer_token", None) is _ISSUE_TOKEN
+    )
+
+
+@dataclass(frozen=True, slots=True, init=False)
 class Hypothesis:
-    """One competing interpretation; transitions happen only through the set."""
+    """One competing interpretation; issued and evolved only through the set."""
 
     hypothesis_id: str
     family: str
@@ -188,16 +235,21 @@ class Hypothesis:
     support: tuple[EntityRef, ...]
     counterevidence: tuple[EntityRef, ...]
     confirmation_basis: tuple[EntityRef, ...]
+    _issuer_token: object = field(repr=False, compare=False)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class HypothesisSet:
     """The competing hypotheses of one difference; immutable evolution only."""
 
     difference_ref: EntityRef
     hypotheses: tuple[Hypothesis, ...]
+    excluded_evidence: tuple[EntityRef, ...] = field(repr=False)
+    _issuer_token: object = field(repr=False, compare=False)
 
     def resolve(self, hypothesis_id, status, *, basis_refs) -> HypothesisSet:
+        if getattr(self, "_issuer_token", None) is not _ISSUE_TOKEN:
+            raise DiagnosisError("a framework-issued hypothesis set is required")
         if status not in RESOLVED_STATUSES:
             raise DiagnosisError("unknown hypothesis resolution status")
         target = None
@@ -210,6 +262,8 @@ class HypothesisSet:
             raise DiagnosisError(
                 "a resolved hypothesis cannot transition again"
             )
+        excluded = self.excluded_evidence
+        changes: dict[str, object]
         if status == "confirmed":
             if any(
                 item.status == "proposed"
@@ -221,32 +275,56 @@ class HypothesisSet:
                 raise DiagnosisError(
                     "competing hypotheses must be examined before confirmation"
                 )
-            basis = _evidence_refs(basis_refs, "confirmation basis", minimum=1)
-            updated = replace(
-                target, status=status, confirmation_basis=basis, support=basis,
+            basis = _evidence_refs(
+                basis_refs, "confirmation basis", minimum=1, excluded=excluded,
             )
+            changes = {"confirmation_basis": basis, "support": basis}
         elif status == "refuted":
-            basis = _evidence_refs(basis_refs, "counterevidence", minimum=1)
-            updated = replace(target, status=status, counterevidence=basis)
+            basis = _evidence_refs(
+                basis_refs, "counterevidence", minimum=1, excluded=excluded,
+            )
+            changes = {"counterevidence": basis}
         elif status == "supported":
-            basis = _evidence_refs(basis_refs, "support", minimum=1)
-            updated = replace(target, status=status, support=basis)
+            basis = _evidence_refs(
+                basis_refs, "support", minimum=1, excluded=excluded,
+            )
+            changes = {"support": basis}
         else:
-            _evidence_refs(basis_refs, "evidence", minimum=0)
-            updated = replace(target, status=status)
-        return HypothesisSet(
+            _evidence_refs(basis_refs, "evidence", minimum=0, excluded=excluded)
+            changes = {}
+        updated = _issue(
+            Hypothesis,
+            hypothesis_id=target.hypothesis_id,
+            family=target.family,
+            claim=target.claim,
+            conditions=target.conditions,
+            predictions=target.predictions,
+            status=status,
+            support=changes.get("support", target.support),
+            counterevidence=changes.get(
+                "counterevidence", target.counterevidence
+            ),
+            confirmation_basis=changes.get(
+                "confirmation_basis", target.confirmation_basis
+            ),
+            _issuer_token=_ISSUE_TOKEN,
+        )
+        return _issue(
+            HypothesisSet,
             difference_ref=self.difference_ref,
             hypotheses=tuple(
                 updated if item.hypothesis_id == hypothesis_id else item
                 for item in self.hypotheses
             ),
+            excluded_evidence=excluded,
+            _issuer_token=_ISSUE_TOKEN,
         )
 
 
 def propose_hypotheses(difference, values) -> HypothesisSet:
     """Open one competing hypothesis set over a recorded difference."""
 
-    if type(difference) is not Difference:
+    if not is_recorded_difference(difference):
         raise DiagnosisError("a recorded difference is required")
     if type(values) is not list or not 1 <= len(values) <= 16:
         raise DiagnosisError("hypothesis proposals are out of bounds")
@@ -256,7 +334,8 @@ def propose_hypotheses(difference, values) -> HypothesisSet:
         family = value["family"]
         if family not in HYPOTHESIS_FAMILIES:
             raise DiagnosisError("unknown hypothesis family")
-        hypotheses.append(Hypothesis(
+        hypotheses.append(_issue(
+            Hypothesis,
             hypothesis_id=f"{family}-{index}",
             family=family,
             claim=_text(value["claim"], "hypothesis claim", 4_096),
@@ -270,16 +349,22 @@ def propose_hypotheses(difference, values) -> HypothesisSet:
             support=(),
             counterevidence=(),
             confirmation_basis=(),
+            _issuer_token=_ISSUE_TOKEN,
         ))
     families = {item.family for item in hypotheses}
-    if families != {"no_generalization"} and len(families) < 2:
-        # A lone causal family is a single-cause claim before any evidence.
+    causal = families - {"no_generalization"}
+    if len(causal) == 1:
+        # A lone causal family is a single-cause claim before any evidence,
+        # even when the null conclusion accompanies it.
         raise DiagnosisError(
             "hypotheses must compete across families or state no generalization"
         )
-    return HypothesisSet(
+    return _issue(
+        HypothesisSet,
         difference_ref=difference.difference_ref,
         hypotheses=tuple(hypotheses),
+        excluded_evidence=difference.excluded_evidence,
+        _issuer_token=_ISSUE_TOKEN,
     )
 
 
@@ -293,6 +378,19 @@ __all__ = [
     "Hypothesis",
     "HypothesisSet",
     "Observation",
+    "is_recorded_difference",
     "propose_hypotheses",
     "record_difference",
 ]
+
+
+def is_issued_hypothesis_set(value: object) -> bool:
+    """True only for a HypothesisSet issued by this module."""
+
+    return (
+        type(value) is HypothesisSet
+        and getattr(value, "_issuer_token", None) is _ISSUE_TOKEN
+    )
+
+
+__all__.append("is_issued_hypothesis_set")

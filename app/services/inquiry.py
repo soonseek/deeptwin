@@ -12,10 +12,13 @@ inquiry is final.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 from ..domain.refs import DomainContractError, EntityRef
-from ..services.diagnosis import Difference, HypothesisSet
+from ..services.diagnosis import (
+    is_issued_hypothesis_set,
+    is_recorded_difference,
+)
 from ..services.lenses import LensDecision, LensRegistry
 
 INQUIRY_SCHEMA_VERSION = "inquiry-v1"
@@ -25,6 +28,14 @@ _EVIDENCE_KINDS = frozenset({"artifact", "comparison_result", "handoff", "source
 _STAMP = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z\Z"
 )
+_ISSUE_TOKEN = object()
+
+
+def _issue(kind, **fields):
+    value = object.__new__(kind)
+    for name, item in fields.items():
+        object.__setattr__(value, name, item)
+    return value
 
 
 class InquiryError(ValueError):
@@ -40,19 +51,28 @@ def _text(value, label, maximum):
 def _stamp(value, label):
     if type(value) is not str or _STAMP.fullmatch(value) is None:
         raise InquiryError(f"invalid {label} stamp")
+    from datetime import datetime
+
+    try:
+        # Naive-parse only: the exact string is stored verbatim; this call
+        # validates calendar reality, never produces a datetime value.
+        datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ")  # noqa: DTZ007
+    except ValueError as exc:
+        raise InquiryError(f"{label} stamp is not a real datetime") from exc
     return value
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class OpposingPrediction:
     """One frozen contrasting prediction pair for one question."""
 
     question_index: int
     if_supported: str
     if_refuted: str
+    _issuer_token: object = field(repr=False, compare=False)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class Inquiry:
     """One frozen investigation; evolution only through the module functions."""
 
@@ -63,8 +83,9 @@ class Inquiry:
     opposing_predictions: tuple[OpposingPrediction, ...]
     frozen_at: str
     excluded_refs: tuple[EntityRef, ...] = field(repr=False)
-    new_evidence: tuple[tuple[str, EntityRef], ...] = ()
-    outcome: str | None = None
+    new_evidence: tuple[tuple[str, EntityRef], ...]
+    outcome: str | None
+    _issuer_token: object = field(repr=False, compare=False)
 
     def as_dict(self) -> dict:
         return {
@@ -102,10 +123,10 @@ def open_inquiry(
 ) -> Inquiry:
     """Freeze one investigation over a difference's confirmed expert judgment."""
 
-    if type(difference) is not Difference:
+    if not is_recorded_difference(difference):
         raise InquiryError("a recorded difference is required")
     if (
-        type(hypothesis_set) is not HypothesisSet
+        not is_issued_hypothesis_set(hypothesis_set)
         or hypothesis_set.difference_ref != difference.difference_ref
     ):
         raise InquiryError("the hypothesis set must belong to this difference")
@@ -122,15 +143,31 @@ def open_inquiry(
         raise InquiryError("the qualified lens registry is required")
     if type(lens_decisions) is not list or not 1 <= len(lens_decisions) <= 16:
         raise InquiryError("lens decisions are out of bounds")
+    expected_scope = "partial" if difference.alignment else "whole"
+    bound_hashes = {
+        difference.original_artifact.sha256,
+        difference.alternative_artifact.sha256,
+        difference.difference_ref.sha256,
+    }
     for decision in lens_decisions:
         if (
             type(decision) is not LensDecision
             or not registry.vouches_for(decision)
             or decision.path != _SPLI_PATH
             or decision.qualification_status != "qualified"
+            or decision.state != "proposed"
         ):
             raise InquiryError(
                 "every lens decision must be a registry-vouched qualified SPLI use"
+            )
+        if (
+            decision.alternative_scope != expected_scope
+            or not bound_hashes <= set(decision.evidence_hashes)
+        ):
+            # The decision's route evidence must cite this exact original,
+            # alternative and observed difference, not unrelated records.
+            raise InquiryError(
+                "the lens route evidence does not bind this exact difference"
             )
     if type(questions) is not list or not 1 <= len(questions) <= 16:
         raise InquiryError("questions are out of bounds")
@@ -155,25 +192,62 @@ def open_inquiry(
         refuted = _text(item["if_refuted"], "refuted prediction", 2_048)
         if supported == refuted:
             raise InquiryError("predictions must actually oppose each other")
-        predictions.append(OpposingPrediction(index, supported, refuted))
-    return Inquiry(
+        predictions.append(_issue(
+            OpposingPrediction,
+            question_index=index,
+            if_supported=supported,
+            if_refuted=refuted,
+            _issuer_token=_ISSUE_TOKEN,
+        ))
+    pre_freeze = list(difference.excluded_evidence)
+    for item in hypothesis_set.hypotheses:
+        pre_freeze.extend(item.support)
+        pre_freeze.extend(item.counterevidence)
+        pre_freeze.extend(item.confirmation_basis)
+    return _issue(
+        Inquiry,
         difference_ref=difference.difference_ref,
         confirmed_h_exp=confirmed,
         lens_refs=tuple(sorted(str(item.lens_ref) for item in lens_decisions)),
         questions=frozen_questions,
         opposing_predictions=tuple(predictions),
         frozen_at=_stamp(frozen_at, "freeze"),
-        excluded_refs=(
-            difference.original_artifact, difference.alternative_artifact,
-        ),
+        excluded_refs=tuple(pre_freeze),
+        new_evidence=(),
+        outcome=None,
+        _issuer_token=_ISSUE_TOKEN,
     )
+
+
+def _require_issued(inquiry) -> None:
+    if (
+        type(inquiry) is not Inquiry
+        or getattr(inquiry, "_issuer_token", None) is not _ISSUE_TOKEN
+    ):
+        raise InquiryError("an opened inquiry is required")
+
+
+def _reissue(inquiry: Inquiry, **changes) -> Inquiry:
+    fields = {
+        "difference_ref": inquiry.difference_ref,
+        "confirmed_h_exp": inquiry.confirmed_h_exp,
+        "lens_refs": inquiry.lens_refs,
+        "questions": inquiry.questions,
+        "opposing_predictions": inquiry.opposing_predictions,
+        "frozen_at": inquiry.frozen_at,
+        "excluded_refs": inquiry.excluded_refs,
+        "new_evidence": inquiry.new_evidence,
+        "outcome": inquiry.outcome,
+        "_issuer_token": _ISSUE_TOKEN,
+    }
+    fields.update(changes)
+    return _issue(Inquiry, **fields)
 
 
 def observe_evidence(inquiry, evidence_refs, *, observed_at) -> Inquiry:
     """Append fresh evidence observed strictly after the freeze."""
 
-    if type(inquiry) is not Inquiry:
-        raise InquiryError("an opened inquiry is required")
+    _require_issued(inquiry)
     if inquiry.outcome is not None:
         raise InquiryError("a concluded inquiry is final")
     stamp = _stamp(observed_at, "observation")
@@ -183,6 +257,8 @@ def observe_evidence(inquiry, evidence_refs, *, observed_at) -> Inquiry:
         )
     if type(evidence_refs) is not list or not 1 <= len(evidence_refs) <= 64:
         raise InquiryError("evidence references are out of bounds")
+    excluded_hashes = {item.sha256 for item in inquiry.excluded_refs}
+    excluded_ids = {(item.kind, item.id) for item in inquiry.excluded_refs}
     observed = []
     for item in evidence_refs:
         try:
@@ -191,21 +267,20 @@ def observe_evidence(inquiry, evidence_refs, *, observed_at) -> Inquiry:
             raise InquiryError("invalid evidence reference") from exc
         if ref.kind not in _EVIDENCE_KINDS:
             raise InquiryError("evidence must be an observable record kind")
-        if ref in inquiry.excluded_refs:
+        if ref.sha256 in excluded_hashes or (ref.kind, ref.id) in excluded_ids:
+            # Neither the compared material nor any pre-freeze record — nor a
+            # version-bumped rename of the same content — is fresh evidence.
             raise InquiryError(
-                "the existing alternative or original is not new evidence"
+                "pre-freeze material cannot be renamed into new evidence"
             )
         observed.append((stamp, ref))
-    return replace(
-        inquiry, new_evidence=inquiry.new_evidence + tuple(observed),
-    )
+    return _reissue(inquiry, new_evidence=inquiry.new_evidence + tuple(observed))
 
 
 def conclude_inquiry(inquiry, outcome) -> Inquiry:
     """Settle one outcome; supported/refuted require actual fresh evidence."""
 
-    if type(inquiry) is not Inquiry:
-        raise InquiryError("an opened inquiry is required")
+    _require_issued(inquiry)
     if inquiry.outcome is not None:
         raise InquiryError("a concluded inquiry is final")
     if outcome not in OUTCOMES:
@@ -214,7 +289,7 @@ def conclude_inquiry(inquiry, outcome) -> Inquiry:
         raise InquiryError(
             "supported or refuted outcomes require fresh observed evidence"
         )
-    return replace(inquiry, outcome=outcome)
+    return _reissue(inquiry, outcome=outcome)
 
 
 __all__ = [

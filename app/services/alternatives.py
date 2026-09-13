@@ -41,6 +41,7 @@ _STAMP = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z\Z"
 )
 _IDENTIFIER = re.compile(r"[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*\Z")
+_ISSUE_TOKEN = object()
 
 
 class AlternativeContractError(ValueError):
@@ -88,6 +89,27 @@ def _text(value, label, maximum):
     return value
 
 
+def _issue(kind, **fields):
+    value = object.__new__(kind)
+    for name, item in fields.items():
+        object.__setattr__(value, name, item)
+    return value
+
+
+def _datetime_stamp(value, label):
+    if type(value) is not str or _STAMP.fullmatch(value) is None:
+        raise AlternativeContractError(f"{label} stamp is invalid")
+    from datetime import datetime
+
+    try:
+        # Naive-parse only: the exact string is stored verbatim; this call
+        # validates calendar reality, never produces a datetime value.
+        datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ")  # noqa: DTZ007
+    except ValueError as exc:
+        raise AlternativeContractError(f"{label} stamp is not a real datetime") from exc
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class Selector:
     """One formal selection bound to the exact original artifact version."""
@@ -104,12 +126,18 @@ class Selector:
         if kind not in SELECTOR_KINDS:
             raise AlternativeContractError("unknown selector kind")
         locator = value["locator"]
-        if (
-            type(locator) is not dict
-            or not 1 <= len(locator) <= 16
-            or any(type(name) is not str for name in locator)
-            or len(canonical_json(locator)) > 4_096
-        ):
+        try:
+            bounded = (
+                type(locator) is dict
+                and 1 <= len(locator) <= 16
+                and all(type(name) is str for name in locator)
+                and len(canonical_json(locator)) <= 4_096
+            )
+        except DomainContractError as exc:
+            raise AlternativeContractError(
+                "selector locator is out of bounds"
+            ) from exc
+        if not bounded:
             raise AlternativeContractError("selector locator is out of bounds")
         source_hash = value["source_hash"]
         if type(source_hash) is not str or _SHA256.fullmatch(source_hash) is None:
@@ -178,9 +206,9 @@ class OriginalExecution:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class OwnAlternative:
-    """A frozen user-made alternative bound to one exact original artifact."""
+    """A frozen user-made alternative; issued only by accept_own_alternative."""
 
     author_id: str
     created_at: str
@@ -190,6 +218,8 @@ class OwnAlternative:
     coverage: str
     selectors: tuple[Selector, ...]
     optional_explanation: EntityRef | None
+    synthetic: bool
+    _issuer_token: object = field(repr=False, compare=False)
 
     @property
     def evidence_scope(self) -> tuple[str, ...]:
@@ -234,6 +264,7 @@ class OwnAlternative:
             "evidence_scope": list(self.evidence_scope),
             "unreviewed_scope": self.unreviewed_scope,
             "impact_scope": self.impact_scope,
+            "synthetic": self.synthetic,
         }
 
     @property
@@ -247,17 +278,30 @@ class OwnAlternative:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class SyntheticAlternative:
     """Derived or mock material: a separate type, never user learning evidence."""
 
     inner: OwnAlternative = field(repr=False)
-    is_user_learning_evidence: bool = False
+    _issuer_token: object = field(repr=False, compare=False)
+
+    @property
+    def is_user_learning_evidence(self) -> bool:
+        # A constant property, not a field: no construction or copy can flip it.
+        return False
 
     def as_dict(self) -> dict:
-        payload = self.inner.as_dict()
-        payload["synthetic"] = True
-        return payload
+        return self.inner.as_dict()
+
+
+def is_accepted_alternative(value: object) -> bool:
+    """True only for a real (non-synthetic) accepted own alternative."""
+
+    return (
+        type(value) is OwnAlternative
+        and getattr(value, "_issuer_token", None) is _ISSUE_TOKEN
+        and value.synthetic is False
+    )
 
 
 def accept_own_alternative(original, value):
@@ -281,9 +325,7 @@ def accept_own_alternative(original, value):
     author_id = value["author_id"]
     if type(author_id) is not str or _UUID.fullmatch(author_id) is None:
         raise AlternativeContractError("author id is not a canonical UUID")
-    created_at = value["created_at"]
-    if type(created_at) is not str or _STAMP.fullmatch(created_at) is None:
-        raise AlternativeContractError("creation stamp is invalid")
+    created_at = _datetime_stamp(value["created_at"], "creation")
 
     original_artifact = _ref(value["original_artifact"], "artifact", "original artifact")
     if original_artifact not in original.output_refs:
@@ -293,7 +335,11 @@ def accept_own_alternative(original, value):
     alternative_artifact = _ref(
         value["alternative_artifact"], "artifact", "alternative artifact",
     )
-    if alternative_artifact == original_artifact:
+    if (
+        alternative_artifact in original.output_refs
+        or alternative_artifact in original.input_refs
+    ):
+        # The boundary's own records are machine output, not a user alternative.
         raise AlternativeContractError(
             "an alternative must be a distinct user-made artifact"
         )
@@ -328,7 +374,8 @@ def accept_own_alternative(original, value):
     if type(synthetic) is not bool:
         raise AlternativeContractError("the synthetic flag must be explicit")
 
-    accepted = OwnAlternative(
+    accepted = _issue(
+        OwnAlternative,
         author_id=author_id,
         created_at=created_at,
         original=original,
@@ -337,9 +384,13 @@ def accept_own_alternative(original, value):
         coverage=coverage,
         selectors=selectors,
         optional_explanation=explanation,
+        synthetic=synthetic,
+        _issuer_token=_ISSUE_TOKEN,
     )
     if synthetic:
-        return SyntheticAlternative(inner=accepted)
+        return _issue(
+            SyntheticAlternative, inner=accepted, _issuer_token=_ISSUE_TOKEN,
+        )
     return accepted
 
 
@@ -355,4 +406,5 @@ __all__ = [
     "Selector",
     "SyntheticAlternative",
     "accept_own_alternative",
+    "is_accepted_alternative",
 ]
