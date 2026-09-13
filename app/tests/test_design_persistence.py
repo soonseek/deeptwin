@@ -169,7 +169,7 @@ def criticized(request, result):
     chains = [_chain(
         candidate, request, validity_status="valid", response_status="mitigate",
     )]
-    verdict = fold_candidate_criticism(candidate, review, chains)
+    verdict = fold_candidate_criticism(candidate, request, review, chains)
     return candidate, review, chains, verdict
 
 
@@ -183,6 +183,7 @@ def test_criticism_verdict_persists_with_candidate_lineage(vault):
         domain,
         persisted.candidate_record_refs[0],
         candidate,
+        request,
         verdict,
         review,
         chains,
@@ -206,6 +207,7 @@ def test_criticism_verdict_persists_with_candidate_lineage(vault):
         domain,
         persisted.candidate_record_refs[0],
         candidate,
+        request,
         verdict,
         review,
         chains,
@@ -230,6 +232,7 @@ def test_a_forged_verdict_cannot_be_persisted(vault):
             domain,
             persisted.candidate_record_refs[0],
             candidate,
+            request,
             forged,
             tampered_review,  # recomputed fold would reject; verdict says passed
             chains,
@@ -251,6 +254,7 @@ def test_the_candidate_record_binding_is_verified(vault):
             domain,
             persisted.request_record_ref,  # not the candidate record
             candidate,
+            request,
             verdict,
             review,
             chains,

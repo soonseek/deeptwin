@@ -76,6 +76,7 @@ _FIELD_PATH = re.compile(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*){0,7}\Z")
 _CONFIRMED_TOKEN = object()
 _DECISION_TOKEN = object()
 _REQUEST_TOKEN = object()
+_CANDIDATE_TOKEN = object()
 
 
 class WorkModelContractError(ValueError):
@@ -783,7 +784,7 @@ def create_generation_request(
     return result
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class DesignCandidate:
     candidate_id: str
     version: int
@@ -796,6 +797,9 @@ class DesignCandidate:
     graph_ref: EntityRef
     applied_effect_ids: tuple[str, ...]
     audit_lens_refs: tuple[str, ...]
+    # Issued only by accept_design_candidates: a reconstructed or field-swapped
+    # instance never inherits acceptance authority (no init, so replace() fails).
+    _issuer_token: object = field(repr=False, compare=False)
 
     def as_dict(self):
         return {
@@ -895,19 +899,30 @@ def _accept_candidate(request, value):
     graph_ref = EntityRef("graph", graph.graph_id, graph.version, compiled.graph_digest)
     lens_refs = tuple(sorted({str(lens.lens_ref) for decision in request.decisions
                               for lens in decision.lens_decisions}))
-    return DesignCandidate(
-        _uuid(value["candidate_id"], "candidate ID", DesignContractError),
-        _version(value["version"], error=DesignContractError),
-        request_ref,
-        graph.work_model_ref,
-        tuple(sorted(graph.decision_refs, key=lambda item: item.id)),
-        tuple(sorted(parents, key=lambda item: item.id)),
-        tuple(sorted(calls, key=lambda item: item.id)),
-        graph,
-        graph_ref,
-        tuple(effect.effect_id for effect in effects),
-        lens_refs,
-    )
+    result = object.__new__(DesignCandidate)
+    for name, item in {
+        "candidate_id": _uuid(value["candidate_id"], "candidate ID", DesignContractError),
+        "version": _version(value["version"], error=DesignContractError),
+        "generation_request_ref": request_ref,
+        "work_model_ref": graph.work_model_ref,
+        "decision_refs": tuple(sorted(graph.decision_refs, key=lambda item: item.id)),
+        "parent_candidate_refs": tuple(sorted(parents, key=lambda item: item.id)),
+        "generation_call_refs": tuple(sorted(calls, key=lambda item: item.id)),
+        "graph": graph,
+        "graph_ref": graph_ref,
+        "applied_effect_ids": tuple(effect.effect_id for effect in effects),
+        "audit_lens_refs": lens_refs,
+        "_issuer_token": _CANDIDATE_TOKEN,
+    }.items():
+        object.__setattr__(result, name, item)
+    return result
+
+
+def is_accepted_candidate(value):
+    """True only for candidates issued by ``accept_design_candidates``."""
+
+    return (type(value) is DesignCandidate
+            and getattr(value, "_issuer_token", None) is _CANDIDATE_TOKEN)
 
 
 def accept_design_candidates(request, values):
@@ -917,6 +932,8 @@ def accept_design_candidates(request, values):
                        minimum=1, error=DesignContractError)
     accepted = tuple(_accept_candidate(request, item) for item in candidates)
     _unique(accepted, lambda item: item.candidate_id, "candidate ID", DesignContractError)
+    _unique(accepted, lambda item: (item.graph.graph_id, item.graph.version),
+            "candidate graph identity", DesignContractError)
     projections = [sha256(canonical_json(structural_diversity_projection(item.graph))).hexdigest()
                    for item in accepted]
     if len(set(projections)) != len(projections):
@@ -936,4 +953,5 @@ __all__ = [
     "accept_design_decision",
     "confirm_work_model",
     "create_generation_request",
+    "is_accepted_candidate",
 ]

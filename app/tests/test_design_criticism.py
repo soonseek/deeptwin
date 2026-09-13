@@ -324,7 +324,15 @@ def test_chain_preparation_rejects_foreign_bindings():
 # ------------------------------------------------- criticism verdict fold
 
 
-from app.services.design_criticism import CandidateVerdict, fold_candidate_criticism
+from app.services.design_criticism import (
+    CandidateVerdict,
+    _review_criteria,
+    fold_candidate_criticism,
+)
+
+
+def derived_ids(request):
+    return [item["id"] for item in _review_criteria(request)["items"]]
 
 
 def _finding(criterion_id, status, request):
@@ -338,13 +346,18 @@ def _finding(criterion_id, status, request):
 
 
 def _review(candidate, request, statuses):
+    ids = derived_ids(request)
     return {
         "candidate_id": candidate.candidate_id,
         "candidate_version": str(candidate.version),
         "purpose": "review",
         "findings": [
-            _finding(f"criterion:{index}", status, request)
-            for index, status in enumerate(statuses)
+            _finding(
+                criterion_id,
+                statuses[index] if index < len(statuses) else "pass",
+                request,
+            )
+            for index, criterion_id in enumerate(ids)
         ],
     }
 
@@ -357,7 +370,7 @@ def _chain(candidate, request, *, validity_status, response_status):
         "candidate_version": str(candidate.version),
         "claim": "주장",
         "conditions": ["조건"],
-        "criterion_ids": ["criterion:0"],
+        "criterion_ids": [derived_ids(request)[0]],
         "citations": [_citation(request)],
     }
     validity = {
@@ -392,6 +405,7 @@ def test_clean_criticism_folds_to_passed():
     request, candidate = live_pair()
     verdict = fold_candidate_criticism(
         candidate,
+        request,
         _review(candidate, request, ["pass", "pass"]),
         [_chain(candidate, request, validity_status="rejected", response_status=None)],
     )
@@ -403,13 +417,14 @@ def test_clean_criticism_folds_to_passed():
 def test_mandatory_defects_reject_and_are_never_hidden():
     request, candidate = live_pair()
     failed = fold_candidate_criticism(
-        candidate, _review(candidate, request, ["pass", "fail"]), [],
+        candidate, request, _review(candidate, request, ["pass", "fail"]), [],
     )
     assert failed.status == "rejected"
-    assert any("criterion:1" in reason for reason in failed.reasons)
+    assert any(derived_ids(request)[1] in reason for reason in failed.reasons)
 
     beaten = fold_candidate_criticism(
         candidate,
+        request,
         _review(candidate, request, ["pass"]),
         [_chain(candidate, request, validity_status="valid", response_status="fail")],
     )
@@ -419,6 +434,7 @@ def test_mandatory_defects_reject_and_are_never_hidden():
     # A mandatory defect outranks any surrounding insufficiency.
     mixed = fold_candidate_criticism(
         candidate,
+        request,
         _review(candidate, request, ["unresolved", "fail"]),
         [_chain(candidate, request, validity_status="unresolved", response_status=None)],
     )
@@ -442,7 +458,7 @@ def test_unresolved_evidence_folds_to_insufficient():
                 response_status=response_status,
             )]
         verdict = fold_candidate_criticism(
-            candidate, _review(candidate, request, review_statuses), chains,
+            candidate, request, _review(candidate, request, review_statuses), chains,
         )
         assert verdict.status == "insufficient_evidence"
         assert verdict.reasons
@@ -453,7 +469,7 @@ def test_fold_rejects_foreign_or_inconsistent_bindings():
     foreign_review = _review(candidate, request, ["pass"])
     foreign_review["candidate_id"] = "00000000-0000-4000-8000-000000000999"
     with pytest.raises(DesignCriticismError):
-        fold_candidate_criticism(candidate, foreign_review, [])
+        fold_candidate_criticism(candidate, request, foreign_review, [])
 
     mismatched = _chain(
         candidate, request, validity_status="valid", response_status="mitigate",
@@ -461,5 +477,5 @@ def test_fold_rejects_foreign_or_inconsistent_bindings():
     mismatched["response"]["validity_status"] = "unresolved"
     with pytest.raises(DesignCriticismError):
         fold_candidate_criticism(
-            candidate, _review(candidate, request, ["pass"]), [mismatched],
+            candidate, request, _review(candidate, request, ["pass"]), [mismatched],
         )

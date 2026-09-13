@@ -23,7 +23,11 @@ from ..critic_contract import (
     prepare_input,
 )
 from ..domain.refs import EntityRef, canonical_json
-from .design import DesignCandidate, DesignGenerationRequest
+from .design import (
+    DesignCandidate,
+    DesignGenerationRequest,
+    is_accepted_candidate,
+)
 from .lenses import LensError, LensRegistry
 
 
@@ -38,6 +42,7 @@ def _ref_string(ref: EntityRef) -> str:
 def _roles(graph) -> list[dict]:
     model_bindings = {item.binding_id: item for item in graph.model_bindings}
     tool_bindings = {item.binding_id: item for item in graph.tool_bindings}
+    memory_policies = {item.policy_id: item for item in graph.memory_policies}
     roles = []
     for node in graph.nodes:
         if node.kind != "agent":
@@ -45,6 +50,7 @@ def _roles(graph) -> list[dict]:
         config = node.config
         binding = model_bindings[config["model_binding_id"]]
         tools = []
+        checks = [f"failure_policy:{node.failure_policy}"]
         for tool_id in config["tool_binding_ids"]:
             bound = tool_bindings[tool_id]
             tools.append({
@@ -54,13 +60,24 @@ def _roles(graph) -> list[dict]:
                 "read_paths": [],
                 "write_paths": [],
             })
-        checks = [f"failure_policy:{node.failure_policy}"]
+            checks.append(f"tool_grant:{tool_id}:{_ref_string(bound.grant_ref)}")
         checks.extend(
             f"required_approval_scope:{scope}"
             for scope in node.required_approval_scopes
         )
+        checks.extend(f"grant:{_ref_string(item)}" for item in node.grant_refs)
         if config.get("memory_policy_id"):
-            checks.append(f"memory_policy:{config['memory_policy_id']}")
+            policy = memory_policies[config["memory_policy_id"]]
+            checks.append(f"memory_policy:{policy.policy_id}")
+            checks.append(f"memory_purpose:{policy.purpose}")
+            checks.extend(
+                f"memory_read_grant:{_ref_string(item)}"
+                for item in policy.read_grant_refs
+            )
+            checks.extend(
+                f"memory_write_grant:{_ref_string(item)}"
+                for item in policy.write_grant_refs
+            )
         roles.append({
             "id": node.node_id,
             "responsibility": node.responsibility,
@@ -93,6 +110,10 @@ def _artifacts(graph) -> list[dict]:
             node.node_id for node in graph.nodes
             if any(slot.artifact_contract_id == identifier for slot in node.input_slots)
         ]
+        if not producers:
+            raise DesignCriticismError(
+                "an artifact contract has no producing node and cannot be reviewed"
+            )
         artifacts.append({
             "id": identifier,
             "version": "1",
@@ -144,13 +165,27 @@ def _control(graph) -> dict:
     for node in graph.nodes:
         if node.kind != "agent":
             notes.append(f"{node.kind}:{node.node_id}:{node.responsibility}")
+            config = dict(node.config)
+            handler = config.pop("handler_id", None)
+            if handler is not None:
+                notes.append(f"handler:{handler}:{node.node_id}")
+            if config:
+                notes.append(
+                    f"config:{node.node_id}:"
+                    + canonical_json(config).decode("utf-8")
+                )
+        for item in node.grant_refs:
+            notes.append(f"node_grant:{node.node_id}:{_ref_string(item)}")
     for edge in graph.edges:
         if edge.kind == "artifact":
             continue
         notes.append(
             f"edge:{edge.kind}:{edge.edge_id}:"
-            f"{edge.source_node_id}->{edge.target_node_id}"
+            f"{edge.source_node_id}->{edge.target_node_id}:"
+            + canonical_json(dict(edge.data)).decode("utf-8")
         )
+    for item in graph.grant_refs:
+        notes.append(f"graph_grant:{_ref_string(item)}")
     for criterion in graph.completion_criteria:
         notes.append(
             f"completion:{criterion.criterion_id}:{criterion.node_id}."
@@ -171,11 +206,15 @@ def _control(graph) -> dict:
     }
 
 
+def _require_accepted(candidate: DesignCandidate) -> None:
+    if not is_accepted_candidate(candidate):
+        raise DesignCriticismError("an accepted design candidate is required")
+
+
 def critic_candidate_projection(candidate: DesignCandidate) -> dict:
     """Render the exact critic-facing candidate functional contract."""
 
-    if type(candidate) is not DesignCandidate:
-        raise DesignCriticismError("an accepted design candidate is required")
+    _require_accepted(candidate)
     graph = candidate.graph
     projection = {
         "id": candidate.candidate_id,
@@ -254,9 +293,9 @@ def _review_source(
     candidate: DesignCandidate,
     request: DesignGenerationRequest,
 ) -> dict:
+    _require_accepted(candidate)
     if (
-        type(candidate) is not DesignCandidate
-        or type(request) is not DesignGenerationRequest
+        type(request) is not DesignGenerationRequest
         or candidate.generation_request_ref != request.request_ref
         or candidate.work_model_ref != request.work_target.work_model_ref
     ):
@@ -430,27 +469,49 @@ def _bound_result(candidate: DesignCandidate, value: object, label: str) -> dict
 
 def fold_candidate_criticism(
     candidate: DesignCandidate,
+    request: DesignGenerationRequest,
     review: dict,
     chains: list[dict],
 ) -> CandidateVerdict:
-    """Fold review findings and counterexample chains into one selectability verdict."""
+    """Fold review findings and counterexample chains into one selectability verdict.
 
-    if type(candidate) is not DesignCandidate:
-        raise DesignCriticismError("an accepted design candidate is required")
+    A passed verdict requires positive evidence for every derived criterion of the
+    exact request: the findings must cover the criteria set exactly, so absence of
+    evidence can never fold to "passed".
+    """
+
+    _require_accepted(candidate)
+    if (
+        type(request) is not DesignGenerationRequest
+        or candidate.generation_request_ref != request.request_ref
+    ):
+        raise DesignCriticismError(
+            "the fold requires the exact generation request of this candidate"
+        )
     review = _bound_result(candidate, review, "review result")
+    expected_ids = {item["id"] for item in _review_criteria(request)["items"]}
+    findings = review.get("findings")
+    if type(findings) is not list:
+        raise DesignCriticismError("the review result carries no findings list")
     rejections: list[str] = []
     insufficiencies: list[str] = []
-    for finding in review.get("findings", ()):
+    seen_ids: list[str] = []
+    for finding in findings:
         if type(finding) is not dict:
             raise DesignCriticismError("a review finding is malformed")
         status = finding.get("status")
         criterion = finding.get("criterion_id")
+        seen_ids.append(criterion)
         if status == "fail":
             rejections.append(f"review_fail:{criterion}")
         elif status == "unresolved":
             insufficiencies.append(f"review_unresolved:{criterion}")
         elif status != "pass":
             raise DesignCriticismError("a review finding status is unknown")
+    if len(set(seen_ids)) != len(seen_ids) or set(seen_ids) != expected_ids:
+        raise DesignCriticismError(
+            "review findings must cover the derived criteria exactly once each"
+        )
     if type(chains) is not list:
         raise DesignCriticismError("counterexample chains must be a bounded list")
     for chain in chains:
@@ -460,6 +521,11 @@ def fold_candidate_criticism(
             raise DesignCriticismError("a counterexample chain is malformed")
         counterexample = _bound_counterexample(candidate, chain["counterexample"])
         identifier = counterexample.get("id")
+        cited = counterexample.get("criterion_ids")
+        if type(cited) is not list or not set(cited) <= expected_ids:
+            raise DesignCriticismError(
+                "a counterexample cites a criterion outside the derived set"
+            )
         validity = _bound_result(candidate, chain["validity"], "validity result")
         if validity.get("counterexample_id") != identifier:
             raise DesignCriticismError(

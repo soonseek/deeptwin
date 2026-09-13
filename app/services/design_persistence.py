@@ -15,9 +15,9 @@ import re
 from dataclasses import dataclass
 from uuid import uuid4
 
-from ..domain.refs import EntityRef
+from ..domain.refs import EntityRef, canonical_json
 from ..domain.schemas import ImmutableRecord
-from ..domain.store import DomainStore
+from ..domain.store import DomainStore, StorageError
 from .design import DesignGenerationRequest
 from .design_criticism import (
     CandidateVerdict,
@@ -28,6 +28,7 @@ from .design_live import DesignGenerationResult
 
 _REF_KEYS = frozenset({"kind", "id", "version", "sha256"})
 _ENCODED_PREFIX = "design-ref:"
+_LITERAL_PREFIX = "design-ref-literal:"
 _KEY_SUFFIX = "_encoded"
 _ENCODED_REF = re.compile(
     r"design-ref:(?P<kind>[a-z_]+):(?P<id>[^@#]+)@(?P<version>0|[1-9][0-9]*)"
@@ -66,6 +67,12 @@ def encode_design_refs(value: object) -> object:
         out: dict[str, object] = {}
         for name, child in value.items():
             encoded = encode_design_refs(child)
+            if type(name) is str and name.endswith(_KEY_SUFFIX):
+                # A reserved encoded name in source content would collide with or
+                # shadow a real encoded key; fail closed rather than losing data.
+                raise DesignPersistenceError(
+                    "design content may not use reserved encoded key names"
+                )
             if type(name) is str and name.endswith(("_ref", "_refs")):
                 out[name + _KEY_SUFFIX] = encoded
             else:
@@ -73,6 +80,10 @@ def encode_design_refs(value: object) -> object:
         return out
     if type(value) is list:
         return [encode_design_refs(item) for item in value]
+    if type(value) is str and value.startswith((_ENCODED_PREFIX, _LITERAL_PREFIX)):
+        # Free text that merely looks like an encoded reference is escaped so the
+        # decode below is a true inverse and can never mint a ref from prose.
+        return _LITERAL_PREFIX + value
     return value
 
 
@@ -91,6 +102,8 @@ def decode_design_refs(value: object) -> object:
         return out
     if type(value) is list:
         return [decode_design_refs(item) for item in value]
+    if type(value) is str and value.startswith(_LITERAL_PREFIX):
+        return value[len(_LITERAL_PREFIX):]
     if type(value) is str and value.startswith(_ENCODED_PREFIX):
         match = _ENCODED_REF.fullmatch(value)
         if match is None:
@@ -159,7 +172,12 @@ def persist_generation_result(
             )
         except (TypeError, ValueError) as exc:
             raise DesignPersistenceError("the design chain record is invalid") from exc
-        return domain_store.put(record)
+        try:
+            return domain_store.put(record)
+        except StorageError as exc:
+            raise DesignPersistenceError(
+                "the design chain record could not be stored"
+            ) from exc
 
     request_ref = store(
         "decision_record",
@@ -209,6 +227,7 @@ def persist_candidate_criticism(
     domain_store: DomainStore,
     candidate_record_ref: EntityRef,
     candidate,
+    request,
     verdict,
     review: dict,
     chains: list,
@@ -233,7 +252,7 @@ def persist_candidate_criticism(
     if type(verdict) is not CandidateVerdict:
         raise DesignPersistenceError("an exact candidate verdict is required")
     try:
-        recomputed = fold_candidate_criticism(candidate, review, chains)
+        recomputed = fold_candidate_criticism(candidate, request, review, chains)
     except DesignCriticismError as exc:
         raise DesignPersistenceError(
             "the criticism results cannot be folded for persistence"
@@ -248,6 +267,8 @@ def persist_candidate_criticism(
         body["kind"] != "design_candidate"
         or body["id"] != verdict.candidate_id
         or str(body["version"]) != verdict.candidate_version
+        or canonical_json(decode_design_refs(body["content"]["design"]))
+        != canonical_json(candidate.as_dict())
     ):
         raise DesignPersistenceError(
             "the candidate record does not bind this exact verdict"
@@ -275,7 +296,12 @@ def persist_candidate_criticism(
         )
     except (TypeError, ValueError) as exc:
         raise DesignPersistenceError("the criticism record is invalid") from exc
-    return domain_store.put(record)
+    try:
+        return domain_store.put(record)
+    except StorageError as exc:
+        raise DesignPersistenceError(
+            "the criticism record could not be stored"
+        ) from exc
 
 
 __all__ = [

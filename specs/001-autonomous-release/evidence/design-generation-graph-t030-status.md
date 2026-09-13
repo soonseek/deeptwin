@@ -353,3 +353,74 @@ Frozen identities (SHA-256):
 Not claimed: the human selection act and design_approval records remain
 unimplemented (they cross the T025 web-authority boundary), and no live model has
 produced any criticism stage.
+
+## Independent adversarial audit of the live pillar and remediation (2026-09-13)
+
+An independent adversarial audit subagent attacked the whole live pillar
+(design_live/design_persistence/design_criticism at 0834125) with nine probe scripts
+(preserved in the session scratchpad `design-audit/`). Verdict: **REJECT** — 2 P1,
+4 P2, 2 P3, all reproduced. All eight findings are now fixed with per-finding
+regression tests (`app/tests/test_design_audit_findings.py`, 9 tests):
+
+- **F1 (P1, fixed):** the projection hid the candidate's entire permission surface
+  (node/tool/memory/graph grants), deterministic handler ids, and control-edge
+  payloads. Roles now carry `grant:`/`tool_grant:`/`memory_read_grant:`/
+  `memory_write_grant:`/`memory_purpose:` checks; control notes carry `handler:`,
+  full non-agent `config:` canonical payloads, `node_grant:`/`graph_grant:` entries
+  and canonical non-artifact edge data. Structurally distinct grant/handler variants
+  now produce distinct projections.
+- **F2 (P1, fixed):** `DesignCandidate` had a public constructor and only id/version
+  binding. It is now `init=False` with an acceptance issuer token
+  (`is_accepted_candidate`); `dataclasses.replace` and direct construction fail;
+  projection, review preparation, fold and persistence all require the token, and
+  `persist_candidate_criticism` additionally compares the stored candidate record's
+  decoded content to `candidate.as_dict()` exactly.
+- **F3 (P2, fixed):** free text beginning `design-ref:` could decode into a ref dict
+  or poison stored records. Encode now escapes such strings with a
+  `design-ref-literal:` prefix (nesting-safe), decode strips exactly one escape, and
+  a full pipeline test persists and exactly round-trips a graph whose responsibility
+  carries the hostile pattern.
+- **F4 (P2, fixed):** a findings-free or alien-criteria review could fold to a
+  durable "passed". `fold_candidate_criticism` now takes the exact request, derives
+  the criteria set, and requires findings to cover it exactly once each;
+  counterexample criterion ids must stay inside the derived set; persistence
+  recomputes the fold with the request.
+- **F5 (P2, fixed):** a producer-less artifact contract crashed projection with a
+  bare IndexError; it is now a typed `DesignCriticismError`.
+- **F6 (P2, fixed):** duplicate graph identities across candidates are rejected at
+  acceptance (`candidate graph identity` uniqueness), and storage-layer conflicts
+  during persistence surface as `DesignPersistenceError` (both put sites wrapped).
+  Residual (documented): the persist chain is not one transaction, so a conflicting
+  retry can leave already-written content-addressed records; they are harmless
+  orphans and an identical retry is idempotent.
+- **F7 (P3, fixed):** a lone-surrogate model response is a typed
+  `DesignGenerationError` at record minting (raw path); the escaped-graph path was
+  already typed by the graph text contract (`DesignContractError`) and is pinned.
+- **F8 (P3, fixed):** reserved `*_encoded` key names in source content are rejected
+  fail-closed instead of colliding/losing data.
+
+Invariants the audit could NOT break (probes listed in its report): model-boundary
+smuggling beyond graphs, fold aggregation hiding a *presented* mandatory defect,
+verdict forgery at persist (recompute guard), prompt determinism across hash seeds,
+and store-side edge forgery through the codec.
+
+```text
+python -m pytest -q (five design suites incl. audit findings)
+63 passed
+ruff check (seven touched files)
+All checks passed
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-13)
+3,040 passed, 2 skipped, 369 subtests passed, 1 known warning
+```
+
+Frozen identities after remediation (SHA-256):
+
+```text
+c388fa4d5b66e21fb4d72b658aeb80caa551a921103d5f6022a4690b517a1782  app/services/design.py
+383571e28bbe41843c84726da118a8c36ba40320fadce79eb02c7bd8b90b224c  app/services/design_live.py
+2279f8987861f8748b291228ad9b4b6f5fd6d4956e3a80f5e7cbc28e673b2c2a  app/services/design_criticism.py
+e151d2ff3902c7835a8ef1232f53417e55957e43793570509b372fdec40def9c  app/services/design_persistence.py
+8902097b6e1a1f8542616d368f17437322d329751008eec136ea8d2534684c1a  app/tests/test_design_audit_findings.py
+```
+
+This remediation itself has not been independently re-audited.

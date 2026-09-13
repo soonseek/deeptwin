@@ -145,6 +145,13 @@ def _parse_model_graphs(raw: object, maximum: int) -> list[object]:
     return graphs
 
 
+def _response_bytes(raw: str) -> bytes:
+    try:
+        return raw.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise DesignGenerationError("model response is not encodable text") from exc
+
+
 def run_candidate_generation(
     request: DesignGenerationRequest,
     *,
@@ -178,7 +185,7 @@ def run_candidate_generation(
         prompt_sha256=sha256(
             canonical_json({"system": system, "user": user})
         ).hexdigest(),
-        response_sha256=sha256(raw.encode("utf-8")).hexdigest(),
+        response_sha256=sha256(_response_bytes(raw)).hexdigest(),
     )
     values = [
         {
