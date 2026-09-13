@@ -105,3 +105,44 @@ Still not claimed: HTTPS/TLS qualification against a real provider origin, the
 HTTP create/rotate ingress wire checks, UDS service wiring, budget binding into
 the runtime ledger, the T087 provider-transport manifest, and any independent
 adversarial audit of the vault/transport pair.
+
+## Create/rotate ingress wire checks (2026-09-13)
+
+`app/api/credential_ingress.py` implements the control-plane wire gate through
+which a raw secret may cross exactly once on its way to the gateway:
+`parse_credential_ingress(raw_headers, body)` requires exactly one decimal
+`Content-Length` (strict `0|[1-9][0-9]*`, no signs/spaces/leading zeros) of at
+most 96 KiB whose value equals the actual body length, rejects any
+`Transfer-Encoding` or `Content-Encoding` occurrence, requires a single JSON
+content type, and parses the strict intent object (exact keys
+`intent_id`/`provider`/`secret` plus optional `rotate_from`) with a canonical
+UUID intent, bounded provider identifier, 1..65,536-byte UTF-8 secret and a
+well-formed rotation handle. Every violation fails before any intent or vault
+effect; errors are sanitized and never carry secret bytes; the module retains no
+copy beyond the returned value.
+
+Tests: `app/tests/test_credential_ingress.py` (7) — create/rotate parse,
+eight framing rejections (missing/duplicate/signed/hex/spaced/leading-zero/
+mismatched/oversized Content-Length), four encoding-header rejections, ten
+strict-body rejections, an over-secret-bound body within acceptable framing,
+secret-free errors, and JSON content-type enforcement.
+
+```text
+python -m pytest -q app/tests/test_credential_ingress.py
+7 passed
+ruff check app/api/credential_ingress.py app/tests/test_credential_ingress.py
+All checks passed
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-13)
+3,065 passed, 2 skipped, 369 subtests passed, 1 known warning
+```
+
+Frozen identities (SHA-256):
+
+```text
+ceccf3f347cbb71aa11ebe0a0ac171d3c08de8c05456a6127f8698668432de7e  app/api/credential_ingress.py
+b3c3697bbd218d05cbbf5560119a19bbecab61bfc94b1be1439ba9e61daf4e28  app/tests/test_credential_ingress.py
+```
+
+Still not claimed: the ingress is not yet mounted on an authenticated HTTP route
+or forwarded over the gateway UDS, lost-response/race persistence cases remain,
+and no independent adversarial audit of the T090 slices has run.
