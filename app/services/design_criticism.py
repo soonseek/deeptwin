@@ -22,6 +22,7 @@ from ..critic_contract import (
 )
 from ..domain.refs import EntityRef, canonical_json
 from .design import DesignCandidate, DesignGenerationRequest
+from .lenses import LensError, LensRegistry
 
 
 class DesignCriticismError(ValueError):
@@ -247,12 +248,10 @@ def _review_criteria(request: DesignGenerationRequest) -> dict:
     return {"id": f"review:{request.request_id}", "version": "1", "items": items}
 
 
-def prepare_candidate_review(
+def _review_source(
     candidate: DesignCandidate,
     request: DesignGenerationRequest,
-) -> PreparedInput:
-    """Prepare the exact bounded critic review input for one live candidate."""
-
+) -> dict:
     if (
         type(candidate) is not DesignCandidate
         or type(request) is not DesignGenerationRequest
@@ -262,21 +261,142 @@ def prepare_candidate_review(
         raise DesignCriticismError(
             "an accepted candidate bound to this exact request is required"
         )
-    source = {
+    return {
         "originals": [_work_model_original(request.work_target.work_model)],
         "criteria": _review_criteria(request),
         "candidate": critic_candidate_projection(candidate),
     }
+
+
+def _prepare(purpose: GenerationPurpose, source: dict) -> PreparedInput:
     try:
-        return prepare_input(GenerationPurpose.REVIEW, source)
+        return prepare_input(purpose, source)
     except InputContractError as exc:
         raise DesignCriticismError(
-            "the candidate review input violates the critic contract"
+            "the candidate criticism input violates the critic contract"
         ) from exc
+
+
+def prepare_candidate_review(
+    candidate: DesignCandidate,
+    request: DesignGenerationRequest,
+) -> PreparedInput:
+    """Prepare the exact bounded critic review input for one live candidate."""
+
+    return _prepare(GenerationPurpose.REVIEW, _review_source(candidate, request))
+
+
+def _lens_pack(request: DesignGenerationRequest, registry) -> dict:
+    if type(registry) is not LensRegistry:
+        raise DesignCriticismError("the qualified lens registry is required")
+    rules = []
+    seen = set()
+    for decision in request.decisions:
+        for lens_decision in decision.lens_decisions:
+            ref = lens_decision.lens_ref
+            if str(ref) in seen:
+                continue
+            seen.add(str(ref))
+            try:
+                definition = registry.get(ref.lens_id)
+            except LensError as exc:
+                raise DesignCriticismError(
+                    "a decision lens is not in the supplied registry"
+                ) from exc
+            if definition.ref != ref:
+                raise DesignCriticismError(
+                    "the registry lens version differs from the decision binding"
+                )
+            rules.append({
+                "id": ref.lens_id,
+                "version": ref.version,
+                "status": "research_draft",
+                "question": definition.distinguishing_question,
+                "prediction": definition.expected_contrast,
+                "falsifier": definition.disconfirmation,
+                "applies_when": definition.applicability,
+                "exclude_when": definition.non_applicability,
+                "abstain_when": definition.abstention_condition,
+                "limits": [
+                    definition.confounders_and_prohibitions,
+                    definition.no_change_condition,
+                ],
+                "provenance": [{
+                    "url": "docs/lenses/definition-candidates.md",
+                    "locator": str(definition.ref),
+                    "read_scope": definition.source_scope,
+                    "unread_scope": "none",
+                }],
+            })
+    rules.sort(key=lambda rule: (rule["id"], rule["version"]))
+    return {"id": f"lenses:{request.request_id}", "version": "1", "rules": rules}
+
+
+def prepare_candidate_proposal(
+    candidate: DesignCandidate,
+    request: DesignGenerationRequest,
+    registry,
+) -> PreparedInput:
+    """Prepare the counterexample-proposal input with the decisions' lens pack."""
+
+    source = _review_source(candidate, request)
+    source["lens_pack"] = _lens_pack(request, registry)
+    return _prepare(GenerationPurpose.COUNTEREXAMPLE_PROPOSAL, source)
+
+
+def _bound_counterexample(candidate: DesignCandidate, counterexample: object) -> dict:
+    if (
+        type(counterexample) is not dict
+        or counterexample.get("candidate_id") != candidate.candidate_id
+        or counterexample.get("candidate_version") != str(candidate.version)
+    ):
+        raise DesignCriticismError(
+            "the counterexample does not bind this exact candidate"
+        )
+    return counterexample
+
+
+def prepare_candidate_validity(
+    candidate: DesignCandidate,
+    request: DesignGenerationRequest,
+    counterexample: dict,
+) -> PreparedInput:
+    """Prepare the validity-assessment input for one proposed counterexample."""
+
+    source = _review_source(candidate, request)
+    source["counterexample"] = _bound_counterexample(candidate, counterexample)
+    return _prepare(GenerationPurpose.COUNTEREXAMPLE_VALIDITY, source)
+
+
+def prepare_candidate_response(
+    candidate: DesignCandidate,
+    request: DesignGenerationRequest,
+    counterexample: dict,
+    validity: dict,
+) -> PreparedInput:
+    """Prepare the candidate-response input for one validity-assessed counterexample."""
+
+    source = _review_source(candidate, request)
+    source["counterexample"] = _bound_counterexample(candidate, counterexample)
+    if (
+        type(validity) is not dict
+        or validity.get("candidate_id") != candidate.candidate_id
+        or validity.get("counterexample_id") != counterexample.get("id")
+    ):
+        raise DesignCriticismError(
+            "the validity evidence does not bind this exact counterexample"
+        )
+    source["validity"] = {
+        key: value for key, value in validity.items() if key != "purpose"
+    }
+    return _prepare(GenerationPurpose.CANDIDATE_RESPONSE, source)
 
 
 __all__ = [
     "DesignCriticismError",
     "critic_candidate_projection",
+    "prepare_candidate_proposal",
+    "prepare_candidate_response",
     "prepare_candidate_review",
+    "prepare_candidate_validity",
 ]

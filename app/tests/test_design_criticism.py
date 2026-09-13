@@ -206,3 +206,116 @@ def test_scripted_review_response_round_trips_through_the_parser():
             "purpose": "review",
             "findings": findings[:1],  # coverage violation
         }))
+
+
+# ---------------------------------- proposal / validity / response chain
+
+
+from app.services.design_criticism import (
+    prepare_candidate_proposal,
+    prepare_candidate_response,
+    prepare_candidate_validity,
+)
+from app.tests.test_design_generation import proposed_lens
+
+
+def _citation(request):
+    return {
+        "document_id": request.work_target.work_model.work_model_id,
+        "version": "1",
+        "location": "work_model.risks",
+    }
+
+
+def test_full_offline_criticism_chain_over_a_live_candidate():
+    request, candidate = live_pair()
+    registry, _lens = proposed_lens(request.work_target)
+
+    proposal_input = prepare_candidate_proposal(candidate, request, registry)
+    assert proposal_input.purpose is GenerationPurpose.COUNTEREXAMPLE_PROPOSAL
+    pack = _json.loads(proposal_input.prompt)["input"]["lens_pack"]
+    assert pack["id"] == f"lenses:{request.request_id}"
+    assert len(pack["rules"]) == 1
+    rule = pack["rules"][0]
+    assert rule["id"] == "L-P032-01"
+    assert rule["status"] == "research_draft"
+    manifest = _json.loads(proposal_input.manifest_json)
+    criterion_ids = manifest["criterion_ids"]
+
+    counterexample = {
+        "id": "ce-unsupported-claim",
+        "version": "1",
+        "candidate_id": candidate.candidate_id,
+        "candidate_version": str(candidate.version),
+        "claim": "검증 단계 없이 작성자가 미확인 주장을 대본에 넣을 수 있다.",
+        "conditions": ["research 노드가 반증 자료를 수집하지 못한 경우"],
+        "criterion_ids": [criterion_ids[0]],
+        "citations": [_citation(request)],
+    }
+    proposal_result = parse_response(proposal_input, _json.dumps({
+        "candidate_id": candidate.candidate_id,
+        "candidate_version": str(candidate.version),
+        "purpose": "counterexample_proposal",
+        "status": "proposed",
+        "counterexamples": [counterexample],
+        "lens_use": [{
+            "rule_id": rule["id"],
+            "rule_version": rule["version"],
+            "status": "used",
+            "reason": "렌즈의 반증 질문이 이 반례를 지목한다.",
+            "evidence": [_citation(request)],
+            "counterexample_ids": ["ce-unsupported-claim"],
+        }],
+        "uncertainties": [],
+    }))
+    proposed = proposal_result["counterexamples"][0]
+
+    validity_input = prepare_candidate_validity(candidate, request, proposed)
+    assert validity_input.purpose is GenerationPurpose.COUNTEREXAMPLE_VALIDITY
+    validity_result = parse_response(validity_input, _json.dumps({
+        "candidate_id": candidate.candidate_id,
+        "candidate_version": str(candidate.version),
+        "counterexample_id": proposed["id"],
+        "counterexample_version": proposed["version"],
+        "purpose": "counterexample_validity",
+        "status": "valid",
+        "evidence": [_citation(request)],
+        "reason": "위험 항목이 명시적으로 이 실패 조건을 예고한다.",
+        "uncertainties": [],
+    }))
+
+    response_input = prepare_candidate_response(
+        candidate, request, proposed, validity_result,
+    )
+    assert response_input.purpose is GenerationPurpose.CANDIDATE_RESPONSE
+    response_result = parse_response(response_input, _json.dumps({
+        "candidate_id": candidate.candidate_id,
+        "candidate_version": str(candidate.version),
+        "purpose": "candidate_response",
+        "counterexample_id": proposed["id"],
+        "counterexample_version": proposed["version"],
+        "validity_status": "valid",
+        "status": "mitigate",
+        "evidence": [_citation(request)],
+        "reason": "research 책임 분리와 인용 연결 조건이 실패 경로를 완화한다.",
+        "uncertainties": [],
+    }))
+    assert response_result["status"] == "mitigate"
+
+
+def test_chain_preparation_rejects_foreign_bindings():
+    request, candidate = live_pair()
+    with pytest.raises(DesignCriticismError):
+        prepare_candidate_proposal(candidate, request, object())
+    foreign_counterexample = {
+        "id": "ce-foreign",
+        "version": "1",
+        "candidate_id": "00000000-0000-4000-8000-000000000999",
+        "candidate_version": "1",
+        "claim": "다른 후보에 대한 반례",
+        "conditions": ["조건"],
+        "criterion_ids": ["shape:disposition"],
+        "citations": [_citation(request)],
+    }
+    with pytest.raises(DesignCriticismError):
+        prepare_candidate_validity(candidate, request, foreign_counterexample)

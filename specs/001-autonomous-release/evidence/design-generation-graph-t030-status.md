@@ -238,3 +238,43 @@ bc6ffb3d348c606e63f754bcad691cf4cd32691e11458f0bb000b50a21d09057  app/tests/test
 Not claimed: no model has produced a live review (the scripted response only proves the
 contract path), counterexample/validity/response stages are not yet driven from design
 context, and selection/approval over criticized candidates remains open.
+
+## Full offline criticism chain (2026-09-13)
+
+`prepare_candidate_proposal` / `prepare_candidate_validity` /
+`prepare_candidate_response` complete all four critic stages over a live candidate.
+The lens pack is derived from the request's own decisions: each decision lens is
+looked up in the supplied `LensRegistry`, the registry binding must equal the
+decision's exact `LensRef`, and the rule fields map faithfully from the
+`LensDefinition` (distinguishing question, expected contrast, disconfirmation,
+applicability/non-applicability/abstention, confounders and no-change limits,
+markdown-source provenance). Counterexample and validity dictionaries — model
+outputs of the previous stage — are bound to the exact candidate (and to each other)
+before reuse, and every stage revalidates through the already-qualified
+`prepare_input`. A scripted proposal→validity→response chain round-trips
+`parse_response` end to end (lens-use coverage, citation visibility,
+validity-transition rules all enforced by the existing contract).
+
+Tests: 2 more in `app/tests/test_design_criticism.py` (13 total) — the full
+four-stage chain over a live candidate, and foreign registry/counterexample binding
+rejection.
+
+```text
+python -m pytest -q app/tests/test_design_criticism.py
+13 passed
+ruff check app/services/design_criticism.py app/tests/test_design_criticism.py
+All checks passed
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-13)
+3,024 passed, 2 skipped, 369 subtests passed, 1 known warning
+```
+
+Frozen identities (SHA-256):
+
+```text
+4241840dbcc1697c47ce5e1cd5bcca4de0389996ba49e8e6d1af6034564384c5  app/services/design_criticism.py
+f7c5a84e8ba17de122eaf0c773f013aed708fc93efe1306958f734e379796708  app/tests/test_design_criticism.py
+```
+
+Not claimed: all chain responses are scripted (no live model), criticism results are
+not yet persisted as domain records, and selection/approval over criticized
+candidates remains open.
