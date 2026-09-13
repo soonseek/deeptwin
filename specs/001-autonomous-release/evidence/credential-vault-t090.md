@@ -57,3 +57,51 @@ redirect/SSRF/header canaries, bounded redacted responses remain open), no HTTP
 create/rotate ingress with the exact Content-Length/no-encoding wire checks, no UDS
 service wiring, no T087 provider-transport manifest binding, and no independent
 adversarial audit of this vault core has run.
+
+## CredentialedProviderTransport (2026-09-13)
+
+`app/workers/provider_gateway.py` adds the gateway's credentialed request path:
+
+- `ProviderBinding`: the closed request surface — provider id, exact origin
+  (scheme/host/port; plain HTTP is loopback-only, production is HTTPS), allowed
+  methods, absolute path prefixes, a projected request-header whitelist that can
+  never include auth/host/cookie/proxy/framing names, the injected auth header
+  name, request/response byte ceilings and a bounded timeout — all validated
+  fail-closed at construction.
+- `CredentialedProviderTransport.send(handle, method, path, headers, body)`:
+  validates the projection *before any network effect* (forbidden or unlisted
+  headers, foreign paths/absolute URLs/traversal/CR-LF, unbound methods, oversized
+  bodies all reject with the fake server observing zero requests), verifies the
+  handle's provider binding, resolves the secret only at send time, injects the
+  auth header itself, and connects only to the pinned origin — the caller never
+  supplies a URL. Redirects are never followed (exactly one wire request observed;
+  the Location target never appears in the error), non-2xx responses are redacted
+  to a status class (provider error bytes never surface), and responses are read
+  under the bound ceiling. Secrets never appear in reprs or errors.
+
+Tests: `app/tests/test_provider_transport.py` (9) over a real loopback HTTP fake
+server — auth injection round trip, seven zero-effect header canaries, six
+destination canaries, redirect non-follow, provider-error redaction, request and
+response size ceilings, cross-provider/retired handle enforcement, secret-leak
+sweep, and fail-closed binding validation.
+
+```text
+python -m pytest -q app/tests/test_provider_transport.py
+9 passed
+ruff check app/workers/provider_gateway.py app/tests/test_provider_transport.py
+All checks passed
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-13)
+3,058 passed, 2 skipped, 369 subtests passed, 1 known warning
+```
+
+Frozen identities (SHA-256):
+
+```text
+78c184e6976bb24c8bd673072567857daf27ffed361ecdff7220e27f8c815064  app/workers/provider_gateway.py
+dd1668deaeb74aa86143c4ad022d55ed754c2787fb691d5f29c37f6242fa09de  app/tests/test_provider_transport.py
+```
+
+Still not claimed: HTTPS/TLS qualification against a real provider origin, the
+HTTP create/rotate ingress wire checks, UDS service wiring, budget binding into
+the runtime ledger, the T087 provider-transport manifest, and any independent
+adversarial audit of the vault/transport pair.
