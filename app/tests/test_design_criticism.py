@@ -319,3 +319,147 @@ def test_chain_preparation_rejects_foreign_bindings():
     }
     with pytest.raises(DesignCriticismError):
         prepare_candidate_validity(candidate, request, foreign_counterexample)
+
+
+# ------------------------------------------------- criticism verdict fold
+
+
+from app.services.design_criticism import CandidateVerdict, fold_candidate_criticism
+
+
+def _finding(criterion_id, status, request):
+    return {
+        "criterion_id": criterion_id,
+        "status": status,
+        "evidence": [_citation(request)],
+        "reason": "근거",
+        "uncertainties": ["미해결 사유"] if status == "unresolved" else [],
+    }
+
+
+def _review(candidate, request, statuses):
+    return {
+        "candidate_id": candidate.candidate_id,
+        "candidate_version": str(candidate.version),
+        "purpose": "review",
+        "findings": [
+            _finding(f"criterion:{index}", status, request)
+            for index, status in enumerate(statuses)
+        ],
+    }
+
+
+def _chain(candidate, request, *, validity_status, response_status):
+    counterexample = {
+        "id": "ce-1",
+        "version": "1",
+        "candidate_id": candidate.candidate_id,
+        "candidate_version": str(candidate.version),
+        "claim": "주장",
+        "conditions": ["조건"],
+        "criterion_ids": ["criterion:0"],
+        "citations": [_citation(request)],
+    }
+    validity = {
+        "candidate_id": candidate.candidate_id,
+        "candidate_version": str(candidate.version),
+        "counterexample_id": "ce-1",
+        "counterexample_version": "1",
+        "purpose": "counterexample_validity",
+        "status": validity_status,
+        "evidence": [_citation(request)],
+        "reason": "근거",
+        "uncertainties": ["사유"] if validity_status == "unresolved" else [],
+    }
+    response = None
+    if response_status is not None:
+        response = {
+            "candidate_id": candidate.candidate_id,
+            "candidate_version": str(candidate.version),
+            "purpose": "candidate_response",
+            "counterexample_id": "ce-1",
+            "counterexample_version": "1",
+            "validity_status": validity_status,
+            "status": response_status,
+            "evidence": [_citation(request)],
+            "reason": "근거",
+            "uncertainties": ["사유"] if response_status == "unresolved" else [],
+        }
+    return {"counterexample": counterexample, "validity": validity, "response": response}
+
+
+def test_clean_criticism_folds_to_passed():
+    request, candidate = live_pair()
+    verdict = fold_candidate_criticism(
+        candidate,
+        _review(candidate, request, ["pass", "pass"]),
+        [_chain(candidate, request, validity_status="rejected", response_status=None)],
+    )
+    assert type(verdict) is CandidateVerdict
+    assert verdict.status == "passed"
+    assert verdict.reasons == ()
+
+
+def test_mandatory_defects_reject_and_are_never_hidden():
+    request, candidate = live_pair()
+    failed = fold_candidate_criticism(
+        candidate, _review(candidate, request, ["pass", "fail"]), [],
+    )
+    assert failed.status == "rejected"
+    assert any("criterion:1" in reason for reason in failed.reasons)
+
+    beaten = fold_candidate_criticism(
+        candidate,
+        _review(candidate, request, ["pass"]),
+        [_chain(candidate, request, validity_status="valid", response_status="fail")],
+    )
+    assert beaten.status == "rejected"
+    assert any("ce-1" in reason for reason in beaten.reasons)
+
+    # A mandatory defect outranks any surrounding insufficiency.
+    mixed = fold_candidate_criticism(
+        candidate,
+        _review(candidate, request, ["unresolved", "fail"]),
+        [_chain(candidate, request, validity_status="unresolved", response_status=None)],
+    )
+    assert mixed.status == "rejected"
+
+
+def test_unresolved_evidence_folds_to_insufficient():
+    request, candidate = live_pair()
+    for review_statuses, chain_spec in (
+        (["unresolved"], None),
+        (["pass"], ("unresolved", None)),
+        (["pass"], ("valid", "unresolved")),
+        (["pass"], ("valid", None)),
+    ):
+        chains = []
+        if chain_spec is not None:
+            validity_status, response_status = chain_spec
+            chains = [_chain(
+                candidate, request,
+                validity_status=validity_status,
+                response_status=response_status,
+            )]
+        verdict = fold_candidate_criticism(
+            candidate, _review(candidate, request, review_statuses), chains,
+        )
+        assert verdict.status == "insufficient_evidence"
+        assert verdict.reasons
+
+
+def test_fold_rejects_foreign_or_inconsistent_bindings():
+    request, candidate = live_pair()
+    foreign_review = _review(candidate, request, ["pass"])
+    foreign_review["candidate_id"] = "00000000-0000-4000-8000-000000000999"
+    with pytest.raises(DesignCriticismError):
+        fold_candidate_criticism(candidate, foreign_review, [])
+
+    mismatched = _chain(
+        candidate, request, validity_status="valid", response_status="mitigate",
+    )
+    mismatched["response"]["validity_status"] = "unresolved"
+    with pytest.raises(DesignCriticismError):
+        fold_candidate_criticism(
+            candidate, _review(candidate, request, ["pass"]), [mismatched],
+        )

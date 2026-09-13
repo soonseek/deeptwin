@@ -11,6 +11,8 @@ read-only data preparation for the already-qualified critic contract.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from pydantic import ValidationError
 
 from ..critic_contract import Candidate as CriticCandidate
@@ -392,9 +394,123 @@ def prepare_candidate_response(
     return _prepare(GenerationPurpose.CANDIDATE_RESPONSE, source)
 
 
+@dataclass(frozen=True, slots=True)
+class CandidateVerdict:
+    """Framework-owned fold of one candidate's criticism into a selectability state.
+
+    Selection itself remains a human act (experience contract): this verdict only
+    determines whether a candidate may be presented as a passed, selectable option.
+    A mandatory defect is never hidden behind aggregation.
+    """
+
+    candidate_id: str
+    candidate_version: str
+    status: str
+    reasons: tuple[str, ...]
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": "candidate-criticism-verdict-v1",
+            "candidate_id": self.candidate_id,
+            "candidate_version": self.candidate_version,
+            "status": self.status,
+            "reasons": list(self.reasons),
+        }
+
+
+def _bound_result(candidate: DesignCandidate, value: object, label: str) -> dict:
+    if (
+        type(value) is not dict
+        or value.get("candidate_id") != candidate.candidate_id
+        or value.get("candidate_version") != str(candidate.version)
+    ):
+        raise DesignCriticismError(f"the {label} does not bind this exact candidate")
+    return value
+
+
+def fold_candidate_criticism(
+    candidate: DesignCandidate,
+    review: dict,
+    chains: list[dict],
+) -> CandidateVerdict:
+    """Fold review findings and counterexample chains into one selectability verdict."""
+
+    if type(candidate) is not DesignCandidate:
+        raise DesignCriticismError("an accepted design candidate is required")
+    review = _bound_result(candidate, review, "review result")
+    rejections: list[str] = []
+    insufficiencies: list[str] = []
+    for finding in review.get("findings", ()):
+        if type(finding) is not dict:
+            raise DesignCriticismError("a review finding is malformed")
+        status = finding.get("status")
+        criterion = finding.get("criterion_id")
+        if status == "fail":
+            rejections.append(f"review_fail:{criterion}")
+        elif status == "unresolved":
+            insufficiencies.append(f"review_unresolved:{criterion}")
+        elif status != "pass":
+            raise DesignCriticismError("a review finding status is unknown")
+    if type(chains) is not list:
+        raise DesignCriticismError("counterexample chains must be a bounded list")
+    for chain in chains:
+        if type(chain) is not dict or set(chain) != {
+            "counterexample", "validity", "response",
+        }:
+            raise DesignCriticismError("a counterexample chain is malformed")
+        counterexample = _bound_counterexample(candidate, chain["counterexample"])
+        identifier = counterexample.get("id")
+        validity = _bound_result(candidate, chain["validity"], "validity result")
+        if validity.get("counterexample_id") != identifier:
+            raise DesignCriticismError(
+                "the validity evidence does not bind this exact counterexample"
+            )
+        validity_status = validity.get("status")
+        response = chain["response"]
+        if response is not None:
+            response = _bound_result(candidate, response, "response result")
+            if (
+                response.get("counterexample_id") != identifier
+                or response.get("validity_status") != validity_status
+            ):
+                raise DesignCriticismError(
+                    "the candidate response does not bind this exact validity"
+                )
+        if validity_status == "rejected":
+            continue
+        if validity_status == "unresolved":
+            insufficiencies.append(f"validity_unresolved:{identifier}")
+            continue
+        if validity_status != "valid":
+            raise DesignCriticismError("a validity status is unknown")
+        if response is None or response.get("status") == "unresolved":
+            insufficiencies.append(f"response_unresolved:{identifier}")
+        elif response.get("status") == "fail":
+            rejections.append(f"counterexample_fail:{identifier}")
+        elif response.get("status") not in ("avoid", "mitigate"):
+            raise DesignCriticismError("a candidate response status is unknown")
+    if rejections:
+        status = "rejected"
+        reasons = tuple(rejections + insufficiencies)
+    elif insufficiencies:
+        status = "insufficient_evidence"
+        reasons = tuple(insufficiencies)
+    else:
+        status = "passed"
+        reasons = ()
+    return CandidateVerdict(
+        candidate_id=candidate.candidate_id,
+        candidate_version=str(candidate.version),
+        status=status,
+        reasons=reasons,
+    )
+
+
 __all__ = [
+    "CandidateVerdict",
     "DesignCriticismError",
     "critic_candidate_projection",
+    "fold_candidate_criticism",
     "prepare_candidate_proposal",
     "prepare_candidate_response",
     "prepare_candidate_review",

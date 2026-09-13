@@ -278,3 +278,43 @@ f7c5a84e8ba17de122eaf0c773f013aed708fc93efe1306958f734e379796708  app/tests/test
 Not claimed: all chain responses are scripted (no live model), criticism results are
 not yet persisted as domain records, and selection/approval over criticized
 candidates remains open.
+
+## Criticism verdict fold (2026-09-13)
+
+`fold_candidate_criticism(candidate, review, chains)` is the framework-owned fold of
+one candidate's criticism into a selectability verdict (`CandidateVerdict`:
+passed / rejected / insufficient_evidence with machine-checkable reasons). Selection
+itself remains a human act per the experience contract; this fold only decides
+whether a candidate may be presented as a passed option, and a mandatory defect is
+never hidden behind aggregation: any review `fail` finding or any valid
+counterexample whose candidate response is `fail` rejects the candidate regardless
+of other results; unresolved findings, unresolved validity, and valid
+counterexamples without a resolving response fold to insufficient_evidence; a
+rejected counterexample contributes nothing. Every result is bound to the exact
+candidate, validity results to their exact counterexample, and responses to the
+exact validity status before folding; unknown statuses are terminal.
+
+Tests: 4 more in `app/tests/test_design_criticism.py` (17 total) — clean pass,
+mandatory-defect precedence (review fail, beaten counterexample, defect over
+insufficiency), four insufficiency shapes, and foreign/inconsistent binding
+rejection.
+
+```text
+python -m pytest -q app/tests/test_design_criticism.py
+17 passed
+ruff check app/services/design_criticism.py app/tests/test_design_criticism.py
+All checks passed
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-13)
+3,028 passed, 2 skipped, 369 subtests passed, 1 known warning
+```
+
+Frozen identities (SHA-256):
+
+```text
+a4dfb0569c626eebaead8e169bd5f5e9573d9eb26f6996bf4ac069eaa15da4ff  app/services/design_criticism.py
+04ce4beace81101a035084164196fd107d7754c722c717ce5e2a5af33e4225bd  app/tests/test_design_criticism.py
+```
+
+Not claimed: verdicts are not yet persisted as domain records, the human selection
+act and design-approval records remain unimplemented, and no live model has produced
+any criticism stage.
