@@ -120,6 +120,48 @@
       },
       "type": "object"
     },
+    "auth.recovery_completed": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "auth.recovery_failed": {
+      "additionalProperties": false,
+      "properties": {
+        "reason_code": {
+          "enum": [
+            "missing",
+            "deleted",
+            "corrupt",
+            "not_recorded",
+            "access_denied",
+            "outcome_unknown",
+            "storage_failed",
+            "unsupported",
+            "not_supplied"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "auth.recovery_started": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "backup.created": {
       "additionalProperties": false,
       "properties": {
@@ -256,6 +298,92 @@
         },
         "ready": {
           "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "credential.cleanup_completed": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "credential.erasure_confirmed": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "credential.erasure_failed": {
+      "additionalProperties": false,
+      "properties": {
+        "reason_code": {
+          "enum": [
+            "missing",
+            "deleted",
+            "corrupt",
+            "not_recorded",
+            "access_denied",
+            "outcome_unknown",
+            "storage_failed",
+            "unsupported",
+            "not_supplied"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "credential.retired": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "deployment.receipt_committed": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "deployment.request_cancelled": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "deployment.request_prepared": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "type": "object"
@@ -1006,6 +1134,72 @@
       },
       "type": "object"
     },
+    "managed_login.cancelled": {
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "enum": [
+            "codex",
+            "claude"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "managed_login.completed": {
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "enum": [
+            "codex",
+            "claude"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "managed_login.failed": {
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "enum": [
+            "codex",
+            "claude"
+          ],
+          "type": "string"
+        },
+        "reason_code": {
+          "enum": [
+            "missing",
+            "deleted",
+            "corrupt",
+            "not_recorded",
+            "access_denied",
+            "outcome_unknown",
+            "storage_failed",
+            "unsupported",
+            "not_supplied"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "managed_login.started": {
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "enum": [
+            "codex",
+            "claude"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "memory.read": {
       "additionalProperties": false,
       "properties": {
@@ -1457,6 +1651,37 @@
           "maximum": 9223372036854775807,
           "minimum": 0,
           "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "speech.interrupted": {
+      "additionalProperties": false,
+      "properties": {
+        "segment_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "speech.raw_unavailable": {
+      "additionalProperties": false,
+      "properties": {
+        "reason_code": {
+          "enum": [
+            "missing",
+            "deleted",
+            "corrupt",
+            "not_recorded",
+            "access_denied",
+            "outcome_unknown",
+            "storage_failed",
+            "unsupported",
+            "not_supplied"
+          ],
+          "type": "string"
         }
       },
       "type": "object"

@@ -135,6 +135,18 @@ _register("extension.compatibility_failed", extension_kind=EXTENSION_KIND,
 _register("service_client.created service_client.rotated service_client.revoked",
           scope_count=COUNT, revision=COUNT)
 _register("service_client.denied", reason_code=SERVICE_CLIENT_DENIAL)
+_register("deployment.request_prepared deployment.request_cancelled "
+          "deployment.receipt_committed", revision=COUNT)
+_register("auth.recovery_started auth.recovery_completed", revision=COUNT)
+_register("auth.recovery_failed", reason_code=GAP_REASON)
+_register("credential.retired credential.cleanup_completed "
+          "credential.erasure_confirmed", revision=COUNT)
+_register("credential.erasure_failed", reason_code=GAP_REASON)
+_register("managed_login.started managed_login.completed managed_login.cancelled",
+          provider=PROVIDER)
+_register("managed_login.failed", provider=PROVIDER, reason_code=GAP_REASON)
+_register("speech.interrupted", segment_count=COUNT)
+_register("speech.raw_unavailable", reason_code=GAP_REASON)
 EVENT_TYPES = frozenset(_registry)
 EVENT_REGISTRY = MappingProxyType(_registry)
 # Do not retain a separately mutable reference to the registry.
