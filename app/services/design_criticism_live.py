@@ -53,11 +53,24 @@ _UUID = re.compile(
 )
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:\-]{0,127}\Z")
+_ISSUE_TOKEN = object()
 
 
-@dataclass(frozen=True, slots=True)
+def _issue(cls, **fields):
+    value = object.__new__(cls)
+    for name, item in fields.items():
+        object.__setattr__(value, name, item)
+    return value
+
+
+@dataclass(frozen=True, slots=True, init=False)
 class CriticismCallRecord:
-    """The framework-minted durable fact of one exact criticism model call."""
+    """The framework-minted durable fact of one exact criticism model call.
+
+    The driver is the only issuer. ``prompt_sha256`` is provable (the prompt
+    re-renders deterministically); ``response_sha256`` is the boundary's
+    recorded attestation — the raw response is not retained beyond it.
+    """
 
     call_id: str
     version: int
@@ -67,24 +80,7 @@ class CriticismCallRecord:
     model_id: str
     prompt_sha256: str
     response_sha256: str
-
-    def __post_init__(self) -> None:
-        if (
-            type(self.call_id) is not str
-            or _UUID.fullmatch(self.call_id) is None
-            or self.version != 1
-            or type(self.request_ref) is not EntityRef
-            or self.purpose not in CRITICISM_PURPOSES
-            or type(self.profile_digest) is not str
-            or _SHA256.fullmatch(self.profile_digest) is None
-            or type(self.model_id) is not str
-            or _MODEL_ID.fullmatch(self.model_id) is None
-            or type(self.prompt_sha256) is not str
-            or _SHA256.fullmatch(self.prompt_sha256) is None
-            or type(self.response_sha256) is not str
-            or _SHA256.fullmatch(self.response_sha256) is None
-        ):
-            raise DesignCriticismError("criticism call record is invalid")
+    _issuer_token: object = field(repr=False, compare=False)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -109,7 +105,7 @@ class CriticismCallRecord:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class CriticismRunResult:
     """One candidate's driven criticism: verdict, evidence, call records."""
 
@@ -117,6 +113,25 @@ class CriticismRunResult:
     review: dict = field(repr=False)
     chains: tuple[dict, ...] = field(repr=False)
     call_records: tuple[CriticismCallRecord, ...] = field(repr=False)
+    _issuer_token: object = field(repr=False, compare=False)
+
+
+def is_issued_call_record(value: object) -> bool:
+    """True only for a record minted by the criticism driver."""
+
+    return (
+        type(value) is CriticismCallRecord
+        and getattr(value, "_issuer_token", None) is _ISSUE_TOKEN
+    )
+
+
+def is_issued_criticism_run(value: object) -> bool:
+    """True only for a run produced by run_candidate_criticism."""
+
+    return (
+        type(value) is CriticismRunResult
+        and getattr(value, "_issuer_token", None) is _ISSUE_TOKEN
+    )
 
 
 def render_criticism_prompt(prepared: PreparedInput) -> tuple[str, str]:
@@ -173,7 +188,8 @@ def run_candidate_criticism(
                 f"the {prepared.purpose.value} response violates the contract"
             ) from exc
         profile = profile_for(prepared.purpose)
-        records.append(CriticismCallRecord(
+        record = _issue(
+            CriticismCallRecord,
             call_id=str(uuid4()),
             version=1,
             request_ref=request.request_ref,
@@ -184,7 +200,15 @@ def run_candidate_criticism(
                 canonical_json({"system": system, "user": user})
             ).hexdigest(),
             response_sha256=sha256(_response_bytes(raw)).hexdigest(),
-        ))
+            _issuer_token=_ISSUE_TOKEN,
+        )
+        if (
+            _UUID.fullmatch(record.call_id) is None
+            or record.purpose not in CRITICISM_PURPOSES
+            or _SHA256.fullmatch(record.profile_digest) is None
+        ):  # pragma: no cover - driver-internal consistency
+            raise DesignCriticismError("criticism call record is invalid")
+        records.append(record)
         return result
 
     review = stage(prepare_candidate_review(candidate, request))
@@ -207,11 +231,13 @@ def run_candidate_criticism(
             "response": response,
         })
     verdict = fold_candidate_criticism(candidate, request, review, chains)
-    return CriticismRunResult(
+    return _issue(
+        CriticismRunResult,
         verdict=verdict,
         review=review,
         chains=tuple(chains),
         call_records=tuple(records),
+        _issuer_token=_ISSUE_TOKEN,
     )
 
 
@@ -219,6 +245,8 @@ __all__ = [
     "CRITICISM_PURPOSES",
     "CriticismCallRecord",
     "CriticismRunResult",
+    "is_issued_call_record",
+    "is_issued_criticism_run",
     "render_criticism_prompt",
     "run_candidate_criticism",
 ]

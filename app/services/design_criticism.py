@@ -12,6 +12,7 @@ read-only data preparation for the already-qualified critic contract.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 
 from pydantic import ValidationError
 
@@ -433,28 +434,56 @@ def prepare_candidate_response(
     return _prepare(GenerationPurpose.CANDIDATE_RESPONSE, source)
 
 
-@dataclass(frozen=True, slots=True)
+_VERDICT_TOKEN = object()
+
+
+@dataclass(frozen=True, slots=True, init=False)
 class CandidateVerdict:
     """Framework-owned fold of one candidate's criticism into a selectability state.
 
     Selection itself remains a human act (experience contract): this verdict only
     determines whether a candidate may be presented as a passed, selectable option.
-    A mandatory defect is never hidden behind aggregation.
+    A mandatory defect is never hidden behind aggregation. The fold is the only
+    issuer: a constructed or field-swapped look-alike carries no authority, and
+    the verdict binds its candidate by content hash, never only by name.
     """
 
     candidate_id: str
     candidate_version: str
+    candidate_sha: str
     status: str
     reasons: tuple[str, ...]
+    _issuer_token: object = dataclass_field(repr=False, compare=False)
 
     def as_dict(self) -> dict[str, object]:
         return {
             "schema_version": "candidate-criticism-verdict-v1",
             "candidate_id": self.candidate_id,
             "candidate_version": self.candidate_version,
+            "candidate_sha": self.candidate_sha,
             "status": self.status,
             "reasons": list(self.reasons),
         }
+
+
+def is_issued_verdict(value: object) -> bool:
+    """True only for a verdict issued by fold_candidate_criticism."""
+
+    return (
+        type(value) is CandidateVerdict
+        and getattr(value, "_issuer_token", None) is _VERDICT_TOKEN
+    )
+
+
+def verdict_binds_candidate(verdict, candidate) -> bool:
+    """True when an issued verdict binds this exact candidate content."""
+
+    return (
+        is_issued_verdict(verdict)
+        and verdict.candidate_id == candidate.candidate_id
+        and verdict.candidate_version == str(candidate.version)
+        and verdict.candidate_sha == candidate.graph_ref.sha256
+    )
 
 
 def _bound_result(candidate: DesignCandidate, value: object, label: str) -> dict:
@@ -564,12 +593,17 @@ def fold_candidate_criticism(
     else:
         status = "passed"
         reasons = ()
-    return CandidateVerdict(
-        candidate_id=candidate.candidate_id,
-        candidate_version=str(candidate.version),
-        status=status,
-        reasons=reasons,
-    )
+    verdict = object.__new__(CandidateVerdict)
+    for name, item in (
+        ("candidate_id", candidate.candidate_id),
+        ("candidate_version", str(candidate.version)),
+        ("candidate_sha", candidate.graph_ref.sha256),
+        ("status", status),
+        ("reasons", reasons),
+        ("_issuer_token", _VERDICT_TOKEN),
+    ):
+        object.__setattr__(verdict, name, item)
+    return verdict
 
 
 __all__ = [
@@ -577,8 +611,10 @@ __all__ = [
     "DesignCriticismError",
     "critic_candidate_projection",
     "fold_candidate_criticism",
+    "is_issued_verdict",
     "prepare_candidate_proposal",
     "prepare_candidate_response",
     "prepare_candidate_review",
     "prepare_candidate_validity",
+    "verdict_binds_candidate",
 ]

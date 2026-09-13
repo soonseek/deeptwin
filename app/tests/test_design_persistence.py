@@ -225,7 +225,9 @@ def test_a_forged_verdict_cannot_be_persisted(vault):
     request, result = generated()
     persisted = persist(domain, roots, request, result)
     candidate, _review_result, chains, verdict = criticized(request, result)
-    forged = replace(verdict, status="passed", reasons=())
+    with pytest.raises(TypeError):
+        # verdicts are fold-issued: the forgery cannot even be built
+        replace(verdict, status="passed", reasons=())
     tampered_review = _review(candidate, request, ["fail"])
     with pytest.raises(DesignPersistenceError):
         persist_candidate_criticism(
@@ -233,8 +235,8 @@ def test_a_forged_verdict_cannot_be_persisted(vault):
             persisted.candidate_record_refs[0],
             candidate,
             request,
-            forged,
-            tampered_review,  # recomputed fold would reject; verdict says passed
+            verdict,
+            tampered_review,  # recomputed fold differs from this verdict
             chains,
             actor_ref=roots.actor,
             access_policy_ref=roots.access_policy,

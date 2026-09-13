@@ -20,7 +20,6 @@ from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore, StorageError
 from .design import DesignGenerationRequest
 from .design_criticism import (
-    CandidateVerdict,
     DesignCriticismError,
     fold_candidate_criticism,
 )
@@ -223,6 +222,44 @@ def persist_generation_result(
     )
 
 
+def _validate_candidate_criticism(
+    domain_store, candidate_record_ref, candidate, request,
+    verdict, review, chains,
+) -> None:
+    """Everything a forged run could lie about, checked before any put."""
+
+    if type(domain_store) is not DomainStore:
+        raise DesignPersistenceError("an exact domain store is required")
+    if type(candidate_record_ref) is not EntityRef:
+        raise DesignPersistenceError("an exact candidate record ref is required")
+    from .design_criticism import is_issued_verdict
+
+    if not is_issued_verdict(verdict):
+        raise DesignPersistenceError("a fold-issued candidate verdict is required")
+    try:
+        recomputed = fold_candidate_criticism(candidate, request, review, chains)
+    except DesignCriticismError as exc:
+        raise DesignPersistenceError(
+            "the criticism results cannot be folded for persistence"
+        ) from exc
+    if recomputed != verdict:
+        raise DesignPersistenceError(
+            "the presented verdict does not match the recomputed fold"
+        )
+    stored = domain_store.get(candidate_record_ref)
+    body = stored.body
+    if (
+        body["kind"] != "design_candidate"
+        or body["id"] != verdict.candidate_id
+        or str(body["version"]) != verdict.candidate_version
+        or canonical_json(decode_design_refs(body["content"]["design"]))
+        != canonical_json(candidate.as_dict())
+    ):
+        raise DesignPersistenceError(
+            "the candidate record does not bind this exact verdict"
+        )
+
+
 def persist_candidate_criticism(
     domain_store: DomainStore,
     candidate_record_ref: EntityRef,
@@ -247,34 +284,10 @@ def persist_candidate_criticism(
     state cannot become a durable record.
     """
 
-    if type(domain_store) is not DomainStore:
-        raise DesignPersistenceError("an exact domain store is required")
-    if type(candidate_record_ref) is not EntityRef:
-        raise DesignPersistenceError("an exact candidate record ref is required")
-    if type(verdict) is not CandidateVerdict:
-        raise DesignPersistenceError("an exact candidate verdict is required")
-    try:
-        recomputed = fold_candidate_criticism(candidate, request, review, chains)
-    except DesignCriticismError as exc:
-        raise DesignPersistenceError(
-            "the criticism results cannot be folded for persistence"
-        ) from exc
-    if recomputed != verdict:
-        raise DesignPersistenceError(
-            "the presented verdict does not match the recomputed fold"
-        )
-    stored = domain_store.get(candidate_record_ref)
-    body = stored.body
-    if (
-        body["kind"] != "design_candidate"
-        or body["id"] != verdict.candidate_id
-        or str(body["version"]) != verdict.candidate_version
-        or canonical_json(decode_design_refs(body["content"]["design"]))
-        != canonical_json(candidate.as_dict())
-    ):
-        raise DesignPersistenceError(
-            "the candidate record does not bind this exact verdict"
-        )
+    _validate_candidate_criticism(
+        domain_store, candidate_record_ref, candidate, request,
+        verdict, review, chains,
+    )
     identifier = record_id if record_id is not None else str(uuid4())
     design = {
         "verdict": verdict.as_dict(),
@@ -379,14 +392,25 @@ def persist_criticism_run(
     durable record.
     """
 
-    from .design_criticism_live import CriticismCallRecord, CriticismRunResult
+    from .design_criticism_live import (
+        is_issued_call_record,
+        is_issued_criticism_run,
+    )
 
     if type(domain_store) is not DomainStore:
         raise DesignPersistenceError("an exact domain store is required")
-    if type(run) is not CriticismRunResult or any(
-        type(record) is not CriticismCallRecord for record in run.call_records
+    if not is_issued_criticism_run(run) or not all(
+        is_issued_call_record(record) for record in run.call_records
     ):
-        raise DesignPersistenceError("an exact driven criticism run is required")
+        # Only the driver issues runs and records; a constructed or
+        # field-swapped look-alike never becomes durable evidence.
+        raise DesignPersistenceError("a driver-issued criticism run is required")
+    # F3: everything a forged run could lie about is checked BEFORE the
+    # first put, so a refused run leaves nothing durable behind.
+    _validate_candidate_criticism(
+        domain_store, candidate_record_ref, candidate, request,
+        run.verdict, run.review, list(run.chains),
+    )
     try:
         expected = _expected_prompt_hashes(
             candidate, request, registry, list(run.chains),

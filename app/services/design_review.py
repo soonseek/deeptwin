@@ -19,8 +19,11 @@ from hashlib import sha256
 
 from ..domain.refs import EntityRef, canonical_json
 from ..runtime.graph import structural_diversity_projection
-from .design import DesignCandidate, is_accepted_candidate
-from .design_criticism import CandidateVerdict
+from .design import DesignCandidate, DesignGenerationRequest, is_accepted_candidate
+from .design_criticism import (
+    is_issued_verdict,
+    verdict_binds_candidate,
+)
 
 SELECTION_POOL_SIZE = 3
 VERDICT_STATUSES = frozenset({"passed", "rejected", "insufficient_evidence"})
@@ -48,6 +51,7 @@ class SelectionPool:
     excluded: tuple[tuple[str, str], ...]
     passed_count: int
     supplementation_available: bool
+    _issuer_token: object = field(repr=False, compare=False)
 
 
 def _signature(candidate: DesignCandidate) -> str:
@@ -56,9 +60,13 @@ def _signature(candidate: DesignCandidate) -> str:
     ).hexdigest()
 
 
-def assemble_selection_pool(entries) -> SelectionPool:
-    """Assemble one honest pool from (candidate, verdict) pairs."""
+def assemble_selection_pool(request, entries) -> SelectionPool:
+    """Assemble one honest pool from one request's (candidate, verdict) pairs."""
 
+    if type(request) is not DesignGenerationRequest:
+        raise DesignReviewError(
+            "a framework-issued generation request is required"
+        )
     if type(entries) is not list or not 1 <= len(entries) <= 64:
         raise DesignReviewError("expected a bounded candidate/verdict list")
     seen_candidates: set[tuple[str, int]] = set()
@@ -69,28 +77,37 @@ def assemble_selection_pool(entries) -> SelectionPool:
     for item in entries:
         if type(item) is not tuple or len(item) != 2:
             raise DesignReviewError("expected (candidate, verdict) pairs")
-        candidate, verdict = item
+        candidate, _verdict = item
         if not is_accepted_candidate(candidate):
             raise DesignReviewError(
                 "only an accepted design candidate can be pooled"
             )
-        if type(verdict) is not CandidateVerdict:
-            raise DesignReviewError("a criticism verdict is required")
-        if (
-            verdict.candidate_id != candidate.candidate_id
-            or verdict.candidate_version != str(candidate.version)
-        ):
+        if candidate.generation_request_ref != request.request_ref:
             raise DesignReviewError(
-                "the verdict does not bind this exact candidate"
+                "every pooled candidate must bind this exact request"
             )
-        if verdict.status not in VERDICT_STATUSES:
-            raise DesignReviewError("unknown verdict status")
         key = (candidate.candidate_id, candidate.version)
         if key in seen_candidates:
             raise DesignReviewError(
                 "a candidate can never appear twice in one pool"
             )
         seen_candidates.add(key)
+    # Deterministic pooling order: the caller's entry order never chooses
+    # which structural duplicate is presented.
+    ordered = sorted(
+        entries, key=lambda item: (item[0].candidate_id, item[0].version),
+    )
+    for candidate, verdict in ordered:
+        if not is_issued_verdict(verdict):
+            raise DesignReviewError(
+                "a fold-issued criticism verdict is required"
+            )
+        if not verdict_binds_candidate(verdict, candidate):
+            raise DesignReviewError(
+                "the verdict does not bind this exact candidate content"
+            )
+        if verdict.status not in VERDICT_STATUSES:
+            raise DesignReviewError("unknown verdict status")
         if verdict.status != "passed":
             # A mandatory defect or missing evidence is stated, never
             # hidden behind aggregation or padding.
@@ -115,6 +132,7 @@ def assemble_selection_pool(entries) -> SelectionPool:
         excluded=tuple(excluded),
         passed_count=passed_count,
         supplementation_available=len(presented) < SELECTION_POOL_SIZE,
+        _issuer_token=_ISSUE_TOKEN,
     )
 
 
@@ -123,6 +141,7 @@ class DerivedDesignVersion:
     """One select/edit/merge act: a new version, never an inheritance."""
 
     action: str
+    request_ref: EntityRef
     parent_refs: tuple[EntityRef, ...]
     instruction: str | None
     re_review_required: bool
@@ -130,9 +149,13 @@ class DerivedDesignVersion:
     _issuer_token: object = field(repr=False, compare=False)
 
 
-def derive_design_version(action, parents, *, instruction=None):
+def derive_design_version(request, action, parents, *, instruction=None):
     """Create one derived design version; re-review is always mandatory."""
 
+    if type(request) is not DesignGenerationRequest:
+        raise DesignReviewError(
+            "a framework-issued generation request is required"
+        )
     if action not in DERIVATION_ACTIONS:
         raise DesignReviewError("unknown design derivation action")
     if type(parents) is not list or not 1 <= len(parents) <= 8:
@@ -142,6 +165,12 @@ def derive_design_version(action, parents, *, instruction=None):
             raise DesignReviewError(
                 "only accepted candidates can parent a derived version"
             )
+        if parent.generation_request_ref != request.request_ref:
+            raise DesignReviewError(
+                "every parent must bind this exact request"
+            )
+    if len({(p.candidate_id, p.version) for p in parents}) != len(parents):
+        raise DesignReviewError("derivation parents must be distinct")
     if action == "merge" and len(parents) < 2:
         raise DesignReviewError("a merge requires at least two parents")
     if action in {"select", "edit"} and len(parents) != 1:
@@ -157,6 +186,7 @@ def derive_design_version(action, parents, *, instruction=None):
     return _issue(
         DerivedDesignVersion,
         action=action,
+        request_ref=request.request_ref,
         parent_refs=tuple(parent.graph_ref for parent in parents),
         instruction=instruction,
         # The original candidates' scores and approvals never inherit; a

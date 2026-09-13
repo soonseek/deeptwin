@@ -18,7 +18,7 @@ import pytest
 
 from app.services.environments import (
     DesignApproval,
-    EnvironmentError,
+    EnvironmentContractError,
     EnvironmentVersion,
     open_environment,
     prepare_environment_version,
@@ -33,6 +33,7 @@ ENV_ID = "00000000-0000-4000-8000-00000000e001"
 
 def approval_value(candidate, candidate_verdict, **overrides):
     value = {
+        "environment": ENV_ID,
         "candidate": candidate,
         "verdict": candidate_verdict,
         "approver": {
@@ -54,26 +55,26 @@ def test_approval_is_an_authenticated_act_on_one_exact_passed_design():
     approval = record_design_approval(approval_value(two, verdict(two)))
     assert type(approval) is DesignApproval
     assert approval.design_ref == two.graph_ref
-    with pytest.raises(EnvironmentError):
+    with pytest.raises(EnvironmentContractError):
         record_design_approval(approval_value(
-            two, verdict(two, "rejected", ["review_fail:c1"]),
+            two, verdict(two, "rejected"),
         ))
-    with pytest.raises(EnvironmentError):
+    with pytest.raises(EnvironmentContractError):
         record_design_approval(approval_value(
-            two, verdict(two, "insufficient_evidence", ["x"]),
+            two, verdict(two, "insufficient_evidence"),
         ))
-    with pytest.raises(EnvironmentError):
+    with pytest.raises(EnvironmentContractError):
         record_design_approval(approval_value(two, verdict(two), approver={
             "actor_id": APPROVER, "authenticated": False,
             "evidence": ref("action_approval", 1101),
         }))
-    with pytest.raises(EnvironmentError):
+    with pytest.raises(EnvironmentContractError):
         record_design_approval(approval_value(object(), verdict(two)))
 
 
 def test_the_verdict_must_bind_the_exact_approved_candidate():
     _request, two, three, _duplicate = pool_inputs()
-    with pytest.raises(EnvironmentError):
+    with pytest.raises(EnvironmentContractError):
         record_design_approval(approval_value(two, verdict(three)))
 
 
@@ -89,11 +90,11 @@ def test_preparation_is_compare_and_swap_on_the_environment_head():
     assert prepared.version == 1
     assert prepared.design_ref == two.graph_ref
     assert state2.head == 1
-    with pytest.raises(EnvironmentError):
+    with pytest.raises(EnvironmentContractError):
         # a stale head never prepares (the environment moved)
         prepare_environment_version(state2, approval, expected_head=0)
     other = record_design_approval(approval_value(three, verdict(three)))
-    with pytest.raises(EnvironmentError):
+    with pytest.raises(EnvironmentContractError):
         # a consumed approval never prepares twice
         prepare_environment_version(state2, approval, expected_head=1)
     prepared2, state3 = prepare_environment_version(
@@ -112,7 +113,7 @@ def test_a_design_changed_after_approval_never_prepares(monkeypatch):
     with pytest.raises(TypeError):
         forged(approval, design_ref=three.graph_ref)
     state = open_environment(ENV_ID)
-    with pytest.raises(EnvironmentError):
+    with pytest.raises(EnvironmentContractError):
         prepare_environment_version(
             state, object(), expected_head=state.head,
         )
@@ -129,7 +130,7 @@ def test_prepared_versions_and_states_are_issued_values():
         dataclasses.replace(prepared, status="active")
     with pytest.raises(TypeError):
         dataclasses.replace(state2, head=99)
-    with pytest.raises(EnvironmentError):
+    with pytest.raises(EnvironmentContractError):
         prepare_environment_version(object(), approval, expected_head=0)
     from app.services import environments
 

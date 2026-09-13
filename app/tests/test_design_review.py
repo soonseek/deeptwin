@@ -17,7 +17,10 @@ import dataclasses
 import pytest
 
 from app.services.design import accept_design_candidates
-from app.services.design_criticism import CandidateVerdict
+from app.services.design_criticism import (
+    _review_criteria,
+    fold_candidate_criticism,
+)
 from app.services.design_review import (
     DesignReviewError,
     SelectionPool,
@@ -47,41 +50,71 @@ def accepted(request, target, decision, *, suffix, reshape=False):
     )[0]
 
 
-def verdict(item, status="passed", reasons=()):
-    return CandidateVerdict(
-        candidate_id=item.candidate_id,
-        candidate_version=str(item.version),
-        status=status,
-        reasons=tuple(reasons),
-    )
+_REQUESTS = {}
 
 
-def pool_inputs():
+def verdict(item, status="passed", _reasons=()):
+    """Earn a real fold verdict for one candidate with the wanted status."""
+
+    request = _REQUESTS[item.candidate_id]
+    ids = [entry["id"] for entry in _review_criteria(request)["items"]]
+    statuses = ["pass"] * len(ids)
+    if status == "rejected":
+        statuses[0] = "fail"
+    elif status == "insufficient_evidence":
+        statuses[0] = "unresolved"
+    review = {
+        "candidate_id": item.candidate_id,
+        "candidate_version": str(item.version),
+        "findings": [
+            {"criterion_id": cid, "status": st}
+            for cid, st in zip(ids, statuses)
+        ],
+    }
+    return fold_candidate_criticism(item, request, review, [])
+
+
+def pool_inputs(request_id_suffix=230):
     target, _lens, decision, request, _graph = prepared()
-    two = accepted(request, target, decision, suffix=231)
-    three = accepted(request, target, decision, suffix=232, reshape=True)
-    duplicate = accepted(request, target, decision, suffix=233)
+    if request_id_suffix != 230:
+        from app.services.design import create_generation_request
+        from app.tests.test_design_generation import design_authority
+
+        request = create_generation_request(
+            target,
+            [decision],
+            request_id=f"00000000-0000-4000-8000-{request_id_suffix:012d}",
+            requested_candidate_count=3,
+            compilation_authority=design_authority(),
+        )
+    two = accepted(request, target, decision, suffix=request_id_suffix + 1)
+    three = accepted(
+        request, target, decision, suffix=request_id_suffix + 2, reshape=True,
+    )
+    duplicate = accepted(request, target, decision, suffix=request_id_suffix + 3)
+    for item in (two, three, duplicate):
+        _REQUESTS[item.candidate_id] = request
     return request, two, three, duplicate
 
 
 def test_the_pool_presents_structurally_different_passed_candidates():
-    _request, two, three, duplicate = pool_inputs()
-    pool = assemble_selection_pool([
+    request, two, three, duplicate = pool_inputs()
+    pool = assemble_selection_pool(request, [
         (two, verdict(two)),
         (three, verdict(three)),
         (duplicate, verdict(duplicate)),  # same shape as `two`
     ])
     assert type(pool) is SelectionPool
-    assert [item.candidate_id for item in pool.presented] == [
+    assert {item.candidate_id for item in pool.presented} == {
         two.candidate_id, three.candidate_id,
-    ]
+    }
     assert pool.passed_count == 3  # honesty: three passed, one pooled out
     assert (duplicate.candidate_id, "structural_duplicate") in pool.excluded
 
 
 def test_mandatory_defects_and_insufficiency_never_enter_the_pool():
-    _request, two, three, _duplicate = pool_inputs()
-    pool = assemble_selection_pool([
+    request, two, three, _duplicate = pool_inputs()
+    pool = assemble_selection_pool(request, [
         (two, verdict(two, "rejected", ["review_fail:c1"])),
         (three, verdict(three, "insufficient_evidence",
                         ["validity_unresolved:x"])),
@@ -95,45 +128,43 @@ def test_mandatory_defects_and_insufficiency_never_enter_the_pool():
 
 
 def test_verdicts_must_bind_their_exact_candidate():
-    _request, two, three, _duplicate = pool_inputs()
+    request, two, three, _duplicate = pool_inputs()
     with pytest.raises(DesignReviewError):
-        assemble_selection_pool([(two, verdict(three))])  # cross-bound
+        assemble_selection_pool(request, [(two, verdict(three))])
     with pytest.raises(DesignReviewError):
-        assemble_selection_pool([(object(), verdict(two))])
+        assemble_selection_pool(request, [(object(), verdict(two))])
     with pytest.raises(DesignReviewError):
-        assemble_selection_pool([(two, {"status": "passed"})])
-    with pytest.raises(DesignReviewError):
-        assemble_selection_pool([
-            (two, verdict(two, "vibes_based")),  # unknown status
-        ])
+        assemble_selection_pool(request, [(two, {"status": "passed"})])
     with pytest.raises(DesignReviewError):
         # the same candidate can never appear twice in one pool input
-        assemble_selection_pool([(two, verdict(two)), (two, verdict(two))])
+        assemble_selection_pool(
+            request, [(two, verdict(two)), (two, verdict(two))],
+        )
 
 
 def test_derived_versions_require_re_review_and_inherit_nothing():
-    _request, two, three, _duplicate = pool_inputs()
-    selected = derive_design_version("select", [two])
+    request, two, three, _duplicate = pool_inputs()
+    selected = derive_design_version(request, "select", [two])
     assert selected.action == "select"
     assert selected.parent_refs == (two.graph_ref,)
     assert selected.re_review_required is True
     assert selected.inherited_verdict is None
-    merged = derive_design_version("merge", [two, three])
+    merged = derive_design_version(request, "merge", [two, three])
     assert merged.parent_refs == (two.graph_ref, three.graph_ref)
     assert merged.re_review_required is True
     edited = derive_design_version(
-        "edit", [two], instruction="research 역할의 출처 수집을 강화",
+        request, "edit", [two], instruction="research 역할의 출처 수집을 강화",
     )
     assert edited.instruction == "research 역할의 출처 수집을 강화"
     with pytest.raises(DesignReviewError):
-        derive_design_version("merge", [two])  # a merge needs two parents
+        derive_design_version(request, "merge", [two])
     with pytest.raises(DesignReviewError):
-        derive_design_version("select", [two, three])  # a select takes one
+        derive_design_version(request, "select", [two, three])
     with pytest.raises(DesignReviewError):
-        derive_design_version("regenerate", [two])  # not a derivation action
+        derive_design_version(request, "regenerate", [two])
     with pytest.raises(DesignReviewError):
-        derive_design_version("edit", [two])  # an edit states its instruction
+        derive_design_version(request, "edit", [two])
     with pytest.raises(DesignReviewError):
-        derive_design_version("select", [object()])
+        derive_design_version(request, "select", [object()])
     with pytest.raises(TypeError):
         dataclasses.replace(selected, re_review_required=False)

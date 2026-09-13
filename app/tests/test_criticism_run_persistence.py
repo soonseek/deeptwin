@@ -108,68 +108,65 @@ def test_a_driven_run_persists_with_its_exact_call_chain(vault):
         assert call_content["prompt_sha256"] == record.prompt_sha256
 
 
-def test_a_forged_prompt_hash_never_persists(vault):
+def test_forged_runs_records_and_verdicts_cannot_even_be_built(vault):
     domain, roots = vault
     request, candidate, registry, run, persisted = driven_persisted(domain, roots)
-    forged_first = CriticismCallRecord(
-        call_id=run.call_records[0].call_id,
-        version=1,
-        request_ref=run.call_records[0].request_ref,
-        purpose="review",
-        profile_digest=run.call_records[0].profile_digest,
-        model_id=MODEL_ID,
-        prompt_sha256="ab" * 32,  # not the rendered review prompt
-        response_sha256=run.call_records[0].response_sha256,
-    )
-    forged = dataclasses.replace(
-        run, call_records=(forged_first, *run.call_records[1:]),
-    )
-    with pytest.raises(DesignPersistenceError):
-        persist_criticism_run(
-            domain, persisted.candidate_record_refs[0], candidate, request, registry,
-            forged, **headers(roots),
+    with pytest.raises(TypeError):
+        # records are driver-issued; public construction is disabled
+        CriticismCallRecord(
+            call_id=run.call_records[0].call_id,
+            version=1,
+            request_ref=run.call_records[0].request_ref,
+            purpose="review",
+            profile_digest=run.call_records[0].profile_digest,
+            model_id=MODEL_ID,
+            prompt_sha256="ab" * 32,
+            response_sha256=run.call_records[0].response_sha256,
         )
-
-
-def test_a_dropped_or_reordered_call_never_persists(vault):
-    domain, roots = vault
-    request, candidate, registry, run, persisted = driven_persisted(domain, roots)
-    dropped = dataclasses.replace(run, call_records=run.call_records[:-1])
-    with pytest.raises(DesignPersistenceError):
-        persist_criticism_run(
-            domain, persisted.candidate_record_refs[0], candidate, request, registry,
-            dropped, **headers(roots),
-        )
-    reordered = dataclasses.replace(
-        run,
-        call_records=(run.call_records[1], run.call_records[0],
-                      *run.call_records[2:]),
-    )
-    with pytest.raises(DesignPersistenceError):
-        persist_criticism_run(
-            domain, persisted.candidate_record_refs[0], candidate, request, registry,
-            reordered, **headers(roots),
-        )
-
-
-def test_a_forged_verdict_never_persists(vault):
-    domain, roots = vault
-    request, candidate, registry, run, persisted = driven_persisted(domain, roots)
+    with pytest.raises(TypeError):
+        dataclasses.replace(run, call_records=run.call_records[:-1])
     from app.services.design_criticism import CandidateVerdict
 
-    forged = dataclasses.replace(run, verdict=CandidateVerdict(
-        candidate_id=run.verdict.candidate_id,
-        candidate_version=run.verdict.candidate_version,
-        status="passed",
-        reasons=("조작된 사유",),
-    ))
-    with pytest.raises(DesignPersistenceError):
-        persist_criticism_run(
-            domain, persisted.candidate_record_refs[0], candidate, request, registry,
-            forged, **headers(roots),
+    with pytest.raises(TypeError):
+        CandidateVerdict(
+            candidate_id=run.verdict.candidate_id,
+            candidate_version=run.verdict.candidate_version,
+            candidate_sha=run.verdict.candidate_sha,
+            status="passed",
+            reasons=("조작된 사유",),
         )
     with pytest.raises(DesignPersistenceError):
         persist_criticism_run(
-            domain, persisted.candidate_record_refs[0], candidate, request, registry,
-            object(), **headers(roots),
+            domain, persisted.candidate_record_refs[0], candidate, request,
+            registry, object(), **headers(roots),
         )
+
+    class FakeRun:
+        verdict = run.verdict
+        review = run.review
+        chains = run.chains
+        call_records = run.call_records
+
+    with pytest.raises(DesignPersistenceError):
+        persist_criticism_run(
+            domain, persisted.candidate_record_refs[0], candidate, request,
+            registry, FakeRun(), **headers(roots),
+        )
+
+
+def test_a_refused_run_stores_nothing(vault):
+    domain, roots = vault
+    request, candidate, registry, run, persisted = driven_persisted(domain, roots)
+    # the request record is NOT the candidate record: binding fails
+    wrong_parent = persisted.request_record_ref
+    with pytest.raises(DesignPersistenceError):
+        persist_criticism_run(
+            domain, wrong_parent, candidate, request, registry, run,
+            **headers(roots),
+        )
+    # F3: nothing durable was left behind by the refused run
+    from app.domain.store import StorageError
+
+    for record in run.call_records:
+        with pytest.raises(StorageError):
+            domain.get(record.call_ref)
