@@ -202,3 +202,42 @@ c59ce54f35a3428da04c27047972f131a483a5016567eb5d93153a306cbda34b  app/api/creden
 ```
 
 This remediation itself has not been independently re-audited.
+
+## Authenticated ingress route (2026-09-13)
+
+`app/api/credential_routes.py` mounts `POST /api/v1/credentials` on the existing
+session/CSRF authority. The route applies the exact wire checks
+(`parse_credential_ingress` over the raw ASGI header pairs) before any effect and
+hands the validated intent to a host-wired `credential_gateway_submit` callable on
+application state — the control plane never imports the vault implementation, and
+`create_app` attaches no gateway by default, so the route is honestly
+`dependency_unavailable` until the UDS-backed gateway client exists. The gateway's
+receipt is validated to the exact redacted shape (`handle`/`provider`/`state`);
+any other shape — including a hostile receipt echoing the secret — is rejected as
+a sanitized 503 and never reaches the browser.
+
+Tests: `app/tests/test_credential_routes.py` (5, over the real app and local
+boundary) — CSRF-less write refused by the boundary; gateway-less unavailability;
+a valid intent forwarded exactly once with a redacted 201 receipt; five wire
+violations rejected 400 with zero gateway effect and no secret in any response;
+and a misbehaving gateway receipt never echoed.
+
+```text
+python -m pytest -q app/tests/test_credential_routes.py
+5 passed
+ruff check app/api/credential_routes.py app/tests/test_credential_routes.py
+All checks passed  (server.py carries 3 pre-existing whole-tree findings, unchanged)
+python -m pytest app/tests deploy/tests -q   (full shared regression, 2026-09-13)
+3,075 passed, 2 skipped, 369 subtests passed, 1 known warning
+```
+
+Frozen identities (SHA-256):
+
+```text
+cffd70c8e287f532b2543dee9a09c209cb4ddaafc7948243747c6fbc6d5da23c  app/api/credential_routes.py
+f17a0293e54752ebd497b36ded840d2493177d31997009c047e42668119781e1  app/tests/test_credential_routes.py
+```
+
+Still not claimed: no UDS-backed gateway client exists (the state attachment point
+is honestly empty in production), GET/status/catalog zero-effect routes, delete
+retirement flow, and lost-response/race persistence cases remain open.

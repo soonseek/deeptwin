@@ -18,6 +18,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .api.conversation_routes import install_conversation_routes
+from .api.credential_routes import install_credential_ingress
 from .api.provider_routes import install_provider_connection_routes
 from .api.routes import api_error, initialize_api_v1, install_api_v1
 from .api.session import (
@@ -483,6 +484,7 @@ def create_app(data_dir, port=4193, *, codex_factory=None, understanding_model_f
     app.state.worker_dispatch = None
     app.state.worker_dispatch_slot = worker_dispatch_slot
     app.state.api_v1 = api_v1
+    app.state.credential_gateway_submit = None
     app.add_middleware(LocalBoundary, sessions=local_sessions)
     install_api_v1(
         app,
@@ -490,6 +492,7 @@ def create_app(data_dir, port=4193, *, codex_factory=None, understanding_model_f
         runtime_dispatch_resolver=runtime_dispatch_resolver,
         worker_dispatch_slot=worker_dispatch_slot,
     )
+    install_credential_ingress(app)
     install_conversation_routes(app, conversation=conversation)
     install_provider_connection_routes(app, connections=provider_connections)
 
