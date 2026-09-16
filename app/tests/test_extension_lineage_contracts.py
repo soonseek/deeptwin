@@ -517,6 +517,15 @@ def test_descriptor_join_rejects_provenance_ref_independently_of_digest_like_fie
             "--shell",
         ],
         ["/bin/sh", "--instance-id", INSTANCE_ID, "--slot-number", "1"],
+        # shortened vectors: descriptor-valid, but the join needs all five
+        [
+            "/opt/deeptwin-extension/bin/worker",
+            "--instance-id",
+            INSTANCE_ID,
+            "--slot-number",
+        ],
+        ["/opt/deeptwin-extension/bin/worker", "--instance-id", INSTANCE_ID],
+        ["/opt/deeptwin-extension/bin/worker"],
     ],
 )
 def test_descriptor_join_rejects_extra_missing_reordered_or_semantic_argv(argv):
@@ -653,3 +662,44 @@ def test_existing_68_schema_artifacts_remain_byte_identical():
     for expected, relative in entries:
         path = ROOT / relative.lstrip(" *")
         assert hashlib.sha256(path.read_bytes()).hexdigest() == expected
+
+
+def _hollow(cls, state=None):
+    """An exact-class instance whose stored state is absent or not bytes."""
+    value = object.__new__(cls)
+    if state is not None:
+        object.__setattr__(value, "content_bytes", state)
+    return value
+
+
+@pytest.mark.parametrize("state", [None, "not-bytes", 7, bytearray(b"{}")])
+def test_hollow_build_identity_is_rejected_as_invalid_not_attribute_error(state):
+    with pytest.raises(LineageContractError, match="^invalid lineage value$"):
+        validate_schema_bytes(_hollow(BuildIdentity, state), shipped_schema_bytes())
+
+
+@pytest.mark.parametrize("state", [None, "not-bytes", 7, bytearray(b"{}")])
+def test_hollow_lineage_is_rejected_by_join_and_projection(state):
+    lineage, _ = parsed_lineage()
+    descriptor = descriptor_for(lineage)
+    hollow = _hollow(LineageEvidence, state)
+    with pytest.raises(LineageContractError, match="^invalid lineage value$"):
+        validate_descriptor_lineage(
+            hollow, descriptor, instance_id=INSTANCE_ID, slot_number=1
+        )
+    with pytest.raises(LineageContractError, match="^invalid lineage value$"):
+        hollow.selected_platform("linux/amd64")
+    with pytest.raises(LineageContractError, match="^invalid lineage value$"):
+        hollow.selected_platform_digest("linux/amd64")
+
+
+@pytest.mark.parametrize("state", [None, "not-bytes", 7, bytearray(b"{}")])
+def test_hollow_descriptor_is_rejected_by_join(state):
+    lineage, _ = parsed_lineage()
+    with pytest.raises(LineageContractError, match="^invalid lineage value$"):
+        validate_descriptor_lineage(
+            lineage,
+            _hollow(ExtensionServiceDescriptor, state),
+            instance_id=INSTANCE_ID,
+            slot_number=1,
+        )

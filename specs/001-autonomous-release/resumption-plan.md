@@ -2219,7 +2219,7 @@ Use current `ExtensionServiceDescriptor` and existing full `index`/`platforms` s
 subset that loses size/media/position or only checks the selected platform. The source-level
 package boundary remains free of app.api/static/server imports.
 
-- [ ] First tests independently build both-platform structural values from existing
+- [x] First tests independently build both-platform structural values from existing
   `app.tests.extension_candidate_fixture.candidate_payload()` metadata; create a local test
   identity helper with input SHA256/size refs, entrypoint ref and actual current four schema
   bytes in fixed role order. These are synthetic declarations, not a real built image. Establish
@@ -2238,13 +2238,13 @@ package boundary remains free of app.api/static/server imports.
   assert value.content_bytes == raw
   ```
 
-- [ ] Implement bounded canonical decoding and immutable byte-backed values, sanitized exact
+- [x] Implement bounded canonical decoding and immutable byte-backed values, sanitized exact
   errors, independently validated embedded identity, both-platform/order/size/media relations.
   Derive detached selected projection and hash without caching mutable dictionary truth. Reuse
   existing wire depth/item semantics and schema grammar; source-byte validation hashes actual
   supplied bytes, not regenerated semantically equivalent JSON. Validate all exact class/scalar
   inputs; no constructor or successful validator grants runtime authority.
-- [ ] RED-first join tests create actual existing candidate descriptors with the lineage's
+- [x] RED-first join tests create actual existing candidate descriptors with the lineage's
   MetaRef and exact five argv values. Require both complete platform entries and index equality.
   Mutate each nonselected-platform media/size/digest/order and provenance MetaRef independently;
   all must fail even when other digest strings match. Preserve repeated layer digests and test
@@ -2261,16 +2261,16 @@ package boundary remains free of app.api/static/server imports.
                                   instance_id="1" * 32, slot_number=1)
   ```
 
-- [ ] Add strict shape/type/Unicode/BOM/duplicate/noncanonical/unknown-field and exact cap edge
+- [x] Add strict shape/type/Unicode/BOM/duplicate/noncanonical/unknown-field and exact cap edge
   cases, including version component overflow, numeric booleans, incorrect schemas/role order,
   truncated/oversized actual schema bytes, and real shipped result schema>65536bytes. Expected
   hashes/projections must be independent test computations, not values taken from subject methods.
   Report whether broad wire caps are redundant above narrower valid grammar; do not fake an
   invalid scalar as a valid cap-edge positive or widen the grammar to reach a test bound.
-- [ ] Implement deterministic new-only exports and byte-parity tests, runtime/schema shape
+- [x] Implement deterministic new-only exports and byte-parity tests, runtime/schema shape
   agreement and invariant that accepted current68 schemas did not change. Code generation is
   developer artifact production, not runtime filesystem behavior or evidence qualification.
-- [ ] Self-review all five new files; Ruff/format/diffcheck, baseline/schema integrity, then
+- [x] Self-review all five new files; Ruff/format/diffcheck, baseline/schema integrity, then
   freeze before the complete covering command (projectPython, all tracing disabled, -B and
   -p no:cacheprovider): `app/tests/test_extension_lineage_contracts.py
   app/tests/test_extension_candidates.py app/tests/test_extension_candidates_persistent.py
@@ -2280,6 +2280,16 @@ package boundary remains free of app.api/static/server imports.
   Verify actual filenames before run, no silent substitution. Final exact report
   `.superpowers/sdd/resumption-plan/task-22-report.md`; parent owns independent review.
   T025/T087/wholeUI remain open; no realimage/native/cryptographic-origin/scan/build/live result.
+Task-scoped result: implementation covering 475 passed; independent review returned "Needs fixes"
+with two Important findings — hollow/corrupt exact-class instances (absent or non-bytes stored state)
+leaked `AttributeError` through `validate_schema_bytes`, `validate_descriptor_lineage` and
+`selected_platform`, and the mandated shortened-argv join vector was absent. Fix round 1
+(2026-09-16): a `_stored_bytes` state guard plus `AttributeError`/`IndexError` in the sanitizing
+boundary, 12 hollow-state regressions (RED 6 failed first) across all three classes, and three
+shortened argv vectors (slot value omitted, pair omitted, bare executable). Covering suite
+490 passed; Ruff lint/format/diffcheck clean. Minor warning noise remains the inherited
+Starlette deprecation. Task 22 accepted; no real build, image provenance or installation claim.
+
 
 ### Task 23: Actual fixed-file extension worker measurement
 

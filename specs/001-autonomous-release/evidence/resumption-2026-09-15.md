@@ -799,3 +799,17 @@ whole command as Task20 above. Code/test/schema bytes stayed frozen; parent post
 all7scope hashes, all68oldschemas,170baseline164unchanged/exact6authorizedchanges, unchangedHEAD
 d484fd55a93e5055e17ad5acb392d2ebf905f326 and clean gitdiffcheck. This supersedes5456 as current
 whole local regression evidence, not release qualification. No live/paid/provider/operator action.
+
+## Task 22 review fix round 1 — accepted (2026-09-16)
+
+Independent review of the five-file lineage slice had returned "Needs fixes": (I1) exact-class
+instances with absent or non-bytes stored state leaked `AttributeError` from the validators and
+the platform projection, violating the sanitized-error requirement; (I2) the mandated
+shortened-argv join vector was missing from the retained tests. Correction: `_stored_bytes`
+refuses hollow/corrupt state explicitly before any parse, the sanitizing boundaries also catch
+`AttributeError`/`IndexError`, and the join reads lineage bytes once through that guard.
+RED 6 failed / 14 passed on the new vectors (the three shortened-argv vectors already refused —
+coverage closure, disclosed), then GREEN. Task 22 covering command: **490 passed, 1 inherited
+warning, 44.51s**. Ruff lint, `ruff format --check` and `git diff --check` clean on both files.
+Full regression and commit follow in the same iteration record below.
+Full regression on the fixed source (same tracing-disabled command): **5600 passed, 1 skipped (Linux SO_PEERCRED), 1 inherited warning, 369 subtests, 678.05s**, exit 0 — the delta over 5585 is exactly the 15 new Task 22 regressions.

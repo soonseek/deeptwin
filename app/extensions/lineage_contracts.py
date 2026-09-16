@@ -101,6 +101,23 @@ def _validate_identity_value(value: dict) -> None:
         raise _invalid()
 
 
+def _stored_bytes(value: object) -> bytes:
+    """Return the exact-class instance's canonical bytes or refuse.
+
+    Class membership alone proves nothing: a hollow or corrupted instance
+    (absent or non-bytes state) must surface as the sanitized contract
+    error, never as AttributeError from a slot lookup.
+    """
+
+    try:
+        stored = object.__getattribute__(value, "content_bytes")
+    except AttributeError:
+        raise _invalid() from None
+    if type(stored) is not bytes:
+        raise _invalid()
+    return stored
+
+
 def _parse_identity(raw: object) -> dict:
     value = _decode(
         raw,
@@ -156,17 +173,31 @@ class LineageEvidence:
     def selected_platform(self, platform: str) -> dict:
         if type(platform) is not str or platform not in _PLATFORMS:
             raise _invalid()
-        value = self.as_dict()
-        entry = value["platforms"][_PLATFORMS.index(platform)][
-            "measured_platform_entry"
-        ]
-        return {
-            "platform": platform,
-            "index_digest": value["index"]["digest"],
-            "manifest_digest": entry["manifest"]["digest"],
-            "config_digest": entry["config"]["digest"],
-            "ordered_layer_digests": [layer["digest"] for layer in entry["layers"]],
-        }
+        try:
+            value = parse_canonical(_stored_bytes(self))
+            entry = value["platforms"][_PLATFORMS.index(platform)][
+                "measured_platform_entry"
+            ]
+            return {
+                "platform": platform,
+                "index_digest": value["index"]["digest"],
+                "manifest_digest": entry["manifest"]["digest"],
+                "config_digest": entry["config"]["digest"],
+                "ordered_layer_digests": [layer["digest"] for layer in entry["layers"]],
+            }
+        except LineageContractError:
+            raise
+        except (
+            ValueError,
+            TypeError,
+            KeyError,
+            IndexError,
+            AttributeError,
+            UnicodeError,
+            RecursionError,
+            MemoryError,
+        ):
+            raise _invalid() from None
 
     def selected_platform_digest(self, platform: str) -> str:
         return sha256(canonical_json(self.selected_platform(platform))).hexdigest()
@@ -227,7 +258,7 @@ def validate_schema_bytes(
             raise _invalid()
         if any(type(raw) is not bytes for raw in schema_bytes):
             raise _invalid()
-        declarations = parse_build_identity(identity.content_bytes).as_dict()[
+        declarations = parse_build_identity(_stored_bytes(identity)).as_dict()[
             "port_schemas"
         ]
         for role, declaration, raw in zip(
@@ -264,9 +295,10 @@ def validate_descriptor_lineage(
             or not 1 <= slot_number <= 16
         ):
             raise _invalid()
-        lineage_value = parse_lineage(lineage.content_bytes).as_dict()
+        lineage_bytes = _stored_bytes(lineage)
+        lineage_value = parse_lineage(lineage_bytes).as_dict()
         descriptor_value = ExtensionServiceDescriptor.from_mapping(
-            descriptor.as_dict()
+            parse_canonical(_stored_bytes(descriptor))
         ).as_dict()
         expected_command = {
             "protocol_id": "deeptwin-extension-worker-v1",
@@ -290,11 +322,19 @@ def validate_descriptor_lineage(
             or descriptor_value["index"] != lineage_value["index"]
             or descriptor_value["platforms"] != measured_entries
             or descriptor_value["evidence"]["provenance_ref"]
-            != metadata_ref("provenance", lineage.content_bytes)
+            != metadata_ref("provenance", lineage_bytes)
             or descriptor_value["command"] != expected_command
         ):
             raise _invalid()
     except LineageContractError:
         raise
-    except (ValueError, TypeError, KeyError, UnicodeError, RecursionError, MemoryError):
+    except (
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        UnicodeError,
+        RecursionError,
+        MemoryError,
+    ):
         raise _invalid() from None
