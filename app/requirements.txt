@@ -1,7 +1,16 @@
-# Direct dependencies verified with Python 3.12.13 on 2026-09-07.
-# This is a development slice, not the final web-release dependency lock.
+# Generated projection of the runtime dependencies in pyproject.toml.
+# Do not edit by hand: app/tests/test_dependency_manifest_parity.py fails on drift.
+# This is the development slice, not the Linux release lock (deploy/locks/).
+anthropic==1.4.0
+argon2-cffi==25.1.0
 fastapi==0.141.1
-uvicorn==0.52.4
-python-docx==1.2.0
+httpx==0.28.1
+idna==3.19
+jsonschema==4.26.0
+langgraph==1.2.11
+langgraph-checkpoint-sqlite==3.1.1
 pydantic==2.13.5
 PyNaCl==1.6.2
+python-docx==1.2.0
+starlette==1.6.0
+uvicorn[standard]==0.52.4

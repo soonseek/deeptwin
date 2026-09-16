@@ -1,0 +1,42 @@
+[project]
+name = "deeptwin"
+version = "0.1.0"
+description = "Trace-grounded framework for diagnosing, validating, and governing expert-judgment knowledge."
+readme = "README.md"
+requires-python = ">=3.12"
+# Single source of dependency truth. Every entry is an exact pin verified in
+# the development environment; app/requirements.txt is a generated projection
+# of this list and app/tests/test_dependency_manifest_parity.py fails on drift.
+# The Linux release locks under deploy/locks/ are separate pinned build inputs.
+dependencies = [
+    "anthropic==1.4.0",
+    "argon2-cffi==25.1.0",
+    "fastapi==0.141.1",
+    "httpx==0.28.1",
+    "idna==3.19",
+    "jsonschema==4.26.0",
+    "langgraph==1.2.11",
+    "langgraph-checkpoint-sqlite==3.1.1",
+    "pydantic==2.13.5",
+    "PyNaCl==1.6.2",
+    "python-docx==1.2.0",
+    "starlette==1.6.0",
+    "uvicorn[standard]==0.52.4",
+]
+
+[dependency-groups]
+dev = [
+    "cyclonedx-bom==7.3.1",
+    "detect-secrets==1.5.0",
+    "hypothesis==6.167.1",
+    "mypy==2.3.1",
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "reuse==6.2.0",
+    "ruff==0.16.6",
+]
+
+[tool.uv]
+# The repository is run as modules (python -m app.server, pytest app/tests);
+# it is not built or installed as a distribution package.
+package = false
