@@ -17,7 +17,7 @@ from ..domain.refs import DomainContractError
 
 REQUIRED_COVERAGE: dict[str, tuple[str, ...]] = {
     "deployment_request_lifecycle": (
-        "deployment.request_prepared", "deployment.request_cancelled",
+        "deployment.request_prepared", "deployment.request_cancelled", "deployment.request_expired",
         "deployment.receipt_committed",
     ),
     "setup": ("setup.started", "setup.component_progress", "setup.failed"),

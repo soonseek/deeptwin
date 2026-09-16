@@ -1,0 +1,65 @@
+{
+  "$comment": "Structural only; actual owner, source and journal admission remain required.",
+  "$id": "urn:deeptwin:schemas:v1:deployment:cancellation-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cancelled_at": {
+      "format": "date-time",
+      "maxLength": 24,
+      "minLength": 1,
+      "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+      "type": "string"
+    },
+    "domain": {
+      "const": "deeptwin-deployment-cancellation-v1",
+      "type": "string"
+    },
+    "instance_id": {
+      "maxLength": 32,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{32})(?![\\s\\S])",
+      "type": "string"
+    },
+    "lifecycle_revision": {
+      "const": 2,
+      "type": "integer"
+    },
+    "origin_profile_digest": {
+      "maxLength": 43,
+      "minLength": 1,
+      "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+      "type": "string"
+    },
+    "request_digest": {
+      "maxLength": 43,
+      "minLength": 1,
+      "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      },
+      "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+      "type": "string"
+    },
+    "schema": {
+      "const": "deployment-cancellation-v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "domain",
+    "request_id",
+    "request_digest",
+    "instance_id",
+    "origin_profile_digest",
+    "lifecycle_revision",
+    "cancelled_at"
+  ],
+  "type": "object"
+}
