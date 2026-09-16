@@ -8,9 +8,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { saveModelSelection } from './helpers/model-selection.mjs';
 import { localContextOptions, localGet, localRouteFetch, mintLaunchURL } from './helpers/local-session.mjs';
+import { closeOwnedFixture, waitForOwnedChildOutput } from './helpers/owned-fixture-lifecycle.mjs';
 
 let chromium;
 const root = fileURLToPath(new URL('../../', import.meta.url));
+const browserTest = (name, fn) => test(name, { timeout: 45_000 }, fn);
 test.before(async () => {
   assert.ok(process.env.CONTROL_PLAYWRIGHT_MODULE, 'Bundled Playwright is required; microphone tests never skip');
   ({ chromium } = await import(pathToFileURL(process.env.CONTROL_PLAYWRIGHT_MODULE).href));
@@ -32,25 +34,32 @@ function wave({ silence = false, continuous = false } = {}) {
 
 async function open(t, { ready = true, silence = false, continuous = false, delay = .02, width = 1024, deny = false, understandingReady = false, speechInfo = null } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'deeptwin-speech-ui-'));
+  let browser, server, cleanupPromise;
+  t.after(() => {
+    cleanupPromise ??= closeOwnedFixture({
+      browser,
+      server,
+      removeTemp: () => rm(dir, { recursive: true, force: true }),
+    }, {
+      browserCloseMs: 5_000,
+      serverGraceMs: 2_000,
+      serverForceMs: 2_000,
+      tempCleanupMs: 5_000,
+      label: 'Speech fixture',
+    });
+    return cleanupPromise;
+  });
   const wav = join(dir, 'synthetic-device.wav'); await writeFile(wav, wave({ silence, continuous }));
   const args = ['app/tests/fixtures/speech_server.py', '--data-dir', dir, '--port', '0', '--delay', String(delay)];
   if (!ready) args.push('--not-ready');
   if (understandingReady) args.push('--understanding-ready');
-  const server = spawn(process.env.CONTROL_PYTHON || 'python3', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
-  t.after(async () => {
-    if (server.exitCode === null) await new Promise(resolve => { server.once('exit', resolve); server.kill('SIGTERM'); });
-    await rm(dir, { recursive: true, force: true });
+  server = spawn(process.env.CONTROL_PYTHON || 'python3', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+  const url = await waitForOwnedChildOutput(server, {
+    pattern: /http:\/\/127\.0\.0\.1:\d+/,
+    timeoutMs: 15_000,
+    label: 'Speech fixture',
   });
-  const url = await new Promise((resolve, reject) => {
-    let output = '';
-    const timer = setTimeout(() => reject(new Error(`Speech fixture not ready: ${output}`)), 15000);
-    const read = bytes => { output += bytes; const match = output.match(/http:\/\/127\.0\.0\.1:\d+/); if (match) { clearTimeout(timer); resolve(match[0]); } };
-    server.stdout.on('data', read); server.stderr.on('data', read);
-    server.once('error', error => { clearTimeout(timer); reject(error); });
-    server.once('exit', code => { clearTimeout(timer); reject(new Error(`Fixture exited ${code}: ${output}`)); });
-  });
-  const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${wav}`] });
-  t.after(() => browser.close());
+  browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${wav}`] });
   const context = await browser.newContext(localContextOptions({ baseURL: url, permissions: ['microphone'], viewport: { width, height: 900 } }));
   await context.addInitScript(({ deny }) => {
     window.testMediaStreams = []; window.testMediaRequests = 0;
@@ -108,7 +117,7 @@ test('audio worklet converts native 16/44.1/48 kHz input to bounded PCM16LE 16 k
   }
 });
 
-test('speech is opt-in and an unprepared engine never asks for microphone access or creates a work', async t => {
+browserTest('speech is opt-in and an unprepared engine never asks for microphone access or creates a work', async t => {
   const { page, requests } = await open(t, { ready: false });
   assert.equal(await page.locator('#speech-input').count(), 1);
   await page.locator('#speech-input[data-ready="false"]').waitFor();
@@ -119,14 +128,14 @@ test('speech is opt-in and an unprepared engine never asks for microphone access
   assert.equal(requests.filter(item => item.method === 'POST' && item.path !== '/api/session/bootstrap').length, 0);
 });
 
-test('a ready flag from a non-local speech identity stays fail-closed before microphone access', async t => {
+browserTest('a ready flag from a non-local speech identity stays fail-closed before microphone access', async t => {
   const { page } = await open(t, { speechInfo: { ready: true, engine: 'remote', model: 'base', language: 'ko', message: 'wrong identity' } });
   await page.locator('#speech-input[data-ready="false"]').waitFor();
   assert.equal(await page.getByRole('button', { name: '말로 입력', exact: true }).isDisabled(), true);
   assert.equal(await page.evaluate(() => window.testMediaRequests), 0);
 });
 
-test('ready copy distinguishes browser microphone capture from instance-owned transcription', async t => {
+browserTest('ready copy distinguishes browser microphone capture from instance-owned transcription', async t => {
   const { page } = await open(t);
   await page.locator('#speech-input[data-ready="true"]').waitFor();
   const copy = await page.locator('#speech-status').textContent();
@@ -135,7 +144,7 @@ test('ready copy distinguishes browser microphone capture from instance-owned tr
   assert.doesNotMatch(copy, /이 컴퓨터/);
 });
 
-test('native keyboard controls and text states expose recording and stop without color dependence', async t => {
+browserTest('native keyboard controls and text states expose recording and stop without color dependence', async t => {
   const { page } = await open(t, { silence: true });
   const toggle = page.getByRole('button', { name: '말로 입력', exact: true });
   assert.equal(await page.locator('#speech-status').getAttribute('role'), 'status');
@@ -154,7 +163,7 @@ test('native keyboard controls and text states expose recording and stop without
   await ended(page);
 });
 
-test('real fake-device audio flows through worklet PCM and final text is inserted only once, with immediate microphone stop', async t => {
+browserTest('real fake-device audio flows through worklet PCM and final text is inserted only once, with immediate microphone stop', async t => {
   const { page, requests, errors, external } = await open(t);
   await start(page);
   assert.equal(await page.locator('#work-select option:checked').textContent(), '작성 중인 업무');
@@ -177,7 +186,7 @@ test('real fake-device audio flows through worklet PCM and final text is inserte
   assert.deepEqual(errors, []); assert.deepEqual(external, []);
 });
 
-test('silence creates no transcription request and permission failure keeps the original input', async t => {
+browserTest('silence creates no transcription request and permission failure keeps the original input', async t => {
   const { page, requests } = await open(t, { silence: true });
   await start(page); await page.waitForTimeout(2500);
   await page.getByRole('button', { name: '음성 입력 중지', exact: true }).click();
@@ -191,7 +200,7 @@ test('silence creates no transcription request and permission failure keeps the 
   assert.match(await denied.page.locator('#speech-status').textContent(), /마이크.*권한/);
 });
 
-test('typing and Korean composition while dictating are preserved before final text is inserted at the current cursor', async t => {
+browserTest('typing and Korean composition while dictating are preserved before final text is inserted at the current cursor', async t => {
   const { page } = await open(t);
   await page.locator('#work-text').fill('기존 글'); await start(page);
   await page.waitForFunction(() => document.querySelector('#speech-provisional').textContent.length > 0);
@@ -211,7 +220,7 @@ test('typing and Korean composition while dictating are preserved before final t
   await page.getByRole('button', { name: '음성 입력 중지', exact: true }).click(); await ended(page);
 });
 
-test('cancel and work switching stop tracks and discard delayed transcription without removing confirmed text', async t => {
+browserTest('cancel and work switching stop tracks and discard delayed transcription without removing confirmed text', async t => {
   for (const leave of ['cancel', 'switch', 'hidden']) {
     const { page, requests } = await open(t, { delay: 5 });
     await page.locator('#work-text').fill('기존 확정 글'); await start(page);
@@ -227,7 +236,7 @@ test('cancel and work switching stop tracks and discard delayed transcription wi
   }
 });
 
-test('long speech is segmented within byte limits and slow inference cannot create an unbounded request queue', async t => {
+browserTest('long speech is segmented within byte limits and slow inference cannot create an unbounded request queue', async t => {
   const { page, requests } = await open(t, { continuous: true, delay: 20, width: 390 });
   await start(page);
   await page.waitForTimeout(13200);
@@ -244,7 +253,7 @@ test('long speech is segmented within byte limits and slow inference cannot crea
   await page.getByRole('button', { name: '음성 입력 취소', exact: true }).click(); await ended(page);
 });
 
-test('stop during an unfinished utterance shuts down tracks first and commits its last final result once', async t => {
+browserTest('stop during an unfinished utterance shuts down tracks first and commits its last final result once', async t => {
   const { page, requests } = await open(t, { continuous: true, delay: 1 });
   await start(page);
   await page.waitForFunction(() => document.querySelector('#speech-provisional').textContent.length > 0);
@@ -256,7 +265,7 @@ test('stop during an unfinished utterance shuts down tracks first and commits it
   assert.equal(requests.filter(item => item.path.endsWith('/chunks') && new URL(item.url).searchParams.get('final') === 'true').length, 1);
 });
 
-test('another window cannot start a simultaneous speech session and keeps its existing input', async t => {
+browserTest('another window cannot start a simultaneous speech session and keeps its existing input', async t => {
   const { page, context, url } = await open(t, { silence: true });
   await page.locator('#work-text').fill('두 창에서 남길 글');
   await start(page);
@@ -271,7 +280,7 @@ test('another window cannot start a simultaneous speech session and keeps its ex
   await page.getByRole('button', { name: '음성 입력 중지', exact: true }).click(); await ended(page);
 });
 
-test('an instance transcriber failure is not misreported as another window using the microphone', async t => {
+browserTest('an instance transcriber failure is not misreported as another window using the microphone', async t => {
   const { page } = await open(t);
   await page.route('**/api/speech/sessions/*/chunks?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: '인스턴스의 음성 입력 기능을 사용할 수 없습니다.' }) }));
   await start(page);
@@ -281,7 +290,7 @@ test('an instance transcriber failure is not misreported as another window using
   assert.doesNotMatch(await page.locator('#speech-status').textContent(), /다른 음성 입력/);
 });
 
-test('a transcription response with a non-local engine identity never inserts text', async t => {
+browserTest('a transcription response with a non-local engine identity never inserts text', async t => {
   const { page } = await open(t);
   await page.route('**/api/speech/sessions/*/chunks?*', async route => {
     const response = await localRouteFetch(route);
@@ -295,7 +304,7 @@ test('a transcription response with a non-local engine identity never inserts te
   assert.match(await page.locator('#speech-status').textContent(), /응답을 확인하지 못/);
 });
 
-test('failure cleanup is awaited so immediate retry keeps text and opens a fresh session', async t => {
+browserTest('failure cleanup is awaited so immediate retry keeps text and opens a fresh session', async t => {
   const { page } = await open(t);
   let first = true;
   await page.route('**/api/speech/sessions/*/chunks?*', async route => {
@@ -318,7 +327,7 @@ test('failure cleanup is awaited so immediate retry keeps text and opens a fresh
   await ended(page);
 });
 
-test('typing while the created session response is delayed does not finish or abandon microphone startup', async t => {
+browserTest('typing while the created session response is delayed does not finish or abandon microphone startup', async t => {
   const { page } = await open(t, { silence: true });
   let release, created;
   const held = new Promise(resolve => { release = resolve; });
@@ -340,7 +349,7 @@ test('typing while the created session response is delayed does not finish or ab
   } finally { release(); }
 });
 
-test('microphone stop preserves an unconfirmed server-close warning instead of claiming completion', async t => {
+browserTest('microphone stop preserves an unconfirmed server-close warning instead of claiming completion', async t => {
   const { page } = await open(t, { silence: true });
   await start(page);
   await page.route('**/api/speech/sessions/*/close', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'controlled close failure' }) }));
@@ -351,7 +360,7 @@ test('microphone stop preserves an unconfirmed server-close warning instead of c
   assert.doesNotMatch(await page.locator('#speech-status').textContent(), /마쳤습니다/);
 });
 
-test('final speech waiting on a real revision snapshot freeze is inserted as soon as save completes without another keystroke', async t => {
+browserTest('final speech waiting on a real revision snapshot freeze is inserted as soon as save completes without another keystroke', async t => {
   const { page } = await open(t, { understandingReady: true });
   await page.locator('#work-text').fill('원래 업무');
   await saveModelSelection(page);

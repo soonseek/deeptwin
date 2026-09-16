@@ -10,7 +10,7 @@ from unittest.mock import patch
 import uvicorn
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from app.server import create_app
+from app.server import create_development_app as create_app
 from app.speech import SpeechCancelled
 from app.codex_connection import CodexConnection
 from app.codex_rpc import CodexRPC
