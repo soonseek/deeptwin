@@ -263,7 +263,7 @@ def test_scheduler_runs_a_sequential_chain_with_ledger_reconciled_executions(tmp
     # the outcome is a bounded projection, never the raw channel state
     assert set(outcome.__dataclass_fields__) == {
         "run_id", "graph_digest", "completed_node_ids", "execution_ids",
-        "result_refs", "counters", "activations",
+        "result_refs", "counters", "activations", "awaiting_human", "approvals",
     }
     assert outcome.counters == {"intake": 1, "writer": 1, "publish": 1}
 
@@ -467,3 +467,130 @@ def test_loop_facts_are_validated_against_the_graph(tmp_path, facts):
     with pytest.raises(sch.SchedulerError, match="node_failed:loop"):
         scheduler.run()
     assert ("revise", 0) not in calls and ("done", 0) not in calls
+
+
+# ---------------------------------------------------------------------------
+# T040 slice 3: human gates. A `human_gate` node runs only when an actual
+# owner-recorded approval exists for every declared scope; without one the
+# run stops honestly in `awaiting_human`, and a recorded rejection fails the
+# gate. No handler return value can substitute for the record.
+# ---------------------------------------------------------------------------
+
+from types import SimpleNamespace as _NS
+
+from app.services.run_approvals import PersistentRunApprovals
+from app.tests.test_extension_candidates_persistent import owner as _owner
+from app.tests.test_runtime_ledger import immutable
+
+
+def gated_app(tmp_path):
+    """A real owner-bootstrapped app whose ledger/store host the gated run."""
+    context = _owner(tmp_path)
+    app, _client, request, _profile, _arguments = context.__enter__()
+    from app.runtime import ledger as ledger_module
+
+    domain = app.state.domain_store
+    roots = domain.roots()
+    refs = _NS(
+        work=immutable(domain, roots, "work_revision"),
+        environment=immutable(domain, roots, "environment"),
+        consent=immutable(domain, roots, "run_consent"),
+        budget=immutable(domain, roots, "budget_policy"),
+        manifest=immutable(domain, roots, "run_manifest"),
+        result=immutable(domain, roots, "run_manifest", content={"fixture": "terminal"}),
+    )
+    # the supported server reconciles its ledger at startup only when worker
+    # dispatch is configured; this fixture performs that same startup step
+    app.state.runtime_ledger.reconcile_startup(identifier(), observed_owners={})
+    subject = _NS(module=ledger_module, refs=refs, ledger=app.state.runtime_ledger,
+                  domain=domain, app=app, request=request, context=context)
+    run = run_spec(subject)
+    subject.ledger.create_run(identifier(), run)
+    approvals = PersistentRunApprovals(domain, app.state.owner_authority)
+    return subject, run, approvals
+
+
+def gate_registry(subject, calls):
+    def produce(context, view):
+        calls.append(context.node_id)
+        return subject.refs.result
+
+    return {"core.deterministic": produce, "core.agent": produce,
+            "core.human_gate": produce}
+
+
+def approval_command(run, decision="approved", scope="release-output", node="owner-gate"):
+    return {"schema_version": "run-approval-command-v1", "command_id": str(_uuid.uuid4()),
+            "run_id": run.run_id, "node_id": node, "approval_scope": scope,
+            "decision": decision}
+
+
+def test_a_gate_waits_for_the_owner_and_runs_after_a_recorded_approval(tmp_path):
+    subject, run, approvals = gated_app(tmp_path)
+    try:
+        calls = []
+        scheduler = sch.build_scheduler(compile_value(graph_value()), ledger=subject.ledger,
+                                        run_id=run.run_id, handlers=gate_registry(subject, calls),
+                                        approvals=approvals)
+        waiting = scheduler.run()
+        assert calls == ["intake", "writer"]
+        assert waiting.awaiting_human == (("owner-gate", "release-output"),)
+        assert "publish" not in waiting.completed_node_ids
+        assert scheduler.run().awaiting_human == waiting.awaiting_human  # still waiting
+        assert calls == ["intake", "writer"]
+        approvals.record(subject.request, approval_command(run))
+        outcome = scheduler.run()
+        assert calls == ["intake", "writer", "owner-gate", "publish"]
+        assert outcome.awaiting_human == ()
+        assert outcome.completed_node_ids == ("intake", "owner-gate", "publish", "writer")
+        assert dict(outcome.approvals)["owner-gate"] == (
+            approvals.lookup(run.run_id, "owner-gate", "release-output").approval_ref,
+        )
+    finally:
+        subject.context.__exit__(None, None, None)
+
+
+def test_a_recorded_rejection_fails_the_gate_and_never_runs_it(tmp_path):
+    subject, run, approvals = gated_app(tmp_path)
+    try:
+        calls = []
+        scheduler = sch.build_scheduler(compile_value(graph_value()), ledger=subject.ledger,
+                                        run_id=run.run_id, handlers=gate_registry(subject, calls),
+                                        approvals=approvals)
+        assert scheduler.run().awaiting_human == (("owner-gate", "release-output"),)
+        approvals.record(subject.request, approval_command(run, decision="rejected"))
+        with pytest.raises(sch.SchedulerError, match="approval_rejected:owner-gate"):
+            scheduler.run()
+        assert "owner-gate" not in calls and "publish" not in calls
+    finally:
+        subject.context.__exit__(None, None, None)
+
+
+def test_approvals_are_keyed_by_run_node_and_scope(tmp_path):
+    subject, run, approvals = gated_app(tmp_path)
+    try:
+        calls = []
+        scheduler = sch.build_scheduler(compile_value(graph_value()), ledger=subject.ledger,
+                                        run_id=run.run_id, handlers=gate_registry(subject, calls),
+                                        approvals=approvals)
+        scheduler.run()
+        other_run = run_spec(subject)
+        subject.ledger.create_run(identifier(), other_run)
+        approvals.record(subject.request, approval_command(other_run))
+        approvals.record(subject.request, approval_command(run, scope="other-scope"))
+        approvals.record(subject.request, approval_command(run, node="publish"))
+        assert scheduler.run().awaiting_human == (("owner-gate", "release-output"),)
+        assert calls == ["intake", "writer"]
+    finally:
+        subject.context.__exit__(None, None, None)
+
+
+def test_a_gated_graph_requires_the_real_approval_service(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    with pytest.raises(sch.SchedulerError, match="approval"):
+        sch.build_scheduler(compile_value(graph_value()), ledger=subject.ledger,
+                            run_id=run.run_id, handlers=gate_registry(subject, []))
+    with pytest.raises(sch.SchedulerError, match="approval"):
+        sch.build_scheduler(compile_value(graph_value()), ledger=subject.ledger,
+                            run_id=run.run_id, handlers=gate_registry(subject, []),
+                            approvals=object())

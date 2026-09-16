@@ -25,12 +25,20 @@ iteration is a NEW visit with its own execution identity, and reaching
 the hard iteration cap unterminated fails the run as `loop_cap:<loop_id>`
 — the recursion limit is only an emergency cap above that product limit.
 
-Explicit limits of this slice: `human_gate` nodes refuse at build time;
-retries within a visit are not implemented (a failed visit fails the run
-and is resumed on restart); `all_selected` joins rely on activated
-branches completing in the same superstep; sealed activations are
-reported from memory, not recovered from the journal; no attempt
-reservation, budget settlement or semantic result admission happens here.
+Human gates (slice 3): the graph always stops before a `human_gate` node
+(static interrupt); `run()` resumes it only when the persistent run
+approval service holds an owner-recorded, approved decision for every
+declared scope — a recorded rejection fails the gate as
+`approval_rejected:<node>`, absence returns the honest `awaiting_human`
+projection, and the gate body itself re-verifies the records. No handler
+return value, boolean or caller-supplied reference can pass a gate.
+
+Explicit limits of this slice: retries within a visit are not
+implemented (a failed visit fails the run and is resumed on restart);
+`all_selected` joins rely on activated branches completing in the same
+superstep; sealed activations and consumed approvals are reported from
+memory, not recovered from the journal; no attempt reservation, budget
+settlement or semantic result admission happens here.
 """
 
 from __future__ import annotations
@@ -43,6 +51,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 
 from ..domain.refs import EntityRef, canonical_json
+from ..services.run_approvals import PersistentRunApprovals
 from .checkpoints import NAMESPACE, CheckpointError, LedgerCheckpointSaver
 from .graph import HANDLER_KEYS, CompiledGraph
 from .ledger import ExecutionSpec, RuntimeLedger
@@ -59,7 +68,7 @@ __all__ = [
 ]
 
 _SUPPORTED_KINDS = frozenset(
-    {"deterministic", "agent", "join", "router", "bounded_loop"}
+    {"deterministic", "agent", "join", "router", "bounded_loop", "human_gate"}
 )
 _DISPATCHING_KINDS = frozenset({"router", "bounded_loop"})  # route by sealed Command
 _MAX_NODES = 256
@@ -84,6 +93,14 @@ class _LoopCap(Exception):
     def __init__(self, loop_id: str) -> None:
         super().__init__("loop_cap")
         self.loop_id = loop_id
+
+
+class _GateRejected(Exception):
+    """Internal: an owner recorded a rejection for a human gate scope."""
+
+    def __init__(self, node_id: str) -> None:
+        super().__init__("approval_rejected")
+        self.node_id = node_id
 
 
 def execution_identity(run_id: str, node_id: str, loop_index: int) -> str:
@@ -152,6 +169,10 @@ class SchedulerOutcome:
     result_refs: tuple[tuple[str, EntityRef], ...]
     counters: dict
     activations: tuple[tuple[str, str, tuple[str, ...]], ...]
+    # (gate node, scope) pairs the run is honestly waiting on; empty when done
+    awaiting_human: tuple[tuple[str, str], ...]
+    # (gate node, approval refs) actually consumed to pass each gate
+    approvals: tuple[tuple[str, tuple[EntityRef, ...]], ...]
 
 
 def _detached_view(state: dict) -> dict:
@@ -166,7 +187,10 @@ class GraphScheduler:
 
     __slots__ = (
         "_activations",
+        "_approvals",
         "_compiled",
+        "_consumed",
+        "_gates",
         "_graph",
         "_handlers",
         "_ledger",
@@ -185,23 +209,68 @@ class GraphScheduler:
             "configurable": {"thread_id": self._run_id, "checkpoint_ns": ""},
             "recursion_limit": self._recursion_limit,
         }
+        awaiting: tuple[tuple[str, str], ...] = ()
         try:
             head = self._saver.get_tuple(config)
             initial = None if head is not None else {"results": {}, "counters": {}}
-            final = self._graph.invoke(initial, config, durability="sync")
+            # the graph always stops before a human gate; it is resumed only
+            # once the owner's recorded approvals cover every scope of every
+            # pending gate — checked BEFORE any resume, never after
+            final = None
+            for _ in range(len(self._gates) + 2):
+                if initial is None:
+                    pending = self._pending_gates(config)
+                    if pending:
+                        awaiting = self._gate_status(pending)
+                        if awaiting:
+                            final = self._graph.get_state(config).values
+                            break
+                final = self._graph.invoke(initial, config, durability="sync")
+                initial = None
+                if not self._pending_gates(config):
+                    break
+            else:
+                raise SchedulerError("human gate resume bound exceeded")
         except _NodeFailure as failure:
             raise SchedulerError(f"node_failed:{failure.node_id}") from None
         except _LoopCap as cap:
             raise SchedulerError(f"loop_cap:{cap.loop_id}") from None
+        except _GateRejected as rejected:
+            raise SchedulerError(f"approval_rejected:{rejected.node_id}") from None
         except SchedulerError:
             raise
         except CheckpointError:
             raise SchedulerError("checkpoint journal halted") from None
         except Exception:  # noqa: BLE001 - never surface private graph or provider detail
             raise SchedulerError("scheduler_failed") from None
-        return self._project(final)
+        return self._project(final, awaiting)
 
-    def _project(self, state: dict) -> SchedulerOutcome:
+    def _pending_gates(self, config: dict) -> tuple[str, ...]:
+        return tuple(
+            node for node in self._graph.get_state(config).next if node in self._gates
+        )
+
+    def _gate_status(self, pending: tuple[str, ...]) -> tuple[tuple[str, str], ...]:
+        """Consult the recorded approvals; a rejection fails, absence waits."""
+
+        awaiting = []
+        for node_id in pending:
+            refs = []
+            for scope in self._gates[node_id]:
+                found = self._approvals.lookup(self._run_id, node_id, scope)
+                if found is None:
+                    awaiting.append((node_id, scope))
+                elif found.decision != "approved":
+                    raise _GateRejected(node_id)
+                else:
+                    refs.append(found.approval_ref)
+            if not any(node == node_id for node, _ in awaiting):
+                self._consumed[node_id] = tuple(refs)
+        return tuple(awaiting)
+
+    def _project(
+        self, state: dict, awaiting: tuple[tuple[str, str], ...] = ()
+    ) -> SchedulerOutcome:
         counters = dict(state.get("counters", {}))
         results = dict(state.get("results", {}))
         executions = []
@@ -221,6 +290,8 @@ class GraphScheduler:
             result_refs=refs,
             counters=counters,
             activations=tuple(self._activations),
+            awaiting_human=awaiting,
+            approvals=tuple(sorted(self._consumed.items())),
         )
 
 
@@ -319,6 +390,7 @@ def build_scheduler(
     ledger: RuntimeLedger,
     run_id: str,
     handlers,
+    approvals=None,
 ) -> GraphScheduler:
     _require(type(compiled) is CompiledGraph, "an exact CompiledGraph is required")
     _require(type(ledger) is RuntimeLedger, "an exact RuntimeLedger is required")
@@ -327,6 +399,22 @@ def build_scheduler(
     kinds = {node.node_id: node.kind for node in compiled.nodes}
     for node_id, kind in kinds.items():
         _require(kind in _SUPPORTED_KINDS, f"unsupported node kind: {kind} ({node_id})")
+    gates = {
+        node.node_id: tuple(node.as_dict()["config"]["approval_scopes"])
+        for node in compiled.execution_graph.nodes
+        if node.kind == "human_gate"
+    }
+    if gates:
+        # a human gate can only be passed by the owner's recorded decision:
+        # the persistent approval service is the sole reader of that record
+        _require(
+            type(approvals) is PersistentRunApprovals,
+            "human_gate nodes require the persistent run approval service",
+        )
+    else:
+        _require(
+            approvals is None, "approvals are only meaningful with human_gate nodes"
+        )
     required_keys = {key for _, key in compiled.handler_keys}
     _require(type(handlers) is dict, "handlers must be a closed mapping")
     # the registry namespace is the closed core key set: every compiled key
@@ -354,6 +442,9 @@ def build_scheduler(
     scheduler._run_id = run_id
     scheduler._handlers = dict(handlers)
     scheduler._activations = []
+    scheduler._approvals = approvals
+    scheduler._gates = gates
+    scheduler._consumed = {}
     loop_steps = sum(
         cap * (len(members) + 1) for _, members, cap in compiled.loop_regions
     )
@@ -405,6 +496,13 @@ def build_scheduler(
                 "results", {}
             ):
                 return {}  # this visit is already durable: never re-run it
+            if node_id in gates:
+                # defense in depth: the gate body runs only against recorded
+                # approvals for every scope, whatever resumed the graph
+                for scope in gates[node_id]:
+                    found = approvals.lookup(run_id, node_id, scope)
+                    if found is None or found.decision != "approved":
+                        raise _NodeFailure(node_id)
             execution_id, loop_index, context = record_execution(node_id, state)
             try:
                 result = handler(context, _detached_view(state))
@@ -505,7 +603,11 @@ def build_scheduler(
         if node_id not in has_successor:
             builder.add_edge(node_id, END)
     try:
-        scheduler._graph = builder.compile(checkpointer=saver)
+        # static interrupts: the run always stops before a human gate, and
+        # only `run()`'s approval check resumes it
+        scheduler._graph = builder.compile(
+            checkpointer=saver, interrupt_before=sorted(gates) or None
+        )
     except Exception:  # noqa: BLE001
         raise SchedulerError("graph compilation failed") from None
     return scheduler
