@@ -1,0 +1,37 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local state and generated artifacts
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+/artifacts/
+/data/private/
+
+# Operating system files
+.DS_Store
+
+# Git worktrees checked out inside the repository
+/.worktrees/
