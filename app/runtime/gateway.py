@@ -24,7 +24,6 @@ from dataclasses import dataclass, field
 from ..domain.refs import DomainContractError, EntityRef
 
 PROVIDERS = frozenset({"claude_api", "codex_subscription", "codex_api"})
-EFFORTS = frozenset({"low", "medium", "high"})
 PART_TYPES = frozenset({"text", "image", "page", "table"})
 # Inputs are allowlisted per profile; the critic's six-field boundary
 # carries no domain refs at all.
@@ -119,7 +118,11 @@ class InputPart:
 
 @dataclass(frozen=True, slots=True, init=False)
 class FrozenTurn:
-    """One completely bound model step; transport carries it verbatim."""
+    """One structurally bound model step; transport carries it verbatim.
+
+    Catalog validation and execution authority remain external. ``effort``
+    preserves the catalog-validated provider value or no explicit override.
+    """
 
     profile: str
     work_ref: EntityRef
@@ -131,7 +134,7 @@ class FrozenTurn:
     account_id: str
     catalog_ref: EntityRef
     model_id: str
-    effort: str
+    effort: str | None
     instruction_profile_digest: str
     inputs: tuple[InputPart, ...]
     granted_tools: tuple[str, ...]
@@ -180,7 +183,7 @@ def _parse_part(value, allowed_kinds) -> InputPart:
 
 
 def freeze_turn(value) -> FrozenTurn:
-    """Bind one model step completely, from the profile's allowlist."""
+    """Build a bounded turn value from the profile's structural allowlist."""
 
     if type(value) is not dict or set(value) != {
         "profile", "work_ref", "environment_ref", "node_id", "execution_id",
@@ -200,8 +203,10 @@ def freeze_turn(value) -> FrozenTurn:
         # "free fallback" paths do not exist.
         raise GatewayError("unknown provider path")
     effort = value["effort"]
-    if effort not in EFFORTS:
-        raise GatewayError("unknown effort level")
+    if effort is not None and (
+        not isinstance(effort, str) or not 1 <= len(effort) <= 80
+    ):
+        raise GatewayError("effort is out of bounds")
     execution_id = value["execution_id"]
     if type(execution_id) is not str or _UUID.fullmatch(execution_id) is None:
         raise GatewayError("execution id is not a canonical UUID")
@@ -357,14 +362,13 @@ def validate_step_output(turn, output) -> dict:
 
 
 __all__ = [
-    "EFFORTS",
-    "carries_host_path",
     "GATEWAY_PROFILES",
     "PART_TYPES",
     "PROVIDERS",
     "FrozenTurn",
     "GatewayError",
     "InputPart",
+    "carries_host_path",
     "freeze_turn",
     "validate_step_output",
 ]

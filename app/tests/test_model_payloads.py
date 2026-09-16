@@ -80,6 +80,20 @@ def test_a_frozen_turn_binds_everything_and_is_issued():
         freeze_turn(turn_value(deadline_seconds=0))
 
 
+@pytest.mark.parametrize(
+    "effort",
+    ["low", "medium", "high", "xhigh", "max", "fixture-next", "e" * 80, None],
+)
+def test_frozen_turn_preserves_nullable_bounded_provider_effort(effort):
+    assert freeze_turn(turn_value(effort=effort)).effort == effort
+
+
+@pytest.mark.parametrize("effort", [True, 1, {}, [], "", "e" * 81])
+def test_frozen_turn_rejects_effort_outside_nullable_bounded_string_grammar(effort):
+    with pytest.raises(GatewayError):
+        freeze_turn(turn_value(effort=effort))
+
+
 def test_profiles_allowlist_their_inputs():
     assert set(GATEWAY_PROFILES) == {
         "understanding", "design", "critic", "execution-model-step",
