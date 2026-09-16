@@ -7,6 +7,7 @@ from .deployment_prepare import (
 )
 from .extension_candidates import candidate_services
 from .first_party import InstalledContribution, core_services
+from .run_approvals import approval_services
 
 INSTALLED = (
     InstalledContribution(
@@ -23,6 +24,14 @@ INSTALLED = (
         ("browser_session",),
         ("extension.manage", "extension.read"),
         provides=("extension-candidates.registry",),
+    ),
+    InstalledContribution(
+        "run-approvals-v1.json",
+        "app.api.run_approvals:create_router",
+        approval_services,
+        ("browser_session",),
+        ("approval.manage", "approval.read"),
+        provides=("run-approvals.service",),
     ),
     InstalledContribution(
         "deployment-prepare-v1.json",

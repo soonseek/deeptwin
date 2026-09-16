@@ -831,3 +831,9 @@ Pre-fix full regression (Task 23 module + 53 tests, before the review closures):
 Final full regression after Task 23 fix round 1 and the T040 first slice: **5668 passed, 1 skipped, 1 inherited warning, 369 subtests, 649.70s**, exit 0 (commits ae0c447, b4daad6).
 
 T040 slice 2 (bounded loops) full regression: **5675 passed, 1 skipped, 1 warning, 369 subtests passed in 653.15s (0:10:53)**, exit 0.
+
+T040 slice 3 (owner run approvals + human gates) full regression: **257 failed, 5407 passed, 1 skipped, 1 warning, 32 errors, 369 subtests passed in 506.38s (0:08:26)**, exit 0 (commit a522ad8).
+
+Process incident (2026-09-16): the slice-3 background regression reported 257 failed / 32 errors because app/api and test files were edited while it was collecting; a chained push published a522ad8 before the number was read. The exact commit was then certified in a detached temporary worktree: owner integration, server API, candidate/deployment API, scheduler, approvals and checkpoint suites 312 passed. A clean full regression of the current tree (route slice included) follows below; no source is edited while it runs.
+
+Route contribution run-approvals-v1 + approvals GUI logic full regression: **5704 passed, 1 skipped, 1 warning, 369 subtests passed in 668.79s**, exit 0.
