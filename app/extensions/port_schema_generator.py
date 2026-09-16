@@ -99,6 +99,10 @@ def _identifier(*, const: str | None = None) -> dict[str, Any]:
     return _string(maximum=128, pattern=IDENTIFIER_PATTERN, const=const)
 
 
+def _effort_value() -> dict[str, Any]:
+    return _string(maximum=80)
+
+
 def _short_text(*, maximum: int = 512) -> dict[str, Any]:
     return _string(maximum=maximum, pattern=TEXT_PATTERN)
 
@@ -188,6 +192,10 @@ def _ref_array(*, sorted_unique: bool = False) -> dict[str, Any]:
 
 def _identifier_array(*, sorted_unique: bool = False) -> dict[str, Any]:
     return _array(_identifier(), sorted_unique=sorted_unique)
+
+
+def _effort_value_array(*, sorted_unique: bool = False) -> dict[str, Any]:
+    return _array(_effort_value(), sorted_unique=sorted_unique)
 
 
 def _media_array(*, sorted_unique: bool = False) -> dict[str, Any]:
@@ -286,7 +294,7 @@ def _model_step_input() -> dict[str, Any]:
     return _object({
         "frozen_turn_ref": _ref(),
         "model_id": _identifier(),
-        "effort": _identifier(),
+        "effort": _nullable(_effort_value()),
         "requested_modalities": _identifier_array(sorted_unique=True),
         "tool_definition_refs": _ref_array(sorted_unique=True),
         "response_schema_ref": _nullable(_ref()),
@@ -298,7 +306,7 @@ def _models_output() -> dict[str, Any]:
         "model_id": _identifier(),
         "display_name": _short_text(),
         "modalities": _identifier_array(sorted_unique=True),
-        "effort_values": _identifier_array(sorted_unique=True),
+        "effort_values": _effort_value_array(sorted_unique=True),
         "capability_evidence_ref": _ref(),
     })
     return _array(model)
@@ -337,7 +345,7 @@ def _port_configs() -> dict[str, dict[str, Any]]:
         "model-runtime-port-v1": _object({
             "runtime_profile_ref": _ref(), "model_catalog_ref": _ref(),
             "supported_modalities": _identifier_array(sorted_unique=True),
-            "supported_efforts": _identifier_array(sorted_unique=True),
+            "supported_efforts": _effort_value_array(sorted_unique=True),
             "supported_input_media_types": _media_array(sorted_unique=True),
         }),
         "tool-port-v1": _object({
@@ -472,7 +480,7 @@ def _operation_shapes() -> dict[tuple[str, str], tuple[dict[str, Any], dict[str,
     add("model-runtime-port-v1", "capabilities", _empty_object(), _object({
         "model_ids": _identifier_array(sorted_unique=True),
         "modalities": _identifier_array(sorted_unique=True),
-        "effort_values": _identifier_array(sorted_unique=True),
+        "effort_values": _effort_value_array(sorted_unique=True),
         "tool_calling": {"type": "boolean"},
     }))
     add("model-runtime-port-v1", "model_step", _model_step_input(),
@@ -483,7 +491,7 @@ def _operation_shapes() -> dict[tuple[str, str], tuple[dict[str, Any], dict[str,
     # Managed provider runner.
     add("managed-provider-runner-port-v1", "preflight", _object({
         "requested_model_id": _nullable(_identifier()),
-        "requested_effort": _nullable(_identifier()),
+        "requested_effort": _nullable(_effort_value()),
     }), _object({
         "observed_binary_digest": _digest(), "runner_version": _version_text(),
         "auth_state": _enum(
@@ -508,7 +516,7 @@ def _operation_shapes() -> dict[tuple[str, str], tuple[dict[str, Any], dict[str,
     }), _cancel_output())
     add("managed-provider-runner-port-v1", "run_start", _object({
         "frozen_run_projection_ref": _ref(), "model_id": _identifier(),
-        "effort": _identifier(),
+        "effort": _nullable(_effort_value()),
         "tool_definition_refs": _ref_array(sorted_unique=True),
     }), _object({"runner_run_ref": _ref(), "event_cursor": _ref()}))
     add("managed-provider-runner-port-v1", "run_status", _object({
@@ -1660,12 +1668,14 @@ def _refs_subset(values: list[Mapping[str, Any]], allowed: list[Mapping[str, Any
     return all(_canonical_key(value) in allowed_keys for value in values)
 
 
-def _parse_time(value: str) -> datetime:
+def _parse_time(value: Any) -> datetime:
+    if not isinstance(value, str):
+        raise PortSchemaValidationError("invalid UTC calendar instant")
     try:
         return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ").replace(
             tzinfo=UTC,
         )
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         raise PortSchemaValidationError("invalid UTC calendar instant") from exc
 
 
@@ -1756,8 +1766,11 @@ def _validate_tool_contract(tool_definition: Mapping[str, Any],
     role = contract["role"]
     media = contract["allowed_media_types"]
     policy = contract["selector_policy"]
-    if (re.fullmatch(IDENTIFIER_PATTERN, role or "") is None or type(media) is not list
-            or not media or media != sorted(set(media))
+    if (type(role) is not str or re.fullmatch(IDENTIFIER_PATTERN, role) is None
+            or type(media) is not list or not media
+            or any(type(item) is not str
+                   or re.fullmatch(MEDIA_TYPE_PATTERN, item) is None for item in media)
+            or media != sorted(set(media)) or type(policy) is not str
             or policy not in {"forbidden", "optional", "required"}):
         raise PortSchemaValidationError("ToolDefinition artifact profile is malformed")
     if not minimum <= len(artifact_inputs) <= maximum:
@@ -1776,10 +1789,12 @@ def _contains_artifact_ref(value: Any) -> bool:
         return any(_contains_artifact_ref(item) for item in value)
     if not isinstance(value, dict):
         return False
-    if set(value) >= {"kind", "id", "version", "sha256"} and value.get("kind") in {
-        "artifact", "artifact_input_selector", "selector",
-    }:
-        return True
+    if set(value) >= {"kind", "id", "version", "sha256"}:
+        kind = value.get("kind")
+        if type(kind) is not str:
+            raise PortSchemaValidationError("tool arguments contain a malformed ref marker")
+        if kind in {"artifact", "artifact_input_selector", "selector"}:
+            return True
     return any(_contains_artifact_ref(item) for item in value.values())
 
 
@@ -1829,7 +1844,9 @@ def _validate_request_trusted_context(port: str, value: Mapping[str, Any],
             or not _refs_subset(value["grant_refs"], config.get("grant_refs", []))):
         raise PortSchemaValidationError("request does not match validated config binding")
     actor = _require_exact_record(context["actor_record"], value["actor_ref"], "actor record")
-    if actor.get("authenticated") is not True or actor.get("actor_type") not in {"system", "worker"}:
+    actor_type = actor.get("actor_type")
+    if (actor.get("authenticated") is not True or type(actor_type) is not str
+            or actor_type not in {"system", "worker"}):
         raise PortSchemaValidationError("request actor is not an authenticated system/worker")
     purpose = _require_exact_record(
         context["purpose_record"], value["purpose_ref"], "purpose record",
@@ -1930,9 +1947,10 @@ def _validate_request_semantics(port: str, value: Mapping[str, Any],
             raise PortSchemaValidationError("ToolDefinition effect class differs from request")
         _validate_tool_contract(tool_definition, artifact_inputs)
         arguments = context["resolved_arguments"]
-        if not isinstance(arguments, Mapping):
+        if type(arguments) is not dict:
             raise PortSchemaValidationError("resolved tool arguments are not a closed object")
-        if _contains_artifact_ref(arguments):
+        argument_projection = json.loads(_canonical_key(arguments))
+        if _contains_artifact_ref(argument_projection):
             raise PortSchemaValidationError("tool arguments contain a hidden artifact/selector ref")
 
     _validate_request_artifact_records(contract.request_artifact_profile, value, config, context)
@@ -2011,26 +2029,87 @@ def _result_projection(artifact: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _validate_embedded_payload_shape(port: str, shape: str, value: Any) -> None:
+    """Validate a previously refined payload's core shape without replaying its refinement."""
+    if type(value) is not dict:
+        raise PortSchemaValidationError(f"trusted {shape} is malformed")
+    _check_global_bounds(value)
+    try:
+        encoded = json.dumps(
+            value, ensure_ascii=False, allow_nan=False, sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise PortSchemaValidationError(f"trusted {shape} is not strict JSON") from exc
+    if len(encoded) > MAX_ENVELOPE_BYTES:
+        raise PortSchemaValidationError(
+            f"trusted {shape} exceeds 1,048,576 bytes",
+        )
+    schema = generate_port_schemas()[(port, shape)]
+    errors = list(Draft202012Validator(
+        schema, format_checker=FormatChecker(),
+    ).iter_errors(value))
+    if errors:
+        raise PortSchemaValidationError(f"trusted {shape} {_format_errors(errors)}")
+    _walk_schema_annotations(value, schema)
+
+
+def _require_result_bindings(context: Mapping[str, Any], field: str,
+                             label: str) -> list[Mapping[str, Any]]:
+    _require_context_fields(context, field)
+    bindings = context[field]
+    if type(bindings) is not list:
+        raise PortSchemaValidationError(f"{label} are malformed")
+    required = {"artifact_ref", "role", "media_type", "omissions_ref"}
+    for binding in bindings:
+        if not isinstance(binding, Mapping) or set(binding) != required:
+            raise PortSchemaValidationError(f"{label} are malformed")
+        artifact_ref = binding["artifact_ref"]
+        omissions_ref = binding["omissions_ref"]
+        if (list(Draft202012Validator(_ref()).iter_errors(artifact_ref))
+                or (omissions_ref is not None
+                    and list(Draft202012Validator(_ref()).iter_errors(omissions_ref)))
+                or type(binding["role"]) is not str
+                or re.fullmatch(IDENTIFIER_PATTERN, binding["role"]) is None
+                or type(binding["media_type"]) is not str
+                or re.fullmatch(MEDIA_TYPE_PATTERN, binding["media_type"]) is None):
+            raise PortSchemaValidationError(f"{label} are malformed")
+    return bindings
+
+
 def _validate_result_semantics(port: str, value: Mapping[str, Any],
                                context: Mapping[str, Any]) -> None:
-    request = context.get("request")
+    _require_context_fields(context, "config", "request", "artifact_records")
+    config = context["config"]
+    request = context["request"]
+    records = context["artifact_records"]
+    _validate_embedded_payload_shape(port, "config", config)
+    _validate_config_semantics(port, config, context)
+    _validate_embedded_payload_shape(port, "request", request)
+    _validate_request_semantics(port, request, context)
+    if not isinstance(records, Mapping):
+        raise PortSchemaValidationError("trusted artifact records are malformed")
     operation = value["operation"]
     terminal = value["terminal"]
-    if request is not None:
-        if (value["request_id"] != request["request_id"]
-                or operation != request["operation"]
-                or port != request["port_contract_version"]):
-            raise PortSchemaValidationError("result does not match the exact request")
-        if value["error"] is not None:
-            _validate_error_lineage(value["error"], request)
-        if (port == "tool-port-v1" and operation == "invoke_tool"
-                and value["effect"]["effect_class"] != request["input"]["expected_effect_class"]):
-            raise PortSchemaValidationError("tool result effect differs from expected class")
-        if (port == "export-sink-port-v1" and operation == "transmit"
-                and context.get("transmit_effect_class") is not None
-                and value["effect"]["effect_class"] != context["transmit_effect_class"]):
-            raise PortSchemaValidationError("export result effect differs from destination profile")
+    if (value["request_id"] != request["request_id"]
+            or operation != request["operation"]
+            or port != request["port_contract_version"]):
+        raise PortSchemaValidationError("result does not match the exact request")
     if value["error"] is not None:
+        _validate_error_lineage(value["error"], request)
+    if (port == "tool-port-v1" and operation == "invoke_tool"
+            and value["effect"]["effect_class"] != request["input"]["expected_effect_class"]):
+        raise PortSchemaValidationError("tool result effect differs from expected class")
+    if port == "export-sink-port-v1" and operation == "transmit":
+        _require_context_fields(context, "transmit_effect_class")
+        if value["effect"]["effect_class"] != context["transmit_effect_class"]:
+            raise PortSchemaValidationError(
+                "export result effect differs from frozen target effect class",
+            )
+    if value["error"] is not None:
+        _require_context_fields(context, "extension_error_codes")
+        if not isinstance(context["extension_error_codes"], Mapping):
+            raise PortSchemaValidationError("extension error context is malformed")
         _validate_extension_error_code(value["error"], context)
     if (terminal != "unknown" and value["completed_at"] is not None
             and _parse_time(value["completed_at"]) < _parse_time(value["started_at"])):
@@ -2042,24 +2121,20 @@ def _validate_result_semantics(port: str, value: Mapping[str, Any],
     elif artifacts:
         raise PortSchemaValidationError("non-success result cannot authorize artifacts")
 
-    config = context.get("config")
-    records = context.get("artifact_records")
-    if config is not None:
-        limits = config["resource_limits"]
-        if len(artifacts) > limits["max_artifacts"]:
-            raise PortSchemaValidationError("result artifacts exceed config count limit")
-    if records is not None:
-        for artifact in artifacts:
-            stored = _lookup_record(records, artifact["artifact_ref"], "artifact")
-            size = stored.get("byte_count", stored.get("size"))
-            digest = stored.get("content_digest", stored.get("digest"))
-            if (stored.get("media_type") != artifact["media_type"]
-                    or size != artifact["byte_count"]
-                    or digest != artifact["content_digest"]):
-                raise PortSchemaValidationError("result artifact metadata differs from durable Artifact")
-            if (config is not None
-                    and artifact["byte_count"] > limits["max_artifact_bytes"]):
-                raise PortSchemaValidationError("result artifacts exceed config limits")
+    limits = config["resource_limits"]
+    if len(artifacts) > limits["max_artifacts"]:
+        raise PortSchemaValidationError("result artifacts exceed config count limit")
+    for artifact in artifacts:
+        stored = _lookup_record(records, artifact["artifact_ref"], "artifact")
+        size = stored["byte_count"] if "byte_count" in stored else stored.get("size")
+        digest = stored.get("content_digest", stored.get("digest"))
+        if (type(size) is not int or size < 0
+                or stored.get("media_type") != artifact["media_type"]
+                or size != artifact["byte_count"]
+                or digest != artifact["content_digest"]):
+            raise PortSchemaValidationError("result artifact metadata differs from durable Artifact")
+        if artifact["byte_count"] > limits["max_artifact_bytes"]:
+            raise PortSchemaValidationError("result artifacts exceed config limits")
 
 
 def _validate_result_artifact_lineage(port: str, operation: str,
@@ -2080,12 +2155,16 @@ def _validate_result_artifact_lineage(port: str, operation: str,
         ):
             raise PortSchemaValidationError("model artifacts do not equal ordered content refs")
     elif port == "managed-provider-runner-port-v1" and operation == "run_status":
-        expected = context.get("normalized_event_artifact_bindings")
+        expected = _require_result_bindings(
+            context, "normalized_event_artifact_bindings",
+            "normalized event artifact bindings",
+        )
     elif port == "tool-port-v1" and operation == "invoke_tool":
-        expected = context.get("tool_result_artifact_bindings")
-        tool_definition = context.get("tool_definition")
-        if expected is not None and tool_definition is not None:
-            _validate_tool_output_contract(tool_definition, expected)
+        expected = _require_result_bindings(
+            context, "tool_result_artifact_bindings", "sealed artifact bindings",
+        )
+        tool_definition = context["tool_definition"]
+        _validate_tool_output_contract(tool_definition, expected)
     elif port == "artifact-codec-port-v1":
         field = {
             "decode_projection": "projection_artifact_ref",
@@ -2096,12 +2175,13 @@ def _validate_result_artifact_lineage(port: str, operation: str,
             raise PortSchemaValidationError("codec result artifact ref mismatch")
         if not _same_ref(artifacts[0]["omissions_ref"], output["omissions_ref"]):
             raise PortSchemaValidationError("codec omissions ref mismatch")
-        if (operation in {"render_preview", "encode"} and request is not None
+        if (operation in {"render_preview", "encode"}
                 and artifacts[0]["media_type"] != request["input"]["target_media_type"]):
             raise PortSchemaValidationError("codec target/result media mismatch")
-        if (operation == "decode_projection" and context.get("target_projection_media_type")
-                and artifacts[0]["media_type"] != context["target_projection_media_type"]):
-            raise PortSchemaValidationError("decoded projection media mismatch")
+        if operation == "decode_projection":
+            _require_context_fields(context, "target_projection_media_type")
+            if artifacts[0]["media_type"] != context["target_projection_media_type"]:
+                raise PortSchemaValidationError("decoded projection media mismatch")
     elif port == "storage-port-v1" and operation == "read":
         if not _same_ref(artifacts[0]["artifact_ref"], output["object_artifact_ref"]):
             raise PortSchemaValidationError("storage read artifact ref mismatch")
@@ -2132,12 +2212,18 @@ def _validate_tool_output_contract(tool_definition: Mapping[str, Any],
         }:
             raise PortSchemaValidationError("tool output role contract is not closed")
         name = role["role"]
+        media = role["allowed_media_types"]
+        policy = role["omissions_policy"]
+        if (type(name) is not str or re.fullmatch(IDENTIFIER_PATTERN, name) is None
+                or type(media) is not list or not media
+                or any(type(item) is not str
+                       or re.fullmatch(MEDIA_TYPE_PATTERN, item) is None for item in media)
+                or media != sorted(set(media))
+                or type(policy) is not str
+                or policy not in {"forbidden", "optional", "required"}):
+            raise PortSchemaValidationError("tool output role/media/omissions contract is invalid")
         if name in role_map:
             raise PortSchemaValidationError("tool output roles are not unique")
-        media = role["allowed_media_types"]
-        if (type(media) is not list or not media or media != sorted(set(media))
-                or role["omissions_policy"] not in {"forbidden", "optional", "required"}):
-            raise PortSchemaValidationError("tool output role/media/omissions contract is invalid")
         role_map[name] = role
     for binding in bindings:
         role = role_map.get(binding["role"])

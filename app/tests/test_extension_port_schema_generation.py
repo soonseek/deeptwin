@@ -478,37 +478,35 @@ def test_semantic_validator_enforces_builtin_tool_profiles_and_export_exact_list
 
 
 def test_result_lineage_enforces_codec_refs_media_omissions_and_tool_bindings():
-    request = _request_instance("artifact-codec-port-v1", "render_preview")
-    result = _result_instance("artifact-codec-port-v1", "render_preview", "succeeded")
-    result["request_id"] = request["request_id"]
-    result["artifacts"][0]["media_type"] = request["input"]["target_media_type"]
+    _, result, context = _complete_result_case(
+        "artifact-codec-port-v1", "render_preview",
+    )
     validate_port_payload(
-        "artifact-codec-port-v1", "result", result, context={"request": request},
+        "artifact-codec-port-v1", "result", result, context=context,
     )
     wrong = deepcopy(result)
     wrong["artifacts"][0]["omissions_ref"] = _ref("omissions", marker="b")
     with pytest.raises(PortSchemaValidationError, match="omissions"):
         validate_port_payload(
-            "artifact-codec-port-v1", "result", wrong, context={"request": request},
+            "artifact-codec-port-v1", "result", wrong, context=context,
         )
 
-    tool_request = _request_instance("tool-port-v1", "invoke_tool")
-    tool_request["input"]["expected_effect_class"] = "read"
-    tool_request["idempotency_key"] = _request_digest(tool_request)
-    tool_result = _result_instance("tool-port-v1", "invoke_tool", "succeeded")
-    tool_result["request_id"] = tool_request["request_id"]
-    tool_result["effect"] = _effect_for("read", "succeeded")
+    _, tool_result, tool_context = _complete_result_case(
+        "tool-port-v1", "invoke_tool",
+    )
+    validate_port_payload(
+        "tool-port-v1", "result", tool_result, context=tool_context,
+    )
+    tool_context["tool_definition"]["artifact_output_contract"]["max_items"] = 1
+    tool_context["tool_result_artifact_bindings"] = [{
+        "artifact_ref": _ref("artifact", marker="b"),
+        "role": "tool_output", "media_type": "text/plain",
+        "omissions_ref": None,
+    }]
     with pytest.raises(PortSchemaValidationError, match="sealed artifact bindings"):
         validate_port_payload(
             "tool-port-v1", "result", tool_result,
-            context={
-                "request": tool_request,
-                "tool_result_artifact_bindings": [{
-                    "artifact_ref": _ref("artifact", marker="b"),
-                    "role": "tool_output", "media_type": "text/plain",
-                    "omissions_ref": None,
-                }],
-            },
+            context=tool_context,
         )
 
 
@@ -996,3 +994,476 @@ def _request_context(port: str, request: dict) -> dict:
         }
         context["resolved_arguments"] = {}
     return context
+
+
+@pytest.mark.parametrize("port,operation,artifact_count", (
+    ("provider-port-v1", "catalog", 0),
+    ("tool-port-v1", "invoke_tool", 0),
+    ("storage-port-v1", "read", 1),
+))
+def test_success_result_rejects_empty_context(port, operation, artifact_count):
+    """Catch result validation silently skipping every trusted comparison."""
+    request = _request_instance(port, operation)
+    result = _result_instance(port, operation, "succeeded")
+    result["request_id"] = request["request_id"]
+    assert len(result["artifacts"]) == artifact_count
+
+    with pytest.raises(PortSchemaValidationError, match="trusted context"):
+        validate_port_payload(port, "result", result, context={})
+
+
+def _complete_result_case(port: str, operation: str,
+                          terminal: str = "succeeded") -> tuple[dict, dict, dict]:
+    """Build controlled mappings; these do not establish store authenticity."""
+    request = _request_instance(port, operation)
+    if port == "artifact-codec-port-v1" and request["artifact_inputs"]:
+        request["artifact_inputs"][0]["selector_ref"] = None
+        request["idempotency_key"] = _request_digest(request)
+    result = _result_instance(port, operation, terminal)
+    result["request_id"] = request["request_id"]
+    if port == "tool-port-v1" and operation == "invoke_tool":
+        result["effect"] = _effect_for(request["input"]["expected_effect_class"], terminal)
+
+    result_ref_field = {
+        ("artifact-codec-port-v1", "decode_projection"): "projection_artifact_ref",
+        ("artifact-codec-port-v1", "render_preview"): "preview_artifact_ref",
+        ("artifact-codec-port-v1", "encode"): "encoded_artifact_ref",
+        ("storage-port-v1", "read"): "object_artifact_ref",
+    }.get((port, operation))
+    if result_ref_field is not None:
+        output_ref = _ref("artifact", marker="e")
+        result["artifacts"][0]["artifact_ref"] = deepcopy(output_ref)
+        result["output"][result_ref_field] = deepcopy(output_ref)
+    if (port == "artifact-codec-port-v1"
+            and operation in {"render_preview", "encode"}):
+        result["artifacts"][0]["media_type"] = request["input"]["target_media_type"]
+
+    context = _request_context(port, request)
+    context.update(_config_context(context["config"]))
+    context["request"] = request
+    context["extension_error_codes"] = {}
+    for artifact in result["artifacts"]:
+        context["artifact_records"][artifact["artifact_ref"]["sha256"]] = {
+            "ref": deepcopy(artifact["artifact_ref"]),
+            "media_type": artifact["media_type"],
+            "byte_count": artifact["byte_count"],
+            "content_digest": artifact["content_digest"],
+        }
+    if port == "managed-provider-runner-port-v1" and operation == "run_status":
+        context["normalized_event_artifact_bindings"] = [
+            {
+                "artifact_ref": deepcopy(item["artifact_ref"]),
+                "role": item["role"],
+                "media_type": item["media_type"],
+                "omissions_ref": deepcopy(item["omissions_ref"]),
+            }
+            for item in result["artifacts"]
+        ]
+    if port == "tool-port-v1" and operation == "invoke_tool":
+        bindings = [
+            {
+                "artifact_ref": deepcopy(item["artifact_ref"]),
+                "role": item["role"],
+                "media_type": item["media_type"],
+                "omissions_ref": deepcopy(item["omissions_ref"]),
+            }
+            for item in result["artifacts"]
+        ]
+        context["tool_result_artifact_bindings"] = bindings
+        context["tool_definition"]["artifact_output_contract"] = {
+            "min_items": len(bindings),
+            "max_items": len(bindings),
+            "roles": [{
+                "role": "tool_output",
+                "allowed_media_types": ["text/plain"],
+                "omissions_policy": "optional",
+            }],
+        }
+    if port == "artifact-codec-port-v1" and operation == "decode_projection":
+        context["target_projection_media_type"] = result["artifacts"][0]["media_type"]
+    if port == "export-sink-port-v1" and operation == "transmit":
+        context["transmit_effect_class"] = result["effect"]["effect_class"]
+    return request, result, context
+
+
+@pytest.mark.parametrize("field,bad_value", (
+    ("config", None),
+    ("config", []),
+    ("request", None),
+    ("request", []),
+    ("artifact_records", None),
+    ("artifact_records", []),
+))
+def test_result_context_rejects_explicit_null_and_wrong_common_types(field, bad_value):
+    _, result, context = _complete_result_case("provider-port-v1", "catalog")
+    validate_port_payload("provider-port-v1", "result", result, context=context)
+    context[field] = bad_value
+
+    with pytest.raises(PortSchemaValidationError):
+        validate_port_payload("provider-port-v1", "result", result, context=context)
+
+
+@pytest.mark.parametrize("mutation", (
+    lambda context: context["binding_revision_record"].update(state="inactive"),
+    lambda context: context["actor_record"].update(authenticated=False),
+    lambda context: context["config"].pop("resource_limits"),
+    lambda context: context["request"].update(operation="status"),
+    lambda context: context.update(validated_at=None),
+    lambda context: context.update(accepted_at=None),
+))
+def test_result_context_rechecks_complete_config_request_and_trusted_records(mutation):
+    _, result, context = _complete_result_case("provider-port-v1", "catalog")
+    validate_port_payload("provider-port-v1", "result", result, context=context)
+    mutation(context)
+
+    with pytest.raises(PortSchemaValidationError):
+        validate_port_payload("provider-port-v1", "result", result, context=context)
+
+
+def test_storage_result_requires_exact_durable_artifact_metadata_and_bounds():
+    _, result, context = _complete_result_case("storage-port-v1", "read")
+    validate_port_payload("storage-port-v1", "result", result, context=context)
+
+    digest = result["artifacts"][0]["artifact_ref"]["sha256"]
+    wrong_metadata = deepcopy(context)
+    wrong_metadata["artifact_records"][digest]["content_digest"] = "f" * 64
+    with pytest.raises(PortSchemaValidationError, match="durable Artifact"):
+        validate_port_payload(
+            "storage-port-v1", "result", result, context=wrong_metadata,
+        )
+
+    over_bound = deepcopy(context)
+    over_bound["config"]["resource_limits"]["max_artifact_bytes"] = 1
+    over_bound["artifact_records"][digest]["byte_count"] = 2
+    over_bound["request"]["idempotency_key"] = _request_digest(over_bound["request"])
+    oversized = deepcopy(result)
+    oversized["artifacts"][0]["byte_count"] = 2
+    with pytest.raises(PortSchemaValidationError, match="config limits"):
+        validate_port_payload(
+            "storage-port-v1", "result", oversized, context=over_bound,
+        )
+
+
+def test_runner_result_requires_present_ordered_event_bindings_even_when_empty():
+    _, result, context = _complete_result_case(
+        "managed-provider-runner-port-v1", "run_status",
+    )
+    assert context["normalized_event_artifact_bindings"] == []
+    assert context["artifact_records"] == {}
+    validate_port_payload(
+        "managed-provider-runner-port-v1", "result", result, context=context,
+    )
+    context.pop("normalized_event_artifact_bindings")
+
+    with pytest.raises(PortSchemaValidationError):
+        validate_port_payload(
+            "managed-provider-runner-port-v1", "result", result, context=context,
+        )
+    malformed = _complete_result_case(
+        "managed-provider-runner-port-v1", "run_status",
+    )[2]
+    malformed["normalized_event_artifact_bindings"] = {}
+    with pytest.raises(PortSchemaValidationError):
+        validate_port_payload(
+            "managed-provider-runner-port-v1", "result", result, context=malformed,
+        )
+
+
+def test_tool_result_requires_present_sealed_bindings_and_output_contract_when_empty():
+    _, result, context = _complete_result_case("tool-port-v1", "invoke_tool")
+    assert context["tool_result_artifact_bindings"] == []
+    assert context["artifact_records"] == {}
+    validate_port_payload("tool-port-v1", "result", result, context=context)
+
+    missing_bindings = deepcopy(context)
+    missing_bindings.pop("tool_result_artifact_bindings")
+    with pytest.raises(PortSchemaValidationError):
+        validate_port_payload(
+            "tool-port-v1", "result", result, context=missing_bindings,
+        )
+
+    missing_contract = deepcopy(context)
+    missing_contract["tool_definition"].pop("artifact_output_contract")
+    with pytest.raises(PortSchemaValidationError, match="output artifact contract"):
+        validate_port_payload(
+            "tool-port-v1", "result", result, context=missing_contract,
+        )
+
+    malformed_bindings = deepcopy(context)
+    malformed_bindings["tool_result_artifact_bindings"] = [{}]
+    with pytest.raises(PortSchemaValidationError):
+        validate_port_payload(
+            "tool-port-v1", "result", result, context=malformed_bindings,
+        )
+
+    wrong_binding_type = deepcopy(context)
+    wrong_binding_type["tool_definition"]["artifact_output_contract"]["max_items"] = 1
+    wrong_binding_type["tool_result_artifact_bindings"] = [{
+        "artifact_ref": _ref("artifact", marker="b"),
+        "role": [], "media_type": "text/plain", "omissions_ref": None,
+    }]
+    with pytest.raises(PortSchemaValidationError):
+        validate_port_payload(
+            "tool-port-v1", "result", result, context=wrong_binding_type,
+        )
+
+    wrong_contract_type = deepcopy(context)
+    wrong_contract_type["tool_definition"]["artifact_output_contract"]["roles"][0][
+        "allowed_media_types"
+    ] = [{}]
+    with pytest.raises(PortSchemaValidationError):
+        validate_port_payload(
+            "tool-port-v1", "result", result, context=wrong_contract_type,
+        )
+
+
+def test_codec_result_requires_resolved_decode_media_and_request_target_media():
+    for operation in ("decode_projection", "render_preview", "encode"):
+        _, result, context = _complete_result_case("artifact-codec-port-v1", operation)
+        validate_port_payload(
+            "artifact-codec-port-v1", "result", result, context=context,
+        )
+        if operation == "decode_projection":
+            context.pop("target_projection_media_type")
+        else:
+            context["request"]["input"]["target_media_type"] = "application/json"
+            context["request"]["idempotency_key"] = _request_digest(context["request"])
+        with pytest.raises(PortSchemaValidationError, match="media"):
+            validate_port_payload(
+                "artifact-codec-port-v1", "result", result, context=context,
+            )
+
+
+def test_export_transmit_result_requires_frozen_target_effect_class():
+    _, result, context = _complete_result_case("export-sink-port-v1", "transmit")
+    validate_port_payload("export-sink-port-v1", "result", result, context=context)
+    context.pop("transmit_effect_class")
+
+    with pytest.raises(PortSchemaValidationError):
+        validate_port_payload("export-sink-port-v1", "result", result, context=context)
+
+
+@pytest.mark.parametrize("bad_value", (None, [], "not-a-map"))
+def test_non_success_result_requires_manifest_frozen_error_context(bad_value):
+    _, result, context = _complete_result_case("tool-port-v1", "invoke_tool", "failed")
+    validate_port_payload("tool-port-v1", "result", result, context=context)
+    if bad_value is None:
+        context.pop("extension_error_codes")
+    else:
+        context["extension_error_codes"] = bad_value
+
+    with pytest.raises(PortSchemaValidationError):
+        validate_port_payload("tool-port-v1", "result", result, context=context)
+
+
+def test_result_context_preserves_prior_frozen_refinements_while_rechecking_core_shape():
+    _, result, context = _complete_result_case("provider-port-v1", "catalog")
+    context["config"]["extension_config"] = {"fixture_mode": "bounded"}
+    context["request"]["extension_input"] = {"fixture_mode": "bounded"}
+    context["request"]["idempotency_key"] = _request_digest(context["request"])
+
+    validate_port_payload("provider-port-v1", "result", result, context=context)
+
+
+def _complete_custom_bounded_tool_result() -> tuple[dict, dict]:
+    request = _request_instance("tool-port-v1", "invoke_tool")
+    request["input"]["tool_id"] = "custom_tool"
+    request["artifact_inputs"] = [_artifact_input("custom_input")]
+    request["idempotency_key"] = _request_digest(request)
+    result = _result_instance("tool-port-v1", "invoke_tool", "succeeded")
+    result["request_id"] = request["request_id"]
+    result["effect"] = _effect_for(request["input"]["expected_effect_class"], "succeeded")
+    context = _request_context("tool-port-v1", request)
+    context.update(_config_context(context["config"]))
+    context.update({
+        "request": request,
+        "extension_error_codes": {},
+        "tool_result_artifact_bindings": [],
+    })
+    context["tool_definition"]["artifact_input_contract"] = {
+        "mode": "bounded",
+        "min_items": 1,
+        "max_items": 1,
+        "role": "custom_input",
+        "allowed_media_types": ["text/plain"],
+        "selector_policy": "forbidden",
+    }
+    context["tool_definition"]["artifact_output_contract"] = {
+        "min_items": 0,
+        "max_items": 0,
+        "roles": [{
+            "role": "tool_output",
+            "allowed_media_types": ["text/plain"],
+            "omissions_policy": "optional",
+        }],
+    }
+    return result, context
+
+
+def test_result_context_rejects_wrong_actor_type_without_leaking_type_error():
+    _, result, context = _complete_result_case("provider-port-v1", "catalog")
+    validate_port_payload("provider-port-v1", "result", result, context=context)
+    context["actor_record"]["actor_type"] = []
+
+    with pytest.raises(PortSchemaValidationError):
+        validate_port_payload("provider-port-v1", "result", result, context=context)
+
+
+@pytest.mark.parametrize("field,bad_value", (
+    ("role", [1]),
+    ("allowed_media_types", [{}]),
+    ("selector_policy", []),
+))
+def test_result_context_rejects_malformed_custom_tool_input_contract(field, bad_value):
+    result, context = _complete_custom_bounded_tool_result()
+    validate_port_payload("tool-port-v1", "result", result, context=context)
+    context["tool_definition"]["artifact_input_contract"][field] = bad_value
+
+    with pytest.raises(PortSchemaValidationError):
+        validate_port_payload("tool-port-v1", "result", result, context=context)
+
+
+def test_result_context_rejects_nonstring_tool_id_before_contract_lookup():
+    result, context = _complete_custom_bounded_tool_result()
+    validate_port_payload("tool-port-v1", "result", result, context=context)
+    context["tool_definition"]["tool_id"] = []
+
+    with pytest.raises(PortSchemaValidationError, match="does not match ToolDefinition"):
+        validate_port_payload("tool-port-v1", "result", result, context=context)
+
+
+@pytest.mark.parametrize("bad_kind", ([], {}))
+def test_result_context_rejects_malformed_ref_shaped_tool_arguments(bad_kind):
+    result, context = _complete_custom_bounded_tool_result()
+    validate_port_payload("tool-port-v1", "result", result, context=context)
+    context["resolved_arguments"] = {
+        "payload": {
+            "kind": bad_kind,
+            "id": "x",
+            "version": 1,
+            "sha256": "a" * 64,
+        },
+    }
+
+    with pytest.raises(PortSchemaValidationError):
+        validate_port_payload("tool-port-v1", "result", result, context=context)
+
+
+def _overdeep_tool_arguments() -> dict:
+    value: dict = {"leaf": "x"}
+    for _ in range(32):
+        value = {"nested": value}
+    return value
+
+
+@pytest.mark.parametrize("bad_arguments", (
+    {"payload": 1.5},
+    {"payload": "x" * 65_537},
+    _overdeep_tool_arguments(),
+    {"payload": ["x" * 4096] * 256},
+))
+def test_result_context_bounds_resolved_tool_arguments_as_safe_json(bad_arguments):
+    result, context = _complete_custom_bounded_tool_result()
+    validate_port_payload("tool-port-v1", "result", result, context=context)
+    context["resolved_arguments"] = bad_arguments
+
+    with pytest.raises(PortSchemaValidationError):
+        validate_port_payload("tool-port-v1", "result", result, context=context)
+
+
+def test_result_context_scans_tuple_projection_for_hidden_artifact_ref():
+    result, context = _complete_custom_bounded_tool_result()
+    validate_port_payload("tool-port-v1", "result", result, context=context)
+    context["resolved_arguments"] = {"payload": (_ref("artifact"),)}
+
+    with pytest.raises(PortSchemaValidationError, match="hidden artifact"):
+        validate_port_payload("tool-port-v1", "result", result, context=context)
+
+
+def test_resolved_tool_arguments_do_not_inherit_port_envelope_field_semantics():
+    result, context = _complete_custom_bounded_tool_result()
+    context["resolved_arguments"] = {
+        "api_origin": "ordinary argument, not a URI",
+        "started_at": "ordinary argument, not a timestamp",
+        "version": "e\u0301",
+        "payload": "x" * 4097,
+    }
+
+    validate_port_payload("tool-port-v1", "result", result, context=context)
+
+
+@pytest.mark.parametrize("stored_field,bad_value", (
+    ("byte_count", True),
+    ("byte_count", 1.0),
+    ("size", True),
+    ("size", 1.0),
+))
+def test_result_artifact_rejects_non_integer_durable_size(stored_field, bad_value):
+    _, result, context = _complete_result_case("storage-port-v1", "read")
+    result["artifacts"][0]["byte_count"] = 1
+    digest = result["artifacts"][0]["artifact_ref"]["sha256"]
+    record = context["artifact_records"][digest]
+    record.pop("byte_count", None)
+    record[stored_field] = 1
+    validate_port_payload("storage-port-v1", "result", result, context=context)
+    record[stored_field] = bad_value
+
+    with pytest.raises(PortSchemaValidationError):
+        validate_port_payload("storage-port-v1", "result", result, context=context)
+
+
+def _install_variable_result_artifacts(port: str, operation: str, result: dict,
+                                       context: dict) -> list[dict]:
+    schema = generate_port_schemas()[(port, "result")]
+    branch = next(
+        item for item in schema["oneOf"]
+        if item["properties"]["operation"]["const"] == operation
+        and item["properties"]["terminal"]["const"] == "succeeded"
+    )
+    artifacts = []
+    for index, marker in enumerate(("e", "f"), start=1):
+        artifact = _minimal(branch["properties"]["artifacts"]["items"])
+        artifact["artifact_ref"] = _ref("artifact", marker=marker)
+        artifact["byte_count"] = index
+        artifact["content_digest"] = str(index) * 64
+        artifact["media_type"] = "text/plain"
+        artifact["omissions_ref"] = None
+        if port == "tool-port-v1":
+            artifact["role"] = "tool_output"
+        artifacts.append(artifact)
+        context["artifact_records"][artifact["artifact_ref"]["sha256"]] = {
+            "ref": deepcopy(artifact["artifact_ref"]),
+            "media_type": artifact["media_type"],
+            "byte_count": artifact["byte_count"],
+            "content_digest": artifact["content_digest"],
+        }
+    result["artifacts"] = artifacts
+    return [{
+        "artifact_ref": deepcopy(item["artifact_ref"]),
+        "role": item["role"],
+        "media_type": item["media_type"],
+        "omissions_ref": None,
+    } for item in artifacts]
+
+
+@pytest.mark.parametrize("port,operation,binding_field", (
+    (
+        "managed-provider-runner-port-v1",
+        "run_status",
+        "normalized_event_artifact_bindings",
+    ),
+    ("tool-port-v1", "invoke_tool", "tool_result_artifact_bindings"),
+))
+def test_nonempty_result_bindings_preserve_exact_order(port, operation, binding_field):
+    _, result, context = _complete_result_case(port, operation)
+    bindings = _install_variable_result_artifacts(port, operation, result, context)
+    context[binding_field] = bindings
+    if port == "tool-port-v1":
+        context["tool_definition"]["artifact_output_contract"].update(
+            min_items=2, max_items=2,
+        )
+    validate_port_payload(port, "result", result, context=context)
+    context[binding_field] = list(reversed(bindings))
+
+    with pytest.raises(PortSchemaValidationError, match="sealed artifact bindings"):
+        validate_port_payload(port, "result", result, context=context)
