@@ -158,3 +158,219 @@ def test_collect_pattern_gathers_the_minimum_across_parallel_workers():
     assert join.inputs == ("w1", "w4")  # frozen order, not arrival order
     late = apply_branch_result(join, result("w3", "succeeded", 4))
     assert late.inputs == ("w1", "w4")  # sealed decision, evidence only
+
+
+# ---------------------------------------------------------------------------
+# T040 (first slice) / T039: the actual LangGraph scheduling adapter over a
+# CompiledGraph with ledger-reconciled idempotent node visits and opaque
+# checkpoint cursors. Handlers are code-owned registry entries keyed by the
+# compiled handler keys; model output can never add one. Real StateGraph,
+# real SQLite ledger and checkpoint journal; no live provider.
+# ---------------------------------------------------------------------------
+
+import uuid as _uuid
+
+from app.runtime import scheduler as sch
+from app.tests.test_graph_contract import (
+    artifact_edge,
+    compile_value,
+    graph_value,
+    input_slot,
+    node,
+    output_slot,
+    router_graph,
+)
+from app.tests.test_langgraph_checkpoints import reopen
+from app.tests.test_runtime_ledger import identifier, opened, run_spec
+
+
+def linear_graph():
+    raw = graph_value()
+    raw["nodes"] = [
+        node("intake", "deterministic", "원자료를 정규화한다",
+             outputs=[output_slot("draft", "text-document")]),
+        node("writer", "agent", "전체 초안을 만든다",
+             inputs=[input_slot("source", "text-document")],
+             outputs=[output_slot("draft", "text-document")]),
+        node("publish", "deterministic", "산출물을 고정한다",
+             inputs=[input_slot("approved", "text-document")],
+             outputs=[output_slot("result", "text-document")]),
+    ]
+    raw["edges"] = [
+        artifact_edge("e1", "intake", "draft", "writer", "source", "text-document"),
+        artifact_edge("e2", "writer", "draft", "publish", "approved", "text-document"),
+    ]
+    return raw
+
+
+def parallel_graph():
+    raw = router_graph()
+    raw["nodes"] = [
+        node("left", "deterministic", "왼쪽 경로", outputs=[output_slot("out", "text-document")]),
+        node("right", "deterministic", "오른쪽 경로", outputs=[output_slot("out", "text-document")]),
+        node("join", "join", "두 경로를 합류한다",
+             inputs=[input_slot("items", "text-document", multiplicity="many")],
+             outputs=[output_slot("result", "text-document")]),
+    ]
+    raw["entry_node_ids"] = ["left", "right"]
+    raw["edges"] = [
+        artifact_edge("p1", "left", "out", "join", "items", "text-document", multiplicity="many"),
+        artifact_edge("p2", "right", "out", "join", "items", "text-document", multiplicity="many"),
+    ]
+    return raw
+
+
+def ledger_run(tmp_path):
+    subject = opened(tmp_path)
+    run = run_spec(subject)
+    subject.ledger.create_run(identifier(), run)
+    return subject, run
+
+
+def registry(subject, calls, *, decision="accept", failing=None):
+    def produce(context, view):
+        calls.append(context.node_id)
+        if context.node_id == failing:
+            raise RuntimeError("PRIVATE_HANDLER_CANARY")
+        return subject.refs.result
+
+    def route(context, view):
+        calls.append(context.node_id)
+        return decision
+
+    return {"core.deterministic": produce, "core.agent": produce,
+            "core.join": produce, "core.router": route}
+
+
+def build(subject, run, raw, handlers):
+    return sch.build_scheduler(compile_value(raw), ledger=subject.ledger,
+                               run_id=run.run_id, handlers=handlers)
+
+
+def test_scheduler_runs_a_sequential_chain_with_ledger_reconciled_executions(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    calls = []
+    outcome = build(subject, run, linear_graph(), registry(subject, calls)).run()
+    assert calls == ["intake", "writer", "publish"]
+    assert outcome.completed_node_ids == ("intake", "publish", "writer")
+    assert outcome.run_id == run.run_id
+    executions = dict(outcome.execution_ids)
+    for node_id, execution_id in executions.items():
+        recorded = subject.ledger.get_execution(execution_id)
+        assert recorded["spec"]["node_id"] == node_id
+        assert execution_id == sch.execution_identity(run.run_id, node_id, 0)
+    assert set(dict(outcome.result_refs)) == set(executions.values())
+    # the outcome is a bounded projection, never the raw channel state
+    assert set(outcome.__dataclass_fields__) == {
+        "run_id", "graph_digest", "completed_node_ids", "execution_ids",
+        "result_refs", "counters", "activations",
+    }
+    assert outcome.counters == {"intake": 1, "writer": 1, "publish": 1}
+
+
+def test_parallel_entries_fan_in_to_one_join_visit(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    calls = []
+    outcome = build(subject, run, parallel_graph(), registry(subject, calls)).run()
+    assert sorted(calls[:2]) == ["left", "right"]
+    assert calls[2:] == ["join"]
+    assert outcome.counters == {"left": 1, "right": 1, "join": 1}
+
+
+def test_router_seals_exactly_the_decided_branch(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    calls = []
+    outcome = build(subject, run, router_graph(), registry(subject, calls)).run()
+    assert calls == ["choose", "accept", "join"]  # revise was never activated
+    assert len(outcome.activations) == 1
+    router, activation_id, branches = outcome.activations[0]
+    assert router == "choose" and branches == ("accept",)
+    _uuid.UUID(activation_id)
+    subject2, run2 = ledger_run(tmp_path / "other")
+    calls2 = []
+    with pytest.raises(sch.SchedulerError):
+        build(subject2, run2, router_graph(), registry(subject2, calls2, decision="other")).run()
+    assert calls2 == ["choose"]  # an undeclared decision activates nothing
+
+
+def test_restart_after_a_failure_never_reruns_completed_visits(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    calls = []
+    scheduler = build(subject, run, linear_graph(), registry(subject, calls, failing="writer"))
+    with pytest.raises(sch.SchedulerError) as caught:
+        scheduler.run()
+    assert "PRIVATE_HANDLER_CANARY" not in str(caught.value)
+    assert "writer" in str(caught.value)
+    assert calls == ["intake", "writer"]
+    intake_execution = sch.execution_identity(run.run_id, "intake", 0)
+    assert subject.ledger.get_execution(intake_execution)["spec"]["node_id"] == "intake"
+    reopen(subject, tmp_path)
+    resumed_calls = []
+    outcome = build(subject, run, linear_graph(), registry(subject, resumed_calls)).run()
+    assert resumed_calls == ["writer", "publish"]  # intake's visit was durable
+    assert outcome.completed_node_ids == ("intake", "publish", "writer")
+    assert dict(outcome.execution_ids)["intake"] == intake_execution
+    # the journal never carried the private error text
+    head = subject.ledger.checkpoint_for_replay(run.run_id, sch.NAMESPACE)
+    for revision in range(1, head["revision"] + 1):
+        row = subject.ledger.checkpoint_for_replay(run.run_id, sch.NAMESPACE, revision=revision)
+        assert b"PRIVATE_HANDLER_CANARY" not in row["cursor"]
+
+
+def test_a_completed_run_is_idempotent(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    calls = []
+    first = build(subject, run, linear_graph(), registry(subject, calls)).run()
+    again = build(subject, run, linear_graph(), registry(subject, calls)).run()
+    assert calls == ["intake", "writer", "publish"]  # nothing re-ran
+    assert again == first
+
+
+def test_the_handler_registry_is_closed_and_kinds_are_explicit(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    good = registry(subject, [])
+    missing = dict(good)
+    del missing["core.agent"]
+    extra = dict(good, **{"core.shell": good["core.agent"]})
+    not_callable = dict(good, **{"core.agent": "os.system"})
+    for handlers in (missing, extra, not_callable):
+        with pytest.raises(sch.SchedulerError):
+            build(subject, run, linear_graph(), handlers)
+    with pytest.raises(sch.SchedulerError):
+        sch.build_scheduler({"graph_digest": "x"}, ledger=subject.ledger,
+                            run_id=run.run_id, handlers=good)
+    with pytest.raises(sch.SchedulerError, match="human_gate"):
+        build(subject, run, graph_value(), good)  # unsupported kinds refuse loudly
+
+
+def test_handler_results_must_be_exact_refs_and_nothing_streams(tmp_path):
+    subject, run = ledger_run(tmp_path)
+
+    def bad(context, view):
+        return {"text": "not a ref"}
+
+    handlers = dict(registry(subject, []), **{"core.deterministic": bad})
+    scheduler = build(subject, run, linear_graph(), handlers)
+    assert not hasattr(scheduler, "stream")
+    with pytest.raises(sch.SchedulerError) as caught:
+        scheduler.run()
+    assert "not a ref" not in str(caught.value)
+
+
+def test_handlers_receive_identity_only_and_a_detached_view(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    seen = {}
+
+    def produce(context, view):
+        seen[context.node_id] = (context, dict(view))
+        view["results"]["forged"] = "x"  # a mutated view must not leak into state
+        return subject.refs.result
+
+    handlers = {"core.deterministic": produce, "core.agent": produce,
+                "core.join": produce, "core.router": produce}
+    outcome = build(subject, run, linear_graph(), handlers).run()
+    context, view = seen["writer"]
+    assert context.run_id == run.run_id and context.loop_index == 0
+    assert set(view) == {"results", "counters"}
+    assert "forged" not in dict(outcome.result_refs)
+    assert type(context).__dataclass_params__.frozen
