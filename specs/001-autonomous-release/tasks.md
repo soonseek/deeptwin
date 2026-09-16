@@ -2,9 +2,9 @@
 
 **Input**: this feature's spec, plan, research, data model, source trace and seven contracts.
 **Status**: the first ADR-009–012/T086 web-framework review is historical and T089's exact multi-
-architecture build-input closure remains closed. ADR-014 reopened T086 for extension-framework
-remediation and independent review. Earlier transport-neutral implementation is preserved; no
-architecture-dependent task may claim design closure while this gate remains open.
+architecture build-input closure remains closed. ADR-014 reopened T086; revision 7 subsequently
+closed that design gate. Implementation resumed on 2026-09-15 with the earlier transport-neutral
+code preserved and the evidence-based completion corrections recorded below.
 **Tests**: explicitly required by the user and spec. Write/observe relevant failures first,
 then implement, run focused tests, integrate regressions and record evidence. Existing passes
 are historical until rerun. Do not modify a test merely to make a deficient implementation pass.
@@ -13,6 +13,13 @@ Each task has an exact destination; paths are repository-relative unless explici
 private local evidence. Tasks can be split into
 smaller substeps with the same acceptance scope. A checkbox requires linked evidence, not code
 existence. `[P]` applies only after earlier shared prerequisites and with disjoint file ownership.
+
+2026-09-15 resumption reconciliation: T039/T041/T055/T056/T057/T061/T064/T065 are reopened
+without discarding their tested partial implementations. The preceding completed markers
+overstated real scheduling, inquiry, paired execution, leak checks or trusted evaluation/human
+approval integration. See `evidence/resumption-2026-09-15.md`. This changes completion accounting,
+not the accepted feature scope; deterministic value-layer passes remain valid only for their
+recorded boundaries.
 No task authorizes publication, new paid calls, credential extraction or destructive user changes.
 Every feature's completion includes its required event emissions and public/private evidence
 tests BEFORE that feature's first live trial. T068 is the comprehensive coverage audit, not
@@ -491,9 +498,9 @@ Independent test: fixed synthetic work → real design decisions/candidates → 
 Independent test: accepted graph with mixed shapes actually browses a controlled source,
 creates files and passes full artifacts to later roles; trace survives cancel/restart.
 
-- [x] T039 [P] [US3] Add sequential/parallel/router/closed-join/loop/retry/restart scheduling tests in app/tests/test_graph_execution.py (R02/07/08).
+- [ ] T039 [P] [US3] Add sequential/parallel/router/closed-join/loop/retry/restart scheduling tests in app/tests/test_graph_execution.py (R02/07/08). Existing tests manually exercise scheduling-state transitions; actual scheduler execution and durable restart coverage remain required.
 - [ ] T040 [US3] Implement LangGraph scheduling adapter with persistent opaque cursors and ledger-reconciled idempotent nodes in app/runtime/scheduler.py; never stream raw private graph state (FR-013/030).
-- [x] T041 [US3] Implement sealed branch activation, atomic join winner, visit-vs-attempt IDs and dependency-scoped failure in app/runtime/scheduling_state.py and app/tests/test_graph_execution.py (runtime §2/4).
+- [ ] T041 [US3] Implement sealed branch activation, atomic join winner, visit-vs-attempt IDs and dependency-scoped failure in app/runtime/scheduling_state.py and app/tests/test_graph_execution.py (runtime §2/4). Existing issued-value transitions preserve the in-memory decision; durable ledger CAS, concurrent-writer single-successor and restart recovery are not implemented by those pure functions.
 - [ ] T042 [US3] Implement provider-neutral multimodal frozen turns and Codex environmentless tool-step bridge in app/runtime/gateway.py and app/adapters/codex_step.py; add actual-page/image/table marker contracts in app/tests/test_model_payloads.py (R04–R06).
 - [ ] T043 [US3] Implement controlled egress fetch and sandboxed Chromium navigation/read/screenshot via typed IPC in app/adapters/browser.py and app/runtime/egress.py; enforce source/recipient grants, DNS/IP/redirect and byte limits (R09, PK-06/07).
 - [ ] T044 [P] [US3] Implement bounded declarative DOCX/CSV/JSON/PDF/image creation and safe format validation in app/adapters/documents.py and app/tests/test_document_tools.py; use PDF skill and actual render inspection, not file-exists-only checks (SC-004).
@@ -519,9 +526,9 @@ whole/partial selectors bind exact original, unreviewed area and impact remain s
 Independent test: preserved original/alternative → observed difference → competing explanations,
 eligible lens questions frozen before new evidence → typed candidate or justified no-change.
 
-- [x] T055 [US5] Implement format-aware differences/trace slicing and system/expert/exception/error/no-generalization hypotheses in app/services/diagnosis.py and app/tests/test_diagnosis.py; no unsupported single-cause claim (FR-018).
-- [x] T056 [US5] Implement qualified SPLI routing, frozen contrasting predictions, actual fresh evidence, abstain/decline and H_exp update in app/services/inquiry.py and app/tests/test_inquiry.py (FR-019, G-03/04).
-- [x] T057 [US5] Implement restore/learn/protect typed patch compilation with per-field behavior provenance and semantic/source leak checks in app/runtime/compiler.py and app/tests/test_change_compiler.py; prevent H_phi/current-alternative copying (FR-020/021).
+- [ ] T055 [US5] Implement format-aware differences/trace slicing and system/expert/exception/error/no-generalization hypotheses in app/services/diagnosis.py and app/tests/test_diagnosis.py; no unsupported single-cause claim (FR-018). Recorded observation contracts exist; actual trace slicing remains open as stated in evidence/diagnosis-t055.md.
+- [ ] T056 [US5] Implement qualified SPLI routing, frozen contrasting predictions, actual fresh evidence, abstain/decline and H_exp update in app/services/inquiry.py and app/tests/test_inquiry.py (FR-019, G-03/04). Inquiry state contracts exist; question generation and evidence-grounded H_exp update remain open as stated in evidence/inquiry-t056.md.
+- [ ] T057 [US5] Implement restore/learn/protect typed patch compilation with per-field behavior provenance and semantic/source leak checks in app/runtime/compiler.py and app/tests/test_change_compiler.py; prevent H_phi/current-alternative copying (FR-020/021). Reconcile mandatory supported-inquiry admission with growth §4's system-repair path and make leak checking non-optional before completion.
 - [x] T058 [US5] Implement active conditional knowledge registry, authority/scope/time/conflict/revalidation and prompt-derived compilation in app/runtime/memory.py and app/services/knowledge.py; ordinary authorized workflow changes remain possible (FR-021/032).
 - [x] T059 [US5] Run cross-purpose retrieval/prompt/derived-input adversarial tests including hidden heldout and sensitive personal-profile rejection in app/tests/test_growth_firewall.py (G-05, OPS-AC09).
 - [ ] T060 [US5] Connect observation/competing evidence/new questions/change candidates and audit details in app/static/inquiry.mjs, app/api/routes.py and app/tests/browser-inquiry.test.mjs; no forced philosophy quiz or fabricated human answer (UX-AC05/07).
@@ -531,11 +538,11 @@ eligible lens questions frozen before new evidence → typed candidate or justif
 Independent test: frozen comparable paired runs, all plateau/invalid/restart cases, separate
 heldout validation and exact authenticated human promotion; no automatic operating change.
 
-- [x] T061 [US6] Implement frozen related-queue/baseline/candidate/reset/evaluator/budget plans and isolated paired execution in app/services/comparisons.py and app/tests/test_comparisons.py; trace partial-scope downstream effects (FR-022/FR-023/FR-025).
+- [ ] T061 [US6] Implement frozen related-queue/baseline/candidate/reset/evaluator/budget plans and isolated paired execution in app/services/comparisons.py and app/tests/test_comparisons.py; trace partial-scope downstream effects (FR-022/FR-023/FR-025). Frozen plan/result recording exists; real paired queue execution remains open as stated in evidence/comparisons-t061.md.
 - [x] T062 [P] [US6] Add exact decimal plateau tests for every growth §6.4 sequence, first-floor=0, cumulative small gains, real failure vs invalid, duplicate/restart/lineage changes in app/tests/test_growth_loop.py (SC-007).
 - [x] T063 [US6] Implement best_observed/progress_reference/patience/stop-reason state and atomic one-result application in app/services/growth.py; product-only no-development-stop semantics (FR-024).
-- [x] T064 [US6] Implement candidate freeze, dataset exposure tracking and heldout/boundary/regression/shadow/limited gates in app/services/validation.py and app/tests/test_validation.py; seen data never relabeled unseen (FR-025).
-- [x] T065 [US6] Implement authenticated exact-hash approval/activation CAS/rollback compatibility in app/services/promotion.py and app/tests/test_promotion.py; preserve separate validation/deployment/lifecycle axes (FR-026).
+- [ ] T064 [US6] Implement candidate freeze, dataset exposure tracking and heldout/boundary/regression/shadow/limited gates in app/services/validation.py and app/tests/test_validation.py; seen data never relabeled unseen (FR-025). Evidence-free caller-declared passes must not issue authoritative qualification; bind actual evaluator execution/results before closing.
+- [ ] T065 [US6] Implement authenticated exact-hash approval/activation CAS/rollback compatibility in app/services/promotion.py and app/tests/test_promotion.py; preserve separate validation/deployment/lifecycle axes (FR-026). Value-level hash/CAS checks exist; replace caller-declared authenticated booleans with authoritative session/approval evidence before closing.
 - [ ] T066 [US6] Implement paired execution/round/artifact comparison, actual stop explanations and human version approval/rollback UI in app/static/experiments.mjs and app/static/versions.mjs (UX-AC06).
 - [ ] T067 [US6] Run G-06–G-15 end-to-end recovery/loop/heldout/approval cases in app/tests/browser-growth.test.mjs and specs/001-autonomous-release/evidence/us6.md; label test-actor/synthetic vs actual user evidence (SC-007/SC-008).
 

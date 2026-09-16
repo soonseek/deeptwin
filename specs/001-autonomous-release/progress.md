@@ -1,8 +1,116 @@
 # DeepTwin autonomous delivery progress
 
-Updated: 2026-09-13. Status: active; ADR-014 revision 7 independently closed the V1/T086 design
-gate, while T089's exact multi-architecture build-input scope remains closed and isolated runtime
-implementation remains active within its now accepted architecture boundary.
+Updated: 2026-09-16 (Asia/Seoul). Status: implementation resumed on the existing worktree after the user's
+handoff and fresh baseline verification. ADR-014 revision 7 closed the design gate; T089's
+build-input scope remains closed. No whole-product implementation or release qualification is
+implied. See `evidence/resumption-2026-09-15.md` and the scoped `resumption-plan.md` work steps.
+
+## Current resumption checkpoints
+
+| Scoped correction | Current evidence/status |
+| --- | --- |
+| Provider-advertised effort -> frozen turn -> port request representation | Nullable exact values reconciled across six generated schemas; independent review accepted and parent301 focused tests pass. Actual provider/dispatcher and durable qualification remain T042/T087 |
+| Finite speech fixture lifecycle | Implemented, independently reviewed; parent 81 controlled browser/lifecycle cases pass. Production STT and timeout-path detached browser termination are not claimed |
+| Real LangGraph ledger-backed checkpoint/pending-write recovery | Partial adapter and no-output correction independently reviewed; parent 148 focused tests pass. Full scheduler remains open |
+| Mandatory result validation context | Final review corrections accepted; 97 focused tests pass, integrated reviewer independently ran 9 relevant regressions. Durable context/source-lineage and production admission remain open |
+| Authenticated response capture/recovery | Accepted after schema parity/authenticated API fixture corrections; independent spec/quality PASS and full3755passed. Semantic acceptance, settlement, scheduler and Linux qualification remain open |
+| Real persistent first-owner/session -> command authority | Task7 bounded backend accepted after independent review/fixes; real bootstrap-cookie-to-command and same-writer revocation verified. Final full3859passed. Final owner UI/TLSedge/service-client/recovery and whole T025 remain open |
+| Actual owner -> inert executable candidate registration | Task8 accepted: durable real-cookie registration/read/replay/cold-reopen, corruption/fault/concurrency/capacity, shared-core extraction and fixed common composition independently reviewed. Final full4126passed; no installation/execution authority |
+| Finite deployment source I/O | Task9 accepted after independent restart-permission correction/review: actual finite producer, metadata-only IPC lease, independent retained-file readers and no-clobber publication. Final full4304passed; owner prepare/cancel journal, images and host qualification remain separate |
+| Actual owner -> deployment prepare/read/cancel | Task10 A/B/C accepted within scope. C cleanup finding corrected:192post-fix covering plus parent real-file regression; independent rereview clean. Pre-fix full4588Python/32browser evidence retained separately. Next public receipt verification/source/import; installation/effect and whole-journey gates stay open |
+| Separate receipt-verifier dependency candidate | Task11 accepted:200covering tests/314subtests, ancestor-symlink correction independently reviewed. Historical release inputs unchanged; no Linux image qualification |
+| Pure public signed-receipt verification | Task12 accepted after four reviewed corrections;321final covering plus parent10targeted/1PATH-runtime cases. Its bounded-session follow-up is resolved by Task20; year-format/style debt remains. Pure verifier alone grants no source/admission/installation authority |
+| Pure public-source expansion and consumed marker | Task13 accepted:246covering and parent112new-code tests, independent review clean. Exact old expansion retained; clean RED-history limitation explicit. No actual source I/O |
+| Retained public-trust source and shared file checks | Task14 accepted after3defect fixes and fresh-process import proof; independent rereview4addressed/no new breakage,188final covering plus parent6regressions. Post-fix full5004passed/1Linuxskip/369subtests/1inheritedwarning; no ingress/consumption source or initializer qualification claimed |
+| Retained incoming receipt files | Task15 accepted after rejecting-parser currentness correction and clean scoped rereview; final249covering plus parent7regressions,4final/144untouchedhashes checked. No signature/admission/import or deployment authority |
+| Consumed-result files and no-overwrite publication | Task16 accepted after final-read ordering correction and clean scoped rereview; final280covering/parent4regressions, seven final/143untouched hashes verified. Two deferred minors remain; no DB consumption or installation authority |
+| Public receipt-root initialization | Task17 accepted after two scoped fix rounds: final239covering/parent491integration plus four actual regressions; independent review clean, retained bindings/membership/metadata verified. No host initialization or image rollout authorized |
+| Receipt v2 command and immutable record structures | Task18 implementation/review gate accepted after timestamp correction: final464covering/parent4time regressions, six exports verified, scoped review clean. Three minor follow-ups remain explicit; no migration/import/approval authority |
+| Mixed cancellation-version file compatibility | Task19 accepted:385covering/parent213integration pass with one inherited warning; independent spec/quality review clean, two nonblocking warning/test-precision notes retained. Shared actual source/publication path only; v2 lifecycle/import still separate |
+| Same-service verified receipt migration/import | Task20 accepted:2884covering plus fresh full5456passed/1Linuxskip/369subtests/1inheritedwarning, independent spec/quality Approved. Concurrent-import race corrected and frozen-byte parity verified. Two nonblocking test-oracle/warning notes retained. Succeeded receipts remain pending evidence, not installation or release |
+| Existing owner web route for receipt import | Task21 accepted:2922affected-family,32browser and fresh full5494passed/1Linuxskip/369subtests/1inheritedwarning, independent spec/quality Approved with0Critical/0Important. Actual owner/import/read/HEAD/replay/restart/source ownership connected; two test-maintenance/warning minors retained. No whole UI/installation or release claim |
+| Closed image identity and full lineage values | Task22 active on a177-artifact/68-schema accepted baseline; five new module/test/schema files only. Pure canonical codecs and full two-platform structural joins grant no measured provenance, trusted source or installation authority |
+
+These are scoped engineering checkpoints, not whole user-story completion or a release claim.
+
+Prior four-task batch verification: **3535 Python tests passed, 2 skipped, 369 subtests passed**
+in 201.36 seconds, freshly repeated before continuation in201.43s, with one unchanged upstream
+Starlette/AnyIO warning; the separate eight-file
+controlled browser/lifecycle regression passed **81 cases**. Changed Python static checks and
+three JavaScript syntax checks pass. All task-scoped and final integrated reviews accepted their
+recorded scopes after corrections. Continued Task5 separately passed301 tests in27.33s and
+independent spec/quality review. Initial continuation full run found one outdated API fixture
+(3709passed/1failed); independent Task6 review also found terminal-newline schema disagreement.
+Both were fixed and independently rereviewed: spec PASS/quality PASS. Final frozen-source full run:
+**3755 passed,2 skipped,369 subtests passed** in241.65s, exit0, one unchanged Starlette/AnyIO warning.
+This is the latest integrated verification before Task7 changes, not whole-story qualification.
+No automatic commit, push or live-provider qualification.
+
+Task7 continued that baseline with actual persistent owner admission and one reviewed correction.
+Final frozen-source Python run: **3859 passed,2 skipped,369 subtests passed**,259.89s,exit0,
+one unchanged Starlette/AnyIO warning. Controlled historical browser regression:81passed,exit0,
+262.920s; the subsequent fix touched only private-auth storage, new tests and documentation.
+Independent review/reviewfix gates accepted the bounded source. These results are not final owner
+UI/TLSedge, full export collector, Linux/provider or whole-story evidence. Retained-history auth
+verification cost is a deferred Minor to address before production long-retention qualification.
+
+Task8 corrected the inherited reusable-core dependency gate and shared request/wire/event imports,
+then resolved two Important review findings: feature-specific startup wiring and an incomplete
+transitive AST gate. The supported server now uses a fixed generic contribution seam; all five
+core roots and reachable local helpers are checked. Independent scoped rereview accepted both.
+Final frozen full Python regression: **4126passed,1skipped,369subtests passed**,317.38s,exit0,
+one unchanged upstream warning. The skip is Linux SO_PEERCRED. Three hash-pinned missing optional
+development packages enabled106offline Claude API tests; no live provider or production credentials
+were used. Historical2skip totals included a missing-SDK module and must not be called bothLinuxonly.
+Forty-one source hashes stayed unchanged during final verification; git diff --check passed.
+Whole T025/T087, final release/static-lint hygiene and retained-history/capacity qualification remain open.
+
+Task9 source I/O is now independently reviewed after correcting a plan-mandated initializer group
+omission. Credential-aware actual-file tests cover1/16slots and missing-group denial. Final parent
+frozen regression: **4304passed,1LinuxSO_PEERCREDskip,369subtests,1existingwarning**,291.53s,exit0.
+Twenty-two frozen hashes verified unchanged. Earlier4300pass pre-fix result remains historical.
+No source metadata, generated Compose expansion or file publication is installation authority.
+Task10 subsequently connected actual owner/domain/candidate sources to durable prepare/read/cancel.
+
+Task10 phase A now has exact seven-table primitives, pure stage/request/domain-anchor contracts and
+six structural exports, with actual temporary domain/owner/candidate foundation tests. Corrected-byte
+covering1759passed/1existingLinuxskip/21subtests/1existingwarning; parent pre-review-fix full4372passed,
+1Linuxskip,369subtests,1warning in296.54s. Independent review found one Important: cancellation
+reconstruction did not invoke its shared codec. The correction now requires an explicit profile and
+validates through that codec. Independent scoped rereview accepted the fix; final parent broader
+boundary regression1245passed/1existingwarning14.10s, no skips, and18finalA+22Task9hashes unchanged.
+Phase A is accepted, not a usable endpoint. The4372full result remains explicitly pre-fix evidence.
+Phases B/C are now also accepted for actual authority/lifecycle/recovery and the supported HTTP
+path, including the final narrow resource-ownership correction. Whole bounded Task10 is complete;
+signed receipt, actual installation/runtime and original whole-story gates remain open.
+
+The separately versioned control dependency candidate is now accepted: final200tests plus314
+subtests, real ancestor-symlink regressions and clean independent scoped rereview. Four historical
+T089 inputs remain unchanged; the candidate is explicitly not release-qualified. Next is actual
+public Ed25519 receipt parsing/verification and verified local package installation. This does not
+yet establish receipt lifecycle, operator execution, final image inclusion or whole-product completion.
+
+Task12 initial public Ed25519 implementation and verified additive local PyNaCl installation now
+have a frozen whole-Python regression:4823passed,1LinuxSO_PEERCREDskip,369subtests,1inheritedwarning,
+458.32s. Independent review found four concrete fixture/contract/portability issues; a scoped fix
+round is active, so this result is explicitly pre-fix and Task12 is not accepted yet. Native
+verification uses actual installed PyNaCl and independent Node public verification, not a mocked
+success. Source admission, actual deployment effects and whole-story integration remain open.
+
+Task12 is now accepted after fixing all four Important findings and clean scoped independent
+rereview. Final affected five-file selection321passed2.59s; parent targeted10passed1.06s and ordinary
+PATH-Node public verification1passed0.66s. All11final and historical build/source hashes verified.
+Ruff lint passes; at Task12 acceptance three minor follow-ups were recorded: platform-year formatting,
+owned-child complete-frame deadlines, and formatter compliance. Task20 later resolves the bounded
+deadline concern while retaining its separately identified clean-exit test-oracle note. The4823whole-suite result remains pre-fix;
+it is not relabeled post-fix. Next Task13 adds pure receipt-source expansion/consumed codec only.
+
+Task13 pure receipt-source producer/consumed codec is accepted:246focused covering tests and parent
+112new-code regressions pass, independent spec/quality review clean,7new/135predecessorhashes verified.
+Exact Q487bytes and generated input/output bindings preserve the previous expansion; no source I/O
+or initializer actually runs. Separate clean pre-implementation RED evidence for renderer/codec was
+not established and remains disclosed; acceptance does not manufacture that history. Next Task14
+adds actual retained public-trust reads and shared bounded file mechanics; whole-story gates stay open.
 
 ## Outcome and authority
 
@@ -20,6 +128,17 @@ The user then explicitly confirmed early stopping describes the PRODUCT reevalua
 not development. This goal has no three-attempt development completion/stop rule.
 
 ## Approximate weighted progress
+
+Current conservative estimate: **40–45% including design**. Eight overstated completion markers
+were reopened (T039/T041/T055/T056/T057/T061/T064/T065) without discarding their tested partial code.
+This is a scope-accounting correction, not a claim that existing functionality regressed. The
+table below preserves the **2026-09-13 historical estimate (46.2%)**; it is not current runnable
+product coverage. A new full weighted numerator is pending integrated execution evidence.
+
+Two historical table notes are superseded: LangGraph/checkpoint-sqlite are installed and import
+successfully in the development environment, so a main-checkout dependency edit does not block
+T040 implementation. Design/growth storage and knowledge modules exist; their presence does not
+close real worker/evaluator/human integration. Actual design/execution UI remains disconnected.
 
 Weights represent final delivery work, not lines, test counts, subagent activity or elapsed
 time. Completion fractions are engineering estimates supported by the listed evidence.
@@ -44,7 +163,7 @@ gate, but ADR-014's extension audit reopened it after finding six reusable-frame
 revision-7 formatting-only remediation passed a new independent review after six ADR-014
 rejections; T089 plus the T018-A/B/B2/C
 checkpoints retain their scoped build-input, internal transport and static-isolation evidence. The
-honest rounded estimate remains roughly 35%; transport-neutral domain/provider/web UI work did not
+pre-2026-09-13 rounded estimate was roughly 35%; transport-neutral domain/provider/web UI work did not
 regress. Whole-goal ETA remains unsupported until at least one complete story integration
 establishes comparable implementation throughput. Claude
 subscription approval is no longer a dependency after the user's
@@ -124,11 +243,12 @@ do not turn unknown external readiness into a promised date.
   T089 core build input or T081 core/built-in image; arbitrary third-party extensions are not bundled.
   T018 broker qualification and T025 durable web authority/routes also keep
   T087 open.
-  See evidence/extension-spi-pure-contracts.md. The executable slice of the 44 base schemas
-  is additionally closed: deterministic generation to schemas/v1/extensions/ports/ with
-  artifact-input uniqueness guards, and fail-closed trusted-context semantic validation whose
-  focused suite passes 28 with full-context happy paths; see
-  evidence/extension-port-schemas-t087a1.md (2026-09-12).
+  See evidence/extension-spi-pure-contracts.md. The 44 base schemas have deterministic generation
+  to schemas/v1/extensions/ports/ and artifact-input uniqueness guards. The historical 28-test
+  scope is recorded in evidence/extension-port-schemas-t087a1.md (2026-09-12); it did not establish
+  mandatory complete result context. That defect and subsequent review findings are corrected
+  in evidence/resumption-2026-09-15.md, with 97 focused tests and independent review. Neither
+  static schemas nor trusted-context validation closes durable semantic admission.
 - [x] T089 exact Linux arm64+amd64 dependency, model, upstream build-input image,
   license/provenance-input and digest
   closure. Python/Node/Caddy index+platform descriptors, all model bytes, the corrected reproducible
