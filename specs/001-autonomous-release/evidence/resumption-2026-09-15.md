@@ -827,3 +827,5 @@ I2 factory-tail BaseException leaked 13 descriptors; M3–M7 as listed in the pl
 RED-first (6 failed → GREEN), suite 60 passed, covering command rerun below, lint/format/diffcheck
 clean. Details in `extension-worker-metadata-task23.md`.
 Pre-fix full regression (Task 23 module + 53 tests, before the review closures): **5653 passed, 1 skipped, 1 inherited warning, 369 subtests, 666.68s**, exit 0. Post-fix Task 23 covering command: **271 passed, 1 skipped, 21 subtests, 10.41s**.
+
+Final full regression after Task 23 fix round 1 and the T040 first slice: **5668 passed, 1 skipped, 1 inherited warning, 369 subtests, 649.70s**, exit 0 (commits ae0c447, b4daad6).

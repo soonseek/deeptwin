@@ -89,3 +89,4 @@ d1212a154432d1c4ca4a014824a66fb2d4b1dbcd9b7406aef6313e4f650b59c0  app/tests/test
 
 - Focused: scheduler + Task 23 + checkpoint suites **121 passed, 17.00s**.
 - Final full regression is recorded below once run.
+- Final full regression on the committed tree (Task 23 post-fix + T040 slice 1; same tracing-disabled command): **5668 passed, 1 skipped (Linux SO_PEERCRED), 1 inherited warning, 369 subtests, 649.70s**, exit 0.

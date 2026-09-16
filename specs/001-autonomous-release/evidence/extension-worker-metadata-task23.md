@@ -116,3 +116,4 @@ suite **60 passed**; Ruff lint/format and diffcheck clean.
 - Pre-fix full regression (module + 53 tests, before the review closures):
   see the resumption evidence log for the exact count.
 - Post-fix covering command and the final full regression are recorded below.
+- Final full regression on the committed tree (Task 23 post-fix + T040 slice 1; same tracing-disabled command): **5668 passed, 1 skipped (Linux SO_PEERCRED), 1 inherited warning, 369 subtests, 649.70s**, exit 0.
