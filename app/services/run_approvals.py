@@ -30,7 +30,7 @@ from ..domain.public_events import (
     _event_cursor_in_transaction,
     _event_stream,
 )
-from ..domain.refs import DomainContractError, EntityRef, uuid_string
+from ..domain.refs import DomainContractError, EntityRef, canonical_json, uuid_string
 from ..domain.request_identity import AuthenticatedRequest
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore, _writer
@@ -62,9 +62,18 @@ def _closed(method):
 def approval_identity(run_id: str, node_id: str, approval_scope: str) -> str:
     """The single record identity for one (run, gate node, scope) decision."""
 
+    # canonical JSON keeps the components delimiter-proof ("a:b","c" ≠ "a","b:c")
     return str(
         uuid5(
-            NAMESPACE_URL, f"deeptwin:run-approval:{run_id}:{node_id}:{approval_scope}"
+            NAMESPACE_URL,
+            canonical_json(
+                {
+                    "domain": "deeptwin-run-approval-v1",
+                    "run_id": run_id,
+                    "node_id": node_id,
+                    "approval_scope": approval_scope,
+                }
+            ).decode(),
         )
     )
 
@@ -157,15 +166,23 @@ class PersistentRunApprovals:
         ).fetchone()
         if row is None:
             return None
+        if row["version"] != 1:
+            # a decision is immutable: any later version is not this service's
+            # record and is never trusted, whatever its content says
+            raise RunApprovalError("unavailable")
         ref = EntityRef(
             kind="action_approval",
             id=approval_id,
-            version=row["version"],
+            version=1,
             sha256=row["sha256"],
         )
         body = self._domain._load(db, ref, roots)[0].body
         content = body["content"]
         if content.get("schema_version") != _RECORD_SCHEMA:
+            raise RunApprovalError("unavailable")
+        account = db.execute("SELECT actor_ref FROM owner_auth_accounts").fetchone()
+        if account is None or json.loads(account["actor_ref"]) != body["actor_ref"]:
+            # only the persistent owner's human actor authors approvals
             raise RunApprovalError("unavailable")
         return RunApproval(
             run_id=content["run_id"],

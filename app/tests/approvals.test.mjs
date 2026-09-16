@@ -124,3 +124,41 @@ test('receipt summaries are closed projections of the server receipt', () => {
     links: { self: `/api/v1/runs/${RUN_ID}/approvals/owner-gate/release-output`, events: '/api/v1/events' },
   }));
 });
+
+// --- independent review closures (2026-09-17) ---------------------------------
+
+const BASE = `/${'2'.repeat(32)}/`;
+
+test('F4: routes and receipts honour the deployment base path', () => {
+  const routes = approvalRoutes(RUN_ID, BASE);
+  assert.equal(routes.record, `${BASE}api/v1/runs/${RUN_ID}/approvals`);
+  assert.equal(routes.read('owner-gate', 'release-output'),
+    `${BASE}api/v1/runs/${RUN_ID}/approvals/owner-gate/release-output`);
+  const receipt = { command_id: COMMAND_ID, state: 'recorded', decision: 'approved',
+    approval_ref: { kind: 'action_approval', id: RUN_ID, version: 1, sha256: 'c'.repeat(64) },
+    links: { self: `${BASE}api/v1/runs/${RUN_ID}/approvals/owner-gate/release-output`,
+             events: `${BASE}api/v1/events` } };
+  const summary = receiptSummary(receipt);
+  assert.equal(summary.runId, RUN_ID);
+  assert.equal(summary.nodeId, 'owner-gate');
+  assert.equal(summary.scope, 'release-output');
+  const view = awaitingHumanView({ run_id: RUN_ID, completed_node_ids: [],
+    awaiting_human: [['owner-gate', 'release-output']] }, BASE);
+  assert.equal(view.gates[0].readPath, routes.read('owner-gate', 'release-output'));
+  assert.deepEqual(remainingGates(view, [summary]), []);
+  for (const bad of ['/not-hex/', 'relative/', '/x/y/']) {
+    assert.throws(() => approvalRoutes(RUN_ID, bad));
+  }
+});
+
+test('F8: only a recorded receipt summary can clear a gate', () => {
+  const base = { command_id: COMMAND_ID, decision: 'approved',
+    approval_ref: { kind: 'action_approval', id: RUN_ID, version: 1, sha256: 'd'.repeat(64) },
+    links: { self: `/api/v1/runs/${RUN_ID}/approvals/owner-gate/release-output`, events: '/api/v1/events' } };
+  assert.throws(() => receiptSummary({ ...base, state: 'pending' }));
+  assert.throws(() => receiptSummary({ ...base }));
+  const view = awaitingHumanView({ run_id: RUN_ID, completed_node_ids: [],
+    awaiting_human: [['owner-gate', 'release-output']] });
+  assert.throws(() => remainingGates(view, [{ decision: 'approved', runId: RUN_ID,
+    nodeId: 'owner-gate', scope: 'release-output' }]));
+});

@@ -157,3 +157,37 @@ eb547add23644225305d73b20f15054b08f6f8fe22a7365dcbb3d3794ebd03d5  app/tests/test
 ```
 
 Clean full regression of the route-contribution tree (catalog reordered, no edits during the run): **5704 passed, 1 skipped, 1 warning, 369 subtests passed in 668.79s**, exit 0.
+
+## Independent review (2026-09-17) and closures
+
+Verdict before the fixes: spec FAIL / quality FAIL. Important: (F1) a fan-in with producers of
+unequal depth ran twice — the first visit against an open input set and a phantom repeat with
+its own ledger execution; (F2) a human gate inside a bounded loop passed every later visit on
+one approval and then died on the resume bound; (F3) the approval reader accepted the newest
+`action_approval` version by any actor, so a version-2 record authored by the system root
+passed a gate; (F4) `approvals.mjs` rejected the server's real receipt links under the
+default local profile base path. Minor: delimiter-prone identity (F5), no run/target binding
+(F6, pre-approval possible), cap counts controller visits (F7), receipt `state` ignored and
+plain objects accepted by `remainingGates` (F8), memory-only consumed approvals (F9).
+
+Closures (RED first: 5 Python + 2 node failures, then GREEN): a fan-in runs once after every
+activated producer completed — routers keep the sealed activation as a closed
+`<router>.activation.<target>` counter so the fan-in distinguishes "never activated" from
+"open"; routers, joins and human gates inside loop regions are refused at build; the reader
+pins `version == 1` and requires the record's actor to be the persistent owner's human actor
+(a forged newer version or a root-authored record is `unavailable`, and the scheduler refuses
+the gate); the identity is canonical-JSON based; the GUI honours the deployment base path,
+requires `state === "recorded"`, and `remainingGates` accepts only summaries it issued.
+F6/F7/F9 are documented limits. Affected suites 108 passed; node 7/7; lint/format/diffcheck
+clean.
+
+```
+8070782870976babbed6e982875aa3381c029ca4078e88f1580deceb1f5b7c20  app/runtime/scheduler.py
+7bc143a01fa692d7ab3108902aa72f04fc7c42e8bd83607241945b119f7d8c7d  app/services/run_approvals.py
+3c0e3f8e996ee290521abdc6c921da852e3eef738c894bb14035b1d85fca8616  app/static/approvals.mjs
+eae1f23e3132e98fc2f5f12716d2c25a29c0a63306dd4bbfc743c33e15af95c9  app/tests/test_graph_execution.py
+a498c272c65bf25d0bfb81c8ba8aa30b3d335673897cf8e7811ca9315ce73e09  app/tests/test_run_approvals.py
+641c51135f485c0a49b7ca0b7fcd0199d437e38e4bc5c9985d4fcc12c454b620  app/tests/approvals.test.mjs
+```
+
+Review-closure full regression (same command): **5715 passed, 1 skipped, 1 warning, 369 subtests passed in 670.24s (0:11:10)**, exit 0.

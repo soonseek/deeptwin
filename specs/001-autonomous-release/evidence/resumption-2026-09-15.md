@@ -839,3 +839,5 @@ Process incident (2026-09-16): the slice-3 background regression reported 257 fa
 Route contribution run-approvals-v1 + approvals GUI logic full regression: **5704 passed, 1 skipped, 1 warning, 369 subtests passed in 668.79s**, exit 0.
 
 Run trace slice (T055 reopened scope) full regression: **5710 passed, 1 skipped, 1 warning, 369 subtests passed in 672.80s (0:11:12)**, exit 0.
+
+Scheduler/approvals review closures full regression: **5715 passed, 1 skipped, 1 warning, 369 subtests passed in 670.24s (0:11:10)**, exit 0.

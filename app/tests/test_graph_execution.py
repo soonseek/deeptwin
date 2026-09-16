@@ -174,6 +174,7 @@ from app.runtime import scheduler as sch
 from app.tests.test_graph_contract import (
     artifact_edge,
     compile_value,
+    control_edge,
     graph_value,
     input_slot,
     node,
@@ -594,3 +595,113 @@ def test_a_gated_graph_requires_the_real_approval_service(tmp_path):
         sch.build_scheduler(compile_value(graph_value()), ledger=subject.ledger,
                             run_id=run.run_id, handlers=gate_registry(subject, []),
                             approvals=object())
+
+
+# --- independent review closures (2026-09-17) ---------------------------------
+
+
+def unequal_depth_join_graph():
+    raw = router_graph()
+    raw["nodes"] = [
+        node("left", "deterministic", "왼쪽 첫 단계", outputs=[output_slot("out", "text-document")]),
+        node("mid", "deterministic", "왼쪽 둘째 단계",
+             inputs=[input_slot("source", "text-document")],
+             outputs=[output_slot("out", "text-document")]),
+        node("right", "deterministic", "오른쪽 단계", outputs=[output_slot("out", "text-document")]),
+        node("join", "join", "두 경로를 합류한다",
+             inputs=[input_slot("items", "text-document", multiplicity="many")],
+             outputs=[output_slot("result", "text-document")]),
+    ]
+    raw["entry_node_ids"] = ["left", "right"]
+    raw["edges"] = [
+        artifact_edge("u1", "left", "out", "mid", "source", "text-document"),
+        artifact_edge("u2", "mid", "out", "join", "items", "text-document", multiplicity="many"),
+        artifact_edge("u3", "right", "out", "join", "items", "text-document", multiplicity="many"),
+    ]
+    return raw
+
+
+def test_f1_a_join_waits_for_every_activated_producer_and_visits_once(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    calls = []
+    outcome = build(subject, run, unequal_depth_join_graph(), registry(subject, calls)).run()
+    assert calls.count("join") == 1 and calls[-1] == "join"
+    assert set(calls[:-1]) == {"left", "right", "mid"}
+    assert outcome.counters == {"left": 1, "right": 1, "mid": 1, "join": 1}
+    join_ids = [eid for node_id, eid in outcome.execution_ids if node_id == "join"]
+    assert join_ids == [sch.execution_identity(run.run_id, "join", 0)]
+    # the ledger holds exactly one join visit, never a phantom repeat
+    assert len(subject.ledger.executions_for_run(run.run_id)) == 4
+
+
+def gated_loop_graph():
+    raw = loop_graph()
+    for key in ("model_bindings", "tool_bindings", "memory_policies", "grant_refs"):
+        raw[key] = []  # no agent node remains, so no binding may stay unused
+    raw["nodes"] = [
+        node("seed", "deterministic", "초기 상태를 만든다"),
+        node("gate", "human_gate", "반복마다 사람이 승인한다"),
+        node("loop", "bounded_loop", "종료 조건과 반복 한도를 판정한다"),
+        node("done", "deterministic", "최종 결과를 고정한다",
+             outputs=[output_slot("result", "text-document")]),
+    ]
+    raw["edges"] = [
+        control_edge("g1", "seed", "loop"),
+        control_edge("g2", "loop", "gate", loop_id="revision-loop"),
+        control_edge("g3", "gate", "loop", loop_id="revision-loop"),
+        control_edge("g4", "loop", "done", {"op": "eq", "fact": "loop_done", "value": True}),
+    ]
+    return raw
+
+
+def test_f2_a_human_gate_inside_a_bounded_loop_is_refused_at_build(tmp_path):
+    subject, run, approvals = gated_app(tmp_path)
+    try:
+        compiled = compile_value(gated_loop_graph())
+        assert compiled.loop_regions[0][1] == ("gate", "loop")
+        handlers = {**gate_registry(subject, []), "core.bounded_loop": lambda c, v: {"loop_done": True}}
+        with pytest.raises(sch.SchedulerError, match="human_gate.*loop"):
+            sch.build_scheduler(compiled, ledger=subject.ledger, run_id=run.run_id,
+                                handlers=handlers, approvals=approvals)
+    finally:
+        subject.context.__exit__(None, None, None)
+
+
+def test_f3_a_forged_newer_approval_version_never_passes_a_gate(tmp_path):
+    from app.domain.schemas import ImmutableRecord
+    from app.services.run_approvals import approval_identity
+
+    subject, run, approvals = gated_app(tmp_path)
+    try:
+        calls = []
+        scheduler = sch.build_scheduler(compile_value(graph_value()), ledger=subject.ledger,
+                                        run_id=run.run_id, handlers=gate_registry(subject, calls),
+                                        approvals=approvals)
+        scheduler.run()
+        approvals.record(subject.request, approval_command(run, decision="rejected"))
+        # a version-2 record for the same identity, authored by the system root
+        domain = subject.domain
+        roots = domain.roots()
+        forged = ImmutableRecord.create(
+            kind="action_approval",
+            id=approval_identity(run.run_id, "owner-gate", "release-output"),
+            version=2,
+            created_at_utc="2026-09-17T00:00:00.000000Z",
+            actor_ref=roots.actor,
+            parent_refs=(),
+            purpose="operational",
+            access_policy_ref=roots.access_policy,
+            retention_policy_ref=roots.retention_policy,
+            content={
+                "schema_version": "run-approval-v1", "run_id": run.run_id,
+                "node_id": "owner-gate", "approval_scope": "release-output",
+                "decision": "approved", "command_id": str(_uuid.uuid4()),
+                "decided_at_utc": "2026-09-17T00:00:00.000000Z", "event_sequence": 1,
+            },
+        )
+        domain.put(forged)
+        with pytest.raises(sch.SchedulerError):
+            scheduler.run()
+        assert "owner-gate" not in calls and "publish" not in calls
+    finally:
+        subject.context.__exit__(None, None, None)

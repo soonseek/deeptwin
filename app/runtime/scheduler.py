@@ -33,12 +33,20 @@ declared scope — a recorded rejection fails the gate as
 projection, and the gate body itself re-verifies the records. No handler
 return value, boolean or caller-supplied reference can pass a gate.
 
+Fan-ins (review closure): a node with several producers runs once, only
+after EVERY activated producer completed — a producer behind a router
+counts only when that router sealed it (the sealed activation is kept as
+a closed `<router>.activation.<target>` counter, durable in the journal),
+and an open activated producer defers the trigger instead of running the
+fan-in against an open set. Routers, joins and human gates inside a
+bounded loop are refused at build time rather than given visit-blind
+activations or approvals.
+
 Explicit limits of this slice: retries within a visit are not
 implemented (a failed visit fails the run and is resumed on restart);
-`all_selected` joins rely on activated branches completing in the same
-superstep; sealed activations and consumed approvals are reported from
-memory, not recovered from the journal; no attempt reservation, budget
-settlement or semantic result admission happens here.
+sealed activations and consumed approvals are reported from memory, not
+recovered from the journal; no attempt reservation, budget settlement or
+semantic result admission happens here.
 """
 
 from __future__ import annotations
@@ -271,7 +279,12 @@ class GraphScheduler:
     def _project(
         self, state: dict, awaiting: tuple[tuple[str, str], ...] = ()
     ) -> SchedulerOutcome:
-        counters = dict(state.get("counters", {}))
+        node_ids = {node.node_id for node in self._compiled.nodes}
+        counters = {
+            key: value
+            for key, value in state.get("counters", {}).items()
+            if key in node_ids  # activation markers are routing facts, not visits
+        }
         results = dict(state.get("results", {}))
         executions = []
         for node_id, count in sorted(counters.items()):
@@ -399,6 +412,16 @@ def build_scheduler(
     kinds = {node.node_id: node.kind for node in compiled.nodes}
     for node_id, kind in kinds.items():
         _require(kind in _SUPPORTED_KINDS, f"unsupported node kind: {kind} ({node_id})")
+    loop_members = {
+        member for _, members, _ in compiled.loop_regions for member in members
+    }
+    for node_id in sorted(loop_members):
+        # a router, join or human gate inside a loop would need visit-scoped
+        # activations and approvals; this slice refuses instead of guessing
+        _require(
+            kinds[node_id] not in {"router", "join", "human_gate"},
+            f"{kinds[node_id]} node {node_id} inside a bounded loop is unsupported",
+        )
     gates = {
         node.node_id: tuple(node.as_dict()["config"]["approval_scopes"])
         for node in compiled.execution_graph.nodes
@@ -487,11 +510,31 @@ def build_scheduler(
         context = NodeContext(run_id, node_id, execution_id, spec.visit_id, loop_index)
         return execution_id, loop_index, context
 
+    branch_router = {}
+    for node_id, kind in kinds.items():
+        if kind == "router":
+            for target in set(_router_branches(compiled, node_id).values()):
+                branch_router[target] = node_id
+
     def producing_node(node_id: str):
         handler = handler_by_node[node_id]
+        sources = predecessors.get(node_id, ())
 
         def node_fn(state: dict):
-            loop_index = state.get("counters", {}).get(node_id, 0)
+            counters = state.get("counters", {})
+            if len(sources) > 1:
+                # a fan-in runs once, after EVERY activated producer completed:
+                # a producer behind a router counts only when that router
+                # sealed it; an open activated producer defers this trigger
+                for source in sources:
+                    router = branch_router.get(source)
+                    if router is not None and not counters.get(
+                        f"{router}.activation.{source}"
+                    ):
+                        continue
+                    if counters.get(source, 0) == 0:
+                        return {}
+            loop_index = counters.get(node_id, 0)
             if execution_identity(run_id, node_id, loop_index) in state.get(
                 "results", {}
             ):
@@ -541,7 +584,17 @@ def build_scheduler(
             scheduler._activations.append(
                 (node_id, activation.activation_id, (target,))
             )
-            return Command(goto=target, update={"counters": {node_id: loop_index + 1}})
+            return Command(
+                goto=target,
+                update={
+                    "counters": {
+                        node_id: loop_index + 1,
+                        # the sealed activation, durable in the closed counters
+                        # channel so fan-ins can tell "not activated" from "open"
+                        f"{node_id}.activation.{target}": loop_index + 1,
+                    }
+                },
+            )
 
         return node_fn
 

@@ -154,3 +154,58 @@ def test_the_service_binds_the_exact_store_and_authority(tmp_path):
             PersistentRunApprovals(DomainStore(app.state.store), app.state.owner_authority)
         with pytest.raises(RunApprovalError):
             PersistentRunApprovals(app.state.domain_store, object())
+
+
+# --- independent review closures (2026-09-17) ---------------------------------
+
+
+def test_f3_lookup_pins_version_one_and_the_owner_actor(tmp_path):
+    from app.domain.schemas import ImmutableRecord
+    from app.services.run_approvals import approval_identity
+
+    with owner(tmp_path) as (app, _client, request, _profile, _arguments):
+        approvals = PersistentRunApprovals(app.state.domain_store, app.state.owner_authority)
+        approvals.record(request, payload(decision="rejected"))
+        domain = app.state.domain_store
+        roots = domain.roots()
+        identity = approval_identity(RUN_ID, "owner-gate", "release-output")
+
+        def forged(version, actor_ref):
+            return ImmutableRecord.create(
+                kind="action_approval", id=identity, version=version,
+                created_at_utc="2026-09-17T00:00:00.000000Z", actor_ref=actor_ref,
+                parent_refs=(), purpose="operational",
+                access_policy_ref=roots.access_policy,
+                retention_policy_ref=roots.retention_policy,
+                content={"schema_version": "run-approval-v1", "run_id": RUN_ID,
+                         "node_id": "owner-gate", "approval_scope": "release-output",
+                         "decision": "approved", "command_id": str(uuid4()),
+                         "decided_at_utc": "2026-09-17T00:00:00.000000Z", "event_sequence": 1},
+            )
+
+        domain.put(forged(2, roots.actor))
+        with pytest.raises(RunApprovalError, match="unavailable"):
+            approvals.lookup(RUN_ID, "owner-gate", "release-output")
+        with pytest.raises(RunApprovalError):
+            approvals.record(request, payload())  # never silently repaired either
+        # a version-1 record authored by the system root is not owner evidence
+        other = approval_identity(RUN_ID, "other-gate", "release-output")
+        domain.put(ImmutableRecord.create(
+            kind="action_approval", id=other, version=1,
+            created_at_utc="2026-09-17T00:00:00.000000Z", actor_ref=roots.actor,
+            parent_refs=(), purpose="operational", access_policy_ref=roots.access_policy,
+            retention_policy_ref=roots.retention_policy,
+            content={"schema_version": "run-approval-v1", "run_id": RUN_ID,
+                     "node_id": "other-gate", "approval_scope": "release-output",
+                     "decision": "approved", "command_id": str(uuid4()),
+                     "decided_at_utc": "2026-09-17T00:00:00.000000Z", "event_sequence": 1},
+        ))
+        with pytest.raises(RunApprovalError, match="unavailable"):
+            approvals.lookup(RUN_ID, "other-gate", "release-output")
+
+
+def test_f5_the_approval_identity_is_delimiter_proof():
+    from app.services.run_approvals import approval_identity
+
+    assert approval_identity(RUN_ID, "a:b", "c") != approval_identity(RUN_ID, "a", "b:c")
+    assert approval_identity(RUN_ID, "a.b", "c") != approval_identity(RUN_ID, "a", "b.c")
