@@ -2309,7 +2309,7 @@ Reuse only compatible low-level file/mount helpers named in§4; no caller-pinned
 absence-only IPC lease, expected-observation callback or production test mode. Preserve package
 import boundaries. Baseline ownership of thirteen FDs and every transient/error path are testable.
 
-- [ ] Write actual temporary-tree fixtures with fixed relative leaves and real shipped schema
+- [x] Write actual temporary-tree fixtures with fixed relative leaves and real shipped schema
   bytes; test-only redirection/sampling preserves actual inode/mode/type/bytes for filesystem
   assertions. Establish RED on absent public factory before code. Clearly label synthetic
   platform/owner/mount values, not Linux qualification. Include these assertions with fixture
@@ -2331,20 +2331,20 @@ import boundaries. Baseline ownership of thirteen FDs and every transient/error 
       source.read_current(deadline=Deadline.after_ms(1000))
   ```
 
-- [ ] Implement fixed no-argument acquisition and actual complete file measurement with
+- [x] Implement fixed no-argument acquisition and actual complete file measurement with
   independent streamed worker hashing, actual identity/schema bytes and measured process/mount
   observations. Apply exact metadata-contract modes/owners/size/fd/deadline limits. No directory
   enumeration, executable-byte return, expected pin, platform fallback, or authority token.
-- [ ] Implement named/retained-FD fences before/after each fresh complete read; exact actual
+- [x] Implement named/retained-FD fences before/after each fresh complete read; exact actual
   signatures and baseline content; source poisoning on integrity/unavailable failure, safe retry
   only for caller deadline/busy. Serialize with nonblocking lock, attempt all closes, preserve
   active exceptions, unwind partial acquisitions on BaseException. Test source noncopyability.
-- [ ] RED-first mutation/error tests exercise byte-identical replacement, unlink/truncate/growth/
+- [x] RED-first mutation/error tests exercise byte-identical replacement, unlink/truncate/growth/
   edit/chmod, changed ancestor, symlink/hardlink/FIFO/directory inputs, actual schema/worker mismatch,
   exact byte caps, process/mount drift and visible alias. Retain unrelated mount-order and /opt
   sibling acceptance. Check real retained/transient FD counts, partial-open/close errors, deadlines
   and concurrent read/close without touching other processes or real system resources.
-- [ ] Self-review/final Ruff/format/diffcheck and unchanged baseline/schema parity, freeze both
+- [x] Self-review/final Ruff/format/diffcheck and unchanged baseline/schema parity, freeze both
   new files before complete covering command with projectPython, tracing disabled, -B, -q and
   -p no:cacheprovider: `app/tests/test_extension_worker_metadata.py
   app/tests/test_extension_lineage_contracts.py app/tests/test_deployment_sources.py
@@ -2353,6 +2353,26 @@ import boundaries. Baseline ownership of thirteen FDs and every transient/error 
   in `.superpowers/sdd/resumption-plan/task-23-report.md`; parent owns independent spec/quality
   review and proportional fresh verification. No whole-suite/browser repetition by default.
   T025/T087, real Linux/image/native/boot/probe/observer/installation and wholeUI remain open.
+Task-scoped result (2026-09-16): `app/workers/extension_metadata.py` and
+`app/tests/test_extension_worker_metadata.py` implemented RED-first (ImportError on the absent
+module, then 53 passed). Thirteen retained descriptors, fresh-chain reopen and full byte/digest/
+signature/process/mount recheck per read, closed error family, poison-on-integrity, busy/deadline
+semantics, non-copyable handle; ten post-open mutations, symlink/hardlink/FIFO/directory leaves,
+caps, six mount rejections and drift cases covered with real temporary files (simulated Linux
+facts). Covering command 264 passed / 1 Linux skip / 21 subtests; Ruff lint/format/diffcheck
+clean. Evidence: `evidence/extension-worker-metadata-task23.md`. Independent review returned spec FAIL / quality PASS with two Important findings — a mount
+below the prefix at a non-chain name was accepted, and a BaseException in the factory tail leaked
+the 13 retained descriptors — plus five Minors (leaf-open OSError classified invalid, no deadline
+check between identity/schema chunks, mount state sampled only after the reads, `__exit__` could
+replace a propagating exception with busy, broad Invalid mapping). Fix round 1 (same day): every
+mount at or below the prefix refuses on or off the named chain; the factory tail unwinds on any
+BaseException; leaves open directly so OSError stays unavailable; identity/schema reads check the
+deadline around every chunk; mount state is sampled before and after the reads and retained
+descriptors are re-fstat'ed at the final fence; `__exit__` preserves a propagating exception.
+RED 6 failed → GREEN; suite 60 passed; Ruff lint/format/diffcheck clean. Task 23 accepted for its
+bounded reader scope. T025/T087, real Linux/image/native/boot/probe/observer/installation and
+whole UI remain open.
+
 
 ## Continuation
 

@@ -813,3 +813,17 @@ coverage closure, disclosed), then GREEN. Task 22 covering command: **490 passed
 warning, 44.51s**. Ruff lint, `ruff format --check` and `git diff --check` clean on both files.
 Full regression and commit follow in the same iteration record below.
 Full regression on the fixed source (same tracing-disabled command): **5600 passed, 1 skipped (Linux SO_PEERCRED), 1 inherited warning, 369 subtests, 678.05s**, exit 0 — the delta over 5585 is exactly the 15 new Task 22 regressions.
+
+## Task 23 fixed-file worker metadata source — implemented (2026-09-16)
+
+RED on the absent module, then 53 focused tests GREEN; covering command 264 passed, 1 Linux
+SO_PEERCRED skip, 21 subtests, no warnings; Ruff lint/format and diffcheck clean. Details and
+frozen hashes in `extension-worker-metadata-task23.md`. Full regression recorded below once run.
+
+### Task 23 review fix round 1 — accepted (2026-09-16)
+
+Independent review: spec FAIL / quality PASS; I1 mount-below-prefix off the named chain accepted,
+I2 factory-tail BaseException leaked 13 descriptors; M3–M7 as listed in the plan. All closed
+RED-first (6 failed → GREEN), suite 60 passed, covering command rerun below, lint/format/diffcheck
+clean. Details in `extension-worker-metadata-task23.md`.
+Pre-fix full regression (Task 23 module + 53 tests, before the review closures): **5653 passed, 1 skipped, 1 inherited warning, 369 subtests, 666.68s**, exit 0. Post-fix Task 23 covering command: **271 passed, 1 skipped, 21 subtests, 10.41s**.
