@@ -1,0 +1,1817 @@
+{
+  "$comment": "Structural only; actual owner, source, signature, currentness, approval and journal admission remain required.",
+  "$id": "urn:deeptwin:schemas:v1:deployment:prepare-api-v2",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "command_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "expires_in_seconds": {
+          "maximum": 86400,
+          "minimum": 60,
+          "type": "integer"
+        },
+        "kind": {
+          "const": "extension_stage",
+          "type": "string"
+        },
+        "slot_id": {
+          "maximum": 16,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "command_id",
+        "kind",
+        "candidate_id",
+        "slot_id",
+        "expires_in_seconds"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "command_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "expected_revision": {
+          "maximum": 3,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "request_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command_id",
+        "request_digest",
+        "expected_revision"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "command_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "expected_revision": {
+          "maximum": 3,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "receipt_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command_id",
+        "request_digest",
+        "receipt_digest",
+        "expected_revision"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "cancellation_publication_state": {
+              "type": "null"
+            },
+            "publication_state": {
+              "const": "pending",
+              "type": "string"
+            },
+            "revision": {
+              "const": 1,
+              "type": "integer"
+            },
+            "state": {
+              "const": "prepared",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "properties": {
+            "cancellation_publication_state": {
+              "const": "pending",
+              "type": "string"
+            },
+            "publication_state": {
+              "enum": [
+                "published",
+                "suppressed"
+              ],
+              "type": "string"
+            },
+            "revision": {
+              "maximum": 3,
+              "minimum": 2,
+              "type": "integer"
+            },
+            "state": {
+              "const": "cancelled",
+              "type": "string"
+            }
+          }
+        }
+      ],
+      "properties": {
+        "cancellation_publication_state": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "pending",
+                "published"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "command_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "event_cursor": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "type": "string"
+        },
+        "kind": {
+          "const": "extension_stage",
+          "type": "string"
+        },
+        "links": {
+          "additionalProperties": false,
+          "properties": {
+            "cancel": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^(?:/(?:[0-9a-f]{32}/)?api/v1/deployment/requests/[0-9a-f-]{36}/cancel)(?![\\s\\S])",
+              "type": "string"
+            },
+            "events": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^(?:/(?:[0-9a-f]{32}/)?api/v1/events)(?![\\s\\S])",
+              "type": "string"
+            },
+            "self": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^(?:/(?:[0-9a-f]{32}/)?api/v1/deployment/requests/[0-9a-f-]{36})(?![\\s\\S])",
+              "type": "string"
+            }
+          },
+          "required": [
+            "self",
+            "cancel",
+            "events"
+          ],
+          "type": "object"
+        },
+        "publication_state": {
+          "enum": [
+            "pending",
+            "published",
+            "suppressed"
+          ],
+          "type": "string"
+        },
+        "request_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 3,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "state": {
+          "enum": [
+            "prepared",
+            "cancelled",
+            "expired",
+            "receipt_pending",
+            "rejected"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "request_digest",
+        "kind",
+        "state",
+        "revision",
+        "publication_state",
+        "cancellation_publication_state",
+        "links",
+        "command_id",
+        "event_cursor"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "disposition": {
+              "const": "pending_postconditions",
+              "type": "string"
+            },
+            "outcome": {
+              "const": "succeeded",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "properties": {
+            "disposition": {
+              "const": "consumed_non_success",
+              "type": "string"
+            },
+            "outcome": {
+              "enum": [
+                "failed",
+                "unknown"
+              ],
+              "type": "string"
+            }
+          }
+        }
+      ],
+      "properties": {
+        "command_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "disposition": {
+          "enum": [
+            "pending_postconditions",
+            "consumed_non_success"
+          ],
+          "type": "string"
+        },
+        "event_cursor": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "succeeded",
+            "failed",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "receipt_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "revision": {
+          "const": 2,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "command_id",
+        "request_id",
+        "receipt_digest",
+        "outcome",
+        "disposition",
+        "revision",
+        "event_cursor"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "cancellation_publication_state": {
+              "type": "null"
+            },
+            "consumption_publication_state": {
+              "type": "null"
+            },
+            "publication_state": {
+              "enum": [
+                "pending",
+                "published"
+              ],
+              "type": "string"
+            },
+            "receipt": {
+              "type": "null"
+            },
+            "revision": {
+              "const": 1,
+              "type": "integer"
+            },
+            "state": {
+              "const": "prepared",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "properties": {
+            "cancellation_publication_state": {
+              "enum": [
+                "pending",
+                "published"
+              ],
+              "type": "string"
+            },
+            "consumption_publication_state": {
+              "type": "null"
+            },
+            "publication_state": {
+              "enum": [
+                "published",
+                "suppressed"
+              ],
+              "type": "string"
+            },
+            "receipt": {
+              "type": "null"
+            },
+            "revision": {
+              "const": 2,
+              "type": "integer"
+            },
+            "state": {
+              "const": "cancelled",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "properties": {
+            "cancellation_publication_state": {
+              "type": "null"
+            },
+            "consumption_publication_state": {
+              "type": "null"
+            },
+            "publication_state": {
+              "enum": [
+                "published",
+                "suppressed"
+              ],
+              "type": "string"
+            },
+            "receipt": {
+              "type": "null"
+            },
+            "revision": {
+              "const": 2,
+              "type": "integer"
+            },
+            "state": {
+              "const": "expired",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "properties": {
+            "cancellation_publication_state": {
+              "type": "null"
+            },
+            "consumption_publication_state": {
+              "type": "null"
+            },
+            "publication_state": {
+              "enum": [
+                "published",
+                "suppressed"
+              ],
+              "type": "string"
+            },
+            "receipt": {
+              "allOf": [
+                {
+                  "additionalProperties": false,
+                  "oneOf": [
+                    {
+                      "properties": {
+                        "disposition": {
+                          "const": "pending_postconditions",
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "const": "succeeded",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "disposition": {
+                          "const": "consumed_non_success",
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "enum": [
+                            "failed",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ],
+                  "properties": {
+                    "disposition": {
+                      "enum": [
+                        "pending_postconditions",
+                        "consumed_non_success"
+                      ],
+                      "type": "string"
+                    },
+                    "import_revision": {
+                      "const": 2,
+                      "type": "integer"
+                    },
+                    "outcome": {
+                      "enum": [
+                        "succeeded",
+                        "failed",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "receipt_digest": {
+                      "maxLength": 43,
+                      "minLength": 1,
+                      "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "receipt_digest",
+                    "outcome",
+                    "disposition",
+                    "import_revision"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "disposition": {
+                      "const": "pending_postconditions",
+                      "type": "string"
+                    },
+                    "outcome": {
+                      "const": "succeeded",
+                      "type": "string"
+                    }
+                  }
+                }
+              ]
+            },
+            "revision": {
+              "const": 2,
+              "type": "integer"
+            },
+            "state": {
+              "const": "receipt_pending",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "properties": {
+            "cancellation_publication_state": {
+              "type": "null"
+            },
+            "consumption_publication_state": {
+              "enum": [
+                "pending",
+                "published"
+              ],
+              "type": "string"
+            },
+            "publication_state": {
+              "enum": [
+                "published",
+                "suppressed"
+              ],
+              "type": "string"
+            },
+            "receipt": {
+              "allOf": [
+                {
+                  "additionalProperties": false,
+                  "oneOf": [
+                    {
+                      "properties": {
+                        "disposition": {
+                          "const": "pending_postconditions",
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "const": "succeeded",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "disposition": {
+                          "const": "consumed_non_success",
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "enum": [
+                            "failed",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ],
+                  "properties": {
+                    "disposition": {
+                      "enum": [
+                        "pending_postconditions",
+                        "consumed_non_success"
+                      ],
+                      "type": "string"
+                    },
+                    "import_revision": {
+                      "const": 2,
+                      "type": "integer"
+                    },
+                    "outcome": {
+                      "enum": [
+                        "succeeded",
+                        "failed",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "receipt_digest": {
+                      "maxLength": 43,
+                      "minLength": 1,
+                      "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "receipt_digest",
+                    "outcome",
+                    "disposition",
+                    "import_revision"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "disposition": {
+                      "const": "consumed_non_success",
+                      "type": "string"
+                    },
+                    "outcome": {
+                      "enum": [
+                        "failed",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    }
+                  }
+                }
+              ]
+            },
+            "revision": {
+              "const": 2,
+              "type": "integer"
+            },
+            "state": {
+              "const": "rejected",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "properties": {
+            "cancellation_publication_state": {
+              "enum": [
+                "pending",
+                "published"
+              ],
+              "type": "string"
+            },
+            "consumption_publication_state": {
+              "type": "null"
+            },
+            "publication_state": {
+              "enum": [
+                "published",
+                "suppressed"
+              ],
+              "type": "string"
+            },
+            "receipt": {
+              "allOf": [
+                {
+                  "additionalProperties": false,
+                  "oneOf": [
+                    {
+                      "properties": {
+                        "disposition": {
+                          "const": "pending_postconditions",
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "const": "succeeded",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "disposition": {
+                          "const": "consumed_non_success",
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "enum": [
+                            "failed",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ],
+                  "properties": {
+                    "disposition": {
+                      "enum": [
+                        "pending_postconditions",
+                        "consumed_non_success"
+                      ],
+                      "type": "string"
+                    },
+                    "import_revision": {
+                      "const": 2,
+                      "type": "integer"
+                    },
+                    "outcome": {
+                      "enum": [
+                        "succeeded",
+                        "failed",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "receipt_digest": {
+                      "maxLength": 43,
+                      "minLength": 1,
+                      "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "receipt_digest",
+                    "outcome",
+                    "disposition",
+                    "import_revision"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "disposition": {
+                      "const": "pending_postconditions",
+                      "type": "string"
+                    },
+                    "outcome": {
+                      "const": "succeeded",
+                      "type": "string"
+                    }
+                  }
+                }
+              ]
+            },
+            "revision": {
+              "const": 3,
+              "type": "integer"
+            },
+            "state": {
+              "const": "cancelled",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "properties": {
+            "cancellation_publication_state": {
+              "type": "null"
+            },
+            "consumption_publication_state": {
+              "type": "null"
+            },
+            "publication_state": {
+              "enum": [
+                "published",
+                "suppressed"
+              ],
+              "type": "string"
+            },
+            "receipt": {
+              "allOf": [
+                {
+                  "additionalProperties": false,
+                  "oneOf": [
+                    {
+                      "properties": {
+                        "disposition": {
+                          "const": "pending_postconditions",
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "const": "succeeded",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "disposition": {
+                          "const": "consumed_non_success",
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "enum": [
+                            "failed",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ],
+                  "properties": {
+                    "disposition": {
+                      "enum": [
+                        "pending_postconditions",
+                        "consumed_non_success"
+                      ],
+                      "type": "string"
+                    },
+                    "import_revision": {
+                      "const": 2,
+                      "type": "integer"
+                    },
+                    "outcome": {
+                      "enum": [
+                        "succeeded",
+                        "failed",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "receipt_digest": {
+                      "maxLength": 43,
+                      "minLength": 1,
+                      "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "receipt_digest",
+                    "outcome",
+                    "disposition",
+                    "import_revision"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "disposition": {
+                      "const": "pending_postconditions",
+                      "type": "string"
+                    },
+                    "outcome": {
+                      "const": "succeeded",
+                      "type": "string"
+                    }
+                  }
+                }
+              ]
+            },
+            "revision": {
+              "const": 3,
+              "type": "integer"
+            },
+            "state": {
+              "const": "expired",
+              "type": "string"
+            }
+          }
+        }
+      ],
+      "properties": {
+        "cancellation_publication_state": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "pending",
+                "published"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "consumption_publication_state": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "pending",
+                "published"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "kind": {
+          "const": "extension_stage",
+          "type": "string"
+        },
+        "links": {
+          "additionalProperties": false,
+          "properties": {
+            "cancel": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^(?:/(?:[0-9a-f]{32}/)?api/v1/deployment/requests/[0-9a-f-]{36}/cancel)(?![\\s\\S])",
+              "type": "string"
+            },
+            "events": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^(?:/(?:[0-9a-f]{32}/)?api/v1/events)(?![\\s\\S])",
+              "type": "string"
+            },
+            "self": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^(?:/(?:[0-9a-f]{32}/)?api/v1/deployment/requests/[0-9a-f-]{36})(?![\\s\\S])",
+              "type": "string"
+            }
+          },
+          "required": [
+            "self",
+            "cancel",
+            "events"
+          ],
+          "type": "object"
+        },
+        "publication_state": {
+          "enum": [
+            "pending",
+            "published",
+            "suppressed"
+          ],
+          "type": "string"
+        },
+        "receipt": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "additionalProperties": false,
+              "oneOf": [
+                {
+                  "properties": {
+                    "disposition": {
+                      "const": "pending_postconditions",
+                      "type": "string"
+                    },
+                    "outcome": {
+                      "const": "succeeded",
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "disposition": {
+                      "const": "consumed_non_success",
+                      "type": "string"
+                    },
+                    "outcome": {
+                      "enum": [
+                        "failed",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    }
+                  }
+                }
+              ],
+              "properties": {
+                "disposition": {
+                  "enum": [
+                    "pending_postconditions",
+                    "consumed_non_success"
+                  ],
+                  "type": "string"
+                },
+                "import_revision": {
+                  "const": 2,
+                  "type": "integer"
+                },
+                "outcome": {
+                  "enum": [
+                    "succeeded",
+                    "failed",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                "receipt_digest": {
+                  "maxLength": 43,
+                  "minLength": 1,
+                  "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "receipt_digest",
+                "outcome",
+                "disposition",
+                "import_revision"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "request": {
+          "additionalProperties": false,
+          "properties": {
+            "created_at": {
+              "format": "date-time",
+              "maxLength": 24,
+              "minLength": 1,
+              "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+              "type": "string"
+            },
+            "created_by": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "actor",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "version": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "domain": {
+              "const": "deeptwin-deployment-request-v1",
+              "type": "string"
+            },
+            "effect_payload": {
+              "additionalProperties": false,
+              "properties": {
+                "expected_installation_head": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "state": {
+                      "const": "absent",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "type": "object"
+                },
+                "expected_next_installation_revision": {
+                  "const": 1,
+                  "type": "integer"
+                },
+                "extension_id": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])",
+                  "type": "string"
+                },
+                "manifest_digest": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "new_service_effect": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "named_volume_mounts": {
+                      "items": {},
+                      "maxItems": 0,
+                      "minItems": 0,
+                      "type": "array",
+                      "uniqueItems": false
+                    },
+                    "network_policy_ref": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "document_kind": {
+                          "enum": [
+                            "network_declaration"
+                          ],
+                          "type": "string"
+                        },
+                        "sha256": {
+                          "maxLength": 64,
+                          "minLength": 1,
+                          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                          "type": "string"
+                        },
+                        "size_bytes": {
+                          "maximum": 65536,
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "document_kind",
+                        "sha256",
+                        "size_bytes"
+                      ],
+                      "type": "object"
+                    },
+                    "resource_profile_ref": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "document_kind": {
+                          "enum": [
+                            "resource_declaration"
+                          ],
+                          "type": "string"
+                        },
+                        "sha256": {
+                          "maxLength": 64,
+                          "minLength": 1,
+                          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                          "type": "string"
+                        },
+                        "size_bytes": {
+                          "maximum": 65536,
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "document_kind",
+                        "sha256",
+                        "size_bytes"
+                      ],
+                      "type": "object"
+                    },
+                    "service_identity": {
+                      "maxLength": 64,
+                      "minLength": 1,
+                      "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])",
+                      "type": "string"
+                    },
+                    "socket_mounts": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "container_path": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "mount_id": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "purpose": {
+                            "const": "broker_pair",
+                            "type": "string"
+                          },
+                          "read_only": {
+                            "const": false,
+                            "type": "boolean"
+                          },
+                          "volume_name": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "mount_id",
+                          "volume_name",
+                          "container_path",
+                          "read_only",
+                          "purpose"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 1,
+                      "minItems": 1,
+                      "type": "array",
+                      "uniqueItems": false
+                    }
+                  },
+                  "required": [
+                    "service_identity",
+                    "socket_mounts",
+                    "named_volume_mounts",
+                    "network_policy_ref",
+                    "resource_profile_ref"
+                  ],
+                  "type": "object"
+                },
+                "schema_id": {
+                  "const": "deeptwin.extension-stage-request.v1",
+                  "type": "string"
+                },
+                "selected_platform_entry": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "config_digest": {
+                      "maxLength": 71,
+                      "minLength": 1,
+                      "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                      "type": "string"
+                    },
+                    "index_digest": {
+                      "maxLength": 71,
+                      "minLength": 1,
+                      "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                      "type": "string"
+                    },
+                    "manifest_digest": {
+                      "maxLength": 71,
+                      "minLength": 1,
+                      "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                      "type": "string"
+                    },
+                    "ordered_layer_digests": {
+                      "items": {
+                        "maxLength": 71,
+                        "minLength": 1,
+                        "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                        "type": "string"
+                      },
+                      "maxItems": 128,
+                      "minItems": 1,
+                      "type": "array",
+                      "uniqueItems": false
+                    },
+                    "platform": {
+                      "enum": [
+                        "linux/amd64",
+                        "linux/arm64"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "platform",
+                    "index_digest",
+                    "manifest_digest",
+                    "config_digest",
+                    "ordered_layer_digests"
+                  ],
+                  "type": "object"
+                },
+                "service_descriptor_digest": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "schema_id",
+                "extension_id",
+                "manifest_digest",
+                "service_descriptor_digest",
+                "selected_platform_entry",
+                "new_service_effect",
+                "expected_installation_head",
+                "expected_next_installation_revision"
+              ],
+              "type": "object"
+            },
+            "expires_at": {
+              "format": "date-time",
+              "maxLength": 24,
+              "minLength": 1,
+              "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+              "type": "string"
+            },
+            "instance_id": {
+              "maxLength": 32,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{32})(?![\\s\\S])",
+              "type": "string"
+            },
+            "kind": {
+              "const": "extension_stage",
+              "type": "string"
+            },
+            "origin_profile_digest": {
+              "maxLength": 43,
+              "minLength": 1,
+              "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+              "type": "string"
+            },
+            "preconditions": {
+              "additionalProperties": false,
+              "properties": {},
+              "required": [],
+              "type": "object"
+            },
+            "request_digest": {
+              "maxLength": 43,
+              "minLength": 1,
+              "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+              "type": "string"
+            },
+            "request_id": {
+              "maxLength": 36,
+              "minLength": 1,
+              "not": {
+                "const": "00000000-0000-0000-0000-000000000000"
+              },
+              "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+              "type": "string"
+            },
+            "request_nonce": {
+              "maxLength": 43,
+              "minLength": 1,
+              "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+              "type": "string"
+            },
+            "schema": {
+              "const": "deployment-request-v1",
+              "type": "string"
+            }
+          },
+          "required": [
+            "schema",
+            "domain",
+            "request_id",
+            "kind",
+            "request_nonce",
+            "request_digest",
+            "instance_id",
+            "origin_profile_digest",
+            "effect_payload",
+            "preconditions",
+            "created_by",
+            "created_at",
+            "expires_at"
+          ],
+          "type": "object"
+        },
+        "request_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 3,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "state": {
+          "enum": [
+            "prepared",
+            "cancelled",
+            "expired",
+            "receipt_pending",
+            "rejected"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "request_digest",
+        "kind",
+        "state",
+        "revision",
+        "publication_state",
+        "cancellation_publication_state",
+        "links",
+        "request",
+        "receipt",
+        "consumption_publication_state"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "affected_refs": {
+          "items": {},
+          "maxItems": 0,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": false
+        },
+        "code": {
+          "const": "invalid_input",
+          "type": "string"
+        },
+        "correlation_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "message": {
+          "const": "Invalid deployment request.",
+          "type": "string"
+        },
+        "retryability": {
+          "const": "not_retryable",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryability",
+        "affected_refs",
+        "correlation_id"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "affected_refs": {
+          "items": {},
+          "maxItems": 0,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": false
+        },
+        "code": {
+          "const": "unauthenticated",
+          "type": "string"
+        },
+        "correlation_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "message": {
+          "const": "Authentication is required.",
+          "type": "string"
+        },
+        "retryability": {
+          "const": "not_retryable",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryability",
+        "affected_refs",
+        "correlation_id"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "affected_refs": {
+          "items": {},
+          "maxItems": 0,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": false
+        },
+        "code": {
+          "const": "access_denied",
+          "type": "string"
+        },
+        "correlation_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "message": {
+          "const": "This action is not allowed.",
+          "type": "string"
+        },
+        "retryability": {
+          "const": "not_retryable",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryability",
+        "affected_refs",
+        "correlation_id"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "affected_refs": {
+          "items": {},
+          "maxItems": 0,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": false
+        },
+        "code": {
+          "const": "not_found",
+          "type": "string"
+        },
+        "correlation_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "message": {
+          "const": "Deployment request, candidate or slot was not found.",
+          "type": "string"
+        },
+        "retryability": {
+          "const": "not_retryable",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryability",
+        "affected_refs",
+        "correlation_id"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "affected_refs": {
+          "items": {},
+          "maxItems": 0,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": false
+        },
+        "code": {
+          "const": "conflict",
+          "type": "string"
+        },
+        "correlation_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "message": {
+          "const": "Deployment request state conflicts with this command.",
+          "type": "string"
+        },
+        "retryability": {
+          "const": "not_retryable",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryability",
+        "affected_refs",
+        "correlation_id"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "affected_refs": {
+          "items": {},
+          "maxItems": 0,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": false
+        },
+        "code": {
+          "const": "too_large",
+          "type": "string"
+        },
+        "correlation_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "message": {
+          "const": "Deployment request is too large.",
+          "type": "string"
+        },
+        "retryability": {
+          "const": "not_retryable",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryability",
+        "affected_refs",
+        "correlation_id"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "affected_refs": {
+          "items": {},
+          "maxItems": 0,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": false
+        },
+        "code": {
+          "const": "capacity",
+          "type": "string"
+        },
+        "correlation_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "message": {
+          "const": "Deployment preparation capacity is exhausted.",
+          "type": "string"
+        },
+        "retryability": {
+          "const": "not_retryable",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryability",
+        "affected_refs",
+        "correlation_id"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "affected_refs": {
+          "items": {},
+          "maxItems": 0,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": false
+        },
+        "code": {
+          "const": "dependency_unavailable",
+          "type": "string"
+        },
+        "correlation_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "message": {
+          "const": "Deployment preparation is unavailable.",
+          "type": "string"
+        },
+        "retryability": {
+          "const": "not_retryable",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryability",
+        "affected_refs",
+        "correlation_id"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "affected_refs": {
+          "items": {},
+          "maxItems": 0,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": false
+        },
+        "code": {
+          "const": "unavailable",
+          "type": "string"
+        },
+        "correlation_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "message": {
+          "const": "Deployment state is unavailable.",
+          "type": "string"
+        },
+        "retryability": {
+          "const": "not_retryable",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryability",
+        "affected_refs",
+        "correlation_id"
+      ],
+      "type": "object"
+    }
+  ]
+}
