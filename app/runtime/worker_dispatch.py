@@ -17,10 +17,8 @@ from hashlib import sha256
 from ..domain.refs import DomainContractError, EntityRef, uuid_string
 from ..workers import broker
 from ..workers.artifact_stream import OfferedBatchPolicy
-from .artifact_cas import store_received_artifact
 from .ledger import DispatchPermit, LedgerError, RuntimeLedger, TransportObservation
 from .worker_coordinator import (
-    AuthenticatedWorkerResponse,
     DispatchArtifactInput,
     SelectedDispatchReadCapability,
     WorkerCoordinator,
@@ -651,24 +649,6 @@ class WorkerDispatchService:
                 return "completed"
             return "absent"
 
-    def _observation_for_response(
-        self,
-        permit: DispatchPermit,
-        response: AuthenticatedWorkerResponse,
-    ) -> TransportObservation:
-        return TransportObservation(
-            permit_id=permit.permit_id,
-            command_id=permit.command_id,
-            attempt_id=permit.attempt_id,
-            effect="transport_accepted",
-            connection_id=response.connection_id,
-            worker_boot_id=response.worker_boot_id,
-            message_id=response.message_id,
-            message_type=response.message_type,
-            payload_bytes=len(response.payload),
-            payload_sha256=sha256(response.payload).hexdigest(),
-        )
-
     def _record_observation(
         self,
         permit: DispatchPermit,
@@ -799,25 +779,24 @@ class WorkerDispatchService:
                         self._record_failure(permit, "outcome_unknown")
                     else:
                         try:
-                            # Returned bytes must be registered content before the
-                            # attempt may claim clean transport acceptance.
-                            for artifact in response.artifacts:
-                                store_received_artifact(
-                                    coordinator._domain,
-                                    artifact,
-                                    purpose="operational",
-                                )
-                        except BaseException:  # noqa: BLE001 - unpersisted output fails closed
-                            self._record_failure(permit, "outcome_unknown")
-                        else:
-                            try:
-                                RuntimeLedger.discard_dispatch_permit(self._ledger, permit)
-                                self._record_observation(
-                                    permit,
-                                    self._observation_for_response(permit, response),
-                                )
-                            except BaseException:  # noqa: BLE001 - durable-write failure latch
-                                _inhibit_runtime_dispatch(self._ledger)
+                            bound_capture = getattr(coordinator, "capture_response", None)
+                            if (getattr(bound_capture, "__self__", None) is not coordinator
+                                    or getattr(bound_capture, "__func__", None)
+                                    is not WorkerCoordinator.capture_response):
+                                raise WorkerDispatchUnavailable()
+                            captured_ref = WorkerCoordinator.capture_response(coordinator, permit, response)
+                            from .worker_response_capture import (
+                                _lookup_response_capture,
+                            )
+
+                            if (type(captured_ref) is not EntityRef
+                                    or _lookup_response_capture(self._ledger, permit.command_id)
+                                    != captured_ref):
+                                raise WorkerDispatchUnavailable()
+                            RuntimeLedger.discard_dispatch_permit(self._ledger, permit)
+                        except BaseException:  # noqa: BLE001 - durable-write failure latch
+                            _inhibit_runtime_dispatch(self._ledger)
+                            WorkerCoordinator.abort_response(coordinator, response)
             finally:
                 with self._condition:
                     self._active_items[profile_ref] = None

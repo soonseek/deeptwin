@@ -505,15 +505,15 @@ def test_record_commit_failure_has_no_record_or_edges(tmp_path, monkeypatch):
     module, legacy, domain, roots = opened(tmp_path)
     before = counts(legacy)
     connect = sqlite3.connect
-    class BrokenCommit(sqlite3.Connection):
-        def commit(self):
-            raise sqlite3.OperationalError("injected record commit failure")
     def broken_connect(*args, **kwargs):
-        kwargs["factory"] = BrokenCommit
-        return connect(*args, **kwargs)
+        db = connect(*args, **kwargs)
+        db.set_authorizer(lambda action, first, *_rest:
+                          sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_TRANSACTION
+                          and first == "COMMIT" else sqlite3.SQLITE_OK)
+        return db
     item = record(roots)
     monkeypatch.setattr(module.sqlite3, "connect", broken_connect)
-    with pytest.raises(sqlite3.OperationalError):
+    with pytest.raises(sqlite3.DatabaseError):
         domain.put(item)
     monkeypatch.undo()
     assert counts(legacy) == before

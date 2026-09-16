@@ -461,6 +461,46 @@ telemetry is not the canonical reproducibility ledger. Cloud tracing/export is o
 
 ## 10. Mandatory acceptance cases
 
+### Durable transport evidence before semantic admission (partial T018/T040)
+
+`WorkerCoordinator.exchange` issues process-local provenance only after the real authenticated
+handshake, correlated MAC frame, response-type and receiver-declared output-stream checks.
+Constructing `AuthenticatedWorkerResponse` is structural and grants no capture authority.
+The exact response owns a private receipt with weak response/permit identity anchors, frozen
+content fingerprint, coordinator generation/route and receiver-policy binding. Only the exact
+coordinator may capture it. Active admission is bounded to one uncaptured response per route;
+capture/abort releases admission and retains no global completed-response cache. A completed
+receipt retains bounded metadata and its durable ref for same-object idempotence, never fresh
+capture or read authority. These are host process boundaries, not an arbitrary-Python-code sandbox.
+
+Capture validates the original committed command/attempt/envelope/profile/owner/fence. Current
+lease/cancel/recovery state controls classification: only a clean, open, unexpired original
+send-intent may become `running/transport_accepted`. Known original responses arriving after
+cancellation, deadline, lease/fence change, terminalization or recovery uncertainty are retained
+as `quarantined`; they do not reopen a gate or replace earlier transport evidence. Absent or
+foreign original command identities cannot create attachments. Exact duplicates return the
+committed capture ref without additional events or state changes.
+
+Startup verifies capture journals, immutable records, permission descriptors, exact dispatch
+bindings and every registered reachable blob before dispatch readiness. Valid pending-validation
+captures keep their original nonterminal attempts recovery-pending with closed gates even when
+the old process owner is gone. Uncaptured sent attempts retain the preexisting unknown-outcome
+recovery branch. Cancelled/terminal/quarantined attempts receive no capture-based reopening.
+Missing, corrupt or conflicting capture data produces a sanitized integrity gap and inhibits
+dispatch. Current terminal/cancel/recovery state takes precedence over an old clean transport fact.
+
+Private metadata lookup requires the current ledger session. A separate byte loader uses
+`PolicyGate.read` with exact capture and transitive dependency grants, then rechecks grants,
+session and ledger generation after loading. Captured bytes are never automatic model inputs.
+The public capture event carries only `artifact_count` and `classification`.
+
+A receive-before-attachment-commit crash still has unknown outcome: there is no durable worker
+response ACK/redelivery protocol. Capture failure inhibits dispatch and checks durable identity;
+it never retries or resends. This slice does not accept semantic results, unblock successors,
+settle reservations or finalize usage. Durable extension qualification, source/result validation,
+atomic semantic acceptance plus budget settlement, and scheduler integration remain dependencies;
+T018/T039/T040/T041 remain open.
+
 | ID | Test boundary and expected evidence |
 | --- | --- |
 | R01 | Compiler rejects missing producers/types, unbounded cycles, gate bypass and unsafe expressions |

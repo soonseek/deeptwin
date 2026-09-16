@@ -1,0 +1,293 @@
+{
+  "$comment": "Closed content only. Runtime also checks exact ordered batch, correlation, blob partitions and original dispatch binding. No semantic acceptance.",
+  "$id": "urn:deeptwin:schemas:v1:worker-response-capture",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifacts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "blob": {
+            "additionalProperties": false,
+            "properties": {
+              "purpose": {
+                "enum": [
+                  "diagnosis",
+                  "evaluation_development",
+                  "evaluation_sealed",
+                  "inquiry_audit",
+                  "operational",
+                  "release_evidence"
+                ]
+              },
+              "sha256": {
+                "maxLength": 64,
+                "minLength": 64,
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "size": {
+                "maximum": 9223372036854775807,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "vault_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "not": {
+                  "const": "00000000-0000-0000-0000-000000000000"
+                },
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "vault_id",
+              "purpose",
+              "sha256",
+              "size"
+            ],
+            "type": "object"
+          },
+          "descriptor": {
+            "additionalProperties": false,
+            "properties": {
+              "batch_id": {
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?![\\s\\S])",
+                "type": "string"
+              },
+              "count": {
+                "maximum": 256,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "declared_size": {
+                "maximum": 67108864,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "media_type": {
+                "pattern": "^[a-z0-9][a-z0-9!#$&\\-^_.+]{0,126}/[a-z0-9][a-z0-9!#$&\\-^_.+]{0,126}(?![\\s\\S])",
+                "type": "string"
+              },
+              "ordinal": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "request_id": {
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?![\\s\\S])",
+                "type": "string"
+              },
+              "sha256": {
+                "maxLength": 64,
+                "minLength": 64,
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "batch_id",
+              "request_id",
+              "ordinal",
+              "count",
+              "media_type",
+              "declared_size",
+              "sha256"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "descriptor",
+          "blob"
+        ],
+        "type": "object"
+      },
+      "maxItems": 256,
+      "type": "array"
+    },
+    "attempt_id": {
+      "maxLength": 36,
+      "minLength": 36,
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "capture_schema_version": {
+      "const": "worker-response-capture-v1",
+      "type": "string"
+    },
+    "channel_id": {
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*(?![\\s\\S])",
+      "type": "string"
+    },
+    "command_id": {
+      "maxLength": 36,
+      "minLength": 36,
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "connection_id": {
+      "maxLength": 64,
+      "minLength": 64,
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "correlation_id": {
+      "maxLength": 36,
+      "minLength": 36,
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "execution_envelope_ref": {
+      "allOf": [
+        {
+          "$ref": "urn:deeptwin:schemas:v1:domain-envelopes#/$defs/EntityRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "execution_envelope",
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "lease_fence": {
+      "maximum": 9223372036854775807,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "message_id": {
+      "maxLength": 36,
+      "minLength": 36,
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "message_type": {
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*(?![\\s\\S])",
+      "type": "string"
+    },
+    "payload_blob": {
+      "additionalProperties": false,
+      "properties": {
+        "purpose": {
+          "enum": [
+            "diagnosis",
+            "evaluation_development",
+            "evaluation_sealed",
+            "inquiry_audit",
+            "operational",
+            "release_evidence"
+          ]
+        },
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "size": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "vault_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "vault_id",
+        "purpose",
+        "sha256",
+        "size"
+      ],
+      "type": "object"
+    },
+    "permit_id": {
+      "maxLength": 36,
+      "minLength": 36,
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "requester_boot_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])",
+      "type": "string"
+    },
+    "requester_service": {
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*(?![\\s\\S])",
+      "type": "string"
+    },
+    "responder_service": {
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*(?![\\s\\S])",
+      "type": "string"
+    },
+    "runtime_profile_ref": {
+      "allOf": [
+        {
+          "$ref": "urn:deeptwin:schemas:v1:domain-envelopes#/$defs/EntityRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "runtime_profile",
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "worker_boot_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])",
+      "type": "string"
+    }
+  },
+  "required": [
+    "capture_schema_version",
+    "lease_fence",
+    "connection_id",
+    "payload_blob",
+    "artifacts",
+    "command_id",
+    "attempt_id",
+    "permit_id",
+    "message_id",
+    "correlation_id",
+    "execution_envelope_ref",
+    "runtime_profile_ref",
+    "requester_boot_id",
+    "worker_boot_id",
+    "channel_id",
+    "requester_service",
+    "responder_service",
+    "message_type"
+  ],
+  "type": "object"
+}

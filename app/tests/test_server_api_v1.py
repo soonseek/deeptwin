@@ -24,14 +24,13 @@ from app.domain.schemas import Actor, ImmutableRecord
 from app.runtime.budgets import BudgetDispatchRequest, BudgetPolicy
 from app.runtime.ledger import AttemptSpec, ExecutionSpec, OwnerIdentity, RunSpec
 from app.runtime.worker_coordinator import (
-    AuthenticatedWorkerResponse,
     WorkerCoordinator,
     WorkerRouteBinding,
 )
 from app.runtime.worker_dispatch import WorkerDispatchBusy, WorkerDispatchService
 import app.server as server_module
 import app.storage as storage_module
-from app.server import create_app
+from app.server import create_development_app as create_app
 from app.tests.local_http import LocalTestClient
 from app.workers import broker
 
@@ -674,10 +673,26 @@ def test_default_command_route_is_dependency_unavailable_without_any_local_effec
 
 
 def test_injected_trusted_context_runs_the_real_root_once_and_returns_202(
-        tmp_path, monkeypatch):
+        tmp_path, monkeypatch, request):
+    import socket
+    from threading import Thread
+
     resolved = {}
     resolver_calls = []
     dispatcher_generations = []
+    worker_threads = []
+    worker_sockets = []
+    worker_errors = []
+    worker_requests = []
+
+    def close_workers():
+        for sock in worker_sockets:
+            sock.close()
+        for thread in worker_threads:
+            thread.join(5)
+            assert not thread.is_alive()
+
+    request.addfinalizer(close_workers)
 
     def resolver(envelope, authenticated, *, deadline):
         assert type(deadline) is broker.Deadline
@@ -743,20 +758,44 @@ def test_injected_trusted_context_runs_the_real_root_once_and_returns_202(
             worker_boot_id=f"document-boot-{len(dispatcher_generations) + 1}",
         )
 
-        def exchange_worker(permit, capability, *, deadline, **_artifact_kwargs):
-            assert capability.permit_id == permit.permit_id
-            assert type(deadline) is broker.Deadline
-            return AuthenticatedWorkerResponse(
-                attempt_id=permit.attempt_id,
-                connection_id="c" * 64,
-                worker_boot_id=coordinator._worker_boot_id,
-                message_id=identifier(),
-                correlation_id=permit.command_id,
-                message_type="completed",
-                payload=b"{}",
-            )
+        def connect_worker(spec, *, local_service, deadline):
+            assert spec is route.channel_spec
+            assert local_service == spec.requester_service
+            client, worker = socket.socketpair()
+            worker_sockets.extend((client, worker))
 
-        coordinator.exchange = exchange_worker
+            def serve():
+                codec = None
+                try:
+                    session = broker.server_handshake(
+                        worker, spec, coordinator._secret,
+                        requester_boot_id=coordinator._requester_boot_id,
+                        responder_boot_id=coordinator._worker_boot_id, deadline=deadline,
+                    )
+                    codec = broker.FrameCodec(spec, session, local_service=spec.responder_service)
+                    frame = codec.read(worker, deadline=deadline)
+                    assert frame.envelope.message_id == resolved["command_id"]
+                    assert frame.envelope.correlation_id == attempt.attempt_id
+                    assert frame.payload == resolved["records"].envelope.body_bytes
+                    worker_requests.append(frame.envelope.message_id)
+                    codec.write(worker, message_id=identifier(), correlation_id=frame.envelope.message_id,
+                                message_type="completed", payload=b"{}", deadline=deadline)
+                except BaseException as exc:  # noqa: BLE001 - surface every owned worker failure
+                    worker_errors.append(exc)
+                finally:
+                    if codec is not None:
+                        codec.close()
+                    worker.close()
+
+            thread = Thread(target=serve, daemon=True)
+            worker_threads.append(thread)
+            thread.start()
+            return client, None, None
+
+        # Socketpair bypasses endpoint/OS-peer identity only. The production exchange,
+        # public mutual handshake and authenticated FrameCodec path issue the receipt.
+        monkeypatch.setattr(broker, "connect_verified", connect_worker)
+        monkeypatch.setattr(broker, "_verify_peer", lambda *_args, **_kwargs: None)
         dispatcher = WorkerDispatchService(
             runtime_ledger=api.runtime_ledger,
             coordinators=(coordinator,),
@@ -938,6 +977,11 @@ def test_injected_trusted_context_runs_the_real_root_once_and_returns_202(
             "accept": route_deadline,
         }
         dispatcher_generations[0].wait_idle(broker.Deadline.after_ms(5_000))
+        for thread in worker_threads:
+            thread.join(5)
+            assert not thread.is_alive()
+        assert worker_errors == []
+        assert worker_requests == [command_id]
         assert application.state.runtime_ledger.pending_permit_count == 0
         status_headers = {
             "Cookie": exchange.cookie_pair,
@@ -1062,6 +1106,8 @@ def test_injected_trusted_context_runs_the_real_root_once_and_returns_202(
     assert table_count(application, "api_event_envelopes") == 1
     assert table_count(application, "runtime_commands") >= 4
     assert table_count(application, "runtime_budget_reservations") == 1
+    assert worker_requests == [command_id]
+    assert worker_errors == []
 
 
 def test_v1_boundary_and_command_errors_have_fixed_redacted_shape(tmp_path):

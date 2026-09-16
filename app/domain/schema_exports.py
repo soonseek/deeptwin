@@ -119,6 +119,57 @@ def domain_schema():
     record = _object({"ref": _ref(), "body": body_variants})
     record["$comment"] = ("Runtime verifies ref identity/version and SHA-256 against the exact "
                           "canonical body bytes. Mutable observation metadata is separate.")
+    from .worker_response import capture_content_schema
+
+    capture_content = capture_content_schema()
+    for name in ("execution_envelope_ref", "runtime_profile_ref"):
+        capture_content["properties"][name]["allOf"][0]["$ref"] = "#/$defs/EntityRef"
+    ordinary_body = _object(ordinary)
+    ordinary_body["allOf"] = [{
+        "if": {"properties": {"kind": _constant("worker_response_capture")}},
+        "then": {"properties": {"version": _constant(1), "content": capture_content}},
+    }]
+    from .deployment_request import anchor_content_schema
+
+    ordinary_body["allOf"].append({
+        "if": {"properties": {"kind": _constant("deployment_request")}},
+        "then": {"properties": {"version": _constant(1), "purpose": _constant("operational"),
+                                "content": anchor_content_schema(),
+                                "parent_refs": {"type": "array", "minItems": 1, "maxItems": 1,
+                                                "items": {"allOf": [_ref("extension_manifest"),
+                                                                     {"properties": {"version": _constant(1)}}]}}}},
+        "$comment": "Runtime also requires header id == content.request_id and the parent == content.candidate_ref.",
+    })
+    from .deployment_receipt import consumption_content_schema, receipt_content_schema
+
+    receipt_request = _ref("deployment_request")
+    receipt_request["allOf"].append({"properties": {"version": _constant(1)}})
+    ordinary_body["allOf"].append({
+        "if": {"properties": {"kind": _constant("deployment_receipt")}},
+        "then": {"properties": {"version": _constant(1), "purpose": _constant("operational"),
+                                "content": receipt_content_schema(),
+                                "parent_refs": {"type": "array", "minItems": 1, "maxItems": 1,
+                                                "items": receipt_request}}},
+        "$comment": ("Runtime also requires header id and sole parent to match request_ref, "
+                     "all four blobs to share one vault and the complete body to fit 8192 bytes. "
+                     "Structure grants no import authority."),
+    })
+    consumption_request = _ref("deployment_request")
+    consumption_request["allOf"].append({"properties": {"version": _constant(1)}})
+    consumption_receipt = _ref("deployment_receipt")
+    consumption_receipt["allOf"].append({"properties": {"version": _constant(1)}})
+    ordinary_body["allOf"].append({
+        "if": {"properties": {"kind": _constant("deployment_receipt_consumption")}},
+        "then": {"properties": {"version": _constant(1), "purpose": _constant("operational"),
+                                "content": consumption_content_schema(),
+                                "parent_refs": {"type": "array", "minItems": 2, "maxItems": 2,
+                                                "prefixItems": [consumption_request,
+                                                                consumption_receipt],
+                                                "items": False}}},
+        "$comment": ("Runtime also requires exact ordered duplicated parents, matching request/"
+                     "receipt ids, actor and six-digit consumption time, and caps the complete "
+                     "body at 8192 bytes. Event syntax proves no event exists."),
+    })
     return {"$schema": DRAFT, "$id": DOMAIN_ID,
             "title": "DeepTwin version 1 immutable record envelopes", "$ref": "#/$defs/Record",
             "$comment": ("Structural envelope contract only. Runtime also checks canonical compact "
@@ -129,7 +180,7 @@ def domain_schema():
                          "Feature schemas further constrain domain content. Schema validity "
                          "never grants root installation, human approval or dispatch authority."),
             "$defs": {"EntityRef": entity, "ObjectRef": locator,
-                      "DomainBody": _object(ordinary), "GenesisBody": genesis,
+                      "DomainBody": ordinary_body, "GenesisBody": genesis,
                       "BootstrapBody": bootstrap, "Record": record,
                       "CanonicalString": string, "CanonicalObject": canonical_object,
                       "CanonicalValue": canonical_value}}
@@ -142,17 +193,23 @@ def events_schema():
             "$comment": ("Select the exact event type through #/$defs/<category.action>. "
                          "This document is a payload schema registry, not the EventEnvelope "
                          "or a substitute for authenticated emission or private-detail access. "
-                         "All metadata observations are optional; absence means unknown."),
+                         "Metadata observations are optional unless the selected event schema "
+                         "requires its exact field set; absence means unknown."),
             "$defs": {name: event_schema(name) for name in sorted(EVENT_TYPES)}}
 
 
 def write_domain_schemas(destination):
-    """Deterministically export the two versioned domain registries."""
+    """Deterministically export domain registries and the closed capture content."""
     root = Path(destination)
     root.mkdir(parents=True, exist_ok=True)
+    from ..services.owner_auth_schema import owner_auth_schema
+    from .worker_response import capture_schema
+
     for name, schema in (
         ("domain-envelopes.schema.json", domain_schema()),
         ("event-metadata.schema.json", events_schema()),
+        ("worker-response-capture.schema.json", capture_schema()),
+        ("owner-auth-public.schema.json", owner_auth_schema()),
     ):
         (root / name).write_text(
             json.dumps(schema, ensure_ascii=False, indent=2, sort_keys=True) + "\n",

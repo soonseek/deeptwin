@@ -92,6 +92,37 @@ satisfy a repeated node visit only if its exact execution ID and envelope hashes
 
 ## 3. Intake, provider and environment records
 
+### Authenticated worker transport capture (partial T018/T040)
+
+`worker_response_capture` is an ordinary immutable `domain-v1` version1 record. Its ID is
+the exact committed dispatch command UUID. Closed content is versioned
+`worker-response-capture-v1`: `command_id`, `attempt_id`, `permit_id`, typed
+`execution_envelope_ref`/`runtime_profile_ref`, original `lease_fence`, authenticated
+`connection_id`, `requester_boot_id`/`worker_boot_id`, `channel_id`,
+`requester_service`/`responder_service`, `message_id`/`correlation_id`/`message_type`,
+one exact `payload_blob`, and ordered zero-to-256 `{descriptor, blob}` artifacts.
+The descriptor retains the stream's exact batch/request/ordinal/count/media/size/hash.
+Equal artifact bytes may share a BlobRef while retaining distinct ordered descriptors.
+
+The host derives purpose/access/retention from the exact verified operational execution
+envelope and episode metadata from its registered permission descriptor. The capture's
+actor is the verified host-system root; its parent is the envelope, with the runtime profile
+as an ordinary content dependency. Dependency taint is inherited, without issuing any read
+grant. Exact payload bytes are stored without parsing or reformatting. Common record metadata
+contains no raw payload, path, credential, provider error, or hidden reasoning.
+
+The canonical attachment is an append-only `response_captured` attempt-journal entry with
+`schema_version=worker-response-capture-journal-v1`, `command_id`, exact `capture_ref`, and
+`classification=pending_validation|quarantined`. One original command has at most one capture;
+changed duplicates conflict. This adds TEXT values, not a new mutable capture table or DDL
+migration. Existing migration checksums and redacted `transport_observed` wire shapes remain.
+
+The record, dependency indexes, permission descriptor, capture journal, count/enum-only
+`attempt.response_captured` event, and eligible transport state change share one existing
+SQLite writer transaction. Physical blob registration precedes attachment, retaining the
+16 MiB per-blob default and 64 MiB reachable-graph ceiling. Failure may leave registered,
+unattached private blobs; core retention remains manual-only, without automatic deletion.
+
 | Entity/table | Required fields beyond common header | Integrity rules |
 | --- | --- | --- |
 | `OwnerAccount` | actor_ref, login_name, state, created/updated, recovery_epoch | first bootstrap only; recovery replaces authenticator and revokes every old session/service client/unconsumed human capability/pending approval or consent challenge, not historical actor identity/evidence |
@@ -131,6 +162,13 @@ satisfy a repeated node visit only if its exact execution ID and envelope hashes
 | `EnvironmentHead` / environment_heads | environment_id, active_version_ref?, revision | only authorized activation CAS; draft selection not active growth promotion |
 
 ### 3.1 Framework extension records and trust tiers
+
+The implemented inert owner-registration prerequisite uses the distinct
+[`extension-manifest-v2` candidate contract](contracts/extension-candidates.md), its acyclic
+descriptor, actual operational blob refs and an `extension_manifest` domain anchor. That contract
+freezes the private version-1 index/command/content-accounting DDL, checksum, row hashes and CAS.
+Historical v1 manifests remain readable unchanged; candidate registration grants no installation,
+qualification, binding or stage authority.
 
 An extension is code/configuration bound to one core-owned semantic port version, not any uploaded
 file, prompt, SKILL.md, model-proposed tool name or generic worker message. The transport envelope
@@ -525,6 +563,58 @@ environment from `restored_review`. Reject symlinks/hardlinks, absolute/traversa
 expansion, duplicate paths, incompatible schemas, missing/changed referenced bytes and
 executable hooks. Restore to a new staging vault with all dispatch disabled. Credentials and
 new effect authority are never restored from a backup or imported log bundle.
+
+## Task7 private owner-auth schema (additive component version1)
+
+This private SQLite component shares the exact initialized DomainStore used by HostPolicy,
+the runtime ledger and root commands. It is outside ordinary work records/exports. Its code-owned
+DDL and complete object set are in `app/services/owner_auth_storage.py`; its own canonical DDL
+checksum is stored in `owner_auth_migrations`. Historical domain/runtime migrations are unchanged.
+
+| Exact table | Exact columns, in DDL order |
+| --- | --- |
+| `owner_auth_migrations` | version, checksum |
+| `owner_auth_control` | singleton, vault_id, instance_id, origin_digest, generation_id, key_id, manifest_digest, epoch, opened_at, deadline, clock_floor, revision, hash |
+| `owner_auth_bootstrap_claims` | epoch, verifier, attempts, state, claim_id, consumed_at, completed_at, revision, hash |
+| `owner_auth_accounts` | owner_id, singleton, actor_ref, login_name, state, auth_epoch, recovery_epoch, created_at, updated_at, revision, hash |
+| `owner_auth_authenticators` | owner_id, revision, previous_revision, kind, profile, encoded_hash, created_at, revoked_at, hash |
+| `owner_auth_sessions` | session_id, owner_id, token_digest, authenticator_revision, auth_epoch, recovery_epoch, origin_digest, created_at, last_seen, idle_expires, absolute_expires, revoked_at, revision, hash |
+| `owner_auth_commands` | command_id, session_id, kind, request_digest, response_json, created_at, epoch, hash |
+| `owner_auth_audit` | sequence, kind, entity_id, observed_at, previous_hash, hash |
+
+Time columns are UTC epoch milliseconds. Authenticator kind=`password`, exact profile=
+`argon2id-v19-m65536-t3-p4-s16-h32`; only its encoded hash persists. Session tokens are32 random
+bytes and only SHA256 hex digests persist. Account state=`active|disabled`; claim state=
+`available|consumed|completed|expired|exhausted`. Consumed with no account derives `setup_incomplete`.
+Private command kind=`logout`; audit kind=`opened|guess|claim|owner|login|logout`. No rows are
+deleted during revocation. Closed error classes contain no native/storage exception text.
+
+DDL enforces singleton/identity/digest/command uniqueness, foreign keys and backward authenticator
+revision references: revision1 requires a NULL predecessor; every revision greater than1 requires
+an explicitly non-NULL predecessor equal to revision−1. Integrity verification independently checks
+this relationship on retained rows, including reopen; SQLite's NULL-valued CHECK result is not proof
+of valid history. Mutable rows use fixed-table/column/identity SQL CAS: exactly old revision+1,
+matching old identity+revision, exactly one changed row. There are no auth triggers; the shared
+database's no-trigger invariant remains intact. Canonical closed-row SHA256 and the audit hash
+chain detect corruption, not an administrator rewriting trusted DB state. Reopen and authority
+admission verify the schema, migration checksum, hashes, root/config binding and real human actor.
+
+The human actor is an ordinary immutable `actor` record authored by the existing system root,
+with content exactly `{id:<owner_id>,kind:"human",origin:"local_session"}`; it never relabels a root.
+Its descriptor, account, authenticator, first session, completed claim and sanitized `owner.created`
+event commit together after the separate claim commit. Other public auth events are
+`session.created` and `session.revoked`, each with only bounded `session_count` metadata.
+
+Root manifest fields are exactly `{schema_version:"session-root-v1",generation_id,key_id,
+instance_id,origin_profile_digest,recovery_epoch,created_at,state:"initial_genesis",integrity_tag}`.
+IDs are independent random UUIDs; `created_at` is UTC milliseconds with Z. `integrity_tag` is
+canonical base64url HMAC-SHA256 under root.key over canonical JSON
+`{domain:"deeptwin-session-root-manifest-v1",manifest:<all manifest fields except integrity_tag>}`.
+The public receipt omits the tag; private control pins SHA256 of the complete canonical manifest.
+`schemas/v1/owner-auth-public.schema.json` exports nonsecret receipt/profile/state definitions;
+schema parsing never issues authority. Root bytes/raw capability/password/session token never enter
+the DB or ordinary artifacts. Replacing all root files and trusted DB state remains outside the
+host-administrator threat boundary.
 
 ## 8. Acceptance and migration evidence
 

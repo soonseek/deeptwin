@@ -117,6 +117,24 @@ def _validate_body(body):
         raise DomainContractError("Self/future version cannot be a parent")
     if type(body["content"]) is not dict:
         raise DomainContractError("Content must be a schema-owned object")
+    if body["kind"] == "deployment_request":
+        from .deployment_request import validate_anchor_body
+
+        validate_anchor_body(body)
+    if body["kind"] == "deployment_receipt":
+        from .deployment_receipt import validate_receipt_body
+
+        validate_receipt_body(body)
+    if body["kind"] == "deployment_receipt_consumption":
+        from .deployment_receipt import validate_consumption_body
+
+        validate_consumption_body(body)
+    if body["kind"] == "worker_response_capture":
+        from .worker_response import validate_capture_content
+
+        if body["version"] != 1:
+            raise DomainContractError("Worker response capture requires version1")
+        validate_capture_content(body["content"])
 
 
 @dataclass(frozen=True, slots=True)

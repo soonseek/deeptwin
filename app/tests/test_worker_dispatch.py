@@ -1122,7 +1122,8 @@ def test_silent_success_observation_noop_inhibits_and_projects_unknown(
 ):
     install_transport(monkeypatch, subject)
     target = subject.ledger if silent_mode == "instance_shadow" else RuntimeLedger
-    monkeypatch.setattr(target, "record_transport_observation", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(target, "_record_transport_observation_in_transaction",
+                        lambda *_args, **_kwargs: None)
     dispatcher = started_dispatcher(subject)
     route_deadline = deadline()
     reservation = dispatcher.reserve(
@@ -1364,7 +1365,7 @@ def test_unrecordable_post_commit_observation_inhibits_process_wide(
     dispatcher = started_dispatcher(subject)
     monkeypatch.setattr(
         subject.ledger,
-        "record_transport_observation",
+        "_record_transport_observation_in_transaction",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("SECRET")),
     )
     monkeypatch.setattr(
@@ -1413,21 +1414,15 @@ def test_close_drains_accepted_queue_without_new_deadline_or_send(
     began = Event()
     release = Event()
     calls = []
+    install_transport(monkeypatch, subject)
+    original_exchange = subject.coordinator.exchange
 
     def exchange(permit, capability, *, deadline, **_artifact_kwargs):
-        del capability
+        response = original_exchange(permit, capability, deadline=deadline, **_artifact_kwargs)
         calls.append(permit.command_id)
         began.set()
         assert release.wait(deadline.require())
-        return worker_module.AuthenticatedWorkerResponse(
-            attempt_id=permit.attempt_id,
-            connection_id="c" * 64,
-            worker_boot_id="document-boot-1",
-            message_id=identifier(),
-            correlation_id=permit.command_id,
-            message_type="completed",
-            payload=b"{}",
-        )
+        return response
 
     monkeypatch.setattr(subject.coordinator, "exchange", exchange)
     dispatcher = started_dispatcher(subject)
@@ -1608,7 +1603,7 @@ def test_a_failed_artifact_import_records_unknown_not_clean_acceptance(
     def doomed_import(*_args, **_kwargs):
         raise StorageError("the vault rejected the import")
 
-    monkeypatch.setattr(dispatch_module, "store_received_artifact", doomed_import)
+    monkeypatch.setattr(subject.domain, "put_blob", doomed_import)
     dispatcher = stream_service(subject, tmp_path)
     dispatcher.start()
     try:

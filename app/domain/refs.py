@@ -21,7 +21,8 @@ comparison_plan comparison_result promotion_decision lens_definition lens_compos
 inquiry_audit knowledge_candidate evaluation_dataset evaluation_profile validation_report
 independence_profile qualification extension_manifest extension_installation
 extension_qualification extension_binding backup_manifest export_manifest
-tool_definition grant execution_envelope task_spec rubric observation_contract
+tool_definition grant execution_envelope task_spec rubric observation_contract worker_response_capture deployment_request
+deployment_receipt deployment_receipt_consumption
 """.split())
 LOCATOR_KINDS = ENTITY_KINDS | frozenset("""
 work setup session connection run node_execution attempt tool_call budget_reservation

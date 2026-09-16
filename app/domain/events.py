@@ -1,6 +1,7 @@
 """Versioned metadata allowlists. Private evidence and authorization live elsewhere.
 
-    All fields are optional observations: absence is unknown, never zero. New event fields
+    Fields are optional observations unless a specific event requires its exact set.
+    Absence is unknown, never zero. New event fields
     require an explicit code/schema change, not an untrusted arbitrary telemetry dictionary.
 """
 
@@ -17,7 +18,8 @@ class Field:
 
     def validate(self, value):
         if self.kind == "integer":
-            valid = type(value) is int and 0 <= value <= MAX_INTEGER
+            minimum, maximum = self.values or (0, MAX_INTEGER)
+            valid = type(value) is int and minimum <= value <= maximum
         elif self.kind == "boolean":
             valid = type(value) is bool
         else:
@@ -28,7 +30,8 @@ class Field:
 
     def schema(self):
         if self.kind == "integer":
-            return {"type": "integer", "minimum": 0, "maximum": MAX_INTEGER}
+            minimum, maximum = self.values or (0, MAX_INTEGER)
+            return {"type": "integer", "minimum": minimum, "maximum": maximum}
         if self.kind == "boolean":
             return {"type": "boolean"}
         return {"type": "string", "enum": list(self.values)}
@@ -68,6 +71,7 @@ def _register(names, **fields):
 
 
 _register("setup.started", component_count=COUNT)
+_register("owner.created session.created session.revoked", session_count=COUNT)
 _register("setup.component_progress", completed_count=COUNT, total_count=COUNT, byte_count=COUNT)
 _register("setup.failed update.failed promotion.failed", reason_code=GAP_REASON)
 _register("connection.checked connection.changed", provider=PROVIDER, auth_mode=MODE,
@@ -89,6 +93,8 @@ _register("review.completed review.invalid", validity=VALIDITY, gate_count=COUNT
 _register("run.started", node_count=COUNT, edge_count=COUNT)
 _register("run.stopped", reason_code=END_REASON, duration_ms=COUNT)
 _register("attempt.reserved attempt.dispatched", attempt_no=COUNT)
+_register("attempt.response_captured", artifact_count=COUNT,
+          classification=Field("enum", ("pending_validation", "quarantined")))
 _register("attempt.terminal tool.terminal", outcome=OUTCOME, duration_ms=COUNT)
 _register("tool.requested", effect_class=Field("enum", ("read", "local_write", "external_write")))
 _register("artifact.sealed", byte_count=COUNT)
@@ -128,6 +134,11 @@ _register("extension.discovered extension.staged extension.verified extension.qu
           extension_kind=EXTENSION_KIND, trust_tier=TRUST_TIER, revision=COUNT)
 _register("extension.binding_changed", extension_kind=EXTENSION_KIND,
           trust_tier=TRUST_TIER, revision=COUNT)
+_register("extension.candidate_registered", extension_kind=EXTENSION_KIND,
+          port_contract_version=Field("enum", ("provider-port-v1", "managed-provider-runner-port-v1",
+              "model-runtime-port-v1", "tool-port-v1", "artifact-codec-port-v1", "evaluator-runtime-port-v1",
+              "storage-port-v1", "credential-vault-port-v1", "export-sink-port-v1")),
+          candidate_count=Field("integer", (1, 1)), byte_count=Field("integer", (1, 1114112)))
 _register("extension.compatibility_failed", extension_kind=EXTENSION_KIND,
           trust_tier=TRUST_TIER, revision=COUNT,
           reason_code=Field("enum", ("framework", "extension_api", "schema", "runtime",
@@ -135,7 +146,7 @@ _register("extension.compatibility_failed", extension_kind=EXTENSION_KIND,
 _register("service_client.created service_client.rotated service_client.revoked",
           scope_count=COUNT, revision=COUNT)
 _register("service_client.denied", reason_code=SERVICE_CLIENT_DENIAL)
-_register("deployment.request_prepared deployment.request_cancelled "
+_register("deployment.request_prepared deployment.request_cancelled deployment.request_expired "
           "deployment.receipt_committed", revision=COUNT)
 _register("auth.recovery_started auth.recovery_completed", revision=COUNT)
 _register("auth.recovery_failed", reason_code=GAP_REASON)
@@ -156,8 +167,11 @@ del _registry
 def event_schema(event_type):
     if type(event_type) is not str or event_type not in EVENT_REGISTRY:
         raise DomainContractError("Unregistered event type")
-    return {"type": "object", "properties": {name: field.schema()
+    result = {"type": "object", "properties": {name: field.schema()
             for name, field in EVENT_REGISTRY[event_type].items()}, "additionalProperties": False}
+    if event_type == "extension.candidate_registered":
+        result["required"] = list(EVENT_REGISTRY[event_type])
+    return result
 
 
 def event_metadata(event_type, payload):
@@ -168,6 +182,8 @@ def event_metadata(event_type, payload):
     fields = EVENT_REGISTRY[event_type]
     if set(payload) - fields.keys():
         raise DomainContractError("Unregistered event metadata field")
+    if event_type == "extension.candidate_registered" and set(payload) != fields.keys():
+        raise DomainContractError("Candidate registration event requires exact observations")
     result = {name: fields[name].validate(value) for name, value in payload.items()}
     canonical_json(result)
     return result

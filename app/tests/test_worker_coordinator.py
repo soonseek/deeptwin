@@ -39,13 +39,14 @@ def immutable(
     kind: str,
     *,
     content: dict[str, object] | None = None,
+    actor_ref: EntityRef | None = None,
 ) -> ImmutableRecord:
     record = ImmutableRecord.create(
         kind=kind,
         id=identifier(),
         version=1,
         created_at_utc=STAMP,
-        actor_ref=roots.actor,
+        actor_ref=roots.actor if actor_ref is None else actor_ref,
         parent_refs=(),
         purpose="operational",
         access_policy_ref=roots.access_policy,
@@ -80,7 +81,8 @@ def channel_spec(pair_root) -> broker.ChannelSpec:
     )
 
 
-def build_subject(tmp_path):
+def build_subject(tmp_path, *, envelope_content=None, profile_content=None, lease_duration_ms=2_000,
+                  human_authored=False):
     legacy = Store(tmp_path / "vault")
     domain = DomainStore(legacy)
     roots = domain.initialize_vault()
@@ -126,6 +128,17 @@ def build_subject(tmp_path):
         max_wall_seconds=60,
         max_candidates=1,
     )
+    author_ref = roots.actor
+    if human_authored:
+        author = ImmutableRecord.create(
+            kind="actor", id=human.actor.id, version=1, created_at_utc=STAMP,
+            actor_ref=roots.actor, parent_refs=(), purpose="operational",
+            access_policy_ref=roots.access_policy, retention_policy_ref=roots.retention_policy,
+            content={"id": human.actor.id, "kind": "human", "origin": "local_session"},
+        )
+        domain.put(author)
+        host.register_record(author)
+        author_ref = author.ref
     records = SimpleNamespace(
         work=immutable(domain, roots, "work_revision"),
         environment=immutable(domain, roots, "environment"),
@@ -141,9 +154,11 @@ def build_subject(tmp_path):
             domain,
             roots,
             "execution_envelope",
-            content={"operation": "render", "artifact": "report.pdf"},
+            content=({"operation": "render", "artifact": "report.pdf"}
+                     if envelope_content is None else envelope_content),
+            actor_ref=author_ref,
         ),
-        profile=immutable(domain, roots, "runtime_profile"),
+        profile=immutable(domain, roots, "runtime_profile", content=profile_content),
     )
     for record in vars(records).values():
         host.register_record(record)
@@ -197,7 +212,7 @@ def build_subject(tmp_path):
         owner,
         10_000,
     )
-    ledger.reserve_attempt(identifier(), attempt, lease_duration_ms=2_000)
+    ledger.reserve_attempt(identifier(), attempt, lease_duration_ms=lease_duration_ms)
     request = BudgetDispatchRequest.create(
         session_id=budget_session_id,
         request_id=attempt.reservation_id,

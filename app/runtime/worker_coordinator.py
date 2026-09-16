@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import re
 import socket
+import threading
+import weakref
 from dataclasses import dataclass, field
 from hashlib import sha256
 
@@ -20,7 +22,7 @@ from ..domain.permissions import (
     PolicyGate,
     Principal,
 )
-from ..domain.refs import DomainContractError, EntityRef, uuid_string
+from ..domain.refs import DomainContractError, EntityRef, canonical_json, uuid_string
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore, StorageError
 from ..workers import broker
@@ -180,7 +182,7 @@ class ReceivedWorkerArtifact:
             raise TypeError("Received worker artifact is invalid")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True)
 class AuthenticatedWorkerResponse:
     attempt_id: str
     connection_id: str
@@ -190,6 +192,7 @@ class AuthenticatedWorkerResponse:
     message_type: str
     payload: bytes = field(repr=False)
     artifacts: tuple[ReceivedWorkerArtifact, ...] = ()
+    _capture_receipt: object = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         try:
@@ -213,6 +216,35 @@ class AuthenticatedWorkerResponse:
             )
         ):
             raise TypeError("Authenticated worker response is invalid")
+
+
+class _ResponseReceipt:
+    """Coordinator-local provenance, not a Python arbitrary-code-execution sandbox."""
+
+    __slots__ = ("aborted", "captured_ref", "deadline", "fingerprint", "generation",
+                 "output_policy_digest", "permit", "response", "route", "token")
+
+    def __init__(self, response, permit, coordinator, deadline, output_policy_digest):
+        from .worker_response_capture import _response_fingerprint
+
+        self.response = weakref.ref(response)
+        self.permit = weakref.ref(permit)
+        self.token = coordinator._response_token
+        self.generation = coordinator._ledger._session_id
+        self.fingerprint = _response_fingerprint(coordinator, permit, response)
+        self.route = coordinator._route
+        self.captured_ref = None
+        self.aborted = False
+        self.deadline = deadline
+        self.output_policy_digest = output_policy_digest
+
+
+def _output_policy_digest(policy):
+    if policy is None:
+        return sha256(b"null").hexdigest()
+    return sha256(canonical_json({"request_id": policy.request_id,
+                                 "allowed_media_types": policy.allowed_media_types,
+                                 "max_artifacts": policy.max_artifacts})).hexdigest()
 
 
 class WorkerCoordinator:
@@ -262,9 +294,70 @@ class WorkerCoordinator:
         self._secret = boot_secret
         self._requester_boot_id = requester_boot_id
         self._worker_boot_id = worker_boot_id
+        self._response_token = object()
+        self._response_lock = threading.RLock()
+        self._response_slot = threading.BoundedSemaphore(1)
+        self._active_responses = {}
         self._admission = broker.AdmissionGate(
             max_queue_depth=route.channel_spec.max_queue_depth
         )
+
+    def _checked_response_receipt(self, permit, response):
+        from .worker_response_capture import _response_fingerprint
+
+        receipt = getattr(response, "_capture_receipt", None)
+        if (type(response) is not AuthenticatedWorkerResponse
+                or type(permit) is not DispatchPermit or type(receipt) is not _ResponseReceipt
+                or receipt.response() is not response or receipt.permit() is not permit
+                or receipt.token is not self._response_token or receipt.aborted
+                or receipt.generation != self._ledger._session_id
+                or receipt.route is not self._route
+                or receipt.fingerprint != _response_fingerprint(self, permit, response)
+                or (receipt.captured_ref is None
+                    and self._active_responses.get(id(response)) is not receipt)):
+            raise WorkerCoordinatorError(dispatch_effect="outcome_unknown")
+        return receipt
+
+    def capture_response(self, permit, response):
+        """Persist only the exact response authenticated by this coordinator."""
+        from .worker_response_capture import _capture_authenticated
+
+        with self._response_lock:
+            receipt = self._checked_response_receipt(permit, response)
+            try:
+                ref = _capture_authenticated(self, permit, response, receipt)
+                receipt.captured_ref = ref
+                return ref
+            except BaseException:  # noqa: BLE001 - unknown capture commit must inhibit dispatch
+                # A receive/commit failure is uncertain. No retry/resend authority.
+                RuntimeLedger._inhibit_all_dispatch(self._ledger)
+                receipt.aborted = True
+                try:
+                    from .worker_response_capture import (
+                        _lookup_response_capture,
+                        _response_content,
+                    )
+
+                    committed = _lookup_response_capture(self._ledger, permit.command_id)
+                    if (committed is not None
+                            and self._domain.get(committed).body["content"]
+                            == _response_content(self, permit, response)):
+                        receipt.captured_ref = committed
+                        receipt.aborted = False
+                except Exception:  # noqa: BLE001, S110 - retain sanitized uncertainty, never log bytes
+                    pass
+                raise WorkerCoordinatorError(dispatch_effect="outcome_unknown") from None
+            finally:
+                if self._active_responses.pop(id(response), None) is not None:
+                    self._response_slot.release()
+
+    def abort_response(self, response):
+        """Release a received response's active admission and revoke fresh capture."""
+        with self._response_lock:
+            receipt = self._active_responses.pop(id(response), None)
+            if receipt is not None:
+                receipt.aborted = True
+                self._response_slot.release()
 
     def _validate_capability(
         self,
@@ -392,13 +485,19 @@ class WorkerCoordinator:
         self._validate_capability(permit, capability)
         self._validate_artifact_inputs(permit, artifact_inputs)
         self._validate_artifact_output_policy(permit, artifact_output_policy)
+        output_policy_digest = _output_policy_digest(artifact_output_policy)
         operation_deadline = deadline.bounded(
             self._route.channel_spec.max_operation_ms
         )
         admission = self._admission.acquire(operation_deadline)
         sock: socket.socket | None = None
         codec: broker.FrameCodec | None = None
+        claimed = False
+        issued = False
         try:
+            claimed = self._response_slot.acquire(blocking=False)
+            if not claimed:
+                raise WorkerCoordinatorError()
             try:
                 window = self._ledger.consume_dispatch_permit_window(
                     permit,
@@ -517,7 +616,7 @@ class WorkerCoordinator:
                 not in self._route.response_message_types
             ):
                 raise broker.ProtocolViolation(dispatch_effect="outcome_unknown")
-            return AuthenticatedWorkerResponse(
+            response = AuthenticatedWorkerResponse(
                 attempt_id=permit.attempt_id,
                 connection_id=session.connection_id,
                 worker_boot_id=session.responder_boot_id,
@@ -527,7 +626,17 @@ class WorkerCoordinator:
                 payload=frame.payload,
                 artifacts=received_artifacts,
             )
+            if _output_policy_digest(artifact_output_policy) != output_policy_digest:
+                raise WorkerArtifactRejected(dispatch_effect="outcome_unknown")
+            receipt = _ResponseReceipt(response, permit, self, effective, output_policy_digest)
+            with self._response_lock:
+                self._active_responses[id(response)] = receipt
+                object.__setattr__(response, "_capture_receipt", receipt)
+                issued = True
+            return response
         finally:
+            if claimed and not issued:
+                self._response_slot.release()
             if codec is not None:
                 codec.close()
             if sock is not None:

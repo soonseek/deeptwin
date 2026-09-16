@@ -214,6 +214,1074 @@
     },
     "DomainBody": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "worker_response_capture",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "content": {
+                "additionalProperties": false,
+                "properties": {
+                  "artifacts": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "blob": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "purpose": {
+                              "enum": [
+                                "diagnosis",
+                                "evaluation_development",
+                                "evaluation_sealed",
+                                "inquiry_audit",
+                                "operational",
+                                "release_evidence"
+                              ]
+                            },
+                            "sha256": {
+                              "maxLength": 64,
+                              "minLength": 64,
+                              "pattern": "^[0-9a-f]{64}$",
+                              "type": "string"
+                            },
+                            "size": {
+                              "maximum": 9223372036854775807,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "vault_id": {
+                              "maxLength": 36,
+                              "minLength": 36,
+                              "not": {
+                                "const": "00000000-0000-0000-0000-000000000000"
+                              },
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "vault_id",
+                            "purpose",
+                            "sha256",
+                            "size"
+                          ],
+                          "type": "object"
+                        },
+                        "descriptor": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "batch_id": {
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?![\\s\\S])",
+                              "type": "string"
+                            },
+                            "count": {
+                              "maximum": 256,
+                              "minimum": 1,
+                              "type": "integer"
+                            },
+                            "declared_size": {
+                              "maximum": 67108864,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "media_type": {
+                              "pattern": "^[a-z0-9][a-z0-9!#$&\\-^_.+]{0,126}/[a-z0-9][a-z0-9!#$&\\-^_.+]{0,126}(?![\\s\\S])",
+                              "type": "string"
+                            },
+                            "ordinal": {
+                              "maximum": 255,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "request_id": {
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?![\\s\\S])",
+                              "type": "string"
+                            },
+                            "sha256": {
+                              "maxLength": 64,
+                              "minLength": 64,
+                              "pattern": "^[0-9a-f]{64}$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "batch_id",
+                            "request_id",
+                            "ordinal",
+                            "count",
+                            "media_type",
+                            "declared_size",
+                            "sha256"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "descriptor",
+                        "blob"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 256,
+                    "type": "array"
+                  },
+                  "attempt_id": {
+                    "maxLength": 36,
+                    "minLength": 36,
+                    "not": {
+                      "const": "00000000-0000-0000-0000-000000000000"
+                    },
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "capture_schema_version": {
+                    "const": "worker-response-capture-v1",
+                    "type": "string"
+                  },
+                  "channel_id": {
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*(?![\\s\\S])",
+                    "type": "string"
+                  },
+                  "command_id": {
+                    "maxLength": 36,
+                    "minLength": 36,
+                    "not": {
+                      "const": "00000000-0000-0000-0000-000000000000"
+                    },
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "connection_id": {
+                    "maxLength": 64,
+                    "minLength": 64,
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "correlation_id": {
+                    "maxLength": 36,
+                    "minLength": 36,
+                    "not": {
+                      "const": "00000000-0000-0000-0000-000000000000"
+                    },
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "execution_envelope_ref": {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/EntityRef"
+                      },
+                      {
+                        "properties": {
+                          "kind": {
+                            "const": "execution_envelope",
+                            "type": "string"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "lease_fence": {
+                    "maximum": 9223372036854775807,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "message_id": {
+                    "maxLength": 36,
+                    "minLength": 36,
+                    "not": {
+                      "const": "00000000-0000-0000-0000-000000000000"
+                    },
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "message_type": {
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*(?![\\s\\S])",
+                    "type": "string"
+                  },
+                  "payload_blob": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "purpose": {
+                        "enum": [
+                          "diagnosis",
+                          "evaluation_development",
+                          "evaluation_sealed",
+                          "inquiry_audit",
+                          "operational",
+                          "release_evidence"
+                        ]
+                      },
+                      "sha256": {
+                        "maxLength": 64,
+                        "minLength": 64,
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "size": {
+                        "maximum": 9223372036854775807,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "vault_id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "not": {
+                          "const": "00000000-0000-0000-0000-000000000000"
+                        },
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "vault_id",
+                      "purpose",
+                      "sha256",
+                      "size"
+                    ],
+                    "type": "object"
+                  },
+                  "permit_id": {
+                    "maxLength": 36,
+                    "minLength": 36,
+                    "not": {
+                      "const": "00000000-0000-0000-0000-000000000000"
+                    },
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "requester_boot_id": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])",
+                    "type": "string"
+                  },
+                  "requester_service": {
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*(?![\\s\\S])",
+                    "type": "string"
+                  },
+                  "responder_service": {
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*(?![\\s\\S])",
+                    "type": "string"
+                  },
+                  "runtime_profile_ref": {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/EntityRef"
+                      },
+                      {
+                        "properties": {
+                          "kind": {
+                            "const": "runtime_profile",
+                            "type": "string"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "worker_boot_id": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "capture_schema_version",
+                  "lease_fence",
+                  "connection_id",
+                  "payload_blob",
+                  "artifacts",
+                  "command_id",
+                  "attempt_id",
+                  "permit_id",
+                  "message_id",
+                  "correlation_id",
+                  "execution_envelope_ref",
+                  "runtime_profile_ref",
+                  "requester_boot_id",
+                  "worker_boot_id",
+                  "channel_id",
+                  "requester_service",
+                  "responder_service",
+                  "message_type"
+                ],
+                "type": "object"
+              },
+              "version": {
+                "const": 1,
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "$comment": "Runtime also requires header id == content.request_id and the parent == content.candidate_ref.",
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "deployment_request",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "content": {
+                "additionalProperties": false,
+                "properties": {
+                  "candidate_ref": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "not": {
+                          "const": "00000000-0000-0000-0000-000000000000"
+                        },
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "extension_manifest",
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "maxLength": 64,
+                        "minLength": 64,
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id",
+                      "version",
+                      "sha256"
+                    ],
+                    "type": "object"
+                  },
+                  "exchange_blob_ref": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "purpose": {
+                        "const": "operational",
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "maxLength": 64,
+                        "minLength": 64,
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "size": {
+                        "maximum": 8192,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "vault_id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "not": {
+                          "const": "00000000-0000-0000-0000-000000000000"
+                        },
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "vault_id",
+                      "purpose",
+                      "sha256",
+                      "size"
+                    ],
+                    "type": "object"
+                  },
+                  "prepare_command_id": {
+                    "maxLength": 36,
+                    "minLength": 36,
+                    "not": {
+                      "const": "00000000-0000-0000-0000-000000000000"
+                    },
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "request_blob_ref": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "purpose": {
+                        "const": "operational",
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "maxLength": 64,
+                        "minLength": 64,
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "size": {
+                        "maximum": 65536,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "vault_id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "not": {
+                          "const": "00000000-0000-0000-0000-000000000000"
+                        },
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "vault_id",
+                      "purpose",
+                      "sha256",
+                      "size"
+                    ],
+                    "type": "object"
+                  },
+                  "request_id": {
+                    "maxLength": 36,
+                    "minLength": 36,
+                    "not": {
+                      "const": "00000000-0000-0000-0000-000000000000"
+                    },
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "reservation_revision": {
+                    "const": 1,
+                    "type": "integer"
+                  },
+                  "schema_version": {
+                    "const": "deployment-request-anchor-v1",
+                    "type": "string"
+                  },
+                  "slot_id": {
+                    "maximum": 16,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "topology_blob_ref": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "purpose": {
+                        "const": "operational",
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "maxLength": 64,
+                        "minLength": 64,
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "size": {
+                        "maximum": 65536,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "vault_id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "not": {
+                          "const": "00000000-0000-0000-0000-000000000000"
+                        },
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "vault_id",
+                      "purpose",
+                      "sha256",
+                      "size"
+                    ],
+                    "type": "object"
+                  },
+                  "topology_id": {
+                    "maxLength": 36,
+                    "minLength": 36,
+                    "not": {
+                      "const": "00000000-0000-0000-0000-000000000000"
+                    },
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "topology_revision": {
+                    "const": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "schema_version",
+                  "request_id",
+                  "request_blob_ref",
+                  "topology_blob_ref",
+                  "exchange_blob_ref",
+                  "candidate_ref",
+                  "topology_id",
+                  "topology_revision",
+                  "slot_id",
+                  "reservation_revision",
+                  "prepare_command_id"
+                ],
+                "type": "object"
+              },
+              "parent_refs": {
+                "items": {
+                  "allOf": [
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/EntityRef"
+                        },
+                        {
+                          "properties": {
+                            "kind": {
+                              "const": "extension_manifest",
+                              "type": "string"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "properties": {
+                        "version": {
+                          "const": 1,
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "maxItems": 1,
+                "minItems": 1,
+                "type": "array"
+              },
+              "purpose": {
+                "const": "operational",
+                "type": "string"
+              },
+              "version": {
+                "const": 1,
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "$comment": "Runtime also requires header id and sole parent to match request_ref, all four blobs to share one vault and the complete body to fit 8192 bytes. Structure grants no import authority.",
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "deployment_receipt",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "content": {
+                "additionalProperties": false,
+                "properties": {
+                  "consumption_exchange_blob_ref": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "purpose": {
+                        "const": "operational",
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "maxLength": 64,
+                        "minLength": 64,
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "size": {
+                        "maximum": 8192,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "vault_id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "not": {
+                          "const": "00000000-0000-0000-0000-000000000000"
+                        },
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "vault_id",
+                      "purpose",
+                      "sha256",
+                      "size"
+                    ],
+                    "type": "object"
+                  },
+                  "import_command_id": {
+                    "maxLength": 36,
+                    "minLength": 36,
+                    "not": {
+                      "const": "00000000-0000-0000-0000-000000000000"
+                    },
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "ingress_blob_ref": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "purpose": {
+                        "const": "operational",
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "maxLength": 64,
+                        "minLength": 64,
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "size": {
+                        "maximum": 8192,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "vault_id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "not": {
+                          "const": "00000000-0000-0000-0000-000000000000"
+                        },
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "vault_id",
+                      "purpose",
+                      "sha256",
+                      "size"
+                    ],
+                    "type": "object"
+                  },
+                  "receipt_blob_ref": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "purpose": {
+                        "const": "operational",
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "maxLength": 64,
+                        "minLength": 64,
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "size": {
+                        "maximum": 16384,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "vault_id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "not": {
+                          "const": "00000000-0000-0000-0000-000000000000"
+                        },
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "vault_id",
+                      "purpose",
+                      "sha256",
+                      "size"
+                    ],
+                    "type": "object"
+                  },
+                  "request_ref": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "not": {
+                          "const": "00000000-0000-0000-0000-000000000000"
+                        },
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "deployment_request",
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "maxLength": 64,
+                        "minLength": 64,
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id",
+                      "version",
+                      "sha256"
+                    ],
+                    "type": "object"
+                  },
+                  "schema_version": {
+                    "const": "deployment-receipt-anchor-v1",
+                    "type": "string"
+                  },
+                  "trust_blob_ref": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "purpose": {
+                        "const": "operational",
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "maxLength": 64,
+                        "minLength": 64,
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "size": {
+                        "maximum": 16384,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "vault_id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "not": {
+                          "const": "00000000-0000-0000-0000-000000000000"
+                        },
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "vault_id",
+                      "purpose",
+                      "sha256",
+                      "size"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "schema_version",
+                  "receipt_blob_ref",
+                  "request_ref",
+                  "trust_blob_ref",
+                  "ingress_blob_ref",
+                  "consumption_exchange_blob_ref",
+                  "import_command_id"
+                ],
+                "type": "object"
+              },
+              "parent_refs": {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/EntityRef"
+                    },
+                    {
+                      "properties": {
+                        "kind": {
+                          "const": "deployment_request",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "version": {
+                          "const": 1,
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "maxItems": 1,
+                "minItems": 1,
+                "type": "array"
+              },
+              "purpose": {
+                "const": "operational",
+                "type": "string"
+              },
+              "version": {
+                "const": 1,
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "$comment": "Runtime also requires exact ordered duplicated parents, matching request/receipt ids, actor and six-digit consumption time, and caps the complete body at 8192 bytes. Event syntax proves no event exists.",
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "deployment_receipt_consumption",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "content": {
+                "additionalProperties": false,
+                "properties": {
+                  "actor_ref": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "not": {
+                          "const": "00000000-0000-0000-0000-000000000000"
+                        },
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "actor",
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "maxLength": 64,
+                        "minLength": 64,
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id",
+                      "version",
+                      "sha256"
+                    ],
+                    "type": "object"
+                  },
+                  "consumed_at": {
+                    "format": "date-time",
+                    "maxLength": 24,
+                    "minLength": 1,
+                    "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "enum": [
+                      "failed",
+                      "unknown"
+                    ],
+                    "type": "string"
+                  },
+                  "public_event_id": {
+                    "maxLength": 36,
+                    "minLength": 36,
+                    "not": {
+                      "const": "00000000-0000-0000-0000-000000000000"
+                    },
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "receipt_ref": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "not": {
+                          "const": "00000000-0000-0000-0000-000000000000"
+                        },
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "deployment_receipt",
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "maxLength": 64,
+                        "minLength": 64,
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id",
+                      "version",
+                      "sha256"
+                    ],
+                    "type": "object"
+                  },
+                  "request_ref": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "not": {
+                          "const": "00000000-0000-0000-0000-000000000000"
+                        },
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "deployment_request",
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "maxLength": 64,
+                        "minLength": 64,
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id",
+                      "version",
+                      "sha256"
+                    ],
+                    "type": "object"
+                  },
+                  "schema_version": {
+                    "const": "deployment-receipt-consumption-anchor-v1",
+                    "type": "string"
+                  },
+                  "transaction_id": {
+                    "maxLength": 36,
+                    "minLength": 36,
+                    "not": {
+                      "const": "00000000-0000-0000-0000-000000000000"
+                    },
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "winning_lifecycle_revision": {
+                    "const": 2,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "schema_version",
+                  "request_ref",
+                  "receipt_ref",
+                  "winning_lifecycle_revision",
+                  "consumed_at",
+                  "actor_ref",
+                  "transaction_id",
+                  "public_event_id",
+                  "outcome"
+                ],
+                "type": "object"
+              },
+              "parent_refs": {
+                "items": false,
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/EntityRef"
+                      },
+                      {
+                        "properties": {
+                          "kind": {
+                            "const": "deployment_request",
+                            "type": "string"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "version": {
+                            "const": 1,
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/EntityRef"
+                      },
+                      {
+                        "properties": {
+                          "kind": {
+                            "const": "deployment_receipt",
+                            "type": "string"
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "version": {
+                            "const": 1,
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "type": "array"
+              },
+              "purpose": {
+                "const": "operational",
+                "type": "string"
+              },
+              "version": {
+                "const": 1,
+                "type": "integer"
+              }
+            }
+          }
+        }
+      ],
       "properties": {
         "access_policy_ref": {
           "allOf": [
@@ -279,6 +1347,9 @@
             "comparison_plan",
             "comparison_result",
             "decision_record",
+            "deployment_receipt",
+            "deployment_receipt_consumption",
+            "deployment_request",
             "design_approval",
             "design_candidate",
             "design_decision",
@@ -324,7 +1395,8 @@
             "tool_definition",
             "validation_report",
             "work_model",
-            "work_revision"
+            "work_revision",
+            "worker_response_capture"
           ],
           "type": "string"
         },
@@ -413,6 +1485,9 @@
             "comparison_plan",
             "comparison_result",
             "decision_record",
+            "deployment_receipt",
+            "deployment_receipt_consumption",
+            "deployment_request",
             "design_approval",
             "design_candidate",
             "design_decision",
@@ -459,7 +1534,8 @@
             "validation_report",
             "vault_genesis",
             "work_model",
-            "work_revision"
+            "work_revision",
+            "worker_response_capture"
           ],
           "type": "string"
         },
@@ -580,6 +1656,9 @@
             "connection",
             "credential_handle",
             "decision_record",
+            "deployment_receipt",
+            "deployment_receipt_consumption",
+            "deployment_request",
             "design_approval",
             "design_candidate",
             "design_decision",
@@ -640,7 +1719,8 @@
             "vault_genesis",
             "work",
             "work_model",
-            "work_revision"
+            "work_revision",
+            "worker_response_capture"
           ],
           "type": "string"
         },

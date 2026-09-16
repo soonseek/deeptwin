@@ -71,7 +71,7 @@ JOURNAL_TRANSITIONS = frozenset({
     "reserved", "preflighting", "awaiting_human", "send_intent", "running",
     "validating", "lease_renewed", "cancel_requested", "cancel_terminal",
     "result_accepted", "result_duplicate", "result_late", "recovery_pending",
-    "recovery_terminal", "transport_observed",
+    "recovery_terminal", "transport_observed", "response_captured",
 })
 
 TRANSPORT_EFFECTS = frozenset({
@@ -573,7 +573,7 @@ class LedgerOnlyPermit:
     issued_at_ms: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True)
 class DispatchPermit:
     """Budget-bound process-local capability; replay never recreates it."""
 
@@ -1857,6 +1857,12 @@ class RuntimeLedger:
 
     def record_transport_observation(self, permit, observation):
         """Persist one redacted transport fact without settling or accepting work."""
+        with self._transaction(write=True) as db:
+            return self._record_transport_observation_in_transaction(db, permit, observation)
+
+    def _record_transport_observation_in_transaction(self, db, permit, observation):
+        """Stage an observation in the caller's exact writer; never owns commit."""
+        self._domain._assert_write_transaction(db)
         if type(permit) is not DispatchPermit or type(observation) is not TransportObservation:
             raise TypeError("Exact permit and transport observation required")
         if (
@@ -1866,7 +1872,7 @@ class RuntimeLedger:
         ):
             raise DispatchBlocked("Transport observation identity changed")
         encoded = canonical_json(observation.as_dict())
-        with self._transaction(write=True) as db:
+        with nullcontext(db):
             self._require_session(db)
             self._transport_command_binding(db, permit)
             row = self._load_attempt(db, permit.attempt_id)
@@ -1989,6 +1995,15 @@ class RuntimeLedger:
             if globally_inhibited:
                 state = "outcome_unknown"
                 dispatch = {"state": "recovery_pending", "effect": "outcome_unknown"}
+            elif (snapshot["phase"] == "terminal" or snapshot["cancel_state"] != "none"
+                  or snapshot["recovery_state"] == "pending"
+                  or snapshot["dispatch_gate"] == "closed"):
+                state = "blocked" if (observation is not None
+                                      and observation.effect == "definitely_not_sent"
+                                      and snapshot["phase"] != "terminal") else "outcome_unknown"
+                effect = (observation.effect if observation is not None
+                          and observation.effect != "transport_accepted" else "outcome_unknown")
+                dispatch = {"state": "recovery_pending", "effect": effect}
             elif observation is None:
                 if (
                     snapshot["recovery_state"] == "pending"
@@ -2637,6 +2652,20 @@ class RuntimeLedger:
                     "dispatch_enabled": False}
 
     def reconcile_startup(self, command_id, *, observed_owners):
+        from .worker_response_capture import WorkerResponseCaptureGap
+
+        try:
+            return self._reconcile_startup(command_id, observed_owners=observed_owners)
+        except WorkerResponseCaptureGap:
+            self._inhibit_all_dispatch()
+            with self._transaction(write=True) as db:
+                self._event(db, "record.gap", "vault_genesis", self.vault_id,
+                            {"reason_code": "corrupt"}, self._now(db))
+            raise
+
+    def _reconcile_startup(self, command_id, *, observed_owners):
+        from .worker_response_capture import _validated_captures
+
         if type(observed_owners) is not dict or len(observed_owners) > MAX_ACTIVE_ATTEMPTS:
             raise ValueError("Observed owners must be a bounded exact mapping")
         normalized = {}
@@ -2666,6 +2695,7 @@ class RuntimeLedger:
             if set(observed_owners) - ids:
                 raise LedgerError("Observed owner names an unknown or terminal attempt")
             checkpoints = self._validated_active_checkpoints(db)
+            captures = _validated_captures(self, db)
             recovery_pending = unknown = definitely_unsent = 0
             for row in rows:
                 row = self._load_attempt(db, row["id"])
@@ -2697,8 +2727,9 @@ class RuntimeLedger:
                     if terminal:
                         self._event(db, "attempt.terminal", "attempt", row["id"],
                                     {"outcome": "cancelled"}, now)
-                elif (observed == stored_owner and now < row["lease_expires_at_ms"]
-                      and row["cancel_state"] == "none"):
+                elif (row["cancel_state"] == "none" and (
+                        captures.get(row["id"]) == "pending_validation"
+                        or (observed == stored_owner and now < row["lease_expires_at_ms"]))):
                     recovery_pending += 1
                     changed = db.execute("UPDATE runtime_attempts SET dispatch_gate='closed',"
                         "recovery_state='pending',dispatch_blocked_at_ms=?,revision=revision+1,updated_at_ms=? "

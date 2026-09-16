@@ -1,5 +1,5 @@
 {
-  "$comment": "Select the exact event type through #/$defs/<category.action>. This document is a payload schema registry, not the EventEnvelope or a substitute for authenticated emission or private-detail access. All metadata observations are optional; absence means unknown.",
+  "$comment": "Select the exact event type through #/$defs/<category.action>. This document is a payload schema registry, not the EventEnvelope or a substitute for authenticated emission or private-detail access. Metadata observations are optional unless the selected event schema requires its exact field set; absence means unknown.",
   "$defs": {
     "alternative.saved": {
       "additionalProperties": false,
@@ -94,6 +94,24 @@
           "maximum": 9223372036854775807,
           "minimum": 0,
           "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "attempt.response_captured": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "classification": {
+          "enum": [
+            "pending_validation",
+            "quarantined"
+          ],
+          "type": "string"
         }
       },
       "type": "object"
@@ -377,6 +395,17 @@
       },
       "type": "object"
     },
+    "deployment.request_expired": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "deployment.request_prepared": {
       "additionalProperties": false,
       "properties": {
@@ -566,6 +595,56 @@
           "type": "string"
         }
       },
+      "type": "object"
+    },
+    "extension.candidate_registered": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_count": {
+          "maximum": 1114112,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "candidate_count": {
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "extension_kind": {
+          "enum": [
+            "provider",
+            "model_runtime",
+            "tool",
+            "artifact_codec",
+            "lens",
+            "evaluator",
+            "storage",
+            "credential_vault",
+            "export_sink"
+          ],
+          "type": "string"
+        },
+        "port_contract_version": {
+          "enum": [
+            "provider-port-v1",
+            "managed-provider-runner-port-v1",
+            "model-runtime-port-v1",
+            "tool-port-v1",
+            "artifact-codec-port-v1",
+            "evaluator-runtime-port-v1",
+            "storage-port-v1",
+            "credential-vault-port-v1",
+            "export-sink-port-v1"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "extension_kind",
+        "port_contract_version",
+        "candidate_count",
+        "byte_count"
+      ],
       "type": "object"
     },
     "extension.compatibility_failed": {
@@ -1282,6 +1361,17 @@
       },
       "type": "object"
     },
+    "owner.created": {
+      "additionalProperties": false,
+      "properties": {
+        "session_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "promotion.applied": {
       "additionalProperties": false,
       "properties": {
@@ -1585,6 +1675,28 @@
           "type": "integer"
         },
         "scope_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "session.created": {
+      "additionalProperties": false,
+      "properties": {
+        "session_count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "session.revoked": {
+      "additionalProperties": false,
+      "properties": {
+        "session_count": {
           "maximum": 9223372036854775807,
           "minimum": 0,
           "type": "integer"

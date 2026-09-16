@@ -335,6 +335,7 @@ class DomainStore:
             raise UnsafePath("Domain storage must share the legacy database")
         self._legacy_store = legacy_store
         self.max_blob_bytes = max_blob_bytes
+        self._active_write_connections = set()
         with _writer(), self._connection(write=True) as db:
             objects = {row["name"] for row in _domain_schema_rows(db)}
             if not objects:
@@ -468,6 +469,8 @@ class DomainStore:
                     raise StorageError("Required SQLite durability settings unavailable")
                 verify_open_path()
                 db.execute("BEGIN IMMEDIATE" if write else "BEGIN")
+                if write:
+                    self._active_write_connections.add(db)
                 yield db
                 verify_open_path()
                 db.commit()
@@ -475,6 +478,7 @@ class DomainStore:
                 db.rollback()
                 raise
             finally:
+                self._active_write_connections.discard(db)
                 db.close()
 
     def sqlite_settings(self):
@@ -628,29 +632,50 @@ class DomainStore:
             stack.extend((child, False, depth + 1) for child in entities)
 
     def put(self, record):
+        with _writer(), self._connection(write=True) as db:
+            return self._put_in_transaction(db, record)
+
+    def _assert_write_transaction(self, db):
+        """Only a live writer borrowed from this exact store may stage content."""
+        if (type(db) is not sqlite3.Connection
+                or db not in self._active_write_connections
+                or not db.in_transaction or db.row_factory is not sqlite3.Row):
+            raise StorageError("Exact active DomainStore writer required")
+        settings = {name: db.execute(f"PRAGMA {name}").fetchone()[0]
+                    for name in ("journal_mode", "synchronous", "fullfsync", "foreign_keys")}
+        if settings != {"journal_mode": "wal", "synchronous": 2,
+                        "fullfsync": 1, "foreign_keys": 1}:
+            raise StorageError("DomainStore transaction durability changed")
+        databases = list(db.execute("PRAGMA database_list"))
+        if (len(databases) != 1 or databases[0]["name"] != "main"
+                or Path(databases[0]["file"]).resolve() != self.path.resolve()):
+            raise StorageError("DomainStore transaction binding changed")
+        self._verify_schema(db, through_version=2)
+
+    def _put_in_transaction(self, db, record):
+        """Stage ordinary immutable content with the same checks as public put."""
+        self._assert_write_transaction(db)
         if type(record) is not ImmutableRecord:
             raise DomainContractError("Expected immutable record")
         record = ImmutableRecord.from_bytes(record.body_bytes, expected_ref=record.ref)
         if record.body["schema_version"] in (GENESIS_VERSION, BOOTSTRAP_VERSION):
             raise BootstrapDenied("Only first host initialization may install roots")
-        with _writer(), self._connection(write=True) as db:
-            roots = self._read_roots(db)
-            existing = db.execute("SELECT sha256 FROM domain_records "
-                "WHERE vault_id=? AND kind=? AND id=? AND version=?",
-                (roots.genesis.id, record.ref.kind, record.ref.id, record.ref.version)).fetchone()
-            if existing is not None:
-                if existing[0] != record.ref.sha256:
-                    raise ImmutableConflict("Immutable identity/version already has different content")
-                self._check_graph(db, [record.ref], roots)
-                return record.ref
-            entities, blobs = _references(record.body)
-            self._check_graph(db, entities, roots)
-            for blob in blobs:
-                self._blob_bytes(db, blob, roots, purpose=blob.purpose)
-            self._insert(db, record, roots.genesis.id)
-            # Include the new root in the same bounded traversal used by reads.
-            # A limit failure rolls back body and indexes with this transaction.
+        roots = self._read_roots(db)
+        existing = db.execute("SELECT sha256 FROM domain_records "
+            "WHERE vault_id=? AND kind=? AND id=? AND version=?",
+            (roots.genesis.id, record.ref.kind, record.ref.id, record.ref.version)).fetchone()
+        if existing is not None:
+            if existing[0] != record.ref.sha256:
+                raise ImmutableConflict("Immutable identity/version already has different content")
             self._check_graph(db, [record.ref], roots)
+            return record.ref
+        entities, blobs = _references(record.body)
+        self._check_graph(db, entities, roots)
+        for blob in blobs:
+            self._blob_bytes(db, blob, roots, purpose=blob.purpose)
+        self._insert(db, record, roots.genesis.id)
+        # Include the new root; limit failure rolls back body and all indexes.
+        self._check_graph(db, [record.ref], roots)
         return record.ref
 
     def get(self, ref):
