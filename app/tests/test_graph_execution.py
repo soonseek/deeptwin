@@ -374,3 +374,96 @@ def test_handlers_receive_identity_only_and_a_detached_view(tmp_path):
     assert set(view) == {"results", "counters"}
     assert "forged" not in dict(outcome.result_refs)
     assert type(context).__dataclass_params__.frozen
+
+
+# ---------------------------------------------------------------------------
+# T040 slice 2: bounded loops. The loop controller's handler returns validated
+# facts; the compiled termination expression decides exit versus another
+# iteration; every iteration is a NEW visit with its own execution identity;
+# the hard iteration cap is a product limit that fails the run loudly.
+# ---------------------------------------------------------------------------
+
+from app.tests.test_graph_contract import loop_graph
+
+
+def loop_registry(subject, calls, *, done_after, facts_for_loop=None):
+    def produce(context, view):
+        calls.append((context.node_id, context.loop_index))
+        return subject.refs.result
+
+    def control(context, view):
+        calls.append((context.node_id, context.loop_index))
+        if facts_for_loop is not None:
+            return None if facts_for_loop == "RETURN_NONE" else facts_for_loop
+        return {"loop_done": context.loop_index >= done_after}
+
+    return {"core.deterministic": produce, "core.agent": produce,
+            "core.bounded_loop": control}
+
+
+def test_bounded_loop_iterates_as_new_visits_until_termination(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    calls = []
+    outcome = build(subject, run, loop_graph(), loop_registry(subject, calls, done_after=2)).run()
+    assert calls == [
+        ("seed", 0), ("loop", 0), ("revise", 0), ("loop", 1), ("revise", 1),
+        ("loop", 2), ("done", 0),
+    ]
+    assert outcome.counters == {"seed": 1, "loop": 3, "revise": 2, "done": 1}
+    revise_ids = [eid for node, eid in outcome.execution_ids if node == "revise"]
+    assert revise_ids == [sch.execution_identity(run.run_id, "revise", 0),
+                          sch.execution_identity(run.run_id, "revise", 1)]
+    for execution_id in revise_ids:
+        assert subject.ledger.get_execution(execution_id)["spec"]["node_id"] == "revise"
+
+
+def test_the_hard_iteration_cap_fails_the_run_loudly(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    calls = []
+    scheduler = build(subject, run, loop_graph(), loop_registry(subject, calls, done_after=99))
+    with pytest.raises(sch.SchedulerError, match="loop_cap:revision-loop"):
+        scheduler.run()
+    loop_visits = [index for node, index in calls if node == "loop"]
+    assert loop_visits == [0, 1, 2, 3, 4]  # the compiled cap is 5 controller visits
+    assert ("done", 0) not in calls
+
+
+def test_restart_inside_a_loop_never_reruns_completed_iterations(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    calls = []
+    state = {"fail_once": True}
+
+    def produce(context, view):
+        calls.append((context.node_id, context.loop_index))
+        if context.node_id == "revise" and context.loop_index == 1 and state["fail_once"]:
+            state["fail_once"] = False
+            raise RuntimeError("PRIVATE_LOOP_CANARY")
+        return subject.refs.result
+
+    def control(context, view):
+        calls.append((context.node_id, context.loop_index))
+        return {"loop_done": context.loop_index >= 2}
+
+    handlers = {"core.deterministic": produce, "core.agent": produce, "core.bounded_loop": control}
+    with pytest.raises(sch.SchedulerError, match="node_failed:revise"):
+        build(subject, run, loop_graph(), handlers).run()
+    assert calls[-1] == ("revise", 1)
+    reopen(subject, tmp_path)
+    before = list(calls)
+    outcome = build(subject, run, loop_graph(), handlers).run()
+    resumed = calls[len(before):]
+    assert resumed == [("revise", 1), ("loop", 2), ("done", 0)]
+    assert outcome.counters == {"seed": 1, "loop": 3, "revise": 2, "done": 1}
+
+
+@pytest.mark.parametrize(
+    "facts", ["done", {"ambient": True}, {"loop_done": "yes"}, "RETURN_NONE"]
+)
+def test_loop_facts_are_validated_against_the_graph(tmp_path, facts):
+    subject, run = ledger_run(tmp_path)
+    calls = []
+    scheduler = build(subject, run, loop_graph(),
+                      loop_registry(subject, calls, done_after=0, facts_for_loop=facts))
+    with pytest.raises(sch.SchedulerError, match="node_failed:loop"):
+        scheduler.run()
+    assert ("revise", 0) not in calls and ("done", 0) not in calls

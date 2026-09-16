@@ -829,3 +829,5 @@ clean. Details in `extension-worker-metadata-task23.md`.
 Pre-fix full regression (Task 23 module + 53 tests, before the review closures): **5653 passed, 1 skipped, 1 inherited warning, 369 subtests, 666.68s**, exit 0. Post-fix Task 23 covering command: **271 passed, 1 skipped, 21 subtests, 10.41s**.
 
 Final full regression after Task 23 fix round 1 and the T040 first slice: **5668 passed, 1 skipped, 1 inherited warning, 369 subtests, 649.70s**, exit 0 (commits ae0c447, b4daad6).
+
+T040 slice 2 (bounded loops) full regression: **5675 passed, 1 skipped, 1 warning, 369 subtests passed in 653.15s (0:10:53)**, exit 0.

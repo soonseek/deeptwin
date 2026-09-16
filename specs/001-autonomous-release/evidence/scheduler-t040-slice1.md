@@ -90,3 +90,36 @@ d1212a154432d1c4ca4a014824a66fb2d4b1dbcd9b7406aef6313e4f650b59c0  app/tests/test
 - Focused: scheduler + Task 23 + checkpoint suites **121 passed, 17.00s**.
 - Final full regression is recorded below once run.
 - Final full regression on the committed tree (Task 23 post-fix + T040 slice 1; same tracing-disabled command): **5668 passed, 1 skipped (Linux SO_PEERCRED), 1 inherited warning, 369 subtests, 649.70s**, exit 0.
+
+## Slice 2 — bounded loops (2026-09-16)
+
+- The loop controller node (`bounded_loop`) runs its handler for a closed
+  facts mapping: keys must be among the graph's declared `fact_names`,
+  values scalars; the compiled termination expression (`eq`/`neq` over one
+  fact, exact type) decides between the exit control edge and the
+  loop-internal control edges, both dispatched by `Command` (no
+  unconditional edge leaves a controller). Every iteration is a NEW visit:
+  each region member's counter is its loop index and yields its own
+  execution identity and ledger execution record. Reaching the hard
+  iteration cap without termination fails the run as
+  `loop_cap:<loop_id>` — the LangGraph recursion limit is raised only as
+  an emergency cap above that product limit.
+- Tests (4, RED first on "unsupported node kind"): iteration as new visits
+  until termination (exact call/visit sequence, counters, distinct revise
+  execution IDs recorded in the ledger); hard cap fails loudly after
+  exactly `cap` controller visits with no exit; restart inside a loop
+  resumes at the failed iteration without re-running completed ones;
+  facts validated against the graph (string, undeclared fact, wrong value
+  type, `None` all fail the loop visit and activate nothing).
+- Graph suites (execution + checkpoints + contract): 128 passed. Ruff
+  lint/format clean on the module; diffcheck clean.
+
+```
+20d95caf034234d7edb98f58e0d893b611a9ad96adde35f03b653d18d0f80415  app/runtime/scheduler.py
+5054f03dd314b852e849aec8efb4e733f4f0259a85deeeb237dbcb38c678944a  app/tests/test_graph_execution.py
+```
+
+Remaining for T039/T040: retry within a visit (needs attempt reservation
+semantics), `human_gate`, durable recovery of sealed activations, budget
+settlement and semantic admission, worker dispatch.
+- Full regression with slice 2 (same tracing-disabled command): **5675 passed, 1 skipped, 1 warning, 369 subtests passed in 653.15s (0:10:53)**, exit 0.

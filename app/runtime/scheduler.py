@@ -18,11 +18,19 @@ cursor bytes, and this module never parses, exposes or streams them. The
 only public result is a bounded projection; handler exceptions become the
 fixed `node_failed` fact with the node ID and nothing else.
 
-Explicit limits of this slice: `human_gate` and `bounded_loop` nodes refuse
-at build time; `all_selected` joins rely on activated branches completing
-in the same superstep; sealed activations are reported from memory, not
-recovered from the journal; no attempt reservation, budget settlement or
-semantic result admission happens here.
+Bounded loops (slice 2): the loop controller's handler returns a closed
+facts mapping over the graph's declared fact names; the compiled
+termination expression decides exit versus another iteration, each
+iteration is a NEW visit with its own execution identity, and reaching
+the hard iteration cap unterminated fails the run as `loop_cap:<loop_id>`
+— the recursion limit is only an emergency cap above that product limit.
+
+Explicit limits of this slice: `human_gate` nodes refuse at build time;
+retries within a visit are not implemented (a failed visit fails the run
+and is resumed on restart); `all_selected` joins rely on activated
+branches completing in the same superstep; sealed activations are
+reported from memory, not recovered from the journal; no attempt
+reservation, budget settlement or semantic result admission happens here.
 """
 
 from __future__ import annotations
@@ -34,7 +42,7 @@ from typing import Annotated, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 
-from ..domain.refs import EntityRef
+from ..domain.refs import EntityRef, canonical_json
 from .checkpoints import NAMESPACE, CheckpointError, LedgerCheckpointSaver
 from .graph import HANDLER_KEYS, CompiledGraph
 from .ledger import ExecutionSpec, RuntimeLedger
@@ -50,8 +58,12 @@ __all__ = [
     "execution_identity",
 ]
 
-_SUPPORTED_KINDS = frozenset({"deterministic", "agent", "join", "router"})
+_SUPPORTED_KINDS = frozenset(
+    {"deterministic", "agent", "join", "router", "bounded_loop"}
+)
+_DISPATCHING_KINDS = frozenset({"router", "bounded_loop"})  # route by sealed Command
 _MAX_NODES = 256
+_SCALARS = (str, int, bool)
 
 
 class SchedulerError(ValueError):
@@ -64,6 +76,14 @@ class _NodeFailure(Exception):
     def __init__(self, node_id: str) -> None:
         super().__init__("node_failed")
         self.node_id = node_id
+
+
+class _LoopCap(Exception):
+    """Internal: a bounded loop reached its hard iteration cap unterminated."""
+
+    def __init__(self, loop_id: str) -> None:
+        super().__init__("loop_cap")
+        self.loop_id = loop_id
 
 
 def execution_identity(run_id: str, node_id: str, loop_index: int) -> str:
@@ -171,6 +191,8 @@ class GraphScheduler:
             final = self._graph.invoke(initial, config, durability="sync")
         except _NodeFailure as failure:
             raise SchedulerError(f"node_failed:{failure.node_id}") from None
+        except _LoopCap as cap:
+            raise SchedulerError(f"loop_cap:{cap.loop_id}") from None
         except SchedulerError:
             raise
         except CheckpointError:
@@ -225,6 +247,72 @@ def _router_branches(compiled: CompiledGraph, node_id: str) -> dict[str, str]:
     return branches
 
 
+@dataclass(frozen=True, slots=True)
+class _LoopPlan:
+    loop_id: str
+    cap: int
+    termination: dict
+    internal_targets: tuple[str, ...]
+    exit_target: str
+    fact_names: frozenset
+
+
+def _loop_plan(compiled: CompiledGraph, node_id: str) -> _LoopPlan:
+    graph = compiled.execution_graph
+    node = next(item for item in graph.nodes if item.node_id == node_id).as_dict()
+    loop_id = node["config"]["loop_id"]
+    region = next((r for r in compiled.loop_regions if r[0] == loop_id), None)
+    _require(
+        region is not None and node_id in region[1], "loop controller has no region"
+    )
+    # thawed plain dicts: the frozen edge/node views are not canonical inputs
+    termination = node["config"]["termination"]
+    internal, exit_target = [], None
+    for item in graph.edges:
+        edge = item.as_dict()
+        if edge["source_node_id"] != node_id or edge["kind"] != "control":
+            continue
+        condition = edge.get("condition")
+        if edge["loop_id"] == loop_id and condition is None:
+            internal.append(edge["target_node_id"])
+        elif condition is not None and canonical_json(condition) == canonical_json(
+            termination
+        ):
+            exit_target = edge["target_node_id"]
+    _require(bool(internal) and exit_target is not None, "loop edges incomplete")
+    return _LoopPlan(
+        loop_id=loop_id,
+        cap=region[2],
+        termination=dict(termination),
+        internal_targets=tuple(sorted(set(internal))),
+        exit_target=exit_target,
+        fact_names=frozenset(graph.fact_names),
+    )
+
+
+def _facts(value, plan: _LoopPlan) -> dict:
+    """Handler-returned facts: a closed mapping over the graph's declared facts."""
+
+    if type(value) is not dict or not value or not set(value) <= plan.fact_names:
+        raise ValueError("facts outside the graph")
+    for item in value.values():
+        if type(item) not in _SCALARS:
+            raise ValueError("fact values must be scalars")
+    return dict(value)
+
+
+def _terminated(plan: _LoopPlan, facts: dict) -> bool:
+    expression = plan.termination
+    if expression["fact"] not in facts:
+        raise ValueError("termination fact absent")
+    observed = facts[expression["fact"]]
+    expected = expression["value"]
+    if type(observed) is not type(expected):
+        raise ValueError("termination fact type mismatch")
+    equal = observed == expected
+    return equal if expression["op"] == "eq" else not equal
+
+
 def build_scheduler(
     compiled: CompiledGraph,
     *,
@@ -266,7 +354,11 @@ def build_scheduler(
     scheduler._run_id = run_id
     scheduler._handlers = dict(handlers)
     scheduler._activations = []
-    scheduler._recursion_limit = min(4 * len(compiled.nodes) + 8, 4096)
+    loop_steps = sum(
+        cap * (len(members) + 1) for _, members, cap in compiled.loop_regions
+    )
+    # an emergency cap in addition to the domain loop budgets (runtime.md §2)
+    scheduler._recursion_limit = min(4 * len(compiled.nodes) + 8 + 2 * loop_steps, 4096)
 
     try:
         saver = LedgerCheckpointSaver(
@@ -355,25 +447,57 @@ def build_scheduler(
 
         return node_fn
 
+    def loop_node(node_id: str, plan: _LoopPlan):
+        handler = handler_by_node[node_id]
+
+        def node_fn(state: dict):
+            _execution_id, loop_index, context = record_execution(node_id, state)
+            try:
+                facts = _facts(handler(context, _detached_view(state)), plan)
+                done = _terminated(plan, facts)
+            except Exception:  # noqa: BLE001 - handler/fact detail is private
+                raise _NodeFailure(node_id) from None
+            update = {"counters": {node_id: loop_index + 1}}
+            if done:
+                return Command(goto=plan.exit_target, update=update)
+            if loop_index + 1 >= plan.cap:
+                # the hard cap is a product limit: another iteration would
+                # exceed it, so the run fails loudly instead of looping on
+                raise _LoopCap(plan.loop_id)
+            return Command(goto=list(plan.internal_targets), update=update)
+
+        return node_fn
+
     builder = StateGraph(_State)
-    router_targets: dict[str, tuple[str, ...]] = {}
+    dispatch_targets: dict[str, tuple[str, ...]] = {}
     for node_id, kind in kinds.items():
         if kind == "router":
             branches = _router_branches(compiled, node_id)
-            router_targets[node_id] = tuple(sorted(set(branches.values())))
+            dispatch_targets[node_id] = tuple(sorted(set(branches.values())))
             builder.add_node(
                 node_id,
                 router_node(node_id, branches),
-                destinations=router_targets[node_id],
+                destinations=dispatch_targets[node_id],
+            )
+        elif kind == "bounded_loop":
+            plan = _loop_plan(compiled, node_id)
+            dispatch_targets[node_id] = tuple(
+                sorted({*plan.internal_targets, plan.exit_target})
+            )
+            builder.add_node(
+                node_id,
+                loop_node(node_id, plan),
+                destinations=dispatch_targets[node_id],
             )
         else:
             builder.add_node(node_id, producing_node(node_id))
-    has_successor = set(router_targets)
+    has_successor = set(dispatch_targets)
     for node_id, sources in predecessors.items():
         for source in sources:
             has_successor.add(source)
-            if kinds[source] != "router":
-                # routers dispatch through their sealed Command, never an edge
+            if kinds[source] not in _DISPATCHING_KINDS:
+                # routers and loop controllers dispatch through their sealed
+                # Command, never through an unconditional edge
                 builder.add_edge(source, node_id)
     for node_id in compiled.entry_node_ids:
         builder.add_edge(START, node_id)
