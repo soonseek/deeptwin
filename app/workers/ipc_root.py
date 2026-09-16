@@ -758,3 +758,188 @@ def acquire_generation(spec: PairRootSpec) -> GenerationLease:
         _close_fd(endpoint_fd)
         _close_fd(lock_fd)
         _close_fd(pair_fd)
+
+
+def _metadata_stat(info: os.stat_result) -> tuple:
+    return (
+        _identity(info),
+        info.st_nlink,
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ctime_ns,
+    )
+
+
+class MetadataGenerationLease:
+    """Shared rotation exclusion and current metadata; never boot-secret contents."""
+
+    __slots__ = (
+        "_closed",
+        "_endpoint_fd",
+        "_lock_fd",
+        "_lock_stat",
+        "_pair_fd",
+        "_secret_fd",
+        "_secret_stat",
+        "_spec",
+        "endpoint_identity",
+        "pair_identity",
+    )
+
+    def __init__(self):
+        raise TypeError("metadata lease construction requires a held generation lock")
+
+    def recheck_current(self) -> None:
+        if self._closed:
+            raise IpcRootIntegrityError()
+        current_fd = -1
+        try:
+            current_fd = _open_absolute_directory(
+                self._spec.pair_root, searchable_only=True
+            )
+            for descriptor in (current_fd, self._pair_fd):
+                if (
+                    _validate_directory(
+                        descriptor,
+                        uid=METADATA_UID,
+                        gid=self._spec.pair_gid,
+                        mode=PAIR_ROOT_MODE,
+                    )
+                    != self.pair_identity
+                ):
+                    raise IpcRootIntegrityError()
+            endpoint = os.stat(ENDPOINT_NAME, dir_fd=current_fd, follow_symlinks=False)
+            if (
+                _identity(endpoint) != self.endpoint_identity
+                or not stat.S_ISDIR(endpoint.st_mode)
+                or _validate_directory(
+                    self._endpoint_fd,
+                    uid=self._spec.responder_uid,
+                    gid=self._spec.pair_gid,
+                    mode=ENDPOINT_MODE,
+                )
+                != self.endpoint_identity
+            ):
+                raise IpcRootIntegrityError()
+            for name, descriptor, expected in (
+                (GENERATION_LOCK_NAME, self._lock_fd, self._lock_stat),
+                (BOOT_SECRET_NAME, self._secret_fd, self._secret_stat),
+            ):
+                named = os.stat(name, dir_fd=current_fd, follow_symlinks=False)
+                held = os.fstat(descriptor)
+                if (
+                    not stat.S_ISREG(named.st_mode)
+                    or _metadata_stat(named) != expected
+                    or _metadata_stat(held) != expected
+                ):
+                    raise IpcRootIntegrityError()
+            for name in ("worker.sock", LISTENER_NAME):
+                try:
+                    os.stat(name, dir_fd=self._endpoint_fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
+                raise IpcRootIntegrityError()
+        except OSError:
+            raise IpcRootIntegrityError() from None
+        finally:
+            _close_fd(current_fd)
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
+        for descriptor in (
+            self._secret_fd,
+            self._endpoint_fd,
+            self._lock_fd,
+            self._pair_fd,
+        ):
+            _close_fd(descriptor)
+
+    def __enter__(self) -> Self:
+        try:
+            self.recheck_current()
+        except IpcRootError:
+            self.close()
+            raise
+        return self
+
+    def __exit__(self, _kind, _value, _traceback) -> None:
+        self.close()
+
+    def __copy__(self):
+        raise TypeError("MetadataGenerationLease is not copyable")
+
+    def __deepcopy__(self, _memo):
+        raise TypeError("MetadataGenerationLease is not copyable")
+
+    def __reduce__(self):
+        raise TypeError("MetadataGenerationLease is not serializable")
+
+
+def acquire_generation_metadata(spec: PairRootSpec) -> MetadataGenerationLease:
+    """Retain actual generation metadata under a nonblocking shared lock."""
+    if type(spec) is not PairRootSpec:
+        raise IpcRootIntegrityError()
+    pair_fd = endpoint_fd = lock_fd = secret_fd = -1
+    lease = None
+    try:
+        pair_fd = _open_absolute_directory(spec.pair_root, searchable_only=True)
+        pair_identity, endpoint_identity = _validate_layout(
+            spec, pair_fd, secret_required=True
+        )
+        lock_fd = _open_regular_at(
+            pair_fd,
+            GENERATION_LOCK_NAME,
+            uid=METADATA_UID,
+            gid=spec.pair_gid,
+            mode=PAIR_METADATA_MODE,
+            writable=False,
+            exact_size=0,
+        )
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise IpcRootBusy() from None
+        secret_fd = _open_regular_at(
+            pair_fd,
+            BOOT_SECRET_NAME,
+            uid=METADATA_UID,
+            gid=spec.pair_gid,
+            mode=PAIR_METADATA_MODE,
+            writable=False,
+            exact_size=broker.AUTH_SECRET_BYTES,
+        )
+        endpoint_fd = os.open(
+            ENDPOINT_NAME, _directory_flags(searchable_only=True), dir_fd=pair_fd
+        )
+        lock_stat = _metadata_stat(os.fstat(lock_fd))
+        secret_stat = _metadata_stat(os.fstat(secret_fd))
+        lease = object.__new__(MetadataGenerationLease)
+        lease._spec = spec
+        lease.pair_identity, lease.endpoint_identity = pair_identity, endpoint_identity
+        lease._pair_fd, lease._endpoint_fd = pair_fd, endpoint_fd
+        lease._lock_fd, lease._secret_fd = lock_fd, secret_fd
+        lease._lock_stat = lock_stat
+        lease._secret_stat = secret_stat
+        lease._closed = False
+        pair_fd = endpoint_fd = lock_fd = secret_fd = -1
+        lease.recheck_current()
+        return lease
+    except (IpcRootError, OSError) as error:
+        if lease is not None:
+            lease.close()
+        if isinstance(error, IpcRootError):
+            raise
+        raise IpcRootIntegrityError() from None
+    finally:
+        for descriptor in (secret_fd, endpoint_fd, lock_fd, pair_fd):
+            _close_fd(descriptor)
