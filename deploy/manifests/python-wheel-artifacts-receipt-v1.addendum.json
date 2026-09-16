@@ -1,0 +1,179 @@
+{
+  "schema_version": "deeptwin-control-receipt-dependency-candidate-v1",
+  "status": "candidate_not_release_qualified",
+  "service": "control-plane",
+  "consumers": [
+    "control-plane"
+  ],
+  "runtime": {
+    "implementation": "CPython",
+    "python_version": "3.12.14",
+    "abi": "cp312",
+    "glibc_floor": "2.28"
+  },
+  "target_platforms": [
+    {
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    {
+      "os": "linux",
+      "architecture": "arm64"
+    }
+  ],
+  "base_inputs": [
+    {
+      "path": "deploy/locks/requirements-control-plane-linux.lock",
+      "sha256": "66ced7fca949d303db10df2802f7b3a8b533d1dc7175d1edf30fe7f2a36fcb47",
+      "size_bytes": 2077
+    },
+    {
+      "path": "deploy/locks/service-roots.json",
+      "sha256": "5feea78f28397217f2afdc1f51b41a3a3be916b4a0f3dd59f9b078f349e9150f",
+      "size_bytes": 3714
+    },
+    {
+      "path": "deploy/manifests/build-input-lock.json",
+      "sha256": "212eb478026a2e38b40d882c2525fcee6a3945ed258dbb0d89b615489e62e0bd",
+      "size_bytes": 27290
+    },
+    {
+      "path": "deploy/manifests/python-wheel-artifacts.json",
+      "sha256": "8d14cbc3b0acd9bc35773b3658c620409ef5e2ad3f9101b35395a740d4a85029",
+      "size_bytes": 201104
+    }
+  ],
+  "added_direct_roots": [
+    "pynacl==1.6.2"
+  ],
+  "service_lock": {
+    "path": "deploy/locks/requirements-control-plane-receipt-v1-linux.lock",
+    "sha256": "5041d7ba10f3e4beb360733e09016ece75e4db8bbf14e633fd28acef952c24d9",
+    "size_bytes": 2271,
+    "package_count": 18
+  },
+  "artifacts": [
+    {
+      "name": "pynacl",
+      "version": "1.6.2",
+      "filename": "pynacl-1.6.2-cp38-abi3-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "8a66d6fb6ae7661c58995f9c6435bda2b1e68b54b598a6a10247bfcdadac996c",
+      "size_bytes": 1437614,
+      "requires_python": ">=3.8",
+      "license": {
+        "license_expression": null,
+        "license_field_evidence": {
+          "utf8_size_bytes": 10,
+          "sha256": "2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608",
+          "value": "Apache-2.0"
+        },
+        "license_classifiers": [
+          "License :: OSI Approved :: Apache Software License"
+        ],
+        "effective_declaration": {
+          "source": "License",
+          "metadata_ref": "license_field_evidence",
+          "utf8_size_bytes": 10,
+          "sha256": "2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "embedded_resources": [
+          {
+            "path": "pynacl-1.6.2.dist-info/licenses/LICENSE",
+            "sha256": "d3174ad63e721d4c9dccb8ad4320848992d314369bc46319720b5802c9153fe9",
+            "size_bytes": 9694
+          },
+          {
+            "path": "pynacl-1.6.2.dist-info/licenses/licenses/LICENSE.libsodium.txt",
+            "sha256": "508a76d186356c0dd807a670ef510964f8724557024796a2c426c6c0e19ab683",
+            "size_bytes": 823
+          }
+        ],
+        "t084_embedded_license_follow_up_required": false
+      },
+      "source": {
+        "type": "pypi",
+        "project": "pynacl",
+        "release_metadata_url": "https://pypi.org/pypi/pynacl/1.6.2/json",
+        "download_url": "https://files.pythonhosted.org/packages/3e/d0/f301f83ac8dbe53442c5a43f6a39016f94f754d7a9815a875b65e218a307/pynacl-1.6.2-cp38-abi3-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl"
+      },
+      "wheel": {
+        "tags": [
+          "cp38-abi3-manylinux_2_26_x86_64",
+          "cp38-abi3-manylinux_2_28_x86_64"
+        ],
+        "platform": {
+          "os": "linux",
+          "architecture": "amd64"
+        }
+      },
+      "usage": [
+        {
+          "service": "control-plane",
+          "os": "linux",
+          "architecture": "amd64"
+        }
+      ]
+    },
+    {
+      "name": "pynacl",
+      "version": "1.6.2",
+      "filename": "pynacl-1.6.2-cp38-abi3-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+      "sha256": "46065496ab748469cdd999246d17e301b2c24ae2fdf739132e580a0e94c94a87",
+      "size_bytes": 835085,
+      "requires_python": ">=3.8",
+      "license": {
+        "license_expression": null,
+        "license_field_evidence": {
+          "utf8_size_bytes": 10,
+          "sha256": "2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608",
+          "value": "Apache-2.0"
+        },
+        "license_classifiers": [
+          "License :: OSI Approved :: Apache Software License"
+        ],
+        "effective_declaration": {
+          "source": "License",
+          "metadata_ref": "license_field_evidence",
+          "utf8_size_bytes": 10,
+          "sha256": "2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "embedded_resources": [
+          {
+            "path": "pynacl-1.6.2.dist-info/licenses/LICENSE",
+            "sha256": "d3174ad63e721d4c9dccb8ad4320848992d314369bc46319720b5802c9153fe9",
+            "size_bytes": 9694
+          },
+          {
+            "path": "pynacl-1.6.2.dist-info/licenses/licenses/LICENSE.libsodium.txt",
+            "sha256": "508a76d186356c0dd807a670ef510964f8724557024796a2c426c6c0e19ab683",
+            "size_bytes": 823
+          }
+        ],
+        "t084_embedded_license_follow_up_required": false
+      },
+      "source": {
+        "type": "pypi",
+        "project": "pynacl",
+        "release_metadata_url": "https://pypi.org/pypi/pynacl/1.6.2/json",
+        "download_url": "https://files.pythonhosted.org/packages/68/f7/322f2f9915c4ef27d140101dd0ed26b479f7e6f5f183590fd32dfc48c4d3/pynacl-1.6.2-cp38-abi3-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl"
+      },
+      "wheel": {
+        "tags": [
+          "cp38-abi3-manylinux_2_26_aarch64",
+          "cp38-abi3-manylinux_2_28_aarch64"
+        ],
+        "platform": {
+          "os": "linux",
+          "architecture": "arm64"
+        }
+      },
+      "usage": [
+        {
+          "service": "control-plane",
+          "os": "linux",
+          "architecture": "arm64"
+        }
+      ]
+    }
+  ]
+}
