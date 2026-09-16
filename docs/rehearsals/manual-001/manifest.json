@@ -1,0 +1,43 @@
+{
+  "id": "MANUAL-001",
+  "phase": "closed_before_comparison_unsuitable_baseline",
+  "date": "2026-09-06",
+  "mode": "manual_procedure_rehearsal_not_deeptwin_runtime",
+  "baseline_generation": {
+    "agent": "/root/rehearsal_baseline_writer",
+    "fork_turns": "none",
+    "attempts": 1,
+    "model_setting": "inherited_default",
+    "resolved_model_id": null,
+    "token_usage": null,
+    "input": "baseline-input.md",
+    "output": "baseline-output.md",
+    "sha256_input": "afe369e2b63bf6806fa97ced6b21f7dd57e087200562788c58c25eb8f45c3ed8",
+    "sha256_output": "fee6f2449bbc6a6270081dfae077c47ae2bf85968244e8230db4eba9c316a866",
+    "prior_conversation_passed_to_writer": false,
+    "user_alternative_passed_to_writer": false,
+    "observed_tool_calls_by_writer": 0
+  },
+  "lens_preparation": {
+    "file": "lens-rules-v0.1.md",
+    "sha256": "dff98de2fc29f42168a59f359461fa4267369b298404d0593ae43b6916cbde2e",
+    "status": "manual_rules_draft_not_validated_or_applied",
+    "source": "DeepTwin_OpenSource_Reference_Paper_KO.pdf, 24-28"
+  },
+  "user_alternative": null,
+  "discrepancy_analysis": null,
+  "lens_application": null,
+  "reexecution": null,
+  "effect_evaluation": null,
+  "operating_environment_promotion": null,
+  "closure": {
+    "reason": "user_reported_baseline_unsuitable_for_providing_an_alternative_and_rejected_this_validation_approach_at_this_stage",
+    "record": "README.md",
+    "user_comment_evidence_role": "procedure_feedback_not_alternative_performance_or_learning_evidence",
+    "validation_conclusion": "not_established_no_comparison_performed",
+    "intent_understanding": "user_acknowledged_value_of_design_dialogue_only",
+    "full_design_approved": false,
+    "implementation_authorized": false,
+    "retry_planned": false
+  }
+}
