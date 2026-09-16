@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:deeptwin:schemas:v1:extensions:candidate-anchor-v1",
+  "$comment": "Structural only; runtime verifies byte/digest/ref/order/identity and authority relationships. Metadata grants no execution authority.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "extension-candidate-anchor-v1"
+    },
+    "candidate_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 36,
+      "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "manifest_blob_ref": {
+      "type": "object",
+      "properties": {
+        "vault_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 36,
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "purpose": {
+          "type": "string",
+          "const": "operational"
+        },
+        "sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        }
+      },
+      "required": [
+        "vault_id",
+        "purpose",
+        "sha256",
+        "size"
+      ],
+      "additionalProperties": false
+    },
+    "service_descriptor_blob_ref": {
+      "type": "object",
+      "properties": {
+        "vault_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 36,
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "purpose": {
+          "type": "string",
+          "const": "operational"
+        },
+        "sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        }
+      },
+      "required": [
+        "vault_id",
+        "purpose",
+        "sha256",
+        "size"
+      ],
+      "additionalProperties": false
+    },
+    "registration_blob_ref": {
+      "type": "object",
+      "properties": {
+        "vault_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 36,
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "purpose": {
+          "type": "string",
+          "const": "operational"
+        },
+        "sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        }
+      },
+      "required": [
+        "vault_id",
+        "purpose",
+        "sha256",
+        "size"
+      ],
+      "additionalProperties": false
+    },
+    "support_documents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "document_kind": {
+            "type": "string",
+            "enum": [
+              "license",
+              "provenance",
+              "sbom",
+              "network_declaration",
+              "resource_declaration",
+              "isolation_declaration"
+            ]
+          },
+          "blob_ref": {
+            "type": "object",
+            "properties": {
+              "vault_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 36,
+                "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                "not": {
+                  "const": "00000000-0000-0000-0000-000000000000"
+                }
+              },
+              "purpose": {
+                "type": "string",
+                "const": "operational"
+              },
+              "sha256": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1048576
+              }
+            },
+            "required": [
+              "vault_id",
+              "purpose",
+              "sha256",
+              "size"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "document_kind",
+          "blob_ref"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "manifest_blob_ref",
+    "service_descriptor_blob_ref",
+    "registration_blob_ref",
+    "support_documents"
+  ],
+  "additionalProperties": false
+}

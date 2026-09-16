@@ -1,0 +1,607 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:deeptwin:schemas:v1:extensions:service-descriptor-v1",
+  "$comment": "Structural only; runtime verifies byte/digest/ref/order/identity and authority relationships. Metadata grants no execution authority.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "extension-service-descriptor-v1"
+    },
+    "extension_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])"
+    },
+    "extension_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^(?:(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*))(?![\\s\\S])"
+    },
+    "port_contract_version": {
+      "type": "string",
+      "enum": [
+        "artifact-codec-port-v1",
+        "credential-vault-port-v1",
+        "evaluator-definition-port-v1",
+        "evaluator-runtime-port-v1",
+        "export-sink-port-v1",
+        "lens-definition-port-v1",
+        "managed-provider-runner-port-v1",
+        "model-runtime-port-v1",
+        "provider-port-v1",
+        "storage-port-v1",
+        "tool-port-v1"
+      ]
+    },
+    "service_identity": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])"
+    },
+    "image_repository": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "index": {
+      "type": "object",
+      "properties": {
+        "media_type": {
+          "type": "string",
+          "enum": [
+            "application/vnd.oci.image.index.v1+json"
+          ]
+        },
+        "digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 71,
+          "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1099511627776
+        }
+      },
+      "required": [
+        "media_type",
+        "digest",
+        "size_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "platforms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": [
+              "linux/amd64",
+              "linux/arm64"
+            ]
+          },
+          "manifest": {
+            "type": "object",
+            "properties": {
+              "media_type": {
+                "type": "string",
+                "enum": [
+                  "application/vnd.oci.image.manifest.v1+json"
+                ]
+              },
+              "digest": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 71,
+                "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])"
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1099511627776
+              }
+            },
+            "required": [
+              "media_type",
+              "digest",
+              "size_bytes"
+            ],
+            "additionalProperties": false
+          },
+          "config": {
+            "type": "object",
+            "properties": {
+              "media_type": {
+                "type": "string",
+                "enum": [
+                  "application/vnd.oci.image.config.v1+json"
+                ]
+              },
+              "digest": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 71,
+                "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])"
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1099511627776
+              }
+            },
+            "required": [
+              "media_type",
+              "digest",
+              "size_bytes"
+            ],
+            "additionalProperties": false
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "position": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 128
+                },
+                "media_type": {
+                  "type": "string",
+                  "enum": [
+                    "application/vnd.oci.image.layer.v1.tar",
+                    "application/vnd.oci.image.layer.v1.tar+gzip",
+                    "application/vnd.oci.image.layer.v1.tar+zstd"
+                  ]
+                },
+                "digest": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 71,
+                  "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])"
+                },
+                "size_bytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1099511627776
+                }
+              },
+              "required": [
+                "position",
+                "media_type",
+                "digest",
+                "size_bytes"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 128,
+            "uniqueItems": false
+          }
+        },
+        "required": [
+          "platform",
+          "manifest",
+          "config",
+          "layers"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true
+    },
+    "command": {
+      "type": "object",
+      "properties": {
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": false
+        },
+        "protocol_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "argv",
+        "protocol_id"
+      ],
+      "additionalProperties": false
+    },
+    "uid": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "gid": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "network_policy_ref": {
+      "type": "object",
+      "properties": {
+        "document_kind": {
+          "type": "string",
+          "enum": [
+            "network_declaration"
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        }
+      },
+      "required": [
+        "document_kind",
+        "sha256",
+        "size_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "resource_profile_ref": {
+      "type": "object",
+      "properties": {
+        "document_kind": {
+          "type": "string",
+          "enum": [
+            "resource_declaration"
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        }
+      },
+      "required": [
+        "document_kind",
+        "sha256",
+        "size_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "isolation_profile_ref": {
+      "type": "object",
+      "properties": {
+        "document_kind": {
+          "type": "string",
+          "enum": [
+            "isolation_declaration"
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        }
+      },
+      "required": [
+        "document_kind",
+        "sha256",
+        "size_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "secret_needs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])"
+      },
+      "minItems": 0,
+      "maxItems": 16,
+      "uniqueItems": true
+    },
+    "broker_endpoint": {
+      "type": "object",
+      "properties": {
+        "channel_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])"
+        },
+        "requester_service": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])"
+        },
+        "responder_service": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])"
+        },
+        "protocol_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])"
+        },
+        "requester_uid": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "requester_gid": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "pair_gid": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "socket_mount_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])"
+        },
+        "socket_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "channel_id",
+        "requester_service",
+        "responder_service",
+        "protocol_id",
+        "requester_uid",
+        "requester_gid",
+        "pair_gid",
+        "socket_mount_id",
+        "socket_name"
+      ],
+      "additionalProperties": false
+    },
+    "socket_mounts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "mount_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])"
+          },
+          "volume_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])"
+          },
+          "container_path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "read_only": {
+            "type": "boolean",
+            "const": false
+          },
+          "purpose": {
+            "type": "string",
+            "const": "broker_pair"
+          }
+        },
+        "required": [
+          "mount_id",
+          "volume_name",
+          "container_path",
+          "read_only",
+          "purpose"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 4,
+      "uniqueItems": true
+    },
+    "named_volume_mounts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "mount_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])"
+          },
+          "volume_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])"
+          },
+          "container_path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "purpose": {
+            "type": "string",
+            "const": "extension_state"
+          }
+        },
+        "required": [
+          "mount_id",
+          "volume_name",
+          "container_path",
+          "read_only",
+          "purpose"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "maxItems": 8,
+      "uniqueItems": true
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "sbom_ref": {
+          "type": "object",
+          "properties": {
+            "document_kind": {
+              "type": "string",
+              "enum": [
+                "sbom"
+              ]
+            },
+            "sha256": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65536
+            }
+          },
+          "required": [
+            "document_kind",
+            "sha256",
+            "size_bytes"
+          ],
+          "additionalProperties": false
+        },
+        "provenance_ref": {
+          "type": "object",
+          "properties": {
+            "document_kind": {
+              "type": "string",
+              "enum": [
+                "provenance"
+              ]
+            },
+            "sha256": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65536
+            }
+          },
+          "required": [
+            "document_kind",
+            "sha256",
+            "size_bytes"
+          ],
+          "additionalProperties": false
+        },
+        "license_ref": {
+          "type": "object",
+          "properties": {
+            "document_kind": {
+              "type": "string",
+              "enum": [
+                "license"
+              ]
+            },
+            "sha256": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65536
+            }
+          },
+          "required": [
+            "document_kind",
+            "sha256",
+            "size_bytes"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "sbom_ref",
+        "provenance_ref",
+        "license_ref"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "extension_id",
+    "extension_version",
+    "port_contract_version",
+    "service_identity",
+    "image_repository",
+    "index",
+    "platforms",
+    "command",
+    "uid",
+    "gid",
+    "network_policy_ref",
+    "resource_profile_ref",
+    "isolation_profile_ref",
+    "secret_needs",
+    "broker_endpoint",
+    "socket_mounts",
+    "named_volume_mounts",
+    "evidence"
+  ],
+  "additionalProperties": false
+}

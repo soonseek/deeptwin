@@ -1,0 +1,748 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:deeptwin:schemas:v1:extensions:manifest-v2",
+  "$comment": "Structural only; runtime verifies byte/digest/ref/order/identity and authority relationships. Metadata grants no execution authority.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "extension-manifest-v2"
+    },
+    "extension_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])"
+    },
+    "extension_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^(?:(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*))(?![\\s\\S])"
+    },
+    "extension_kind": {
+      "type": "string",
+      "enum": [
+        "artifact_codec",
+        "credential_vault",
+        "evaluator",
+        "export_sink",
+        "model_runtime",
+        "provider",
+        "storage",
+        "tool"
+      ]
+    },
+    "port_contract_version": {
+      "type": "string",
+      "enum": [
+        "artifact-codec-port-v1",
+        "credential-vault-port-v1",
+        "evaluator-definition-port-v1",
+        "evaluator-runtime-port-v1",
+        "export-sink-port-v1",
+        "lens-definition-port-v1",
+        "managed-provider-runner-port-v1",
+        "model-runtime-port-v1",
+        "provider-port-v1",
+        "storage-port-v1",
+        "tool-port-v1"
+      ]
+    },
+    "artifact": {
+      "type": "object",
+      "properties": {
+        "artifact_form": {
+          "type": "string",
+          "enum": [
+            "deployment_pinned_oci_service",
+            "oci_extension_service",
+            "release_pinned_oci_service"
+          ]
+        },
+        "service_descriptor_ref": {
+          "type": "object",
+          "properties": {
+            "document_kind": {
+              "type": "string",
+              "enum": [
+                "service_descriptor"
+              ]
+            },
+            "sha256": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 262144
+            }
+          },
+          "required": [
+            "document_kind",
+            "sha256",
+            "size_bytes"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "artifact_form",
+        "service_descriptor_ref"
+      ],
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "third_party",
+            "built_in",
+            "operator_deployment"
+          ]
+        },
+        "locator": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "provenance_ref": {
+          "type": "object",
+          "properties": {
+            "document_kind": {
+              "type": "string",
+              "enum": [
+                "provenance"
+              ]
+            },
+            "sha256": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65536
+            }
+          },
+          "required": [
+            "document_kind",
+            "sha256",
+            "size_bytes"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "kind",
+        "locator",
+        "provenance_ref"
+      ],
+      "additionalProperties": false
+    },
+    "license": {
+      "type": "object",
+      "properties": {
+        "expression": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "text_ref": {
+          "type": "object",
+          "properties": {
+            "document_kind": {
+              "type": "string",
+              "enum": [
+                "license"
+              ]
+            },
+            "sha256": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65536
+            }
+          },
+          "required": [
+            "document_kind",
+            "sha256",
+            "size_bytes"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "expression",
+        "text_ref"
+      ],
+      "additionalProperties": false
+    },
+    "compatibility": {
+      "type": "object",
+      "properties": {
+        "framework_min": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^(?:(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*))(?![\\s\\S])"
+        },
+        "framework_max": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^(?:(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*))(?![\\s\\S])"
+        },
+        "extension_api_min": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^(?:(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*))(?![\\s\\S])"
+        },
+        "extension_api_max": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^(?:(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*))(?![\\s\\S])"
+        },
+        "schema_versions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "domain-v1"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "framework_min",
+        "framework_max",
+        "extension_api_min",
+        "extension_api_max",
+        "schema_versions"
+      ],
+      "additionalProperties": false
+    },
+    "refinements": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RefinementNode"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "object"
+                },
+                "additionalProperties": {
+                  "type": "boolean",
+                  "const": false
+                }
+              },
+              "required": [
+                "type",
+                "additionalProperties"
+              ]
+            }
+          ],
+          "$comment": "Runtime validate_refinement_schema also validates local refs, type/bound relationships and Draft semantics."
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "abstain",
+                  "apply_decision",
+                  "cancel",
+                  "capabilities",
+                  "catalog",
+                  "compose",
+                  "decode_projection",
+                  "describe_rubric",
+                  "describe_tools",
+                  "device_auth_cancel",
+                  "device_auth_start",
+                  "device_auth_status",
+                  "encode",
+                  "erase",
+                  "evaluate",
+                  "health",
+                  "invoke_tool",
+                  "migrate_plan",
+                  "model_step",
+                  "preflight",
+                  "prepare",
+                  "probe",
+                  "read",
+                  "render_preview",
+                  "resolve_for_gateway",
+                  "retire",
+                  "run_cancel",
+                  "run_start",
+                  "run_status",
+                  "status",
+                  "store",
+                  "transmit",
+                  "validate_definition",
+                  "write_cas"
+                ]
+              },
+              "request": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/RefinementNode"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "object"
+                      },
+                      "additionalProperties": {
+                        "type": "boolean",
+                        "const": false
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "additionalProperties"
+                    ]
+                  }
+                ],
+                "$comment": "Runtime validate_refinement_schema also validates local refs, type/bound relationships and Draft semantics."
+              },
+              "result": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/RefinementNode"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "object"
+                      },
+                      "additionalProperties": {
+                        "type": "boolean",
+                        "const": false
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "additionalProperties"
+                    ]
+                  }
+                ],
+                "$comment": "Runtime validate_refinement_schema also validates local refs, type/bound relationships and Draft semantics."
+              },
+              "extension_error_codes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])"
+                },
+                "minItems": 0,
+                "maxItems": 64,
+                "uniqueItems": true
+              }
+            },
+            "required": [
+              "operation",
+              "request",
+              "result",
+              "extension_error_codes"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 52,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "config",
+        "operations"
+      ],
+      "additionalProperties": false
+    },
+    "requirements": {
+      "type": "object",
+      "properties": {
+        "grant_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 64,
+          "uniqueItems": true
+        },
+        "network_policy_ref": {
+          "type": "object",
+          "properties": {
+            "document_kind": {
+              "type": "string",
+              "enum": [
+                "network_declaration"
+              ]
+            },
+            "sha256": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65536
+            }
+          },
+          "required": [
+            "document_kind",
+            "sha256",
+            "size_bytes"
+          ],
+          "additionalProperties": false
+        },
+        "resource_profile_ref": {
+          "type": "object",
+          "properties": {
+            "document_kind": {
+              "type": "string",
+              "enum": [
+                "resource_declaration"
+              ]
+            },
+            "sha256": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65536
+            }
+          },
+          "required": [
+            "document_kind",
+            "sha256",
+            "size_bytes"
+          ],
+          "additionalProperties": false
+        },
+        "isolation_profile_ref": {
+          "type": "object",
+          "properties": {
+            "document_kind": {
+              "type": "string",
+              "enum": [
+                "isolation_declaration"
+              ]
+            },
+            "sha256": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65536
+            }
+          },
+          "required": [
+            "document_kind",
+            "sha256",
+            "size_bytes"
+          ],
+          "additionalProperties": false
+        },
+        "filesystem_needs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "owned_scratch",
+              "declared_named_volumes"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 2,
+          "uniqueItems": true
+        },
+        "secret_needs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 16,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "grant_ids",
+        "network_policy_ref",
+        "resource_profile_ref",
+        "isolation_profile_ref",
+        "filesystem_needs",
+        "secret_needs"
+      ],
+      "additionalProperties": false
+    },
+    "migration_policy": {
+      "type": "string",
+      "enum": [
+        "none",
+        "compatible",
+        "required"
+      ]
+    },
+    "uninstall_policy": {
+      "type": "string",
+      "enum": [
+        "retain_records",
+        "block_if_bound"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "extension_id",
+    "extension_version",
+    "extension_kind",
+    "port_contract_version",
+    "artifact",
+    "source",
+    "license",
+    "compatibility",
+    "refinements",
+    "requirements",
+    "migration_policy",
+    "uninstall_policy"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "RefinementNode": {
+      "type": "object",
+      "properties": {
+        "$schema": {
+          "type": "string",
+          "const": "https://json-schema.org/draft/2020-12/schema"
+        },
+        "$ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^(?:#[^\\x00-\\x1f\\x7f]*)(?![\\s\\S])"
+        },
+        "$defs": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": {
+            "$ref": "#/$defs/RefinementNode"
+          }
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "object",
+            "array",
+            "string",
+            "integer",
+            "boolean",
+            "null"
+          ]
+        },
+        "additionalProperties": {
+          "type": "boolean",
+          "const": false
+        },
+        "properties": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": {
+            "$ref": "#/$defs/RefinementNode"
+          }
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "minItems": 0,
+          "maxItems": 64,
+          "uniqueItems": true
+        },
+        "items": {
+          "$ref": "#/$defs/RefinementNode"
+        },
+        "uniqueItems": {
+          "type": "boolean"
+        },
+        "const": {},
+        "enum": {
+          "type": "array",
+          "items": {},
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "$comment": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "pattern": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "format": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "minLength": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "minItems": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "maxItems": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "minProperties": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "maxProperties": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "minimum": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "maximum": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "exclusiveMinimum": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "exclusiveMaximum": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "multipleOf": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "allOf": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RefinementNode"
+          },
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": false
+        },
+        "anyOf": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RefinementNode"
+          },
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": false
+        },
+        "oneOf": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RefinementNode"
+          },
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": false
+        },
+        "not": {
+          "$ref": "#/$defs/RefinementNode"
+        },
+        "if": {
+          "$ref": "#/$defs/RefinementNode"
+        },
+        "then": {
+          "$ref": "#/$defs/RefinementNode"
+        },
+        "else": {
+          "$ref": "#/$defs/RefinementNode"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

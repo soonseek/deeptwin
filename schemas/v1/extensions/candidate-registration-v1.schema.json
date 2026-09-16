@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:deeptwin:schemas:v1:extensions:candidate-registration-v1",
+  "$comment": "Structural only; runtime verifies byte/digest/ref/order/identity and authority relationships. Metadata grants no execution authority.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "extension-candidate-registration-v1"
+    },
+    "candidate_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 36,
+      "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "extension_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])"
+    },
+    "manifest_digest": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+    },
+    "service_descriptor_digest": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+    },
+    "support_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "document_kind": {
+            "type": "string",
+            "enum": [
+              "service_descriptor",
+              "license",
+              "provenance",
+              "sbom",
+              "network_declaration",
+              "resource_declaration",
+              "isolation_declaration"
+            ]
+          },
+          "sha256": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65536
+          }
+        },
+        "required": [
+          "document_kind",
+          "sha256",
+          "size_bytes"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true
+    },
+    "registered_by": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "actor"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 36,
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "version",
+        "sha256"
+      ],
+      "additionalProperties": false
+    },
+    "registered_at": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 24,
+      "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])"
+    },
+    "source_class": {
+      "type": "string",
+      "const": "owner_proposal"
+    },
+    "command_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 36,
+      "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "extension_id",
+    "manifest_digest",
+    "service_descriptor_digest",
+    "support_refs",
+    "registered_by",
+    "registered_at",
+    "source_class",
+    "command_id"
+  ],
+  "additionalProperties": false
+}

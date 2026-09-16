@@ -1,5 +1,12 @@
 # Extension semantic port schema contract
 
+The bounded executable metadata producer/consumer is separately specified in
+[extension-candidates.md](extension-candidates.md): manifest-v2, acyclic service-descriptor-v1,
+actual owner-cookie registration and durable unqualified candidate readback. It reuses this core
+port catalog/refinement language and does not change historical v1 manifests, semantic port
+schema bytes or qualification evidence. Candidate schemas have their own generator and storage
+contract. Registration creates no channel, grant, installation, binding or dispatch authority.
+
 2026-09-08 · `extension-ports-v1` · Normative design contract; implementation and qualification are
 owned by T087 and remain open.
 
@@ -43,7 +50,9 @@ from one port or shape cannot validate another.
 ### 2.0 Exact type vocabulary and expansion rule
 
 The following aliases are normative JSON Schema constraints, not prose hints. `identifier` is a
-UTF-8 string matching `^[a-z][a-z0-9._:-]{0,127}$`; `short-text` is a 1–512 character NFC string
+UTF-8 string matching `^[a-z][a-z0-9._:-]{0,127}$`; `effort-value` is a JSON UTF-8 string of 1–80
+characters preserved byte-for-byte, with no trimming, case folding, Unicode normalization or
+identifier-only restriction; `short-text` is a 1–512 character NFC string
 matching `^[^\u0000-\u001f\u007f-\u009f]{1,512}$`; `version-text` uses the same pattern with
 `maxLength=128`. `media-type` is a deliberately strict lowercase, parameter-free subset matching
 `^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$`. `https-uri` has
@@ -220,9 +229,9 @@ identifier is `unsupported_capability`, not an implicit capability.
 
 | Port | Exact closed `port_config` | Exact operation: `input` → successful `output` | Closed port-error enum |
 | --- | --- | --- | --- |
-| `provider-port-v1` | `{provider_id:identifier,auth_mode:api,api_origin:https-uri,egress_policy_ref:ref,catalog_ttl_seconds:positive-int<=86400,supported_modalities:sorted unique identifier[],supported_input_media_types:sorted unique media-type[]}` | `capabilities`: `{}` → `{modalities:sorted unique identifier[],tool_calling:bool,usage_reporting:bool,cancellation:bool}`; `catalog`: `{catalog_epoch?:ref}` → `{catalog_ref:ref,complete:bool,models:{model_id:identifier,display_name:short-text,modalities:sorted unique identifier[],effort_values:sorted unique identifier[],capability_evidence_ref:ref}[]}`; `model_step`: `{frozen_turn_ref:ref,model_id:identifier,effort:identifier,requested_modalities:sorted unique identifier[],tool_definition_refs:sorted unique ref[],response_schema_ref?:ref}` → `{provider_id:identifier,model_id:identifier,content_block_refs:ref[],tool_proposal_refs:ref[],usage_report_ref?:ref,provider_response_ref:ref}`; `status`: `StatusOperation`; `cancel`: `CancelOperation` | `auth_failed\|catalog_incomplete\|model_unavailable\|rate_limited\|billing_blocked\|provider_protocol_error` |
-| `managed-provider-runner-port-v1` | `{provider_id:identifier,runner_profile_ref:ref,binary_digest:digest,tool_bridge_profile_ref:ref,auth_volume_profile_ref:ref,supported_event_types:sorted unique identifier[],supported_input_media_types:sorted unique media-type[]}` | `preflight`: `{requested_model_id?:identifier,requested_effort?:identifier}` → `{observed_binary_digest:digest,runner_version:version-text,auth_state:disconnected\|pending\|authenticated\|expired\|failed,model_acceptance:accepted\|unsupported\|unknown,capability_evidence_ref:ref}`; `device_auth_start`: `{login_intent_ref:ref}` → `{login_operation_ref:ref,verification_url:https-uri,user_code:short-text,expires_at:time}`; `device_auth_status`: `{login_operation_ref:ref}` → `{state:pending\|completed\|cancelled\|expired\|failed}`; `device_auth_cancel`: `{login_operation_ref:ref}` → `{cancel_state:accepted\|already_terminal\|not_cancellable,observed_at:time}`; `run_start`: `{frozen_run_projection_ref:ref,model_id:identifier,effort:identifier,tool_definition_refs:sorted unique ref[]}` → `{runner_run_ref:ref,event_cursor:ref}`; `run_status`: `{runner_run_ref:ref,event_cursor?:ref}` → `{state:pending\|running\|succeeded\|failed\|cancelled\|unknown,normalized_event_refs:ref[],usage_report_ref?:ref}`; `run_cancel`: `{runner_run_ref:ref,reason_class:user_requested\|deadline\|budget\|superseded\|shutdown\|policy_revoked}` → `{cancel_state:accepted\|already_terminal\|not_cancellable,observed_at:time}` | `auth_required\|device_flow_expired\|runner_version_mismatch\|tool_bridge_failed\|runner_protocol_error` |
-| `model-runtime-port-v1` | `{runtime_profile_ref:ref,model_catalog_ref:ref,supported_modalities:sorted unique identifier[],supported_efforts:sorted unique identifier[],supported_input_media_types:sorted unique media-type[]}` | `capabilities`: `{}` → `{model_ids:sorted unique identifier[],modalities:sorted unique identifier[],effort_values:sorted unique identifier[],tool_calling:bool}`; `model_step`: `{frozen_turn_ref:ref,model_id:identifier,effort:identifier,requested_modalities:sorted unique identifier[],tool_definition_refs:sorted unique ref[],response_schema_ref?:ref}` → `{runtime_profile_ref:ref,model_id:identifier,content_block_refs:ref[],tool_proposal_refs:ref[],usage_report_ref?:ref,runtime_response_ref:ref}`; `status`: `StatusOperation`; `cancel`: `CancelOperation` | `model_not_loaded\|model_incompatible\|inference_failed\|runtime_protocol_error` |
+| `provider-port-v1` | `{provider_id:identifier,auth_mode:api,api_origin:https-uri,egress_policy_ref:ref,catalog_ttl_seconds:positive-int<=86400,supported_modalities:sorted unique identifier[],supported_input_media_types:sorted unique media-type[]}` | `capabilities`: `{}` → `{modalities:sorted unique identifier[],tool_calling:bool,usage_reporting:bool,cancellation:bool}`; `catalog`: `{catalog_epoch?:ref}` → `{catalog_ref:ref,complete:bool,models:{model_id:identifier,display_name:short-text,modalities:sorted unique identifier[],effort_values:sorted unique effort-value[],capability_evidence_ref:ref}[]}`; `model_step`: `{frozen_turn_ref:ref,model_id:identifier,effort?:effort-value,requested_modalities:sorted unique identifier[],tool_definition_refs:sorted unique ref[],response_schema_ref?:ref}` → `{provider_id:identifier,model_id:identifier,content_block_refs:ref[],tool_proposal_refs:ref[],usage_report_ref?:ref,provider_response_ref:ref}`; `status`: `StatusOperation`; `cancel`: `CancelOperation` | `auth_failed\|catalog_incomplete\|model_unavailable\|rate_limited\|billing_blocked\|provider_protocol_error` |
+| `managed-provider-runner-port-v1` | `{provider_id:identifier,runner_profile_ref:ref,binary_digest:digest,tool_bridge_profile_ref:ref,auth_volume_profile_ref:ref,supported_event_types:sorted unique identifier[],supported_input_media_types:sorted unique media-type[]}` | `preflight`: `{requested_model_id?:identifier,requested_effort?:effort-value}` → `{observed_binary_digest:digest,runner_version:version-text,auth_state:disconnected\|pending\|authenticated\|expired\|failed,model_acceptance:accepted\|unsupported\|unknown,capability_evidence_ref:ref}`; `device_auth_start`: `{login_intent_ref:ref}` → `{login_operation_ref:ref,verification_url:https-uri,user_code:short-text,expires_at:time}`; `device_auth_status`: `{login_operation_ref:ref}` → `{state:pending\|completed\|cancelled\|expired\|failed}`; `device_auth_cancel`: `{login_operation_ref:ref}` → `{cancel_state:accepted\|already_terminal\|not_cancellable,observed_at:time}`; `run_start`: `{frozen_run_projection_ref:ref,model_id:identifier,effort?:effort-value,tool_definition_refs:sorted unique ref[]}` → `{runner_run_ref:ref,event_cursor:ref}`; `run_status`: `{runner_run_ref:ref,event_cursor?:ref}` → `{state:pending\|running\|succeeded\|failed\|cancelled\|unknown,normalized_event_refs:ref[],usage_report_ref?:ref}`; `run_cancel`: `{runner_run_ref:ref,reason_class:user_requested\|deadline\|budget\|superseded\|shutdown\|policy_revoked}` → `{cancel_state:accepted\|already_terminal\|not_cancellable,observed_at:time}` | `auth_required\|device_flow_expired\|runner_version_mismatch\|tool_bridge_failed\|runner_protocol_error` |
+| `model-runtime-port-v1` | `{runtime_profile_ref:ref,model_catalog_ref:ref,supported_modalities:sorted unique identifier[],supported_efforts:sorted unique effort-value[],supported_input_media_types:sorted unique media-type[]}` | `capabilities`: `{}` → `{model_ids:sorted unique identifier[],modalities:sorted unique identifier[],effort_values:sorted unique effort-value[],tool_calling:bool}`; `model_step`: `{frozen_turn_ref:ref,model_id:identifier,effort?:effort-value,requested_modalities:sorted unique identifier[],tool_definition_refs:sorted unique ref[],response_schema_ref?:ref}` → `{runtime_profile_ref:ref,model_id:identifier,content_block_refs:ref[],tool_proposal_refs:ref[],usage_report_ref?:ref,runtime_response_ref:ref}`; `status`: `StatusOperation`; `cancel`: `CancelOperation` | `model_not_loaded\|model_incompatible\|inference_failed\|runtime_protocol_error` |
 
 ### 3.2 Tool and artifact codec
 
@@ -476,6 +485,12 @@ Port compatibility is exact-major and explicit-minor. A new required operation, 
 requires a new port contract version and requalification. Additive optional evidence can be
 negotiated only when both core and manifest declare the version; silence never means support. These
 rules apply equally to built-ins and third-party extensions.
+
+This unpublished pre-release correction amends the generated schemas' accepted bytes; it is not a
+silent runtime compatibility promise and changes no deployed extension state. Historical ADR-014
+review manifests remain frozen as reviewed, and their exact-byte acceptance does not qualify these
+amended bytes. Any prior schema-qualified binding requires fresh qualification against the
+applicable amended schema digests; a historical review acceptance cannot substitute for it.
 
 ## 5. Acceptance boundary
 

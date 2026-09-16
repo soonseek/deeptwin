@@ -1,9 +1,8 @@
 """Browser and optional HTTPS clients must meet one transport-independent command port."""
 
-import ast
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
-import traceback
 from uuid import uuid4
 
 import pytest
@@ -22,7 +21,6 @@ from app.services.command_clients import (
     CommandServiceDenied,
 )
 from app.services.service_clients import ServiceClientRegistry
-
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 
@@ -89,25 +87,8 @@ def command(command_id=None):
 
 
 def test_core_dependency_layers_never_import_http_or_static_presentation():
-    roots = [REPOSITORY / "app" / name for name in ("domain", "runtime", "extensions", "services")]
-    forbidden = []
-    for root in roots:
-        for source in root.glob("*.py"):
-            tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Import):
-                    names = [item.name for item in node.names]
-                elif isinstance(node, ast.ImportFrom):
-                    names = [node.module or ""]
-                else:
-                    continue
-                if any(name == "api" and getattr(node, "level", 0) > 0
-                       or name == "static" and getattr(node, "level", 0) > 0
-                       or name == "app.api" or name.startswith("app.api.")
-                       or name == "app.static" or name.startswith("app.static.")
-                       for name in names):
-                    forbidden.append((source, node.lineno, names))
-    assert forbidden == []
+    from app.tests.core_import_scanner import violations
+    assert violations(REPOSITORY) == []
 
 
 def test_browser_and_headless_surfaces_produce_same_mutation_contract():

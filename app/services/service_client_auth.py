@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from threading import RLock
 
-from ..api.wire import WireInputError, parse_singleton_headers
+from ..domain.wire import WireInputError, parse_singleton_headers
 from .service_clients import ServiceClientPrincipal
 
 _NETWORK_PROFILES = frozenset({"portable_https", "dedicated_https"})
