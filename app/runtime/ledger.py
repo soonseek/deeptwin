@@ -2794,6 +2794,26 @@ class RuntimeLedger:
             self._validate_execution_bindings(db, spec)
             return result
 
+    def executions_for_run(self, run_id):
+        """Read-only: every recorded node execution of one run in insertion order.
+
+        Trace readers use this to rebuild the visit structure; it grants no
+        dispatch, result or recovery authority and never exposes cursor bytes.
+        """
+        uuid_string(run_id)
+        with self._transaction() as db:
+            if db.execute("SELECT 1 FROM runtime_runs WHERE vault_id=? AND id=?",
+                          (self.vault_id, run_id)).fetchone() is None:
+                raise KeyError(run_id)
+            rows = db.execute("SELECT * FROM runtime_node_executions WHERE vault_id=? AND run_id=? "
+                              "ORDER BY rowid", (self.vault_id, run_id)).fetchall()
+            results = []
+            for row in rows:
+                result = self._execution_snapshot(row)
+                self._validate_execution_bindings(db, ExecutionSpec.from_dict(result["spec"]))
+                results.append(result)
+            return results
+
     def get_attempt(self, attempt_id):
         with self._transaction() as db:
             row = self._load_attempt(db, attempt_id)

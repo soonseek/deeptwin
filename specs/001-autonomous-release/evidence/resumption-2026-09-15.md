@@ -837,3 +837,5 @@ T040 slice 3 (owner run approvals + human gates) full regression: **257 failed, 
 Process incident (2026-09-16): the slice-3 background regression reported 257 failed / 32 errors because app/api and test files were edited while it was collecting; a chained push published a522ad8 before the number was read. The exact commit was then certified in a detached temporary worktree: owner integration, server API, candidate/deployment API, scheduler, approvals and checkpoint suites 312 passed. A clean full regression of the current tree (route slice included) follows below; no source is edited while it runs.
 
 Route contribution run-approvals-v1 + approvals GUI logic full regression: **5704 passed, 1 skipped, 1 warning, 369 subtests passed in 668.79s**, exit 0.
+
+Run trace slice (T055 reopened scope) full regression: **5710 passed, 1 skipped, 1 warning, 369 subtests passed in 672.80s (0:11:12)**, exit 0.
