@@ -1,0 +1,97 @@
+{
+  "$comment": "Schema data grants no authority. Private hashes, verifiers, session digests and root integrity tags are never exported as records.",
+  "$defs": {
+    "BootstrapClaimState": {
+      "enum": [
+        "available",
+        "consumed",
+        "completed",
+        "expired",
+        "exhausted"
+      ],
+      "type": "string"
+    },
+    "OwnerAccountState": {
+      "enum": [
+        "active",
+        "disabled"
+      ],
+      "type": "string"
+    },
+    "PasswordProfile": {
+      "const": "argon2id-v19-m65536-t3-p4-s16-h32",
+      "type": "string"
+    },
+    "SessionRootReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+          "type": "string"
+        },
+        "generation_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "instance_id": {
+          "pattern": "^[0-9a-f]{32}$",
+          "type": "string"
+        },
+        "key_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "origin_profile_digest": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "recovery_epoch": {
+          "const": 1,
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "session-root-v1"
+        },
+        "state": {
+          "const": "initial_genesis"
+        }
+      },
+      "required": [
+        "schema_version",
+        "generation_id",
+        "key_id",
+        "instance_id",
+        "origin_profile_digest",
+        "recovery_epoch",
+        "created_at",
+        "state"
+      ],
+      "type": "object"
+    },
+    "SetupGate": {
+      "enum": [
+        "owner_required",
+        "ready",
+        "setup_incomplete",
+        "setup_unavailable"
+      ],
+      "type": "string"
+    }
+  },
+  "$id": "urn:deeptwin:schemas:v1:owner-auth-public",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Nonsecret owner authentication and session-root receipt definitions"
+}

@@ -2,7 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-from app.server import create_app
+from app.server import create_development_app as create_app
 
 
 ORIGIN = "http://127.0.0.1:4193"

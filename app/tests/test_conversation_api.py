@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app.api.conversation_routes import install_conversation_routes
 from app.api.session import LocalSessionAuthority
 from app.domain.refs import EntityRef, ObjectRef
-from app.server import LocalBoundary, create_app
+from app.server import LocalBoundary, create_development_app as create_app
 from app.services.conversation import Conversation, TrustedConversationActor
 from app.storage import Store
 

@@ -20,7 +20,7 @@ from uuid import uuid4
 from .refs import (DomainContractError, EntityRef, MAX_INTEGER, MAX_JSON_BYTES, canonical_json,
                    parse_canonical, uuid_string)
 from .schemas import Actor, ImmutableRecord, PURPOSES, SCHEMA_VERSION
-from .store import DomainStore, _writer
+from .store import DomainStore, StorageError, _writer
 
 
 _ACTIONS = frozenset({"read", "write", "compile"})
@@ -372,15 +372,20 @@ def _descriptor_semantics(descriptor, vault_id):
 class _PermissionStore:
     """Hashed component using the canonical DomainStore connection and writer."""
 
-    def __init__(self, domain_store):
+    def __init__(self, domain_store, *, _db=None):
         if type(domain_store) is not DomainStore:
             raise TypeError("Persistent policy requires the exact initialized DomainStore")
-        roots = domain_store.roots()
+        if _db is not None:
+            domain_store._assert_write_transaction(_db)
+        roots = domain_store.roots() if _db is None else domain_store._read_roots(_db)
         self.domain_store = domain_store
         self.path = domain_store.path
         self.vault_id = roots.genesis.id
-        with self.transaction(write=True) as db:
-            self._install(db, allow_create=True)
+        if _db is None:
+            with self.transaction(write=True) as db:
+                self._install(db, allow_create=True)
+        else:
+            self._install(_db)
 
     @contextmanager
     def transaction(self, *, write=False):
@@ -1011,7 +1016,7 @@ class HostPolicy:
                 raise AccessDenied("Trusted permission clock has not been observed")
             return self._last_now
 
-    def _principal(self, value, *, human=None):
+    def _principal(self, value, *, human=None, db=None):
         if type(value) is not Principal or self._principals.get(id(value)) is not value:
             raise AccessDenied("Unregistered principal")
         if value.expires_at <= self._now():
@@ -1019,7 +1024,9 @@ class HostPolicy:
         if human is not None and (value.kind == "human") is not human:
             raise AccessDenied("Wrong principal authority")
         if value.kind == "human":
-            actor = self._authenticate_session(value._session)
+            from .request_identity import authenticate_in_transaction
+            actor = (self._authenticate_session(value._session) if db is None else
+                     authenticate_in_transaction(self._authenticate_session, value._session, db))
             if type(actor) is not Actor or actor != value.actor or actor.kind != "human":
                 raise AccessDenied("Human session is no longer authenticated")
         return value
@@ -1047,6 +1054,12 @@ class HostPolicy:
         return principal
 
     def register_record(self, record, *, episode_id=None, secret=False):
+        if self._storage is not None:
+            with self._storage.transaction(write=True) as db:
+                descriptor = self._register_record_in_transaction(
+                    db, record, episode_id=episode_id, secret=secret)
+            self._sync_persistent()
+            return descriptor
         if (type(record) is not ImmutableRecord or record.body["schema_version"] != SCHEMA_VERSION
                 or type(secret) is not bool):
             raise AccessDenied("Only verified ordinary records can be registered")
@@ -1073,23 +1086,52 @@ class HostPolicy:
             return ResourceDescriptor(record.ref, body["purpose"], episode_id, dependencies,
                                       tainted, True, 1, record, secret)
 
-        if self._storage is None:
-            descriptor = build()
-            prior = self._resources.get(record.ref)
-            if prior is not None and prior != descriptor:
-                raise AccessDenied("Resource descriptor conflict")
-            self._resources[record.ref] = prior or descriptor
-            return self._resources[record.ref]
-        with self._storage.transaction(write=True) as db:
-            self._sync_persistent(db)
-            descriptor = build()
-            self._storage.insert_descriptor(db, descriptor)
-            self._storage.observe_clock(db, self._now())
-            _, resources, _, _ = self._load_persistent_in_transaction(db)
-            if resources.get(record.ref) != descriptor:
-                raise CorruptPolicy("Resource descriptor commit invariant failed")
-        self._sync_persistent()
+        descriptor = build()
+        prior = self._resources.get(record.ref)
+        if prior is not None and prior != descriptor:
+            raise AccessDenied("Resource descriptor conflict")
+        self._resources[record.ref] = prior or descriptor
         return self._resources[record.ref]
+
+    def _register_record_in_transaction(self, db, record, *, episode_id=None, secret=False):
+        """Stage a descriptor without publishing uncommitted in-memory authority."""
+        if self._storage is None:
+            raise AccessDenied("Persistent permission registry is required")
+        self._storage.domain_store._assert_write_transaction(db)
+        self._storage._install(db)
+        self._storage._verify_domain_binding(db)
+        if (type(record) is not ImmutableRecord
+                or record.body["schema_version"] != SCHEMA_VERSION or type(secret) is not bool):
+            raise AccessDenied("Only verified ordinary records can be registered")
+        try:
+            verified = self._verify_registered_record(record, db)
+        except (StorageError, DomainContractError, KeyError, TypeError):
+            raise AccessDenied("Record is not registered in this vault") from None
+        if verified is not True:
+            raise AccessDenied("Record is not registered in this vault")
+        episode_id = _episode(episode_id)
+        revision, resources, _, _ = self._load_persistent_in_transaction(db)
+        if revision < self._policy_revision:
+            raise CorruptPolicy("Permission revision moved backwards")
+        body = record.body
+        dependencies = _content_dependencies(record)
+        if any(ref not in resources for ref in dependencies):
+            raise AccessDenied("Dependency is not registered in this vault")
+        if ((record.ref.kind == "inquiry_audit" or body["purpose"] == "inquiry_audit")
+                and episode_id is None):
+            raise AccessDenied("Inquiry evidence requires an exact episode")
+        tainted = (secret or record.ref.kind in _SENSITIVE_KINDS
+                   or body["purpose"] == "evaluation_sealed"
+                   or _contains_sensitive_claim(body["content"])
+                   or any(resources[ref].tainted for ref in dependencies))
+        descriptor = ResourceDescriptor(record.ref, body["purpose"], episode_id,
+                                        dependencies, tainted, True, 1, record, secret)
+        self._storage.insert_descriptor(db, descriptor)
+        self._storage.observe_clock(db, self._now())
+        _, committed, _, _ = self._load_persistent_in_transaction(db)
+        if committed.get(record.ref) != descriptor:
+            raise CorruptPolicy("Resource descriptor commit invariant failed")
+        return descriptor
 
     def set_available(self, ref, available):
         if type(ref) is not EntityRef or type(available) is not bool:
@@ -1283,15 +1325,15 @@ class HostPolicy:
         if self._storage is not None:
             with self._storage.transaction(write=True) as db:
                 self._sync_persistent(db)
-                self._principal(issuer, human=True)
-                self._principal(subject)
+                self._principal(issuer, human=True, db=db)
+                self._principal(subject, db=db)
                 validate()
                 grant_revision = self._policy_revision
                 self._storage.insert_grant(
                     db, grant_id, issuer, subject, ref, action, purpose, episode_id,
                     expires_at, grant_revision)
-                self._principal(issuer, human=True)
-                self._principal(subject)
+                self._principal(issuer, human=True, db=db)
+                self._principal(subject, db=db)
                 self._storage.observe_clock(db, self._now())
                 revision, _, _, _ = self._load_persistent_in_transaction(db)
                 row, _, _, stored_ref, stored_episode = self._storage.grant_row(db, grant_id)
@@ -1328,8 +1370,8 @@ class HostPolicy:
             grant = Grant(row["id"], issuer.id, subject.id, ref, row["action"],
                           row["purpose"], episode_id, row["expires_at"],
                           row["policy_revision"])
-            self._principal(issuer, human=True)
-            self._principal(subject)
+            self._principal(issuer, human=True, db=db)
+            self._principal(subject, db=db)
             self._storage.observe_clock(db, self._now())
             self._load_persistent_in_transaction(db)
         self._grants[id(grant)] = (grant, issuer, subject)
@@ -1342,6 +1384,7 @@ class HostPolicy:
         if self._storage is not None:
             with self._storage.transaction(write=True) as db:
                 self._sync_persistent(db)
+                self._principal(self._grants[id(grant)][1], human=True, db=db)
                 self._storage.revoke_grant(db, grant.id)
                 new_revision = self._storage.advance_revision(db, self._policy_revision)
                 self._storage.observe_clock(db, self._now())
@@ -1408,8 +1451,8 @@ class PolicyGate:
                             raise AccessDenied("Grant policy revision is stale")
                         if grant.expires_at <= self._host._now():
                             raise AccessDenied("Grant expired")
-                        self._host._principal(issuer, human=True)
-                        self._host._principal(subject)
+                        self._host._principal(issuer, human=True, db=connection)
+                        self._host._principal(subject, db=connection)
                         self._host._storage.observe_clock(connection, self._host._now())
                         self._host._load_persistent_in_transaction(connection)
                     if db is None:
@@ -1430,7 +1473,7 @@ class PolicyGate:
     def _authorize_descriptor(self, principal, ref, *, action, purpose, grants,
                               episode_id=None, db=None):
         self._host._sync_persistent(db)
-        principal = self._host._principal(principal)
+        principal = self._host._principal(principal, db=db)
         if type(action) is not str or action not in _ACTIONS:
             raise AccessDenied("Invalid action")
         if type(purpose) is not str or purpose not in _RUNTIME_PURPOSES:

@@ -19,7 +19,7 @@ async function open(t, scenario, options = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'deeptwin-connection-ui-'));
   const args = scenario
     ? ['app/tests/fixtures/connection_server.py', '--scenario', scenario, '--data-dir', dir, '--port', '0']
-    : ['-m', 'app.server', '--data-dir', dir, '--port', '0'];
+    : ['app/tests/fixtures/development_server.py', '--data-dir', dir, '--port', '0'];
   const server = spawn(process.env.CONTROL_PYTHON || 'python3', args, { cwd: fileURLToPath(new URL('../../', import.meta.url)), stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(async () => {
     if (server.exitCode === null) await new Promise(resolve => { server.once('exit', resolve); server.kill('SIGTERM'); });

@@ -6,7 +6,7 @@ import pytest
 
 from app.domain.refs import MAX_INTEGER, canonical_json, parse_canonical
 from app.runtime.budgets import BudgetPolicy, CorruptBudget
-from app.server import create_app
+from app.server import create_development_app as create_app
 from app.services.usage_settings import UsagePolicyConflict, WorkUsagePolicies
 from app.storage import Store
 from app.tests.local_http import LocalTestClient as TestClient

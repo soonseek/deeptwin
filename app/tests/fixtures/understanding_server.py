@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from app.adapters.keychain import InMemoryCredentialVault
 from app.codex_connection import CodexConnection
 from app.codex_rpc import CodexRPC
-from app.server import create_app
+from app.server import create_development_app as create_app
 from app.understanding import ModelError
 
 parser = argparse.ArgumentParser()

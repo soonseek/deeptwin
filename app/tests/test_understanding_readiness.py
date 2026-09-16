@@ -26,7 +26,7 @@ def test_existing_external_environment_keeps_runtime_unavailable(monkeypatch):
 @pytest.mark.parametrize('available', [False, True])
 def test_production_capability_uses_local_runtime_check_not_a_fixture_flag(tmp_path, monkeypatch, available):
     monkeypatch.setattr(codex_understanding, 'generation_available', lambda: available)
-    with TestClient(server.create_app(tmp_path), base_url='http://127.0.0.1:4193') as client:
+    with TestClient(server.create_development_app(tmp_path), base_url='http://127.0.0.1:4193') as client:
         flags = client.get('/api/bootstrap').json()['capabilities']
         assert flags['understanding_provider_ready'] is available
         assert flags['design_generation'] is False and flags['execution'] is False
@@ -34,6 +34,6 @@ def test_production_capability_uses_local_runtime_check_not_a_fixture_flag(tmp_p
 
 def test_explicit_disabled_fixture_does_not_probe_the_real_runtime(tmp_path, monkeypatch):
     monkeypatch.setattr(codex_understanding, 'generation_available', lambda: pytest.fail('no runtime check'))
-    with TestClient(server.create_app(tmp_path, understanding_provider_ready=False),
+    with TestClient(server.create_development_app(tmp_path, understanding_provider_ready=False),
                     base_url='http://127.0.0.1:4193') as client:
         assert client.get('/api/bootstrap').json()['capabilities']['understanding_provider_ready'] is False

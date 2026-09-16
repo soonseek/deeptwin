@@ -238,12 +238,14 @@ class RootCommandCoordinator:
     def _after_stage(_stage, _db):
         """Deterministic failure-injection seam; production implementation is inert."""
 
-    def _authenticated_actor(self, request, *, read):
+    def _authenticated_actor(self, request, *, read, db=None):
         if (type(request) is not AuthenticatedRequest
                 or request.is_read is not read
                 or (not read and not request.csrf_verified)):
             raise CommandInvalid("Authenticated local request required")
-        actor = self._authenticate_session(request.session)
+        from .session import authenticate_in_transaction
+        actor = (self._authenticate_session(request.session) if db is None else
+                 authenticate_in_transaction(self._authenticate_session, request.session, db))
         if (type(actor) is not Actor or actor != request.session.actor
                 or actor.kind != "human"):
             raise CommandInvalid("Command actor is not an authenticated local human")
@@ -366,6 +368,7 @@ class RootCommandCoordinator:
                 with self._domain._connection(write=True) as db:
                     db.execute("PRAGMA trusted_schema=OFF")
                     self._assert_transaction(db)
+                    actor = self._authenticated_actor(request, read=False, db=db)
                     existing = _existing_command(
                         db, vault_id=self.vault_id, envelope=envelope,
                         actor=actor, session=request.session,

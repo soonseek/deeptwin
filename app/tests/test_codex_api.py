@@ -1,6 +1,6 @@
 from app.tests.local_http import LocalTestClient as TestClient
 
-from app.server import create_app
+from app.server import create_development_app as create_app
 from app.storage import Store
 
 

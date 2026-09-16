@@ -138,7 +138,7 @@ def test_unrelated_and_late_login_completions_do_not_reactivate_cancelled_attemp
 
 
 def test_auth_http_endpoints_enforce_origin_csrf_and_keep_work_untouched(tmp_path, monkeypatch):
-    from app.server import create_app
+    from app.server import create_development_app as create_app
     monkeypatch.setattr(codex_connection, 'find_codex', lambda: '/controlled/codex')
     rpc = ControlledRPC()
     application = create_app(tmp_path, port=4193,

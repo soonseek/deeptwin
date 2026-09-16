@@ -14,18 +14,34 @@ form and never placed in a URL, plus OriginProfile, durable session-root and rec
 design from ADR-010 through ADR-012.
 """
 
-from collections import deque
-from dataclasses import dataclass
-from hashlib import sha256
+# ruff: noqa: PLC0414 - explicit compatibility re-exports preserve capability identity.
+
 import ipaddress
 import re
 import secrets
+from collections import deque
+from dataclasses import dataclass
+from hashlib import sha256
 from threading import RLock
 from uuid import uuid4
 
-from ..domain.refs import MAX_INTEGER, uuid_string
+from ..domain.refs import MAX_INTEGER
+from ..domain.request_identity import (
+    AuthenticatedRequest as AuthenticatedRequest,
+)
+from ..domain.request_identity import (
+    AuthenticatedSession as AuthenticatedSession,
+)
+from ..domain.request_identity import (
+    RequestDenied as RequestDenied,
+)
+from ..domain.request_identity import (
+    SessionBoundaryError as SessionBoundaryError,
+)
+from ..domain.request_identity import (
+    authenticate_in_transaction as authenticate_in_transaction,
+)
 from ..domain.schemas import Actor
-
 
 COOKIE_NAME = "deeptwin_local_session"
 MAX_BOOTSTRAP_TTL_SECONDS = 60
@@ -34,14 +50,6 @@ MAX_LIVE_BOOTSTRAPS = 8
 MAX_CSRF_TOKENS_PER_SESSION = 8
 ATTEMPT_WINDOW_SECONDS = 60
 _TOKEN = re.compile(r"[A-Za-z0-9_-]{32,256}")
-
-
-class SessionBoundaryError(PermissionError):
-    """Safe local-boundary refusal without secret or capability detail."""
-
-
-class RequestDenied(SessionBoundaryError):
-    pass
 
 
 class BootstrapUnavailable(SessionBoundaryError):
@@ -56,33 +64,6 @@ class BootstrapReplay(SessionBoundaryError):
 class BootstrapCapability:
     capability: str
     expires_at: int
-
-
-@dataclass(frozen=True, slots=True)
-class AuthenticatedSession:
-    session_id: str
-    actor: Actor
-    expires_at: int
-
-    def __post_init__(self):
-        uuid_string(self.session_id)
-        if type(self.actor) is not Actor or self.actor.kind != "human":
-            raise ValueError("A local session requires a human actor")
-        if type(self.expires_at) is not int or not 0 < self.expires_at <= MAX_INTEGER:
-            raise ValueError("Session expiry must be bounded")
-
-
-@dataclass(frozen=True, slots=True)
-class AuthenticatedRequest:
-    method: str
-    host: str
-    origin: str | None
-    session: AuthenticatedSession
-    csrf_verified: bool
-
-    @property
-    def is_read(self):
-        return self.method in {"GET", "HEAD"}
 
 
 @dataclass(frozen=True, slots=True)

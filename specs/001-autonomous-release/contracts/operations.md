@@ -41,6 +41,38 @@ OPS-D03의 유한한 첫 도구 범위는 **설계→실행→자기 대안→�
 
 배포물은 호스트 전역 Python/Node·셸 설정·사용자의 Codex/Claude 설정을 덮지 않는다. 사용자 홈 전체를 복사·마운트하지 않는다. 마이크 권한은 해당 브라우저 기능의 명시 행위에서 요청하며 보안 설정을 끄거나 무신뢰 HTTP로 우회하는 절차를 제공하지 않는다. 라이선스가 재배포를 허용하지 않는 구성요소는 공식 지원 방식의 사용자 동의 다운로드를 설계하고, 이를 확인하지 못하면 그 경로는 준비되지 않은 상태다.
 
+### 2.0 Task7 세션 root·서빙 소유권 (T025 부분 구현)
+
+배포 전용 `initialize_session_root`는 명시적인 별도0700 소유 디렉터리의 부재/빈 상태에만
+`root.key`(정확히32 random bytes,0400)와 canonical `manifest.json`(0400)을 O_EXCL로 생성하고
+파일/디렉터리를 fsync한다. 기존 정상 상태는 읽고 검증하는 no-op이며, 부분 상태·symlink·hardlink·
+잘못된 소유권/모드·epoch는 교체하거나 복구하지 않는다. 서빙 `open_session_root`는 읽기/검증 및
+CSRF 유도만 제공하며 init/raw-key getter/general MAC 기능이 없다. manifest integrity는
+root-key HMAC-SHA256이며 정확한 preimage는 data-model의 SessionRootReceipt 설명을 따른다.
+초기 epoch1만 지원하고 DB는 완전한 canonical manifest의 SHA256을 pin한다.
+
+지원 administrative main은 `--data-dir`, `--deployment-config`, `--session-root-dir`,
+`--expected-uid`, `--expected-gid`를 모두 요구한다. 이는 운영 입력이며 일반 사용자 안내가 아니다.
+내부 listener는 canonical `0.0.0.0:8080`; Uvicorn workers1/reloadFalse/proxy_headersFalse/
+forwarded_allow_ips empty/access_logFalse를 고정한다. capability 생성/출력이나 사용자 Codex/STT
+초기화가 없다. 구성/root 부재는 startup failure다. Compose/edge topology를 변경하거나
+`Forwarded`/`X-Forwarded-*`를 신뢰하여 HTTPS로 간주하지 않으며 portable edge gate는 열린 상태다.
+
+업무 DB 디렉터리의 소유자 전용0600 비밀 없는 `owner-auth.lock`에 OS exclusive lock을 유지한다.
+두 번째 serving instance는 startup에서 실패한다. shutdown/cancellation 때 실행 중인 native
+Argon2 작업이 실제 끝나기 전에는 lock/native slot을 해제하지 않는다. 프로세스 종료 시 OS가
+lock을 해제한다. 이는 단일 control-plane process 제약이며 다중 프로세스 semaphore 주장이나
+재시작을 넘는 일반 rate-limit 보장은 아니다. 최초 claim window/시도수만 DB에 지속한다.
+
+root/config/DB 불일치 및 `setup_incomplete`는 자동 복구되지 않는다. 별도 signed recovery,
+최종 웹 UI, 실제 TLS edge/Linux UID/container network, provider/runtime story 검증은 남아 있다.
+
+Task7의 secret-canary 검증은 실제 auth/work/event/snapshot 및 일반 domain-record projection,
+captured logs/stdout/repr와 현행 export category의 private-auth 제외를 대상으로 한다. 세션 cookie와
+CSRF의 명시적인 발급/조회 응답은 허용된 비밀 전달 경로다. 현행 export 모듈은 제공된 item의
+manifest builder일 뿐 DB collector/archive 경로가 아니므로, 전체 collector/archive 유출 검증은
+T071의 필수 미완료 조건으로 유지한다. 구성한 manifest를 end-to-end export 증거로 취급하지 않는다.
+
 ### 2.1 의존성/플랫폼 manifest
 
 | 레코드 | 필수 필드 | 조건 |

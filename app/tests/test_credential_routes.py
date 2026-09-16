@@ -8,7 +8,7 @@ redacted receipt. Without an attached gateway the route is honestly unavailable.
 
 import json
 
-from app.server import create_app
+from app.server import create_development_app as create_app
 from app.tests.local_http import LocalTestClient
 from app.tests.test_server_api_v1 import FETCH, ORIGIN, assert_error
 

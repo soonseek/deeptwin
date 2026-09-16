@@ -11,7 +11,7 @@ import uvicorn
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from app.codex_connection import CodexConnection
 from app.codex_rpc import CodexRPC
-from app.server import create_app
+from app.server import create_development_app as create_app
 
 
 parser = argparse.ArgumentParser()

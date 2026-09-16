@@ -1,9 +1,8 @@
-"""Local first-use API; explicit requests may send frozen input to Codex."""
+"""Deployed browser control plane and an explicitly historical development preview."""
 
 import argparse
 import json
 import os
-import socket
 import sqlite3
 import stat
 import time
@@ -286,7 +285,7 @@ def _validated_data_dir(value):
         os.close(descriptor)
 
 
-def create_app(data_dir, port=4193, *, codex_factory=None, understanding_model_factory=None,
+def create_development_app(data_dir, port=4193, *, codex_factory=None, understanding_model_factory=None,
                understanding_provider_ready=None, model_catalog_factory=None, speech_factory=None,
                runtime_dispatch_resolver=None, worker_dispatch_factory=None,
                credential_vault=None):
@@ -852,21 +851,168 @@ def create_app(data_dir, port=4193, *, codex_factory=None, understanding_model_f
     return app
 
 
+def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, expected_gid,
+               runtime_dispatch_resolver=None, worker_dispatch_factory=None,
+               first_party_startup_values=None, additional_protected_roots=()):
+    """Supported web factory: exact deployment authority, no host provider discovery."""
+    from .api.first_party import (
+        ApplicationContext,
+        build_startup_inputs,
+        compose_first_party,
+    )
+    from .api.session_routes import create_session_router
+    from .api.web_boundary import WebBoundary, auth_error
+    from .domain.store import DomainStore, UninitializedVault
+    from .operations.session_root import open_session_root
+    from .operations.setup import OriginProfile, build_bootstrap_configuration
+    from .services.owner_admission import ServingLock
+    from .services.owner_auth import OwnerAuthError, PersistentOwnerAuthority
+
+    if (type(deployment_config) is not dict or set(deployment_config) != {
+            'origin_profile', 'verifier_b64u', 'recovery_epoch'}
+            or type(expected_uid) is not int or type(expected_gid) is not int
+            or min(expected_uid, expected_gid) < 0):
+        raise ValueError('Deployment configuration is required')
+    profile = OriginProfile.from_dict(deployment_config['origin_profile'])
+    configuration = build_bootstrap_configuration(profile=profile,
+        verifier_b64u=deployment_config['verifier_b64u'], recovery_epoch=deployment_config['recovery_epoch'])
+    data_path, root_path = Path(data_dir).absolute(), Path(session_root_dir).absolute()
+    if type(additional_protected_roots) is not tuple:
+        raise ValueError('Invalid protected roots')
+    startup_inputs = build_startup_inputs(values=first_party_startup_values,
+        protected_roots=(*additional_protected_roots, data_path, root_path))
+    if data_path == root_path or data_path in root_path.parents or root_path in data_path.parents:
+        raise ValueError('Session root and work storage require separate directories')
+    root = open_session_root(session_root_dir, profile=profile, recovery_epoch=configuration['recovery_epoch'],
+                             expected_uid=expected_uid, expected_gid=expected_gid)
+    store = lock = authority = publication = None
+    try:
+        with _validated_data_dir(data_dir) as (validated_data_path, directory_fd):
+            lock = ServingLock(validated_data_path, expected_uid=expected_uid, expected_gid=expected_gid)
+            store = Store(validated_data_path, _verified_directory_fd=directory_fd)
+        domain = DomainStore(store)
+        try:
+            domain.roots()
+        except UninitializedVault:
+            domain.initialize_vault()
+        authority = PersistentOwnerAuthority(domain, root=root, configuration=configuration, serving_lock=lock)
+        components = initialize_api_v1(store, authority, domain_store=domain)
+        authority._permission_host = components.permission_host
+        slot = None if worker_dispatch_factory is None else WorkerDispatchServiceSlot(
+            domain_store=domain, permission_gate=components.permission_gate,
+            budget_book=components.budget_book, runtime_ledger=components.runtime_ledger)
+    except BaseException:
+        try:
+            if authority is not None:
+                authority.close()
+            else:
+                try:
+                    root.close()
+                finally:
+                    if lock is not None:
+                        lock.close()
+        finally:
+            if store is not None:
+                store.close_verified_handles()
+        raise
+
+    @asynccontextmanager
+    async def lifespan(application):
+        worker = None
+        published = False
+        try:
+            if authority._closed:
+                raise OwnerAuthError('unavailable')
+            await run_in_threadpool(publication.activate_startup)
+            if worker_dispatch_factory is not None:
+                await run_in_threadpool(components.runtime_ledger.reconcile_startup, str(uuid4()), observed_owners={})
+                worker = await run_in_threadpool(worker_dispatch_factory, components)
+                if type(worker) is not WorkerDispatchService:
+                    raise TypeError('Worker dispatch factory returned an invalid service')
+                worker.assert_components(domain_store=domain, permission_gate=components.permission_gate,
+                    budget_book=components.budget_book, runtime_ledger=components.runtime_ledger)
+                await run_in_threadpool(worker.start)
+                slot.publish(worker)
+                published = True
+                application.state.worker_dispatch = worker
+            yield
+        finally:
+            try:
+                if worker is not None:
+                    try:
+                        if published:
+                            slot.clear(worker)
+                    finally:
+                        application.state.worker_dispatch = None
+                        await run_in_threadpool(worker.close)
+            finally:
+                try:
+                    publication.close()
+                finally:
+                    try:
+                        authority.close()
+                    finally:
+                        store.close_verified_handles()
+
+    try:
+        application = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+        application.state.store = store
+        application.state.owner_authority = authority
+        application.state.api_v1 = components
+        for name in ('domain_store', 'permission_host', 'permission_gate', 'budget_book', 'runtime_ledger', 'root_commands'):
+            setattr(application.state, name, getattr(components, name))
+        application.state.worker_dispatch = None
+        application.state.worker_dispatch_slot = slot
+        publication = compose_first_party(application, ApplicationContext(
+            components=components, owner_authority=authority, base_path=profile.base_path,
+            runtime_dispatch_resolver=runtime_dispatch_resolver, worker_dispatch_slot=slot,
+            startup_inputs=startup_inputs))
+        application.state.route_composition = publication.receipt
+        application.state.first_party_exports = publication.exports
+        application.include_router(create_session_router(authority))
+        application.add_middleware(WebBoundary, authority=authority)
+
+        @application.exception_handler(OwnerAuthError)
+        async def owner_error(request, error):
+            return auth_error(error)
+    except BaseException:
+        try:
+            if publication is not None:
+                publication.close()
+        finally:
+            try:
+                authority.close()
+            finally:
+                store.close_verified_handles()
+        raise
+
+    return application
+
+
 def main():
     import uvicorn
-    parser = argparse.ArgumentParser(description='DeepTwin local first-use development server')
+
+    from .api.wire import WireLimits, parse_json_object
+    parser = argparse.ArgumentParser(description='DeepTwin deployed web control plane')
     parser.add_argument('--data-dir', type=Path, required=True)
-    parser.add_argument('--port', type=int, default=4193)
+    parser.add_argument('--deployment-config', type=Path, required=True)
+    parser.add_argument('--session-root-dir', type=Path, required=True)
+    parser.add_argument('--expected-uid', type=int, required=True)
+    parser.add_argument('--expected-gid', type=int, required=True)
     args = parser.parse_args()
-    # Binding before printing supports ephemeral test ports without a port race.
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(('127.0.0.1', args.port))
-    port = sock.getsockname()[1]
-    server = create_app(args.data_dir, port=port)
-    launch = server.state.local_sessions.mint_bootstrap()
-    print(f'DEEPTWIN_URL=http://127.0.0.1:{port}/#bootstrap='
-          f'{quote(launch.capability, safe="")}', flush=True)
-    uvicorn.Server(uvicorn.Config(server, log_level='warning', access_log=False)).run(sockets=[sock])
+    if min(args.expected_uid, args.expected_gid) < 0:
+        parser.error('Expected ownership IDs must be nonnegative')
+    config_path = args.deployment_config.absolute()
+    if '..' in config_path.parts or not 1 <= len(str(config_path).encode('utf-8')) <= 4096:
+        parser.error('Invalid deployment configuration path')
+    with config_path.open('rb') as source:
+        configuration = parse_json_object(source.read(8193),
+            required=('origin_profile', 'verifier_b64u', 'recovery_epoch'), limits=WireLimits(max_bytes=8192))
+    application = create_app(args.data_dir, deployment_config=configuration,
+        session_root_dir=args.session_root_dir, expected_uid=args.expected_uid, expected_gid=args.expected_gid,
+        additional_protected_roots=(config_path.parent,))
+    uvicorn.run(application, host='0.0.0.0', port=8080, workers=1, reload=False,
+                proxy_headers=False, forwarded_allow_ips='', access_log=False)
 
 
 if __name__ == '__main__':

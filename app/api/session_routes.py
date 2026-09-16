@@ -1,0 +1,76 @@
+"""Fixed nonversioned owner session HTTP adapter; no domain command aliases."""
+from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse, JSONResponse, Response
+from starlette.concurrency import run_in_threadpool
+
+from ..services.owner_auth import OwnerAuthError
+from .web_boundary import auth_error
+
+
+def create_session_router(authority):
+    router = APIRouter()
+
+    def cookie(response, value):
+        response.set_cookie(authority.cookie_name, value, path=authority.profile.base_path,
+                            secure=authority.profile.scheme == "https", httponly=True,
+                            samesite="strict", max_age=604800)
+
+    @router.api_route("/", methods=["GET", "HEAD"])
+    def shell():
+        return HTMLResponse("<!doctype html><html><head><title>DeepTwin</title></head>"
+                            "<body><main><h1>DeepTwin</h1><p>Owner setup and login UI is pending.</p></main></body></html>")
+
+    @router.api_route("/health", methods=["GET", "HEAD"])
+    def health():
+        return {"state": "available"}
+
+    @router.post("/session/bootstrap")
+    async def bootstrap(request: Request):
+        value = request.state.owner_payload
+        try:
+            exchange = await run_in_threadpool(authority.bootstrap, **value, source_key=request.state.owner_source)
+            response = JSONResponse({"state": "authenticated", "csrf_token": exchange.csrf_token}, status_code=201)
+            cookie(response, exchange.token_b64u)
+            return response
+        except OwnerAuthError as error:
+            return auth_error(error)
+        finally:
+            value.clear()
+
+    @router.post("/session/login")
+    async def login(request: Request):
+        value = request.state.owner_payload
+        try:
+            try:
+                prior = authority.token_from_cookie(request.state.owner_cookie)
+            except OwnerAuthError:
+                prior = None
+            exchange = await run_in_threadpool(authority.login, **value, source_key=request.state.owner_source, prior_cookie=prior)
+            response = JSONResponse({"state": "authenticated", "csrf_token": exchange.csrf_token})
+            cookie(response, exchange.token_b64u)
+            return response
+        except OwnerAuthError as error:
+            return auth_error(error)
+        finally:
+            value.clear()
+
+    @router.api_route("/session", methods=["GET", "HEAD"])
+    def session(request: Request):
+        token = authority.token_from_cookie(request.state.owner_cookie)
+        value = authority.session_view(request.state.authenticated_request, token_b64u=token)
+        return Response() if request.method == "HEAD" else JSONResponse(value)
+
+    @router.post("/session/logout")
+    async def logout(request: Request):
+        try:
+            token = authority.token_from_cookie(request.state.owner_cookie)
+            value = await run_in_threadpool(authority.logout, request.state.authenticated_request,
+                command_id=request.state.owner_payload["command_id"], token_b64u=token)
+            response = JSONResponse(value)
+            response.delete_cookie(authority.cookie_name, path=authority.profile.base_path,
+                                   secure=authority.profile.scheme == "https", httponly=True, samesite="strict")
+            return response
+        except OwnerAuthError as error:
+            return auth_error(error)
+
+    return router

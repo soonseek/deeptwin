@@ -1,5 +1,12 @@
 # Web UI/API and command contract
 
+The supported owner path now includes fixed `POST /api/v1/extensions/candidates` and
+`GET|HEAD /api/v1/extensions/candidates/{candidate_id}`. Their exact 1MiB input, closed receipt,
+errors, inert storage, local-prefix projection and current-owner admission are frozen in
+[extension-candidates.md](extension-candidates.md). This is unqualified metadata registration;
+there is no stage/install endpoint. Supported composition is exactly core-v1 plus
+extension-candidates-v1; historical preview remains separate.
+
 2026-09-08 · `api-v1` · Target contract, not currently implemented endpoint inventory.
 Keep existing `/api/works`, revisions, file and Codex/STT endpoints compatible while adding
 versioned services. Domain types are in data-model.md; execution/approval semantics are not
@@ -266,6 +273,54 @@ The initial profiles derive their origin only from the validated `OriginProfile`
 secure-cookie or redirect decisions. A future qualified upstream-proxy profile must declare exact
 trusted peer addresses plus forwarding, SSE buffering/timeout and reconnect canaries before those
 headers are accepted. No WebSocket requirement is implied by speech chunks.
+
+### 1.1 Implemented first-owner backend slice (Task 7, T025 partial)
+
+The supported `create_app` takes the exact three-field nonsecret bootstrap configuration,
+an independently initialized session-root directory and explicit expected UID/GID. It invokes the
+fixed first-party composer once for the existing six `/api/v1` route declarations. Nonversioned
+session routes are a separate fixed router. Historical `create_development_app` and its
+`/api/session`, `deeptwin_local_session`, fragment delivery and `X-CSRF-Token` fixtures do not
+qualify this web authority.
+
+| External path relative to configured base | Exact input | Result |
+| --- | --- | --- |
+| `POST session/bootstrap` | `login_name`, `password`, `raw_capability_b64u` | 201; cookie and derived `csrf_token` |
+| `POST session/login` | `login_name`, `password` | 200; cookie and derived `csrf_token` |
+| `GET` / `HEAD session` | no query fields; current cookie | authenticated state and CSRF on GET; empty HEAD |
+| `POST session/logout` | `command_id`; current cookie and singleton `X-DeepTwin-CSRF` | committed revocation, then cookie clearing; exact private replay only |
+
+`login_name` is an exact nonempty Unicode-scalar string, at most128 UTF-8 bytes, without control
+characters or leading/trailing whitespace. The chosen password has at least15 Unicode scalars
+and at most1024 UTF-8 bytes, without normalization, trimming or composition rules. Login accepts
+any bounded nonempty candidate; shorter incorrect passwords and unknown accounts both return the
+same401 class. Password work uses the exact ADR012 profile and one process-owned FIFO lane, a250ms
+monotonic response floor, independent source/account burst5/refill1-per6s buckets,1024-key maps
+and60s idle expiry. Unknown names share one sentinel. Ordinary rate buckets are process-local;
+the OS serving lock prevents concurrent control-plane instances but does not make restart abuse
+accounting durable. Bootstrap opening/deadline/attempts are durable.
+
+Bootstrap has two commits: consume the exact claim before native hashing, then atomically create
+human actor/descriptor, owner, authenticator, session and sanitized public event. A failed second
+commit or crash leaves `setup_incomplete`, with no automatic verifier restoration or hash retry.
+A lost response after success permits password login. Replay never revokes the successful session.
+Login preserves other sessions, rotating only the exact presented prior same-owner cookie.
+
+The authority validates persisted session/account/authenticator state in the exact root-command
+writer before replay/intent and checks human permission consumers with that same writer. A revoked
+cookie plus the same logout command/profile/epoch can retrieve only its previous logout result.
+Root generation, exact canonical manifest digest and epoch are pinned privately in the shared DB.
+Private auth state is absent from ordinary snapshots/exports and public events carry counts only.
+
+The local prefix is checked in raw ASGI paths and removed once by code-owned routing. Scheme,
+Host, Origin, fetch metadata, singleton security headers and bounded raw wire bodies are admitted
+before auth state. Forwarding headers cannot establish HTTPS, host, prefix or rate identity.
+Proxied internal HTTP remains unqualified for the portable HTTPS profile until a pinned-edge
+transport adapter exists. Static shell/minimal health are public; work/download/event paths are
+session-protected. The shell deliberately reports that final setup/login UI is pending.
+
+Backend ASGI tests are not browser-story, TLS-edge, container, deployment recovery, service-client,
+password-change/revoke-others, provider, semantic-runtime or whole T025/T026 qualification.
 
 ## 2. Service routes and authority
 

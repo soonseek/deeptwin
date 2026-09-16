@@ -8,12 +8,13 @@ error before any command, reservation, event, or process-local permit is created
 """
 
 import json
+import re
 import sqlite3
 import time
 from dataclasses import dataclass
 from uuid import uuid4
 
-from fastapi import Request
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
@@ -177,9 +178,11 @@ def _epoch_milliseconds():
     return time.time_ns() // 1_000_000
 
 
-def initialize_api_v1(legacy_store, sessions):
+def initialize_api_v1(legacy_store, sessions, *, domain_store=None):
     """Install/reopen additive state in the exact existing intake database."""
-    domain = DomainStore(legacy_store)
+    domain = DomainStore(legacy_store) if domain_store is None else domain_store
+    if type(domain) is not DomainStore or domain._legacy_store is not legacy_store:
+        raise TypeError("API requires the exact shared DomainStore")
     try:
         domain.roots()
     except UninitializedVault:
@@ -271,6 +274,34 @@ def _authenticated(request, *, read):
             or (not read and not value.csrf_verified)):
         raise RequestDenied("Authenticated local request required")
     return value
+
+
+def preflight_api_v1(scope, body):
+    """Pure shared-wire admission before the supported boundary reads auth state."""
+    from .views import _decode_cursor
+    from .wire import WireLimits, parse_json_object, parse_query
+    path = scope['path']
+    raw_query = scope.get('query_string', b'')
+    if path == '/api/v1/events' or path.startswith('/api/v1/events/'):
+        if len(raw_query) > MAX_QUERY_BYTES or len(raw_query.split(b'&')) > 256:
+            raise ApiInputError('Event query is invalid')
+        # event_type is a bounded repeatable filter. Each raw scalar still uses
+        # the strict decoder; the existing event parser validates duplicates/types.
+        if raw_query:
+            for pair in raw_query.split(b'&'):
+                parse_query(pair, allowed=('cursor', 'event_type', 'limit'))
+        event_type = None if path in {'/api/v1/events', '/api/v1/events/stream'} else path.rsplit('/', 1)[1]
+        cursor, _, _ = _event_options(Request(scope), path_event_type=event_type)
+        if cursor is not None:
+            _decode_cursor(cursor)
+    elif path == '/api/v1/snapshot' or path.startswith('/api/v1/commands'):
+        parse_query(raw_query, allowed=())
+        if path.startswith('/api/v1/commands/'):
+            uuid_string(path.rsplit('/', 1)[1])
+    if path == '/api/v1/commands' and scope['method'] == 'POST':
+        fields = ('schema_version', 'command_id', 'command_type', 'target', 'expected_revision', 'target_hash', 'args')
+        value = parse_json_object(body, required=fields, limits=WireLimits(max_bytes=131072))
+        CommandEnvelope.from_mapping(value, command_registry())
 
 
 def _header_singleton(request, name):
@@ -722,12 +753,18 @@ def _failure(exc):
 
 def install_api_v1(app, *, components, runtime_dispatch_resolver=None,
                    worker_dispatch_slot=None):
+    app.include_router(create_router(components=components,
+        runtime_dispatch_resolver=runtime_dispatch_resolver, worker_dispatch_slot=worker_dispatch_slot))
+
+
+def create_router(*, components, runtime_dispatch_resolver=None, worker_dispatch_slot=None, base_path="/"):
     """Attach delivery routes.
 
     ``runtime_dispatch_resolver`` is trusted host wiring, never page/model input. It must
     only resolve already-frozen local capabilities and must not mutate state or perform an
     external action; the root coordinator remains the sole mutation/permit boundary.
     """
+    app = APIRouter()
     if type(components) is not ApiV1Components:
         raise TypeError("Versioned API requires exact initialized components")
     if runtime_dispatch_resolver is not None and not callable(runtime_dispatch_resolver):
@@ -737,6 +774,14 @@ def install_api_v1(app, *, components, runtime_dispatch_resolver=None,
         raise TypeError("Worker dispatcher slot must be an exact managed binding")
     root = components.root_commands
     registry = root._registry
+    if type(base_path) is not str or (base_path != "/" and re.fullmatch(r"/[0-9a-f]{32}/", base_path) is None):
+        raise ValueError("Route base path must be deployment-validated")
+
+    def project(value):
+        # Persisted receipts keep their canonical core paths. HTTP links use the
+        # fixed deployment prefix, never a header or request-supplied prefix.
+        return {**value, "links": {key: base_path + path.lstrip("/")
+                                  for key, path in value["links"].items()}}
 
     @app.api_route("/api/v1/events", methods=["GET", "HEAD"])
     def events_v1(request: Request):
@@ -754,7 +799,7 @@ def install_api_v1(app, *, components, runtime_dispatch_resolver=None,
                     cursor=page.next_cursor,
                     snapshot_required=page.snapshot_required,
                 )
-            return _page_body(page)
+            return project(_page_body(page))
         except Exception as exc:  # noqa: BLE001 - sanitize the public delivery boundary
             return _failure(exc)
 
@@ -806,7 +851,7 @@ def install_api_v1(app, *, components, runtime_dispatch_resolver=None,
                     cursor=page.next_cursor,
                     snapshot_required=page.snapshot_required,
                 )
-            return _page_body(page)
+            return project(_page_body(page))
         except Exception as exc:  # noqa: BLE001 - sanitize the public delivery boundary
             return _failure(exc)
 
@@ -819,7 +864,7 @@ def install_api_v1(app, *, components, runtime_dispatch_resolver=None,
             snapshot = _snapshot(root, authenticated)
             if request.method == "HEAD":
                 return _head_response(cursor=snapshot["event_cursor"])
-            return snapshot
+            return project(snapshot)
         except Exception as exc:  # noqa: BLE001 - sanitize the public delivery boundary
             return _failure(exc)
 
@@ -839,7 +884,7 @@ def install_api_v1(app, *, components, runtime_dispatch_resolver=None,
                         "X-DeepTwin-Dispatch-State": status["dispatch"]["state"],
                     },
                 )
-            return status
+            return project(status)
         except Exception as exc:  # noqa: BLE001 - sanitize the public delivery boundary
             return _failure(exc)
 
@@ -855,7 +900,7 @@ def install_api_v1(app, *, components, runtime_dispatch_resolver=None,
             )
             deadline.require()
             if replay is not None:
-                return _receipt_response(replay)
+                return _receipt_response(project(replay))
             if runtime_dispatch_resolver is None:
                 replay = await run_in_threadpool(
                     _stored_command_receipt,
@@ -865,7 +910,7 @@ def install_api_v1(app, *, components, runtime_dispatch_resolver=None,
                     synchronize=True,
                 )
                 if replay is not None:
-                    return _receipt_response(replay)
+                    return _receipt_response(project(replay))
                 raise ApiDependencyUnavailable("No trusted runtime dispatch resolver")
             try:
                 resolved = await run_in_threadpool(
@@ -881,7 +926,7 @@ def install_api_v1(app, *, components, runtime_dispatch_resolver=None,
                     synchronize=True,
                 )
                 if replay is not None:
-                    return _receipt_response(replay)
+                    return _receipt_response(project(replay))
                 raise
             if type(resolved) is not ResolvedDispatch:
                 replay = await run_in_threadpool(
@@ -889,7 +934,7 @@ def install_api_v1(app, *, components, runtime_dispatch_resolver=None,
                     synchronize=True,
                 )
                 if replay is not None:
-                    return _receipt_response(replay)
+                    return _receipt_response(project(replay))
                 raise ApiDependencyUnavailable("Runtime dispatch context unavailable")
             try:
                 deadline.require()
@@ -905,7 +950,7 @@ def install_api_v1(app, *, components, runtime_dispatch_resolver=None,
                     synchronize=True,
                 )
                 if replay is not None:
-                    return _receipt_response(replay)
+                    return _receipt_response(project(replay))
                 raise
             outcome = await run_in_threadpool(
                 _reserve_execute_and_handoff,
@@ -916,6 +961,7 @@ def install_api_v1(app, *, components, runtime_dispatch_resolver=None,
                 resolved,
                 deadline,
             )
-            return _receipt_response(outcome.receipt)
+            return _receipt_response(project(outcome.receipt))
         except Exception as exc:  # noqa: BLE001 - sanitize the public delivery boundary
             return _failure(exc)
+    return app

@@ -11,7 +11,7 @@ def test_server_exists():
 
 @pytest.fixture
 def client(tmp_path):
-    from app.server import create_app
+    from app.server import create_development_app as create_app
     with TestClient(create_app(tmp_path, port=4193, understanding_provider_ready=False), base_url='http://127.0.0.1:4193') as value:
         yield value
 
@@ -116,7 +116,7 @@ def test_design_request_is_real_durable_blocked_and_exact_revision_bound(client,
     assert repeat.json()['id'] == request['id']
     client.put(path, json={'text': 'new', 'expected_revision': 1}, headers=auth(client))
     assert client.post(path + '/design-requests', json=payload, headers=auth(client)).status_code == 409
-    from app.server import create_app
+    from app.server import create_development_app as create_app
     with TestClient(create_app(tmp_path, port=4193), base_url='http://127.0.0.1:4193') as reopened:
         assert reopened.get(path + '/design-requests').json() == [request]
         assert reopened.get(path).json()['text'] == 'new'
