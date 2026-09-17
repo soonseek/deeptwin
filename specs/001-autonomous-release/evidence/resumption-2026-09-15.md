@@ -841,3 +841,19 @@ Route contribution run-approvals-v1 + approvals GUI logic full regression: **570
 Run trace slice (T055 reopened scope) full regression: **5710 passed, 1 skipped, 1 warning, 369 subtests passed in 672.80s (0:11:12)**, exit 0.
 
 Scheduler/approvals review closures full regression: **5715 passed, 1 skipped, 1 warning, 369 subtests passed in 670.24s (0:11:10)**, exit 0.
+
+## T065 closure — owner-recorded promotion approvals (2026-09-16/17)
+
+RED on the absent `app/services/promotion_approvals.py`, GREEN, then an independent adversarial
+review returned REJECT (consumed-approval bypass via a re-wrapped decision object after rollback)
+plus seven SHOULD/NIT findings; every finding closed RED-first. Covering command (promotion
+approvals, promotion, US6 audit, growth store, run approvals + API, validation, scheduler):
+**126 passed, 1 inherited warning, 32.41s**; Ruff clean. Details and frozen hashes in
+`promotion-approvals-t065.md`; tasks.md T065 checked.
+
+Process incident (2026-09-16→17): a session-scoped conftest teardown of the shared owner
+TestClient hung the pytest process at exit (0% CPU, 22 h) after all tests had passed; the loop's
+completion signal never arrived. Replaced by a module-scoped autouse fixture; every test command
+in this session now runs under a shell watchdog. Full regression for this iteration follows.
+
+T065 closure (owner-recorded promotion approvals) full regression: **5746 passed, 1 skipped, 1 warning, 369 subtests passed in 723.93s (0:12:03)**, exit 0.

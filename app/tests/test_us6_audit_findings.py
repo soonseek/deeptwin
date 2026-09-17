@@ -45,11 +45,13 @@ from app.services.validation import (
 from app.tests.test_alternatives import ref
 from app.tests.test_change_compiler import patch_value, supported_inquiry
 from app.tests.test_comparisons import plan_value, round_value
-from app.tests.test_promotion import (
+from app.tests.test_promotion import (  # noqa: F401 - promotion_owner is an autouse fixture
     CURRENT_ENV,
     decision_value,
     frozen_candidate,
     passed_report,
+    promotion_owner,
+    record_approval,
 )
 from app.tests.test_validation import ledger_with_sealed, report_value
 
@@ -84,6 +86,36 @@ def test_f2_a_consumed_approval_is_never_valid_again():
     with pytest.raises(PromotionError):
         # current == expected again, but the approval was consumed.
         activate_candidate(rolled, approved, candidate)
+
+
+def test_f2b_a_consumed_approval_never_returns_under_another_decision_object():
+    # T065 review F1: consumption is keyed on the owner's approval evidence,
+    # not on the decision object's content — re-wrapping the same approval
+    # with another scope or rollback bundle after a rollback is no fresh act.
+    candidate = frozen_candidate()
+    report = passed_report(candidate)
+    approval = record_approval(candidate, report=report)
+    approved = record_promotion_decision(
+        decision_value(candidate, report, approval=approval),
+    )
+    state = activate_candidate(
+        open_promotion_state(CURRENT_ENV), approved, candidate,
+    )
+    rolled = rollback_environment(state, "회귀 발견")
+    assert rolled.current_environment == approved.expected_current_environment
+    for overrides in (
+        {"scope": ref("decision_record", 777)},
+        {"rollback_bundle": ref("backup_manifest", 778)},
+    ):
+        again = record_promotion_decision(
+            decision_value(candidate, report, approval=approval, **overrides),
+        )
+        assert again != approved
+        with pytest.raises(PromotionError):
+            activate_candidate(rolled, again, candidate)
+    # a genuinely fresh owner approval is what re-promotion needs
+    fresh = record_promotion_decision(decision_value(candidate, report))
+    assert activate_candidate(rolled, fresh, candidate).current_environment == candidate.bundle_ref
 
 
 def test_f3_a_burned_manifest_cannot_return_under_a_new_name():
@@ -229,17 +261,31 @@ def test_f15_provenance_must_match_observed_evidence_including_version():
 
 
 def test_f16_decision_stamps_are_canonical_six_digit_utc():
+    import re
+
     candidate = frozen_candidate()
     report = passed_report(candidate)
+    decision = record_promotion_decision(decision_value(candidate, report))
+    # the stamp is the owner writer's recorded decision time, never a
+    # caller-supplied string
+    assert re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z", decision.decision_at
+    )
+    with pytest.raises(PromotionError):
+        record_promotion_decision(
+            decision_value(candidate, report) | {"decision_at": "2026-09-13T03:14:15.9Z"},
+        )
     for bad in (
         "2026-09-13T03:14:15.9Z",       # 1-digit fraction
         "2026-09-13T03:14:15Z",         # no fraction
         "2026-09-13 03:14:15.926535Z",  # no T
     ):
+        # the constructor re-validates the stamp even on an issued approval
+        # whose field was tampered with in memory
+        approval = record_approval(candidate, report=report)
+        object.__setattr__(approval, "decided_at_utc", bad)
         with pytest.raises(PromotionError):
-            record_promotion_decision(
-                decision_value(candidate, report, decision_at=bad),
-            )
+            record_promotion_decision(decision_value(candidate, report, approval=approval))
 
 
 def test_f17_malformed_dataset_lists_fail_with_the_domain_error():

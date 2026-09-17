@@ -50,6 +50,16 @@ def counts(domain):
         )
 
 
+def test_authentication_is_checked_before_the_command_is_parsed(tmp_path):
+    with owner(tmp_path) as (app, _client, request, _profile, _arguments):
+        approvals = PersistentRunApprovals(app.state.domain_store, app.state.owner_authority)
+        with pytest.raises(OwnerAuthError):
+            # an unauthenticated caller learns nothing about command grammar
+            approvals.record(replace(request, csrf_verified=False), {"garbage": True})
+        with pytest.raises(OwnerAuthError):
+            approvals.record(object(), {"garbage": True})
+
+
 def test_an_owner_records_one_durable_approval_with_its_event(tmp_path):
     with owner(tmp_path) as (app, _client, request, _profile, _arguments):
         approvals = PersistentRunApprovals(app.state.domain_store, app.state.owner_authority)

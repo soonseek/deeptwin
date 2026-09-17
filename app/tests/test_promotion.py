@@ -14,6 +14,7 @@ history, and it never claims external real-world effects were undone.
 """
 
 import dataclasses
+from uuid import uuid4
 
 import pytest
 
@@ -27,7 +28,17 @@ from app.services.promotion import (
     record_promotion_decision,
     rollback_environment,
 )
-from app.services.validation import freeze_candidate, run_validation
+from app.services.promotion_approvals import (
+    PersistentPromotionApprovals,
+    PromotionApproval,
+)
+from app.services.validation import (
+    freeze_candidate,
+    is_frozen_candidate,
+    is_validation_report,
+    run_validation,
+    validation_report_ref,
+)
 from app.tests.test_alternatives import ref
 from app.tests.test_validation import (
     candidate_value,
@@ -35,8 +46,59 @@ from app.tests.test_validation import (
     report_value,
 )
 
-APPROVER = "00000000-0000-4000-8000-00000000a001"
 CURRENT_ENV = ref("environment", 980)
+
+# One real owner session per test module backs every promotion approval in
+# these value-level suites: approvals are only ever issued by the persistent
+# owner writer, never assembled by a test. Modules that use decision_value /
+# record_approval import `promotion_owner` so the autouse fixture opens the
+# session before their first test and closes it right after their last.
+_approvals = None
+
+
+@pytest.fixture(scope="module", autouse=True)
+def promotion_owner(tmp_path_factory):
+    global _approvals
+    from app.tests.test_extension_candidates_persistent import owner
+
+    with owner(tmp_path_factory.mktemp("promotion-owner")) as (
+        app,
+        _client,
+        request,
+        _p,
+        _a,
+    ):
+        _approvals = (
+            PersistentPromotionApprovals(
+                app.state.domain_store, app.state.owner_authority
+            ),
+            request,
+        )
+        yield
+    _approvals = None
+
+
+def record_approval(
+    candidate, decision="approve", expected_current_environment=CURRENT_ENV, report=None
+):
+    if _approvals is None:
+        raise RuntimeError(
+            "import promotion_owner from app.tests.test_promotion into this module"
+        )
+    service, request = _approvals
+    if not is_validation_report(report):
+        report = passed_report(candidate)
+    return service.record(
+        request,
+        {
+            "schema_version": "promotion-approval-command-v1",
+            "command_id": str(uuid4()),
+            "candidate_bundle": candidate.bundle_ref.as_dict(),
+            "validation_report": validation_report_ref(report).as_dict(),
+            "expected_current_environment": expected_current_environment,
+            "decision": decision,
+        },
+    )
 
 
 def frozen_candidate(**overrides):
@@ -45,25 +107,24 @@ def frozen_candidate(**overrides):
 
 def passed_report(candidate, dataset_id="sealed-a", **overrides):
     report, _ledger = run_validation(
-        candidate, ledger_with_sealed(dataset_id),
+        candidate,
+        ledger_with_sealed(dataset_id),
         report_value(datasets=[dataset_id], **overrides),
     )
     return report
 
 
 def decision_value(candidate, report, **overrides):
+    expected = overrides.pop("expected_current_environment", CURRENT_ENV)
+    decision = overrides.pop("decision", "approve")
+    if "approval" not in overrides:
+        subject = candidate if is_frozen_candidate(candidate) else frozen_candidate()
+        overrides["approval"] = record_approval(subject, decision, expected, report)
     value = {
         "candidate": candidate,
         "validation_report": report,
         "scope": ref("decision_record", 981),
-        "approver": {
-            "actor_id": APPROVER,
-            "authenticated": True,
-            "evidence": ref("action_approval", 982),
-        },
-        "decision": "approve",
-        "decision_at": "2026-09-13T03:14:15.926535Z",
-        "expected_current_environment": CURRENT_ENV,
+        "expected_current_environment": expected,
         "rollback_bundle": ref("backup_manifest", 983),
     }
     value.update(overrides)
@@ -73,31 +134,107 @@ def decision_value(candidate, report, **overrides):
 def test_approval_is_an_authenticated_explicit_human_act():
     candidate = frozen_candidate()
     report = passed_report(candidate)
-    decision = record_promotion_decision(decision_value(candidate, report))
+    approval = record_approval(candidate)
+    decision = record_promotion_decision(
+        decision_value(candidate, report, approval=approval)
+    )
     assert type(decision) is PromotionDecision
     assert decision.decision == "approve"
     assert decision.candidate_environment == candidate.bundle_ref
+    # the decision carries the owner's recorded act, nothing caller-declared
+    assert decision.approver_id == approval.actor_ref.id
+    assert decision.approver_evidence == approval.approval_ref
+    assert decision.decision_at == approval.decided_at_utc
     with pytest.raises(PromotionError):
-        record_promotion_decision(decision_value(
-            candidate, report,
-            approver={"actor_id": APPROVER, "authenticated": False,
-                      "evidence": ref("action_approval", 982)},
-        ))
+        # a caller-declared approver is not evidence
+        record_promotion_decision(
+            decision_value(
+                candidate,
+                report,
+                approval={
+                    "actor_id": approval.actor_ref.id,
+                    "authenticated": True,
+                    "evidence": approval.approval_ref,
+                },
+            )
+        )
     with pytest.raises(PromotionError):
         # silence is never a decision
-        record_promotion_decision(decision_value(candidate, report,
-                                                 decision=None))
+        record_promotion_decision(decision_value(candidate, report, approval=None))
+    forged = object.__new__(PromotionApproval)
+    for name in PromotionApproval.__slots__:
+        object.__setattr__(forged, name, getattr(approval, name))
+    object.__setattr__(forged, "_issuer_token", object())
     with pytest.raises(PromotionError):
-        record_promotion_decision(decision_value(candidate, report,
-                                                 decision="auto_approve"))
-    rejected = record_promotion_decision(decision_value(
-        candidate, report, decision="reject",
-    ))
-    deferred = record_promotion_decision(decision_value(
-        candidate, report, decision="defer",
-    ))
+        record_promotion_decision(decision_value(candidate, report, approval=forged))
+    with pytest.raises(PromotionError):
+        # the decision object keeps no caller-declared decision or stamp
+        record_promotion_decision(
+            decision_value(candidate, report) | {"decision": "approve"}
+        )
+    with pytest.raises(PromotionError):
+        record_promotion_decision(
+            decision_value(candidate, report)
+            | {"decision_at": "2026-09-13T03:14:15.926535Z"}
+        )
+    rejected = record_promotion_decision(
+        decision_value(
+            candidate,
+            report,
+            decision="reject",
+        )
+    )
+    deferred = record_promotion_decision(
+        decision_value(
+            candidate,
+            report,
+            decision="defer",
+        )
+    )
     assert rejected.decision == "reject"
     assert deferred.decision == "defer"
+
+
+def test_the_approval_must_be_bound_to_this_bundle_and_expected_environment():
+    candidate = frozen_candidate()
+    report = passed_report(candidate)
+    other = frozen_candidate(prompts=ref("artifact", 999))
+    with pytest.raises(PromotionError):
+        # an approval of another bundle never backs this one (exact hash)
+        record_promotion_decision(
+            decision_value(
+                candidate,
+                report,
+                approval=record_approval(other),
+            )
+        )
+    with pytest.raises(PromotionError):
+        # an approval given against another current environment demands
+        # re-approval, not reuse (G-13)
+        record_promotion_decision(
+            decision_value(
+                candidate,
+                report,
+                approval=record_approval(candidate, "approve", ref("environment", 984)),
+            )
+        )
+    with pytest.raises(PromotionError):
+        # the human approved over the evidence they saw: an approval bound to
+        # another validation report of the same bundle backs nothing
+        record_promotion_decision(
+            decision_value(
+                candidate,
+                report,
+                approval=record_approval(
+                    candidate, report=passed_report(candidate, "sealed-b")
+                ),
+            )
+        )
+    assert validation_report_ref(report) != validation_report_ref(
+        passed_report(candidate, "sealed-b")
+    )
+    decision = record_promotion_decision(decision_value(candidate, report))
+    assert decision.validation_report == validation_report_ref(report)
 
 
 def test_only_an_approve_decision_can_activate():
@@ -105,9 +242,13 @@ def test_only_an_approve_decision_can_activate():
     report = passed_report(candidate)
     state = open_promotion_state(CURRENT_ENV)
     for outcome in ("reject", "defer"):
-        decision = record_promotion_decision(decision_value(
-            candidate, report, decision=outcome,
-        ))
+        decision = record_promotion_decision(
+            decision_value(
+                candidate,
+                report,
+                decision=outcome,
+            )
+        )
         with pytest.raises(PromotionError):
             activate_candidate(state, decision, candidate)
     approved = record_promotion_decision(decision_value(candidate, report))
@@ -148,22 +289,28 @@ def test_full_activation_requires_a_passed_sealed_report_on_the_same_bundle():
     other = frozen_candidate(prompts=ref("artifact", 999))
     with pytest.raises(PromotionError):
         # a report for a different bundle backs nothing
-        record_promotion_decision(decision_value(
-            candidate, passed_report(other),
-        ))
+        record_promotion_decision(
+            decision_value(
+                candidate,
+                passed_report(other),
+            )
+        )
     gates = report_value()["gates"]
     gates["regression"] = {
-        "status": "fail", "reasons": ["회귀 실패"],
+        "status": "fail",
+        "reasons": ["회귀 실패"],
         "evidence": [ref("comparison_result", 960)],
     }
     failed, _ = run_validation(
-        candidate, ledger_with_sealed("sealed-f"),
+        candidate,
+        ledger_with_sealed("sealed-f"),
         report_value(gates=gates, datasets=["sealed-f"]),
     )
     with pytest.raises(PromotionError):
         record_promotion_decision(decision_value(candidate, failed))
     shadow, _ = run_validation(
-        candidate, ledger_with_sealed("sealed-s"),
+        candidate,
+        ledger_with_sealed("sealed-s"),
         report_value(mode="shadow", datasets=[]),
     )
     with pytest.raises(PromotionError):
@@ -176,7 +323,9 @@ def test_rollback_restores_the_bundle_and_never_claims_effect_reversal():
     report = passed_report(candidate)
     approved = record_promotion_decision(decision_value(candidate, report))
     state = activate_candidate(
-        open_promotion_state(CURRENT_ENV), approved, candidate,
+        open_promotion_state(CURRENT_ENV),
+        approved,
+        candidate,
     )
     rolled = rollback_environment(state, "회귀 발견")
     assert rolled.current_environment == EntityRef.from_dict(CURRENT_ENV)

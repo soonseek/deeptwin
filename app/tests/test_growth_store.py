@@ -36,6 +36,9 @@ from app.services.validation import (
 )
 from app.storage import Store
 from app.tests.test_growth_loop import LINEAGE, profile, valid
+from app.tests.test_promotion import (
+    promotion_owner,  # noqa: F401 - autouse owner session
+)
 from app.tests.test_validation import ledger_with_sealed, report_value
 
 STAMP = "2026-09-13T06:00:00.000000Z"

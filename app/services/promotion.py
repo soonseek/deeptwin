@@ -20,11 +20,15 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from hashlib import sha256
-from uuid import NAMESPACE_URL, uuid5
 
-from ..domain.refs import DomainContractError, EntityRef, canonical_json
-from .validation import FrozenCandidate, is_frozen_candidate, is_validation_report
+from ..domain.refs import DomainContractError, EntityRef
+from .promotion_approvals import is_issued_promotion_approval
+from .validation import (
+    FrozenCandidate,
+    is_frozen_candidate,
+    is_validation_report,
+    validation_report_ref,
+)
 
 PROMOTION_DECISION_SCHEMA_VERSION = "promotion-decision-v1"
 DECISIONS = frozenset({"approve", "reject", "defer"})
@@ -103,11 +107,16 @@ class PromotionDecision:
 
 
 def record_promotion_decision(value) -> PromotionDecision:
-    """Record one explicit human decision; silence never becomes an approve."""
+    """Record one explicit human decision; silence never becomes an approve.
+
+    The decision, its time and the approver come only from an owner-recorded
+    promotion approval issued by `promotion_approvals` — the caller declares
+    nothing about authentication.
+    """
 
     if type(value) is not dict or set(value) != {
-        "candidate", "validation_report", "scope", "approver", "decision",
-        "decision_at", "expected_current_environment", "rollback_bundle",
+        "candidate", "validation_report", "scope", "approval",
+        "expected_current_environment", "rollback_bundle",
     }:
         raise PromotionError("expected the exact promotion decision object")
     candidate = value["candidate"]
@@ -121,7 +130,26 @@ def record_promotion_decision(value) -> PromotionDecision:
         raise PromotionError(
             "the validation report is not bound to this exact bundle"
         )
-    decision = value["decision"]
+    approval = value["approval"]
+    if not is_issued_promotion_approval(approval):
+        raise PromotionError("promotion requires an owner-recorded approval")
+    expected_current = _ref(
+        value["expected_current_environment"], "environment",
+        "expected current environment",
+    )
+    report_ref = validation_report_ref(report)
+    if approval.candidate_bundle != bundle_ref:
+        # G-13: the approved hash is the applied hash, never another version
+        raise PromotionError("the approval is not bound to this exact bundle")
+    if approval.validation_report != report_ref:
+        # the human decided over the evidence they saw, not over any report
+        # that happens to name the same bundle
+        raise PromotionError("the approval is not bound to this validation report")
+    if approval.expected_current_environment != expected_current:
+        raise PromotionError(
+            "the approval was given against another current environment"
+        )
+    decision = approval.decision
     if decision not in DECISIONS:
         raise PromotionError(
             "a decision must be an explicit approve, reject or defer"
@@ -135,39 +163,19 @@ def record_promotion_decision(value) -> PromotionDecision:
         raise PromotionError(
             "an approve requires a passed sealed-offline validation report"
         )
-    approver = value["approver"]
-    if type(approver) is not dict or set(approver) != {
-        "actor_id", "authenticated", "evidence",
-    }:
-        raise PromotionError("expected the exact approver object")
-    actor_id = approver["actor_id"]
+    actor_id = approval.actor_ref.id
     if type(actor_id) is not str or _UUID.fullmatch(actor_id) is None:
         raise PromotionError("approver id is not a canonical UUID")
-    if approver["authenticated"] is not True:
-        raise PromotionError("promotion requires an authenticated approver")
-    report_sha = sha256(canonical_json(report.as_dict())).hexdigest()
     return _issue(
         PromotionDecision,
         candidate_environment=bundle_ref,
-        # A content-derived id: two different reports can never share
-        # (kind, id, version).
-        validation_report=EntityRef(
-            "validation_report",
-            str(uuid5(NAMESPACE_URL, f"deeptwin:validation-report:{report_sha}")),
-            1,
-            report_sha,
-        ),
+        validation_report=report_ref,
         scope=_ref(value["scope"], "decision_record", "scope"),
         approver_id=actor_id,
-        approver_evidence=_ref(
-            approver["evidence"], "action_approval", "approver evidence",
-        ),
+        approver_evidence=approval.approval_ref,
         decision=decision,
-        decision_at=_stamp(value["decision_at"], "decision time"),
-        expected_current_environment=_ref(
-            value["expected_current_environment"], "environment",
-            "expected current environment",
-        ),
+        decision_at=_stamp(approval.decided_at_utc, "decision time"),
+        expected_current_environment=expected_current,
         rollback_bundle=_ref(
             value["rollback_bundle"], "backup_manifest", "rollback bundle",
         ),
@@ -182,8 +190,9 @@ class PromotionState:
     current_environment: EntityRef
     # history entries: (environment_ref, lifecycle) — versions are never erased
     history: tuple[tuple[EntityRef, str], ...]
-    # content hashes of every decision this state lineage has applied; a
-    # consumed approval is never valid again, rollback included (G-13).
+    # content hashes of every owner approval record this state lineage has
+    # applied; a consumed approval is never valid again, rollback included
+    # (G-13), whatever decision object carries it.
     consumed_decisions: tuple[str, ...]
     external_effects_reverted: bool
     # Monotone per-value revision: the storage layer versions records by it
@@ -257,8 +266,11 @@ def activate_candidate(state, decision, candidate) -> PromotionState:
         raise PromotionError(
             "the current environment changed since approval"
         )
-    decision_sha = sha256(canonical_json(decision.as_dict())).hexdigest()
-    if decision_sha in state.consumed_decisions:
+    # Consumption is keyed on the owner's approval record itself: the same
+    # approval re-wrapped in another decision object (other scope, other
+    # rollback bundle) is not a fresh human act.
+    approval_sha = decision.approver_evidence.sha256
+    if approval_sha in state.consumed_decisions:
         # A rollback restores the environment the approval expected, but the
         # human rolled back for a reason: re-promotion needs a fresh decision.
         raise PromotionError("this approval was already applied once")
@@ -268,7 +280,7 @@ def activate_candidate(state, decision, candidate) -> PromotionState:
         PromotionState,
         current_environment=candidate.bundle_ref,
         history=(*state.history, (state.current_environment, "retired")),
-        consumed_decisions=(*state.consumed_decisions, decision_sha),
+        consumed_decisions=(*state.consumed_decisions, approval_sha),
         external_effects_reverted=False,
         revision=state.revision + 1,
         _issuer_token=_ISSUE_TOKEN,

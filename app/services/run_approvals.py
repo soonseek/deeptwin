@@ -126,37 +126,65 @@ def _validate_command(payload) -> dict:
     }
 
 
+def _bound_pair(domain_store, owner_authority, error):
+    if (
+        type(domain_store) is not DomainStore
+        or type(owner_authority) is not PersistentOwnerAuthority
+        or owner_authority._domain is not domain_store
+    ):
+        raise error("unavailable")
+    return domain_store, owner_authority
+
+
+def _authenticate_owner(owner, request, db=None):
+    """The owner's human actor for a CSRF-verified same-origin POST, re-checked
+    against the live session (inside the writer when `db` is given)."""
+
+    profile = owner.profile
+    if (
+        type(request) is not AuthenticatedRequest
+        or request.method != "POST"
+        or request.csrf_verified is not True
+        or type(request.host) is not str
+        or request.host != profile.http_origin.split("://", 1)[1]
+        or request.origin != profile.http_origin
+    ):
+        raise OwnerAuthError("access_denied")
+    actor = owner.authenticate_bound(request.session, db=db)
+    if (
+        actor is not request.session.actor
+        or actor.kind != "human"
+        or actor.origin != "local_session"
+    ):
+        raise OwnerAuthError("unauthenticated")
+    return actor
+
+
+def _owner_actor_ref(db, actor) -> EntityRef:
+    account = db.execute(
+        "SELECT actor_ref FROM owner_auth_accounts WHERE owner_id=?",
+        (actor.id,),
+    ).fetchone()
+    if account is None:
+        raise OwnerAuthError("unauthenticated")
+    return EntityRef.from_dict(json.loads(account["actor_ref"]))
+
+
+def _stored_owner_actor_ref(db) -> dict | None:
+    account = db.execute("SELECT actor_ref FROM owner_auth_accounts").fetchone()
+    return None if account is None else json.loads(account["actor_ref"])
+
+
 class PersistentRunApprovals:
     """Writes and reads owner approvals over the exact bound store."""
 
     def __init__(self, domain_store, owner_authority):
-        if (
-            type(domain_store) is not DomainStore
-            or type(owner_authority) is not PersistentOwnerAuthority
-            or owner_authority._domain is not domain_store
-        ):
-            raise RunApprovalError("unavailable")
-        self._domain, self._owner = domain_store, owner_authority
+        self._domain, self._owner = _bound_pair(
+            domain_store, owner_authority, RunApprovalError
+        )
 
     def _authenticate(self, request, db=None):
-        profile = self._owner.profile
-        if (
-            type(request) is not AuthenticatedRequest
-            or request.method != "POST"
-            or request.csrf_verified is not True
-            or type(request.host) is not str
-            or request.host != profile.http_origin.split("://", 1)[1]
-            or request.origin != profile.http_origin
-        ):
-            raise OwnerAuthError("access_denied")
-        actor = self._owner.authenticate_bound(request.session, db=db)
-        if (
-            actor is not request.session.actor
-            or actor.kind != "human"
-            or actor.origin != "local_session"
-        ):
-            raise OwnerAuthError("unauthenticated")
-        return actor
+        return _authenticate_owner(self._owner, request, db)
 
     def _load(self, db, approval_id: str, roots) -> RunApproval | None:
         row = db.execute(
@@ -180,8 +208,7 @@ class PersistentRunApprovals:
         content = body["content"]
         if content.get("schema_version") != _RECORD_SCHEMA:
             raise RunApprovalError("unavailable")
-        account = db.execute("SELECT actor_ref FROM owner_auth_accounts").fetchone()
-        if account is None or json.loads(account["actor_ref"]) != body["actor_ref"]:
+        if _stored_owner_actor_ref(db) != body["actor_ref"]:
             # only the persistent owner's human actor authors approvals
             raise RunApprovalError("unavailable")
         return RunApproval(
@@ -207,8 +234,10 @@ class PersistentRunApprovals:
 
     @_closed
     def record(self, request, payload) -> dict:
-        command = _validate_command(payload)
+        # authentication first: an unauthenticated caller learns nothing
+        # about the command grammar
         self._authenticate(request)
+        command = _validate_command(payload)
         approval_id = approval_identity(
             command["run_id"], command["node_id"], command["approval_scope"]
         )
@@ -229,13 +258,7 @@ class PersistentRunApprovals:
                 return self._receipt(
                     db, roots, existing, stored["content"]["event_sequence"]
                 )
-            account = db.execute(
-                "SELECT actor_ref FROM owner_auth_accounts WHERE owner_id=?",
-                (actor.id,),
-            ).fetchone()
-            if account is None:
-                raise OwnerAuthError("unauthenticated")
-            actor_ref = EntityRef.from_dict(json.loads(account["actor_ref"]))
+            actor_ref = _owner_actor_ref(db, actor)
             stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
             event_sequence = _event_stream(db, roots.genesis.id)["next_sequence"]
             content = {

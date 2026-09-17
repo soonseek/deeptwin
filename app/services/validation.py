@@ -503,6 +503,21 @@ def is_validation_report(value: object) -> bool:
     )
 
 
+def validation_report_ref(report) -> EntityRef:
+    """The content-derived reference of one issued report: two different
+    reports can never share (kind, id, version)."""
+
+    if not is_validation_report(report):
+        raise GrowthValidationError("a framework-issued validation report is required")
+    report_sha = sha256(canonical_json(report.as_dict())).hexdigest()
+    return EntityRef(
+        "validation_report",
+        str(uuid5(NAMESPACE_URL, f"deeptwin:validation-report:{report_sha}")),
+        1,
+        report_sha,
+    )
+
+
 def is_frozen_candidate(value: object) -> bool:
     """True only for a bundle issued by freeze_candidate."""
 
