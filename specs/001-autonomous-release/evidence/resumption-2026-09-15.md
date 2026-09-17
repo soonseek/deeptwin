@@ -1034,3 +1034,15 @@ and contracts, storage, receipt exports, lineage contracts incl. the 68-artifact
 Details and hashes in `prepare-v3-constants-task24c2.md`. Full regression for this iteration follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6014 passed, 2 skipped, 1 warning, 369
 subtests passed in 701.20s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## Task 24 step (d) — control-side stage postcondition observer (2026-09-18)
+
+RED retained (module absent: 2 failed, 20 errors), GREEN after the framing's socket-timeout shape was
+learned (TransportUncertain → probe_deadline when the attempt is exhausted) and two test-side corrections.
+Independent review ACCEPT WITH CHANGES (handshake stall = deadline, framing violation = invalid, reply-side
+uid/gid comparison exercised, correlation rules parametrized, boot-id pin, attempt measured before
+teardown, failure-path fd baselines) folded in RED-first. Covering: **68 passed** (observer 29, probe,
+listener); the wider transport set **237 passed, 1 skipped** before the closures; Ruff clean. Details and
+hashes in `stage-observer-task24d.md`. Full regression for this iteration follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6043 passed, 2 skipped, 1 warning, 369
+subtests passed in 710.16s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
