@@ -13,7 +13,6 @@ is status "prepared" — never active, with no activation path in this module
 """
 
 import dataclasses
-from uuid import uuid4
 
 import pytest
 
@@ -26,7 +25,8 @@ from app.services.environments import (
     prepare_environment_version,
     record_design_approval,
 )
-from app.services.owner_decisions import OwnerDecision, PersistentOwnerDecisions
+from app.services.owner_decisions import OwnerDecision
+from app.tests.owner_session import OwnerSession
 from app.tests.test_alternatives import ref
 from app.tests.test_design_review import pool_inputs, verdict
 
@@ -35,34 +35,12 @@ ENV_ID = "00000000-0000-4000-8000-00000000e001"
 # One real owner session per test module records every design approval in
 # the value-level design suites (modules calling approval_value import
 # `design_owner`); approvals are never assembled by a test.
-_decisions = None
-
-
-@pytest.fixture(scope="module", autouse=True)
-def design_owner(tmp_path_factory):
-    global _decisions
-    from app.tests.test_extension_candidates_persistent import owner
-
-    with owner(tmp_path_factory.mktemp("design-owner")) as (app, _c, request, _p, _a):
-        _decisions = (
-            PersistentOwnerDecisions(app.state.domain_store, app.state.owner_authority),
-            request,
-        )
-        yield
-    _decisions = None
+SESSION = OwnerSession("design-owner")
+design_owner = SESSION.fixture()
 
 
 def record_owner_decision(subject, decision="approve", subject_kind="design_approval"):
-    if _decisions is None:
-        raise RuntimeError("import design_owner from app.tests.test_environments into this module")
-    service, request = _decisions
-    return service.record(request, {
-        "schema_version": "owner-decision-command-v1",
-        "command_id": str(uuid4()),
-        "subject_kind": subject_kind,
-        "subject": subject,
-        "decision": decision,
-    })
+    return SESSION.decide(subject_kind, subject, decision)
 
 
 def approval_value(candidate, candidate_verdict, **overrides):
@@ -130,6 +108,11 @@ def test_the_owner_decision_must_be_over_this_exact_design_subject():
     _request, two, three, _duplicate = pool_inputs()
     value = approval_value(two, verdict(two))
     subject = design_approval_subject(value)
+    # identities bind the entity kind too (as a sibling field, never the
+    # four-key reference shape the store would try to resolve)
+    assert subject["design"]["entity_kind"] == two.graph_ref.kind
+    assert subject["model_bindings"]["entity_kind"] == "model_choice"
+    assert "kind" not in subject["design"]
     for other in (
         design_approval_subject(approval_value(three, verdict(three))),  # another design
         design_approval_subject(approval_value(two, verdict(two), environment=ENV_ID[:-1] + "2")),

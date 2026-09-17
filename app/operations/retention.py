@@ -12,9 +12,10 @@ creation-order approximation of the contract's LRU — the access layer owns
 real usage recency and may re-touch entries by re-registering derived ones. Explicit deletion is a
 two-step human act: `preview_deletion` states the exact scope, bytes and
 derived/approval impact against the ledger's current revision;
-`delete_items` must present that exact preview against the unchanged
-ledger with an authenticated actor, and it leaves tombstones — never a
-silent hole. Values are issued, never constructed; storage owns the
+`delete_items` must present that exact preview against the unchanged,
+same-identity ledger together with the owner's recorded decision over
+exactly that preview and reason (`owner_decisions`, kind `deletion`), and it
+leaves tombstones — never a silent hole. Values are issued, never constructed; storage owns the
 single-writer transaction as with the other ledgers.
 """
 
@@ -24,8 +25,10 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from hashlib import sha256
+from uuid import uuid4
 
 from ..domain.refs import DomainContractError, EntityRef, canonical_json
+from ..services.owner_decisions import is_issued_owner_decision, subject_digest
 
 CLASSIFICATIONS = frozenset({"core", "cache", "diagnostics"})
 DELETION_REASONS = frozenset({
@@ -160,6 +163,9 @@ class Tombstone:
 class RetentionLedger:
     """One ledger value; evolution only through the module functions."""
 
+    # issued once at open: a preview and its owner decision bind this ledger,
+    # never another with the same items, bytes and revision
+    ledger_id: str
     entries: tuple[RetentionEntry, ...]
     tombstones: tuple[Tombstone, ...]
     revision: int
@@ -183,6 +189,7 @@ class DeletionPreview:
     derived_impact: tuple[str, ...]
     approval_impact: tuple[EntityRef, ...]
     ledger_revision: int
+    ledger_id: str
     preview_sha: str
     _issuer_token: object = field(repr=False, compare=False)
 
@@ -197,7 +204,7 @@ def _require_ledger(value) -> None:
 
 def open_retention_ledger() -> RetentionLedger:
     return _issue(
-        RetentionLedger, entries=(), tombstones=(), revision=1,
+        RetentionLedger, ledger_id=str(uuid4()), entries=(), tombstones=(), revision=1,
         _issuer_token=_ISSUE_TOKEN,
     )
 
@@ -253,6 +260,7 @@ def register_item(ledger, value) -> RetentionLedger:
     )
     return _issue(
         RetentionLedger,
+        ledger_id=ledger.ledger_id,
         entries=(*ledger.entries, entry),
         tombstones=ledger.tombstones,
         revision=ledger.revision + 1,
@@ -319,6 +327,7 @@ def prune(ledger, policy, *, now):
     )
     return _issue(
         RetentionLedger,
+        ledger_id=ledger.ledger_id,
         entries=ordered,
         tombstones=ledger.tombstones,
         revision=ledger.revision + 1,
@@ -349,10 +358,15 @@ def preview_deletion(ledger, item_ids) -> DeletionPreview:
     approvals = tuple(
         approval for entry in entries for approval in entry.approval_refs
     )
+    # the digest covers everything the preview shows: scope, bytes, the
+    # ledger it was taken from and the derived/approval impact
     payload = {
+        "ledger_id": ledger.ledger_id,
         "item_ids": list(item_ids),
         "ledger_revision": ledger.revision,
         "total_bytes": sum(entry.byte_length for entry in entries),
+        "derived_impact": list(derived),
+        "approval_impact": [approval.as_dict() for approval in approvals],
     }
     return _issue(
         DeletionPreview,
@@ -361,43 +375,82 @@ def preview_deletion(ledger, item_ids) -> DeletionPreview:
         derived_impact=derived,
         approval_impact=approvals,
         ledger_revision=ledger.revision,
+        ledger_id=ledger.ledger_id,
         preview_sha=sha256(canonical_json(payload)).hexdigest(),
         _issuer_token=_ISSUE_TOKEN,
     )
 
 
-def delete_items(
-    ledger, preview, *, actor, deleted_at, deletion_request_id, reason_code,
-) -> RetentionLedger:
-    """Delete exactly the previewed scope, leaving complete tombstones."""
+DELETION_SUBJECT_SCHEMA_VERSION = "deletion-subject-v1"
 
-    _require_ledger(ledger)
+
+def _require_preview(value) -> None:
     if (
-        type(preview) is not DeletionPreview
-        or getattr(preview, "_issuer_token", None) is not _ISSUE_TOKEN
+        type(value) is not DeletionPreview
+        or getattr(value, "_issuer_token", None) is not _ISSUE_TOKEN
     ):
         raise RetentionError("a framework-issued deletion preview is required")
+
+
+def deletion_subject(preview, reason_code) -> dict:
+    """The exact subject a human approves for one explicit deletion: the
+    previewed scope (by digest and by ids) and the reason. The deletion
+    screen and `delete_items` derive it from the same inputs, so the owner's
+    recorded decision binds it by canonical digest."""
+
+    _require_preview(preview)
+    if reason_code not in DELETION_REASONS:
+        raise RetentionError("unknown deletion reason")
+    return {
+        "schema_version": DELETION_SUBJECT_SCHEMA_VERSION,
+        "ledger_id": preview.ledger_id,
+        "preview_sha256": preview.preview_sha,
+        "ledger_revision": preview.ledger_revision,
+        "item_ids": list(preview.item_ids),
+        "total_bytes": preview.total_bytes,
+        "reason_code": reason_code,
+    }
+
+
+def delete_items(ledger, preview, *, approval, reason_code) -> RetentionLedger:
+    """Delete exactly the previewed scope, leaving complete tombstones.
+
+    The actor, evidence, time and request identity come only from an
+    owner-recorded decision (`owner_decisions`, kind `deletion`) over exactly
+    this preview and reason — the caller declares nothing about
+    authentication.
+    """
+
+    _require_ledger(ledger)
+    _require_preview(preview)
+    if preview.ledger_id != ledger.ledger_id:
+        raise RetentionError("the preview was taken from another ledger")
     if preview.ledger_revision != ledger.revision:
         # The ledger changed since the human saw the scope: show it again.
         raise RetentionError("the preview is stale; re-show the exact scope")
-    if type(actor) is not dict or set(actor) != {
-        "actor_id", "authenticated", "evidence",
-    }:
-        raise RetentionError("expected the exact actor object")
-    actor_id = actor["actor_id"]
+    subject = deletion_subject(preview, reason_code)
+    if not is_issued_owner_decision(approval):
+        raise RetentionError("deletion requires an owner-recorded decision")
+    if (
+        approval.subject_kind != "deletion"
+        or approval.subject != subject
+        or approval.subject_sha256 != subject_digest(subject)
+    ):
+        raise RetentionError("the decision is not over this exact deletion")
+    if approval.decision != "approve":
+        raise RetentionError("a recorded reject deletes nothing")
+    actor_id = approval.actor_ref.id
     if type(actor_id) is not str or _UUID.fullmatch(actor_id) is None:
         raise RetentionError("actor id is not a canonical UUID")
-    if actor["authenticated"] is not True:
-        raise RetentionError("deletion requires an authenticated actor")
-    evidence = _ref(actor["evidence"], "action_approval", "actor evidence")
-    _stamp(deleted_at, "deletion time")
+    evidence = approval.approval_ref
+    deleted_at = approval.decided_at_utc
+    _stamp(deleted_at, "deletion time")  # the exact stamp string is what is stored
+    deletion_request_id = approval.command_id
     if (
         type(deletion_request_id) is not str
         or _UUID.fullmatch(deletion_request_id) is None
     ):
         raise RetentionError("deletion request id is not a canonical UUID")
-    if reason_code not in DELETION_REASONS:
-        raise RetentionError("unknown deletion reason")
     scope = set(preview.item_ids)
     tombstones = list(ledger.tombstones)
     kept = []
@@ -423,6 +476,7 @@ def delete_items(
         raise RetentionError("an item in the scope does not exist")
     return _issue(
         RetentionLedger,
+        ledger_id=ledger.ledger_id,
         entries=tuple(kept),
         tombstones=tuple(tombstones),
         revision=ledger.revision + 1,
@@ -441,6 +495,7 @@ __all__ = [
     "RetentionPolicy",
     "Tombstone",
     "delete_items",
+    "deletion_subject",
     "freeze_retention_policy",
     "open_retention_ledger",
     "preview_deletion",

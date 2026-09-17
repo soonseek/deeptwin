@@ -275,3 +275,5 @@ def test_values_are_issued_never_constructed_and_resolve_is_exact(tmp_path):
             decisions.resolve(decision.approval_ref.as_dict())
         with pytest.raises(OwnerDecisionError):
             PersistentOwnerDecisions(object(), app.state.owner_authority)
+        assert decisions.bound_to(app.state.domain_store)
+        assert not decisions.bound_to(object())

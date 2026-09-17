@@ -43,3 +43,13 @@
 - TDD: module absent first (collection error); 7 tests green.
 - `ruff check` clean; full regression **3296 passed, 2 skipped**
   (was 3289).
+
+## Amendment 2026-09-18 — deletion actor replaced by owner-recorded decisions
+
+The paragraph above describing `delete_items` with "an authenticated actor with
+`action_approval` evidence" is superseded: the caller-declared actor object is gone.
+`delete_items(ledger, preview, *, approval, reason_code)` now requires an issued
+`OwnerDecision` (kind `deletion`) over exactly `deletion_subject(preview, reason_code)`;
+the preview digest covers the ledger identity, scope, bytes and the derived/approval
+impact the human saw; tombstone actor/evidence/time/request id come from the owner's
+record. See `deletion-decisions-t069.md`.

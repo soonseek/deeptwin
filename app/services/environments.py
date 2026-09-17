@@ -121,9 +121,15 @@ _SUBJECT_KEYS = frozenset({
 
 
 def _identity(ref: EntityRef) -> dict:
-    # an exact identity, never a stored-record reference the store would
-    # try to resolve (design and binding records may not exist yet)
-    return {"id": ref.id, "version": ref.version, "sha256": ref.sha256}
+    # an exact identity including its kind, never the four-key reference
+    # shape the store would try to resolve (design and binding records may
+    # not exist yet)
+    return {
+        "entity_kind": ref.kind,
+        "id": ref.id,
+        "version": ref.version,
+        "sha256": ref.sha256,
+    }
 
 
 def design_approval_subject(value) -> dict:
@@ -170,6 +176,26 @@ def design_approval_subject(value) -> dict:
             _ref(value["observation_contract"], "observation_contract",
                  "observation contract")
         ),
+    }
+
+
+def design_approval_evidence_subject(approval) -> dict:
+    """The subject the owner decision behind an issued DesignApproval must
+    carry — rebuilt from the approval alone, so a store can check that the
+    evidence it resolves is over exactly this design."""
+
+    if not is_issued_design_approval(approval):
+        raise EnvironmentContractError("a recorded design approval is required")
+    return {
+        "schema_version": DESIGN_APPROVAL_SUBJECT_SCHEMA_VERSION,
+        "environment_id": approval.environment_id,
+        "design": _identity(approval.design_ref),
+        "verdict_sha256": approval.verdict_sha,
+        "candidate_id": approval.candidate_id,
+        "candidate_version": approval.candidate_version,
+        "model_bindings": _identity(approval.model_bindings),
+        "tool_permissions": _identity(approval.tool_permissions),
+        "observation_contract": _identity(approval.observation_contract),
     }
 
 

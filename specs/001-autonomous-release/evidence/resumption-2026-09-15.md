@@ -869,3 +869,14 @@ Follow-ups recorded: design_store evidence resolution in the same vault; retenti
 (T069). Full regression for this iteration follows.
 
 Owner decisions + design approval evidence full regression: **5769 passed, 1 skipped, 1 warning, 369 subtests passed in 688.98s (0:11:28)**, exit 0.
+
+## Deletion decisions (T069 residual) + design-store evidence resolution (2026-09-18)
+
+RED on `deletion_subject` / `decisions=` / `bound_to` / `ledger_id` / `entity_kind`, GREEN; independent
+review ACCEPT with three SHOULDs folded in RED-first (ledger identity + impact-covering preview
+digest; entity kinds bound in the design subject; order-independent count assertion). Covering
+command (retention, ops audit, design store, environments, design audit 2, owner decisions,
+records mirror): **66 passed, 1 inherited warning, 9.34s**; Ruff clean. Details and hashes in
+`deletion-decisions-t069.md`. Full regression for this iteration follows.
+
+Deletion decisions + design-store evidence resolution full regression: **5772 passed, 1 skipped, 1 warning, 369 subtests passed in 686.88s (0:11:26)**, exit 0.

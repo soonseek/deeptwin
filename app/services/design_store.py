@@ -21,11 +21,13 @@ from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore, StorageError
 from .design_persistence import decode_design_refs, encode_design_refs
 from .environments import (
+    design_approval_evidence_subject,
     is_issued_design_approval,
     is_issued_environment_state,
     is_issued_environment_version,
     restore_environment_state,
 )
+from .owner_decisions import OwnerDecisionError, PersistentOwnerDecisions
 
 RECORD_KIND = "decision_record"
 _APPROVAL_KIND = "design_approval_record"
@@ -75,11 +77,33 @@ def _put(
         ) from exc
 
 
-def persist_design_approval(domain_store, approval, **headers) -> EntityRef:
-    """Persist one human approval content-addressed; identical is idempotent."""
+def persist_design_approval(domain_store, approval, *, decisions, **headers) -> EntityRef:
+    """Persist one human approval content-addressed; identical is idempotent.
+
+    The approval's evidence must resolve, through the owner-decision reader
+    bound to this very store, to an approve decision over exactly this
+    design subject: evidence from another vault, another design or a
+    tampered reference persists nothing.
+    """
 
     if not is_issued_design_approval(approval):
         raise DesignStoreError("a recorded design approval is required")
+    if type(decisions) is not PersistentOwnerDecisions or not decisions.bound_to(
+        domain_store
+    ):
+        raise DesignStoreError("an owner-decision reader bound to this store is required")
+    try:
+        evidence = decisions.resolve(approval.approver_evidence)
+    except OwnerDecisionError as exc:
+        raise DesignStoreError("the approval's evidence is not in this vault") from exc
+    if (
+        evidence.subject_kind != "design_approval"
+        or evidence.decision != "approve"
+        or evidence.subject != design_approval_evidence_subject(approval)
+        or evidence.actor_ref.id != approval.approver_id
+        or evidence.decided_at_utc != approval.approved_at
+    ):
+        raise DesignStoreError("the approval's evidence is not over this exact design")
     record_id = str(uuid5(
         NAMESPACE_URL, f"deeptwin:design-approval:{approval.approval_sha}",
     ))

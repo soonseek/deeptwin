@@ -247,6 +247,11 @@ class PersistentOwnerDecisions:
             domain_store, owner_authority, OwnerDecisionError
         )
 
+    def bound_to(self, domain_store) -> bool:
+        """True only for the exact store this reader resolves evidence in."""
+
+        return self._domain is domain_store
+
     def _load(self, db, ref: EntityRef, roots) -> OwnerDecision:
         if ref.kind != "action_approval" or ref.version != 1:
             raise OwnerDecisionError("unavailable")

@@ -66,11 +66,11 @@ Verdict on the first cut: REJECT (narrow). Closed RED-first:
    type → also the envelope's correlation id; test writes an owner-authored
    record naming another command's decided event. 5. `design_approval_subject`
    accepted superset keys → exact set (plus `approval`).
-- Tracked follow-up (review finding 2): `persist_design_approval`
-  (app/services/design_store.py) encodes `approver_evidence_ref` as a tagged
-  string, so a persisted approval can carry evidence from another vault; it
-  should resolve the evidence through `PersistentOwnerDecisions` bound to the
-  same store before persisting. Not closed here.
+- Follow-up (review finding 2), closed 2026-09-18 in
+  `deletion-decisions-t069.md`: `persist_design_approval` now resolves the
+  evidence through the `PersistentOwnerDecisions` bound to the same store
+  and checks kind, decision, exact subject (including entity kinds),
+  approver and stamp before writing.
 - `app/extensions/port_schema_generator.py:1848` reads `authenticated` off a
   trusted actor record for system/worker actors — not the caller-declared
   human-approval shape; outside this ruling.
@@ -88,5 +88,5 @@ Verdict on the first cut: REJECT (narrow). Closed RED-first:
 
 - No route or GUI calls the producer yet (§6.3 "이 설계로 준비" screen is UI
   work); no model/tool/paid call; no publication; no license decision.
-- `retention.py` `delete_items` still takes the caller-declared actor dict
-  (T069 follow-up; the `deletion` subject kind is reserved for it).
+- `retention.py` `delete_items` took the caller-declared actor dict until
+  2026-09-18 (`deletion-decisions-t069.md`).

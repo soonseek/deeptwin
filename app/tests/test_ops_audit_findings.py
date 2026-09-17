@@ -40,16 +40,12 @@ from app.operations.retention import (
 from app.tests.test_alternatives import ref
 from app.tests.test_document_tools import docx_spec
 from app.tests.test_export import item_value, missing_value, request_value
-from app.tests.test_retention import ACTOR, NOW, ledger
-
-DELETE_REQUEST = "00000000-0000-4000-8000-00000000de01"
-
-
-def actor():
-    return {
-        "actor_id": ACTOR, "authenticated": True,
-        "evidence": ref("action_approval", 1703),
-    }
+from app.tests.test_retention import (  # noqa: F401 - retention_owner is an autouse fixture
+    NOW,
+    deletion_approval,
+    ledger,
+    retention_owner,
+)
 
 
 def manifest_kwargs(**overrides):
@@ -84,20 +80,21 @@ def test_f1_escape_carrying_canaries_still_refuse(canary):
 def test_f2_tombstones_carry_the_mandated_fields_and_evidence():
     state = ledger()
     preview = preview_deletion(state, ["cache-preview"])
+    approval = deletion_approval(preview)
     deleted = delete_items(
-        state, preview, actor=actor(),
-        deleted_at=NOW, deletion_request_id=DELETE_REQUEST,
-        reason_code="user_requested",
+        state, preview, approval=approval, reason_code="user_requested",
     )
     tombstone = deleted.tombstones[0]
-    assert tombstone.deleted_at == NOW
-    assert tombstone.deletion_request_id == DELETE_REQUEST
+    # every mandated field is the owner writer's, never caller input
+    assert tombstone.deleted_at == approval.decided_at_utc
+    assert tombstone.deletion_request_id == approval.command_id
     assert tombstone.reason_code == "user_requested"
-    assert tombstone.evidence_ref.as_dict() == ref("action_approval", 1703)
+    assert tombstone.evidence_ref == approval.approval_ref
+    assert tombstone.actor_id == approval.actor_ref.id
     with pytest.raises(RetentionError):
         delete_items(
-            state, preview_deletion(state, ["diag-log"]), actor=actor(),
-            deleted_at=NOW, deletion_request_id=DELETE_REQUEST,
+            state, preview_deletion(state, ["diag-log"]),
+            approval=deletion_approval(preview_deletion(state, ["diag-log"])),
             reason_code="vibes",
         )
 

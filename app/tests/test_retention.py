@@ -8,9 +8,10 @@ can never be classified as cache, and every prune leaves a core event
 record of the kinds, window and quantities it removed. Explicit deletion is
 a two-step act: a preview states the exact scope, bytes and derived and
 approval impact; the deletion must present that exact preview against an
-unchanged ledger with an authenticated actor, and it leaves a tombstone —
-never a silent hole (operations.md OPS-D04/D05, §RetentionPolicy,
-OPS-AC06; T069).
+unchanged ledger together with the owner's recorded decision over exactly
+that preview and reason (never a caller-declared actor), and it leaves a
+tombstone — never a silent hole (operations.md OPS-D04/D05,
+§RetentionPolicy, OPS-AC06; T069).
 """
 
 import dataclasses
@@ -20,13 +21,24 @@ import pytest
 from app.operations.retention import (
     RetentionError,
     delete_items,
+    deletion_subject,
     freeze_retention_policy,
     open_retention_ledger,
     preview_deletion,
     prune,
     register_item,
 )
+from app.services.owner_decisions import OwnerDecision
+from app.tests.owner_session import OwnerSession
 from app.tests.test_alternatives import ref
+
+SESSION = OwnerSession("retention-owner")
+retention_owner = SESSION.fixture()
+
+
+def deletion_approval(preview, reason_code="user_requested", decision="approve",
+                      subject_kind="deletion"):
+    return SESSION.decide(subject_kind, deletion_subject(preview, reason_code), decision)
 
 NOW = "2026-09-13T12:00:00.000000Z"
 OLD = "2026-08-01T00:00:00.000000Z"
@@ -135,62 +147,118 @@ def test_explicit_deletion_needs_the_exact_preview_and_leaves_tombstones():
     assert preview.total_bytes == 1_000
     assert preview.derived_impact == ("preview-1",)
     assert len(preview.approval_impact) == 1
+    approval = deletion_approval(preview)
     deleted = delete_items(
-        state, preview,
-        actor={
-            "actor_id": ACTOR, "authenticated": True,
-            "evidence": ref("action_approval", 1703),
-        },
-        deleted_at=NOW,
-        deletion_request_id="00000000-0000-4000-8000-00000000de02",
-        reason_code="user_requested",
+        state, preview, approval=approval, reason_code="user_requested",
     )
     remaining = {entry.item_id for entry in deleted.entries}
     assert "core-with-impact" not in remaining
     tombstone = deleted.tombstones[0]
     assert tombstone.item_id == "core-with-impact"
     assert tombstone.derived_impact == ("preview-1",)
+    # the tombstone carries the owner's recorded act, nothing caller-declared
+    assert tombstone.actor_id == approval.actor_ref.id
+    assert tombstone.evidence_ref == approval.approval_ref
+    assert tombstone.deleted_at == approval.decided_at_utc
+    assert tombstone.deletion_request_id == approval.command_id
     with pytest.raises(RetentionError):
         # the consumed preview never deletes twice
         delete_items(
-            deleted, preview,
-            actor={
-                "actor_id": ACTOR, "authenticated": True,
-                "evidence": ref("action_approval", 1703),
-            },
-            deleted_at=NOW,
-            deletion_request_id="00000000-0000-4000-8000-00000000de02",
-            reason_code="user_requested",
+            deleted, preview, approval=approval, reason_code="user_requested",
         )
 
 
-def test_deletion_refuses_stale_previews_and_unauthenticated_actors():
+def test_deletion_refuses_stale_previews_and_undecided_actors():
     state = ledger()
     preview = preview_deletion(state, ["cache-preview"])
     moved = register_item(state, item("late-item", "cache", created_at=NOW))
-    common = {
-        "deleted_at": NOW,
-        "deletion_request_id": "00000000-0000-4000-8000-00000000de03",
-        "reason_code": "user_requested",
-    }
+    approval = deletion_approval(preview)
     with pytest.raises(RetentionError):
         # the ledger changed since the preview: the scope must be re-shown
-        delete_items(moved, preview, actor={
+        delete_items(moved, preview, approval=approval, reason_code="user_requested")
+    with pytest.raises(RetentionError):
+        # a caller-declared actor is not evidence
+        delete_items(state, preview, approval={
             "actor_id": ACTOR, "authenticated": True,
             "evidence": ref("action_approval", 1703),
-        }, **common)
+        }, reason_code="user_requested")
     with pytest.raises(RetentionError):
-        delete_items(state, preview, actor={
-            "actor_id": ACTOR, "authenticated": False,
-            "evidence": ref("action_approval", 1703),
-        }, **common)
+        delete_items(state, preview, approval=None, reason_code="user_requested")
     with pytest.raises(RetentionError):
         preview_deletion(state, ["never-registered"])
     with pytest.raises(RetentionError):
-        delete_items(state, object(), actor={
-            "actor_id": ACTOR, "authenticated": True,
-            "evidence": ref("action_approval", 1703),
-        }, **common)
+        delete_items(state, object(), approval=approval, reason_code="user_requested")
+
+
+def test_a_decision_binds_this_ledger_and_the_impact_the_human_saw():
+    # review: two ledgers with the same item id, bytes and revision but a
+    # different shown impact used to share a preview digest, so one owner
+    # decision deleted on both. The ledger has an identity and the digest
+    # covers the derived/approval impact that the preview displays.
+    first = register_item(open_retention_ledger(), item(
+        "core-a", "core", derived_ids=("preview-1",),
+    ))
+    second = register_item(open_retention_ledger(), item(
+        "core-a", "core", approval_refs=(ref("action_approval", 1702),),
+    ))
+    assert first.ledger_id != second.ledger_id
+    preview_first = preview_deletion(first, ["core-a"])
+    preview_second = preview_deletion(second, ["core-a"])
+    assert preview_first.preview_sha != preview_second.preview_sha
+    assert preview_first.ledger_id == first.ledger_id
+    assert deletion_subject(preview_first, "user_requested")["ledger_id"] == first.ledger_id
+    approval = deletion_approval(preview_first)
+    with pytest.raises(RetentionError):
+        delete_items(second, preview_second, approval=approval, reason_code="user_requested")
+    with pytest.raises(RetentionError):
+        # a preview of another ledger never applies to this one
+        delete_items(second, preview_first, approval=approval, reason_code="user_requested")
+    twin = register_item(open_retention_ledger(), item(
+        "core-a", "core", derived_ids=("preview-1",),
+    ))
+    with pytest.raises(RetentionError):
+        # byte-identical scope on a different ledger is a different subject
+        delete_items(
+            twin, preview_deletion(twin, ["core-a"]), approval=approval,
+            reason_code="user_requested",
+        )
+    deleted = delete_items(first, preview_first, approval=approval, reason_code="user_requested")
+    assert deleted.ledger_id == first.ledger_id
+    assert deleted.tombstones[0].deletion_request_id == approval.command_id
+
+
+def test_the_owner_decision_must_be_over_this_exact_deletion_subject():
+    state = ledger()
+    preview = preview_deletion(state, ["cache-preview"])
+    other = preview_deletion(state, ["diag-log"])
+    subject = deletion_subject(preview, "user_requested")
+    assert subject["preview_sha256"] == preview.preview_sha
+    assert subject["item_ids"] == ["cache-preview"]
+    with pytest.raises(RetentionError):
+        deletion_subject(preview, "vibes")
+    for wrong in (
+        deletion_approval(other),  # another scope
+        deletion_approval(preview, reason_code="policy_cleanup"),  # another reason
+        deletion_approval(preview, decision="reject"),  # a recorded reject deletes nothing
+        deletion_approval(preview, subject_kind="design_approval"),  # another kind
+    ):
+        with pytest.raises(RetentionError):
+            delete_items(state, preview, approval=wrong, reason_code="user_requested")
+    with pytest.raises(RetentionError):
+        # the reason the human saw is the reason recorded
+        delete_items(
+            state, preview, approval=deletion_approval(preview), reason_code="policy_cleanup",
+        )
+    genuine = deletion_approval(preview)
+    forged = object.__new__(OwnerDecision)
+    for name in OwnerDecision.__slots__:
+        object.__setattr__(forged, name, getattr(genuine, name))
+    object.__setattr__(forged, "_issuer_token", object())
+    with pytest.raises(RetentionError):
+        delete_items(state, preview, approval=forged, reason_code="user_requested")
+    assert delete_items(
+        state, preview, approval=genuine, reason_code="user_requested",
+    ).tombstones[0].evidence_ref == genuine.approval_ref
 
 
 def test_values_are_issued_never_constructed():
