@@ -34,9 +34,22 @@ from app.domain.public_events import EventEnvelope
 from app.domain.refs import canonical_json, parse_canonical
 from app.domain.schema_exports import events_schema
 from app.domain.store import _writer
+from app.extensions.lineage_contracts import parse_build_identity
+from app.tests import deployment_prepare_fixture
 from app.tests.deployment_receipt_import_fixture import receipt_context, signed_case
+from app.tests.test_deployment_consume import lineage_bundle, worker_identity_bytes
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(autouse=True)
+def lineage_candidate(monkeypatch):
+    """The verifier re-derives the expectation from the candidate's provenance
+    lineage (journal v3 §4), so every accepted journal here is built on the
+    lineage-joined candidate; the evidence names that lineage's identity."""
+    bundle = lineage_bundle()
+    monkeypatch.setattr(deployment_prepare_fixture, "matching_bundle", lambda: bundle)
+    return bundle
 
 
 def nonce():
@@ -53,10 +66,11 @@ def evidence_for(item, *, expected=None, **changes):
     service_identity = present.get(
         "service_identity", request["effect_payload"]["new_service_effect"]["service_identity"]
     )
+    identity = parse_build_identity(worker_identity_bytes())
     expected = expected or {
         "service_identity": service_identity,
-        "build_identity_digest": "1" * 64,
-        "port_schema_set_digest": "2" * 64,
+        "build_identity_digest": identity.digest,
+        "port_schema_set_digest": identity.schema_set_digest,
         "port_contract_version": "tool-port-v1",
         "platform": request["effect_payload"]["selected_platform_entry"]["platform"],
         "uid": 22001,

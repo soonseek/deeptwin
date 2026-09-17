@@ -1073,3 +1073,15 @@ Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6085 passed, 1 fa
 369 subtests in 820.71s**; the failure was the pre-Task-22 byte-pin meeting the regenerated event-metadata
 export, adapted as a test (second authorised regeneration) and re-run green with its module; no `app/` code
 changed after the full run. Hashes re-verified unchanged before commit.
+
+## Task 24 step (e2b) — service consume transaction (2026-09-18)
+
+RED retained (service method absent), GREEN after the staged-worker fixture was built on the source
+fixture's remapped slot (installed after prepare/import, fake ownership, alias bind, thread-keyed
+mountinfo, metadata tree bypassing the directory remap) and the (e2a) acceptance tests moved to the
+lineage-joined candidate. Independent review ACCEPT WITH CHANGES (change-set completeness, orphan-blob
+assertion, three admission rows, seam enumeration, observer clock rounding, contract wording, candidate
+load inside the mapping) folded in. Consume 21 + observer **48 passed**; covering set 208 + acceptance
+36; Ruff clean. Details and hashes in `consume-transaction-task24e2b.md`. Full regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6105 passed, 2 skipped, 1 warning, 369
+subtests passed in 833.97s** — the two Linux-only skips. Hashes re-verified unchanged before commit.

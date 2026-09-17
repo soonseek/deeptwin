@@ -28,7 +28,6 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from uuid import uuid4
 
 from ..domain.refs import DomainContractError, canonical_json, uuid_string
@@ -168,11 +167,12 @@ def _process_boot_id() -> str:
 
 
 def _now() -> str:
-    """The wire Time grammar: exactly three fractional digits, `Z`."""
+    """The wire Time grammar: the owner authority's clock source and rounding
+    (`time.time_ns() // 1_000_000`), rendered by the shared `stamp`."""
 
-    return (
-        datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-    )
+    from .prepare_contracts import stamp
+
+    return stamp(time.time_ns() // 1_000_000)
 
 
 def observe_stage_postcondition(

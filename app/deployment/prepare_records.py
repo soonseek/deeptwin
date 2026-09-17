@@ -5,7 +5,7 @@ from base64 import urlsafe_b64decode, urlsafe_b64encode
 from hashlib import sha256
 
 from ..domain.public_events import _assert_event_schema
-from ..domain.refs import EntityRef, parse_canonical
+from ..domain.refs import EntityRef, canonical_json, parse_canonical
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import BlobRef
 from ..extensions import candidate_storage
@@ -553,6 +553,13 @@ def _load_installation(domain, db, roots, profile, item, consumption, row, head_
     except StagePostconditionError:
         raise DeploymentPrepareError("unavailable") from None
     request = item["request"]
+    # the verifier re-derives the expectation through the same path as the
+    # service (journal v3 §4: never from the blob alone)
+    try:
+        expected = expected_stage_identity(domain, db, profile, item)
+    except DeploymentPrepareError:
+        raise DeploymentPrepareError("unavailable") from None
+    require(parsed["expected"] == expected.as_dict(), "unavailable")
     require(
         anchor == _installation_anchor(item, evidence, accepted["command_id"], accepted["transitioned_ms"])
         and _evidence_agrees(
@@ -624,6 +631,66 @@ def _load_installation(domain, db, roots, profile, item, consumption, row, head_
         "evidence": parsed,
         "evidence_blob": evidence,
     }
+
+
+def expected_stage_identity(domain, db, profile, item):
+    """Journal v3 §4: the expectation from retained records only — the admitted
+    slot for identity/uid/gid, the candidate's provenance lineage joined to its
+    descriptor for the selected platform's embedded build identity. A candidate
+    whose provenance is not a valid lineage, or fails the join, is a conflict."""
+    from ..extensions.lineage_contracts import (
+        LineageContractError,
+        parse_build_identity,
+        parse_lineage,
+        validate_descriptor_lineage,
+    )
+    from .stage_observer import ExpectedStageIdentity, StagePostconditionError
+
+    platform = item["request"]["effect_payload"]["selected_platform_entry"]["platform"]
+    try:
+        bundle, candidate_ref = candidate(
+            domain, db, item["anchor"]["candidate_ref"]["id"]
+        )
+        require(candidate_ref.as_dict() == item["anchor"]["candidate_ref"], "conflict")
+        provenance = [raw for kind, raw in bundle.documents if kind == "provenance"]
+        require(len(provenance) == 1, "conflict")
+        lineage = parse_lineage(provenance[0])
+        validate_descriptor_lineage(
+            lineage,
+            bundle.descriptor,
+            instance_id=profile.instance_id,
+            slot_number=item["row"]["slot_id"],
+        )
+        value = lineage.as_dict()
+        entries = [
+            entry
+            for entry in value["platforms"]
+            if entry["measured_platform_entry"]["platform"] == platform
+        ]
+        require(len(entries) == 1, "conflict")
+        identity = parse_build_identity(canonical_json(entries[0]["build_identity"]))
+        slot = sources.slot(profile.instance_id, item["row"]["slot_id"])
+        return ExpectedStageIdentity(
+            service_identity=slot["service_identity"],
+            build_identity_digest=identity.digest,
+            port_schema_set_digest=identity.schema_set_digest,
+            port_contract_version=value["port_contract_version"],
+            platform=platform,
+            uid=slot["uid"],
+            gid=slot["gid"],
+        )
+    except (
+        DeploymentPrepareError,
+        LineageContractError,
+        StagePostconditionError,
+        sources.DeploymentSourceError,
+        KeyError,
+        TypeError,
+        ValueError,
+    ):
+        # a candidate that cannot be loaded or joined is a conflict with the
+        # request, whatever the inner code
+        raise DeploymentPrepareError("conflict") from None
 
 
 def _evidence_agrees(parsed, item, profile, receipt, observed_after_ms, observed_before_ms):

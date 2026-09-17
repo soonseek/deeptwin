@@ -212,9 +212,10 @@ from `deployment.contracts.slot(instance_id, row.slot_id)` of the request's admi
 (as the verifier already does), `lineage = parse_lineage(<the bundle's "provenance"
 support-document bytes>)`, `validate_descriptor_lineage(lineage, bundle.descriptor,
 instance_id=<control instance_id>, slot_number=row.slot_id)`, then
-`build_identity_digest = parse_build_identity(canonical_json(lineage.selected_platform(platform)
-["build_identity"])).digest` (SHA-256 of the canonical embedded identity, equal to the worker's
-file digest because `parse_build_identity` refuses non-canonical bytes),
+`build_identity_digest = parse_build_identity(canonical_json(<the lineage's platforms entry whose
+measured_platform_entry.platform == platform>["build_identity"])).digest` (SHA-256 of the
+canonical embedded identity, equal to the worker's file digest because `parse_build_identity`
+refuses non-canonical bytes; `parse_lineage` pins one entry per platform),
 `port_schema_set_digest` = that identity's `schema_set_digest`, and `port_contract_version` = the
 lineage's `port_contract_version`. A candidate whose provenance document is not a valid
 `extension-build-lineage-v1`, or which fails the descriptor join, denies **409 conflict** in the

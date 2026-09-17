@@ -191,6 +191,7 @@ class PersistentDeploymentPrepare:
             "prepare": {"deployment-prepare-v1"},
             "cancel": {"deployment-cancel-v1", "deployment-cancel-v2"},
             "receipt_import": {"deployment-receipt-import-v1"},
+            "consume": {"deployment-consume-v1"},
         }
         require(operation in namespaces, "unavailable")
         command = next(
@@ -891,6 +892,127 @@ class PersistentDeploymentPrepare:
                 },
             )
         return result
+
+    @closed
+    def consume_receipt(self, authenticated_request, request_id, payload):
+        """Journal v3 §5: consume a pending succeeded receipt into accepted3 after
+        the core itself observed the staged service. Expiry precedes any socket;
+        the observation runs between the two writers; the final writer repeats
+        every admission check and rechecks the expectation before the one
+        acceptance body commits. No failure after the preseal leaves authority."""
+        from ..workers import broker
+        from .prepare_v3_contracts import parse_consume
+        from .stage_observer import (
+            StagePostconditionError,
+            observe_stage_postcondition,
+            parse_stage_evidence,
+        )
+
+        value = parse_consume(request_id, payload)
+        replay, _ = self._admit(authenticated_request, value, "consume")
+        if replay is not None:
+            return replay
+        with _writer(), self._domain._connection(write=True) as db:
+            actor = self._authenticate(authenticated_request, db)
+            journal = self._journal(db)
+            replay = self._replay(journal, self._actor_ref(db, actor), "consume", value)
+            if replay is not None:
+                return replay
+            item = self._consume_head(db, journal, value)
+            now = self._now(db, journal["control"])
+            self._floor(db, journal["control"], now)
+            expired = self._expire_import(db, journal, item, now)
+            if not expired:
+                expected = records.expected_stage_identity(
+                    self._domain, db, self._profile, item
+                )
+                facts = {
+                    "request_bytes": item["raw"],
+                    "receipt_bytes": item["receipt"]["raw"],
+                    "slot_number": item["row"]["slot_id"],
+                }
+        if expired:
+            raise DeploymentPrepareError("conflict")
+        try:
+            evidence = observe_stage_postcondition(
+                request_id=request_id,
+                request_digest=value["request_digest"],
+                receipt_digest=value["receipt_digest"],
+                expected=expected,
+                instance_id=self._profile.instance_id,
+                deadline=broker.Deadline.after_ms(2_000),
+                **facts,
+            )
+        except StagePostconditionError as error:
+            # a mismatch is a conflict with the request; everything else is the
+            # staged service being unobservable right now
+            raise DeploymentPrepareError(
+                "conflict" if error.code == "probe_mismatch" else "dependency_unavailable"
+            ) from None
+        blob = self._domain.put_blob(evidence.content_bytes, purpose="operational")
+        with _writer(), self._domain._connection(write=True) as db:
+            actor = self._authenticate(authenticated_request, db)
+            journal = self._journal(db)
+            actor_ref = self._actor_ref(db, actor)
+            replay = self._replay(journal, actor_ref, "consume", value)
+            if replay is not None:
+                return replay
+            item = self._consume_head(db, journal, value)
+            now = self._now(db, journal["control"])
+            self._floor(db, journal["control"], now)
+            expired = self._expire_import(db, journal, item, now)
+            if not expired:
+                require(
+                    records.expected_stage_identity(self._domain, db, self._profile, item)
+                    == expected,
+                    "conflict",
+                )
+                try:
+                    parsed = parse_stage_evidence(evidence.content_bytes)
+                except StagePostconditionError:
+                    raise DeploymentPrepareError("conflict") from None
+                require(parsed["expected"] == expected.as_dict(), "conflict")
+                roots = self._domain._read_roots(db)
+                result = records.accept_stage(
+                    self._domain,
+                    db,
+                    roots,
+                    self._profile,
+                    item,
+                    now=now,
+                    actor_ref=actor_ref,
+                    value=value,
+                    evidence=blob,
+                    evidence_bytes=evidence.content_bytes,
+                )
+                self._journal(db)
+        if expired:
+            raise DeploymentPrepareError("conflict")
+        return result
+
+    def _consume_head(self, db, journal, value):
+        require(value["request_id"] in journal["requests"], "not_found")
+        item = journal["requests"][value["request_id"]]
+        receipt = item.get("receipt")
+        require(
+            item["row"]["request_digest"] == value["request_digest"]
+            and item["head"]["revision"] == value["expected_revision"]
+            and item["history"][-1]["state"] == "receipt_pending"
+            and receipt is not None
+            and receipt["value"]["outcome"] == "succeeded"
+            and receipt["digest"] == value["receipt_digest"],
+            "conflict",
+        )
+        # the global first-only guard as journal v2 §5 wrote it: at most one
+        # acceptance per journal while it stands
+        require(
+            db.execute(
+                "SELECT 1 FROM domain_records WHERE kind IN ('extension_installation','extension_qualification','extension_binding') LIMIT 1"
+            ).fetchone()
+            is None,
+            "conflict",
+        )
+        return item
 
     def _reconcile(self):
         started = time.monotonic()
