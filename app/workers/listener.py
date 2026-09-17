@@ -21,6 +21,7 @@ import sys
 from dataclasses import dataclass
 from typing import Self
 
+from ..deployment import mounts as m
 from . import broker, ipc_root
 
 LISTENER_SCHEMA_VERSION = "deeptwin-worker-listener-v1"
@@ -1193,3 +1194,306 @@ def connect_authenticated(
         if connection is not None:
             connection.close()
         verified.close()
+
+
+# --- worker-private probe channel: extension accept/connect and fences ---------
+# (Task 25 slice 2c; contracts/extension-worker-probe.md §3/§6, proposal §3)
+
+_read_mountinfo = m.read_mountinfo
+
+
+def _extension_mount_fence(root: ipc_root.PairRootSpec, *, read_only: bool) -> None:
+    """The slot's pair root must be exactly one mountpoint with the side's
+    mapping (read-only for control, read-write for the worker), with no
+    mount nested below it and no visible same-device alias of its backing
+    path; an unreadable mount table fails closed. Named volumes on the host
+    state device (the compose shape) pass; a bare host that bind-mounts the
+    slot out of its root filesystem is refused as a same-device alias, by
+    the same rule the worker metadata source applies."""
+
+    try:
+        mounts = _read_mountinfo()
+        mount = m.containing(mounts, root.pair_root)
+    except m.DeploymentSourceError:
+        raise ListenerIntegrityError() from None
+    if mount.mountpoint != root.pair_root or mount.read_only is not read_only:
+        raise ListenerIntegrityError()
+    backing = m.backing(mount, root.pair_root)
+    for other in mounts:
+        if other is mount:
+            continue
+        if other.mountpoint.is_relative_to(root.pair_root):
+            raise ListenerIntegrityError()
+        if other.device == mount.device and (
+            other.root.is_relative_to(backing) or backing.is_relative_to(other.root)
+        ):
+            raise ListenerIntegrityError()
+
+
+class ExtensionConnection:
+    """One owning, authenticated probe connection with its fences.
+
+    Owns the socket, the codec and (after a successful handshake) the
+    generation, the populated-generation fence and the listener record it
+    was verified against. `recheck()` re-runs the populated fence, the
+    listener record fence (readiness bytes, HMAC, socket inode) and the
+    mount fence; any failure closes the connection. Ownership order on
+    close: fence, codec and socket, then the generation. Nonconstructible,
+    uncopyable, unserializable: no observation recreates it.
+    """
+
+    __slots__ = (
+        "_closed",
+        "_codec",
+        "_fence",
+        "_generation",
+        "_read_only",
+        "_root",
+        "_socket",
+        "_spec",
+        "peer",
+        "record",
+        "session",
+    )
+
+    def __init__(self) -> None:
+        raise TypeError("an extension connection is accepted or connected, never built")
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    def recheck(self) -> None:
+        if self._closed:
+            raise ListenerIntegrityError()
+        try:
+            self._fence.recheck_current()
+            record, _readiness, _socket = _verify_record(self._generation, self._root, self._spec)
+            if record != self.record:
+                raise ListenerIntegrityError()
+            _extension_mount_fence(self._root, read_only=self._read_only)
+        except BaseException as error:
+            self.close()
+            if isinstance(error, ListenerError):
+                raise
+            if isinstance(error, (ipc_root.IpcRootError, OSError)):
+                raise ListenerIntegrityError() from None
+            raise
+
+    def write(self, *, message_id: str, correlation_id: str | None, message_type: str,
+              payload: bytes, deadline: broker.Deadline) -> None:
+        if self._closed:
+            raise broker.TransportClosed()
+        try:
+            self._codec.write(
+                self._socket,
+                message_id=message_id,
+                correlation_id=correlation_id,
+                message_type=message_type,
+                payload=payload,
+                deadline=deadline,
+            )
+        except BaseException:
+            self.close()
+            raise
+
+    def read(self, *, deadline: broker.Deadline) -> broker.ReceivedFrame:
+        if self._closed:
+            raise broker.TransportClosed(dispatch_effect="outcome_unknown")
+        try:
+            return self._codec.read(self._socket, deadline=deadline)
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._fence.close()
+        finally:
+            try:
+                self._codec.close()
+                self._socket.close()
+            finally:
+                self._generation.close()
+
+    def __enter__(self) -> Self:
+        if self._closed:
+            raise ListenerIntegrityError()
+        return self
+
+    def __exit__(self, _kind: object, _value: object, _traceback: object) -> None:
+        self.close()
+
+    def __repr__(self) -> str:
+        return f"ExtensionConnection(closed={self._closed!r})"
+
+    def __copy__(self) -> object:
+        raise TypeError("an extension connection cannot be copied")
+
+    def __deepcopy__(self, _memo: object) -> object:
+        raise TypeError("an extension connection cannot be copied")
+
+    def __reduce__(self) -> object:
+        raise TypeError("an extension connection cannot be serialized")
+
+
+def _extension_connection(
+    *,
+    connection: socket.socket,
+    session: broker.AuthenticatedSession,
+    codec: broker.FrameCodec,
+    generation: ipc_root.GenerationLease,
+    fence: ipc_root.PopulatedGenerationFence,
+    record: ListenerRecord,
+    root: ipc_root.PairRootSpec,
+    spec: broker.ChannelSpec,
+    read_only: bool,
+    peer: broker.PeerCredentials | None,
+) -> ExtensionConnection:
+    result = object.__new__(ExtensionConnection)
+    result._closed = False
+    # the kernel peer credentials observed at connect, fixed per connection
+    # (control keeps them for its comparison; the responder wrapper verifies
+    # them before the hello but returns only the session, so the accept side
+    # records none — a deferred retention, not a check skipped)
+    result.peer = peer
+    result._socket = connection
+    result.session = session
+    result._codec = codec
+    result._generation = generation
+    result._fence = fence
+    result.record = record
+    result._root = root
+    result._spec = spec
+    result._read_only = read_only
+    return result
+
+
+def _accept_extension_authenticated(
+    worker: WorkerListener, *, deadline: broker.Deadline
+) -> ExtensionConnection:
+    """Responder side: accept one probe connection under every fence.
+
+    The generation is re-acquired and fenced, the worker's own readiness
+    record and file identities re-verified and the slot mount checked
+    read-write before the transport accept (which may block until the
+    deadline); the requester's boot ID is learned from its proven hello, and
+    the mount fence runs once more after the handshake. These are
+    pre-connection observations: the probe service rechecks before the first
+    read and after each reply (`ExtensionConnection.recheck`). Every failure
+    after the generation was acquired unwinds socket, fence and generation.
+    """
+
+    if type(worker) is not WorkerListener or worker.closed:
+        raise ListenerIntegrityError()
+    broker._require_extension_profile(worker.spec)
+    root, spec = worker.root_spec, worker.spec
+    generation = ipc_root.acquire_generation(root)
+    fence = None
+    connection: socket.socket | None = None
+    try:
+        if (
+            generation.generation_id != worker.record.generation_id
+            or generation.endpoint_identity != worker._generation.endpoint_identity
+        ):
+            raise ListenerIntegrityError()
+        fence = ipc_root._retain_populated_generation(root, generation)
+        record, readiness, socket_identity = _verify_record(generation, root, spec)
+        if (
+            record != worker.record
+            or readiness != worker._readiness_identity
+            or socket_identity != worker._socket_identity
+        ):
+            # a re-created readiness file with identical bytes is another inode
+            raise ListenerIntegrityError()
+        _extension_mount_fence(root, read_only=False)
+        connection = worker._accept_transport(deadline)
+        session = broker._extension_server_handshake(
+            connection,
+            spec,
+            generation.secret,
+            responder_boot_id=worker.record.responder_boot_id,
+            deadline=deadline,
+        )
+        _extension_mount_fence(root, read_only=False)
+        codec = broker.FrameCodec(spec, session, local_service=spec.responder_service)
+        result = _extension_connection(
+            connection=connection, session=session, codec=codec, generation=generation,
+            fence=fence, record=record, root=root, spec=spec, read_only=False, peer=None,
+        )
+        connection = generation = fence = None  # type: ignore[assignment]
+        return result
+    except BaseException as error:
+        if connection is not None:
+            connection.close()
+        if fence is not None:
+            fence.close()
+        if generation is not None:
+            generation.close()
+        if isinstance(error, ipc_root.IpcRootError):
+            raise ListenerIntegrityError() from None
+        raise
+
+
+def _connect_extension_authenticated(
+    root: ipc_root.PairRootSpec,
+    spec: broker.ChannelSpec,
+    *,
+    requester_boot_id: str,
+    deadline: broker.Deadline,
+) -> ExtensionConnection:
+    """Requester side: verify readiness, fence the generation and the slot
+    mount (read-only for control), connect to the exact socket inode with
+    the kernel peer credentials retained, and complete the extension
+    handshake. Every failure after readiness was verified unwinds; an
+    `IpcRootError` from the readiness verification itself propagates as
+    raised, as `connect_authenticated` does."""
+
+    broker._require_extension_profile(spec)
+    _validate_pair_channel(root, spec)
+    verified = verify_listener(root, spec)
+    fence = None
+    connection: socket.socket | None = None
+    try:
+        fence = ipc_root._retain_populated_generation(root, verified.generation)
+        _extension_mount_fence(root, read_only=True)
+        connection, endpoint_identity, peer = broker.connect_verified(
+            spec, local_service=spec.requester_service, deadline=deadline
+        )
+        if (
+            endpoint_identity.device != verified.record.socket.device
+            or endpoint_identity.inode != verified.record.socket.inode
+            or endpoint_identity.uid != verified.record.socket.uid
+            or endpoint_identity.gid != verified.record.socket.gid
+            or endpoint_identity.mode != verified.record.socket.mode
+        ):
+            raise ListenerIntegrityError()
+        session = broker._extension_client_handshake(
+            connection,
+            spec,
+            verified.generation.secret,
+            requester_boot_id=requester_boot_id,
+            responder_boot_id=verified.record.responder_boot_id,
+            deadline=deadline,
+        )
+        codec = broker.FrameCodec(spec, session, local_service=spec.requester_service)
+        result = _extension_connection(
+            connection=connection, session=session, codec=codec,
+            generation=verified.generation, fence=fence, record=verified.record,
+            root=root, spec=spec, read_only=True, peer=peer,
+        )
+        connection = fence = None  # type: ignore[assignment]
+        verified._closed = True  # the generation now belongs to the connection
+        return result
+    except BaseException as error:
+        if connection is not None:
+            connection.close()
+        if fence is not None:
+            fence.close()
+        verified.close()
+        if isinstance(error, ipc_root.IpcRootError):
+            raise ListenerIntegrityError() from None
+        raise

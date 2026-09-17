@@ -968,3 +968,16 @@ window between `object.__new__` and the slot assignments) are folded in after th
 Slice 2b first full regression (before the re-review NITs): **5930 passed, 2 skipped (Linux SO_PEERCRED; endpoint owner drift needs root), 1 warning, 369 subtests passed in 698.60s (0:11:38)**, exit 0. NITs folded in (covering 110 passed, 1 skipped); the final regression follows.
 
 Task 25 slice 2b final full regression: **5930 passed, 2 skipped, 1 warning, 369 subtests passed in 702.05s (0:11:42)**, exit 0.
+
+## Task 25 slice 2c — extension listener accept/connect and fences (2026-09-18)
+
+RED retained (`_read_mountinfo` / `_accept_extension_authenticated` absent), GREEN 12 after three
+test-side corrections (descriptor baseline, seam restored to itself, mountinfo parent id), independent
+review ACCEPT with four SHOULDs and four NITs folded in RED-first (`peer` attribute, readiness-identity
+refusal, realistic compose mount table, post-handshake mount fence, client fail-closed). Final covering
+(extension listener, handshake, fence, worker listener, response capture): **165 passed, 1 skipped**;
+Ruff clean, `listener.py` zero findings. Details and hashes in `extension-listener-task25-2c.md`.
+Full regression for this iteration follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **5943 passed, 2 skipped, 1 warning,
+369 subtests passed in 696.67s** — skips are the two Linux-only qualifications (endpoint owner drift
+needs root; SO_PEERCRED). Hashes re-verified unchanged before commit.
