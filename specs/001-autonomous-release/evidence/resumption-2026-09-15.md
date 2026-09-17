@@ -981,3 +981,19 @@ Full regression for this iteration follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **5943 passed, 2 skipped, 1 warning,
 369 subtests passed in 696.67s** — skips are the two Linux-only qualifications (endpoint owner drift
 needs root; SO_PEERCRED). Hashes re-verified unchanged before commit.
+
+## Task 25 slice 3 — worker probe service and fixed entrypoint (2026-09-18)
+
+RED retained (module absent, collection ImportError), GREEN 21/22 then the descriptor enumeration
+corrected to count the same-process requester (equality 42), one test-side correction (a third probe
+is never read; the closure is asserted). Independent review ACCEPT WITH CHANGES: MUST (entrypoint spins
+on a listener whose record is gone → the service closes when the listener no longer verifies), SHOULD
+×4 (2000 ms window from the transport accept covering the handshake, carried as
+`ExtensionConnection.deadline`; SIGTERM raises out of a blocking accept; closed-transport assertions;
+the window actually exercised), NIT ×4 (`__exit__` guard, read-only `listener` property,
+`LineageContractError` sanitized, reply-id reuse and poison fd baseline tests) — all folded in
+RED-first. Final covering (probe service 26, listener, handshake, metadata, channel, messages, fence,
+worker listener): **275 passed, 1 skipped**; Ruff clean. Details and hashes in
+`extension-probe-service-task25-3.md`. Full regression for this iteration follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **5969 passed, 2 skipped, 1 warning,
+369 subtests passed in 752.86s** — the two Linux-only skips. Hashes re-verified unchanged before commit.

@@ -2521,6 +2521,11 @@ previous is accepted):**
   envelope. Control-side probe *use* (deriving slot and blob digests from retained
   prepare/receipt records, same-writer admission) is Task 24's observer, not this task.
 
+**Status (2026-09-18):** slices 1a, 1b, 2a, 2b, 2c and 3 are implemented, independently
+reviewed and evidenced (`evidence/extension-channel-task25-1a.md` …
+`evidence/extension-probe-service-task25-3.md`); the gates named under "Acceptance and
+non-claims" stay open. Next is Task 24 step (a), the journal-v3 contract.
+
 **Ordering with Task 24(a):** slice 1a has no authority gap and touches no existing code, so it
 runs now; the `contracts/extension-worker-probe.md` document precedes 1b and is referenced by the
 journal-v3 contract (Task 24 step (a)) for the evidence blob it records; then 1b → 2a → 2b → 2c → 3.

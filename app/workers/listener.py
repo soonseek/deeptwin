@@ -1251,6 +1251,7 @@ class ExtensionConnection:
         "_root",
         "_socket",
         "_spec",
+        "deadline",
         "peer",
         "record",
         "session",
@@ -1352,9 +1353,14 @@ def _extension_connection(
     spec: broker.ChannelSpec,
     read_only: bool,
     peer: broker.PeerCredentials | None,
+    deadline: broker.Deadline,
 ) -> ExtensionConnection:
     result = object.__new__(ExtensionConnection)
     result._closed = False
+    # the connection's own window: on the responder side it starts at the
+    # transport accept and already bounded the handshake; on the requester
+    # side it is the attempt's deadline
+    result.deadline = deadline
     # the kernel peer credentials observed at connect, fixed per connection
     # (control keeps them for its comparison; the responder wrapper verifies
     # them before the hello but returns only the session, so the accept side
@@ -1373,7 +1379,10 @@ def _extension_connection(
 
 
 def _accept_extension_authenticated(
-    worker: WorkerListener, *, deadline: broker.Deadline
+    worker: WorkerListener,
+    *,
+    deadline: broker.Deadline,
+    connection_ms: int | None = None,
 ) -> ExtensionConnection:
     """Responder side: accept one probe connection under every fence.
 
@@ -1385,9 +1394,17 @@ def _accept_extension_authenticated(
     pre-connection observations: the probe service rechecks before the first
     read and after each reply (`ExtensionConnection.recheck`). Every failure
     after the generation was acquired unwinds socket, fence and generation.
+    With `connection_ms`, the accepted connection's window starts at the
+    transport accept, bounds the handshake and is carried as
+    `ExtensionConnection.deadline`; without it the caller's deadline is the
+    window.
     """
 
     if type(worker) is not WorkerListener or worker.closed:
+        raise ListenerIntegrityError()
+    if connection_ms is not None and not broker._exact_int(
+        connection_ms, minimum=1, maximum=86_400_000
+    ):
         raise ListenerIntegrityError()
     broker._require_extension_profile(worker.spec)
     root, spec = worker.root_spec, worker.spec
@@ -1411,18 +1428,20 @@ def _accept_extension_authenticated(
             raise ListenerIntegrityError()
         _extension_mount_fence(root, read_only=False)
         connection = worker._accept_transport(deadline)
+        window = deadline if connection_ms is None else deadline.bounded(connection_ms)
         session = broker._extension_server_handshake(
             connection,
             spec,
             generation.secret,
             responder_boot_id=worker.record.responder_boot_id,
-            deadline=deadline,
+            deadline=window,
         )
         _extension_mount_fence(root, read_only=False)
         codec = broker.FrameCodec(spec, session, local_service=spec.responder_service)
         result = _extension_connection(
             connection=connection, session=session, codec=codec, generation=generation,
             fence=fence, record=record, root=root, spec=spec, read_only=False, peer=None,
+            deadline=window,
         )
         connection = generation = fence = None  # type: ignore[assignment]
         return result
@@ -1483,7 +1502,7 @@ def _connect_extension_authenticated(
         result = _extension_connection(
             connection=connection, session=session, codec=codec,
             generation=verified.generation, fence=fence, record=verified.record,
-            root=root, spec=spec, read_only=True, peer=peer,
+            root=root, spec=spec, read_only=True, peer=peer, deadline=deadline,
         )
         connection = fence = None  # type: ignore[assignment]
         verified._closed = True  # the generation now belongs to the connection
