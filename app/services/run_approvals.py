@@ -18,7 +18,6 @@ reference can stand in for it.
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import wraps
@@ -34,12 +33,23 @@ from ..domain.refs import DomainContractError, EntityRef, canonical_json, uuid_s
 from ..domain.request_identity import AuthenticatedRequest
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore, _writer
+from ..runtime.gates import LOCAL, gate_request_identity, gate_request_recorded
 from .owner_auth import OwnerAuthError, PersistentOwnerAuthority
+
+__all__ = [
+    "DECISIONS",
+    "PersistentRunApprovals",
+    "RunApproval",
+    "RunApprovalError",
+    "approval_identity",
+    "gate_request_identity",
+]
 
 DECISIONS = ("approved", "rejected")
 _SCHEMA = "run-approval-command-v1"
 _RECORD_SCHEMA = "run-approval-v1"
-_LOCAL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}\Z")
+# one grammar for gate node ids and scopes, shared with the ledger's requests
+_LOCAL = LOCAL
 
 
 class RunApprovalError(ValueError):
@@ -258,6 +268,19 @@ class PersistentRunApprovals:
                 return self._receipt(
                     db, roots, existing, stored["content"]["event_sequence"]
                 )
+            # an approval answers a gate some run's scheduler durably asked
+            # for; nothing is recordable ahead of, or beside, that ask. The
+            # ledger's command table lives in this same vault database (its
+            # vault id is the genesis id); a vault without a ledger has no
+            # table and fails closed as "unavailable".
+            if not gate_request_recorded(
+                db,
+                roots.genesis.id,
+                command["run_id"],
+                command["node_id"],
+                command["approval_scope"],
+            ):
+                raise RunApprovalError("invalid gate: no pending approval request")
             actor_ref = _owner_actor_ref(db, actor)
             stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
             event_sequence = _event_stream(db, roots.genesis.id)["next_sequence"]

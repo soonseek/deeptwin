@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.server import create_app
+from app.tests.test_run_approvals import pending_gate
 from app.tests.test_web_owner_integration import bootstrap_client, configured, headers
 
 RUN_ID = "00000000-0000-4000-8000-00000000a0a1"
@@ -30,9 +31,16 @@ def command(**changes):
 def test_owner_records_reads_replays_and_survives_reopen(tmp_path, mode):
     profile, capability, arguments = configured(tmp_path, mode)
     application = create_app(tmp_path / "data", **arguments)
-    path = profile.base_path + f"api/v1/runs/{RUN_ID}/approvals"
     with TestClient(application, base_url=profile.http_origin) as client:
         csrf = bootstrap_client(client, profile, capability)
+        # only a gate the scheduler durably requested can be approved
+        run_id = pending_gate(application)
+        path = profile.base_path + f"api/v1/runs/{run_id}/approvals"
+        unrequested = client.post(
+            profile.base_path + f"api/v1/runs/{RUN_ID}/approvals",
+            headers=headers(profile, csrf), json=command(),
+        )
+        assert unrequested.status_code == 400 and unrequested.json()["code"] == "invalid_input"
         body = command()
         response = client.post(path, headers=headers(profile, csrf), json=body)
         assert response.status_code == 201, response.text
@@ -44,7 +52,7 @@ def test_owner_records_reads_replays_and_survives_reopen(tmp_path, mode):
         read = client.get(receipt["links"]["self"], headers=headers(profile))
         assert read.status_code == 200, read.text
         saved = read.json()
-        assert saved["run_id"] == RUN_ID and saved["node_id"] == "owner-gate"
+        assert saved["run_id"] == run_id and saved["node_id"] == "owner-gate"
         assert saved["decision"] == "approved" and saved["command_id"] == body["command_id"]
         assert saved["approval_ref"] == receipt["approval_ref"]
         assert saved["actor_ref"]["kind"] == "actor"

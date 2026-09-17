@@ -16,21 +16,47 @@ from uuid import uuid4
 import pytest
 
 from app.domain.refs import EntityRef
+from app.runtime.ledger import RunSpec
 from app.services.owner_auth import OwnerAuthError
 from app.services.run_approvals import (
     PersistentRunApprovals,
     RunApprovalError,
 )
 from app.tests.test_extension_candidates_persistent import owner
+from app.tests.test_runtime_ledger import identifier, immutable
 
 RUN_ID = "00000000-0000-4000-8000-00000000a001"
 
 
-def payload(**changes):
+def pending_gate(app, node_id="owner-gate", approval_scope="release-output", run_id=None):
+    """A real run whose scheduler durably requested this gate's approval: the
+    only thing an approval can ever be recorded against."""
+
+    ledger = app.state.runtime_ledger
+    if run_id is None:
+        domain = app.state.domain_store
+        roots = domain.roots()
+        spec = RunSpec(
+            run_id=identifier(),
+            work_revision_ref=immutable(domain, roots, "work_revision"),
+            environment_ref=immutable(domain, roots, "environment"),
+            consent_ref=immutable(domain, roots, "run_consent"),
+            mode="live",
+            budget_policy_ref=immutable(domain, roots, "budget_policy"),
+            budget_session_id=identifier(),
+            manifest_ref=immutable(domain, roots, "run_manifest"),
+        )
+        ledger.create_run(identifier(), spec)
+        run_id = spec.run_id
+    ledger.request_gate_approval(run_id, node_id, approval_scope)
+    return run_id
+
+
+def payload(run_id, **changes):
     value = {
         "schema_version": "run-approval-command-v1",
         "command_id": str(uuid4()),
-        "run_id": RUN_ID,
+        "run_id": run_id,
         "node_id": "owner-gate",
         "approval_scope": "release-output",
         "decision": "approved",
@@ -60,11 +86,31 @@ def test_authentication_is_checked_before_the_command_is_parsed(tmp_path):
             approvals.record(object(), {"garbage": True})
 
 
+def test_an_approval_needs_a_gate_the_scheduler_durably_requested(tmp_path):
+    with owner(tmp_path) as (app, _client, request, _profile, _arguments):
+        approvals = PersistentRunApprovals(app.state.domain_store, app.state.owner_authority)
+        with pytest.raises(RunApprovalError, match="invalid gate"):
+            # a run nobody started
+            approvals.record(request, payload(str(uuid4())))
+        run_id = pending_gate(app)
+        for wrong in ({"node_id": "publish"}, {"approval_scope": "other-scope"}):
+            with pytest.raises(RunApprovalError, match="invalid gate"):
+                # the run exists but the scheduler never asked for this gate/scope
+                approvals.record(request, payload(run_id, **wrong))
+        assert counts(app.state.domain_store) == (0, 0)
+        assert approvals.lookup(run_id, "publish", "release-output") is None
+        approvals.record(request, payload(run_id))
+        assert counts(app.state.domain_store) == (1, 1)
+        # requesting the same gate again is an exact replay, never a new ask
+        assert pending_gate(app, run_id=run_id) == run_id
+
+
 def test_an_owner_records_one_durable_approval_with_its_event(tmp_path):
     with owner(tmp_path) as (app, _client, request, _profile, _arguments):
         approvals = PersistentRunApprovals(app.state.domain_store, app.state.owner_authority)
-        assert approvals.lookup(RUN_ID, "owner-gate", "release-output") is None
-        command = payload()
+        run_id = pending_gate(app)
+        assert approvals.lookup(run_id, "owner-gate", "release-output") is None
+        command = payload(run_id)
         receipt = approvals.record(request, command)
         assert receipt["command_id"] == command["command_id"]
         assert receipt["state"] == "recorded"
@@ -75,7 +121,7 @@ def test_an_owner_records_one_durable_approval_with_its_event(tmp_path):
         content = record.body["content"]
         assert content == {
             "schema_version": "run-approval-v1",
-            "run_id": RUN_ID,
+            "run_id": run_id,
             "node_id": "owner-gate",
             "approval_scope": "release-output",
             "decision": "approved",
@@ -86,28 +132,29 @@ def test_an_owner_records_one_durable_approval_with_its_event(tmp_path):
         assert type(content["event_sequence"]) is int
         actor_ref = EntityRef.from_dict(record.body["actor_ref"])
         assert actor_ref.kind == "actor"  # the owner's human actor, never the system root
-        assert actor_ref == approvals.lookup(RUN_ID, "owner-gate", "release-output").actor_ref
+        assert actor_ref == approvals.lookup(run_id, "owner-gate", "release-output").actor_ref
         assert actor_ref != app.state.domain_store.roots().actor
         assert counts(app.state.domain_store) == (1, 1)
-        found = approvals.lookup(RUN_ID, "owner-gate", "release-output")
+        found = approvals.lookup(run_id, "owner-gate", "release-output")
         assert found.decision == "approved" and found.approval_ref == ref
-        assert approvals.lookup(RUN_ID, "owner-gate", "other-scope") is None
+        assert approvals.lookup(run_id, "owner-gate", "other-scope") is None
         assert approvals.lookup(str(uuid4()), "owner-gate", "release-output") is None
 
 
 def test_exact_replay_returns_the_same_receipt_and_conflicts_never_overwrite(tmp_path):
     with owner(tmp_path) as (app, _client, request, _profile, _arguments):
         approvals = PersistentRunApprovals(app.state.domain_store, app.state.owner_authority)
-        command = payload()
+        run_id = pending_gate(app)
+        command = payload(run_id)
         first = approvals.record(request, command)
         assert approvals.record(request, dict(command)) == first
         assert counts(app.state.domain_store) == (1, 1)
         with pytest.raises(RunApprovalError, match="conflict"):
             approvals.record(request, dict(command, decision="rejected"))
         with pytest.raises(RunApprovalError, match="conflict"):
-            approvals.record(request, payload(command_id=str(uuid4()), decision="rejected"))
+            approvals.record(request, payload(run_id, command_id=str(uuid4()), decision="rejected"))
         assert counts(app.state.domain_store) == (1, 1)
-        assert approvals.lookup(RUN_ID, "owner-gate", "release-output").decision == "approved"
+        assert approvals.lookup(run_id, "owner-gate", "release-output").decision == "approved"
 
 
 @pytest.mark.parametrize("change", [
@@ -117,8 +164,9 @@ def test_exact_replay_returns_the_same_receipt_and_conflicts_never_overwrite(tmp
 def test_only_a_real_mutating_owner_request_can_record(tmp_path, change):
     with owner(tmp_path) as (app, _client, request, _profile, _arguments):
         approvals = PersistentRunApprovals(app.state.domain_store, app.state.owner_authority)
+        run_id = pending_gate(app)
         with pytest.raises(OwnerAuthError):
-            approvals.record(replace(request, **change), payload())
+            approvals.record(replace(request, **change), payload(run_id))
         assert counts(app.state.domain_store) == (0, 0)
 
 
@@ -131,7 +179,8 @@ def test_only_a_real_mutating_owner_request_can_record(tmp_path, change):
 def test_the_command_payload_is_closed_and_validated_before_any_write(tmp_path, change):
     with owner(tmp_path) as (app, _client, request, _profile, _arguments):
         approvals = PersistentRunApprovals(app.state.domain_store, app.state.owner_authority)
-        value = payload()
+        run_id = pending_gate(app)
+        value = payload(run_id)
         value.update(change)
         if "extra" in change:
             value["extra"] = 1
@@ -148,12 +197,13 @@ def test_a_failed_event_write_rolls_back_the_record(tmp_path, monkeypatch):
 
     with owner(tmp_path) as (app, _client, request, _profile, _arguments):
         approvals = PersistentRunApprovals(app.state.domain_store, app.state.owner_authority)
+        run_id = pending_gate(app)
         monkeypatch.setattr(module, "_append_event_in_transaction", failing)
         with pytest.raises(RunApprovalError) as caught:
-            approvals.record(request, payload())
+            approvals.record(request, payload(run_id))
         assert "PRIVATE_FAULT_CANARY" not in str(caught.value)
         assert counts(app.state.domain_store) == (0, 0)
-        assert approvals.lookup(RUN_ID, "owner-gate", "release-output") is None
+        assert approvals.lookup(run_id, "owner-gate", "release-output") is None
 
 
 def test_the_service_binds_the_exact_store_and_authority(tmp_path):
@@ -175,10 +225,11 @@ def test_f3_lookup_pins_version_one_and_the_owner_actor(tmp_path):
 
     with owner(tmp_path) as (app, _client, request, _profile, _arguments):
         approvals = PersistentRunApprovals(app.state.domain_store, app.state.owner_authority)
-        approvals.record(request, payload(decision="rejected"))
+        run_id = pending_gate(app)
+        approvals.record(request, payload(run_id, decision="rejected"))
         domain = app.state.domain_store
         roots = domain.roots()
-        identity = approval_identity(RUN_ID, "owner-gate", "release-output")
+        identity = approval_identity(run_id, "owner-gate", "release-output")
 
         def forged(version, actor_ref):
             return ImmutableRecord.create(
@@ -187,7 +238,7 @@ def test_f3_lookup_pins_version_one_and_the_owner_actor(tmp_path):
                 parent_refs=(), purpose="operational",
                 access_policy_ref=roots.access_policy,
                 retention_policy_ref=roots.retention_policy,
-                content={"schema_version": "run-approval-v1", "run_id": RUN_ID,
+                content={"schema_version": "run-approval-v1", "run_id": run_id,
                          "node_id": "owner-gate", "approval_scope": "release-output",
                          "decision": "approved", "command_id": str(uuid4()),
                          "decided_at_utc": "2026-09-17T00:00:00.000000Z", "event_sequence": 1},
@@ -195,23 +246,23 @@ def test_f3_lookup_pins_version_one_and_the_owner_actor(tmp_path):
 
         domain.put(forged(2, roots.actor))
         with pytest.raises(RunApprovalError, match="unavailable"):
-            approvals.lookup(RUN_ID, "owner-gate", "release-output")
+            approvals.lookup(run_id, "owner-gate", "release-output")
         with pytest.raises(RunApprovalError):
-            approvals.record(request, payload())  # never silently repaired either
+            approvals.record(request, payload(run_id))  # never silently repaired either
         # a version-1 record authored by the system root is not owner evidence
-        other = approval_identity(RUN_ID, "other-gate", "release-output")
+        other = approval_identity(run_id, "other-gate", "release-output")
         domain.put(ImmutableRecord.create(
             kind="action_approval", id=other, version=1,
             created_at_utc="2026-09-17T00:00:00.000000Z", actor_ref=roots.actor,
             parent_refs=(), purpose="operational", access_policy_ref=roots.access_policy,
             retention_policy_ref=roots.retention_policy,
-            content={"schema_version": "run-approval-v1", "run_id": RUN_ID,
+            content={"schema_version": "run-approval-v1", "run_id": run_id,
                      "node_id": "other-gate", "approval_scope": "release-output",
                      "decision": "approved", "command_id": str(uuid4()),
                      "decided_at_utc": "2026-09-17T00:00:00.000000Z", "event_sequence": 1},
         ))
         with pytest.raises(RunApprovalError, match="unavailable"):
-            approvals.lookup(RUN_ID, "other-gate", "release-output")
+            approvals.lookup(run_id, "other-gate", "release-output")
 
 
 def test_f5_the_approval_identity_is_delimiter_proof():

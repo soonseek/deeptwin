@@ -10,23 +10,23 @@ a budget reservation, or redispatches work.  A committed send intent means only
 that transfer may have started; restart handling is conservative by construction.
 """
 
+import os
+import re
+import sqlite3
+import time
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from hashlib import sha256
-import os
 from pathlib import Path
-import re
-import sqlite3
 from threading import RLock
-import time
 from uuid import uuid4
 
 from ..domain.events import event_metadata
 from ..domain.permissions import Grant, Principal
 from ..domain.refs import (
+    MAX_INTEGER,
     DomainContractError,
     EntityRef,
-    MAX_INTEGER,
     ObjectRef,
     canonical_json,
     parse_canonical,
@@ -35,7 +35,12 @@ from ..domain.refs import (
 )
 from ..domain.store import DomainStore, StorageError, _writer
 from .budgets import BudgetBook, BudgetDispatchRequest
-
+from .gates import (
+    GATE_REQUEST_COMMAND,
+    gate_request_identity,
+    gate_request_recorded,
+    local_identifier,
+)
 
 MAX_LEASE_MS = 86_400_000
 MAX_ACTIVE_ATTEMPTS = 1_000
@@ -947,7 +952,6 @@ class RuntimeLedger:
             ).rowcount
             if changed != 1:
                 raise CorruptLedger("Runtime clock floor changed concurrently")
-        return None
 
     def _require_session(self, db):
         row = db.execute("SELECT active_session_id FROM runtime_control WHERE singleton=1").fetchone()
@@ -1261,6 +1265,50 @@ class RuntimeLedger:
             result = self._run_snapshot(row)
             self._record_command(db, command_id, "create_run", payload, result, now)
             return result
+
+    def request_gate_approval(self, run_id, node_id, approval_scope):
+        """Durably record that a run's scheduler waits for one gate approval.
+
+        One replayable command per (run, node, scope) — its identity IS
+        `gate_request_identity`, derived here, so the same ask can never be
+        recorded twice — and one public `approval.requested` event on first
+        recording. The approvals service records an owner decision only
+        against a request found here.
+
+        The ledger does not check the run's compiled graph (only the
+        scheduler, which knows it, calls this) and a request never expires:
+        runs have no retired phase here, and a late approval only matters
+        once a scheduler resumes against it (a second decision conflicts).
+        """
+
+        uuid_string(run_id)
+        node = local_identifier(node_id, "node id")
+        scope = local_identifier(approval_scope, "approval scope")
+        command_id = gate_request_identity(run_id, node, scope)
+        payload = self._command_payload(
+            {"run_id": run_id, "node_id": node, "approval_scope": scope}
+        )
+        with self._transaction(write=True) as db:
+            replay = self._command_replay(db, command_id, GATE_REQUEST_COMMAND, payload)
+            if replay is not None:
+                return replay
+            now = self._now(db)
+            run = db.execute("SELECT 1 FROM runtime_runs WHERE vault_id=? AND id=?",
+                             (self.vault_id, run_id)).fetchone()
+            if run is None:
+                raise KeyError(run_id)
+            self._event(db, "approval.requested", "run", run_id,
+                        {"approval_kind": "run"}, now)
+            result = {"run_id": run_id, "node_id": node, "approval_scope": scope,
+                      "requested": True}
+            self._record_command(db, command_id, GATE_REQUEST_COMMAND, payload, result, now)
+            return result
+
+    def gate_approval_requested(self, run_id, node_id, approval_scope):
+        """True only when this exact gate request was durably recorded."""
+
+        with self._transaction() as db:
+            return gate_request_recorded(db, self.vault_id, run_id, node_id, approval_scope)
 
     def create_execution(self, command_id, spec):
         if type(spec) is not ExecutionSpec:
@@ -1767,7 +1815,6 @@ class RuntimeLedger:
         with self._permit_lock:
             self._global_emergency_inhibited = True
             self._pending_permits.clear()
-        return None
 
     def emergency_inhibit_attempt(self, attempt_id):
         """Fail closed in memory when a post-commit observation cannot persist."""
@@ -1777,7 +1824,6 @@ class RuntimeLedger:
             for permit_id, stored in tuple(self._pending_permits.items()):
                 if stored[0].attempt_id == attempt_id:
                     self._pending_permits.pop(permit_id, None)
-        return None
 
     def emergency_inhibit_all_dispatch(self):
         """Public fail-closed latch for an unrecordable post-commit effect."""
@@ -1795,7 +1841,6 @@ class RuntimeLedger:
         with self._permit_lock:
             if self._global_emergency_inhibited:
                 raise DispatchBlocked("Process-local emergency inhibition is active")
-        return None
 
     def discard_dispatch_permit(self, permit):
         """Remove an exact unconsumed permit without authorizing an external send."""

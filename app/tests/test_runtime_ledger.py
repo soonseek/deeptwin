@@ -1,19 +1,18 @@
 """Offline runtime-ledger fault tests against a real temporary additive SQLite store."""
 
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-import sqlite3
 from threading import Barrier
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
-from app.domain.refs import DomainContractError, EntityRef, MAX_INTEGER
+from app.domain.refs import MAX_INTEGER, DomainContractError, EntityRef
 from app.domain.schemas import ImmutableRecord
 from app.domain.store import DomainStore, MissingRecord
 from app.storage import Store
-
 
 STAMP = "2026-09-07T00:00:00.000000Z"
 
@@ -842,3 +841,33 @@ def test_unknown_ids_and_bounded_arguments_fail_explicitly(tmp_path):
         subject.ledger.checkpoint_for_replay(missing, "main", revision=True)
     with pytest.raises(ValueError):
         subject.module.OwnerIdentity(identifier(), True, 0, identifier())
+
+
+# --- human gate approval requests (2026-09-18, scheduler review F6) ------------
+
+
+def test_gate_approval_requests_are_replayable_run_bound_commands(tmp_path):
+    subject = opened(tmp_path)
+    run = run_spec(subject)
+    subject.ledger.create_run(identifier(), run)
+    first = subject.ledger.request_gate_approval(run.run_id, "owner-gate", "release")
+    assert first == {"run_id": run.run_id, "node_id": "owner-gate",
+                     "approval_scope": "release", "requested": True}
+    # the same ask is an exact replay: nothing new is recorded or emitted
+    assert subject.ledger.request_gate_approval(run.run_id, "owner-gate", "release") == first
+    other = subject.ledger.request_gate_approval(run.run_id, "owner-gate", "other")
+    assert other["approval_scope"] == "other"
+    events = [event for event in subject.ledger.events(after_sequence=0, limit=100)
+              if event["event_type"] == "approval.requested"]
+    assert len(events) == 2 and {event["object_id"] for event in events} == {run.run_id}
+    assert events[0]["payload"] == {"approval_kind": "run"}
+    with pytest.raises(KeyError):
+        subject.ledger.request_gate_approval(identifier(), "owner-gate", "release")
+    for bad in ("", "a" * 65, "bad scope!", None):
+        with pytest.raises((ValueError, TypeError)):
+            subject.ledger.request_gate_approval(run.run_id, "owner-gate", bad)
+    # the durable request is readable back as the pending gate it names
+    assert subject.ledger.gate_approval_requested(run.run_id, "owner-gate", "release") is True
+    assert subject.ledger.gate_approval_requested(run.run_id, "owner-gate", "third") is False
+    assert subject.ledger.gate_approval_requested(identifier(), "owner-gate", "release") is False
+    assert subject.ledger.gate_approval_requested(run.run_id, "owner-gate", "bad scope!") is False

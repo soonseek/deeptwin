@@ -577,11 +577,62 @@ def test_approvals_are_keyed_by_run_node_and_scope(tmp_path):
         scheduler.run()
         other_run = run_spec(subject)
         subject.ledger.create_run(identifier(), other_run)
-        approvals.record(subject.request, approval_command(other_run))
-        approvals.record(subject.request, approval_command(run, scope="other-scope"))
-        approvals.record(subject.request, approval_command(run, node="publish"))
+        from app.services.run_approvals import RunApprovalError
+
+        decoys = (
+            (other_run, "owner-gate", "release-output"),  # another run's gate
+            (run, "owner-gate", "other-scope"),
+            (run, "publish", "release-output"),
+        )
+        for target, node, scope in decoys:
+            with pytest.raises(RunApprovalError, match="invalid gate"):
+                # only a gate a scheduler durably requested is approvable
+                approvals.record(subject.request, approval_command(target, scope=scope, node=node))
+        for target, node, scope in decoys:
+            # once those gates are genuinely requested, real decoy approvals
+            # exist — and still never satisfy THIS run's gate and scope
+            subject.ledger.request_gate_approval(target.run_id, node, scope)
+            approvals.record(subject.request, approval_command(target, scope=scope, node=node))
         assert scheduler.run().awaiting_human == (("owner-gate", "release-output"),)
         assert calls == ["intake", "writer"]
+    finally:
+        subject.context.__exit__(None, None, None)
+
+
+def test_reaching_a_gate_durably_requests_the_owner_approval_once(tmp_path):
+    from app.services.run_approvals import gate_request_identity
+
+    subject, run, approvals = gated_app(tmp_path)
+    try:
+        calls = []
+        scheduler = sch.build_scheduler(compile_value(graph_value()), ledger=subject.ledger,
+                                        run_id=run.run_id, handlers=gate_registry(subject, calls),
+                                        approvals=approvals)
+
+        def requested():
+            return [event for event in subject.ledger.events(after_sequence=0, limit=500)
+                    if event["event_type"] == "approval.requested"]
+
+        assert requested() == []
+        assert scheduler.run().awaiting_human == (("owner-gate", "release-output"),)
+        events = requested()
+        assert len(events) == 1
+        assert events[0]["object_kind"] == "run" and events[0]["object_id"] == run.run_id
+        assert events[0]["payload"] == {"approval_kind": "run"}
+        # the request is a replayable ledger command whose identity is derived
+        # from run/node/scope, so asking again is the same ask
+        assert subject.ledger.gate_approval_requested(run.run_id, "owner-gate", "release-output")
+        assert subject.ledger.request_gate_approval(
+            run.run_id, "owner-gate", "release-output"
+        )["requested"] is True
+        assert gate_request_identity(run.run_id, "owner-gate", "release-output") != \
+            gate_request_identity(run.run_id, "owner-gate", "other")
+        # waiting again (and resuming later) never asks twice
+        assert scheduler.run().awaiting_human == (("owner-gate", "release-output"),)
+        assert len(requested()) == 1
+        approvals.record(subject.request, approval_command(run))
+        assert scheduler.run().awaiting_human == ()
+        assert len(requested()) == 1
     finally:
         subject.context.__exit__(None, None, None)
 

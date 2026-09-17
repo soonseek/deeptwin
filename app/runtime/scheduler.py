@@ -267,6 +267,9 @@ class GraphScheduler:
             for scope in self._gates[node_id]:
                 found = self._approvals.lookup(self._run_id, node_id, scope)
                 if found is None:
+                    # the ask is durable and replayable: the owner can only
+                    # approve a gate this run actually reached
+                    self._ledger.request_gate_approval(self._run_id, node_id, scope)
                     awaiting.append((node_id, scope))
                 elif found.decision != "approved":
                     raise _GateRejected(node_id)

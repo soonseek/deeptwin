@@ -880,3 +880,14 @@ records mirror): **66 passed, 1 inherited warning, 9.34s**; Ruff clean. Details 
 `deletion-decisions-t069.md`. Full regression for this iteration follows.
 
 Deletion decisions + design-store evidence resolution full regression: **5772 passed, 1 skipped, 1 warning, 369 subtests passed in 686.88s (0:11:26)**, exit 0.
+
+## Gate approval requests bound to real runs (scheduler review F6, 2026-09-18)
+
+RED (`gate_request_identity` absent) → GREEN; independent review ACCEPT with one SHOULD on lost
+coverage (decoy approvals) and two on shared readers/docs, all folded in. Covering command (run
+approvals + API, scheduler, runtime ledger, run trace, web owner integration): **181 passed**, then
+after closures **101 passed (approvals, API, scheduler, ledger, trace)**; Ruff clean on new/changed
+files (ledger.py's pre-existing ISC004 findings unchanged, other pre-existing findings reduced).
+Details and hashes in `gate-approval-requests-f6.md`. Full regression for this iteration follows.
+
+Gate approval requests (F6) full regression: **5775 passed, 1 skipped, 1 warning, 369 subtests passed in 693.88s (0:11:33)**, exit 0.
