@@ -330,6 +330,9 @@ def _read_exact_secret(descriptor: int) -> bytes:
         before.st_size,
         before.st_mtime_ns,
     ) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns):
+        # the partial or drifted bytes must not stay reachable through the
+        # traceback frame of the sanitized error
+        value = None
         raise IpcRootIntegrityError()
     return value
 
@@ -943,3 +946,167 @@ def acquire_generation_metadata(spec: PairRootSpec) -> MetadataGenerationLease:
     finally:
         for descriptor in (secret_fd, endpoint_fd, lock_fd, pair_fd):
             _close_fd(descriptor)
+
+
+class PopulatedGenerationFence:
+    """A borrowed held generation plus one owned boot-secret descriptor and
+    the leaf root and metadata observations, rechecked against the named
+    files on every fence (extension-worker-probe.md §6; proposal §3). Every
+    path component is opened no-follow, so an ancestor swapped for a symlink
+    is refused; a rename or bind that resolves to the same device and inode
+    is harmless by construction.
+
+    Unlike the absence-only `MetadataGenerationLease`, this fence permits a
+    populated endpoint (`worker.sock`, `listener.json` present): it exists for
+    the probe that runs while the worker listener is live. It never exposes
+    secret bytes; the reread is compared in constant time to the generation's
+    own secret and discarded. Closing the fence releases only what it owns.
+    """
+
+    __slots__ = (
+        "_closed",
+        "_generation",
+        "_lock_stat",
+        "_secret_fd",
+        "_secret_stat",
+        "_spec",
+    )
+
+    def __init__(self):
+        raise TypeError("a populated fence is retained from a held generation")
+
+    def recheck_current(self) -> None:
+        if self._closed or self._generation.closed:
+            raise IpcRootIntegrityError()
+        spec, generation = self._spec, self._generation
+        current_fd = -1
+        try:
+            current_fd = _open_absolute_directory(spec.pair_root, searchable_only=True)
+            for descriptor in (current_fd, generation.pair_fd):
+                if (
+                    _validate_directory(
+                        descriptor,
+                        uid=METADATA_UID,
+                        gid=spec.pair_gid,
+                        mode=PAIR_ROOT_MODE,
+                    )
+                    != generation.pair_identity
+                ):
+                    raise IpcRootIntegrityError()
+            endpoint = os.stat(ENDPOINT_NAME, dir_fd=current_fd, follow_symlinks=False)
+            if (
+                _identity(endpoint) != generation.endpoint_identity
+                or not stat.S_ISDIR(endpoint.st_mode)
+                or _validate_directory(
+                    generation.endpoint_fd,
+                    uid=spec.responder_uid,
+                    gid=spec.pair_gid,
+                    mode=ENDPOINT_MODE,
+                )
+                != generation.endpoint_identity
+            ):
+                raise IpcRootIntegrityError()
+            for name, descriptor, expected in (
+                (GENERATION_LOCK_NAME, generation.lock_fd, self._lock_stat),
+                (BOOT_SECRET_NAME, self._secret_fd, self._secret_stat),
+            ):
+                named = os.stat(name, dir_fd=current_fd, follow_symlinks=False)
+                held = os.fstat(descriptor)
+                if (
+                    not stat.S_ISREG(named.st_mode)
+                    or _metadata_stat(named) != expected
+                    or _metadata_stat(held) != expected
+                ):
+                    raise IpcRootIntegrityError()
+            reread = _read_exact_secret(self._secret_fd)
+            same = hmac.compare_digest(reread, generation.secret._material())
+            del reread
+            if not same:
+                raise IpcRootIntegrityError()
+        except IpcRootError:
+            raise
+        except OSError:
+            raise IpcRootIntegrityError() from None
+        finally:
+            _close_fd(current_fd)
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        _close_fd(self._secret_fd)
+
+    def __enter__(self) -> Self:
+        try:
+            self.recheck_current()
+        except BaseException:
+            self.close()
+            raise
+        return self
+
+    def __exit__(self, _kind, _value, _traceback) -> None:
+        self.close()
+
+    def __repr__(self) -> str:
+        return f"PopulatedGenerationFence(closed={self._closed!r})"
+
+    def __copy__(self):
+        raise TypeError("a populated fence cannot be copied")
+
+    def __deepcopy__(self, _memo):
+        raise TypeError("a populated fence cannot be copied")
+
+    def __reduce__(self):
+        raise TypeError("a populated fence cannot be serialized")
+
+
+def _retain_populated_generation(
+    spec: PairRootSpec, generation: GenerationLease
+) -> PopulatedGenerationFence:
+    """Borrow a held generation and own one more no-follow boot-secret
+    descriptor plus the leaf root and metadata observations; the original
+    shared lock stays held by the generation (borrowers close nothing)."""
+
+    if type(spec) is not PairRootSpec or type(generation) is not GenerationLease:
+        raise IpcRootIntegrityError()
+    if generation.closed:
+        raise IpcRootIntegrityError()
+    secret_fd = -1
+    fence = None
+    try:
+        secret_fd = _open_regular_at(
+            generation.pair_fd,
+            BOOT_SECRET_NAME,
+            uid=METADATA_UID,
+            gid=spec.pair_gid,
+            mode=PAIR_METADATA_MODE,
+            writable=False,
+            exact_size=broker.AUTH_SECRET_BYTES,
+        )
+        # every observation that can fail happens before the fence exists, so
+        # a half-built fence never reaches close()
+        secret_stat = _metadata_stat(os.fstat(secret_fd))
+        lock_stat = _metadata_stat(os.fstat(generation.lock_fd))
+        fence = object.__new__(PopulatedGenerationFence)
+        # ownership of the descriptor moves in one step: close() is valid
+        # from here on, and the local no longer refers to the descriptor
+        fence._closed, fence._secret_fd, secret_fd = False, secret_fd, -1
+        fence._spec = spec
+        fence._generation = generation
+        fence._secret_stat = secret_stat
+        fence._lock_stat = lock_stat
+        fence.recheck_current()
+        return fence
+    except BaseException as error:
+        # every acquisition path unwinds, whatever interrupted it
+        if fence is not None:
+            fence.close()
+        if isinstance(error, IpcRootError) or not isinstance(error, OSError):
+            raise
+        raise IpcRootIntegrityError() from None
+    finally:
+        _close_fd(secret_fd)

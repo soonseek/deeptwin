@@ -948,3 +948,23 @@ Ruff clean, `broker.py` zero findings. Details and hashes in `extension-handshak
 Full regression for this iteration follows.
 
 Task 25 slice 2a full regression: **5910 passed, 1 skipped, 1 warning, 369 subtests passed in 697.10s (0:11:37)**, exit 0.
+
+## Task 25 slice 2b — populated-generation fence (2026-09-18)
+
+RED retained (`populated fence missing` ×12), GREEN 79, independent review REJECT (small fixes):
+reread secret bytes reachable in `_read_exact_secret`'s traceback frame, half-built fence raising
+`AttributeError`, owned descriptor leaked on non-IpcRootError, tamper test passing via the stat
+compare, missing negatives. All closed RED-first (traceback-locals and descriptor-count assertions
+RED, then GREEN; a naive frozen-stat monkeypatch that failed the lock compare first was itself
+corrected to per-inode). Final covering (fence, metadata lease, initializer, worker listener):
+**110 passed, 1 skipped (endpoint owner drift needs root)**; Ruff clean. Details and hashes in
+`ipc-populated-fence-task25-2b.md`. Confirmatory re-review and full regression follow.
+Confirmatory re-review of slice 2b: all seven findings CLOSED with probe evidence (a restored pre-fix
+`_read_exact_secret` fails the traceback assertion; `compare_digest → True` fails both reread tests
+with DID NOT RAISE; failing the 2nd/3rd `fstat` raises the closed error with no descriptor change).
+Three new NITs (fstat-counter accuracy, a vacuous assertion in the truncated case, the async-exception
+window between `object.__new__` and the slot assignments) are folded in after the running regression.
+
+Slice 2b first full regression (before the re-review NITs): **5930 passed, 2 skipped (Linux SO_PEERCRED; endpoint owner drift needs root), 1 warning, 369 subtests passed in 698.60s (0:11:38)**, exit 0. NITs folded in (covering 110 passed, 1 skipped); the final regression follows.
+
+Task 25 slice 2b final full regression: **5930 passed, 2 skipped, 1 warning, 369 subtests passed in 702.05s (0:11:42)**, exit 0.
