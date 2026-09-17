@@ -1085,3 +1085,14 @@ load inside the mapping) folded in. Consume 21 + observer **48 passed**; coverin
 36; Ruff clean. Details and hashes in `consume-transaction-task24e2b.md`. Full regression follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6105 passed, 2 skipped, 1 warning, 369
 subtests passed in 833.97s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## Task 24 step (f) — owner consume route and prepare-api-v3 read (2026-09-18)
+
+RED retained (the preflight refused the `consume` suffix), GREEN after the preflight, endpoint and
+descriptor entry; two composition pins adapted (15/16). Independent review ACCEPT WITH CHANGES (a genuinely
+unauthenticated 401 → 404 ordering, oversize pinned to 413, HEAD headers aligned, an unused parameter and a
+citation corrected) folded in. Consume API **9 passed**, covering 45 + 108 with the web/first-party suites;
+Ruff clean. Task 24 (a)–(f) is complete. Details and hashes in `consume-route-task24f.md`. Full regression
+follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6114 passed, 2 skipped, 1 warning, 369
+subtests passed in 855.83s** — the two Linux-only skips. Hashes re-verified unchanged before commit.

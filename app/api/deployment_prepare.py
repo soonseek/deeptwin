@@ -15,6 +15,7 @@ from ..deployment.prepare_contracts import (
 )
 from ..deployment.prepare_service import PersistentDeploymentPrepare
 from ..deployment.prepare_v2_contracts import parse_cancel_v2, parse_receipt_import
+from ..deployment.prepare_v3_contracts import parse_consume
 from ..deployment.receipt_sources import (
     open_consumption_exchange_source,
     open_public_trust_source,
@@ -183,12 +184,12 @@ def preflight(scope, body, content_type):
                 return None
             if (
                 len(parts) != 2
-                or parts[1] not in {"cancel", "receipts"}
+                or parts[1] not in {"cancel", "receipts", "consume"}
                 or method != "POST"
             ):
                 raise DeploymentPrepareError()
             required = ("command_id", "request_digest", "expected_revision")
-            if parts[1] == "receipts":
+            if parts[1] in {"receipts", "consume"}:
                 required += ("receipt_digest",)
         if content_type.split(";", 1)[0] != "application/json":
             raise DeploymentPrepareError()
@@ -205,7 +206,11 @@ def preflight(scope, body, content_type):
         )
         if request_id is None:
             return parse_prepare(value)
-        parser = parse_receipt_import if parts[1] == "receipts" else parse_cancel_v2
+        parser = {
+            "receipts": parse_receipt_import,
+            "consume": parse_consume,
+            "cancel": parse_cancel_v2,
+        }[parts[1]]
         parsed = parser(request_id, value)
         # The route binds the ID again inside the actual service; body cannot override it.
         return {key: parsed[key] for key in required}
@@ -274,6 +279,21 @@ def create_router(*, service, base_path):
         try:
             result = await run_in_threadpool(
                 service.import_receipt,
+                request.state.authenticated_request,
+                request_id,
+                request.state.deployment_payload,
+            )
+            return response(result, project_links=False)
+        except DeploymentPrepareError as error:
+            return deployment_error(error)
+
+    @router.post(PATH + "/{request_id}/consume")
+    async def consume_receipt(request: Request, request_id: str):
+        # journal v3 §6: digest selectors only; the service performs the
+        # observation itself and returns the frozen consume reply (no links)
+        try:
+            result = await run_in_threadpool(
+                service.consume_receipt,
                 request.state.authenticated_request,
                 request_id,
                 request.state.deployment_payload,

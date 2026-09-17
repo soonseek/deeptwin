@@ -130,7 +130,7 @@ class StagedWorker:
     wants a divergent worker). Positive Linux authentication, real mounts, the
     real worker image and the container are host gates."""
 
-    def __init__(self, actual, monkeypatch, *, identity_bytes=None):
+    def __init__(self, fixture, profile, monkeypatch, *, identity_bytes=None):
         import os
         import socket
         import threading
@@ -141,8 +141,8 @@ class StagedWorker:
         from app.tests.test_extension_lineage_contracts import shipped_schema_bytes
         from app.tests.test_extension_worker_metadata import _write
 
-        fixture = actual.actual  # the ActualSources fixture: remapped roots, fake ownership
-        self.instance_id = actual.profile.instance_id
+        # `fixture` is the ActualSources fixture (remapped roots, fake ownership)
+        self.instance_id = profile.instance_id
         root, spec = extension_channel(instance_id=self.instance_id, slot_number=SLOT)
         self.root, self.spec = root, spec
         mapped = fixture.actual(root.pair_root)
@@ -310,7 +310,7 @@ def test_consume_observes_the_actual_staged_worker_and_commits_accepted3(
         prepared, command = pending(actual, monkeypatch)
         # the staged worker's seams are installed after prepare/import: the
         # consume transaction reacquires no slot lease and no live source
-        worker = StagedWorker(actual, monkeypatch)
+        worker = StagedWorker(actual.actual, actual.profile, monkeypatch)
         before = counts(actual.domain)
         baseline = open_fds()
         worker.start()
@@ -372,7 +372,7 @@ def test_a_worker_whose_identity_differs_from_the_lineage_is_a_conflict(
     other["extension_version"] = "1.0.1"
     with receipt_context(tmp_path, monkeypatch) as actual:
         prepared, command = pending(actual, monkeypatch)
-        worker = StagedWorker(actual, monkeypatch, identity_bytes=canonical_json(other))
+        worker = StagedWorker(actual.actual, actual.profile, monkeypatch, identity_bytes=canonical_json(other))
         before = counts(actual.domain)
         blobs_before = blob_count(actual.domain)
         worker.start()
@@ -399,7 +399,7 @@ def test_an_unobservable_staged_service_is_dependency_unavailable(
 ):
     with receipt_context(tmp_path, monkeypatch) as actual:
         prepared, command = pending(actual, monkeypatch)
-        StagedWorker(actual, monkeypatch)  # seams only: no probe service is listening
+        StagedWorker(actual.actual, actual.profile, monkeypatch)  # seams only: no probe service is listening
         before = counts(actual.domain)
         with pytest.raises(DeploymentPrepareError) as failure:
             actual.service.consume_receipt(
@@ -477,7 +477,7 @@ def test_the_final_writer_rechecks_the_head_after_the_observation(
 ):
     with receipt_context(tmp_path, monkeypatch) as actual:
         prepared, command = pending(actual, monkeypatch)
-        worker = StagedWorker(actual, monkeypatch)
+        worker = StagedWorker(actual.actual, actual.profile, monkeypatch)
         original = actual.domain.put_blob
         cancelled = {"done": False}
 
@@ -518,7 +518,7 @@ def test_each_authority_write_fault_leaves_no_partial_acceptance(
 ):
     with receipt_context(tmp_path, monkeypatch) as actual:
         prepared, command = pending(actual, monkeypatch)
-        worker = StagedWorker(actual, monkeypatch)
+        worker = StagedWorker(actual.actual, actual.profile, monkeypatch)
         before = counts(actual.domain)
         blobs_before = blob_count(actual.domain)
         original_insert = storage.insert
@@ -629,7 +629,7 @@ def test_replay_with_a_changed_body_or_a_foreign_command_id_is_a_conflict(
 ):
     with receipt_context(tmp_path, monkeypatch) as actual:
         prepared, command = pending(actual, monkeypatch)
-        worker = StagedWorker(actual, monkeypatch)
+        worker = StagedWorker(actual.actual, actual.profile, monkeypatch)
         worker.start()
         try:
             payload = consume_payload(prepared, command)

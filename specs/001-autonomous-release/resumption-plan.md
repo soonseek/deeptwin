@@ -2420,8 +2420,16 @@ must shape the redraft are:
    an operational blob referenced from the installation anchor so the whole-journal verifier can
    recompute it.
 
-**Status (2026-09-18):** (a) `contracts/deployment-receipt-journal-v3.md` accepted with changes
-folded in (`evidence/receipt-journal-v3-contract-task24a.md`); (b) Task 25 complete. Next: (c).
+**Status (2026-09-18):** every redraft step is implemented, independently reviewed and
+evidenced — (a) `contracts/deployment-receipt-journal-v3.md`
+(`evidence/receipt-journal-v3-contract-task24a.md`); (b) Task 25; (c) the domain anchors and the
+v3 constants/codecs (`extension-installation-domain-task24c1.md`,
+`prepare-v3-constants-task24c2.md`); (d) the observer (`stage-observer-task24d.md`); (e) the v3
+storage and migration, the acceptance writer and the service transaction
+(`journal-v3-storage-task24e1.md`, `acceptance-writer-task24e2a.md`,
+`consume-transaction-task24e2b.md`); (f) the route (`consume-route-task24f.md`). The boundary
+statements below stand; the live end-to-end run remains the Docker/colima host gate. Continue
+with the Continuation section (T040 scheduler/ledger/worker integration).
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;

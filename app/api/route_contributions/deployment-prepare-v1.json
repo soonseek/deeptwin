@@ -6,6 +6,7 @@
     {"route_id":"deployment.requests.prepare","methods":["POST"],"path":"/api/v1/deployment/requests","auth_policy":"browser_session","required_scope":"deployment.manage"},
     {"route_id":"deployment.requests.cancel","methods":["POST"],"path":"/api/v1/deployment/requests/{request_id}/cancel","auth_policy":"browser_session","required_scope":"deployment.manage"},
     {"route_id":"deployment.requests.read","methods":["GET","HEAD"],"path":"/api/v1/deployment/requests/{request_id}","auth_policy":"browser_session","required_scope":"deployment.read"},
-    {"route_id":"deployment.requests.receipts.import","methods":["POST"],"path":"/api/v1/deployment/requests/{request_id}/receipts","auth_policy":"browser_session","required_scope":"deployment.manage"}
+    {"route_id":"deployment.requests.receipts.import","methods":["POST"],"path":"/api/v1/deployment/requests/{request_id}/receipts","auth_policy":"browser_session","required_scope":"deployment.manage"},
+    {"route_id":"deployment.requests.consume","methods":["POST"],"path":"/api/v1/deployment/requests/{request_id}/consume","auth_policy":"browser_session","required_scope":"deployment.manage"}
   ]
 }

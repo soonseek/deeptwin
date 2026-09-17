@@ -612,14 +612,14 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
     with TestClient(reopened, base_url=profile.http_origin) as client:
         assert client.get(profile.base_path + "health").status_code == 200
         composition = reopened.state.route_composition
-        assert composition.route_count == 14
+        assert composition.route_count == 15
         assert composition.contribution_ids == ("core-v1", "extension-candidates-v1", "run-approvals-v1",
                                                 "deployment-prepare-v1")
         assert composition.route_ids == ("events.read", "events.stream", "events.type", "snapshot.read",
             "commands.read", "commands.create", "extensions.candidates.create", "extensions.candidates.read",
             "runs.approvals.record", "runs.approvals.read",
             "deployment.requests.prepare", "deployment.requests.cancel", "deployment.requests.read",
-            "deployment.requests.receipts.import")
+            "deployment.requests.receipts.import", "deployment.requests.consume")
 
 
 def test_live_session_root_pin_rejects_a_different_valid_pair(tmp_path):
