@@ -330,3 +330,4 @@ linked evidence before resuming. Inspect working-tree changes and active agents;
 restart completed work. Write completed/failed/blocked evidence as work occurs. A checkpoint
 is not task completion. The product's patience counter never determines whether development
 ends. Only verified delivery or a genuine authority/external-state blocker ends autonomous work.
+| Task 24 plan draft (T087 next step) | Drafted, independently reviewed and REJECTED before any code: postcondition must be a socket handshake probe (prerequisite task), evidence never a request body, success needs a journal-v3 contract (`accepted3`), absent-only head, record kind `extension_installation`. resumption-plan.md now carries the corrected redraft order; next iterations produce the journal-v3 contract and the probe prerequisite task |

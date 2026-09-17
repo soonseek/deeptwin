@@ -2374,6 +2374,61 @@ bounded reader scope. T025/T087, real Linux/image/native/boot/probe/observer/ins
 whole UI remain open.
 
 
+### Task 24: Stage postcondition acceptance and installation head (T087 partial) — DRAFT REJECTED 2026-09-18
+
+The autonomous loop drafted a three-phase entry on 2026-09-18 (evidence value → installation
+record/head → success consumption, with a fixed-file "observer" over the socket mount and an
+owner route accepting an evidence body). Independent specification review REJECTED it before any
+code. The rejected draft is not retained here so that no reader dispatches it; the findings that
+must shape the redraft are:
+
+1. **Postcondition is a component handshake, not a file read.** `open_worker_metadata_source()`
+   pins `/opt/deeptwin-extension` on the calling process's own root mount and samples its own
+   uname/uid/mountinfo (extension-worker-metadata §1/§4/§6); from the control process it can
+   never observe a staged service, and `socket_mounts[0]` is the `broker_pair` volume holding
+   `worker.sock`, not the worker image tree. The normative arm-specific stage postcondition is a
+   control-side authenticated probe over that socket in which the worker reports its own
+   `WorkerMetadataReading`, compared to the request tuple and `validate_descriptor_lineage`
+   (api.md handshakes, runtime.md "handshake/qualification precede binding CAS", data-model
+   §3.1 descriptor row, lineage-values §1). Today the core can make **no** such observation: the
+   three probe slices in the private proposal
+   `.superpowers/sdd/resumption-plan/worker-probe-integration-proposal.md` (channel values,
+   private listener/boot-ID handshake, worker probe service) are a prerequisite task.
+2. **Evidence is never a request body.** receipts §6 / journal §1: the owner route accepts
+   digest selectors only; the service performs the observation itself in its preseal phase (as
+   it does `J.open_receipt`) and only the observer module can construct evidence.
+3. **Success is `accepted`, on a journal v3.** The lifecycle state is `accepted` (data-model
+   `DeploymentRequestLifecycle`); DDL_V2 allows revision 3 only for `cancelled|expired`, the
+   consumption anchor pins revision 2 and outcome ∈ {failed, unknown}, and §12 freezes C2
+   forward-only. Task 20 added `_V2` constants and preserved C1 byte-exact; this step needs a
+   `deployment-receipt-journal` **v3 contract** (migration row 3, `DDL_V3/CHECKSUM_V3`, C1/C2
+   preserved, consumption anchor v2 with `outcome:"succeeded"` + `effect_ref`, verifier rules
+   for `accepted3`, admission rows `receipt_pending2 + consume` and `accepted3 + any → 409`,
+   no K marker for success, `prepare-api-v3` with `disposition:"consumed_success"` and a
+   defined frozen consume-200 body, the `deployment.requests.consume` route in §6/§11, a
+   registered `deployment.request_accepted` event next to `extension.staged`).
+4. **Absent-only head.** receipts §2/§3 and journal §1 pin the first consumer to
+   `expected_installation_head:{state:"absent"}` → revision 1; no uninstall arm produces a
+   tombstone, so a tombstone CAS branch would be a fabricated-row fixture. It arrives with
+   uninstall-current.
+5. **The record is the domain kind `extension_installation`.** The first-only guard
+   (`prepare_service.py` managed-kind absence query) and the reference scanner depend on it;
+   `ENTITY_KINDS` and `app/extensions/contracts.py::ExtensionInstallation`
+   (`extension-installation-v1`, with `verification_refs` and `scan_refs`) already exist and
+   need an explicit supersede/coexist ruling plus a versioned content validator under
+   `app/domain/` and regenerated envelope exports (Task 10 precedent). Evidence is presealed as
+   an operational blob referenced from the installation anchor so the whole-journal verifier can
+   recompute it.
+
+Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
+(b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;
+(d) evidence value inside the observer module with an in-process socket responder test;
+(e) the one-writer consume transaction against the actual observer, with fault injection at every
+stage; (f) route + prepare-api-v3. Boundary statements to keep verbatim: `staged ≠ verified`,
+no qualification/binding/enable/dispatch, no replace/uninstall/retire arm, one-writer atomicity,
+expiry precedence, and the live end-to-end run (container, socket, worker) is Docker/colima host
+authority reported as a gate, never claimed; no GUI (UX-AC11 remains open).
+
 ## Continuation
 
 After these tasks, continue T040's scheduler/ledger/worker integration and the core semantic-port

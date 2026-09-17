@@ -901,3 +901,15 @@ after the last refactor **38 passed**; Ruff clean. Details and hashes in
 `scheduler-projection-recovery-f9.md`. Full regression for this iteration follows.
 
 Restart-invariant scheduler projection (F9) full regression: **5777 passed, 1 skipped, 1 warning, 369 subtests passed in 689.75s (0:11:29)**, exit 0.
+
+## Task 24 plan draft — REJECTED by independent specification review (2026-09-18)
+
+The loop drafted the next T087 step (stage postcondition evidence → installation record/head →
+success consumption). Review found five REJECT-level contract errors (the fixed-file measurement
+cannot observe a staged service — the postcondition is a socket handshake probe whose slices are a
+prerequisite; evidence can never be a request body; success is `accepted` on a journal **v3**, not a
+`consumed_success3` row on the frozen v2; absent-only head, no tombstone fixture; the record is the
+domain kind `extension_installation` with a ruling on the existing v1 shape) plus event/read-surface/
+admission-row/evidence-persistence gaps. The draft was replaced in `resumption-plan.md` by the
+corrected redraft order (journal-v3 contract → probe prerequisite → absent-only codecs → observer
+evidence → one-writer transaction → route/api-v3). No code was written against the rejected draft.
