@@ -26,6 +26,7 @@ from .prepare_contracts import (
     stamp,
 )
 from .prepare_v2_contracts import cancellation_v2, parse_cancel_v2, parse_receipt_import
+from .prepare_v3_contracts import parse_consume
 
 NAMESPACES = {"prepared": "deployment-prepare-v1", "cancelled": "deployment-cancel-v1"}
 
@@ -69,6 +70,7 @@ def body(item, *, command_id=None, cursor=None):
 
 def read_body(item):
     receipt = item.get("receipt")
+    accepted = item["history"][-1]["state"] == "accepted"
     return {
         **body(item),
         "receipt": None
@@ -76,12 +78,19 @@ def read_body(item):
         else {
             "receipt_digest": receipt["digest"],
             "outcome": receipt["value"]["outcome"],
-            "disposition": disposition(receipt["value"]["outcome"]),
+            # the accepted3 head consumed the success; the stored revision-2
+            # import reply keeps its frozen pending disposition
+            "disposition": "consumed_success"
+            if accepted
+            else disposition(receipt["value"]["outcome"]),
             "import_revision": 2,
         },
         "consumption_publication_state": None
         if item.get("consumed_outbox") is None
         else item["consumed_outbox"]["state"],
+        "installation": installation_summary(item["installation"])
+        if item.get("installation") is not None
+        else None,
     }
 
 
@@ -133,6 +142,9 @@ def event_fields(
             or (state == "rejected" and receipt_outcome in {"failed", "unknown"}),
             "unavailable",
         )
+    if state == "accepted":
+        # journal v3 §6: the acceptance is always the third revision
+        require(revision == 3 and receipt_outcome is None, "unavailable")
     return {
         "vault_id": roots.genesis.id,
         "recorded_at_utc": instant(milliseconds),
@@ -154,6 +166,7 @@ def event_fields(
                 "prepared": "pending",
                 "cancelled": "cancelled",
                 "expired": "blocked",
+                "accepted": "succeeded",
             }[state]
         ),
         "error_code": "stale_state"
@@ -214,7 +227,7 @@ def _append_transition(
             and previous["state"] == "prepared"
         )
         or (
-            state in {"cancelled", "expired"}
+            state in {"cancelled", "expired", "accepted"}
             and previous is not None
             and previous["state"] == "receipt_pending"
         ),
@@ -385,6 +398,113 @@ def commit_receipt_transition(
     return receipt, event
 
 
+def installation_summary(installation):
+    """The v3 installation summary carried by the consume reply and the read body."""
+    ref = installation["ref"]
+    return {
+        "installation_id": ref.id,
+        "extension_id": installation["anchor"]["extension_id"],
+        "installation_digest": ref.sha256,
+        "revision": 1,
+    }
+
+
+def commit_acceptance_transition(
+    db, roots, profile, item, *, now, actor_ref, value, installation
+):
+    """receipt_pending2 → accepted3 with the frozen consume reply and command
+    (journal v3 §5/§6); the caller has already put the installation anchor."""
+    history, event = _append_transition(
+        db,
+        roots,
+        profile,
+        item,
+        state="accepted",
+        now=now,
+        actor_ref=actor_ref,
+        command_id=value["command_id"],
+    )
+    reply = {
+        "command_id": value["command_id"],
+        "request_id": item["ref"].id,
+        "receipt_digest": value["receipt_digest"],
+        "outcome": "succeeded",
+        "disposition": "consumed_success",
+        "revision": history["revision"],
+        "installation": installation_summary(installation),
+        "event_cursor": _event_cursor_in_transaction(
+            db, vault_id=roots.genesis.id, sequence=event.sequence, event_types=()
+        ),
+    }
+    _store_command(
+        db,
+        profile,
+        item,
+        actor_ref=actor_ref,
+        namespace="deployment-consume-v1",
+        value=value,
+        http_status=200,
+        receipt=reply,
+        lifecycle_revision=3,
+    )
+    return reply, event
+
+
+def staged_event_fields(roots, installation_ref, milliseconds, actor_ref, *,
+                        correlation_id, causation_id):
+    """The `extension.staged` event of the installation head change (journal
+    v3 §6): the installation ObjectRef, the consume command as correlation,
+    the acceptance event as causation, the fixed stage arm's kind and tier."""
+    from ..extensions.port_contracts import PORT_CONTRACTS
+
+    # the candidate manifest's admitted tuple: `stage_for_candidate` pins every
+    # retained stage request to exactly this port contract's kind and tier
+    port = PORT_CONTRACTS["tool-port-v1"]
+    return {
+        "vault_id": roots.genesis.id,
+        "recorded_at_utc": instant(milliseconds),
+        "observed_at_utc": instant(milliseconds),
+        "actor_kind": "human",
+        "actor_ref": actor_ref,
+        "event_type": "extension.staged",
+        "object_refs": (
+            ObjectRef(
+                installation_ref.kind,
+                installation_ref.id,
+                installation_ref.version,
+                installation_ref.sha256,
+            ),
+        ),
+        "correlation_id": correlation_id,
+        "causation_id": causation_id,
+        "status": "succeeded",
+        "error_code": None,
+        "public_metadata": {
+            "extension_kind": port.extension_kind,
+            "trust_tier": port.trust_tier,
+            "revision": 1,
+        },
+        "private_evidence_refs": (),
+        "retention_class": "core",
+        "policy_ref": roots.access_policy,
+    }
+
+
+def append_staged_event(db, roots, item, *, now, actor_ref, installation_ref,
+                        correlation_id, causation_id):
+    return _append_event_in_transaction(
+        db,
+        **staged_event_fields(
+            roots,
+            installation_ref,
+            now,
+            actor_ref,
+            correlation_id=correlation_id,
+            causation_id=causation_id,
+        ),
+    )
+
+
 def verify(db, roots, profile, item, commands):
     history, outboxes = item["history"], item["outbox"]
     row, ref = item["row"], item["ref"]
@@ -465,7 +585,13 @@ def verify(db, roots, profile, item, commands):
                     or (
                         number == 3
                         and history[1]["state"] == "receipt_pending"
-                        and state in {"cancelled", "expired"}
+                        and (
+                            state in {"cancelled", "expired"}
+                            or (
+                                state == "accepted"
+                                and item["receipt"]["value"]["outcome"] == "succeeded"
+                            )
+                        )
                     )
                 )
                 and (
@@ -530,9 +656,12 @@ def verify(db, roots, profile, item, commands):
         require(command is not None, "unavailable")
         value = parse_canonical(command["input_json"].encode())
         imported = state in {"receipt_pending", "rejected"}
+        accepted = state == "accepted"
         namespace = (
             "deployment-receipt-import-v1"
             if imported
+            else "deployment-consume-v1"
+            if accepted
             else "deployment-cancel-v2"
             if number == 3
             else NAMESPACES[state]
@@ -540,6 +669,8 @@ def verify(db, roots, profile, item, commands):
         route_parser = (
             parse_receipt_import
             if imported
+            else parse_consume
+            if accepted
             else parse_cancel_v2
             if number == 3
             else parse_cancel
@@ -609,12 +740,23 @@ def verify(db, roots, profile, item, commands):
                 "event_cursor": receipt["event_cursor"],
             }
             if imported
+            else {
+                "command_id": command["command_id"],
+                "request_id": ref.id,
+                "receipt_digest": item["receipt"]["digest"],
+                "outcome": "succeeded",
+                "disposition": "consumed_success",
+                "revision": 3,
+                "installation": installation_summary(item["installation"]),
+                "event_cursor": receipt["event_cursor"],
+            }
+            if accepted
             else body(
                 frozen, command_id=command["command_id"], cursor=receipt["event_cursor"]
             )
         )
         require(receipt == expected_reply, "unavailable")
-        if imported:
+        if imported or accepted:
             require(value["receipt_digest"] == item["receipt"]["digest"], "unavailable")
     require(
         {key for key, value in commands.items() if value["request_id"] == ref.id}

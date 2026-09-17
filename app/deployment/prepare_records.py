@@ -112,12 +112,6 @@ def verify(domain, db, profile):
             "unavailable",
         )
     else:
-        # explicit closure until the consume transaction (e2) adds
-        # `_load_installation`: no writer can produce an installation row yet,
-        # so any such row is refused rather than left unread
-        require(
-            not rows["installations"] and not rows["installation_heads"], "unavailable"
-        )
         # journal v3 §4: heads ↔ installations, revision 1, same anchor digest
         require(
             {
@@ -177,7 +171,7 @@ def verify(domain, db, profile):
     events = list(
         db.execute(
             "SELECT event_id FROM api_event_envelopes WHERE event_type IN "
-            "('deployment.request_prepared','deployment.request_cancelled','deployment.request_expired','deployment.receipt_committed') LIMIT 49"
+            "('deployment.request_prepared','deployment.request_cancelled','deployment.request_expired','deployment.receipt_committed','deployment.request_accepted') LIMIT 49"
         )
     )
     require(
@@ -242,16 +236,42 @@ def verify(domain, db, profile):
             and r["consumption_id"] == item["consumption"]["ref"].id
         ]
         item["consumed_outbox"] = consumed[0] if consumed else None
+        installation_rows = [
+            r
+            for r in rows.get("installations", ())
+            if r["request_id"] == row["request_id"]
+        ]
         is_receipt = len(item["history"]) >= 2 and item["history"][1]["state"] in {
             "receipt_pending",
             "rejected",
         }
         rejected = is_receipt and item["history"][1]["state"] == "rejected"
+        accepted = (
+            len(item["history"]) == 3 and item["history"][2]["state"] == "accepted"
+        )
+        # journal v3 §4: accepted3 has exactly one success consumption and one
+        # installation with its head and no consumed outbox; rejected2 keeps
+        # its one v1 consumption with the marker intent; nothing else has any
         require(
             bool(receipt_rows) == is_receipt
-            and bool(consumption_rows) == rejected
-            and bool(consumed) == rejected,
+            and bool(consumption_rows) == (rejected or accepted)
+            and bool(consumed) == rejected
+            and bool(installation_rows) == accepted,
             "unavailable",
+        )
+        item["installation"] = (
+            _load_installation(
+                domain,
+                db,
+                roots,
+                profile,
+                item,
+                item["consumption"],
+                installation_rows[0],
+                rows.get("installation_heads", ()),
+            )
+            if installation_rows
+            else None
         )
         if rejected:
             out = item["consumed_outbox"]
@@ -454,30 +474,46 @@ def _load_receipt(domain, db, roots, profile, item, source_binding, row):
 
 
 def _load_consumption(domain, db, roots, item, receipt, row):
+    """The one-use consumption: v1 for a rejected2 non-success (revision 2),
+    v2 for an accepted3 success (revision 3, the installation as effect; the
+    effect itself is compared by `_load_installation`)."""
+    accepted = len(item["history"]) == 3 and item["history"][2]["state"] == "accepted"
     require(
-        receipt is not None and receipt["value"]["outcome"] in {"failed", "unknown"},
+        receipt is not None
+        and (
+            receipt["value"]["outcome"] == "succeeded"
+            if accepted
+            else receipt["value"]["outcome"] in {"failed", "unknown"}
+        )
+        and row["lifecycle_revision"] == (3 if accepted else 2),
         "unavailable",
     )
     ref = EntityRef(
         "deployment_receipt_consumption", row["consumption_id"], 1, row["anchor_digest"]
     )
-    bound_associations(db, roots.genesis.id, ref.kind, ref.id, 1, edges=5, blobs=0)
+    bound_associations(
+        db, roots.genesis.id, ref.kind, ref.id, 1, edges=6 if accepted else 5, blobs=0
+    )
     record = bounded_body(db, roots.genesis.id, ref, 8192)
     domain._check_graph(db, [ref], roots)
-    anchor, history = record.body["content"], item["history"][1]
+    anchor, history = record.body["content"], item["history"][2 if accepted else 1]
+    expected = {
+        "schema_version": "deployment-receipt-consumption-anchor-v2"
+        if accepted
+        else "deployment-receipt-consumption-anchor-v1",
+        "request_ref": item["ref"].as_dict(),
+        "receipt_ref": receipt["ref"].as_dict(),
+        "winning_lifecycle_revision": 3 if accepted else 2,
+        "consumed_at": lifecycle.stamp(history["transitioned_ms"]),
+        "actor_ref": item["actor"].as_dict(),
+        "transaction_id": history["command_id"],
+        "public_event_id": history["event_id"],
+        "outcome": receipt["value"]["outcome"],
+    }
+    if accepted:
+        expected["effect_ref"] = anchor.get("effect_ref")
     require(
-        anchor
-        == {
-            "schema_version": "deployment-receipt-consumption-anchor-v1",
-            "request_ref": item["ref"].as_dict(),
-            "receipt_ref": receipt["ref"].as_dict(),
-            "winning_lifecycle_revision": 2,
-            "consumed_at": lifecycle.stamp(history["transitioned_ms"]),
-            "actor_ref": item["actor"].as_dict(),
-            "transaction_id": history["command_id"],
-            "public_event_id": history["event_id"],
-            "outcome": receipt["value"]["outcome"],
-        }
+        anchor == expected
         and row["command_id"] == history["command_id"]
         and row["event_id"] == history["event_id"]
         and row["consumed_ms"] == history["transitioned_ms"]
@@ -488,6 +524,351 @@ def _load_consumption(domain, db, roots, item, receipt, row):
         "unavailable",
     )
     return {"ref": ref, "record": record, "anchor": anchor, "row": row}
+
+
+def _load_installation(domain, db, roots, profile, item, consumption, row, head_rows):
+    """The accepted3 installation (journal v3 §4): anchor, evidence blob, head,
+    the consume command/consumption linkage and the `extension.staged` event."""
+    from ..domain.public_events import EventEnvelope
+    from .stage_observer import StagePostconditionError, parse_stage_evidence
+
+    history = item["history"]
+    require(
+        len(history) == 3
+        and history[2]["state"] == "accepted"
+        and consumption is not None
+        and item["receipt"] is not None,
+        "unavailable",
+    )
+    accepted = history[2]
+    ref = EntityRef("extension_installation", row["installation_id"], 1, row["anchor_digest"])
+    bound_associations(db, roots.genesis.id, ref.kind, ref.id, 1, edges=5, blobs=1)
+    record = bounded_body(db, roots.genesis.id, ref, 8192)
+    domain._check_graph(db, [ref], roots)
+    anchor = record.body["content"]
+    evidence = BlobRef(row["vault_id"], row["purpose"], row["evidence_sha256"], row["evidence_size"])
+    raw = _bounded_blob(domain, db, roots, evidence, 8192)
+    try:
+        parsed = parse_stage_evidence(raw)
+    except StagePostconditionError:
+        raise DeploymentPrepareError("unavailable") from None
+    request = item["request"]
+    require(
+        anchor == _installation_anchor(item, evidence, accepted["command_id"], accepted["transitioned_ms"])
+        and _evidence_agrees(
+            parsed,
+            item,
+            profile,
+            item["receipt"],
+            history[1]["transitioned_ms"],
+            accepted["transitioned_ms"],
+        )
+        and row["request_id"] == item["ref"].id
+        and row["extension_id"] == request["effect_payload"]["extension_id"]
+        and row["vault_id"] == roots.genesis.id
+        and row["consumption_id"] == consumption["ref"].id
+        and row["command_id"] == accepted["command_id"]
+        and row["installed_ms"] == accepted["transitioned_ms"]
+        and consumption["anchor"]["effect_ref"] == ref.as_dict()
+        and record.body["actor_ref"] == item["actor"].as_dict()
+        and record.body["access_policy_ref"] == roots.access_policy.as_dict()
+        and record.body["retention_policy_ref"] == roots.retention_policy.as_dict()
+        and record.body["parent_refs"] == [item["ref"].as_dict(), item["receipt"]["ref"].as_dict()],
+        "unavailable",
+    )
+    heads = [h for h in head_rows if h["request_id"] == item["ref"].id]
+    require(
+        len(heads) == 1
+        and heads[0]["extension_id"] == row["extension_id"]
+        and heads[0]["revision"] == 1
+        and heads[0]["installation_anchor_digest"] == row["anchor_digest"],
+        "unavailable",
+    )
+    event_row = db.execute(
+        "SELECT * FROM api_event_envelopes WHERE event_id=? LIMIT 2", (row["event_id"],)
+    ).fetchone()
+    accepted_sequence = db.execute(
+        "SELECT sequence FROM api_event_envelopes WHERE event_id=? LIMIT 2",
+        (accepted["event_id"],),
+    ).fetchone()
+    require(
+        event_row is not None
+        and event_row["event_type"] == "extension.staged"
+        and event_row["vault_id"] == roots.genesis.id
+        and len(event_row["envelope"]) <= 8192
+        # appended in the one writer right after the acceptance event
+        and accepted_sequence is not None
+        and event_row["sequence"] == accepted_sequence[0] + 1,
+        "unavailable",
+    )
+    event = EventEnvelope.from_bytes(event_row["envelope"])
+    expected_event = EventEnvelope.create(
+        event_id=row["event_id"],
+        sequence=event_row["sequence"],
+        **lifecycle.staged_event_fields(
+            roots,
+            ref,
+            accepted["transitioned_ms"],
+            item["actor"],
+            correlation_id=accepted["command_id"],
+            causation_id=accepted["event_id"],
+        ),
+    )
+    require(event.body_bytes == expected_event.body_bytes, "unavailable")
+    return {
+        "ref": ref,
+        "record": record,
+        "anchor": anchor,
+        "row": row,
+        "head": heads[0],
+        "evidence": parsed,
+        "evidence_blob": evidence,
+    }
+
+
+def _evidence_agrees(parsed, item, profile, receipt, observed_after_ms, observed_before_ms):
+    """The parsed evidence describes this request, this receipt and the admitted
+    slot (journal v3 §4: `service_identity`, `uid`, `gid` and the channel come
+    from `contracts.slot`, never from the blob alone), observed inside the
+    receipt-import → acceptance window. The build/schema digests are compared
+    with the candidate lineage by the service (e2b)."""
+    request = item["request"]
+    present = receipt["value"]["effect_result"]["new_service"]
+    try:
+        slot = sources.slot(profile.instance_id, item["row"]["slot_id"])
+        observed_ms = epoch_ms(parsed["observed_at"])
+    except (sources.DeploymentSourceError, DeploymentPrepareError):
+        return False
+    expected = parsed["expected"]
+    return (
+        parsed["request_id"] == item["ref"].id
+        and parsed["request_digest"] == request["request_digest"]
+        and parsed["receipt_digest"] == receipt["digest"]
+        and parsed["request_blob_sha256"] == sha256(item["raw"]).hexdigest()
+        and parsed["receipt_blob_sha256"] == receipt["row"]["receipt_sha256"]
+        and expected["service_identity"] == present["service_identity"]
+        and expected["service_identity"] == slot["service_identity"]
+        and expected["uid"] == slot["uid"]
+        and expected["gid"] == slot["gid"]
+        and parsed["connection"]["channel_id"] == slot["channel_id"]
+        and expected["platform"]
+        == request["effect_payload"]["selected_platform_entry"]["platform"]
+        and observed_after_ms <= observed_ms <= observed_before_ms
+    )
+
+
+def _installation_anchor(item, evidence, command_id, installed_ms):
+    """The exact `extension-installation-anchor-v1` content of an acceptance,
+    derived from the retained request and the receipt's Present result only."""
+    request = item["request"]
+    payload = request["effect_payload"]
+    present = item["receipt"]["value"]["effect_result"]["new_service"]
+    return {
+        "schema_version": "extension-installation-anchor-v1",
+        "extension_id": payload["extension_id"],
+        "manifest_digest": present["manifest_digest"],
+        "service_descriptor_digest": present["service_descriptor_digest"],
+        "selected_platform_entry_digest": present["selected_platform_entry_digest"],
+        "image_manifest_digest": present["image_manifest_digest"],
+        "platform": payload["selected_platform_entry"]["platform"],
+        "service_identity": present["service_identity"],
+        "staging_authority": "deployment-receipt-v1",
+        "request_ref": item["ref"].as_dict(),
+        "receipt_ref": item["receipt"]["ref"].as_dict(),
+        "postcondition_evidence_blob_ref": evidence.as_dict(),
+        "consume_command_id": command_id,
+        "state": "staged",
+        "revision": 1,
+        "previous_record_digest": None,
+        "installed_at": lifecycle.stamp(installed_ms),
+        "actor_ref": item["actor"].as_dict(),
+    }
+
+
+def accept_stage(domain, db, roots, profile, item, *, now, actor_ref, value, evidence,
+                 evidence_bytes):
+    """The final-writer body of the consume transaction (journal v3 §5): a
+    receipt_pending2 request with a succeeded receipt and a presealed
+    postcondition evidence blob becomes accepted3 with its installation
+    anchor and absent-only head, the acceptance and staged events, the
+    success consumption anchor v2 and the index rows, in this one writer.
+    Everything is derived from retained records and the evidence; the caller
+    owns admission, expiry precedence, the observation and the rechecks."""
+    from uuid import uuid4
+
+    from ..domain.schemas import ImmutableRecord
+    from .prepare_v3_contracts import parse_consume
+    from .stage_observer import StagePostconditionError, parse_stage_evidence
+
+    domain._assert_write_transaction(db)
+    history = item["history"]
+    receipt = item.get("receipt")
+    require(
+        type(value) is dict
+        and parse_consume(
+            item["ref"].id, {k: v for k, v in value.items() if k != "request_id"}
+        )
+        == value,
+        "conflict",
+    )
+    require(
+        len(history) == 2
+        and history[1]["state"] == "receipt_pending"
+        and item["head"]["revision"] == 2
+        and receipt is not None
+        and receipt["value"]["outcome"] == "succeeded"
+        and value["expected_revision"] == 2
+        and value["request_digest"] == item["request"]["request_digest"]
+        and value["receipt_digest"] == receipt["digest"]
+        # the final-writer time precondition: never at or after the deadline
+        # (the caller's expiry precedence owns that transition) and never
+        # before the receipt import this acceptance consumes
+        and type(now) is int
+        and history[1]["transitioned_ms"] <= now < item["row"]["expires_ms"],
+        "conflict",
+    )
+    require(
+        db.execute(
+            "SELECT 1 FROM domain_records WHERE kind IN ('extension_installation','extension_qualification','extension_binding') LIMIT 1"
+        ).fetchone()
+        is None,
+        "conflict",
+    )
+    require(
+        type(evidence) is BlobRef
+        and type(evidence_bytes) is bytes
+        and evidence.vault_id == roots.genesis.id
+        and evidence.purpose == "operational"
+        and evidence.sha256 == sha256(evidence_bytes).hexdigest()
+        and evidence.size == len(evidence_bytes)
+        and _bounded_blob(domain, db, roots, evidence, 8192) == evidence_bytes,
+        "conflict",
+    )
+    try:
+        parsed = parse_stage_evidence(evidence_bytes)
+    except StagePostconditionError:
+        raise DeploymentPrepareError("conflict") from None
+    require(
+        _evidence_agrees(parsed, item, profile, receipt, history[1]["transitioned_ms"], now),
+        "conflict",
+    )
+    common = {
+        "version": 1,
+        "created_at_utc": lifecycle.instant(now),
+        "actor_ref": actor_ref,
+        "purpose": "operational",
+        "access_policy_ref": roots.access_policy,
+        "retention_policy_ref": roots.retention_policy,
+    }
+    anchor = _installation_anchor(item, evidence, value["command_id"], now)
+    installation_record = ImmutableRecord.create(
+        kind="extension_installation",
+        id=str(uuid4()),
+        parent_refs=(item["ref"], receipt["ref"]),
+        content=anchor,
+        **common,
+    )
+    domain._put_in_transaction(db, installation_record)
+    installation = {"ref": installation_record.ref, "anchor": anchor}
+    reply, accepted_event = lifecycle.commit_acceptance_transition(
+        db,
+        roots,
+        profile,
+        item,
+        now=now,
+        actor_ref=actor_ref,
+        value=value,
+        installation=installation,
+    )
+    staged = lifecycle.append_staged_event(
+        db,
+        roots,
+        item,
+        now=now,
+        actor_ref=actor_ref,
+        installation_ref=installation_record.ref,
+        correlation_id=value["command_id"],
+        causation_id=accepted_event.event_id,
+    )
+    content = {
+        "schema_version": "deployment-receipt-consumption-anchor-v2",
+        "request_ref": item["ref"].as_dict(),
+        "receipt_ref": receipt["ref"].as_dict(),
+        "winning_lifecycle_revision": 3,
+        "consumed_at": lifecycle.stamp(now),
+        "actor_ref": actor_ref.as_dict(),
+        "transaction_id": value["command_id"],
+        "public_event_id": accepted_event.event_id,
+        "outcome": "succeeded",
+        "effect_ref": installation_record.ref.as_dict(),
+    }
+    consumption = ImmutableRecord.create(
+        kind="deployment_receipt_consumption",
+        id=str(uuid4()),
+        parent_refs=(item["ref"], receipt["ref"], installation_record.ref),
+        content=content,
+        **common,
+    )
+    domain._put_in_transaction(db, consumption)
+    consumption_row = storage.insert(
+        db,
+        "consumptions",
+        {
+            "request_id": item["ref"].id,
+            "receipt_sha256": receipt["row"]["receipt_sha256"],
+            "consumption_id": consumption.ref.id,
+            "vault_id": roots.genesis.id,
+            "kind": "deployment_receipt_consumption",
+            "version": 1,
+            "anchor_digest": consumption.ref.sha256,
+            "lifecycle_revision": 3,
+            "command_id": value["command_id"],
+            "event_id": accepted_event.event_id,
+            "consumed_ms": now,
+        },
+    )
+    installation_row = storage.insert(
+        db,
+        "installations",
+        {
+            "request_id": item["ref"].id,
+            "extension_id": anchor["extension_id"],
+            "vault_id": roots.genesis.id,
+            "purpose": "operational",
+            "kind": "extension_installation",
+            "installation_id": installation_record.ref.id,
+            "version": 1,
+            "anchor_digest": installation_record.ref.sha256,
+            "evidence_sha256": evidence.sha256,
+            "evidence_size": evidence.size,
+            "consumption_id": consumption.ref.id,
+            "lifecycle_revision": 3,
+            "command_id": value["command_id"],
+            "event_id": staged.event_id,
+            "installed_ms": now,
+        },
+    )
+    head_row = storage.insert(
+        db,
+        "installation_heads",
+        {
+            "extension_id": anchor["extension_id"],
+            "request_id": item["ref"].id,
+            "revision": 1,
+            "installation_anchor_digest": installation_record.ref.sha256,
+        },
+    )
+    item["consumption"] = {"ref": consumption.ref, "anchor": content, "row": consumption_row}
+    item["consumed_outbox"] = None
+    item["installation"] = {
+        **installation,
+        "record": installation_record,
+        "row": installation_row,
+        "head": head_row,
+        "evidence": parsed,
+        "evidence_blob": evidence,
+    }
+    return reply
 
 
 def bounded_candidates(domain, db):

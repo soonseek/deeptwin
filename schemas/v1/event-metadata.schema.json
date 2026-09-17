@@ -384,6 +384,17 @@
       },
       "type": "object"
     },
+    "deployment.request_accepted": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "deployment.request_cancelled": {
       "additionalProperties": false,
       "properties": {

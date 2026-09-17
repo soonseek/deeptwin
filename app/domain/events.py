@@ -147,7 +147,7 @@ _register("service_client.created service_client.rotated service_client.revoked"
           scope_count=COUNT, revision=COUNT)
 _register("service_client.denied", reason_code=SERVICE_CLIENT_DENIAL)
 _register("deployment.request_prepared deployment.request_cancelled deployment.request_expired "
-          "deployment.receipt_committed", revision=COUNT)
+          "deployment.receipt_committed deployment.request_accepted", revision=COUNT)
 _register("auth.recovery_started auth.recovery_completed", revision=COUNT)
 _register("auth.recovery_failed", reason_code=GAP_REASON)
 _register("credential.retired credential.cleanup_completed "

@@ -418,8 +418,11 @@ v3 rows; `advance` gains no new allowed-column set (installation heads are inser
 `verify`, `validate_current_row`, `records.verify/private_sizes` admit any exact stored shape;
 `records.install(domain, db, profile, *, candidate_registry)` remains the sole install/upgrade
 entry and runs v1→v2→v3 as needed. `prepare_records.py` adds
-`_load_installation(domain, db, roots, item, consumption, row) -> dict` and
-`_load_installation_head(...)`; each loaded item gains `installation` (None or verified data).
+`_load_installation(domain, db, roots, profile, item, consumption, row, head_rows) -> dict`
+(the head row is verified inside it; `profile` supplies the slot comparison) and the writer body
+`accept_stage(domain, db, roots, profile, item, *, now, actor_ref, value, evidence,
+evidence_bytes) -> reply` that the service's final writer calls; each loaded item gains
+`installation` (None or verified data).
 `prepare_lifecycle.py` extends `_append_transition`'s finite matrix with
 `receipt_pending → accepted`, adds `commit_acceptance_transition(...)` (sibling of
 `commit_receipt_transition`, returns the actual event and frozen consume reply), and `read_body`

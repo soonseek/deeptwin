@@ -1060,3 +1060,16 @@ Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6047 passed, 3 fa
 369 subtests in 774.76s**; the three failures were v2-landing assertions in the prepare integrity and receipt
 API suites, adapted as tests and re-run green with their whole modules; no `app/` code changed after the
 full run. Hashes re-verified unchanged before commit.
+
+## Task 24 step (e2a) — acceptance writer, accepted3 rules, events, v3 read (2026-09-18)
+
+RED retained (`accept_stage`/`parse_stage_evidence` absent, event unregistered), GREEN after one import
+slip and two test-side corrections. Independent review ACCEPT WITH CHANGES: MUST ×3 (slot comparison of
+the evidence identity/peer/channel, `observed_at` bounds, the writer's time precondition), SHOULD ×2
+(re-hashed damage case, direct transition negative), NIT ×4 — all RED-first. Covering **212 passed**
+before the closures, acceptance **36 passed** after; Ruff clean. Details and hashes in
+`acceptance-writer-task24e2a.md`. Full regression for this iteration follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6085 passed, 1 failed, 2 skipped, 1 warning,
+369 subtests in 820.71s**; the failure was the pre-Task-22 byte-pin meeting the regenerated event-metadata
+export, adapted as a test (second authorised regeneration) and re-run green with its module; no `app/` code
+changed after the full run. Hashes re-verified unchanged before commit.

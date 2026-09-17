@@ -659,12 +659,17 @@ def test_existing_68_schema_artifacts_remain_byte_identical():
         line.split(maxsplit=1) for line in manifest.read_text().splitlines() if line
     ]
     assert len(entries) == 68
-    # one artifact was regenerated after Task 22 by an accepted later contract:
-    # the domain envelope export gained the extension_installation branch and
-    # the consumption v2 variant (deployment-receipt-journal-v3.md §4/§7,
-    # evidence/extension-installation-domain-task24c1.md); it is pinned to the
-    # live export by test_domain_schema_exports instead of to this manifest
-    regenerated = {"schemas/v1/domain-envelopes.schema.json"}
+    # two artifacts were regenerated after Task 22 by an accepted later
+    # contract (deployment-receipt-journal-v3.md §4/§6/§7): the domain envelope
+    # export gained the extension_installation branch and the consumption v2
+    # variant (evidence/extension-installation-domain-task24c1.md), and the
+    # event-metadata export gained deployment.request_accepted
+    # (evidence/acceptance-writer-task24e2a.md); both are pinned to their live
+    # exports by test_domain_schema_exports instead of to this manifest
+    regenerated = {
+        "schemas/v1/domain-envelopes.schema.json",
+        "schemas/v1/event-metadata.schema.json",
+    }
     for expected, relative in entries:
         relative = relative.lstrip(" *")
         if relative in regenerated:
