@@ -372,7 +372,9 @@ def test_install_routing_preserves_absent_schema_initialization(tmp_path, entryp
                     == {}
                 )
         with domain._connection() as db:
-            assert storage.shape(db) == storage.SHAPE_V2
+            # a wholly absent schema installs v1 and migrates forward to the
+            # current v3 shape in the same writer (journal v3 §3)
+            assert storage.shape(db) == storage.SHAPE_V3
             assert not any(storage.verify(db).values())
 
 

@@ -334,7 +334,12 @@ def test_any_actual_historical_managed_kind_denies_new_first_only_prepare(
         actual.domain.put(record)
         with pytest.raises(DeploymentPrepareError) as failure:
             actual.service.prepare(actual.request, actual.payload)
-        assert failure.value.code == "conflict"
+        # journal v3 owns every extension_installation anchor: one outside its
+        # index is an integrity failure (a closed denial before the guard);
+        # the first-only guard itself is proved by the other two kinds
+        assert failure.value.code == (
+            "unavailable" if kind == "extension_installation" else "conflict"
+        )
 
 
 def test_fresh_real_session_replays_terminal_command_but_revoked_and_copied_sessions_fail(

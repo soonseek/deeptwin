@@ -35,11 +35,14 @@ def test_ordinary_constructor_upgrades_actual_old_history_without_sources(
                     "SELECT * FROM deployment_prepare_migrations ORDER BY version"
                 )
             ]
+            # the constructor continues forward-only to the current v3 shape
+            # (journal v3 §3): v1 → v2 → v3 in one writer, each step verified
             assert migrations == [
                 (1, "68a6ed89486cb48536873e4b107e2e7e1dd4061e5ce65773b0bebe46303cc2ec"),
                 (2, "d35202bc3d2b3f7be9a0a0d86ba32171c4055334f11531c40497d9b54165693f"),
+                (3, "ff0931661b7958805f3113bad954110ca702ba3c0205e6dadc73651508a51457"),
             ]
-            assert storage.shape(db) == storage.SHAPE_V2
+            assert storage.shape(db) == storage.SHAPE_V3
         after = snapshot_v1(actual.domain)
         after["rows"]["migrations"] = after["rows"]["migrations"][:1]
         assert after == before

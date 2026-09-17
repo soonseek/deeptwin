@@ -59,7 +59,7 @@ def install(domain, db, profile, *, candidate_registry):
     if not storage.shape(db):
         require(
             db.execute(
-                "SELECT 1 FROM domain_records WHERE kind IN ('deployment_request','deployment_receipt','deployment_receipt_consumption') LIMIT 1"
+                "SELECT 1 FROM domain_records WHERE kind IN ('deployment_request','deployment_receipt','deployment_receipt_consumption','extension_installation') LIMIT 1"
             ).fetchone()
             is None,
             "unavailable",
@@ -76,6 +76,10 @@ def install(domain, db, profile, *, candidate_registry):
     if storage._layout(db) is storage._V1:
         storage._rebuild_v1_as_v2(db)
         journal = verify(domain, db, profile)
+    if storage._layout(db) is storage._V2:
+        # forward-only, in the same writer, each shape verified before the next
+        storage._rebuild_v2_as_v3(db)
+        journal = verify(domain, db, profile)
     require(db.execute("PRAGMA foreign_key_check").fetchone() is None, "unavailable")
     return journal
 
@@ -87,6 +91,7 @@ def verify(domain, db, profile):
         "deployment_request",
         "deployment_receipt",
         "deployment_receipt_consumption",
+        "extension_installation",
     ):
         _anchor_dimensions(db, kind)
     if "receipts" not in rows:
@@ -95,6 +100,36 @@ def verify(domain, db, profile):
                 "SELECT 1 FROM domain_records WHERE kind IN ('deployment_receipt','deployment_receipt_consumption') LIMIT 1"
             ).fetchone()
             is None,
+            "unavailable",
+        )
+    if "installations" not in rows:
+        # before v3 no installation anchor can be owned by this journal
+        require(
+            db.execute(
+                "SELECT 1 FROM domain_records WHERE kind='extension_installation' LIMIT 1"
+            ).fetchone()
+            is None,
+            "unavailable",
+        )
+    else:
+        # explicit closure until the consume transaction (e2) adds
+        # `_load_installation`: no writer can produce an installation row yet,
+        # so any such row is refused rather than left unread
+        require(
+            not rows["installations"] and not rows["installation_heads"], "unavailable"
+        )
+        # journal v3 §4: heads ↔ installations, revision 1, same anchor digest
+        require(
+            {
+                (r["extension_id"], r["request_id"], r["installation_anchor_digest"])
+                for r in rows["installation_heads"]
+                if r["revision"] == 1
+            }
+            == {
+                (r["extension_id"], r["request_id"], r["anchor_digest"])
+                for r in rows["installations"]
+            }
+            and len(rows["installation_heads"]) == len(rows["installations"]),
             "unavailable",
         )
     anchors = list(
@@ -122,6 +157,7 @@ def verify(domain, db, profile):
     for kind, table, key in (
         ("deployment_receipt", "receipts", "request_id"),
         ("deployment_receipt_consumption", "consumptions", "consumption_id"),
+        ("extension_installation", "installations", "installation_id"),
     ):
         entities = {
             tuple(row)

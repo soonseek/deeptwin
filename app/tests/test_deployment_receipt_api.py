@@ -1120,8 +1120,10 @@ def test_actual_v1_cold_http_upgrade_preserves_historical_reply_bytes(
             ] == [
                 (1, "68a6ed89486cb48536873e4b107e2e7e1dd4061e5ce65773b0bebe46303cc2ec"),
                 (2, "d35202bc3d2b3f7be9a0a0d86ba32171c4055334f11531c40497d9b54165693f"),
+                # the cold HTTP upgrade continues forward-only to v3 (journal v3 §3)
+                (3, "ff0931661b7958805f3113bad954110ca702ba3c0205e6dadc73651508a51457"),
             ]
-            assert storage.shape(db) == storage.SHAPE_V2
+            assert storage.shape(db) == storage.SHAPE_V3
             with pytest.raises(DeploymentPrepareError):
                 storage.install(db)
         for value, reply, cancel_value, cancel_reply in old.cases:

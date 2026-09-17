@@ -1046,3 +1046,17 @@ listener); the wider transport set **237 passed, 1 skipped** before the closures
 hashes in `stage-observer-task24d.md`. Full regression for this iteration follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6043 passed, 2 skipped, 1 warning, 369
 subtests passed in 710.16s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## Task 24 step (e1) — v3 storage layout and v2→v3 migration (2026-09-18)
+
+RED retained (the constructor left a v2 journal), GREEN with `_V3`, `_rebuild_v2_as_v3` and the install
+chain; three pre-existing tests adapted (v1→v2 landing now v3; a foreign `extension_installation` anchor is
+an integrity denial under v3, so guard tests use qualification rows / expect `unavailable`). Independent
+review ACCEPT WITH CHANGES (stale landing assertion, format, explicit closure until (e2), delete order
+wording, constructor acceptance after the consumed-journal migration) folded in. Covering: migration and
+storage **46 passed**, wider set 161 + 12 adapted; Ruff clean. Details and hashes in
+`journal-v3-storage-task24e1.md`. Full regression for this iteration follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6047 passed, 3 failed, 2 skipped, 1 warning,
+369 subtests in 774.76s**; the three failures were v2-landing assertions in the prepare integrity and receipt
+API suites, adapted as tests and re-run green with their whole modules; no `app/` code changed after the
+full run. Hashes re-verified unchanged before commit.

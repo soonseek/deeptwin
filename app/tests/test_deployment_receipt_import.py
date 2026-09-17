@@ -400,13 +400,17 @@ def test_final_writer_rechecks_actual_admission_after_preseal(
                 elif change == "deadline":
                     monkeypatch.setattr(time, "time_ns", lambda: deadline * 1000000)
                 else:
+                    # a managed kind this journal does not own: under journal
+                    # v3 an extension_installation anchor outside the index
+                    # is an integrity failure, so the guard is proved here
+                    # with a qualification row
                     with sqlite3.connect(actual.domain.path) as db:
                         row = db.execute(
                             "SELECT vault_id,id,version,sha256,purpose,body FROM domain_records WHERE kind='deployment_request'"
                         ).fetchone()
                         db.execute(
                             "INSERT INTO domain_records VALUES(?,?,?,?,?,?,?)",
-                            (row[0], "extension_installation", *row[1:]),
+                            (row[0], "extension_qualification", *row[1:]),
                         )
             return blob
 

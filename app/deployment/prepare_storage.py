@@ -420,6 +420,7 @@ def _expected(ddl=DDL, tables=TABLES):
 
 SHAPE, COLUMNS = _expected(DDL, TABLES)
 SHAPE_V2, COLUMNS_V2 = _expected(DDL_V2, TABLES_V2)
+SHAPE_V3, COLUMNS_V3 = _expected(DDL_V3, TABLES_V3)
 
 
 @dataclass(frozen=True)
@@ -456,6 +457,15 @@ _V2 = _freeze(
     CAPS_V2,
     NULLABLE_V2,
     ((1, CHECKSUM), (2, CHECKSUM_V2)),
+)
+_V3 = _freeze(
+    DDL_V3,
+    TABLES_V3,
+    SHAPE_V3,
+    COLUMNS_V3,
+    CAPS_V3,
+    NULLABLE_V3,
+    ((1, CHECKSUM), (2, CHECKSUM_V2), (3, CHECKSUM_V3)),
 )
 
 
@@ -513,6 +523,8 @@ def _layout(db):
         layout = _V1
     elif observed == _V2.shape:
         layout = _V2
+    elif observed == _V3.shape:
+        layout = _V3
     else:
         fail()
     _private_sizes(db, layout)
@@ -642,14 +654,16 @@ def validate_receipt_identity(value):
 
 
 def digest(table, values):
-    if type(table) is not str or table not in TABLES_V2:
+    if type(table) is not str or table not in TABLES_V3:
         fail()
     return sha256(
         canonical_json(
             {
                 "namespace": "deployment-prepare-storage-v1"
                 if table in TABLES
-                else "deployment-prepare-storage-v2",
+                else "deployment-prepare-storage-v2"
+                if table in TABLES_V2
+                else "deployment-prepare-storage-v3",
                 "table": table,
                 "row": {k: v for k, v in dict(values).items() if k != "hash"},
             }
@@ -675,12 +689,15 @@ def _row(layout, table, row):
             "event_id",
             "consumption_id",
             "import_command_id",
+            "installation_id",
         }:
             uuid_string(value)
         if key in {
             "hash",
             "previous_hash",
             "anchor_digest",
+            "evidence_sha256",
+            "installation_anchor_digest",
             "nonce_hex",
             "origin_digest",
             "topology_sha256",
@@ -973,6 +990,119 @@ def _rebuild_v1_as_v2(db):
             for row in db.execute(
                 "SELECT * FROM deployment_prepare_" + table + " ORDER BY 1 LIMIT ?",
                 (CAPS[table] + 1,),
+            )
+        ] != before:
+            fail()
+
+
+def _rebuild_v2_as_v3(db):
+    """Mechanical v2 → v3 rebuild (journal v3 §3): the four recreated parents
+    are snapshotted, deleted, dropped, recreated and restored under deferred
+    foreign keys; their populated children (heads, outbox, receipts,
+    consumed_outbox) stay in place and re-resolve by name, so a commit without
+    the restores is refused by SQLite. Never a caller-chosen version."""
+    if _layout(db) is not _V2 or db.execute("PRAGMA foreign_keys").fetchone()[0] != 1:
+        fail()
+    keys = {
+        "migrations": ("version",),
+        "lifecycle": ("request_id", "revision"),
+        "commands": ("command_id",),
+        "consumptions": ("request_id",),
+    }
+    snapshots = {
+        table: [
+            dict(row)
+            for row in db.execute(
+                "SELECT * FROM deployment_prepare_"
+                + table
+                + " ORDER BY "
+                + ",".join(pk)
+                + " LIMIT ?",
+                ((2 if table == "migrations" else CAPS_V2[table]) + 1,),
+            )
+        ]
+        for table, pk in keys.items()
+    }
+    untouched = (
+        "control",
+        "requests",
+        "heads",
+        "outbox",
+        "receipt_sources",
+        "receipts",
+        "consumed_outbox",
+    )
+    unchanged = {
+        table: [
+            tuple(row)
+            for row in db.execute(
+                "SELECT * FROM deployment_prepare_" + table + " ORDER BY 1,2 LIMIT ?",
+                (CAPS_V2[table] + 1,),
+            )
+        ]
+        for table in untouched
+    }
+    db.execute("PRAGMA defer_foreign_keys=ON")
+    if db.execute("PRAGMA defer_foreign_keys").fetchone()[0] != 1:
+        fail()
+    for table in ("consumptions", "commands", "lifecycle", "migrations"):
+        # journal v3 §3: commands in descending lifecycle_revision, lifecycle in
+        # descending revision (the reversed primary-key order), then migrations
+        ordered = (
+            sorted(
+                snapshots[table],
+                key=lambda row: (-row["lifecycle_revision"], row["command_id"]),
+            )
+            if table == "commands"
+            else list(reversed(snapshots[table]))
+        )
+        for row in ordered:
+            db.execute(
+                "DELETE FROM deployment_prepare_"
+                + table
+                + " WHERE "
+                + " AND ".join(key + "=?" for key in keys[table]),
+                tuple(row[key] for key in keys[table]),
+            )
+    for table in ("consumptions", "commands", "lifecycle", "migrations"):
+        db.execute("DROP TABLE deployment_prepare_" + table)
+    for index in (0, 3, 5, 9, 11, 12):
+        db.execute(DDL_V3[index])
+    for table in ("migrations", "lifecycle", "commands", "consumptions"):
+        for row in snapshots[table]:
+            db.execute(
+                "INSERT INTO deployment_prepare_"
+                + table
+                + " ("
+                + ",".join(row)
+                + ") VALUES ("
+                + ",".join("?" for _ in row)
+                + ")",
+                tuple(row.values()),
+            )
+    db.execute("INSERT INTO deployment_prepare_migrations VALUES(3,?)", (CHECKSUM_V3,))
+    for table, pk in keys.items():
+        restored = [
+            dict(row)
+            for row in db.execute(
+                "SELECT * FROM deployment_prepare_"
+                + table
+                + " ORDER BY "
+                + ",".join(pk)
+                + " LIMIT ?",
+                (len(snapshots[table]) + 2,),
+            )
+        ]
+        if table == "migrations":
+            restored = restored[:2]
+        if restored != snapshots[table]:
+            fail()
+    for table, before in unchanged.items():
+        if [
+            tuple(row)
+            for row in db.execute(
+                "SELECT * FROM deployment_prepare_" + table + " ORDER BY 1,2 LIMIT ?",
+                (CAPS_V2[table] + 1,),
             )
         ] != before:
             fail()
