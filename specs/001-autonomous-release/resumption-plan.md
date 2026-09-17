@@ -2429,6 +2429,114 @@ no qualification/binding/enable/dispatch, no replace/uninstall/retire arm, one-w
 expiry precedence, and the live end-to-end run (container, socket, worker) is Docker/colima host
 authority reported as a gate, never claimed; no GUI (UX-AC11 remains open).
 
+### Task 25: Worker-private probe channel (prerequisite for Task 24; T018-foundation transport, T087 worker startup)
+
+Drafted 2026-09-18 from the advisory
+`.superpowers/sdd/resumption-plan/worker-probe-integration-proposal.md` (2026-09-16) after the
+Task 24 draft was rejected for lacking any actual control-side observation of a staged service.
+Independent specification review (2026-09-18): ACCEPT WITH CHANGES for slice 1a only; the changes
+are folded in below. This establishes the authenticated observation a later stage postcondition
+consumes; it adds no installation consumer, semantic execution, qualification, binding, dispatch
+permit or admission proof. ADR-010/T018 own authenticated isolated transport (tasks.md
+`T018-foundation`: actual Linux IPC initializers/listeners, peer-credential/channel handshake, a
+prerequisite for T087); ADR-014/T087 owns extension lifecycle persistence and the worker service
+startup over that transport. Slices 1–2 are T018-foundation; slice 3 is T087 worker startup.
+
+**Authority:** `contracts/extension-worker-metadata.md` (§1 factory/retained source, §3 FD
+budget: 13 retained + ≤32 transient, §4 actual observations; §6 names the "startup/private
+probe/peer/HMAC composition, populated endpoint fence" gates this task *addresses* — it is not
+authority that they are done), `contracts/extension-lineage-values.md` §1/§5 (descriptor join,
+argv structure), `contracts/extension-candidates.md` (SocketMount `broker_pair`,
+`deeptwin-extension-worker-v1` protocol identity vs `deeptwin-worker-ipc-v2` framing),
+`contracts/deployment-prepare-sources.md` (control identity, packaging gate),
+`app/deployment/contracts.py::slot` and `::CONTROL`, existing `broker.ChannelSpec`,
+`ipc_root.PairRootSpec`, `WorkerListener`, and the Task 23 metadata source.
+
+**Slices (each RED-first with retained output and independently reviewed; none starts before the
+previous is accepted):**
+
+- **1a. Fixed channel values and argv parser (pure; inert values with no production importer
+  until slice 3, on the Task 22 precedent).** Create `app/workers/extension_channel.py` and
+  `app/tests/test_extension_channel.py`. `extension_channel(*, instance_id, slot_number) ->
+  tuple[PairRootSpec, ChannelSpec]` derives every value from `deployment.contracts.slot` (service
+  `ext-I-NN`, channel `cp-ext-I-NN`, responder uid/gid 22000+N, pair gid 23000+N, socket mount
+  `/run/deeptwin/ipc/xsNN`, `worker.sock`, `deeptwin-extension-worker-v1`) and from
+  `deployment.contracts.CONTROL` (requester `control`, uid/gid 20102) — the tests assert against
+  those two objects, never against literals restated in the new module. `pair_root` is the slot
+  root's `endpoint` (never the outer root, `listener._validate_pair_channel`), direction
+  `control-to-ext-I-NN`, root/socket owner responder + pair gid, modes 0o2710/0o660, requester
+  types `("extension-artifact-v1","extension-request-v1")`, responder types
+  `("extension-artifact-v1","extension-result-v1")`, frame 65536, in-flight 1, queue 16,
+  operation 30000 ms as the explicit `extension-channel-profile-v1` constants (no framing
+  change; `WorkerRouteBinding`-satisfiable). `parse_worker_argv(argv) -> (instance_id,
+  slot_number)` accepts exactly five elements with elements 1..4 exactly
+  `--instance-id`, hex32 (reuse `slot()`'s instance grammar, no third regex), `--slot-number`,
+  `1..16` without leading zeros; argv[0] is not compared — the executable's packaging is an
+  image gate. No I/O, no authority, no existing production edits.
+- **1b. Probe message codecs** (`extension-stage-probe-v1` request ≤1024 B,
+  `extension-stage-probe-result-v1` reply ≤4096 B, canonical strict JSON, hex64 digests, 43-char
+  base64url nonce, `registered_operations` a sorted unique subset of
+  `PORT_CONTRACTS["tool-port-v1"].operations`, `[]` permitted, envelope use of
+  `FrameEnvelope` message_type/message_id/correlation_id, at most two probes per connection).
+  Gated on a short accepted contract document `contracts/extension-worker-probe.md` normalising
+  proposal §1–§4: these names exist nowhere in `contracts/` today and the proposal itself calls
+  the reply grammar "a proposed correction, not an accepted schema change".
+- **2a. Broker handshake continuation.** Private `_extension_server_handshake` /
+  `_extension_client_handshake` in `app/workers/broker.py` around one shared continuation of the
+  existing hello/challenge/session code (4096 B packet caps, fresh requester boot ID read from the
+  actual hello and verified against the reconstructed expected hello, no verify-peer or
+  challenge-factory callback, no second MAC/KDF). Public `server_handshake`/`client_handshake`
+  stay byte-identical in semantics; every existing caller of `_server_handshake_impl` stays green.
+- **2b. Populated-generation fence.** Private `ipc_root._retain_populated_generation(root,
+  generation)`: borrowed generation plus an owned no-follow boot-secret FD and fixed ancestry
+  observations, constant-time secret compare; the absence-only `MetadataGenerationLease` is
+  untouched.
+- **2c. Listener accept/connect and fences.** Private `_accept_extension_authenticated`,
+  `_connect_extension_authenticated`, the listener fence over `_verify_record` (readiness
+  bytes/HMAC/socket inode) rechecked before and after each probe, peer credentials taken at
+  connect (they are fixed per connection, not a post-probe observation), and the mount-mapping /
+  no-alias fence via the existing bounded mount helpers (slot mount RO for control, RW for the
+  worker, no nested/alias mounts — matching `deploy/compose.yaml` today). Real
+  `secrets.token_hex(32)` boot IDs once per process; the learned requester ID is an authenticated
+  process label, never an owner account or authorization.
+  *Test honesty for slices 2a–2c on this macOS host:* the new wrappers expose no `verify_peer`,
+  so (i) socketpair/HMAC vectors exercise the shared post-peer continuation directly, (ii) the
+  wrappers are asserted to fail closed with `PeerCredentialError` off-Linux, (iii) accept/connect
+  paths use the existing `_server_handshake_impl(verify_peer=False)` monkeypatch pattern of
+  `deploy/tests/test_worker_listener.py`, and (iv) the positive run with separate processes,
+  pair groups and an RO requester mount needs a provisioned Linux host and is skipped here and on
+  generic CI — reported as a gate, never claimed. Slice acceptance is the continuation / vector /
+  fail-closed set.
+- **3. Worker probe service and fixed entrypoint (T087 worker startup).** Create
+  `app/workers/extension_probe.py` (`open_worker_probe_service(*, instance_id, slot_number)`,
+  `serve_one(deadline)`, `close()`: opens the Task 23 metadata source before binding, relies on
+  the existing listener identity check for uid/gid/pair-gid, owns one boot ID/source/listener, at
+  most two probes per connection with distinct message ids/nonces and identical request/receipt
+  digests, reply built from an actual `read_current` per probe; a new private router created in
+  this slice whose semantic registry is empty — `registered_operations=[]`, no placeholder
+  handlers, not the T087 semantic registry) and `app/workers/extension_worker.py` (`main()`
+  parsing only the fixed argv). FD budget ≤64 total including the source's 13 retained + ≤32
+  transient (45 peak), leaving ≤19 for generation/listener/connection/fence descriptors —
+  enumerated in the test. No semantic handler, artifact stream, retry or failure-success
+  envelope. Control-side probe *use* (deriving slot and blob digests from retained
+  prepare/receipt records, same-writer admission) is Task 24's observer, not this task.
+
+**Ordering with Task 24(a):** slice 1a has no authority gap and touches no existing code, so it
+runs now; the `contracts/extension-worker-probe.md` document precedes 1b and is referenced by the
+journal-v3 contract (Task 24 step (a)) for the evidence blob it records; then 1b → 2a → 2b → 2c → 3.
+
+**Acceptance and non-claims:** RED-first per slice with retained command output; independent
+review per slice; no edits to frozen candidate/receipt/identity bytes or accepted migration
+checksums; `app/workers` imports nothing from `app.api`/`app.static`/`app.server`. Explicit
+non-claims: no Linux/OCI image qualification; the fixed image entrypoint (`main()`, `bin/worker`)
+must actually be implemented and packaged/qualified in its declared image — a generated
+image-variable string is not evidence that that image or entrypoint exists; no allowed-manifest
+or identity trust; no worker semantic registry; no control observer or admission; no guarantee of
+life after response or DB atomicity; final admission still needs its own same-writer
+authority/currentness contract; no extra human/key authority, metadata mount or core fixture lock;
+no GUI. The actual worker image, native architectures and container/socket runtime are
+deployment-operator/host authority (Docker/colima gate) and are reported, never claimed.
+
 ## Continuation
 
 After these tasks, continue T040's scheduler/ledger/worker integration and the core semantic-port
