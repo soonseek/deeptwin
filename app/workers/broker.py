@@ -30,6 +30,14 @@ from uuid import UUID
 
 PROTOCOL_VERSION = "deeptwin-worker-ipc-v2"
 MAX_FRAME_BYTES = 65_536
+# extension-channel-profile-v1 (contracts/extension-worker-probe.md §1): the
+# single source for the worker-private probe channel's protocol identity,
+# message types and handshake packet cap; app/workers/extension_channel.py
+# derives the rest from the deployment slot
+EXTENSION_PROTOCOL_ID = "deeptwin-extension-worker-v1"
+EXTENSION_REQUESTER_MESSAGE_TYPES = ("extension-artifact-v1", "extension-request-v1")
+EXTENSION_RESPONDER_MESSAGE_TYPES = ("extension-artifact-v1", "extension-result-v1")
+EXTENSION_HANDSHAKE_PACKET_BYTES = 4_096
 AUTH_SECRET_BYTES = 32
 AUTH_CHALLENGE_BYTES = 32
 _PREFIX_BYTES = 4
@@ -978,8 +986,10 @@ def _client_handshake_impl(
     deadline: Deadline,
     challenge_factory: Callable[[int], bytes] | None = None,
     verify_peer: bool = True,
+    max_packet_bytes: int | None = None,
 ) -> AuthenticatedSession:
     deadline = deadline.bounded(spec.max_operation_ms)
+    packet_bytes = spec.max_frame_bytes if max_packet_bytes is None else max_packet_bytes
     _validate_socket(sock)
     requester_boot_id = _require_boot_id(requester_boot_id)
     responder_boot_id = _require_boot_id(responder_boot_id)
@@ -1005,8 +1015,8 @@ def _client_handshake_impl(
         responder_challenge=None,
         role="requester",
     ))
-    write_packet(sock, hello, deadline, max_frame_bytes=spec.max_frame_bytes)
-    response = read_packet(sock, deadline, max_frame_bytes=spec.max_frame_bytes)
+    write_packet(sock, hello, deadline, max_frame_bytes=packet_bytes)
+    response = read_packet(sock, deadline, max_frame_bytes=packet_bytes)
     responder = _decode_b64(response.get("responder_challenge"), exact_bytes=AUTH_CHALLENGE_BYTES)
     expected = _hello_base(
         spec, "responder-hello", requester_boot_id, responder_boot_id
@@ -1041,8 +1051,8 @@ def _client_handshake_impl(
             role="requester",
         )),
     })
-    write_packet(sock, finish, deadline, max_frame_bytes=spec.max_frame_bytes)
-    acknowledgement = read_packet(sock, deadline, max_frame_bytes=spec.max_frame_bytes)
+    write_packet(sock, finish, deadline, max_frame_bytes=packet_bytes)
+    acknowledgement = read_packet(sock, deadline, max_frame_bytes=packet_bytes)
     expected_acknowledgement = _hello_base(
         spec, "responder-finish", requester_boot_id, responder_boot_id
     )
@@ -1093,6 +1103,39 @@ def _server_handshake_impl(
     if challenge_factory is None:
         challenge_factory = secrets.token_bytes
     hello = read_packet(sock, deadline, max_frame_bytes=spec.max_frame_bytes)
+    return _server_continue(
+        sock,
+        spec,
+        secret,
+        hello,
+        requester_boot_id=requester_boot_id,
+        responder_boot_id=responder_boot_id,
+        deadline=deadline,
+        challenge_factory=challenge_factory,
+        packet_bytes=spec.max_frame_bytes,
+    )
+
+
+def _server_continue(
+    sock: socket.socket,
+    spec: ChannelSpec,
+    secret: BootSecret,
+    hello: object,
+    *,
+    requester_boot_id: str,
+    responder_boot_id: str,
+    deadline: Deadline,
+    challenge_factory: Callable[[int], bytes],
+    packet_bytes: int,
+) -> AuthenticatedSession:
+    """The one responder continuation after a hello was read: verify the
+    complete expected hello (proof over both boot IDs and the fresh requester
+    challenge), issue a fresh responder challenge, verify the finish and
+    mint the session. Shared by the exact-expected-requester wrapper and the
+    extension wrapper that learned the requester ID from the hello itself."""
+
+    if type(hello) is not dict:
+        raise AuthenticationError(dispatch_effect="outcome_unknown")
     requester = _decode_b64(hello.get("requester_challenge"), exact_bytes=AUTH_CHALLENGE_BYTES)
     expected = _hello_base(
         spec, "requester-hello", requester_boot_id, responder_boot_id
@@ -1129,8 +1172,8 @@ def _server_handshake_impl(
             role="responder",
         )),
     })
-    write_packet(sock, response, deadline, max_frame_bytes=spec.max_frame_bytes)
-    finish = read_packet(sock, deadline, max_frame_bytes=spec.max_frame_bytes)
+    write_packet(sock, response, deadline, max_frame_bytes=packet_bytes)
+    finish = read_packet(sock, deadline, max_frame_bytes=packet_bytes)
     expected_finish = _hello_base(
         spec, "requester-finish", requester_boot_id, responder_boot_id
     )
@@ -1164,7 +1207,7 @@ def _server_handshake_impl(
             role="responder",
         )),
     })
-    write_packet(sock, acknowledgement, deadline, max_frame_bytes=spec.max_frame_bytes)
+    write_packet(sock, acknowledgement, deadline, max_frame_bytes=packet_bytes)
     return _session(
         secret,
         spec,
@@ -1685,3 +1728,130 @@ class AdmissionGate:
                 raise ProtocolViolation()
             self._active = None
             self._condition.notify_all()
+
+
+def _require_extension_profile(spec: ChannelSpec) -> None:
+    """The whole extension-channel-profile-v1: protocol identity, message
+    types and every bound the contract fixes (§1), not only the frame cap."""
+
+    if (
+        type(spec) is not ChannelSpec
+        or spec.protocol_id != EXTENSION_PROTOCOL_ID
+        or spec.requester_message_types != EXTENSION_REQUESTER_MESSAGE_TYPES
+        or spec.responder_message_types != EXTENSION_RESPONDER_MESSAGE_TYPES
+        or spec.max_frame_bytes != MAX_FRAME_BYTES
+        or spec.max_in_flight != 1
+        or spec.max_queue_depth != 16
+        or spec.max_operation_ms != 30_000
+    ):
+        raise ChannelConfigurationError()
+
+
+def _extension_server_handshake_impl(
+    sock: socket.socket,
+    spec: ChannelSpec,
+    secret: BootSecret,
+    *,
+    responder_boot_id: str,
+    deadline: Deadline,
+    challenge_factory: Callable[[int], bytes] | None = None,
+    verify_peer: bool = True,
+) -> AuthenticatedSession:
+    """Responder side of the worker-private probe handshake: the requester's
+    boot ID is read from the actual bounded hello, never known a priori, and
+    proven by the same HMAC continuation; packets are capped at 4096 B."""
+
+    _require_extension_profile(spec)
+    deadline = deadline.bounded(spec.max_operation_ms)
+    _validate_socket(sock)
+    responder_boot_id = _require_boot_id(responder_boot_id)
+    if verify_peer:
+        _verify_peer(sock, spec, spec.responder_service)
+    if challenge_factory is None:
+        challenge_factory = secrets.token_bytes
+    hello = read_packet(sock, deadline, max_frame_bytes=EXTENSION_HANDSHAKE_PACKET_BYTES)
+    # once the hello was read every rejection is an unknown-outcome effect,
+    # exactly as the exact-expected-requester path classifies the same failures
+    try:
+        requester_boot_id = _require_boot_id(hello.get("requester_boot_id"))
+    except AuthenticationError:
+        raise AuthenticationError(dispatch_effect="outcome_unknown") from None
+    if requester_boot_id == responder_boot_id:
+        raise AuthenticationError(dispatch_effect="outcome_unknown")
+    return _server_continue(
+        sock,
+        spec,
+        secret,
+        hello,
+        requester_boot_id=requester_boot_id,
+        responder_boot_id=responder_boot_id,
+        deadline=deadline,
+        challenge_factory=challenge_factory,
+        packet_bytes=EXTENSION_HANDSHAKE_PACKET_BYTES,
+    )
+
+
+def _extension_server_handshake(
+    sock: socket.socket,
+    spec: ChannelSpec,
+    secret: BootSecret,
+    *,
+    responder_boot_id: str,
+    deadline: Deadline,
+) -> AuthenticatedSession:
+    """Seamless responder wrapper. Unlike the public `server_handshake`, it
+    does not close the socket or normalise dispatch effects on failure: the
+    private extension listener (slice 2c) owns the accepted socket and its
+    cleanup on every failure, and reads the effect class as raised."""
+
+    return _extension_server_handshake_impl(
+        sock, spec, secret, responder_boot_id=responder_boot_id, deadline=deadline
+    )
+
+
+def _extension_client_handshake_impl(
+    sock: socket.socket,
+    spec: ChannelSpec,
+    secret: BootSecret,
+    *,
+    requester_boot_id: str,
+    responder_boot_id: str,
+    deadline: Deadline,
+    challenge_factory: Callable[[int], bytes] | None = None,
+    verify_peer: bool = True,
+) -> AuthenticatedSession:
+    _require_extension_profile(spec)
+    return _client_handshake_impl(
+        sock,
+        spec,
+        secret,
+        requester_boot_id=requester_boot_id,
+        responder_boot_id=responder_boot_id,
+        deadline=deadline,
+        challenge_factory=challenge_factory,
+        verify_peer=verify_peer,
+        max_packet_bytes=EXTENSION_HANDSHAKE_PACKET_BYTES,
+    )
+
+
+def _extension_client_handshake(
+    sock: socket.socket,
+    spec: ChannelSpec,
+    secret: BootSecret,
+    *,
+    requester_boot_id: str,
+    responder_boot_id: str,
+    deadline: Deadline,
+) -> AuthenticatedSession:
+    """Seamless requester wrapper; as with the responder wrapper, the private
+    extension connector (slice 2c) owns the socket and its cleanup on every
+    failure and reads the effect class as raised."""
+
+    return _extension_client_handshake_impl(
+        sock,
+        spec,
+        secret,
+        requester_boot_id=requester_boot_id,
+        responder_boot_id=responder_boot_id,
+        deadline=deadline,
+    )

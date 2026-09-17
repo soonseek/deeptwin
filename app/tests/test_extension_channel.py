@@ -71,6 +71,11 @@ def test_the_channel_profile_constants_are_explicit_and_route_binding_compatible
         "extension-result-v1",
     )
     assert spec.max_frame_bytes == broker.MAX_FRAME_BYTES == 65_536
+    # the slot's protocol identity and the broker's extension profile agree
+    assert spec.protocol_id == broker.EXTENSION_PROTOCOL_ID
+    assert spec.requester_message_types == broker.EXTENSION_REQUESTER_MESSAGE_TYPES
+    assert spec.responder_message_types == broker.EXTENSION_RESPONDER_MESSAGE_TYPES
+    broker._require_extension_profile(spec)
     assert (spec.max_in_flight, spec.max_queue_depth, spec.max_operation_ms) == (
         1,
         16,

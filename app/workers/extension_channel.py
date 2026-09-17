@@ -22,8 +22,11 @@ from . import broker
 from .ipc_root import PairRootSpec
 
 EXTENSION_CHANNEL_PROFILE = "extension-channel-profile-v1"
-REQUESTER_MESSAGE_TYPES = ("extension-artifact-v1", "extension-request-v1")
-RESPONDER_MESSAGE_TYPES = ("extension-artifact-v1", "extension-result-v1")
+# the message types and protocol identity are the broker's profile constants
+# (its extension handshake checks the same values); the slot supplies the
+# protocol identity, which must equal the broker's
+REQUESTER_MESSAGE_TYPES = broker.EXTENSION_REQUESTER_MESSAGE_TYPES
+RESPONDER_MESSAGE_TYPES = broker.EXTENSION_RESPONDER_MESSAGE_TYPES
 MAX_FRAME_BYTES = broker.MAX_FRAME_BYTES
 MAX_IN_FLIGHT = 1
 MAX_QUEUE_DEPTH = 16

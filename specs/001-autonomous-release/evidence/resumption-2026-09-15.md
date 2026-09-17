@@ -937,3 +937,14 @@ url-safe alphabet); final **69 passed**, with channel + import boundary **143 pa
 Details and hashes in `extension-probe-messages-task25-1b.md`. Full regression for this iteration follows.
 
 Task 25 slice 1b full regression: **5893 passed, 1 skipped, 1 warning, 369 subtests passed in 698.75s (0:11:38)**, exit 0.
+
+## Task 25 slice 2a — extension handshake continuation (2026-09-18)
+
+RED retained (`AttributeError` on the absent wrapper), GREEN 15 + every existing handshake consumer
+suite (192), independent review ACCEPT with four SHOULDs (relabelled-hello vector, genuine stale
+finish, `outcome_unknown` after the hello is read, seamless-wrapper ownership docstring) and four
+NITs closed RED-first (`'definitely_not_sent' == 'outcome_unknown'` ×5 RED); final **234 passed**;
+Ruff clean, `broker.py` zero findings. Details and hashes in `extension-handshake-task25-2a.md`.
+Full regression for this iteration follows.
+
+Task 25 slice 2a full regression: **5910 passed, 1 skipped, 1 warning, 369 subtests passed in 697.10s (0:11:37)**, exit 0.
