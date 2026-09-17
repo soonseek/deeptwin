@@ -997,3 +997,13 @@ worker listener): **275 passed, 1 skipped**; Ruff clean. Details and hashes in
 `extension-probe-service-task25-3.md`. Full regression for this iteration follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **5969 passed, 2 skipped, 1 warning,
 369 subtests passed in 752.86s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## Task 24 step (a) — deployment receipt journal v3 contract (2026-09-18)
+
+Drafted from the rejection findings and Task 25; C3 computed from literal statements; independent
+specification review ACCEPT WITH CHANGES (guard scope stated global as in code; `expected` pinned to
+`records.candidate` → `parse_lineage` → `validate_descriptor_lineage` → `parse_build_identity`; deferred-FK
+reliance of the migration stated and proof required; boot-id grammar, installation_id/digest, event
+ObjectRefs, export regeneration, `consume` operation string, observer signature; tightened DDL adopted,
+C3 = ff0931661b7958805f3113bad954110ca702ba3c0205e6dadc73651508a51457 re-verified from the fenced text).
+No code changed; the 810b2cd regression stands. Details in `receipt-journal-v3-contract-task24a.md`.

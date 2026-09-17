@@ -2420,6 +2420,9 @@ must shape the redraft are:
    an operational blob referenced from the installation anchor so the whole-journal verifier can
    recompute it.
 
+**Status (2026-09-18):** (a) `contracts/deployment-receipt-journal-v3.md` accepted with changes
+folded in (`evidence/receipt-journal-v3-contract-task24a.md`); (b) Task 25 complete. Next: (c).
+
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;
 (d) evidence value inside the observer module with an in-process socket responder test;
