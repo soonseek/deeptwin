@@ -925,3 +925,15 @@ string, listener-rule/route-binding tests, subprocess cwd, extra negatives, dige
 in `extension-channel-task25-1a.md`. Full regression for this iteration follows.
 
 Task 25 slice 1a full regression: **5822 passed, 1 skipped, 1 warning, 369 subtests passed in 740.49s (0:12:20)**, exit 0.
+
+## Task 25 slice 1b — closed probe message codecs (2026-09-18)
+
+`contracts/extension-worker-probe.md` drafted and spec-reviewed (ACCEPT WITH CHANGES: digest field
+mapping to lineage `BuildIdentity.digest`/`schema_set_digest`, wire-limit convention, UInt32 lower
+bound, §2a pure interfaces, service ownership, non-claims), folded in and committed (93321da).
+Slice 1b: RED retained (`ModuleNotFoundError`), GREEN 66/69 with three test-case corrections, independent
+review ACCEPT with three SHOULDs + NITs closed RED-first (type-check order, repr hiding, deterministic
+url-safe alphabet); final **69 passed**, with channel + import boundary **143 passed**; Ruff clean.
+Details and hashes in `extension-probe-messages-task25-1b.md`. Full regression for this iteration follows.
+
+Task 25 slice 1b full regression: **5893 passed, 1 skipped, 1 warning, 369 subtests passed in 698.75s (0:11:38)**, exit 0.
