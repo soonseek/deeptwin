@@ -284,6 +284,106 @@ CAPS_V2 = {
 }
 NULLABLE_V2 = {**NULLABLE, "consumed_outbox": {"published_ms"}}
 
+# --- v3: accepted stage postcondition and absent-only installation head
+# (contracts/deployment-receipt-journal-v3.md §2). Pure constants for the
+# thirteen-statement layout; layout dispatch, insertion and migration arrive
+# with the coordinated storage step. Seven statements are the v1/v2 strings
+# byte-identical; four are changed; two are new.
+DDL_V3 = (
+    """CREATE TABLE deployment_prepare_migrations (
+ version INTEGER PRIMARY KEY CHECK(version IN (1,2,3)),
+ checksum TEXT NOT NULL CHECK(length(checksum)=64)
+);""",
+    DDL[1],
+    DDL[2],
+    """CREATE TABLE deployment_prepare_lifecycle (
+ request_id TEXT NOT NULL REFERENCES deployment_prepare_requests(request_id),
+ revision INTEGER NOT NULL CHECK(revision BETWEEN 1 AND 3),
+ previous_revision INTEGER, previous_hash TEXT,
+ state TEXT NOT NULL CHECK(state IN ('prepared','cancelled','expired','receipt_pending','rejected','accepted')),
+ transitioned_ms INTEGER NOT NULL CHECK(transitioned_ms BETWEEN 0 AND 253402300799999),
+ actor_ref TEXT NOT NULL CHECK(length(actor_ref) BETWEEN 1 AND 1024), command_id TEXT,
+ event_id TEXT NOT NULL UNIQUE REFERENCES api_event_envelopes(event_id),
+ hash TEXT NOT NULL CHECK(length(hash)=64),
+ PRIMARY KEY(request_id,revision), UNIQUE(request_id,revision,hash), UNIQUE(command_id),
+ FOREIGN KEY(request_id,previous_revision,previous_hash)
+  REFERENCES deployment_prepare_lifecycle(request_id,revision,hash),
+ FOREIGN KEY(command_id) REFERENCES deployment_prepare_commands(command_id) DEFERRABLE INITIALLY DEFERRED,
+ CHECK((revision=1 AND state='prepared' AND previous_revision IS NULL AND previous_hash IS NULL AND command_id IS NOT NULL)
+  OR (revision=2 AND state IN ('cancelled','expired','receipt_pending','rejected') AND previous_revision IS NOT NULL AND previous_revision=1 AND previous_hash IS NOT NULL)
+  OR (revision=3 AND state IN ('cancelled','expired','accepted') AND previous_revision IS NOT NULL AND previous_revision=2 AND previous_hash IS NOT NULL)),
+ CHECK((state='expired' AND command_id IS NULL) OR (state<>'expired' AND command_id IS NOT NULL))
+);""",
+    DDL_V2[4],
+    """CREATE TABLE deployment_prepare_commands (
+ command_id TEXT PRIMARY KEY CHECK(length(command_id)=36),
+ namespace TEXT NOT NULL CHECK(namespace IN ('deployment-prepare-v1','deployment-cancel-v1','deployment-cancel-v2','deployment-receipt-import-v1','deployment-consume-v1')),
+ request_id TEXT NOT NULL REFERENCES deployment_prepare_requests(request_id),
+ actor_ref TEXT NOT NULL CHECK(length(actor_ref) BETWEEN 1 AND 1024),
+ input_json TEXT NOT NULL CHECK(length(input_json) BETWEEN 2 AND 4096),
+ input_digest TEXT NOT NULL CHECK(length(input_digest)=64),
+ http_status INTEGER NOT NULL CHECK(http_status IN (200,201)),
+ receipt_json TEXT NOT NULL CHECK(length(receipt_json) BETWEEN 2 AND 8192),
+ lifecycle_revision INTEGER NOT NULL CHECK(lifecycle_revision BETWEEN 1 AND 3),
+ hash TEXT NOT NULL CHECK(length(hash)=64), UNIQUE(namespace,request_id),
+ FOREIGN KEY(request_id,lifecycle_revision) REFERENCES deployment_prepare_lifecycle(request_id,revision),
+ CHECK((namespace='deployment-prepare-v1' AND http_status=201 AND lifecycle_revision=1)
+  OR (namespace='deployment-cancel-v1' AND http_status=200 AND lifecycle_revision=2)
+  OR (namespace='deployment-cancel-v2' AND http_status=200 AND lifecycle_revision=3)
+  OR (namespace='deployment-receipt-import-v1' AND http_status=200 AND lifecycle_revision=2)
+  OR (namespace='deployment-consume-v1' AND http_status=200 AND lifecycle_revision=3))
+);""",
+    DDL_V2[6],
+    DDL_V2[7],
+    DDL_V2[8],
+    """CREATE TABLE deployment_prepare_consumptions (
+ request_id TEXT PRIMARY KEY, receipt_sha256 TEXT NOT NULL UNIQUE CHECK(length(receipt_sha256)=64),
+ consumption_id TEXT NOT NULL UNIQUE CHECK(length(consumption_id)=36), vault_id TEXT NOT NULL,
+ kind TEXT NOT NULL CHECK(kind='deployment_receipt_consumption'), version INTEGER NOT NULL CHECK(version=1),
+ anchor_digest TEXT NOT NULL CHECK(length(anchor_digest)=64),
+ lifecycle_revision INTEGER NOT NULL CHECK(lifecycle_revision IN (2,3)),
+ command_id TEXT NOT NULL UNIQUE REFERENCES deployment_prepare_commands(command_id),
+ event_id TEXT NOT NULL UNIQUE REFERENCES api_event_envelopes(event_id),
+ consumed_ms INTEGER NOT NULL CHECK(consumed_ms BETWEEN 0 AND 253402300799999),
+ hash TEXT NOT NULL CHECK(length(hash)=64),
+ FOREIGN KEY(request_id,receipt_sha256) REFERENCES deployment_prepare_receipts(request_id,receipt_sha256),
+ FOREIGN KEY(request_id,lifecycle_revision) REFERENCES deployment_prepare_lifecycle(request_id,revision),
+ FOREIGN KEY(vault_id,kind,consumption_id,version,anchor_digest) REFERENCES domain_records(vault_id,kind,id,version,sha256)
+);""",
+    DDL_V2[10],
+    """CREATE TABLE deployment_prepare_installations (
+ request_id TEXT PRIMARY KEY REFERENCES deployment_prepare_requests(request_id),
+ extension_id TEXT NOT NULL UNIQUE CHECK(length(extension_id) BETWEEN 1 AND 128),
+ vault_id TEXT NOT NULL, purpose TEXT NOT NULL CHECK(purpose='operational'),
+ kind TEXT NOT NULL CHECK(kind='extension_installation'),
+ installation_id TEXT NOT NULL UNIQUE CHECK(length(installation_id)=36),
+ version INTEGER NOT NULL CHECK(version=1), anchor_digest TEXT NOT NULL CHECK(length(anchor_digest)=64),
+ evidence_sha256 TEXT NOT NULL UNIQUE CHECK(length(evidence_sha256)=64),
+ evidence_size INTEGER NOT NULL CHECK(evidence_size BETWEEN 1 AND 8192),
+ consumption_id TEXT NOT NULL UNIQUE REFERENCES deployment_prepare_consumptions(consumption_id),
+ lifecycle_revision INTEGER NOT NULL CHECK(lifecycle_revision=3),
+ command_id TEXT NOT NULL UNIQUE REFERENCES deployment_prepare_commands(command_id),
+ event_id TEXT NOT NULL UNIQUE REFERENCES api_event_envelopes(event_id),
+ installed_ms INTEGER NOT NULL CHECK(installed_ms BETWEEN 0 AND 253402300799999),
+ hash TEXT NOT NULL CHECK(length(hash)=64), UNIQUE(extension_id,request_id),
+ FOREIGN KEY(request_id,lifecycle_revision) REFERENCES deployment_prepare_lifecycle(request_id,revision),
+ FOREIGN KEY(vault_id,purpose,evidence_sha256) REFERENCES domain_blobs(vault_id,purpose,sha256),
+ FOREIGN KEY(vault_id,kind,installation_id,version,anchor_digest) REFERENCES domain_records(vault_id,kind,id,version,sha256)
+);""",
+    """CREATE TABLE deployment_prepare_installation_heads (
+ extension_id TEXT PRIMARY KEY REFERENCES deployment_prepare_installations(extension_id),
+ request_id TEXT NOT NULL UNIQUE REFERENCES deployment_prepare_installations(request_id),
+ revision INTEGER NOT NULL CHECK(revision=1),
+ installation_anchor_digest TEXT NOT NULL CHECK(length(installation_anchor_digest)=64),
+ hash TEXT NOT NULL CHECK(length(hash)=64),
+ FOREIGN KEY(extension_id,request_id) REFERENCES deployment_prepare_installations(extension_id,request_id)
+);""",
+)
+CHECKSUM_V3 = sha256(canonical_json(list(DDL_V3))).hexdigest()
+TABLES_V3 = (*TABLES_V2, "installations", "installation_heads")
+CAPS_V3 = {**CAPS_V2, "installations": 16, "installation_heads": 16}
+NULLABLE_V3 = {**NULLABLE_V2}
+
 
 def fail():
     raise DeploymentPrepareError("unavailable")
