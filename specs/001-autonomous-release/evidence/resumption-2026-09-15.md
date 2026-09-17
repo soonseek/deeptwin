@@ -913,3 +913,15 @@ domain kind `extension_installation` with a ruling on the existing v1 shape) plu
 admission-row/evidence-persistence gaps. The draft was replaced in `resumption-plan.md` by the
 corrected redraft order (journal-v3 contract → probe prerequisite → absent-only codecs → observer
 evidence → one-writer transaction → route/api-v3). No code was written against the rejected draft.
+
+## Task 25 slice 1a — extension worker channel values and argv parser (2026-09-18)
+
+Task 25 plan entry drafted from the 2026-09-16 probe proposal, spec-reviewed (ACCEPT WITH CHANGES:
+1a/1b split, CONTROL-derived requester, ADR-010, slice 2 split, macOS test honesty, FD budget,
+packaging gate) and folded in (commit f2fc533). Slice 1a: RED retained (`ModuleNotFoundError`),
+GREEN 33, independent review ACCEPT with two conditions + NITs closed RED-first (oversized digit
+string, listener-rule/route-binding tests, subprocess cwd, extra negatives, digest pin); final
+**45 passed**, mixed run with the web owner suite **113 passed**; Ruff clean. Details and hashes
+in `extension-channel-task25-1a.md`. Full regression for this iteration follows.
+
+Task 25 slice 1a full regression: **5822 passed, 1 skipped, 1 warning, 369 subtests passed in 740.49s (0:12:20)**, exit 0.
