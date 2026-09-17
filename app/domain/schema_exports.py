@@ -140,7 +140,7 @@ def domain_schema():
                                                                      {"properties": {"version": _constant(1)}}]}}}},
         "$comment": "Runtime also requires header id == content.request_id and the parent == content.candidate_ref.",
     })
-    from .deployment_receipt import consumption_content_schema, receipt_content_schema
+    from .deployment_receipt import consumption_content_variants, receipt_content_schema
 
     receipt_request = _ref("deployment_request")
     receipt_request["allOf"].append({"properties": {"version": _constant(1)}})
@@ -158,17 +158,45 @@ def domain_schema():
     consumption_request["allOf"].append({"properties": {"version": _constant(1)}})
     consumption_receipt = _ref("deployment_receipt")
     consumption_receipt["allOf"].append({"properties": {"version": _constant(1)}})
+    consumption_installation = _ref("extension_installation")
+    consumption_installation["allOf"].append({"properties": {"version": _constant(1)}})
+    consumption_parents = [consumption_request, consumption_receipt, consumption_installation]
     ordinary_body["allOf"].append({
         "if": {"properties": {"kind": _constant("deployment_receipt_consumption")}},
-        "then": {"properties": {"version": _constant(1), "purpose": _constant("operational"),
-                                "content": consumption_content_schema(),
-                                "parent_refs": {"type": "array", "minItems": 2, "maxItems": 2,
-                                                "prefixItems": [consumption_request,
-                                                                consumption_receipt],
-                                                "items": False}}},
+        # each content variant is paired with its exact parent arity: the v1
+        # non-success shape has the request and receipt parents, the v2 success
+        # shape adds the installation it created
+        "then": {"oneOf": [
+            {"properties": {"version": _constant(1), "purpose": _constant("operational"),
+                            "content": content,
+                            "parent_refs": {"type": "array", "minItems": arity,
+                                            "maxItems": arity,
+                                            "prefixItems": consumption_parents[:arity],
+                                            "items": False}}}
+            for content, arity in consumption_content_variants()]},
         "$comment": ("Runtime also requires exact ordered duplicated parents, matching request/"
-                     "receipt ids, actor and six-digit consumption time, and caps the complete "
-                     "body at 8192 bytes. Event syntax proves no event exists."),
+                     "receipt ids (and the v2 effect as the third parent), actor and six-digit "
+                     "consumption time, and caps the complete body at 8192 bytes. Event syntax "
+                     "proves no event exists."),
+    })
+    from .extension_installation import installation_content_schema
+
+    installation_request = _ref("deployment_request")
+    installation_request["allOf"].append({"properties": {"version": _constant(1)}})
+    installation_receipt = _ref("deployment_receipt")
+    installation_receipt["allOf"].append({"properties": {"version": _constant(1)}})
+    ordinary_body["allOf"].append({
+        "if": {"properties": {"kind": _constant("extension_installation")}},
+        "then": {"properties": {"version": _constant(1), "purpose": _constant("operational"),
+                                "content": installation_content_schema(),
+                                "parent_refs": {"type": "array", "minItems": 2, "maxItems": 2,
+                                                "prefixItems": [installation_request,
+                                                                installation_receipt],
+                                                "items": False}}},
+        "$comment": ("Runtime also requires the ordered duplicated request/receipt parents with "
+                     "matching ids, the actor, the six-digit installation time, an operational "
+                     "evidence blob and the 8192-byte cap. Structure grants no installation, "
+                     "acceptance or head authority."),
     })
     return {"$schema": DRAFT, "$id": DOMAIN_ID,
             "title": "DeepTwin version 1 immutable record envelopes", "$ref": "#/$defs/Record",

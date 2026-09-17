@@ -306,10 +306,19 @@ def test_rejected_new_command_checkpoints_clock_and_stale_cancel_never_expires(
 def test_any_actual_historical_managed_kind_denies_new_first_only_prepare(
     tmp_path, monkeypatch, kind
 ):
+    from app.domain import extension_installation
     from app.domain.schemas import ImmutableRecord
 
     with service_context(tmp_path, monkeypatch) as actual:
         roots = actual.domain.roots()
+        if kind == "extension_installation":
+            # the guard denies on any row of the managed kind, whatever its
+            # content (a row written under another schema); the closed
+            # extension-installation-anchor-v1 codec is proven by its own
+            # suite, so this historical row is admitted without it
+            monkeypatch.setattr(
+                extension_installation, "validate_installation_body", lambda body: None
+            )
         record = ImmutableRecord.create(
             kind=kind,
             id=str(uuid4()),

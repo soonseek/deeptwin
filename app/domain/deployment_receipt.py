@@ -47,7 +47,7 @@ def receipt_content_schema():
     )
 
 
-def consumption_content_schema():
+def _consumption_v1_schema():
     from ..deployment.prepare_schema_exports import timestamp
     from .schema_exports import _constant, _enum, _object, _uuid
 
@@ -64,6 +64,39 @@ def consumption_content_schema():
             "outcome": _enum({"failed", "unknown"}),
         }
     )
+
+
+def _consumption_v2_schema():
+    """Success consumption (journal v3 §4): revision 3, `succeeded`, and the
+    installation the acceptance created as `effect_ref`."""
+    from ..deployment.prepare_schema_exports import timestamp
+    from .schema_exports import _constant, _object, _uuid
+
+    return _object(
+        {
+            "schema_version": _constant("deployment-receipt-consumption-anchor-v2"),
+            "request_ref": _entity("deployment_request"),
+            "receipt_ref": _entity("deployment_receipt"),
+            "winning_lifecycle_revision": _constant(3),
+            "consumed_at": timestamp(),
+            "actor_ref": _entity("actor"),
+            "transaction_id": _uuid(),
+            "public_event_id": _uuid(),
+            "outcome": _constant("succeeded"),
+            "effect_ref": _entity("extension_installation"),
+        }
+    )
+
+
+def consumption_content_variants():
+    """The two closed consumption shapes with their parent arity: v1 has the
+    request and receipt parents, v2 adds the installation it created."""
+    return ((_consumption_v1_schema(), 2), (_consumption_v2_schema(), 3))
+
+
+def consumption_content_schema():
+    """Exactly one of the two closed consumption shapes, selected by schema_version."""
+    return {"oneOf": [schema for schema, _arity in consumption_content_variants()]}
 
 
 def _valid_schema(value, schema):
@@ -120,6 +153,15 @@ def validate_consumption_body(body):
         actor = EntityRef.from_dict(content["actor_ref"])
         uuid_string(content["transaction_id"])
         uuid_string(content["public_event_id"])
+        parents = [content["request_ref"], content["receipt_ref"]]
+        if content["schema_version"] == "deployment-receipt-consumption-anchor-v2":
+            # success: the installation the acceptance created is the third
+            # parent and the effect; the schema already fixed revision,
+            # outcome and the effect kind/version (rechecked as defence)
+            effect = EntityRef.from_dict(content["effect_ref"])
+            if effect.kind != "extension_installation" or effect.version != 1:
+                raise ValueError
+            parents.append(content["effect_ref"])
         if (
             type(body["version"]) is not int
             or body["version"] != 1
@@ -131,7 +173,7 @@ def validate_consumption_body(body):
             or receipt.id != request.id
             or actor.kind != "actor"
             or body["actor_ref"] != content["actor_ref"]
-            or body["parent_refs"] != [content["request_ref"], content["receipt_ref"]]
+            or body["parent_refs"] != parents
             or body["created_at_utc"] != content["consumed_at"][:-1] + "000Z"
         ):
             raise ValueError

@@ -129,6 +129,10 @@ def _validate_body(body):
         from .deployment_receipt import validate_consumption_body
 
         validate_consumption_body(body)
+    if body["kind"] == "extension_installation":
+        from .extension_installation import validate_installation_body
+
+        validate_installation_body(body)
     if body["kind"] == "worker_response_capture":
         from .worker_response import validate_capture_content
 
