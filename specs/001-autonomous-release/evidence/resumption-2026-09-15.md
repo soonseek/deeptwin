@@ -857,3 +857,15 @@ completion signal never arrived. Replaced by a module-scoped autouse fixture; ev
 in this session now runs under a shell watchdog. Full regression for this iteration follows.
 
 T065 closure (owner-recorded promotion approvals) full regression: **5746 passed, 1 skipped, 1 warning, 369 subtests passed in 723.93s (0:12:03)**, exit 0.
+
+## Owner decisions + design approval evidence (T036 environments part, 2026-09-17)
+
+RED on the absent `app/services/owner_decisions.py` and `design_approval_subject`, GREEN (35), then an
+independent adversarial review returned REJECT (narrow: blob-reference-shaped subjects reached the
+store's index) plus NITs; all closed RED-first. Covering command (owner decisions, environments,
+design store, design audit 2, promotion approvals, run approvals): **86 passed, 1 inherited
+warning, 23.07s**; Ruff clean. Details and hashes in `owner-decisions-design-approval.md`.
+Follow-ups recorded: design_store evidence resolution in the same vault; retention deletion actor
+(T069). Full regression for this iteration follows.
+
+Owner decisions + design approval evidence full regression: **5769 passed, 1 skipped, 1 warning, 369 subtests passed in 688.98s (0:11:28)**, exit 0.

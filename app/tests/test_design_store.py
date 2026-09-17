@@ -27,7 +27,11 @@ from app.services.environments import (
 )
 from app.storage import Store
 from app.tests.test_design_review import pool_inputs, verdict
-from app.tests.test_environments import ENV_ID, approval_value
+from app.tests.test_environments import (  # noqa: F401 - design_owner is an autouse fixture
+    ENV_ID,
+    approval_value,
+    design_owner,
+)
 
 STAMP = "2026-09-13T09:00:00.000000Z"
 

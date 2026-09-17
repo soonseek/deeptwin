@@ -36,7 +36,11 @@ from app.services.environments import (
     record_design_approval,
 )
 from app.tests.test_design_review import pool_inputs, verdict
-from app.tests.test_environments import ENV_ID, approval_value
+from app.tests.test_environments import (  # noqa: F401 - design_owner is an autouse fixture
+    ENV_ID,
+    approval_value,
+    design_owner,
+)
 
 
 def test_f1_verdicts_and_run_records_are_issued_never_constructed():

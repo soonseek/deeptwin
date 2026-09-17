@@ -29,6 +29,7 @@ from hashlib import sha256
 from ..domain.refs import DomainContractError, EntityRef, canonical_json
 from .design import is_accepted_candidate
 from .design_criticism import verdict_binds_candidate
+from .owner_decisions import is_issued_owner_decision, subject_digest
 
 _UUID = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z"
@@ -112,13 +113,26 @@ class DesignApproval:
         return sha256(canonical_json(self.as_dict())).hexdigest()
 
 
-def record_design_approval(value) -> DesignApproval:
-    """Record one explicit approval; absence or silence records nothing."""
+DESIGN_APPROVAL_SUBJECT_SCHEMA_VERSION = "design-approval-subject-v1"
+_SUBJECT_KEYS = frozenset({
+    "environment", "candidate", "verdict", "model_bindings", "tool_permissions",
+    "observation_contract",
+})
 
-    if type(value) is not dict or set(value) != {
-        "environment", "candidate", "verdict", "approver", "approved_at",
-        "model_bindings", "tool_permissions", "observation_contract",
-    }:
+
+def _identity(ref: EntityRef) -> dict:
+    # an exact identity, never a stored-record reference the store would
+    # try to resolve (design and binding records may not exist yet)
+    return {"id": ref.id, "version": ref.version, "sha256": ref.sha256}
+
+
+def design_approval_subject(value) -> dict:
+    """The exact subject a human approves: one passed design version for one
+    environment with its bindings. Both the approval screen and
+    `record_design_approval` derive it from the same inputs, so the owner's
+    recorded decision can bind it by canonical digest."""
+
+    if type(value) is not dict or set(value) - {"approval"} != _SUBJECT_KEYS:
         raise EnvironmentContractError("expected the exact design approval object")
     environment_id = value["environment"]
     if type(environment_id) is not str or _UUID.fullmatch(environment_id) is None:
@@ -139,28 +153,64 @@ def record_design_approval(value) -> DesignApproval:
         # derived (select/edit/merge) design must complete its own
         # re-review into a passed candidate first.
         raise EnvironmentContractError("only a passed design version is approvable")
-    approver = value["approver"]
-    if type(approver) is not dict or set(approver) != {
-        "actor_id", "authenticated", "evidence",
-    }:
-        raise EnvironmentContractError("expected the exact approver object")
-    actor_id = approver["actor_id"]
+    return {
+        "schema_version": DESIGN_APPROVAL_SUBJECT_SCHEMA_VERSION,
+        "environment_id": environment_id,
+        "design": _identity(candidate.graph_ref),
+        "verdict_sha256": sha256(canonical_json(verdict.as_dict())).hexdigest(),
+        "candidate_id": candidate.candidate_id,
+        "candidate_version": candidate.version,
+        "model_bindings": _identity(
+            _ref(value["model_bindings"], "model_choice", "model bindings")
+        ),
+        "tool_permissions": _identity(
+            _ref(value["tool_permissions"], "grant", "tool permissions")
+        ),
+        "observation_contract": _identity(
+            _ref(value["observation_contract"], "observation_contract",
+                 "observation contract")
+        ),
+    }
+
+
+def record_design_approval(value) -> DesignApproval:
+    """Record one explicit approval; absence or silence records nothing.
+
+    The approver, evidence and time come only from an owner-recorded
+    decision (`owner_decisions`) over exactly this design subject — the
+    caller declares nothing about authentication.
+    """
+
+    if type(value) is not dict or set(value) != _SUBJECT_KEYS | {"approval"}:
+        raise EnvironmentContractError("expected the exact design approval object")
+    subject = design_approval_subject(value)
+    approval = value["approval"]
+    if not is_issued_owner_decision(approval):
+        raise EnvironmentContractError("approval requires an owner-recorded decision")
+    if (
+        approval.subject_kind != "design_approval"
+        or approval.subject != subject
+        or approval.subject_sha256 != subject_digest(subject)
+    ):
+        # The human decided over one exact subject; a decision over any
+        # other design, environment, verdict or binding approves nothing.
+        raise EnvironmentContractError("the decision is not over this exact design")
+    if approval.decision != "approve":
+        raise EnvironmentContractError("a recorded reject approves nothing")
+    actor_id = approval.actor_ref.id
     if type(actor_id) is not str or _UUID.fullmatch(actor_id) is None:
         raise EnvironmentContractError("approver id is not a canonical UUID")
-    if approver["authenticated"] is not True:
-        raise EnvironmentContractError("approval requires an authenticated approver")
+    candidate = value["candidate"]
     return _issue(
         DesignApproval,
-        environment_id=environment_id,
+        environment_id=subject["environment_id"],
         design_ref=candidate.graph_ref,
-        verdict_sha=sha256(canonical_json(verdict.as_dict())).hexdigest(),
+        verdict_sha=subject["verdict_sha256"],
         candidate_id=candidate.candidate_id,
         candidate_version=candidate.version,
         approver_id=actor_id,
-        approver_evidence=_ref(
-            approver["evidence"], "action_approval", "approver evidence",
-        ),
-        approved_at=_stamp(value["approved_at"], "approval time"),
+        approver_evidence=approval.approval_ref,
+        approved_at=_stamp(approval.decided_at_utc, "approval time"),
         model_bindings=_ref(
             value["model_bindings"], "model_choice", "model bindings",
         ),
