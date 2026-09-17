@@ -43,10 +43,11 @@ bounded loop are refused at build time rather than given visit-blind
 activations or approvals.
 
 Explicit limits of this slice: retries within a visit are not
-implemented (a failed visit fails the run and is resumed on restart);
-sealed activations and consumed approvals are reported from memory, not
-recovered from the journal; no attempt reservation, budget settlement or
-semantic result admission happens here.
+implemented (a failed visit fails the run and is resumed on restart); no
+attempt reservation, budget settlement or semantic result admission
+happens here. The outcome projection is restart-invariant: sealed
+activations are rebuilt from the durable activation markers and consumed
+approvals are re-read from the owner's records, never kept in memory.
 """
 
 from __future__ import annotations
@@ -194,15 +195,14 @@ class GraphScheduler:
     """One compiled graph bound to one run; built only by `build_scheduler`."""
 
     __slots__ = (
-        "_activations",
         "_approvals",
         "_compiled",
-        "_consumed",
         "_gates",
         "_graph",
         "_handlers",
         "_ledger",
         "_recursion_limit",
+        "_routers",
         "_run_id",
         "_saver",
     )
@@ -263,7 +263,6 @@ class GraphScheduler:
 
         awaiting = []
         for node_id in pending:
-            refs = []
             for scope in self._gates[node_id]:
                 found = self._approvals.lookup(self._run_id, node_id, scope)
                 if found is None:
@@ -273,19 +272,66 @@ class GraphScheduler:
                     awaiting.append((node_id, scope))
                 elif found.decision != "approved":
                     raise _GateRejected(node_id)
-                else:
-                    refs.append(found.approval_ref)
-            if not any(node == node_id for node, _ in awaiting):
-                self._consumed[node_id] = tuple(refs)
         return tuple(awaiting)
+
+    def _consumed_approvals(self, counters: dict) -> tuple:
+        """The approval refs each completed gate actually passed on — read
+        from the owner's durable records, so a restarted scheduler projects
+        exactly what the first one did."""
+
+        consumed = []
+        for node_id, scopes in sorted(self._gates.items()):
+            if not counters.get(node_id):
+                continue  # the gate never ran: nothing was consumed
+            refs = []
+            for scope in scopes:
+                try:
+                    found = self._approvals.lookup(self._run_id, node_id, scope)
+                except Exception:  # noqa: BLE001 - the service's detail stays behind this boundary
+                    raise SchedulerError(f"approval_unreadable:{node_id}") from None
+                if found is None or found.decision != "approved":
+                    raise SchedulerError(f"approval_missing:{node_id}")
+                refs.append(found.approval_ref)
+            consumed.append((node_id, tuple(refs)))
+        return tuple(consumed)
+
+    def _sealed_activations(self, raw_counters: dict) -> tuple:
+        """Router activations rebuilt from the durable activation markers;
+        the sealed identity is a pure function of run, router, visit and
+        branches, so it is the same after any restart."""
+
+        activations = []
+        for node_id, branches in sorted(self._routers.items()):
+            if raw_counters.get(node_id, 0) > 1:
+                # a router visits once (no router inside a loop, one trigger);
+                # last-writer-wins markers could not carry a second visit, so a
+                # revisit is refused loudly rather than projected partially
+                raise SchedulerError(f"router_revisited:{node_id}")
+            for loop_index in range(raw_counters.get(node_id, 0)):
+                targets = sorted(
+                    target
+                    for target in set(branches.values())
+                    if raw_counters.get(f"{node_id}.activation.{target}") == loop_index + 1
+                )
+                if not targets:
+                    continue
+                sealed = seal_activation(
+                    run_id=self._run_id,
+                    router_node_id=node_id,
+                    visit=visit_identity(node_id, loop_index=loop_index),
+                    branch_ids=targets,
+                )
+                activations.append((node_id, sealed.activation_id, tuple(targets)))
+        return tuple(activations)
 
     def _project(
         self, state: dict, awaiting: tuple[tuple[str, str], ...] = ()
     ) -> SchedulerOutcome:
         node_ids = {node.node_id for node in self._compiled.nodes}
+        raw_counters = state.get("counters", {})
         counters = {
             key: value
-            for key, value in state.get("counters", {}).items()
+            for key, value in raw_counters.items()
             if key in node_ids  # activation markers are routing facts, not visits
         }
         results = dict(state.get("results", {}))
@@ -305,9 +351,9 @@ class GraphScheduler:
             execution_ids=tuple(executions),
             result_refs=refs,
             counters=counters,
-            activations=tuple(self._activations),
+            activations=self._sealed_activations(raw_counters),
             awaiting_human=awaiting,
-            approvals=tuple(sorted(self._consumed.items())),
+            approvals=self._consumed_approvals(counters),
         )
 
 
@@ -467,10 +513,13 @@ def build_scheduler(
     scheduler._ledger = ledger
     scheduler._run_id = run_id
     scheduler._handlers = dict(handlers)
-    scheduler._activations = []
     scheduler._approvals = approvals
     scheduler._gates = gates
-    scheduler._consumed = {}
+    scheduler._routers = {
+        node_id: _router_branches(compiled, node_id)
+        for node_id, kind in kinds.items()
+        if kind == "router"
+    }
     loop_steps = sum(
         cap * (len(members) + 1) for _, members, cap in compiled.loop_regions
     )
@@ -514,10 +563,9 @@ def build_scheduler(
         return execution_id, loop_index, context
 
     branch_router = {}
-    for node_id, kind in kinds.items():
-        if kind == "router":
-            for target in set(_router_branches(compiled, node_id).values()):
-                branch_router[target] = node_id
+    for node_id, branches in scheduler._routers.items():
+        for target in set(branches.values()):
+            branch_router[target] = node_id
 
     def producing_node(node_id: str):
         handler = handler_by_node[node_id]
@@ -576,7 +624,9 @@ def build_scheduler(
                 raise _NodeFailure(node_id)  # an undeclared decision activates nothing
             target = branches[decision]
             try:
-                activation = seal_activation(
+                # sealed before dispatch; the identity is re-derived from the
+                # durable markers at projection, never kept in process memory
+                seal_activation(
                     run_id=run_id,
                     router_node_id=node_id,
                     visit=visit_identity(node_id, loop_index=loop_index),
@@ -584,9 +634,6 @@ def build_scheduler(
                 )
             except Exception:  # noqa: BLE001
                 raise _NodeFailure(node_id) from None
-            scheduler._activations.append(
-                (node_id, activation.activation_id, (target,))
-            )
             return Command(
                 goto=target,
                 update={
@@ -626,7 +673,7 @@ def build_scheduler(
     dispatch_targets: dict[str, tuple[str, ...]] = {}
     for node_id, kind in kinds.items():
         if kind == "router":
-            branches = _router_branches(compiled, node_id)
+            branches = scheduler._routers[node_id]
             dispatch_targets[node_id] = tuple(sorted(set(branches.values())))
             builder.add_node(
                 node_id,

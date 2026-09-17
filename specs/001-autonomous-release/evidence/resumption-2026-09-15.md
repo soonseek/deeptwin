@@ -891,3 +891,13 @@ files (ledger.py's pre-existing ISC004 findings unchanged, other pre-existing fi
 Details and hashes in `gate-approval-requests-f6.md`. Full regression for this iteration follows.
 
 Gate approval requests (F6) full regression: **5775 passed, 1 skipped, 1 warning, 369 subtests passed in 693.88s (0:11:33)**, exit 0.
+
+## Restart-invariant scheduler projection (scheduler review F9, 2026-09-18)
+
+RED (two recovery tests: `() == (...)`), GREEN; independent review ACCEPT with two SHOULDs (error
+contract, stale docstring) and three NITs, all folded in RED-first (error-contract test RED on a
+leaked `RunApprovalError`). Covering command (scheduler, run trace, run approvals): **59 passed**;
+after the last refactor **38 passed**; Ruff clean. Details and hashes in
+`scheduler-projection-recovery-f9.md`. Full regression for this iteration follows.
+
+Restart-invariant scheduler projection (F9) full regression: **5777 passed, 1 skipped, 1 warning, 369 subtests passed in 689.75s (0:11:29)**, exit 0.

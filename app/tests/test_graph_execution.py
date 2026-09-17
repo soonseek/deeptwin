@@ -637,6 +637,57 @@ def test_reaching_a_gate_durably_requests_the_owner_approval_once(tmp_path):
         subject.context.__exit__(None, None, None)
 
 
+def test_a_fresh_scheduler_recovers_consumed_approvals_from_the_durable_record(tmp_path):
+    # review F9: the outcome's consumed approvals were process memory; a new
+    # scheduler instance (restart) over the same ledger/store must project
+    # the same approvals from the owner's durable records, not an empty tuple
+    subject, run, approvals = gated_app(tmp_path)
+    try:
+        calls = []
+        first = sch.build_scheduler(compile_value(graph_value()), ledger=subject.ledger,
+                                    run_id=run.run_id, handlers=gate_registry(subject, calls),
+                                    approvals=approvals)
+        assert first.run().awaiting_human == (("owner-gate", "release-output"),)
+        approvals.record(subject.request, approval_command(run))
+        outcome = first.run()
+        assert outcome.awaiting_human == () and dict(outcome.approvals)["owner-gate"]
+        second_calls = []
+        again = sch.build_scheduler(compile_value(graph_value()), ledger=subject.ledger,
+                                    run_id=run.run_id, handlers=gate_registry(subject, second_calls),
+                                    approvals=approvals).run()
+        assert second_calls == []  # projected from durable state, nothing re-ran
+        assert again.approvals == outcome.approvals
+        assert again == outcome
+        # the projection reads the owner's records; a failing read never leaks
+        # the approvals service's own error through the scheduler boundary
+        from app.services.run_approvals import RunApprovalError
+
+        def unavailable(*_args, **_kwargs):
+            raise RunApprovalError("unavailable")
+
+        broken = sch.build_scheduler(compile_value(graph_value()), ledger=subject.ledger,
+                                     run_id=run.run_id, handlers=gate_registry(subject, []),
+                                     approvals=approvals)
+        broken._approvals = _NS(lookup=unavailable)
+        with pytest.raises(sch.SchedulerError, match="approval"):
+            broken.run()
+    finally:
+        subject.context.__exit__(None, None, None)
+
+
+def test_a_fresh_scheduler_recovers_router_activations_from_the_durable_counters(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    calls = []
+    outcome = build(subject, run, router_graph(), registry(subject, calls)).run()
+    assert len(outcome.activations) == 1
+    reopen(subject, tmp_path)
+    second_calls = []
+    again = build(subject, run, router_graph(), registry(subject, second_calls)).run()
+    assert second_calls == []  # projected from the durable markers, nothing re-ran
+    assert again.activations == outcome.activations
+    assert again == outcome
+
+
 def test_a_gated_graph_requires_the_real_approval_service(tmp_path):
     subject, run = ledger_run(tmp_path)
     with pytest.raises(sch.SchedulerError, match="approval"):
