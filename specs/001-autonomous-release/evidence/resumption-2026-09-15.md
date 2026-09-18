@@ -1358,3 +1358,15 @@ and version, the data-model deviation and the raw-UTF-8 cap undocumented; NITs) 
 covering **242**; Ruff clean. Details and hashes in `works-routes-intake-t023.md`. Full regression: **6333 passed, 2 skipped** (Linux-only),
 369 subtests, 16m50s.
 
+## T023/T025 — the intake page over `works-v1` (2026-09-19)
+
+RED retained (the module absent, the start page landing on the observation page, the catalogue without the entries),
+GREEN after the page, the module, the catalogue and the landing. Independent review REJECT (MUST: a vanished work
+wiped the unsaved draft; a create-mode conflict offered a reopen of nothing and orphaned a sealed sentence; SHOULD:
+a stale expected revision across reloads, unvalidated storage, a revise 404 dead end, offline as a server failure,
+a rotated token misreported, two notice claims, test gaps) folded in RED-first; the rewritten module's second
+independent review ACCEPT WITH CHANGES (MUST: a pending send the reload observed as sealed stayed pending; SHOULD:
+typing during a save dropped, no way to keep a draft over the latest) folded in RED-first. node **21 (+37)**,
+Python **140**; Ruff clean. Details and hashes in `intake-page-t023.md`. Full regression: **6335 passed, 2 skipped**
+(Linux-only), 369 subtests, 16m08s.
+

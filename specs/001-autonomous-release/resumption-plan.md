@@ -2463,9 +2463,9 @@ control mirroring the table and verifying the reply). The reverse leg landed wit
 sealed). The first screen landed (`first-screen-setup-login-t025.md`: setup on an ownerless instance, login otherwise,
 the public setup state on `/health`, the observation page reachable after either). The `ToolCall` record and the effect
 gate landed (`tool-call-record-effect-gate-t087.md`); the `output_bytes` reservation from the tool's bound landed
-(`output-bytes-reservation-t087.md`); the intake's server surface landed (`works-v1`, `works-routes-intake-t023.md`).
-Next: the intake page on the supported factory over `works-v1` (T023/T025, §5.1 items 4–6), then the approval's
-verification and the ToolDefinition-backed gate (T087).
+(`output-bytes-reservation-t087.md`); the intake's server surface landed (`works-v1`, `works-routes-intake-t023.md`)
+and the intake page over it (`intake-page-t023.md`). Next: the approval's verification and the ToolDefinition-backed
+gate (T087), then run creation from the intake once the consent/design line records a run consent and an environment.
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;

@@ -4,7 +4,7 @@
 // is created; on an instance with an owner it shows the login form. The
 // server alone decides: the page reads the public setup state from
 // {base}health, posts to the establishment routes, and on success moves to
-// the observation page. Tested over a fake document/fetch/location; the
+// the work screen. Tested over a fake document/fetch/location; the
 // browser case stays T049's.
 
 import test from 'node:test';
@@ -92,12 +92,12 @@ test('the setup state is read from the public health route and nothing else deci
   }
 });
 
-test('an established session goes straight to the observation page', async () => {
+test('an established session goes straight to the work screen', async () => {
   const { promise, fetched, navigated } = booted([jsonResponse(200, { state: 'authenticated', csrf_token: 't' })]);
   const result = await promise;
   assert.equal(result.mode, 'established');
   assert.deepEqual(fetched.map(([path]) => path), [`/${HEX}/session`]);
-  assert.deepEqual(navigated, [`/${HEX}/observe.html`]);
+  assert.deepEqual(navigated, [`/${HEX}/work.html`]);
 });
 
 test('an instance without an owner shows the setup form only, and a typed capability is never in a URL', async () => {
@@ -150,7 +150,7 @@ test('an instance without an owner shows the setup form only, and a typed capabi
     raw_capability_b64u: 'A'.repeat(43) });
   assert.equal(CAPABILITY.test('A'.repeat(43)), true);
   assert.equal(CAPABILITY.test('A'.repeat(42)), false);
-  assert.deepEqual(navigated, [`/${HEX}/observe.html`]);
+  assert.deepEqual(navigated, [`/${HEX}/work.html`]);
   // the inputs are cleared after the exchange, success or not
   assert.equal(inputs.password.value, '');
   assert.equal(inputs.capability.value, '');
@@ -182,7 +182,7 @@ test('an instance with an owner shows the login form only, and a refusal is type
   name.value = 'owner';
   password.value = 'right';
   await login.dispatch('submit');
-  assert.deepEqual(navigated, [`/${HEX}/observe.html`]);
+  assert.deepEqual(navigated, [`/${HEX}/work.html`]);
 });
 
 test('a setup that is no longer available says so and offers no form', async () => {

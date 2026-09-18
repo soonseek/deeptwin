@@ -42,6 +42,8 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "observe.html": "text/html",
         "start.mjs": "application/javascript",
         "start.html": "text/html",
+        "work.mjs": "application/javascript",
+        "work.html": "text/html",
     }
     assert "index.html" not in MODULES
 
@@ -160,13 +162,13 @@ def test_the_observation_page_is_served_publicly_and_references_only_catalogued_
     assert "data-ready" not in source  # nothing copied from the preview shell that never flips
 
 
-def test_the_observation_pages_module_graph_is_catalogued_transitively():
+def test_every_pages_module_graph_is_catalogued_transitively():
     # review closure: a dependency importing an uncatalogued module passes `node --test`
     # (the file is on disk) while the factory answers 401 for it and the whole graph fails
     # to load in the browser — so the import graph is walked from the page's module
     import re
 
-    pending = ["observe.mjs"]
+    pending = ["observe.mjs", "work.mjs", "start.mjs"]
     seen = set()
     while pending:
         name = pending.pop()
@@ -177,6 +179,53 @@ def test_the_observation_pages_module_graph_is_catalogued_transitively():
         source = (STATIC / name).read_text(encoding="utf-8")
         pending.extend(re.findall(r"from '\./([^']+)'", source))
     assert {"run-list.mjs", "run-panel.mjs", "runtime.mjs", "session.mjs"} <= seen
+
+
+@pytest.mark.parametrize("mode", ["local", "https"])
+def test_the_work_screen_is_served_publicly_and_the_pages_exact_exchanges_save_a_revision(tmp_path, mode):
+    # T023/T025 §5.1 items 4–6: the first work screen after login; its exact request shapes
+    # (the schema names read from the module itself) against the real factory on both origin
+    # profiles — create, read, revise, a stale revision refused
+    import re
+
+    profile, capability, arguments = configured(tmp_path, mode)
+    app = create_app(tmp_path / "data", **arguments)
+    source = (STATIC / "work.html").read_text(encoding="utf-8")
+    for reference in re.findall(r'(?:src|href)="([^"]+)"', source):
+        assert reference.startswith("./") and reference[2:] in MODULES, reference
+    for mount in ("session-status", "intake-notice", "work-form", "save-status", "materials", "observe-link"):
+        assert f'id="{mount}"' in source, mount
+    assert 'method="post"' in source and "password" not in source.lower()
+    module = (STATIC / "work.mjs").read_text(encoding="utf-8")
+    for code in ("invalid_input", "unauthenticated", "access_denied", "not_found", "conflict", "too_large", "unavailable"):
+        assert f"{code}:" in module, code
+    create_schema = re.search(r"const CREATE_SCHEMA = '([^']+)'", module).group(1)
+    revise_schema = re.search(r"const REVISE_SCHEMA = '([^']+)'", module).group(1)
+    # the start screen lands on the work screen, and the observation page links back to it
+    assert "work.html" in (STATIC / "start.mjs").read_text(encoding="utf-8")
+    assert "./work.html" in (STATIC / "observe.html").read_text(encoding="utf-8")
+    with TestClient(app, base_url=profile.http_origin) as client:
+        page = client.get(profile.base_path + "work.html", headers=headers(profile))
+        assert page.status_code == 200 and page.headers["content-type"].split(";", 1)[0] == "text/html"
+        _exchanges(client, profile, capability, create_schema, revise_schema)
+
+
+def _exchanges(client, profile, capability, create_schema, revise_schema):
+    csrf = bootstrap_client(client, profile, capability)
+    command = "11111111-1111-4111-8111-111111111111"
+    created = client.post(profile.base_path + "api/v1/works", headers=headers(profile, csrf), json={
+        "schema_version": create_schema, "command_id": command, "text": "보고서 요약"})
+    assert created.status_code == 201, created.text
+    work = created.json()
+    assert client.get(profile.base_path + "api/v1/works/" + work["work_id"], headers=headers(profile)).json() == work
+    revised = client.post(profile.base_path + "api/v1/works/" + work["work_id"] + "/revisions", headers=headers(profile, csrf), json={
+        "schema_version": revise_schema, "command_id": "22222222-2222-4222-8222-222222222222",
+        "expected_revision": 1, "text": "세 문단으로"})
+    assert revised.status_code == 201 and revised.json()["revision"] == 2
+    stale = client.post(profile.base_path + "api/v1/works/" + work["work_id"] + "/revisions", headers=headers(profile, csrf), json={
+        "schema_version": revise_schema, "command_id": "33333333-3333-4333-8333-333333333333",
+        "expected_revision": 1, "text": "늦은 편집"})
+    assert stale.status_code == 409 and stale.json()["code"] == "conflict"
 
 
 

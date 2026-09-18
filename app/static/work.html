@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>DeepTwin — 업무</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./work.mjs"></script>
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <span class="wordmark" aria-label="DeepTwin">Deep<span>Twin</span></span>
+    </header>
+    <main>
+      <aside class="development-preview" aria-label="개발 미리보기 상태">
+        <strong>개발 미리보기</strong>
+        <p>이 화면은 맡길 일의 설명을 이 인스턴스에 저장합니다. 자료·파일과 마이크 입력, 업무 이해와 실행 시작은 아직 구현 중입니다.</p>
+      </aside>
+      <div class="space-label"><span class="space-mark" aria-hidden="true"></span> 업무</div>
+      <h1>맡길 일을 설명합니다</h1>
+      <p id="session-status" role="status" aria-live="polite" data-state="">브라우저 세션을 확인하는 중…</p>
+      <section id="intake-notice" class="introduction" aria-label="보관과 전송 안내"></section>
+      <form id="work-form" class="work-surface" aria-label="업무 설명" method="post" hidden></form>
+      <p id="save-status" role="status" aria-live="polite" data-state=""></p>
+      <section id="materials" class="materials" aria-label="자료"></section>
+      <nav id="observe-link" aria-label="다른 화면"></nav>
+      <footer>
+        <p>설명은 이 인스턴스의 저장소에 수정본 단위로 남습니다. 아직 저장하지 않은 입력은 이 브라우저에만 임시 보관됩니다.</p>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

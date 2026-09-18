@@ -6,7 +6,7 @@
 // reads the public setup state from {base}health, posts to the establishment
 // routes (`session/bootstrap`, `session/login`) with same-origin credentials
 // and no CSRF (they are the public establishment), and on success moves to
-// the observation page. An established session skips the page. Every
+// the work screen. An established session skips the page. Every
 // dependency (document, location, fetch) is injected; the page passes the
 // platform's own. Inputs are cleared after every exchange, success or not.
 
@@ -92,7 +92,7 @@ export async function boot({ document, location, fetch } = {}) {
   }
   const basePath = basePathFrom(location.pathname);
   const prefix = basePath.slice(0, -1);
-  const observe = `${prefix}/observe.html`;
+  const landing = `${prefix}/work.html`;  // the first work screen (T023)
   roots.setup.hidden = true;
   roots.login.hidden = true;
 
@@ -135,7 +135,7 @@ export async function boot({ document, location, fetch } = {}) {
       status(ERROR_TEXT[code], code);
       return false;
     }
-    location.assign(observe);
+    location.assign(landing);
     return true;
   }
 
@@ -157,7 +157,7 @@ export async function boot({ document, location, fetch } = {}) {
     return Object.freeze({ mode: 'unavailable', basePath });
   }
   if (standing) {
-    location.assign(observe);
+    location.assign(landing);
     return Object.freeze({ mode: 'established', basePath });
   }
   let state;
