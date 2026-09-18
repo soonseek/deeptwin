@@ -325,9 +325,9 @@ function viewKey(view) {
 
 // The observer talks to the server only through the injected request. The
 // DOM half's adapter must preserve the error envelope's `code` (or at least
-// the HTTP `status`) on thrown errors and send `X-DeepTwin-CSRF` on POSTs —
-// app.mjs's current `api` helper sends `X-CSRF-Token`, which the supported
-// boundary does not admit; it is not this module's caller yet. Reads never
+// the HTTP `status`) on thrown errors and send `X-DeepTwin-CSRF` on POSTs
+// (app.mjs's `api` helper does; its CSRF source and root-absolute paths are
+// still the preview's, so it is not this module's caller yet). Reads never
 // post; a reply becomes the view only when runView accepts it; exchanges are
 // ordered by generation so a late reply never replaces a newer view, and an
 // unchanged view is not re-announced.

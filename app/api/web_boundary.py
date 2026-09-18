@@ -7,6 +7,7 @@ from ..extensions.candidate_contracts import CandidateError
 from ..services.owner_auth import OwnerAuthError, validate_credentials
 from ..services.run_approvals import RunApprovalError
 from ..services.runs import RunServiceError
+from .assets import PUBLIC_ASSET_PATHS
 from .deployment_prepare import PATH as DEPLOYMENT_PATH
 from .deployment_prepare import deployment_error
 from .deployment_prepare import preflight as deployment_preflight
@@ -99,8 +100,8 @@ class WebBoundary:
             if method not in {"GET", "HEAD"} and (fields.get("origin") != profile.http_origin
                                                    or fields.get("sec-fetch-site") != "same-origin"):
                 raise OwnerAuthError("access_denied")
-            if session_route:
-                parse_query(scope.get("query_string", b""), allowed=())
+            if session_route or path in PUBLIC_ASSET_PATHS:
+                parse_query(scope.get("query_string", b""), allowed=())  # no query rides on an asset
             body = b""
             if method not in {"GET", "HEAD"} or candidate_route or deployment_route or approval_route or run_route:
                 limit = 1048576 if path == CANDIDATE_PATH and method == "POST" else 8192 if session_route else 131072
@@ -179,7 +180,8 @@ class WebBoundary:
             elif path.startswith('/api/v1/'):
                 from .routes import preflight_api_v1
                 preflight_api_v1({**scope, "path": path}, body)
-            public = (path in {"/", "/health"} and method in {"GET", "HEAD"}) or establishment
+            public = ((path in {"/", "/health"} or path in PUBLIC_ASSET_PATHS)
+                      and method in {"GET", "HEAD"}) or establishment
             if not public:
                 try:
                     state["authenticated_request"] = await run_in_threadpool(

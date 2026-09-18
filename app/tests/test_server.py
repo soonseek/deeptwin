@@ -2,6 +2,7 @@ import importlib.util
 import json
 
 import pytest
+
 from app.tests.local_http import LocalTestClient as TestClient
 
 
@@ -234,3 +235,23 @@ def test_upload_requires_observed_revision_and_rejects_stale_tab(client):
     assert response.status_code == 409
     current = client.get(path).json()
     assert current['text'] == 'another tab' and current['revision'] == 2 and current['files'] == []
+
+
+def test_preview_accepts_the_supported_csrf_header_name_and_serves_every_module(client):
+    # the shell's request helper now sends X-DeepTwin-CSRF (the supported boundary's
+    # name); the preview boundary admits it beside its historical X-CSRF-Token
+    response = client.post('/api/works', json={'text': '지원 헤더'}, headers={'X-DeepTwin-CSRF': client.csrf_token})
+    assert response.status_code == 201, response.text
+    assert client.post('/api/works', json={'text': '과거 헤더'}, headers=auth(client)).status_code == 201
+    assert client.post('/api/works', json={'text': 'wrong'}, headers={'X-DeepTwin-CSRF': 'wrong'}).status_code == 403
+    both = client.post('/api/works', json={'text': 'both'},
+                       headers={'X-DeepTwin-CSRF': client.csrf_token, 'X-CSRF-Token': client.csrf_token})
+    assert both.status_code == 403  # two CSRF lines are not one exact singleton
+    for name in ('app.mjs', 'chat.mjs', 'settings.mjs', 'speech-input.mjs', 'audio-capture-worklet.mjs',
+                 'approvals.mjs', 'records.mjs', 'runtime.mjs'):
+        served = client.get('/' + name)
+        assert served.status_code == 200, name
+        assert served.headers['content-type'].split(';', 1)[0] == 'application/javascript', name
+    assert client.get('/styles.css').headers['content-type'].split(';', 1)[0] == 'text/css'
+    assert client.get('/').status_code == 200
+

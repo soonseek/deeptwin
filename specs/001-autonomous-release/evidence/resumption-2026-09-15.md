@@ -1157,3 +1157,16 @@ universe, the full phase rule, async-only failures; six NITs) folded in RED-firs
 Full regression follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6199 passed, 2 skipped, 1 warning, 369
 subtests passed in 927.77s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## Supported factory serves the shell modules; shell on `X-DeepTwin-CSRF` (2026-09-18)
+
+RED retained (401 for every module on the supported factory; `app.mjs` on the historical header; the preview
+refusing the supported name), GREEN after the shared asset catalogue, the supported session router's public
+asset routes, the boundary's public set, the preview's header map and the shell's header. Independent review
+REJECT on one MUST (a closure-default `name` became a query parameter that served the preview shell publicly)
+then ACCEPT WITH CHANGES (whole-file responses, closed envelope, queries refused on asset paths, caching
+deviation stated) folded in RED-first. Shell assets **5 passed**, preview **+1**; covering **229** then **138**
+after the closures; Ruff: no new findings. Details and hashes in `shell-assets-supported-factory.md`. Full
+regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6205 passed, 2 skipped, 1 warning, 369
+subtests passed in 889.12s** — the two Linux-only skips. Hashes re-verified unchanged before commit.

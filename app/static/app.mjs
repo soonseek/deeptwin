@@ -108,7 +108,7 @@ function updateControls() {
 
 async function api(path, { method = 'GET', body, raw = false, contentType } = {}) {
   const headers = {};
-  if (method !== 'GET') headers['X-CSRF-Token'] = csrf;
+  if (method !== 'GET') headers['X-DeepTwin-CSRF'] = csrf;
   if (body !== undefined) headers['Content-Type'] = raw ? contentType || 'application/octet-stream' : 'application/json';
   const response = await fetch(path, { method, headers, body: body === undefined ? undefined : raw ? body : JSON.stringify(body), credentials: 'same-origin' });
   let payload;

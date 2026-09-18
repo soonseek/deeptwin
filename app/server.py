@@ -12,7 +12,7 @@ from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -49,7 +49,6 @@ from .speech_sessions import SpeechSessions
 from .storage import ConflictError, Store
 from .understanding import Understanding, UnderstandingBusy
 
-STATIC = Path(__file__).parent / 'static'
 CAPABILITIES = {'understanding': True, 'understanding_provider_ready': False,
                 'design_generation': False, 'execution': False}
 SECURITY_HEADERS = {
@@ -814,39 +813,12 @@ def create_development_app(data_dir, port=4193, *, codex_factory=None, understan
         await payload(request, set())
         return await run_in_threadpool(understanding.cancel, work_id, request_id)
 
-    def asset(name, media_type):
-        path = STATIC / name
-        if not path.is_file():
-            raise HTTPException(404, '화면을 아직 준비하지 못했습니다.')
-        return FileResponse(path, media_type=media_type)
+    from .api.assets import MODULES, asset_endpoint
 
-    @app.get('/')
-    def index():
-        return asset('index.html', 'text/html')
-
-    @app.get('/app.mjs')
-    def javascript():
-        return asset('app.mjs', 'application/javascript')
-
-    @app.get('/styles.css')
-    def css():
-        return asset('styles.css', 'text/css')
-
-    @app.get('/audio-capture-worklet.mjs')
-    def speech_worklet():
-        return asset('audio-capture-worklet.mjs', 'application/javascript')
-
-    @app.get('/speech-input.mjs')
-    def speech_input():
-        return asset('speech-input.mjs', 'application/javascript')
-
-    @app.get('/chat.mjs')
-    def chat_module():
-        return asset('chat.mjs', 'application/javascript')
-
-    @app.get('/settings.mjs')
-    def settings_module():
-        return asset('settings.mjs', 'application/javascript')
+    app.add_api_route('/', asset_endpoint('index.html'), methods=['GET'])
+    # the same closed module catalogue the supported factory serves
+    for name in MODULES:
+        app.add_api_route('/' + name, asset_endpoint(name), methods=['GET'])
 
     return app
 

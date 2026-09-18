@@ -1,0 +1,71 @@
+"""The browser shell's static modules: one closed, content-typed catalogue
+served flat (no nested tree: the supported boundary refuses `..`, `%` and
+`//` in raw paths) by both the supported factory and the development
+preview. `index.html` is the preview's shell only; the supported factory's
+`/` stays the setup/login stub until T025 serves the real one. Assets are
+served whole (no byte ranges, no validators) under the boundary's `no-store`;
+content-digested immutable asset paths (api.md) are deferred to the T025
+shell work.
+"""
+
+from pathlib import Path
+from types import MappingProxyType
+from uuid import uuid4
+
+from fastapi.responses import JSONResponse, Response
+
+STATIC = Path(__file__).resolve().parents[1] / "static"
+JAVASCRIPT = "application/javascript"
+MODULES = MappingProxyType({
+    "app.mjs": JAVASCRIPT,
+    "styles.css": "text/css",
+    "chat.mjs": JAVASCRIPT,
+    "settings.mjs": JAVASCRIPT,
+    "speech-input.mjs": JAVASCRIPT,
+    "audio-capture-worklet.mjs": JAVASCRIPT,
+    "approvals.mjs": JAVASCRIPT,
+    "records.mjs": JAVASCRIPT,
+    "runtime.mjs": JAVASCRIPT,
+})
+PUBLIC_ASSET_PATHS = frozenset("/" + name for name in MODULES)
+_SHELL = "index.html"
+
+
+def _unavailable():
+    return JSONResponse(
+        {
+            "code": "unavailable",
+            "message": "Asset could not be served",
+            "retryability": "not_retryable",
+            "affected_refs": [],
+            "correlation_id": str(uuid4()),
+        },
+        status_code=503,
+    )
+
+
+def asset_response(name):
+    """The exact catalogued file as one whole response, or the closed
+    unavailable envelope; never a path the caller composed."""
+
+    if name not in MODULES and name != _SHELL:
+        return _unavailable()
+    path = STATIC / name
+    if not path.is_file():
+        return _unavailable()
+    media_type = MODULES.get(name, "text/html")
+    return Response(content=path.read_bytes(), media_type=media_type)
+
+
+def asset_endpoint(name):
+    """A parameterless route endpoint for one catalogued name: nothing about
+    the request (query, body, headers) can re-aim it."""
+
+    if name not in MODULES and name != _SHELL:
+        raise ValueError("not a catalogued asset")
+
+    def endpoint():
+        return asset_response(name)
+
+    endpoint.__name__ = "asset_" + name.replace(".", "_").replace("-", "_")
+    return endpoint

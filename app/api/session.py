@@ -125,6 +125,7 @@ def parse_request_headers(raw_headers):
         "sec-fetch-site": "sec_fetch_site",
         "cookie": "cookie_header",
         "x-csrf-token": "csrf_token",
+        "x-deeptwin-csrf": "csrf_token",  # the supported boundary's name; one line total
     }
     found = {value: [] for value in names.values()}
     total = 0

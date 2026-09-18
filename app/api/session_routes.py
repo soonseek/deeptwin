@@ -4,6 +4,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from ..services.owner_auth import OwnerAuthError
+from .assets import MODULES, asset_endpoint
 from .web_boundary import auth_error
 
 
@@ -23,6 +24,11 @@ def create_session_router(authority):
     @router.api_route("/health", methods=["GET", "HEAD"])
     def health():
         return {"state": "available"}
+
+    # the shell's modules are public static assets (api.md: the static shell is
+    # public); the boundary blanks HEAD bodies and adds the security headers
+    for name in MODULES:
+        router.add_api_route("/" + name, asset_endpoint(name), methods=["GET", "HEAD"])
 
     @router.post("/session/bootstrap")
     async def bootstrap(request: Request):
