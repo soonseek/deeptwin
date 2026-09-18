@@ -2,7 +2,8 @@
 served flat (no nested tree: the supported boundary refuses `..`, `%` and
 `//` in raw paths) by both the supported factory and the development
 preview. `index.html` is the preview's shell only; the supported factory's
-`/` stays the setup/login stub until T025 serves the real one. Assets are
+`/` serves `start.html`, the first screen (T025: the first-owner setup or the
+login form, decided by the public setup state on `/health`). Assets are
 served whole (no byte ranges, no validators) under the boundary's `no-store`;
 content-digested immutable asset paths (api.md) are deferred to the T025
 shell work.
@@ -31,6 +32,8 @@ MODULES = MappingProxyType({
     "run-list.mjs": JAVASCRIPT,
     "observe.mjs": JAVASCRIPT,
     "observe.html": "text/html",
+    "start.mjs": JAVASCRIPT,
+    "start.html": "text/html",
 })
 PUBLIC_ASSET_PATHS = frozenset("/" + name for name in MODULES)
 _SHELL = "index.html"

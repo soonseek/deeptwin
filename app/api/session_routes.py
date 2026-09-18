@@ -1,6 +1,6 @@
 """Fixed nonversioned owner session HTTP adapter; no domain command aliases."""
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from ..services.owner_auth import OwnerAuthError
@@ -16,14 +16,20 @@ def create_session_router(authority):
                             secure=authority.profile.scheme == "https", httponly=True,
                             samesite="strict", max_age=604800)
 
-    @router.api_route("/", methods=["GET", "HEAD"])
-    def shell():
-        return HTMLResponse("<!doctype html><html><head><title>DeepTwin</title></head>"
-                            "<body><main><h1>DeepTwin</h1><p>Owner setup and login UI is pending.</p></main></body></html>")
+    # the instance's first screen (T025, experience.md §5.1.3): the setup/login page,
+    # a public static asset like every module; the page decides its form from /health
+    router.add_api_route("/", asset_endpoint("start.html"), methods=["GET", "HEAD"])
 
     @router.api_route("/health", methods=["GET", "HEAD"])
     def health():
-        return {"state": "available"}
+        # the public setup state the first screen needs: whether an owner exists and the
+        # bootstrap claim's state — never a name, a digest or a session fact; a fault
+        # is the closed envelope behind the boundary's headers, never a bare 500
+        try:
+            owner, setup = authority.setup_state()
+        except OwnerAuthError as error:
+            return auth_error(error)
+        return {"state": "available", "owner": owner, "setup": setup}
 
     # the shell's modules are public static assets (api.md: the static shell is
     # public); the boundary blanks HEAD bodies and adds the security headers

@@ -16,12 +16,12 @@ export const MOUNT_IDS = Object.freeze({ session: 'session-status', source: 'run
 
 // the codes GET {base}session can actually answer (app/api/web_boundary.py,
 // owner_auth.authenticate_request): a session that stands, none (a fresh
-// instance without an owner answers the same 401 — the setup/login screen is
-// still pending, so the text states the fact and names no screen), a
-// host/origin refusal; anything else is reported by the status the page saw
+// instance without an owner answers the same 401 — the start screen at `./`
+// handles both setup and login, so the text names it), a host/origin refusal;
+// anything else is reported by the status the page saw
 const SESSION_MESSAGES = Object.freeze({
   authenticated: '브라우저 세션이 연결되어 있습니다. 관제할 실행을 선택해 주세요.',
-  unauthenticated: '소유자 세션이 없습니다. 소유자 설정·로그인 화면은 아직 구현 중입니다.',
+  unauthenticated: '소유자 세션이 없습니다. 이 인스턴스의 시작 화면(./)에서 최초 소유자 설정 또는 로그인을 마친 뒤 이 화면을 다시 열어 주세요.',
   access_denied: '이 화면은 이 배포의 주소에서만 열 수 있습니다.',
 });
 const OFFLINE_MESSAGE = '서버에 연결하지 못했습니다. 잠시 후 다시 열어 주세요.';

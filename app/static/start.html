@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>DeepTwin — 시작</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./start.mjs"></script>
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <span class="wordmark" aria-label="DeepTwin">Deep<span>Twin</span></span>
+    </header>
+    <main>
+      <aside class="development-preview" aria-label="개발 미리보기 상태">
+        <strong>개발 미리보기</strong>
+        <p>이 화면은 이 인스턴스의 최초 소유자 설정과 로그인입니다. 설명·자료를 입력하는 업무 화면과 실행 시작은 아직 구현 중이며, 로그인 뒤에는 기록된 실행을 관제하는 화면으로 이어집니다.</p>
+      </aside>
+      <div class="space-label"><span class="space-mark" aria-hidden="true"></span> 시작</div>
+      <h1>이 인스턴스의 소유자</h1>
+      <p id="start-status" role="status" aria-live="polite" data-state="">이 인스턴스의 상태를 확인하는 중…</p>
+      <form id="setup-form" class="start-form" aria-label="최초 소유자 설정" method="post" hidden autocomplete="off"></form>
+      <form id="login-form" class="start-form" aria-label="소유자 로그인" method="post" hidden></form>
+      <footer>
+        <p>capability와 비밀번호는 이 인스턴스에만 전송되며 주소·기록·제작자에게 가지 않습니다. 설명과 자료는 이 인스턴스의 저장소에만 남습니다.</p>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

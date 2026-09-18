@@ -117,11 +117,10 @@ test('without a session the page says so and mounts nothing that could send a co
   const status = document.elements.get('session-status');
   assert.match(status.textContent, /세션/);
   assert.equal(status.dataset.state, 'unauthenticated');
-  // review closure: the copy states the fact and that the login screen is still pending —
-  // it never tells the owner to log in somewhere that does not exist yet (a fresh
-  // instance without an owner gets the same 401)
-  assert.doesNotMatch(status.textContent, /로그인한 뒤/);
-  assert.match(status.textContent, /구현 중/);
+  // the copy states the fact and names the start screen, which handles setup and login
+  // alike (a fresh instance without an owner gets the same 401 here)
+  assert.match(status.textContent, /시작 화면/);
+  assert.doesNotMatch(status.textContent, /구현 중/);
   assert.equal(document.elements.get('run-panel').children.length, 0);
   assert.equal(document.elements.get('run-source').children.length, 0);
   // a network failure is the same honest shape, never a mount

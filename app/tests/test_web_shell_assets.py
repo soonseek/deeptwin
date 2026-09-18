@@ -4,7 +4,8 @@ api.md: the static shell is public, everything else session-protected).
 The run GUI logic (`runtime.mjs`, `approvals.mjs`) and the intake shell's
 modules are reachable from the supported deployment authority as flat,
 content-typed, public GET/HEAD assets behind the web boundary's headers and
-path hygiene; `/` stays the honest setup/login stub (UX-AC01 open, T025). The
+path hygiene; `/` is the first screen (T025: the first-owner setup or the login
+form, decided by the public setup state on `/health`). The
 shell's request helper speaks the supported CSRF header name
 (`X-DeepTwin-CSRF`), which the boundary alone admits.
 """
@@ -39,6 +40,8 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "run-list.mjs": "application/javascript",
         "observe.mjs": "application/javascript",
         "observe.html": "text/html",
+        "start.mjs": "application/javascript",
+        "start.html": "text/html",
     }
     assert "index.html" not in MODULES
 
@@ -64,10 +67,11 @@ def test_the_browser_modules_are_served_publicly_with_exact_types(served):
         head = client.head(profile.base_path + name, headers=headers(profile))
         assert head.status_code == 200 and head.content == b""
         assert head.headers["content-type"] == response.headers["content-type"]
-    # the shell itself is still the honest setup/login stub, not the intake page
+    # the shell itself is the first screen (T025): the setup/login page, not the intake page
     shell = client.get(profile.base_path, headers=headers(profile))
-    assert shell.status_code == 200 and "pending" in shell.text
-    assert "work-stage" not in shell.text
+    assert shell.status_code == 200 and "work-stage" not in shell.text
+    assert shell.content == (STATIC / "start.html").read_bytes()
+    assert shell.headers["content-type"].split(";", 1)[0] == "text/html"
 
 
 def test_unknown_or_hostile_asset_paths_are_never_served(served):
@@ -173,3 +177,123 @@ def test_the_observation_pages_module_graph_is_catalogued_transitively():
         source = (STATIC / name).read_text(encoding="utf-8")
         pending.extend(re.findall(r"from '\./([^']+)'", source))
     assert {"run-list.mjs", "run-panel.mjs", "runtime.mjs", "session.mjs"} <= seen
+
+
+
+def test_the_first_screen_serves_the_setup_or_login_page_and_health_tells_which(served):
+    # T025 / experience.md §5.1.3: the instance's first screen; the page decides the form from
+    # the public setup state on /health — an owner present or not, the bootstrap claim's state
+    _app, client, profile, capability = served
+    import re
+
+    source = (STATIC / "start.html").read_text(encoding="utf-8")
+    for reference in re.findall(r'(?:src|href)="([^"]+)"', source):
+        assert reference.startswith("./") and reference[2:] in MODULES, reference
+    for mount in ("start-status", "setup-form", "login-form"):
+        assert f'id="{mount}"' in source, mount
+    assert 'autocomplete="off"' in source  # the setup form never offers to remember a capability
+    module = (STATIC / "start.mjs").read_text(encoding="utf-8")
+    assert "type: 'password'" in module and "'new-password'" in module and "'current-password'" in module
+    health = client.get(profile.base_path + "health", headers=headers(profile))
+    assert health.status_code == 200, health.text
+    assert health.json() == {"state": "available", "owner": False, "setup": "available"}
+    assert client.get(profile.base_path + "health").status_code == 200  # a navigation's own shape
+    bootstrap_client(client, profile, capability)
+    health = client.get(profile.base_path + "health", headers=headers(profile))
+    assert health.json() == {"state": "available", "owner": True, "setup": "completed"}
+    # the page module's error text covers every code the establishment routes can answer
+    for code in ("credentials", "capacity", "setup_incomplete", "setup_unavailable", "invalid_input",
+                 "unavailable", "access_denied", "unauthenticated"):
+        assert f"{code}:" in module, code
+
+
+def test_the_health_setup_state_follows_the_claim(tmp_path):
+    profile, _capability, arguments = configured(tmp_path)
+    app = create_app(tmp_path / "data", **arguments)
+    with TestClient(app, base_url=profile.http_origin) as client:
+        from base64 import urlsafe_b64encode
+
+        wrong = urlsafe_b64encode(b"W" * 32).rstrip(b"=").decode()  # canonical, but not the capability
+        for _ in range(5):
+            refused = client.post(profile.base_path + "session/bootstrap", headers=headers(profile), json={
+                "login_name": "owner", "password": "synthetic owner passphrase", "raw_capability_b64u": wrong})
+            assert refused.status_code == 401, refused.text
+        health = client.get(profile.base_path + "health", headers=headers(profile)).json()
+        assert health == {"state": "available", "owner": False, "setup": "exhausted"}
+
+
+def test_the_health_setup_state_reports_an_expired_window_without_an_attempt(tmp_path, monkeypatch):
+    # review closure: `expired` was written only lazily inside a bootstrap attempt, so the
+    # first screen offered the setup form after the deadline and the owner learned of the
+    # expiry from a 409 — the health read reports the deadline itself
+    import time
+
+    from app.services import owner_auth
+
+    profile, _capability, arguments = configured(tmp_path)
+    app = create_app(tmp_path / "data", **arguments)
+    with TestClient(app, base_url=profile.http_origin) as client:
+        assert client.get(profile.base_path + "health", headers=headers(profile)).json()["setup"] == "available"
+        real = time.time_ns
+        monkeypatch.setattr(owner_auth.time, "time_ns", lambda: real() + 11 * 60 * 1_000_000_000)
+        assert client.get(profile.base_path + "health", headers=headers(profile)).json()["setup"] == "expired"
+
+
+def test_a_storage_fault_on_health_is_the_closed_envelope_with_the_security_headers(tmp_path, monkeypatch):
+    # review MUST: the setup read was the one public authority entry without the closed
+    # error boundary — a storage fault escaped as a bare 500 without CSP or no-store
+    from app.services import owner_auth
+
+    profile, _capability, arguments = configured(tmp_path)
+    app = create_app(tmp_path / "data", **arguments)
+    with TestClient(app, base_url=profile.http_origin, raise_server_exceptions=False) as client:
+        assert client.get(profile.base_path + "health", headers=headers(profile)).status_code == 200
+
+        def broken(*_args, **_kwargs):
+            raise owner_auth.storage.AuthStorageError("PRIVATE")
+
+        monkeypatch.setattr(owner_auth.storage, "verify", broken)
+        response = client.get(profile.base_path + "health", headers=headers(profile))
+        assert response.status_code == 503, response.text
+        body = response.json()
+        assert body["code"] == "unavailable" and "PRIVATE" not in response.text
+        assert response.headers["cache-control"] == "no-store"
+        assert "script-src 'self'" in response.headers["content-security-policy"]
+
+
+@pytest.mark.parametrize("mode", ["local", "https"])
+def test_the_first_screens_flow_end_to_end_on_the_real_factory(tmp_path, mode):
+    # the page's exact exchanges against the real factory: the page, the health state, a
+    # bootstrap with the page's body shape, the cookie, the observation page, the session,
+    # then a fresh browser logging in
+    from app.tests.test_web_owner_integration import configured as configure
+
+    profile, capability, arguments = configure(tmp_path, mode)
+    app = create_app(tmp_path / "data", **arguments)
+    base = profile.base_path
+    host = profile.http_origin.split("://", 1)[1]
+    navigation = {"host": host, "sec-fetch-site": "none", "sec-fetch-dest": "document"}
+    with TestClient(app, base_url=profile.http_origin) as client:
+        page = client.get(base, headers=navigation)
+        assert page.status_code == 200 and page.content == (STATIC / "start.html").read_bytes()
+        assert client.head(base, headers=navigation).status_code == 200
+        assert client.get(base + "session", headers=headers(profile)).status_code == 401
+        assert client.get(base + "health", headers=headers(profile)).json() == {
+            "state": "available", "owner": False, "setup": "available"}
+        created = client.post(base + "session/bootstrap", headers=headers(profile), json={
+            "login_name": "owner", "password": "a passphrase of fifteen characters",
+            "raw_capability_b64u": capability})
+        assert created.status_code == 201 and created.json()["state"] == "authenticated", created.text
+        assert client.get(base + "health", headers=headers(profile)).json() == {
+            "state": "available", "owner": True, "setup": "completed"}
+        assert client.get(base + "observe.html", headers=navigation).status_code == 200
+        assert client.get(base + "session", headers=headers(profile)).status_code == 200
+        client.cookies.clear()
+        assert client.get(base + "session", headers=headers(profile)).status_code == 401
+        logged = client.post(base + "session/login", headers=headers(profile), json={
+            "login_name": "owner", "password": "a passphrase of fifteen characters"})
+        assert logged.status_code == 200 and logged.json()["state"] == "authenticated", logged.text
+        assert client.get(base + "session", headers=headers(profile)).status_code == 200
+    # the forms never submit natively: method post, so a blocked script cannot put a secret in a URL
+    source = (STATIC / "start.html").read_text(encoding="utf-8")
+    assert source.count('method="post"') == 2

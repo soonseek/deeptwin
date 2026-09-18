@@ -141,6 +141,22 @@ class PersistentOwnerAuthority:
                 raise OwnerAuthError("unavailable")
         return control, claim, account
 
+    @_closed_errors
+    def setup_state(self):
+        """The public setup state of this instance for its first screen: whether an
+        owner exists and the bootstrap claim's state (`available`, `consumed`,
+        `expired`, `exhausted`, `completed`). Read-only; nothing else leaves. An
+        available claim past the deadline reads `expired` here without an attempt
+        (the row itself is only written lazily by a bootstrap); a storage fault is
+        the closed `unavailable`, never a bare error."""
+
+        with self._domain._connection() as db:
+            control, claim, account = self._check(db)
+            state = claim["state"]
+            if state == "available" and self._now(db) >= control["deadline"]:
+                state = "expired"
+            return account is not None, state
+
     def _now(self, db, *, write=False):
         control = db.execute("SELECT * FROM owner_auth_control").fetchone()
         now = max(time.time_ns() // 1_000_000, control["clock_floor"])

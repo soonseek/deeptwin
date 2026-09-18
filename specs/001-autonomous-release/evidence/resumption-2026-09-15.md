@@ -1316,3 +1316,15 @@ previous slice's contract closures, which its patch had not written, are landed 
 Full regression follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6289 passed, 2 skipped, 1 warning, 369
 subtests passed in 924.79s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## T025 — the instance's first screen: setup and login (2026-09-18)
+
+RED retained (`start.mjs` absent, the catalogue pin, `/health` without the setup state), GREEN after the page, the
+module, the `/` and `/health` routes and the authority's read. Independent review ACCEPT WITH CHANGES (MUST: a storage
+fault on `/health` escaped the closed boundary as a bare 500; SHOULD: the expired window reported only lazily, a
+consumed claim's copy promising a retry, forms without `method`, false copy on the observation page, client bounds
+off the server's, `preventDefault` unasserted, no Python end to end; NITs) folded in RED-first. `node --test` **19**
+(start 6), shell assets **13**, covering **115**; Ruff clean. Details and hashes in `first-screen-setup-login-t025.md`.
+Full regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6295 passed, 2 skipped, 1 warning, 369
+subtests passed in 985.36s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
