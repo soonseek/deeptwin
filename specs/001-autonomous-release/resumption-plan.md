@@ -2432,8 +2432,11 @@ statements below stand; the live end-to-end run remains the Docker/colima host g
 with the Continuation section (T040 scheduler/ledger/worker integration). 2026-09-18: the first
 Continuation slice, the atomic semantic acceptance + budget settlement
 (`RuntimeLedger.accept_result_and_settle`, `runtime-result-settlement-t040.md`), is complete; the
-Task 6 boundary (transport evidence releases no unknown-use reservation) is preserved. Next:
-worker/attempt dispatch through the scheduler.
+Task 6 boundary (transport evidence releases no unknown-use reservation) is preserved. The second
+slice, attempt dispatch through the scheduler (`NodeAttemptDispatcher`, `build_scheduler(attempts=)`,
+`scheduler-attempt-dispatch-t040.md`), is complete with an injected transport only. Next: the core
+semantic-port dependencies (T087 worker-side operation registry / T018 worker message) so a real
+transport can replace the injected one, then the connected browser path.
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;

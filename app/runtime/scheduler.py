@@ -53,7 +53,7 @@ approvals are re-read from the owner's records, never kept in memory.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Annotated, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -64,6 +64,7 @@ from ..services.run_approvals import PersistentRunApprovals
 from .checkpoints import NAMESPACE, CheckpointError, LedgerCheckpointSaver
 from .graph import HANDLER_KEYS, CompiledGraph
 from .ledger import ExecutionSpec, RuntimeLedger
+from .node_attempts import NodeAttemptDispatcher
 from .scheduling_state import seal_activation, visit_identity
 
 __all__ = [
@@ -158,13 +159,17 @@ class _State(TypedDict):
 
 @dataclass(frozen=True, slots=True)
 class NodeContext:
-    """What a handler learns about its visit: identity only, never clients."""
+    """What a handler learns about its visit: identity, plus for a bound agent
+    node the one-shot attempt capability (a code-owned trust boundary: the
+    handler may dispatch once and must return the accepted result)."""
 
     run_id: str
     node_id: str
     execution_id: str
     visit_id: str
     loop_index: int
+    # the one-shot attempt capability of a bound agent node visit, else None
+    attempt: object | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -453,6 +458,7 @@ def build_scheduler(
     run_id: str,
     handlers,
     approvals=None,
+    attempts=None,
 ) -> GraphScheduler:
     _require(type(compiled) is CompiledGraph, "an exact CompiledGraph is required")
     _require(type(ledger) is RuntimeLedger, "an exact RuntimeLedger is required")
@@ -461,6 +467,19 @@ def build_scheduler(
     kinds = {node.node_id: node.kind for node in compiled.nodes}
     for node_id, kind in kinds.items():
         _require(kind in _SUPPORTED_KINDS, f"unsupported node kind: {kind} ({node_id})")
+    if attempts is not None:
+        # an agent node dispatches an attempt only through the dispatcher's
+        # ledger boundary; it must be this run's ledger and bind agent nodes only
+        _require(
+            type(attempts) is NodeAttemptDispatcher,
+            "an exact NodeAttemptDispatcher is required",
+        )
+        _require(attempts.ledger is ledger, "attempt dispatcher must share the run ledger")
+        for node_id in sorted(attempts.node_ids):
+            _require(
+                kinds.get(node_id) == "agent",
+                f"attempt binding requires an agent node: {node_id}",
+            )
     loop_members = {
         member for _, members, _ in compiled.loop_regions for member in members
     }
@@ -598,11 +617,23 @@ def build_scheduler(
                     if found is None or found.decision != "approved":
                         raise _NodeFailure(node_id)
             execution_id, loop_index, context = record_execution(node_id, state)
+            visit_attempt = None
+            if attempts is not None and node_id in attempts.node_ids:
+                visit_attempt = attempts.for_visit(
+                    run_id=run_id, node_id=node_id, execution_id=execution_id,
+                    loop_index=loop_index,
+                )
+                context = replace(context, attempt=visit_attempt)
             try:
                 result = handler(context, _detached_view(state))
             except Exception:  # noqa: BLE001 - handler detail is private
                 raise _NodeFailure(node_id) from None
             if type(result) is not EntityRef:
+                raise _NodeFailure(node_id)
+            if visit_attempt is not None and (
+                visit_attempt.committed is None or visit_attempt.committed != result
+            ):
+                # a bound node's result is the accepted attempt result, nothing else
                 raise _NodeFailure(node_id)
             return {
                 "results": {execution_id: result},

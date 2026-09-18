@@ -1109,3 +1109,14 @@ RED-first. Settlement **12 passed**; covering ledger/budgets/dispatch **129 pass
 findings. Details and hashes in `runtime-result-settlement-t040.md`. Full regression follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6126 passed, 2 skipped, 1 warning, 369
 subtests passed in 886.95s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## T040 slice 4 — attempt dispatch through the scheduler (2026-09-18)
+
+RED retained (`app.runtime.node_attempts` absent), GREEN after the dispatcher module and the scheduler seam
+(`NodeContext.attempt`, `build_scheduler(attempts=)`); one restart assertion aligned with startup recovery.
+Independent review ACCEPT WITH CHANGES (continuation after a proven never-sent attempt, unresolvable claimed
+result as `outcome_unknown`, permit discard, capability collapsed to one callable; five NITs) folded in
+RED-first. Dispatch **9 passed**; covering dispatch/graph execution/checkpoints/settlement/budget dispatch
+**117 passed**; Ruff clean. Details and hashes in `scheduler-attempt-dispatch-t040.md`. Full regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6135 passed, 2 skipped, 1 warning, 369
+subtests passed in 881.56s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
