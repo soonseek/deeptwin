@@ -1349,3 +1349,12 @@ reason, a raising property silently skipping the gate; NITs) folded in RED-first
 findings. Details and hashes in `output-bytes-reservation-t087.md`. Full regression: **6310 passed, 2 skipped** (Linux-only),
 369 subtests, 15m58s.
 
+## T023/T025 — the intake's server surface, `works-v1` (2026-09-18)
+
+RED retained (the works routes 404 on the supported factory), GREEN after the service, the adapter, the descriptor,
+the catalog entry and the boundary wiring. Independent review ACCEPT WITH CHANGES (MUST: the record's 64 KiB string
+cap surfacing as a 503 outage, a chunked body bypassing the closed envelope; SHOULD: command ids unique only per work
+and version, the data-model deviation and the raw-UTF-8 cap undocumented; NITs) folded in RED-first. Works **23**,
+covering **242**; Ruff clean. Details and hashes in `works-routes-intake-t023.md`. Full regression: **6333 passed, 2 skipped** (Linux-only),
+369 subtests, 16m50s.
+

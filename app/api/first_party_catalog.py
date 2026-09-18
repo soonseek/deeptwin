@@ -9,6 +9,7 @@ from .extension_candidates import candidate_services
 from .first_party import InstalledContribution, core_services
 from .run_approvals import approval_services
 from .runs import run_services
+from .works import work_services
 
 INSTALLED = (
     InstalledContribution(
@@ -33,6 +34,14 @@ INSTALLED = (
         ("browser_session",),
         ("approval.manage", "approval.read"),
         provides=("run-approvals.service",),
+    ),
+    InstalledContribution(
+        "works-v1.json",
+        "app.api.works:create_router",
+        work_services,
+        ("browser_session",),
+        ("work.command", "work.read"),
+        provides=("works.service",),
     ),
     InstalledContribution(
         "runs-v1.json",

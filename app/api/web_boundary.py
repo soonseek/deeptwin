@@ -7,6 +7,7 @@ from ..extensions.candidate_contracts import CandidateError
 from ..services.owner_auth import OwnerAuthError, validate_credentials
 from ..services.run_approvals import RunApprovalError
 from ..services.runs import RunServiceError
+from ..services.works import WorkServiceError
 from .assets import PUBLIC_ASSET_PATHS
 from .deployment_prepare import PATH as DEPLOYMENT_PATH
 from .deployment_prepare import deployment_error
@@ -25,6 +26,9 @@ from .wire import (
     parse_query,
     parse_singleton_headers,
 )
+from .works import MAX_BODY_BYTES as WORK_BODY_BYTES
+from .works import WorkRouteError, is_work_path, work_error
+from .works import preflight as work_preflight
 
 SECURITY_HEADERS = {
     "cache-control": "no-store", "x-content-type-options": "nosniff",
@@ -94,6 +98,7 @@ class WebBoundary:
             deployment_route = path == DEPLOYMENT_PATH or path.startswith(DEPLOYMENT_PATH + "/")
             approval_route = is_approval_path(path)
             run_route = is_run_path(path)
+            work_route = is_work_path(path)
             session_route = path == "/session" or path.startswith("/session/")
             establishment = path in {"/session/bootstrap", "/session/login"} and method == "POST"
             logout = path == "/session/logout" and method == "POST"
@@ -103,7 +108,7 @@ class WebBoundary:
             if session_route or path in PUBLIC_ASSET_PATHS:
                 parse_query(scope.get("query_string", b""), allowed=())  # no query rides on an asset
             body = b""
-            if method not in {"GET", "HEAD"} or candidate_route or deployment_route or approval_route or run_route:
+            if method not in {"GET", "HEAD"} or candidate_route or deployment_route or approval_route or run_route or work_route:
                 limit = 1048576 if path == CANDIDATE_PATH and method == "POST" else 8192 if session_route else 131072
                 if deployment_route or approval_route or run_route:
                     limit = 4096
@@ -115,6 +120,8 @@ class WebBoundary:
                     limit = 0
                 if run_route and method in {"GET", "HEAD"}:
                     limit = 0
+                if work_route:
+                    limit = WORK_BODY_BYTES if method == "POST" else 0
                 length = fields.get("content-length", "0")
                 if not length.isdecimal():
                     raise OwnerAuthError("invalid_input")
@@ -127,6 +134,8 @@ class WebBoundary:
                         raise ApprovalRouteError("invalid_input" if limit == 0 else "too_large")
                     if run_route:
                         raise RunRouteError("invalid_input" if limit == 0 else "too_large")
+                    if work_route:
+                        raise WorkRouteError("invalid_input" if limit == 0 else "too_large")
                     response = JSONResponse({"code": "invalid_input"}, status_code=413)
                     return await response(scope, receive, safe_send)
                 while True:
@@ -143,6 +152,8 @@ class WebBoundary:
                             raise ApprovalRouteError("invalid_input" if limit == 0 else "too_large")
                         if run_route:
                             raise RunRouteError("invalid_input" if limit == 0 else "too_large")
+                        if work_route:
+                            raise WorkRouteError("invalid_input" if limit == 0 else "too_large")
                         response = JSONResponse({"code": "invalid_input"}, status_code=413)
                         return await response(scope, receive, safe_send)
                     body += chunk
@@ -177,6 +188,10 @@ class WebBoundary:
                 if method in {"GET", "HEAD"} and fields.get("content-length", "0") != "0":
                     raise RunRouteError()
                 state["run_payload"] = run_preflight({**scope, "path": path}, body, fields.get("content-type", ""))
+            elif work_route:
+                if method in {"GET", "HEAD"} and fields.get("content-length", "0") != "0":
+                    raise WorkRouteError()
+                state["work_payload"] = work_preflight({**scope, "path": path}, body, fields.get("content-type", ""))
             elif path.startswith('/api/v1/'):
                 from .routes import preflight_api_v1
                 preflight_api_v1({**scope, "path": path}, body)
@@ -209,9 +224,11 @@ class WebBoundary:
                     consumed = True
                     return {"type": "http.request", "body": body, "more_body": False}
                 return await receive()
-            await self.app(routed, replay if method not in {"GET", "HEAD"} or candidate_route or deployment_route or approval_route or run_route else receive, safe_send)
+            await self.app(routed, replay if method not in {"GET", "HEAD"} or candidate_route or deployment_route or approval_route or run_route or work_route else receive, safe_send)
         except (RunRouteError, RunServiceError) as error:
             await run_error(error)(scope, receive, safe_send)
+        except (WorkRouteError, WorkServiceError) as error:
+            await work_error(error)(scope, receive, safe_send)
         except (ApprovalRouteError, RunApprovalError) as error:
             await approval_error(error)(scope, receive, safe_send)
         except DeploymentPrepareError as error:
