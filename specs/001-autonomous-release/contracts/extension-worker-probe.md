@@ -86,12 +86,18 @@ worker; `runtime.platform`/`uid`/`gid` are the reading's own fresh observations
 worker's owned `ChannelSpec`, not an argv re-derivation. `registered_operations` is the exact
 key set of the worker's actual immutable semantic registry — the code-owned operation table
 of `app/workers/extension_probe.py` (`_OPERATIONS`), fixed at import and keyed by
-`tool-port-v1` operation names; since the T087 execute slice it is `["status"]` (slice 3 shipped
-it empty, `[]`); a placeholder handler or a copy of the port catalog is forbidden.
+`tool-port-v1` operation names; since the T087 `describe_tools` slice it is
+`["describe_tools", "status"]` (the execute slice shipped `["status"]`, slice 3 `[]`); a placeholder
+handler or a copy of the port catalog is forbidden. `describe_tools` answers from the worker's
+code-owned tool table (`_TOOLS`, fixed at import; empty until a real tool is implemented in the
+worker), never from the port catalog; the execute grammar carries no selection yet, so the whole
+table is described. Control does not trust the worker's counters for either read-class query.
 
 ### 2b. Closed execute messages (T087 execute slice)
 
-`extension-execute-v1` (request, ≤ 2048 B pre-envelope; wire depth ≤ 5, otherwise §2's limits):
+`extension-execute-v1` (request, ≤ 2048 B pre-envelope; wire depth ≤ 6 since the `describe_tools`
+slice — a tool entry's schema-reference objects sit at depth 5 and their scalar members at 6, root
+being 1 — otherwise §2's limits):
 `schema_version`, `attempt_id` (uuid), `execution_id` (uuid), `operation` (a member of the
 port's closed operation set), `envelope_ref` and `profile_ref` (four-field `EntityRef` shapes of
 kinds `execution_envelope` / `runtime_profile`), `remaining_ms` (1..30000, the requester's
@@ -103,13 +109,22 @@ references only; never bytes, never model input.
 `challenge` (echoed), `outcome` / `usage_finality` / `remote_terminal_observed` / `reason_code`
 (the runtime ledger's closed result vocabulary, mirrored in the worker package and pinned equal
 by test), `usage` (the seven exact counters iff `usage_finality == "final"`, else `null`),
-`output` (present iff `outcome == "succeeded"`; for `status` exactly the probe reply's
-`service_identity` / `component` / `runtime` shape). Invariants: an unknown outcome cannot claim
+`output` (present iff `outcome == "succeeded"`; its grammar is selected by the reply's
+`operation`: for `status` exactly the probe reply's `service_identity` / `component` / `runtime`
+shape; for `describe_tools` exactly `{tools: [{tool_id, version, argument_schema_ref,
+result_schema_ref, effect_class, artifact_roles}]}` after extension-ports.md §3.2 with the wire's
+narrower grammars: `tool_id` and roles are §2 identifiers (no `:`, no `--`, ≤ 64), `version` is
+`[A-Za-z0-9][A-Za-z0-9_.+-]{0,63}` (no spaces or parentheses), references are four-field
+`EntityRef` shapes of any registered kind, `effect_class` a member of the closed effect classes,
+roles sorted unique (≤ 256), one entry per tool in identifier order, at most 8 entries and — the
+binding bound — at most 3072 canonical bytes for the table so the reply can always carry it; a
+success under any other operation is outside the grammar until its output is defined). Invariants: an unknown outcome cannot claim
 a known remote terminal; a succeeded outcome observes `succeeded`; a terminal outcome other than
 `succeeded` cannot observe `succeeded`. An unregistered operation is the typed refusal
 `failed` / `validation_failed` with final zero usage and no output. Control does not trust the
-worker's counters for `status`: the only real counter (`output_bytes`) is measured control-side
-and any other claim is a mismatch. A succeeded output is sealed control-side as an `artifact`
+worker's counters for the read-class queries `status` and `describe_tools`: the only real
+counter (`output_bytes`) is measured control-side; a completed query claiming its usage unknown,
+or any final claim other than the measured one, is a mismatch (`outcome_unknown`). A succeeded output is sealed control-side as an `artifact`
 record whose id derives from the send-intent command; the worker never touches the store.
 
 ### 2a. Pure interfaces (slice 1b)
@@ -173,7 +188,7 @@ contracted. Handshake packets ≤ 4096 B in the private extension wrappers (the 
 decoder may buffer ≤ 65536 B before the tighter payload rejection). At most four handshake packets
 and two request/reply pairs per probe connection (one per execute connection); payload caps are
 §2's pre-envelope byte sizes (probe: 1024 B / 4096 B, depth 4) and §2b's (execute: 2048 B /
-4096 B, depth 5). Worker
+4096 B, depth 6). Worker
 service total owned FDs ≤ 64 including the metadata source's 13 retained + ≤ 32 transient (45 at
 peak), leaving ≤ 19 for generation, listener, connection and fence descriptors. Digests, nonces
 and bytes never appear in logs. Metadata syscall stalls cannot be preempted; control enforces its
@@ -202,8 +217,9 @@ after each reply, and a later stage postcondition consumes the observation only 
 same-writer authority/currentness transaction. Gates reported, never claimed: both native
 architectures; the actual initializer/image/mount/UID/argv packaging of the fixed image (`main()`,
 `bin/worker`); allowed-manifest and OCI identity trust; the worker semantic registry beyond the
-one code-owned `status` operation (T087: `invoke_tool`, `describe_tools`, `cancel`, every
-model-bearing port); the control observer and admission; positive Linux authentication (non-Linux hosts fail closed at
+two code-owned read-class operations, `status` and `describe_tools` over an empty tool table
+(T087: `invoke_tool`, `cancel`, a real tool in the table, an operation input in the execute
+grammar, every model-bearing port); the control observer and admission; positive Linux authentication (non-Linux hosts fail closed at
 peer credentials). No human/key authority, metadata mount, allowlist or core fixture lock is
 introduced; boot IDs are per-process `secrets.token_hex(32)` labels, never owner accounts;
 `app/workers` imports nothing from `app.api`, `app.static` or `app.server`; no GUI.

@@ -13,7 +13,7 @@ the fences before the first read and after each reply, and closes after the
 second reply. An execute connection (the first frame's schema is
 `extension-execute-v1`) answers exactly one request through the private
 router's code-owned operation table (`_OPERATIONS`: `status` since the T087
-execute slice) and closes; the probe reply's `registered_operations` is that
+execute slice, `describe_tools` since the tool-table slice) and closes; the probe reply's `registered_operations` is that
 table's exact key set. No placeholder handler exists.
 
 A reply is a self-reported observation over one connection; the service
@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import secrets
 import threading
+from copy import deepcopy
 from types import MappingProxyType
 from typing import Self
 from uuid import uuid4
@@ -128,8 +129,31 @@ def _status_operation(service: WorkerProbeService, request, deadline) -> dict:
     }
 
 
+# the code-owned tool table of this worker (tool-port-v1 `describe_tools`
+# entries): fixed at import, empty until a real tool is implemented here —
+# never a copy of the port catalogue, never a placeholder
+_TOOLS: tuple[dict, ...] = ()
+
+
+def _describe_tools_operation(service: WorkerProbeService, request, deadline) -> dict:
+    """`describe_tools` (tool-port-v1, query class, read effect): the tools this
+    worker actually offers, from its code-owned table; the execute grammar carries
+    no selection yet, so the whole table is described."""
+
+    output = {"tools": [deepcopy(entry) for entry in _TOOLS]}
+    return {
+        "outcome": "succeeded", "usage_finality": "final",
+        "remote_terminal_observed": "succeeded", "reason_code": "provider_terminal",
+        "usage": {**_ZERO_USAGE, "output_bytes": len(canonical_json(output))},
+        "output": output,
+    }
+
+
 # the code-owned semantic registry of this worker: exact port operations only
-_OPERATIONS: MappingProxyType[str, object] = MappingProxyType({"status": _status_operation})
+_OPERATIONS: MappingProxyType[str, object] = MappingProxyType({
+    "status": _status_operation,
+    "describe_tools": _describe_tools_operation,
+})
 
 
 class _Router:

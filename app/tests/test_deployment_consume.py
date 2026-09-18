@@ -337,7 +337,7 @@ def test_consume_observes_the_actual_staged_worker_and_commits_accepted3(
         assert evidence["expected"] == expected.as_dict()
         assert evidence["connection"]["requester_boot_id"] == stage_observer._process_boot_id()
         # the worker's code-owned registry now carries `status` (T087 slice)
-        assert evidence["probes"][0]["reply"]["runtime"]["registered_operations"] == ["status"]
+        assert evidence["probes"][0]["reply"]["runtime"]["registered_operations"] == ["describe_tools", "status"]
         # exact replay returns the frozen reply without a second observation
         observed = []
         monkeypatch.setattr(

@@ -10,7 +10,8 @@ remaining window in milliseconds (never an absolute clock value) and a fresh
 nonce. `extension-execute-result-v1` carries the runtime
 ledger's result vocabulary — outcome, usage finality, remote terminal
 observation, typed reason, the exact usage counters iff the usage is final —
-and, for a succeeded `status`, the worker's own reading as the output. The
+and, for a success, the output whose grammar the reply's operation selects
+(`status`: the worker's own reading; `describe_tools`: its tool table). The
 worker package never imports the runtime: the closed sets are mirrored here
 and pinned equal by test.
 
@@ -20,10 +21,12 @@ limits as the probe grammar.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from ..domain.refs import DomainContractError, EntityRef, canonical_json, uuid_string
 from ..domain.wire import WireInputError, WireLimits, parse_json_object
+from ..extensions.port_contracts import EFFECT_CLASSES
 from .extension_probe_messages import (
     OPERATIONS,
     _component,
@@ -45,8 +48,12 @@ __all__ = [
     "MAX_REMAINING_MS",
     "MAX_REPLY_BYTES",
     "MAX_REQUEST_BYTES",
+    "MAX_ROLES",
+    "MAX_TOOLS",
+    "MAX_TOOLS_BYTES",
     "OPERATIONS",
     "OUTCOMES",
+    "OUTPUT_OPERATIONS",
     "REASONS",
     "REMOTE_TERMINALS",
     "REPLY_SCHEMA",
@@ -94,17 +101,35 @@ _REPLY_FIELDS = (
     "usage_finality", "remote_terminal_observed", "reason_code", "usage", "output",
 )
 _OUTPUT_FIELDS = ("service_identity", "component", "runtime")
+# `describe_tools` output (extension-ports.md §3.2): the worker's actual tool table
+_TOOL_FIELDS = ("tool_id", "version", "argument_schema_ref", "result_schema_ref",
+                "effect_class", "artifact_roles")
+_TOOLS_FIELDS = ("tools",)
+# the wire's version text is narrower than the ports contract's `version-text`
+# (no spaces or parentheses, 64 chars), as the identifier is narrower than its
+# `identifier` (probe contract §2); both narrowings are stated in §2b
+_VERSION_TEXT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+-]{0,63}")
+MAX_TOOLS = 8  # entries; the binding bound is the bytes below
+MAX_ROLES = 256  # artifact roles per entry (ports contract: T[] up to 256)
+# a grammar-maximal entry is ~1.2 KB: the table is bounded by the canonical
+# bytes the 4096 B reply can carry beside its other fields, checked where the
+# table is validated so a worker refuses instead of failing to answer
+MAX_TOOLS_BYTES = 3_072
+# the operations whose successful output has a closed grammar here; a success
+# under any other operation is outside the grammar until its output is defined
+OUTPUT_OPERATIONS = frozenset({"status", "describe_tools"})
 _KNOWN_SCHEMAS = frozenset({
     PROBE_REQUEST_SCHEMA, PROBE_REPLY_SCHEMA, REQUEST_SCHEMA, REPLY_SCHEMA,
 })
 
 
 def _limits(max_bytes: int) -> WireLimits:
-    # the probe limits, one level deeper: the output nests the runtime's
-    # operation list under the reply
+    # the probe limits, two levels deeper: the reply nests the runtime's
+    # operation list under the output (depth 5) and a tool entry's schema
+    # references under the tool table (depth 6)
     return WireLimits(
         max_bytes=max_bytes,
-        max_depth=5,
+        max_depth=6,
         max_items=128,
         max_members=16,
         max_string_bytes=128,
@@ -203,9 +228,62 @@ def _usage(value) -> dict | None:
     return usage
 
 
-def _output(value) -> dict | None:
+def _any_ref_dict(value) -> dict:
+    if type(value) is not dict or tuple(sorted(value)) != tuple(sorted(_REF_FIELDS)):
+        raise ExecuteMessageError()
+    return _wrap(EntityRef.from_dict, value).as_dict()
+
+
+def _sorted_unique_identifiers(value, limit) -> list[str]:
+    if type(value) is not list or len(value) > limit:
+        raise ExecuteMessageError()
+    items = [_wrap(_identifier, item) for item in value]
+    if items != sorted(set(items)):
+        raise ExecuteMessageError()
+    return items
+
+
+def _tool(value) -> dict:
+    if type(value) is not dict or tuple(sorted(value)) != tuple(sorted(_TOOL_FIELDS)):
+        raise ExecuteMessageError()
+    version = value["version"]
+    if type(version) is not str or _VERSION_TEXT.fullmatch(version) is None:
+        raise ExecuteMessageError()
+    if type(value["effect_class"]) is not str or value["effect_class"] not in EFFECT_CLASSES:
+        raise ExecuteMessageError()
+    return {
+        "tool_id": _wrap(_identifier, value["tool_id"]),
+        "version": version,
+        "argument_schema_ref": _any_ref_dict(value["argument_schema_ref"]),
+        "result_schema_ref": _any_ref_dict(value["result_schema_ref"]),
+        "effect_class": value["effect_class"],
+        "artifact_roles": _sorted_unique_identifiers(value["artifact_roles"], MAX_ROLES),
+    }
+
+
+def _tools_output(value) -> dict:
+    if type(value) is not dict or tuple(sorted(value)) != tuple(sorted(_TOOLS_FIELDS)):
+        raise ExecuteMessageError()
+    tools = value["tools"]
+    if type(tools) is not list or len(tools) > MAX_TOOLS:
+        raise ExecuteMessageError()
+    entries = [_tool(item) for item in tools]
+    ids = [entry["tool_id"] for entry in entries]
+    if ids != sorted(set(ids)):
+        raise ExecuteMessageError()  # one entry per tool, in identifier order
+    output = {"tools": entries}
+    if len(_wrap(canonical_json, output)) > MAX_TOOLS_BYTES:
+        raise ExecuteMessageError()  # the reply could not carry it
+    return output
+
+
+def _output(value, operation) -> dict | None:
     if value is None:
         return None
+    if operation not in OUTPUT_OPERATIONS:
+        raise ExecuteMessageError()  # no success grammar for this operation yet
+    if operation == "describe_tools":
+        return _tools_output(value)
     if type(value) is not dict or tuple(sorted(value)) != tuple(sorted(_OUTPUT_FIELDS)):
         raise ExecuteMessageError()
     component = _wrap(_component, value["component"])
@@ -320,12 +398,13 @@ def encode_execute_reply(
     usage_finality = _member(usage_finality, USAGE_FINALITIES)
     remote_terminal_observed = _member(remote_terminal_observed, REMOTE_TERMINALS)
     usage = _usage(usage)
-    output = _output(output)
+    operation = _operation(operation)
+    output = _output(output, operation)
     _reply_invariants(outcome, usage_finality, remote_terminal_observed, usage, output)
     return _wrap(_encode, {
         "schema_version": REPLY_SCHEMA,
         "attempt_id": _uuid(attempt_id),
-        "operation": _operation(operation),
+        "operation": operation,
         "challenge": _nonce_text(_wrap(_nonce_bytes, challenge)),
         "outcome": outcome,
         "usage_finality": usage_finality,
@@ -342,11 +421,12 @@ def parse_execute_reply(raw) -> ExecuteReply:
     usage_finality = _member(value["usage_finality"], USAGE_FINALITIES)
     remote = _member(value["remote_terminal_observed"], REMOTE_TERMINALS)
     usage = _usage(value["usage"])
-    output = _output(value["output"])
+    operation = _operation(value["operation"])
+    output = _output(value["output"], operation)
     _reply_invariants(outcome, usage_finality, remote, usage, output)
     return ExecuteReply(
         attempt_id=_uuid(value["attempt_id"]),
-        operation=_operation(value["operation"]),
+        operation=operation,
         challenge=_wrap(_parse_nonce, value["challenge"]),
         outcome=outcome,
         usage_finality=usage_finality,

@@ -4,8 +4,8 @@
 the in-process worker service under the one-shot permit: it writes the
 execute request for the bound operation, reads the one reply, verifies the
 correlation, attempt, operation and nonce, rechecks the fences, and maps the
-reply to the ledger's result vocabulary. A succeeded `status` reply is
-sealed control-side as an immutable `artifact` record (the worker never
+reply to the ledger's result vocabulary. A succeeded read-class reply
+(`status`, `describe_tools`) is sealed control-side as an immutable `artifact` record (the worker never
 touches the store); admission still happens only through
 `accept_result_and_settle` inside `NodeAttemptDispatcher`. Same macOS seams
 as the probe tests: service, operation and transport logic, never positive
@@ -108,7 +108,7 @@ def test_status_executes_over_the_socket_and_the_sealed_output_is_the_node_resul
     assert content["execution_id"] == writer_execution
     assert content["output"]["service_identity"] == spec.responder_service
     assert content["output"]["component"]["build_identity_digest"] == tree["identity_digest"]
-    assert content["output"]["runtime"]["registered_operations"] == ["status"]
+    assert content["output"]["runtime"]["registered_operations"] == ["describe_tools", "status"]
     assert record.body["parent_refs"] == [subject.refs.envelope.as_dict()]
     # the sealed artifact is addressable from the send command: one id per attempt
     assert content["send_command_id"] == na._command_identity(writer_attempt_id(run), "send")
@@ -125,6 +125,72 @@ def test_status_executes_over_the_socket_and_the_sealed_output_is_the_node_resul
     assert row["actual_model_calls"] == 0 and row["actual_node_visits"] == 1
     assert subject.ledger._pending_permits == {}
     assert box.get("served") == 1, box
+
+
+def test_describe_tools_executes_over_the_socket_and_seals_the_empty_catalogue(tmp_path, staged):
+    _root, _spec, _tree, box = staged
+    subject, run = started(tmp_path / "ledger")
+    outcome = build(subject, run, bound(subject, transport(subject, operation="describe_tools")),
+                    handlers(subject, [])).run()
+    writer_execution = sch.execution_identity(run.run_id, "writer", 0)
+    content = subject.domain.get(dict(outcome.result_refs)[writer_execution]).body["content"]
+    assert content["operation"] == "describe_tools"
+    assert content["output"] == {"tools": []}
+    attempt_id = writer_attempt_id(run)
+    assert subject.ledger.get_attempt(attempt_id)["terminal_outcome"] == "succeeded"
+    row = budget_row(subject, na.reservation_identity(attempt_id))
+    assert row["state"] == "finalized"
+    assert row["actual_output_bytes"] == len(canonical_json({"tools": []}))
+    assert row["actual_model_calls"] == 0 and row["actual_tool_calls"] == 0
+    assert box.get("served") == 1, box
+
+
+def test_the_worker_cannot_inflate_the_usage_of_describe_tools(tmp_path, staged, monkeypatch):
+    # a read-class query makes no model or tool call and control measures its bytes
+    box = staged[3]
+    original = ep._Router.execute
+
+    def inflated(self, service, request, deadline):
+        result = original(self, service, request, deadline)
+        result["usage"] = {**result["usage"], "tool_calls": 1}
+        return result
+
+    monkeypatch.setattr(ep._Router, "execute", inflated)
+    subject, run = started(tmp_path / "ledger")
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, bound(subject, transport(subject, operation="describe_tools")),
+              handlers(subject, [])).run()
+    attempt_id = writer_attempt_id(run)
+    assert subject.ledger.get_attempt(attempt_id)["terminal_outcome"] == "outcome_unknown"
+    assert box.get("served") == 1, box
+
+
+def test_a_read_class_query_cannot_dodge_the_measured_usage_by_claiming_it_unknown(tmp_path, staged, monkeypatch):
+    # review closure: a succeeded `describe_tools` with usage_finality "unknown" and no
+    # counters completed the run with an unknown budget row; a completed read-class query
+    # has no unknown usage — control measures it, so the claim is a mismatch
+    box = staged[3]
+    original = ep._Router.execute
+
+    def dodging(self, service, request, deadline):
+        result = original(self, service, request, deadline)
+        return {**result, "usage_finality": "unknown", "usage": None}
+
+    monkeypatch.setattr(ep._Router, "execute", dodging)
+    subject, run = started(tmp_path / "ledger")
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, bound(subject, transport(subject, operation="describe_tools")),
+              handlers(subject, [])).run()
+    attempt_id = writer_attempt_id(run)
+    assert subject.ledger.get_attempt(attempt_id)["terminal_outcome"] == "outcome_unknown"
+    assert box.get("served") == 1, box
+
+
+def test_the_control_measured_queries_are_exactly_the_operations_with_an_output_grammar():
+    from app.workers.extension_execute_messages import OPERATIONS, OUTPUT_OPERATIONS
+
+    assert xt._CONTROL_MEASURED == OUTPUT_OPERATIONS == frozenset({"status", "describe_tools"})
+    assert OUTPUT_OPERATIONS <= OPERATIONS
 
 
 def test_an_unregistered_operation_is_admitted_as_a_failed_attempt(tmp_path, staged):

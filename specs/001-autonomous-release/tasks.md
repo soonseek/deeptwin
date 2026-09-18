@@ -178,7 +178,7 @@ phase. Web session and isolated-worker feasibility are tested here before extens
   two-clean-host repetition, this single checkbox may close. The whole T018 checkbox is not a
   reverse prerequisite for its downstream semantic implementations, and T083 retains clean-host
   ownership.
-- [ ] T087 Implement ADR-014's versioned semantic extension framework in app/extensions/, the domain 2026-09-18 slice: the worker's code-owned operation registry now carries `status` (an actual metadata reading) behind the closed `extension-execute-v1` grammar, with the control-side transport sealing the output (evidence/worker-execute-transport-t087.md); every other operation and port remains open.
+- [ ] T087 Implement ADR-014's versioned semantic extension framework in app/extensions/, the domain 2026-09-18 slice: the worker's code-owned operation registry now carries `status` (an actual metadata reading) behind the closed `extension-execute-v1` grammar, with the control-side transport sealing the output (evidence/worker-execute-transport-t087.md); `describe_tools` landed the same day over the worker's empty code-owned tool table (evidence/worker-describe-tools-t087.md); `invoke_tool`, `cancel`, a real tool, an operation input in the execute grammar and every other port remain open.
   store/migrations, schemas/v1/extensions/, app/api/extension_routes.py,
   app/api/route_contributions/extensions-v1.json,
   app/operations/extension_deployment.py, app/static/extensions.mjs,

@@ -222,7 +222,7 @@ def test_service_opens_source_before_listener_and_answers_two_probes(slot, monke
                 assert reply.runtime.platform == "linux/amd64"
                 assert (reply.runtime.uid, reply.runtime.gid) == (UID, GID)
                 # the code-owned registry carries `status` (T087 execute slice)
-                assert reply.runtime.registered_operations == ("status",)
+                assert reply.runtime.registered_operations == ("describe_tools", "status")
             assert len(set(ids)) == 4
             assert len(reads) == 2  # one actual read per probe, never readiness
             assert reply.component.port_schema_set_digest == (
@@ -497,7 +497,7 @@ def test_open_failure_after_the_source_releases_every_descriptor(slot, monkeypat
 
 def test_registry_is_code_owned_and_private(slot):
     router = ep._Router()
-    assert router.operations() == ("status",)  # the T087 execute slice's one operation
+    assert router.operations() == ("describe_tools", "status")  # the T087 execute slices' operations
     assert not hasattr(router, "register")
     with pytest.raises(TypeError):
         pickle.dumps(router)

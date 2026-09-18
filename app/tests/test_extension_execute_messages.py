@@ -17,7 +17,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.domain.refs import EntityRef
+from app.domain.refs import EntityRef, canonical_json
 from app.runtime import ledger as ledger_module
 from app.runtime.budgets import BudgetUsage
 from app.workers import extension_execute_messages as xm
@@ -204,3 +204,76 @@ def test_reply_round_trips_with_output_and_usage_only_when_final():
 def test_reply_encoding_refuses_values_outside_the_grammar(change):
     with pytest.raises(xm.ExecuteMessageError):
         xm.encode_execute_reply(**reply_fields(**change))
+
+
+def tool_entry(**changes):
+    return {
+        "tool_id": "read_text", "version": "1.0.0",
+        "argument_schema_ref": ref("artifact").as_dict(), "result_schema_ref": ref("artifact").as_dict(),
+        "effect_class": "read", "artifact_roles": ["source"], **changes,
+    }
+
+
+def test_describe_tools_reply_carries_the_ports_contract_tool_shape_or_an_empty_catalogue():
+    # T087 second operation: `describe_tools` → {tools:[{tool_id,version,argument_schema_ref,
+    # result_schema_ref,effect_class,artifact_roles}]} (extension-ports.md §3.2); the output
+    # shape is selected by the reply's operation, so a status shape under describe_tools (or
+    # the reverse) is outside the grammar
+    empty = xm.parse_execute_reply(xm.encode_execute_reply(**reply_fields(
+        operation="describe_tools", output={"tools": []},
+        usage={**usage_fields(), "output_bytes": len(canonical_json({"tools": []}))})))
+    assert empty.operation == "describe_tools" and empty.output == {"tools": []}
+    entry = tool_entry()
+    full = xm.parse_execute_reply(xm.encode_execute_reply(**reply_fields(
+        operation="describe_tools", output={"tools": [entry]})))
+    assert full.output == {"tools": [entry]}
+    assert type(full.output["tools"][0]["argument_schema_ref"]) is dict
+    for change in [
+        {"operation": "describe_tools", "output": output()},
+        {"operation": "status", "output": {"tools": []}},
+        {"operation": "describe_tools", "output": {}},
+        {"operation": "describe_tools", "output": {"tools": [], "extra": 1}},
+        {"operation": "describe_tools", "output": {"tools": {}}},
+        {"operation": "describe_tools", "output": {"tools": [tool_entry(tool_id="Bad Id")]}},
+        {"operation": "describe_tools", "output": {"tools": [tool_entry(effect_class="wild")]}},
+        {"operation": "describe_tools", "output": {"tools": [tool_entry(artifact_roles=["b", "a"])]}},
+        {"operation": "describe_tools", "output": {"tools": [tool_entry(artifact_roles=["a", "a"])]}},
+        {"operation": "describe_tools", "output": {"tools": [tool_entry(version="")]}},
+        {"operation": "describe_tools", "output": {"tools": [tool_entry(argument_schema_ref="x")]}},
+        {"operation": "describe_tools", "output": {"tools": [{**tool_entry(), "extra": 1}]}},
+        {"operation": "describe_tools", "output": {"tools": [tool_entry(), tool_entry()]}},  # ids unique
+        {"operation": "describe_tools", "output": {"tools": [tool_entry(tool_id="b"), tool_entry(tool_id="a")]}},
+        {"operation": "invoke_tool", "output": {"tools": []}},  # no output grammar yet: no success
+    ]:
+        with pytest.raises(xm.ExecuteMessageError):
+            xm.encode_execute_reply(**reply_fields(**change))
+    # the same refusals on parse: a foreign encoder cannot smuggle the shape
+    forged = json.loads(xm.encode_execute_reply(**reply_fields(operation="describe_tools", output={"tools": []})))
+    forged["output"] = output()
+    with pytest.raises(xm.ExecuteMessageError):
+        xm.parse_execute_reply(canonical_json(forged))
+
+
+def test_the_tool_table_is_bounded_by_the_bytes_the_reply_can_carry():
+    # review closure: eight grammar-maximal entries validate but cannot be encoded under the
+    # 4096 B reply cap, so the worker would fail to answer instead of refusing at validation;
+    # the binding bound is canonical bytes, checked where the table is validated
+    def maximal(index):
+        return tool_entry(
+            tool_id=f"t{index}" + "x" * 62, version="v" * 64,
+            argument_schema_ref=EntityRef("deployment_receipt_consumption", str(uuid4()), 2**32 - 1, "c" * 64).as_dict(),
+            result_schema_ref=EntityRef("deployment_receipt_consumption", str(uuid4()), 2**32 - 1, "c" * 64).as_dict(),
+            artifact_roles=[f"r{role}" + "y" * 62 for role in range(8)],
+        )
+    assert xm.MAX_TOOLS_BYTES + 1_024 <= xm.MAX_REPLY_BYTES  # the rest of the reply always fits
+    one = xm._output({"tools": [maximal(0)]}, "describe_tools")
+    assert len(canonical_json(one)) <= xm.MAX_TOOLS_BYTES
+    with pytest.raises(xm.ExecuteMessageError):
+        xm._output({"tools": [maximal(index) for index in range(4)]}, "describe_tools")
+    with pytest.raises(xm.ExecuteMessageError):
+        xm.encode_execute_reply(**reply_fields(operation="describe_tools",
+                                               output={"tools": [maximal(index) for index in range(4)]}))
+    # the roles list has its own bound, distinct from the table's
+    with pytest.raises(xm.ExecuteMessageError):
+        xm._output({"tools": [tool_entry(artifact_roles=[f"r{n:03d}" for n in range(xm.MAX_ROLES + 1)])]},
+                   "describe_tools")

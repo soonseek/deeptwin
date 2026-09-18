@@ -12,7 +12,8 @@ the store — and its reference is the transport result; admission still
 happens only through `accept_result_and_settle`. Any failure raises a typed
 error, which the dispatcher records as `outcome_unknown` (the send may have
 started). No provider, model, effort or paid call is involved: the only
-operation a worker offers today is `status`.
+operations a worker offers today are the read-class queries `status` and
+`describe_tools` (over an empty tool table).
 """
 
 from __future__ import annotations
@@ -93,6 +94,10 @@ def _unsent(deadline, code_if_open="transport_unavailable"):
         "transport_deadline" if deadline.remaining() <= 0 else code_if_open,
         dispatch_effect="definitely_not_sent",
     )
+
+
+# the read-class queries whose usage control measures itself (never trusted)
+_CONTROL_MEASURED = frozenset({"status", "describe_tools"})
 
 
 class ExtensionAttemptTransport:
@@ -231,14 +236,20 @@ class ExtensionAttemptTransport:
 
     def _result(self, permit, request, reply) -> AttemptTransportResult:
         usage = None
+        if (self._operation in _CONTROL_MEASURED and reply.outcome in ("succeeded", "failed")
+                and reply.usage is None):
+            # a completed read-class query has no unknown usage: control measures
+            # it, so a claim of unknown finality is a dodge, not an observation
+            raise ExtensionTransportError("transport_mismatch")
         if reply.usage is not None:
-            if self._operation == "status" and reply.usage != {
+            if self._operation in _CONTROL_MEASURED and reply.usage != {
                 "model_calls": 0, "tool_calls": 0, "node_visits": 1, "loop_rounds": 0,
                 "output_bytes": 0 if reply.output is None else len(canonical_json(reply.output)),
                 "candidates": 0, "api_microunits": None,
             }:
-                # control measures the only real counter of `status` itself and
-                # knows it makes no model or tool call: any other claim is a lie
+                # a read-class query (`status`, `describe_tools`) makes no model or
+                # tool call and control measures its only real counter itself:
+                # any other claim is a lie
                 raise ExtensionTransportError("transport_mismatch")
             try:
                 usage = BudgetUsage.create(**reply.usage)

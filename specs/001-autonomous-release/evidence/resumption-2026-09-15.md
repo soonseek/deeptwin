@@ -1244,3 +1244,15 @@ RED-first. `node --test` **43** (run-panel 10, runtime 18, session 9, approvals 
 **142**; Ruff clean. Details and hashes in `run-panel-dom-t048.md`. Full regression follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6234 passed, 2 skipped, 1 warning, 369
 subtests passed in 956.94s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## T087 — the worker's `describe_tools` (2026-09-18)
+
+RED retained (`failed`/`validation_failed` over the socket, the grammar refusing `{tools: []}`, pins at `["status"]`),
+GREEN after the per-operation output grammar, the code-owned tool table, the router entry and the transport's
+measured set. Independent review ACCEPT WITH CHANGES (SHOULD: the table bounded by canonical bytes, the wire's
+narrower grammars stated, a completed query claiming unknown usage refused, the contract's depth sentences fixed,
+the sealed table's trust boundary stated, the two closed sets pinned equal; four NITs) folded in RED-first.
+Covering **47 / 97 / 48** in separate processes (the descriptor checks are order-sensitive across suites, pre-existing);
+Ruff clean. Details and hashes in `worker-describe-tools-t087.md`. Full regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6241 passed, 2 skipped, 1 warning, 369
+subtests passed in 901.52s** — the two Linux-only skips. Hashes re-verified unchanged before commit.

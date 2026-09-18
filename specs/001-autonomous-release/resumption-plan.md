@@ -2450,8 +2450,9 @@ proof, at most four attempts per visit); the checkpoint↔attempt binding landed
 one closed read boundary, pending-write results); the shell's supported session client landed
 (`shell-session-client-supported.md`: `session.mjs` — base path from the location, the token from `GET {base}session`,
 the request adapter for the observer and the approvals module); the run view's DOM half landed over it
-(`run-panel-dom-t048.md`: `run-panel.mjs`, not yet mounted — the shell has no run source). Next: T087 operations
-beyond `status`, the artifact stream, and the shell's run source (graph/run creation surface) before the mount.
+(`run-panel-dom-t048.md`: `run-panel.mjs`, not yet mounted — the shell has no run source); the worker's
+`describe_tools` landed over its empty tool table (`worker-describe-tools-t087.md`). Next: the artifact stream,
+the shell's run source (graph/run creation surface) before the mount, then a real tool / `invoke_tool` (T087).
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;
