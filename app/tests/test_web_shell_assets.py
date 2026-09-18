@@ -37,6 +37,8 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "session.mjs": "application/javascript",
         "run-panel.mjs": "application/javascript",
         "run-list.mjs": "application/javascript",
+        "observe.mjs": "application/javascript",
+        "observe.html": "text/html",
     }
     assert "index.html" not in MODULES
 
@@ -120,3 +122,54 @@ def test_the_shell_speaks_the_supported_csrf_header(served):
     source = (STATIC / "app.mjs").read_text(encoding="utf-8")
     assert "X-DeepTwin-CSRF" in source
     assert "X-CSRF-Token" not in source
+
+
+def test_the_observation_page_is_served_publicly_and_references_only_catalogued_relative_assets(served):
+    # T048/T025 shell mount: the page is a public static asset under the deployment base
+    # path; every script/stylesheet it references is a relative, catalogued module, so it
+    # resolves under `/<hex>/` as under `/`, and the CSP admits it (script-src 'self')
+    import re
+
+    _app, client, profile, _capability = served
+    page = client.get(profile.base_path + "observe.html", headers=headers(profile))
+    assert page.status_code == 200, page.text
+    assert page.headers["content-type"].split(";", 1)[0] == "text/html"
+    assert "script-src 'self'" in page.headers["content-security-policy"]
+    source = (STATIC / "observe.html").read_text(encoding="utf-8")
+    references = re.findall(r'(?:src|href)="([^"]+)"', source)
+    assert references, source
+    for reference in references:
+        assert reference.startswith("./"), reference
+        assert reference[2:] in MODULES, reference
+    assert "<script" in source and 'type="module"' in source
+    for mount in ("session-status", "run-source", "run-panel"):
+        assert f'id="{mount}"' in source, mount
+    # the page is not the setup/login stub and carries no form that could take a secret
+    assert "<form" not in source and "password" not in source.lower()
+    # the page's own head: unauthenticated readers get the page, the API stays protected
+    assert client.get(profile.base_path + "api/v1/snapshot", headers=headers(profile)).status_code == 401
+    # a navigation's own request shape (no Origin, Sec-Fetch-Site none, a document) is admitted
+    navigated = client.get(profile.base_path + "observe.html", headers={
+        "host": profile.http_origin.split("://", 1)[1], "sec-fetch-site": "none", "sec-fetch-dest": "document",
+    })
+    assert navigated.status_code == 200, navigated.text
+    assert "data-ready" not in source  # nothing copied from the preview shell that never flips
+
+
+def test_the_observation_pages_module_graph_is_catalogued_transitively():
+    # review closure: a dependency importing an uncatalogued module passes `node --test`
+    # (the file is on disk) while the factory answers 401 for it and the whole graph fails
+    # to load in the browser — so the import graph is walked from the page's module
+    import re
+
+    pending = ["observe.mjs"]
+    seen = set()
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        assert name in MODULES, name
+        source = (STATIC / name).read_text(encoding="utf-8")
+        pending.extend(re.findall(r"from '\./([^']+)'", source))
+    assert {"run-list.mjs", "run-panel.mjs", "runtime.mjs", "session.mjs"} <= seen

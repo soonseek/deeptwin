@@ -1280,3 +1280,14 @@ the list and the choice, fixtures misstating the served shape; NITs) folded in R
 regression follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6256 passed, 2 skipped, 1 warning, 369
 subtests passed in 900.00s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## T048/T025 — the shell mount on the supported factory (2026-09-18)
+
+RED retained (`observe.mjs` absent, the catalogue pin, the page test), GREEN after the page, the boot module and the
+entries. Independent review ACCEPT WITH CHANGES (SHOULD: the no-session copy named a login screen that does not exist
+yet, a boot failing outside the exchange left the initial text standing, the module import graph unpinned; NITs)
+folded in RED-first; the reviewer verified the page, its module graph, the exact CSP and the cookie path over the
+real factory under the hex base. `node --test` **31** (observe 5), shell assets **7**, covering **190**; Ruff clean.
+Details and hashes in `observe-page-mount-t048.md`. Full regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6258 passed, 2 skipped, 1 warning, 369
+subtests passed in 962.45s** — the two Linux-only skips. Hashes re-verified unchanged before commit.

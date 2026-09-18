@@ -2455,9 +2455,11 @@ the request adapter for the observer and the approvals module); the run view's D
 execute exchange landed over T018's bounded stream (`worker-artifact-input-leg-t018-t087.md`: declared inputs,
 profile-gated admission, typed unknown on a broken stream; no registered consumer yet). The run source landed
 as the public snapshot's run list (`run-list-source-t048.md`; a creation surface is blocked on the consent/design
-line — no production path records a run consent, environment or work revision). Next: the shell mount of the run
-list + panel on the supported factory (the `/` stub, T025/T048), then a real tool / `invoke_tool` over the leg
-(T087), then worker-returned output artifacts.
+line — no production path records a run consent, environment or work revision). The shell mount landed as the
+public observation page (`observe-page-mount-t048.md`: `observe.html` beside the `/` stub, the session established
+from the cookie, the list and panel mounted). Next: a real tool / `invoke_tool` over the artifact leg (T087), then
+worker-returned output artifacts, then the owner setup/login UI (T025) so the page is reachable without a
+bootstrap client.
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;

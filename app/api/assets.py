@@ -29,6 +29,8 @@ MODULES = MappingProxyType({
     "session.mjs": JAVASCRIPT,
     "run-panel.mjs": JAVASCRIPT,
     "run-list.mjs": JAVASCRIPT,
+    "observe.mjs": JAVASCRIPT,
+    "observe.html": "text/html",
 })
 PUBLIC_ASSET_PATHS = frozenset("/" + name for name in MODULES)
 _SHELL = "index.html"
