@@ -18,24 +18,32 @@ operations a worker offers today are the read-class queries `status` and
 
 from __future__ import annotations
 
+import hashlib
 import os
 import time
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from ..deployment.stage_observer import _process_boot_id
 from ..domain.refs import DomainContractError, EntityRef, canonical_json, uuid_string
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore
+from ..extensions.port_contracts import OPERATION_CONTRACTS
 from ..workers import broker, ipc_root, listener
+from ..workers.artifact_stream import BytesSource, StreamLimits, send_batch
+from ..workers.artifact_stream_transport import ConnectionStreamTransport
 from ..workers.extension_channel import ExtensionChannelError, extension_channel
 from ..workers.extension_execute_messages import (
+    MAX_INPUT_BYTES,
     MAX_REMAINING_MS,
     OPERATIONS,
     REPLY_SCHEMA,
+    ArtifactInputDeclaration,
     ExecuteMessageError,
     encode_execute_request,
     parse_execute_reply,
+    parse_execute_request,
     peek_schema,
 )
 from .budgets import BudgetUsage
@@ -54,7 +62,7 @@ RESULT_TYPE = "extension-result-v1"
 REQUEST_TYPE = "extension-request-v1"
 ATTEMPT_MS = 2_000  # probe contract §4: the control attempt window
 CODES = frozenset({
-    "transport_unavailable", "transport_deadline", "transport_invalid", "transport_mismatch",
+    "transport_unavailable", "transport_deadline", "transport_invalid", "transport_stream", "transport_mismatch",
     "seal_failed",
 })
 _NONCE_BYTES = 32
@@ -98,19 +106,72 @@ def _unsent(deadline, code_if_open="transport_unavailable"):
 
 # the read-class queries whose usage control measures itself (never trusted)
 _CONTROL_MEASURED = frozenset({"status", "describe_tools"})
+ARTIFACT_TYPE = "extension-artifact-v1"
+_STREAM_LIMITS = StreamLimits(max_artifact_bytes=MAX_INPUT_BYTES, max_total_bytes=MAX_INPUT_BYTES)
+
+
+@dataclass(frozen=True, slots=True)
+class ExtensionArtifactInput:
+    """One artifact control streams to the worker after the request frame:
+    its declaration (media type, exact size and digest, role) and its bytes.
+    Declared at build for the bound operation; the bytes are held (bounded by
+    the input ceiling) so every attempt of the visit — the owner's recovery
+    retry included — streams them again from a fresh source, never from a
+    consumed one-shot reader."""
+
+    media_type: str
+    declared_size: int
+    sha256: str
+    role: str
+    payload: bytes = field(repr=False)
+
+    def __post_init__(self) -> None:
+        if type(self.payload) is not bytes:
+            raise TypeError("an artifact input carries its bytes")
+        if (len(self.payload) != self.declared_size
+                or hashlib.sha256(self.payload).hexdigest() != self.sha256):
+            raise TypeError("an artifact input declaration must be its bytes' own")
+        try:
+            self.declaration(0, 1)
+        except ExecuteMessageError:
+            raise TypeError("an artifact input declaration is outside the grammar") from None
+
+    def source(self) -> BytesSource:
+        return BytesSource(self.payload)
+
+    def declaration(self, ordinal: int, count: int) -> ArtifactInputDeclaration:
+        # validated through the wire grammar so a bad input fails at build, not at send
+        request = parse_execute_request(encode_execute_request(
+            attempt_id=_PLACEHOLDER, execution_id=_PLACEHOLDER, operation="invoke_tool",
+            envelope_ref=EntityRef("execution_envelope", _PLACEHOLDER, 1, "0" * 64),
+            profile_ref=EntityRef("runtime_profile", _PLACEHOLDER, 1, "0" * 64),
+            remaining_ms=1, challenge=bytes(_NONCE_BYTES), artifact_batch_id=_PLACEHOLDER,
+            artifact_inputs=[
+                {"ordinal": index, "media_type": self.media_type, "declared_size": self.declared_size,
+                 "sha256": self.sha256, "role": self.role} if index == ordinal else
+                {"ordinal": index, "media_type": "application/octet-stream", "declared_size": 0,
+                 "sha256": "0" * 64, "role": "placeholder"}
+                for index in range(count)
+            ],
+        ))
+        return request.artifact_inputs[ordinal]
+
+
+_PLACEHOLDER = "00000000-0000-4000-8000-000000000000"
 
 
 class ExtensionAttemptTransport:
     """Built only by `build`; one bound operation over one extension slot."""
 
-    __slots__ = ("_attempt_ms", "_domain", "_instance_id", "_operation", "_slot_number")
+    __slots__ = ("_artifact_inputs", "_attempt_ms", "_domain", "_instance_id", "_operation",
+                 "_slot_number")
 
     def __init__(self) -> None:
         raise TypeError("Use ExtensionAttemptTransport.build")
 
     @classmethod
     def build(cls, *, domain_store, instance_id, slot_number, operation="status",
-              attempt_ms=ATTEMPT_MS):
+              attempt_ms=ATTEMPT_MS, artifact_inputs=()):
         if type(domain_store) is not DomainStore:
             raise TypeError("Exact DomainStore required")
         if type(instance_id) is not str or not instance_id:
@@ -121,12 +182,24 @@ class ExtensionAttemptTransport:
             raise ValueError("operation must be a tool-port-v1 operation")
         if type(attempt_ms) is not int or not 1 <= attempt_ms <= 30_000:
             raise ValueError("attempt window out of bounds")
+        if type(artifact_inputs) is not tuple or any(
+                type(item) is not ExtensionArtifactInput for item in artifact_inputs):
+            raise TypeError("artifact inputs must be a tuple of ExtensionArtifactInput")
+        if artifact_inputs:
+            # the same gate the worker applies before reading a byte: the operation's
+            # port contract must take request artifacts (profile E takes none)
+            contract = OPERATION_CONTRACTS[("tool-port-v1", operation)]
+            if contract.request_artifact_profile == "E":
+                raise ValueError("this operation takes no request artifacts")
+            if sum(item.declared_size for item in artifact_inputs) > MAX_INPUT_BYTES:
+                raise ValueError("artifact inputs exceed the input byte ceiling")
         transport = object.__new__(cls)
         transport._domain = domain_store
         transport._instance_id = instance_id
         transport._slot_number = slot_number
         transport._operation = operation
         transport._attempt_ms = attempt_ms
+        transport._artifact_inputs = artifact_inputs
         return transport
 
     @property
@@ -164,12 +237,18 @@ class ExtensionAttemptTransport:
             raise ExtensionTransportError("transport_invalid",
                                           dispatch_effect="definitely_not_sent") from None
         challenge = os.urandom(_NONCE_BYTES)
+        inputs = self._artifact_inputs
         try:
+            declarations = [
+                item.declaration(index, len(inputs)) for index, item in enumerate(inputs)
+            ]
             payload = encode_execute_request(
                 attempt_id=request.attempt_id, execution_id=request.execution_id,
                 operation=self._operation, envelope_ref=request.envelope_ref,
                 profile_ref=request.profile_ref,
                 remaining_ms=min(remaining_ms, MAX_REMAINING_MS), challenge=challenge,
+                artifact_batch_id=str(uuid4()) if inputs else None,
+                artifact_inputs=declarations,
             )
         except ExecuteMessageError:
             raise ExtensionTransportError("transport_invalid",
@@ -192,6 +271,8 @@ class ExtensionAttemptTransport:
 
     def _exchange(self, connection, permit, request, payload, challenge, deadline):
         message_id = permit.command_id
+        # the descriptors of the declared batch, from the exact bytes about to be sent
+        descriptors = parse_execute_request(payload).artifact_descriptors(message_id)
         try:
             connection.write(
                 message_id=message_id, correlation_id=None, message_type=REQUEST_TYPE,
@@ -206,6 +287,23 @@ class ExtensionAttemptTransport:
         except (listener.ListenerError, ipc_root.IpcRootError, OSError):
             raise ExtensionTransportError("transport_unavailable",
                                           dispatch_effect="may_have_started") from None
+        if self._artifact_inputs:
+            # the declared batch follows the request frame on the channel's artifact
+            # type. Any failure past the request has an unknown effect: the worker
+            # runs the operation only after it accepted the last artifact, so a
+            # failure while reading that final acceptance (a deadline, an EOF)
+            # leaves the run possible — control cannot tell which side of the
+            # acceptance the fault fell on
+            try:
+                send_batch(
+                    ConnectionStreamTransport(connection, message_type=ARTIFACT_TYPE,
+                                              correlation_id=message_id, deadline=deadline),
+                    descriptors,
+                    [item.source() for item in self._artifact_inputs],
+                    limits=_STREAM_LIMITS,
+                )
+            except Exception:  # noqa: BLE001 - effect-preserving barrier
+                raise ExtensionTransportError("transport_stream") from None
         try:
             frame = connection.read(deadline=deadline)
             connection.recheck()

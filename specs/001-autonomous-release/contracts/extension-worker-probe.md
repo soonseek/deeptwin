@@ -95,15 +95,39 @@ table is described. Control does not trust the worker's counters for either read
 
 ### 2b. Closed execute messages (T087 execute slice)
 
-`extension-execute-v1` (request, ≤ 2048 B pre-envelope; wire depth ≤ 6 since the `describe_tools`
+`extension-execute-v1` (request, ≤ 4096 B pre-envelope since the artifact leg — up to eight declared
+inputs; wire depth ≤ 6 since the `describe_tools`
 slice — a tool entry's schema-reference objects sit at depth 5 and their scalar members at 6, root
 being 1 — otherwise §2's limits):
 `schema_version`, `attempt_id` (uuid), `execution_id` (uuid), `operation` (a member of the
 port's closed operation set), `envelope_ref` and `profile_ref` (four-field `EntityRef` shapes of
 kinds `execution_envelope` / `runtime_profile`), `remaining_ms` (1..30000, the requester's
 effective remaining window after permit consumption — the worker may bound its work by it; it
-is not an absolute clock value), `challenge` (32-byte nonce, base64url). Identities and
-references only; never bytes, never model input.
+is not an absolute clock value), `challenge` (32-byte nonce, base64url), and — the T018/T087
+artifact leg — `artifact_batch_id` (uuid, `null` iff no inputs) with `artifact_inputs`
+(≤ 8 declarations `{ordinal, media_type, declared_size, sha256, role}`: the exact ordered
+sequence, sizes and their sum ≤ 1 MiB per extension-ports.md `max_input_bytes`, media type and
+digest per the stream's descriptor grammar, role a §2 identifier). Identities, references and
+descriptors only; never bytes, never model input. The declared bytes follow the request frame
+on the channel's `extension-artifact-v1` type, correlated to the request's message id, through
+T018's digest/chunk/receiver-credit stream (`ConnectionStreamTransport` on both ends, batch and
+request ids = the declared batch id and the request message id). The worker admits them into
+bounded owned in-memory sinks (its root is read-only; no scratch volume) only when the
+operation is registered and its port contract's request artifact profile takes request
+artifacts: profile `E` (`status`, `describe_tools`) takes none, so a request declaring inputs
+for them is the typed refusal `failed` / `validation_failed` before any artifact frame is read
+(the requester never has to send one). A stream violation (digest, size, order, credit, an
+unexpected frame) is terminal: the connection closes without a reply and the operation never
+runs; control records `outcome_unknown` (`transport_stream`) — honest because the worker runs
+the operation only after it accepted the last artifact, so a failure while control reads that
+final acceptance leaves the run possible. Control applies the same profile gate at build
+(`ExtensionAttemptTransport.build(artifact_inputs=)`), so a query operation can never be built
+with inputs; an input carries its bytes (bounded by the ceiling) so every attempt of the visit,
+the owner's recovery retry included, streams them again from a fresh source. Stream frames carry
+fresh message ids; their integrity is the channel's sequence and HMAC, and their binding to the
+request is the correlation id and the offers' batch/request ids matched field for field. No
+registered operation takes inputs today: the byte route is exercised end to end in tests through
+a test-only handler under `invoke_tool` (profile `T-tool`).
 
 `extension-execute-result-v1` (reply, ≤ 4096 B): `schema_version`, `attempt_id`, `operation`,
 `challenge` (echoed), `outcome` / `usage_finality` / `remote_terminal_observed` / `reason_code`
@@ -170,7 +194,7 @@ Observation-only connections: at most two probes, distinct message ids and
 nonces, identical `request_blob_sha256`/`receipt_blob_sha256`; the worker remembers only those
 bounded values locally and closes after the second reply. A repeated challenge, a third probe, a
 different digest pair, any other message type (the framing permits `extension-artifact-v1`; the
-probe rejects it here), an artifact or semantic payload, a malformed correlation (request
+probe rejects it — only an execute connection whose request declared inputs reads it, §2b), an artifact or semantic payload, a malformed correlation (request
 `correlation_id != null`, reply `correlation_id != request.message_id`) or an unexpected frame
 closes the connection with a sanitized local error. No retry, no failure-success envelope, no
 artifact stream; semantic dispatch is admitted only through the execute schema selected by the
@@ -187,8 +211,8 @@ remaining attempt budget. Worker accepted connection ≤ 2000 ms; metadata reads
 contracted. Handshake packets ≤ 4096 B in the private extension wrappers (the existing frame
 decoder may buffer ≤ 65536 B before the tighter payload rejection). At most four handshake packets
 and two request/reply pairs per probe connection (one per execute connection); payload caps are
-§2's pre-envelope byte sizes (probe: 1024 B / 4096 B, depth 4) and §2b's (execute: 2048 B /
-4096 B, depth 6). Worker
+§2's pre-envelope byte sizes (probe: 1024 B / 4096 B, depth 4) and §2b's (execute: 4096 B /
+4096 B, depth 6; declared input bytes ≤ 1 MiB per batch over the artifact stream). Worker
 service total owned FDs ≤ 64 including the metadata source's 13 retained + ≤ 32 transient (45 at
 peak), leaving ≤ 19 for generation, listener, connection and fence descriptors. Digests, nonces
 and bytes never appear in logs. Metadata syscall stalls cannot be preempted; control enforces its
@@ -217,9 +241,11 @@ after each reply, and a later stage postcondition consumes the observation only 
 same-writer authority/currentness transaction. Gates reported, never claimed: both native
 architectures; the actual initializer/image/mount/UID/argv packaging of the fixed image (`main()`,
 `bin/worker`); allowed-manifest and OCI identity trust; the worker semantic registry beyond the
-two code-owned read-class operations, `status` and `describe_tools` over an empty tool table
-(T087: `invoke_tool`, `cancel`, a real tool in the table, an operation input in the execute
-grammar, every model-bearing port); the control observer and admission; positive Linux authentication (non-Linux hosts fail closed at
+two code-owned read-class operations, `status` and `describe_tools` over an empty tool table,
+and the artifact input leg with no registered consumer (T087: `invoke_tool`, `cancel`, a real
+tool in the table, an operation input in the execute grammar, worker-returned output artifacts,
+the ports contract's per-tool input count (up to 32 for T-tool; the wire carries 8), role and
+selector binding to the ToolDefinition, every model-bearing port); the control observer and admission; positive Linux authentication (non-Linux hosts fail closed at
 peer credentials). No human/key authority, metadata mount, allowlist or core fixture lock is
 introduced; boot IDs are per-process `secrets.token_hex(32)` labels, never owner accounts;
 `app/workers` imports nothing from `app.api`, `app.static` or `app.server`; no GUI.

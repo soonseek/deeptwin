@@ -34,25 +34,30 @@ from uuid import uuid4
 
 from ..domain.refs import DomainContractError, canonical_json, uuid_string
 from ..extensions.lineage_contracts import LineageContractError
+from ..extensions.port_contracts import OPERATION_CONTRACTS
 from . import broker, ipc_root, listener
 from . import extension_metadata as em
+from .artifact_stream import ArtifactStreamError, BytesSink, StreamLimits, receive_batch
+from .artifact_stream_transport import ConnectionStreamTransport
 from .extension_channel import ExtensionChannelError, extension_channel
 from .extension_execute_messages import (
-    REQUEST_SCHEMA as EXECUTE_SCHEMA,
-)
-from .extension_execute_messages import (
+    MAX_INPUT_BYTES,
     ExecuteMessageError,
     encode_execute_reply,
     parse_execute_request,
     peek_schema,
 )
-from .extension_probe_messages import (
-    REQUEST_SCHEMA as PROBE_SCHEMA,
+from .extension_execute_messages import (
+    REQUEST_SCHEMA as EXECUTE_SCHEMA,
 )
 from .extension_probe_messages import (
+    PORT_CONTRACT_VERSION,
     ProbeMessageError,
     encode_probe_reply,
     parse_probe_request,
+)
+from .extension_probe_messages import (
+    REQUEST_SCHEMA as PROBE_SCHEMA,
 )
 
 REQUEST_TYPE = "extension-request-v1"
@@ -84,6 +89,7 @@ class ProbeServiceClosed(ProbeServiceError):
 
 _SANITIZED = (
     ProbeServiceError,
+    ArtifactStreamError,
     listener.ListenerError,
     broker.BrokerError,
     ipc_root.IpcRootError,
@@ -101,7 +107,14 @@ _ZERO_USAGE = {
 }
 
 
-def _status_operation(service: WorkerProbeService, request, deadline) -> dict:
+# the artifact leg's admission limits: the ports contract's input ceiling, in
+# owned in-memory sinks (the worker's root is read-only; no scratch volume)
+EXECUTE_STREAM_LIMITS = StreamLimits(max_artifact_bytes=MAX_INPUT_BYTES,
+                                     max_total_bytes=MAX_INPUT_BYTES)
+ARTIFACT_TYPE = "extension-artifact-v1"
+
+
+def _status_operation(service: WorkerProbeService, request, deadline, inputs) -> dict:
     """`status` (tool-port-v1): the worker's own reading — the same actual
     measurement the probe reports — as the operation's output."""
 
@@ -135,7 +148,7 @@ def _status_operation(service: WorkerProbeService, request, deadline) -> dict:
 _TOOLS: tuple[dict, ...] = ()
 
 
-def _describe_tools_operation(service: WorkerProbeService, request, deadline) -> dict:
+def _describe_tools_operation(service: WorkerProbeService, request, deadline, inputs) -> dict:
     """`describe_tools` (tool-port-v1, query class, read effect): the tools this
     worker actually offers, from its code-owned table; the execute grammar carries
     no selection yet, so the whole table is described."""
@@ -170,15 +183,28 @@ class _Router:
     def operations(self) -> tuple[str, ...]:
         return tuple(sorted(self._handlers))
 
-    def execute(self, service: WorkerProbeService, request, deadline) -> dict:
+    def admits_inputs(self, request) -> bool:
+        """Whether this request's declared artifact inputs are admissible before a
+        single artifact frame is read: the operation must be registered and its port
+        contract's request artifact profile must take request artifacts (profile `E`
+        takes none — `status` and `describe_tools` today)."""
+
+        if not request.artifact_inputs:
+            return True
+        if request.operation not in self._handlers:
+            return False
+        profile = OPERATION_CONTRACTS[(PORT_CONTRACT_VERSION, request.operation)]
+        return profile.request_artifact_profile != "E"
+
+    def execute(self, service: WorkerProbeService, request, deadline, inputs=()) -> dict:
         handler = self._handlers.get(request.operation)
-        if handler is None:
+        if handler is None or not self.admits_inputs(request):
             return {
                 "outcome": "failed", "usage_finality": "final",
                 "remote_terminal_observed": "failed", "reason_code": "validation_failed",
                 "usage": dict(_ZERO_USAGE), "output": None,
             }
-        return handler(service, request, deadline)
+        return handler(service, request, deadline, inputs)
 
     def __reduce__(self) -> object:
         raise TypeError("the worker router is not serializable")
@@ -349,7 +375,26 @@ class WorkerProbeService:
             raise ProbeServiceError()
         message_id = uuid_string(envelope.message_id)
         request = parse_execute_request(frame.payload)
-        result = self._router.execute(self, request, deadline)
+        inputs = ()
+        if request.artifact_inputs and self._router.admits_inputs(request):
+            # the declared batch follows the request on the channel's artifact type;
+            # a stream violation is terminal — the connection closes without a reply
+            # and the operation never runs (control records an unknown outcome).
+            # The descriptor build stays inside the sanitizer: the domain admits any
+            # non-nil canonical UUID as a message id, the stream's grammar only a
+            # versioned one
+            try:
+                descriptors = request.artifact_descriptors(message_id)
+                sinks = [BytesSink() for _ in descriptors]
+                transport = ConnectionStreamTransport(
+                    connection, message_type=ARTIFACT_TYPE, correlation_id=message_id,
+                    deadline=deadline,
+                )
+                receive_batch(transport, descriptors, sinks, limits=EXECUTE_STREAM_LIMITS)
+            except ArtifactStreamError:
+                raise ProbeServiceError() from None
+            inputs = tuple(zip(request.artifact_inputs, [sink.value for sink in sinks], strict=True))
+        result = self._router.execute(self, request, deadline, inputs)
         reply_id = str(uuid4())
         while reply_id == message_id:
             reply_id = str(uuid4())

@@ -105,7 +105,8 @@ def test_request_round_trips_canonically_and_is_bounded():
     value = json.loads(raw)
     assert value["schema_version"] == xm.REQUEST_SCHEMA == "extension-execute-v1"
     assert set(value) == {"schema_version", "attempt_id", "execution_id", "operation",
-                          "envelope_ref", "profile_ref", "remaining_ms", "challenge"}
+                          "envelope_ref", "profile_ref", "remaining_ms", "challenge",
+                          "artifact_batch_id", "artifact_inputs"}
     assert xm.peek_schema(raw) == xm.REQUEST_SCHEMA
     probe = encode_probe_request(request_blob_sha256="a" * 64, receipt_blob_sha256="b" * 64,
                                  challenge=os.urandom(32))
@@ -277,3 +278,56 @@ def test_the_tool_table_is_bounded_by_the_bytes_the_reply_can_carry():
     with pytest.raises(xm.ExecuteMessageError):
         xm._output({"tools": [tool_entry(artifact_roles=[f"r{n:03d}" for n in range(xm.MAX_ROLES + 1)])]},
                    "describe_tools")
+
+
+def artifact_input(**changes):
+    return {"ordinal": 0, "media_type": "text/plain", "declared_size": 5, "sha256": "d" * 64,
+            "role": "source", **changes}
+
+
+def test_the_request_declares_its_artifact_inputs_for_the_bounded_stream():
+    # T018/T087 artifact leg: the request names the bytes that will follow it over the
+    # channel's artifact type — descriptors only (ordinal, media, size, digest, role) under
+    # a fresh batch id; the bytes themselves travel only over the digest/chunk/credit stream
+    batch = str(uuid4())
+    items = [artifact_input(), artifact_input(ordinal=1, media_type="application/json", declared_size=0,
+                                              sha256="e" * 64, role="arguments")]
+    raw = xm.encode_execute_request(**request_fields(operation="invoke_tool", artifact_batch_id=batch,
+                                                     artifact_inputs=items))
+    assert len(raw) <= xm.MAX_REQUEST_BYTES == 4_096
+    parsed = xm.parse_execute_request(raw)
+    assert parsed.artifact_batch_id == batch
+    assert [item.as_dict() for item in parsed.artifact_inputs] == items
+    request_id = str(uuid4())
+    descriptors = parsed.artifact_descriptors(request_id)
+    assert [(d.batch_id, d.request_id, d.ordinal, d.count, d.media_type, d.declared_size, d.sha256)
+            for d in descriptors] == [(batch, request_id, 0, 2, "text/plain", 5, "d" * 64),
+                                      (batch, request_id, 1, 2, "application/json", 0, "e" * 64)]
+    # no inputs: no batch id, an empty list, and the old wire shape still parses
+    plain = xm.parse_execute_request(xm.encode_execute_request(**request_fields()))
+    assert plain.artifact_batch_id is None and plain.artifact_inputs == ()
+    assert plain.artifact_descriptors(request_id) == []
+    assert json.loads(xm.encode_execute_request(**request_fields()))["artifact_inputs"] == []
+    for change in [
+        {"artifact_batch_id": batch},  # a batch id without items
+        {"artifact_inputs": items},  # items without a batch id
+        {"artifact_batch_id": "nope", "artifact_inputs": items},
+        {"artifact_batch_id": batch, "artifact_inputs": [artifact_input(ordinal=1)]},  # not the exact sequence
+        {"artifact_batch_id": batch, "artifact_inputs": [artifact_input(), artifact_input()]},
+        {"artifact_batch_id": batch, "artifact_inputs": [artifact_input(ordinal=n) for n in range(xm.MAX_ARTIFACT_INPUTS + 1)]},
+        {"artifact_batch_id": batch, "artifact_inputs": [artifact_input(declared_size=xm.MAX_INPUT_BYTES + 1)]},
+        {"artifact_batch_id": batch, "artifact_inputs": [artifact_input(declared_size=xm.MAX_INPUT_BYTES),
+                                                         artifact_input(ordinal=1, declared_size=1)]},  # total
+        {"artifact_batch_id": batch, "artifact_inputs": [artifact_input(media_type="Text/Plain")]},
+        {"artifact_batch_id": batch, "artifact_inputs": [artifact_input(sha256="D" * 64)]},
+        {"artifact_batch_id": batch, "artifact_inputs": [artifact_input(role="Bad Role")]},
+        {"artifact_batch_id": batch, "artifact_inputs": [{**artifact_input(), "extra": 1}]},
+        {"artifact_batch_id": batch, "artifact_inputs": [artifact_input(declared_size=-1)]},
+        {"artifact_batch_id": batch, "artifact_inputs": "nope"},
+    ]:
+        with pytest.raises(xm.ExecuteMessageError):
+            xm.encode_execute_request(**request_fields(operation="invoke_tool", **change))
+    forged = json.loads(raw)
+    forged["artifact_inputs"][0]["ordinal"] = 1
+    with pytest.raises(xm.ExecuteMessageError):
+        xm.parse_execute_request(canonical_json(forged))

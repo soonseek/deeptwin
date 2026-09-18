@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from ..domain.refs import DomainContractError, EntityRef, canonical_json, uuid_string
 from ..domain.wire import WireInputError, WireLimits, parse_json_object
 from ..extensions.port_contracts import EFFECT_CLASSES
+from .artifact_stream import ArtifactDescriptor, ArtifactStreamError
 from .extension_probe_messages import (
     OPERATIONS,
     _component,
@@ -45,6 +46,8 @@ from .extension_probe_messages import (
 )
 
 __all__ = [
+    "MAX_ARTIFACT_INPUTS",
+    "MAX_INPUT_BYTES",
     "MAX_REMAINING_MS",
     "MAX_REPLY_BYTES",
     "MAX_REQUEST_BYTES",
@@ -60,6 +63,7 @@ __all__ = [
     "REQUEST_SCHEMA",
     "USAGE_FIELDS",
     "USAGE_FINALITIES",
+    "ArtifactInputDeclaration",
     "ExecuteMessageError",
     "ExecuteReply",
     "ExecuteRequest",
@@ -72,7 +76,7 @@ __all__ = [
 
 REQUEST_SCHEMA = "extension-execute-v1"
 REPLY_SCHEMA = "extension-execute-result-v1"
-MAX_REQUEST_BYTES = 2_048
+MAX_REQUEST_BYTES = 4_096  # since the artifact leg: up to eight declared inputs
 MAX_REPLY_BYTES = 4_096
 _MAX_UINT32 = 2**32 - 1
 # mirrored from app/runtime/ledger.py (pinned equal by test); never imported
@@ -93,9 +97,17 @@ USAGE_FIELDS = (
 _REF_FIELDS = ("kind", "id", "version", "sha256")
 _REQUEST_FIELDS = (
     "schema_version", "attempt_id", "execution_id", "operation", "envelope_ref",
-    "profile_ref", "remaining_ms", "challenge",
+    "profile_ref", "remaining_ms", "challenge", "artifact_batch_id", "artifact_inputs",
 )
 MAX_REMAINING_MS = 30_000  # the channel's operation cap
+# the request's declared artifact inputs (T018/T087 artifact leg): descriptors
+# only — the bytes travel after the request frame over the channel's artifact
+# type through the digest/chunk/credit stream, bounded by the ports contract's
+# `max_input_bytes` ceiling and admitted into owned in-memory sinks
+_ARTIFACT_INPUT_FIELDS = ("ordinal", "media_type", "declared_size", "sha256", "role")
+MAX_ARTIFACT_INPUTS = 8
+MAX_INPUT_BYTES = 1_048_576  # per artifact and for the batch (extension-ports.md resource_limits)
+_PLACEHOLDER_ID = "00000000-0000-4000-8000-000000000000"
 _REPLY_FIELDS = (
     "schema_version", "attempt_id", "operation", "challenge", "outcome",
     "usage_finality", "remote_terminal_observed", "reason_code", "usage", "output",
@@ -145,6 +157,22 @@ class ExecuteMessageError(ValueError):
         super().__init__("invalid execute message")
 
 
+@dataclass(frozen=True, slots=True)
+class ArtifactInputDeclaration:
+    """One declared request artifact: its position, media type, exact size and
+    digest, and the role it plays for the operation (ports contract artifact roles)."""
+
+    ordinal: int
+    media_type: str
+    declared_size: int
+    sha256: str
+    role: str
+
+    def as_dict(self) -> dict:
+        return {"ordinal": self.ordinal, "media_type": self.media_type,
+                "declared_size": self.declared_size, "sha256": self.sha256, "role": self.role}
+
+
 # nonces never appear in logs: the values hide them from repr/str
 @dataclass(frozen=True, slots=True)
 class ExecuteRequest:
@@ -155,6 +183,25 @@ class ExecuteRequest:
     profile_ref: EntityRef
     remaining_ms: int
     challenge: bytes = field(repr=False)
+    artifact_batch_id: str | None = None
+    artifact_inputs: tuple[ArtifactInputDeclaration, ...] = ()
+
+    def artifact_descriptors(self, request_id: str) -> list[ArtifactDescriptor]:
+        """The stream descriptors of the declared batch under this request's id
+        (the request frame's message id, known to both ends)."""
+
+        request_id = _uuid(request_id)
+        if not self.artifact_inputs:
+            return []
+        return [
+            ArtifactDescriptor(
+                batch_id=self.artifact_batch_id, request_id=request_id,
+                ordinal=item.ordinal, count=len(self.artifact_inputs),
+                media_type=item.media_type, declared_size=item.declared_size,
+                sha256=item.sha256,
+            )
+            for item in self.artifact_inputs
+        ]
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,6 +232,43 @@ def _operation(value) -> str:
     if type(value) is not str or value not in OPERATIONS:
         raise ExecuteMessageError()
     return value
+
+
+def _artifact_input(value, ordinal, count) -> ArtifactInputDeclaration:
+    if type(value) is not dict or tuple(sorted(value)) != tuple(sorted(_ARTIFACT_INPUT_FIELDS)):
+        raise ExecuteMessageError()
+    if value["ordinal"] != ordinal or type(value["ordinal"]) is not int:
+        raise ExecuteMessageError()  # the exact ordered sequence
+    size = value["declared_size"]
+    if type(size) is not int or not 0 <= size <= MAX_INPUT_BYTES:
+        raise ExecuteMessageError()
+    media = value["media_type"]
+    if type(media) is not str or len(media.encode("utf-8", "strict")) > 128:
+        raise ExecuteMessageError()  # the wire's string bound, closed on encode as on parse
+    try:
+        # the stream's own descriptor grammar validates media type and digest
+        ArtifactDescriptor(batch_id=_PLACEHOLDER_ID, request_id=_PLACEHOLDER_ID, ordinal=ordinal,
+                           count=count, media_type=value["media_type"], declared_size=size,
+                           sha256=value["sha256"])
+    except (ArtifactStreamError, TypeError, ValueError):
+        raise ExecuteMessageError() from None
+    return ArtifactInputDeclaration(
+        ordinal=ordinal, media_type=value["media_type"], declared_size=size,
+        sha256=value["sha256"], role=_wrap(_identifier, value["role"]),
+    )
+
+
+def _artifact_inputs(batch_id, items) -> tuple[str | None, tuple[ArtifactInputDeclaration, ...]]:
+    if type(items) is not list or len(items) > MAX_ARTIFACT_INPUTS:
+        raise ExecuteMessageError()
+    if not items:
+        if batch_id is not None:
+            raise ExecuteMessageError()  # a batch id names a batch
+        return None, ()
+    declarations = tuple(_artifact_input(item, index, len(items)) for index, item in enumerate(items))
+    if sum(item.declared_size for item in declarations) > MAX_INPUT_BYTES:
+        raise ExecuteMessageError()
+    return _uuid(batch_id), declarations
 
 
 def _member(value, allowed) -> str:
@@ -362,8 +446,14 @@ def peek_schema(raw) -> str:
 
 def encode_execute_request(
     *, attempt_id, execution_id, operation, envelope_ref, profile_ref, remaining_ms,
-    challenge,
+    challenge, artifact_batch_id=None, artifact_inputs=(),
 ) -> bytes:
+    if type(artifact_inputs) in (tuple, list):
+        artifact_inputs = [
+            item.as_dict() if type(item) is ArtifactInputDeclaration else item
+            for item in artifact_inputs
+        ]
+    batch_id, declarations = _artifact_inputs(artifact_batch_id, artifact_inputs)
     return _wrap(_encode, {
         "schema_version": REQUEST_SCHEMA,
         "attempt_id": _uuid(attempt_id),
@@ -373,12 +463,15 @@ def encode_execute_request(
         "profile_ref": _ref_value(profile_ref, "runtime_profile").as_dict(),
         "remaining_ms": _remaining(remaining_ms),
         "challenge": _nonce_text(_wrap(_nonce_bytes, challenge)),
+        "artifact_batch_id": batch_id,
+        "artifact_inputs": [item.as_dict() for item in declarations],
     }, max_bytes=MAX_REQUEST_BYTES)
 
 
 def parse_execute_request(raw) -> ExecuteRequest:
     value = _parse(raw, schema=REQUEST_SCHEMA, fields=_REQUEST_FIELDS,
                    max_bytes=MAX_REQUEST_BYTES)
+    batch_id, declarations = _artifact_inputs(value["artifact_batch_id"], value["artifact_inputs"])
     return ExecuteRequest(
         attempt_id=_uuid(value["attempt_id"]),
         execution_id=_uuid(value["execution_id"]),
@@ -387,6 +480,8 @@ def parse_execute_request(raw) -> ExecuteRequest:
         profile_ref=_ref_dict(value["profile_ref"], "runtime_profile"),
         remaining_ms=_remaining(value["remaining_ms"]),
         challenge=_wrap(_parse_nonce, value["challenge"]),
+        artifact_batch_id=batch_id,
+        artifact_inputs=declarations,
     )
 
 

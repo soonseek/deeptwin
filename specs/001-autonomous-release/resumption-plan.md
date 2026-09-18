@@ -2451,8 +2451,11 @@ one closed read boundary, pending-write results); the shell's supported session 
 (`shell-session-client-supported.md`: `session.mjs` — base path from the location, the token from `GET {base}session`,
 the request adapter for the observer and the approvals module); the run view's DOM half landed over it
 (`run-panel-dom-t048.md`: `run-panel.mjs`, not yet mounted — the shell has no run source); the worker's
-`describe_tools` landed over its empty tool table (`worker-describe-tools-t087.md`). Next: the artifact stream,
-the shell's run source (graph/run creation surface) before the mount, then a real tool / `invoke_tool` (T087).
+`describe_tools` landed over its empty tool table (`worker-describe-tools-t087.md`); the artifact input leg of the
+execute exchange landed over T018's bounded stream (`worker-artifact-input-leg-t018-t087.md`: declared inputs,
+profile-gated admission, typed unknown on a broken stream; no registered consumer yet). Next: the shell's run
+source (graph/run creation surface) before the run panel's mount, then a real tool / `invoke_tool` over the leg
+(T087), then worker-returned output artifacts.
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;

@@ -65,4 +65,44 @@ class FrameCodecTransport:
         return frame.payload
 
 
-__all__ = ["FrameCodecTransport"]
+class ConnectionStreamTransport:
+    """A ``StreamTransport`` over one owning extension connection (either end):
+    every stream message is one authenticated frame of the channel's artifact
+    type stamped with the execute request's message id as its correlation."""
+
+    __slots__ = ("_connection", "_correlation_id", "_deadline", "_message_type")
+
+    def __init__(self, connection, *, message_type: str, correlation_id: str,
+                 deadline: broker.Deadline) -> None:
+        if not callable(getattr(connection, "write", None)) or not callable(
+                getattr(connection, "read", None)):
+            raise ArtifactStreamError("artifact stream requires an extension connection")
+        if type(deadline) is not broker.Deadline:
+            raise ArtifactStreamError("artifact stream requires a bounded deadline")
+        self._connection = connection
+        self._message_type = message_type
+        self._correlation_id = correlation_id
+        self._deadline = deadline
+
+    def send(self, payload: bytes) -> None:
+        try:
+            self._connection.write(
+                message_id=str(uuid4()), correlation_id=self._correlation_id,
+                message_type=self._message_type, payload=payload, deadline=self._deadline,
+            )
+        except broker.BrokerError as exc:
+            raise ArtifactStreamError("artifact stream frame could not be sent") from exc
+
+    def receive(self) -> bytes:
+        try:
+            frame = self._connection.read(deadline=self._deadline)
+        except broker.BrokerError as exc:
+            raise ArtifactStreamError("artifact stream frame could not be read") from exc
+        envelope = frame.envelope
+        if (envelope.message_type != self._message_type
+                or envelope.correlation_id != self._correlation_id):
+            raise ArtifactStreamError("unexpected frame on the artifact stream")
+        return frame.payload
+
+
+__all__ = ["ConnectionStreamTransport", "FrameCodecTransport"]

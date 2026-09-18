@@ -1256,3 +1256,15 @@ Covering **47 / 97 / 48** in separate processes (the descriptor checks are order
 Ruff clean. Details and hashes in `worker-describe-tools-t087.md`. Full regression follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6241 passed, 2 skipped, 1 warning, 369
 subtests passed in 901.52s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## T018/T087 — the artifact input leg of the execute exchange (2026-09-18)
+
+RED retained (no `artifact_batch_id` in the grammar, no `ExtensionArtifactInput`, the worker refusing nothing), GREEN
+after the request grammar, `ConnectionStreamTransport`, the worker's profile-gated receive before the operation and
+control's send leg after the request frame. Independent review ACCEPT WITH CHANGES (MUST: `transport_stream` was not a
+registered error code — a bare ValueError on control's stream failure; the descriptor build sat outside the worker's
+sanitizer; SHOULD: the effect comment's reason, one-shot sources vs the owner's retry, ports-contract parity stated
+open, weak/missing tests; three NITs) folded in RED-first. Covering **58 / 139 / 63 / 42** in separate processes;
+Ruff clean. Details and hashes in `worker-artifact-input-leg-t018-t087.md`. Full regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6252 passed, 2 skipped, 1 warning, 369
+subtests passed in 904.43s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
