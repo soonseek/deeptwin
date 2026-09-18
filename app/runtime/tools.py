@@ -7,9 +7,10 @@ model or extension outputs — and nothing outside :func:`register_tool` can
 add a tool or widen its declared argument profile. Tool arguments carry no
 artifact or selector refs (the ordered artifact-input bindings are the sole
 byte-input authority) and no host paths. The required grant must match the
-definition exactly; external and irreversible effects require an explicit
-effect approval; the declared replay policy is authoritative — an
-irreversible request never re-dispatches, a dedup tool returns its original
+definition exactly; the ports contract's external family of effects (external
+and instance-critical) requires an explicit effect approval; the declared
+replay policy is authoritative — a
+`replay="never"` request never re-dispatches, a dedup tool returns its original
 envelope; and an unknown external outcome holds the request, blocking every
 retry until a real reconciliation records the final outcome. Values are
 issued, never constructed; the registry is an immutable value, so
@@ -22,13 +23,21 @@ import re
 from dataclasses import dataclass, field
 
 from ..domain.refs import DomainContractError, EntityRef
+from ..extensions import port_contracts
 from .gateway import carries_host_path
 
-EFFECT_CLASSES = frozenset({"read", "write", "external", "irreversible"})
+# the effect vocabulary is the ports contract's closed set (extension-ports.md `effect-class`;
+# runtime.md §6), the one set the ledger's ToolCall and the extension transport's gate share;
+# this boundary's earlier four names (read/write/external/irreversible) are refused — a
+# legacy `external` never stated reversibility, and a second spelling would shadow the set
+EFFECT_CLASSES = port_contracts.EFFECT_CLASSES
+# the ports' external family (X): external and instance-critical effects need an explicit approval
+APPROVAL_EFFECTS = frozenset(
+    name for name, family in port_contracts.EFFECT_FAMILIES.items() if family == "X"
+)
 IDEMPOTENCY = frozenset({"idempotent", "dedup_by_request", "none"})
 REPLAY_POLICIES = frozenset({"safe", "requires_confirmation", "never"})
 OUTCOMES = frozenset({"succeeded", "failed", "unknown"})
-_APPROVAL_EFFECTS = frozenset({"external", "irreversible"})
 _ARGUMENT_TYPES = {"str": str, "int": int, "bool": bool}
 _UUID = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z"
@@ -146,7 +155,8 @@ def register_tool(registry, value) -> ToolRegistry:
         for item in registry.definitions
     ):
         raise ToolBoundaryError("a tool id/version registers exactly once")
-    if value["effect_class"] not in EFFECT_CLASSES:
+    effect_class = value["effect_class"]
+    if type(effect_class) is not str or effect_class not in EFFECT_CLASSES:
         raise ToolBoundaryError("unknown tool effect class")
     if value["idempotency"] not in IDEMPOTENCY:
         raise ToolBoundaryError("unknown idempotency behavior")
@@ -189,7 +199,7 @@ def register_tool(registry, value) -> ToolRegistry:
         version=version,
         argument_keys=tuple(sorted(keys_value.items())),
         result_schema_id=_text(value["result_schema_id"], "result schema id"),
-        effect_class=value["effect_class"],
+        effect_class=effect_class,
         required_grant=_ref(value["required_grant"], "grant", "required grant"),
         filesystem_scopes=tuple(value["filesystem_scopes"]),
         network_scopes=tuple(value["network_scopes"]),
@@ -265,7 +275,7 @@ def dispatch_tool(registry, value):
         raise ToolBoundaryError("the grant does not match this tool")
     approval = value["effect_approval_ref"]
     parsed_approval = None
-    if tool.effect_class in _APPROVAL_EFFECTS:
+    if tool.effect_class in APPROVAL_EFFECTS:
         if approval is None:
             raise ToolBoundaryError(
                 f"a {tool.effect_class} effect requires an explicit approval"
@@ -345,6 +355,10 @@ def record_outcome(registry, request_id, outcome) -> ToolRegistry:
         if entry[0] == request_id:
             if entry[3] is not None and entry[3] != "unknown":
                 raise ToolBoundaryError("a final outcome never changes")
+            if outcome == "unknown" and port_contracts.EFFECT_FAMILIES[entry[4].effect_class] == "N":
+                # the ports forbid an unknown effect for the N family: nothing external
+                # could be in doubt, so nothing is held
+                raise ToolBoundaryError("a no-effect or read tool has no unknown outcome")
             entry = (entry[0], entry[1], entry[2], outcome, entry[4])
             touched = True
         entries.append(entry)
@@ -359,6 +373,7 @@ def record_outcome(registry, request_id, outcome) -> ToolRegistry:
 
 
 __all__ = [
+    "APPROVAL_EFFECTS",
     "EFFECT_CLASSES",
     "IDEMPOTENCY",
     "OUTCOMES",

@@ -1389,3 +1389,12 @@ the attempt; SHOULD: the suppress path and the crash window unpinned) folded in 
 **157**; Ruff clean. Details and hashes in `vouched-transport-effect-journal.md`. Full regression: **6341 passed,
 2 skipped** (Linux-only), 369 subtests, 16m18s.
 
+## T047/T087 — one effect vocabulary for tools (2026-09-19)
+
+RED retained (the vocabulary pins against the four names), GREEN after the boundary took the ports contract's seven
+and the external family as its approval rule. Independent review ACCEPT WITH CHANGES (MUST: a legacy `external`
+mapped to the weaker sibling; two vocabularies widening the closed registry — both closed by refusing the legacy
+names; SHOULD: an N-family unknown outcome, runtime.md's row) folded in RED-first. Boundary+audit **39**, covering
+**147**; Ruff clean. Details and hashes in `tool-effect-vocabulary-t047-t087.md`. Full regression: **6351 passed,
+2 skipped** (Linux-only), 369 subtests, 17m04s.
+

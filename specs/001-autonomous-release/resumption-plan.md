@@ -2467,9 +2467,11 @@ gate landed (`tool-call-record-effect-gate-t087.md`); the `output_bytes` reserva
 and the intake page over it (`intake-page-t023.md`); the approval's verification landed
 (`tool-call-approval-verification-t087.md`); the transport's vouched dispatch effect is journaled by the dispatcher
 (`vouched-transport-effect-journal.md`; a free retry after a committed send intent is a ledger trust-model change
-runtime.md does not yet state — open). Next: the ToolDefinition-backed gate (T087; the tool boundary's four-class
-effect vocabulary must first be reconciled with the ports contract's seven), then run creation from the intake once
-the consent/design line records a run consent and an environment.
+runtime.md does not yet state — open); the tool boundary's effect vocabulary is the ports contract's
+(`tool-effect-vocabulary-t047-t087.md`). Next: the ToolDefinition-backed gate (T087: the compilation authority's
+trusted tool definition carries the effect class, a binding to an approval-requiring tool must name its approval
+scope, the transport takes the class from the binding and refuses a disagreeing mirror), then run creation from the
+intake once the consent/design line records a run consent and an environment.
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;

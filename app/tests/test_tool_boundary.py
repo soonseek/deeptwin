@@ -5,9 +5,9 @@ or an unknown version is unsupported, never interpreted, and nothing an
 extension or model outputs can add a tool or widen its input profile. Tool
 arguments carry no artifact or selector refs — the ordered artifact-input
 bindings are the sole byte-input authority — and no argument smuggles a
-host path. The required grant must match exactly; external and
-irreversible effects require an explicit effect approval; replay policy is
-authoritative (an irreversible tool never re-dispatches the same request,
+host path. The required grant must match exactly; the ports contract's
+external family of effects requires an explicit effect approval; replay policy
+is authoritative (a `replay="never"` tool never re-dispatches the same request,
 a dedup tool returns the same envelope); and an unknown external outcome
 holds the request — retry is blocked until reconciliation (runtime.md §6,
 FR-014/FR-032; T047 core slice).
@@ -36,7 +36,7 @@ def definition(**overrides):
         "version": 1,
         "argument_keys": {"page_range": "str", "dpi": "int"},
         "result_schema_id": "pdf-render-result-v1",
-        "effect_class": "write",
+        "effect_class": "write_reversible",
         "required_grant": ref("grant", 1401),
         "filesystem_scopes": ["workspace/artifacts"],
         "network_scopes": [],
@@ -123,7 +123,7 @@ def test_the_grant_must_match_exactly():
 
 def test_external_and_irreversible_effects_require_approval():
     state = register_tool(registry(), definition(
-        tool_id="deeptwin_send_email", effect_class="irreversible",
+        tool_id="deeptwin_send_email", effect_class="external_irreversible",
         replay="never", idempotency="none",
     ))
     with pytest.raises(ToolBoundaryError):
@@ -134,14 +134,14 @@ def test_external_and_irreversible_effects_require_approval():
         tool_id="deeptwin_send_email", request_id=REQUEST2,
         effect_approval_ref=ref("action_approval", 1405),
     ))
-    assert envelope.effect_class == "irreversible"
+    assert envelope.effect_class == "external_irreversible"
     # a write tool never demands an approval it does not need
     _envelope, _state = dispatch_tool(state, request())
 
 
 def test_replay_policy_is_authoritative():
     state = register_tool(registry(), definition(
-        tool_id="deeptwin_send_email", effect_class="irreversible",
+        tool_id="deeptwin_send_email", effect_class="external_irreversible",
         replay="never", idempotency="none",
     ))
     _envelope, state = dispatch_tool(state, request(
@@ -161,7 +161,7 @@ def test_replay_policy_is_authoritative():
 
 def test_an_unknown_outcome_blocks_retry_until_reconciled():
     state = register_tool(registry(), definition(
-        tool_id="deeptwin_send_email", effect_class="external",
+        tool_id="deeptwin_send_email", effect_class="external_irreversible",
         replay="requires_confirmation", idempotency="none",
     ))
     _envelope, state = dispatch_tool(state, request(
@@ -194,3 +194,58 @@ def test_values_are_issued_never_constructed():
         dispatch_tool(object(), request())
     with pytest.raises(ToolBoundaryError):
         register_tool(object(), definition())
+
+
+def test_the_effect_vocabulary_is_the_ports_contracts_and_nothing_else():
+    # T087 reconciliation: the ports contract's seven effect classes are the one closed set
+    # the ledger, the transport and this boundary share; the boundary's earlier four names
+    # (read/write/external/irreversible) are refused — a legacy `external` never states
+    # reversibility, and a second spelling would shadow the closed set; the approval rule is
+    # the ports' external family, equal to the ledger's own set
+    from app.extensions import port_contracts
+    from app.runtime import ledger, tools
+
+    assert tools.EFFECT_CLASSES == port_contracts.EFFECT_CLASSES
+    assert tools.APPROVAL_EFFECTS == ledger.TOOL_APPROVAL_EFFECTS
+    assert tools.APPROVAL_EFFECTS == {name for name, family in port_contracts.EFFECT_FAMILIES.items() if family == "X"}
+    assert not hasattr(tools, "LEGACY_EFFECT_CLASSES")
+    for name in sorted(port_contracts.EFFECT_CLASSES):
+        state = register_tool(open_tool_registry(), definition(effect_class=name))
+        assert state.definitions[0].effect_class == name
+    for refused in ("write", "external", "irreversible", "READ", ["read"], None, 1):
+        with pytest.raises(ToolBoundaryError):
+            register_tool(open_tool_registry(), definition(effect_class=refused))
+
+
+@pytest.mark.parametrize("effect", ["none", "read"])
+def test_a_no_effect_or_read_tool_never_records_an_unknown_outcome(effect):
+    # review closure: the ports forbid an unknown effect for the N family (nothing external
+    # could be in doubt), so the boundary refuses to hold such a request on an unknown outcome
+    state = register_tool(open_tool_registry(), definition(effect_class=effect))
+    _envelope, state = dispatch_tool(state, request())
+    with pytest.raises(ToolBoundaryError):
+        record_outcome(state, REQUEST, "unknown")
+    state = record_outcome(state, REQUEST, "failed")
+    assert state.dispatched[0][3] == "failed"
+
+
+@pytest.mark.parametrize("effect", ["external_reversible", "external_irreversible",
+                                    "instance_critical_secret", "instance_critical_storage"])
+def test_every_external_family_effect_requires_an_approval(effect):
+    state = register_tool(open_tool_registry(), definition(
+        tool_id="deeptwin_send_email", effect_class=effect, replay="never", idempotency="none"))
+    with pytest.raises(ToolBoundaryError):
+        dispatch_tool(state, request(tool_id="deeptwin_send_email", request_id=REQUEST2))
+    envelope, _state = dispatch_tool(state, request(
+        tool_id="deeptwin_send_email", request_id=REQUEST2, effect_approval_ref=ref("action_approval", 1405)))
+    assert envelope.effect_class == effect
+
+
+@pytest.mark.parametrize("effect", ["none", "read", "write_reversible"])
+def test_no_other_effect_takes_an_approval(effect):
+    state = register_tool(open_tool_registry(), definition(effect_class=effect))
+    with pytest.raises(ToolBoundaryError):
+        dispatch_tool(state, request(effect_approval_ref=ref("action_approval", 1405)))
+    envelope, _state = dispatch_tool(state, request())
+    assert envelope.effect_class == effect
+

@@ -241,7 +241,7 @@ def test_f11_visits_and_attempts_are_issued_values():
 
 def test_f12_the_envelope_records_grant_and_approval():
     state = register_tool(registry(), definition(
-        tool_id="deeptwin_send_email", effect_class="irreversible",
+        tool_id="deeptwin_send_email", effect_class="external_irreversible",
         replay="never", idempotency="none",
     ))
     envelope, _state = dispatch_tool(state, request(
