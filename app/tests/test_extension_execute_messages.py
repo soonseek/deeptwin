@@ -106,7 +106,7 @@ def test_request_round_trips_canonically_and_is_bounded():
     assert value["schema_version"] == xm.REQUEST_SCHEMA == "extension-execute-v1"
     assert set(value) == {"schema_version", "attempt_id", "execution_id", "operation",
                           "envelope_ref", "profile_ref", "remaining_ms", "challenge",
-                          "artifact_batch_id", "artifact_inputs"}
+                          "artifact_batch_id", "artifact_inputs", "tool"}
     assert xm.peek_schema(raw) == xm.REQUEST_SCHEMA
     probe = encode_probe_request(request_blob_sha256="a" * 64, receipt_blob_sha256="b" * 64,
                                  challenge=os.urandom(32))
@@ -208,9 +208,11 @@ def test_reply_encoding_refuses_values_outside_the_grammar(change):
 
 
 def tool_entry(**changes):
+    # a worker cannot reference control-side schema records: an entry carries the digests
+    # of its argument and result schemas (control resolves and seals them later)
     return {
         "tool_id": "read_text", "version": "1.0.0",
-        "argument_schema_ref": ref("artifact").as_dict(), "result_schema_ref": ref("artifact").as_dict(),
+        "argument_schema_sha256": "a" * 64, "result_schema_sha256": "b" * 64,
         "effect_class": "read", "artifact_roles": ["source"], **changes,
     }
 
@@ -228,7 +230,7 @@ def test_describe_tools_reply_carries_the_ports_contract_tool_shape_or_an_empty_
     full = xm.parse_execute_reply(xm.encode_execute_reply(**reply_fields(
         operation="describe_tools", output={"tools": [entry]})))
     assert full.output == {"tools": [entry]}
-    assert type(full.output["tools"][0]["argument_schema_ref"]) is dict
+    assert full.output["tools"][0]["argument_schema_sha256"] == "a" * 64
     for change in [
         {"operation": "describe_tools", "output": output()},
         {"operation": "status", "output": {"tools": []}},
@@ -240,7 +242,8 @@ def test_describe_tools_reply_carries_the_ports_contract_tool_shape_or_an_empty_
         {"operation": "describe_tools", "output": {"tools": [tool_entry(artifact_roles=["b", "a"])]}},
         {"operation": "describe_tools", "output": {"tools": [tool_entry(artifact_roles=["a", "a"])]}},
         {"operation": "describe_tools", "output": {"tools": [tool_entry(version="")]}},
-        {"operation": "describe_tools", "output": {"tools": [tool_entry(argument_schema_ref="x")]}},
+        {"operation": "describe_tools", "output": {"tools": [tool_entry(argument_schema_sha256="x")]}},
+        {"operation": "describe_tools", "output": {"tools": [tool_entry(result_schema_sha256="B" * 64)]}},
         {"operation": "describe_tools", "output": {"tools": [{**tool_entry(), "extra": 1}]}},
         {"operation": "describe_tools", "output": {"tools": [tool_entry(), tool_entry()]}},  # ids unique
         {"operation": "describe_tools", "output": {"tools": [tool_entry(tool_id="b"), tool_entry(tool_id="a")]}},
@@ -262,18 +265,20 @@ def test_the_tool_table_is_bounded_by_the_bytes_the_reply_can_carry():
     def maximal(index):
         return tool_entry(
             tool_id=f"t{index}" + "x" * 62, version="v" * 64,
-            argument_schema_ref=EntityRef("deployment_receipt_consumption", str(uuid4()), 2**32 - 1, "c" * 64).as_dict(),
-            result_schema_ref=EntityRef("deployment_receipt_consumption", str(uuid4()), 2**32 - 1, "c" * 64).as_dict(),
+            argument_schema_sha256="c" * 64, result_schema_sha256="d" * 64,
             artifact_roles=[f"r{role}" + "y" * 62 for role in range(8)],
         )
     assert xm.MAX_TOOLS_BYTES + 1_024 <= xm.MAX_REPLY_BYTES  # the rest of the reply always fits
     one = xm._output({"tools": [maximal(0)]}, "describe_tools")
     assert len(canonical_json(one)) <= xm.MAX_TOOLS_BYTES
+    too_many = next(count for count in range(2, xm.MAX_TOOLS + 1)
+                    if len(canonical_json({"tools": [maximal(index) for index in range(count)]})) > xm.MAX_TOOLS_BYTES)
+    assert too_many == 4  # pinned: a bound drift is visible
     with pytest.raises(xm.ExecuteMessageError):
-        xm._output({"tools": [maximal(index) for index in range(4)]}, "describe_tools")
+        xm._output({"tools": [maximal(index) for index in range(too_many)]}, "describe_tools")
     with pytest.raises(xm.ExecuteMessageError):
         xm.encode_execute_reply(**reply_fields(operation="describe_tools",
-                                               output={"tools": [maximal(index) for index in range(4)]}))
+                                               output={"tools": [maximal(index) for index in range(too_many)]}))
     # the roles list has its own bound, distinct from the table's
     with pytest.raises(xm.ExecuteMessageError):
         xm._output({"tools": [tool_entry(artifact_roles=[f"r{n:03d}" for n in range(xm.MAX_ROLES + 1)])]},
@@ -292,7 +297,8 @@ def test_the_request_declares_its_artifact_inputs_for_the_bounded_stream():
     batch = str(uuid4())
     items = [artifact_input(), artifact_input(ordinal=1, media_type="application/json", declared_size=0,
                                               sha256="e" * 64, role="arguments")]
-    raw = xm.encode_execute_request(**request_fields(operation="invoke_tool", artifact_batch_id=batch,
+    tool = {"tool_id": "text_profile", "version": "1.0.0"}
+    raw = xm.encode_execute_request(**request_fields(operation="invoke_tool", tool=tool, artifact_batch_id=batch,
                                                      artifact_inputs=items))
     assert len(raw) <= xm.MAX_REQUEST_BYTES == 4_096
     parsed = xm.parse_execute_request(raw)
@@ -326,8 +332,68 @@ def test_the_request_declares_its_artifact_inputs_for_the_bounded_stream():
         {"artifact_batch_id": batch, "artifact_inputs": "nope"},
     ]:
         with pytest.raises(xm.ExecuteMessageError):
-            xm.encode_execute_request(**request_fields(operation="invoke_tool", **change))
+            xm.encode_execute_request(**request_fields(operation="invoke_tool", tool=tool, **change))
     forged = json.loads(raw)
     forged["artifact_inputs"][0]["ordinal"] = 1
     with pytest.raises(xm.ExecuteMessageError):
         xm.parse_execute_request(canonical_json(forged))
+
+
+def test_invoke_tool_names_its_tool_in_the_request_and_answers_with_the_tools_result():
+    # T087 first real tool: the request names the exact tool (id, version) it invokes — only
+    # for invoke_tool; the reply's output is {tool_id, version, result} with the tool's own
+    # bounded JSON result, sealed control-side as the attempt's artifact
+    tool = {"tool_id": "text_profile", "version": "1.0.0"}
+    raw = xm.encode_execute_request(**request_fields(operation="invoke_tool", tool=tool))
+    parsed = xm.parse_execute_request(raw)
+    assert parsed.tool == xm.ToolSelection(tool_id="text_profile", version="1.0.0")
+    assert xm.parse_execute_request(xm.encode_execute_request(**request_fields())).tool is None
+    assert json.loads(xm.encode_execute_request(**request_fields()))["tool"] is None
+    for change in [
+        {"operation": "invoke_tool"},  # invoke_tool names its tool
+        {"operation": "status", "tool": tool},  # a query names none
+        {"operation": "invoke_tool", "tool": {"tool_id": "Bad Id", "version": "1.0.0"}},
+        {"operation": "invoke_tool", "tool": {"tool_id": "text_profile", "version": ""}},
+        {"operation": "invoke_tool", "tool": {"tool_id": "text_profile"}},
+        {"operation": "invoke_tool", "tool": {**tool, "arguments": {}}},  # no argument grammar yet
+        {"operation": "invoke_tool", "tool": "text_profile"},
+    ]:
+        with pytest.raises(xm.ExecuteMessageError):
+            xm.encode_execute_request(**request_fields(**change))
+    result = {"byte_count": 5, "char_count": 5, "line_count": 1, "word_count": 1, "sha256": "e" * 64, "utf8": True}
+    output = {"tool_id": "text_profile", "version": "1.0.0", "result": result}
+    reply = xm.parse_execute_reply(xm.encode_execute_reply(**reply_fields(
+        operation="invoke_tool", output=output,
+        usage={**usage_fields(), "tool_calls": 1, "output_bytes": len(canonical_json(output))})))
+    assert reply.output == output
+    assert "invoke_tool" in xm.OUTPUT_OPERATIONS
+    for change in [
+        {"operation": "invoke_tool", "output": {"tools": []}},
+        {"operation": "invoke_tool", "output": {"tool_id": "text_profile", "version": "1.0.0"}},
+        {"operation": "invoke_tool", "output": {**output, "extra": 1}},
+        {"operation": "invoke_tool", "output": {**output, "result": []}},
+        {"operation": "invoke_tool", "output": {**output, "result": "x"}},
+        {"operation": "invoke_tool", "output": {**output, "tool_id": "Bad Id"}},
+        {"operation": "status", "output": output},
+        {"operation": "describe_tools", "output": output},
+    ]:
+        with pytest.raises(xm.ExecuteMessageError):
+            xm.encode_execute_reply(**reply_fields(**change))
+
+
+def test_a_tool_result_is_closed_over_the_wire_limits_at_encode_as_at_parse():
+    # review closure: a handler result the reply cannot carry must be refused where it is
+    # built, not by control's parser (which would make a deterministic tool unknown)
+    def reply(result):
+        output = {"tool_id": "text_profile", "version": "1.0.0", "result": result}
+        return reply_fields(operation="invoke_tool", output=output, usage={**usage_fields(), "tool_calls": 1})
+    nested = {"a": {"b": {"c": {"d": {"e": 1}}}}}  # five levels under the result
+    with pytest.raises(xm.ExecuteMessageError):
+        xm.encode_execute_reply(**reply(nested))
+    with pytest.raises(xm.ExecuteMessageError):
+        xm.encode_execute_reply(**reply({"text": "x" * 129}))
+    with pytest.raises(xm.ExecuteMessageError):
+        xm.encode_execute_reply(**reply({f"k{n:02d}": n for n in range(17)}))
+    with pytest.raises(xm.ExecuteMessageError):
+        xm.encode_execute_reply(**reply({"n": 1.5}))  # no floats on the wire
+    xm.parse_execute_reply(xm.encode_execute_reply(**reply({"a": {"b": {"c": 1}}})))

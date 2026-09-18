@@ -76,14 +76,15 @@ def staged(slot, monkeypatch):  # noqa: F811 - the imported fixture
             pass
 
 
-def bound(subject, transport):
-    # the status output is a few hundred bytes: reserve within the policy cap
+def bound(subject, transport, *, tool_calls=0):
+    # the status output is a few hundred bytes: reserve within the policy cap; a tool
+    # call reserves its one call
     return na.NodeAttemptDispatcher.build(
         ledger=subject.ledger, budget_book=subject.book, owner=subject.owner,
         bindings={"writer": na.AttemptBinding.create(
             envelope_ref=subject.refs.envelope, profile_ref=subject.refs.profile,
             budget_policy_ref=subject.refs.budget, deadline_at_ms=10_000,
-            lease_duration_ms=1_000, model_calls=1, tool_calls=0, node_visits=1,
+            lease_duration_ms=1_000, model_calls=1, tool_calls=tool_calls, node_visits=1,
             loop_rounds=0, output_bytes=1_000, candidates=0, api_microunits=None,
             principal=subject.principal, grant=subject.grant,
         )},
@@ -118,7 +119,7 @@ def test_status_executes_over_the_socket_and_the_sealed_output_is_the_node_resul
     assert content["execution_id"] == writer_execution
     assert content["output"]["service_identity"] == spec.responder_service
     assert content["output"]["component"]["build_identity_digest"] == tree["identity_digest"]
-    assert content["output"]["runtime"]["registered_operations"] == ["describe_tools", "status"]
+    assert content["output"]["runtime"]["registered_operations"] == ["describe_tools", "invoke_tool", "status"]
     assert record.body["parent_refs"] == [subject.refs.envelope.as_dict()]
     # the sealed artifact is addressable from the send command: one id per attempt
     assert content["send_command_id"] == na._command_identity(writer_attempt_id(run), "send")
@@ -145,12 +146,12 @@ def test_describe_tools_executes_over_the_socket_and_seals_the_empty_catalogue(t
     writer_execution = sch.execution_identity(run.run_id, "writer", 0)
     content = subject.domain.get(dict(outcome.result_refs)[writer_execution]).body["content"]
     assert content["operation"] == "describe_tools"
-    assert content["output"] == {"tools": []}
+    assert content["output"] == {"tools": ep.tool_descriptions()}
     attempt_id = writer_attempt_id(run)
     assert subject.ledger.get_attempt(attempt_id)["terminal_outcome"] == "succeeded"
     row = budget_row(subject, na.reservation_identity(attempt_id))
     assert row["state"] == "finalized"
-    assert row["actual_output_bytes"] == len(canonical_json({"tools": []}))
+    assert row["actual_output_bytes"] == len(canonical_json({"tools": ep.tool_descriptions()}))
     assert row["actual_model_calls"] == 0 and row["actual_tool_calls"] == 0
     assert box.get("served") == 1, box
 
@@ -199,7 +200,7 @@ def test_a_read_class_query_cannot_dodge_the_measured_usage_by_claiming_it_unkno
 def test_the_control_measured_queries_are_exactly_the_operations_with_an_output_grammar():
     from app.workers.extension_execute_messages import OPERATIONS, OUTPUT_OPERATIONS
 
-    assert xt._CONTROL_MEASURED == OUTPUT_OPERATIONS == frozenset({"status", "describe_tools"})
+    assert xt._CONTROL_MEASURED == OUTPUT_OPERATIONS == frozenset({"status", "describe_tools", "invoke_tool"})
     assert OUTPUT_OPERATIONS <= OPERATIONS
 
 
@@ -217,8 +218,16 @@ def test_build_refuses_artifact_inputs_for_operations_that_take_none(tmp_path):
             xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE,
                                                slot_number=SLOT, operation=operation, artifact_inputs=(item,))
     built = xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE,
-                                               slot_number=SLOT, operation="invoke_tool", artifact_inputs=(item,))
+                                               slot_number=SLOT, operation="invoke_tool", artifact_inputs=(item,),
+                                               tool=TEXT_PROFILE)
     assert built.operation == "invoke_tool"
+    # invoke_tool names its tool at build; a query never does
+    with pytest.raises(ValueError):
+        xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
+                                           operation="invoke_tool", artifact_inputs=(item,))
+    with pytest.raises(ValueError):
+        xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
+                                           operation="status", tool=TEXT_PROFILE)
     with pytest.raises(TypeError):
         xt.ExtensionArtifactInput(media_type="text/plain", declared_size=5, sha256="d" * 64, role="document_source",
                                   payload=BytesSource(b"hello"))  # bytes, not a source
@@ -237,24 +246,22 @@ def test_declared_inputs_stream_after_the_request_and_a_typed_result_settles(tmp
 
     def recording(self, service, request, deadline, inputs):
         seen["inputs"] = [(item.role, raw) for item, raw in inputs]
+        # a tool that ran and failed made its one call (control verifies exactly that)
         return {"outcome": "failed", "usage_finality": "final", "remote_terminal_observed": "failed",
-                "reason_code": "provider_terminal", "usage": dict(ep._ZERO_USAGE), "output": None}
+                "reason_code": "provider_terminal", "usage": {**ep._ZERO_USAGE, "tool_calls": 1}, "output": None}
 
     monkeypatch.setattr(ep._Router, "execute", recording)
-    # the test seam: `invoke_tool` is unregistered today, so the router would refuse the
-    # inputs before reading a byte; admit them to exercise the byte route itself
-    monkeypatch.setattr(ep._Router, "admits_inputs", lambda self, request: True)
     box = staged[3]
     subject, run = started(tmp_path / "ledger")
     payload = b"y" * 20_000
-    inputs = (xt.ExtensionArtifactInput(media_type="application/octet-stream", declared_size=len(payload),
+    inputs = (xt.ExtensionArtifactInput(media_type="text/plain", declared_size=len(payload),
                                         sha256=sha256(payload).hexdigest(), role="document_source",
                                         payload=payload),)
     transport_ = xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE,
                                                     slot_number=SLOT, operation="invoke_tool",
-                                                    artifact_inputs=inputs)
+                                                    artifact_inputs=inputs, tool=TEXT_PROFILE)
     with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
-        build(subject, run, bound(subject, transport_), handlers(subject, [])).run()
+        build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
     assert seen["inputs"] == [("document_source", payload)]
     attempt_id = writer_attempt_id(run)
     stored = subject.ledger.get_attempt(attempt_id)
@@ -270,7 +277,7 @@ def test_declared_inputs_stream_after_the_request_and_a_typed_result_settles(tmp
         bindings={"writer": na.AttemptBinding.create(
             envelope_ref=subject.refs.envelope, profile_ref=subject.refs.profile,
             budget_policy_ref=subject.refs.budget, deadline_at_ms=10_000,
-            lease_duration_ms=1_000, model_calls=1, tool_calls=0, node_visits=1,
+            lease_duration_ms=1_000, model_calls=1, tool_calls=1, node_visits=1,
             loop_rounds=0, output_bytes=1_000, candidates=0, api_microunits=None,
             principal=subject.principal, grant=subject.grant,
         )},
@@ -290,7 +297,6 @@ def test_a_stream_failure_on_control_is_a_typed_unknown_outcome(tmp_path, staged
 
     called = []
     monkeypatch.setattr(ep._Router, "execute", lambda *args, **kwargs: called.append(args) or {})
-    monkeypatch.setattr(ep._Router, "admits_inputs", lambda self, request: True)
     box = staged[3]
     subject, run = started(tmp_path / "ledger")
     error = xt.ExtensionTransportError("transport_stream")
@@ -302,7 +308,7 @@ def test_a_stream_failure_on_control_is_a_typed_unknown_outcome(tmp_path, staged
     object.__setattr__(item, "payload", b"HELLO")
     transport_ = xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE,
                                                     slot_number=SLOT, operation="invoke_tool",
-                                                    artifact_inputs=(item,))
+                                                    artifact_inputs=(item,), tool=TEXT_PROFILE)
     raised = []
     original = xt.ExtensionAttemptTransport.__call__
 
@@ -323,6 +329,198 @@ def test_a_stream_failure_on_control_is_a_typed_unknown_outcome(tmp_path, staged
     assert type(box.get("error")) is ep.ProbeServiceError
 
 
+TEXT_PROFILE = {"tool_id": "text_profile", "version": "1.0.0"}
+
+
+def test_the_real_tool_runs_end_to_end_and_its_result_is_the_sealed_node_result(tmp_path, staged):
+    # T087 first real tool over the artifact leg: control declares and streams the text,
+    # the worker runs `text_profile`, the reply's result is sealed as the attempt's artifact
+    # and the node's result; the attempt settles with one tool call and measured bytes
+    from hashlib import sha256
+
+    box = staged[3]
+    subject, run = started(tmp_path / "ledger")
+    text = b"one two\nthree\n"
+    inputs = (xt.ExtensionArtifactInput(media_type="text/plain", declared_size=len(text),
+                                        sha256=sha256(text).hexdigest(), role="document_source", payload=text),)
+    transport_ = xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE,
+                                                    slot_number=SLOT, operation="invoke_tool",
+                                                    artifact_inputs=inputs, tool=TEXT_PROFILE)
+    outcome = build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
+    writer_execution = sch.execution_identity(run.run_id, "writer", 0)
+    content = subject.domain.get(dict(outcome.result_refs)[writer_execution]).body["content"]
+    assert content["operation"] == "invoke_tool"
+    assert content["output"] == {"tool_id": "text_profile", "version": "1.0.0", "result": {
+        "byte_count": len(text), "char_count": len(text.decode()), "line_count": 2, "word_count": 3,
+        "sha256": sha256(text).hexdigest(), "utf8": True}}
+    attempt_id = writer_attempt_id(run)
+    stored = subject.ledger.get_attempt(attempt_id)
+    assert stored["terminal_outcome"] == "succeeded" and stored["usage_finality"] == "final"
+    row = budget_row(subject, na.reservation_identity(attempt_id))
+    assert row["state"] == "finalized"
+    assert row["actual_tool_calls"] == 1 and row["actual_model_calls"] == 0
+    assert row["actual_output_bytes"] == len(canonical_json(content["output"]))
+    assert box.get("served") == 1, box
+
+
+def test_the_worker_cannot_inflate_the_usage_of_invoke_tool(tmp_path, staged, monkeypatch):
+    # a tool call's usage is verified by control: one tool call, no model call, measured bytes
+    from hashlib import sha256
+
+    box = staged[3]
+    original = ep._Router.execute
+
+    def inflated(self, service, request, deadline, inputs=()):
+        result = original(self, service, request, deadline, inputs)
+        return {**result, "usage": {**result["usage"], "model_calls": 1}}
+
+    monkeypatch.setattr(ep._Router, "execute", inflated)
+    subject, run = started(tmp_path / "ledger")
+    text = b"hello"
+    inputs = (xt.ExtensionArtifactInput(media_type="text/plain", declared_size=5, sha256=sha256(text).hexdigest(),
+                                        role="document_source", payload=text),)
+    transport_ = xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE,
+                                                    slot_number=SLOT, operation="invoke_tool",
+                                                    artifact_inputs=inputs, tool=TEXT_PROFILE)
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
+    assert subject.ledger.get_attempt(writer_attempt_id(run))["terminal_outcome"] == "outcome_unknown"
+    assert box.get("served") == 1, box
+
+
+def observed_call(monkeypatch):
+    raised = []
+    original = xt.ExtensionAttemptTransport.__call__
+
+    def observed(self, permit, request, window):
+        try:
+            return original(self, permit, request, window)
+        except BaseException as failure:
+            raised.append(failure)
+            raise
+
+    monkeypatch.setattr(xt.ExtensionAttemptTransport, "__call__", observed)
+    return raised
+
+
+def text_input(text, *, role="document_source", media_type="text/plain"):
+    from hashlib import sha256
+
+    return xt.ExtensionArtifactInput(media_type=media_type, declared_size=len(text),
+                                     sha256=sha256(text).hexdigest(), role=role, payload=text)
+
+
+def tool_transport(subject, inputs, tool=None):
+    return xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE,
+                                              slot_number=SLOT, operation="invoke_tool",
+                                              artifact_inputs=inputs, tool=TEXT_PROFILE if tool is None else tool)
+
+
+def test_build_mirrors_the_tools_input_contract_so_a_refusal_is_never_lost_as_unknown(tmp_path):
+    # review MUST: the worker refuses a call declaring the wrong inputs before reading a
+    # byte, but control streamed regardless and met the reply mid-stream — a definitive
+    # validation_failed became outcome_unknown. Control mirrors the tool's input contract
+    # at build (a static mirror pinned to the worker's entry until ToolDefinition records)
+    subject, _run = started(tmp_path / "ledger")
+    text = b"hello"
+    assert xt.TOOL_INPUT_CONTRACTS[("text_profile", "1.0.0")] == (("document_source", "text/plain"),)
+    assert tuple(ep.TEXT_PROFILE_ENTRY["artifact_roles"]) == ("document_source",)
+    assert dict(xt.TOOL_EFFECTS) == {("text_profile", "1.0.0"): ep.TEXT_PROFILE_ENTRY["effect_class"]}
+    tool_transport(subject, (text_input(text),))  # the exact contract builds
+    for inputs in [
+        (text_input(text), text_input(text)),
+        (text_input(text, role="attachment"),),
+        (text_input(text, media_type="application/octet-stream"),),
+        (),
+    ]:
+        with pytest.raises(ValueError):
+            tool_transport(subject, inputs)
+    with pytest.raises(ValueError):
+        tool_transport(subject, (text_input(text),), tool={"tool_id": "other_tool", "version": "1.0.0"})
+    with pytest.raises(ValueError):
+        tool_transport(subject, (text_input(text),), tool={"tool_id": "text_profile", "version": "2.0.0"})
+
+
+def test_a_result_for_a_tool_control_did_not_name_is_never_sealed(tmp_path, staged, monkeypatch):
+    # review MUST: the reply's tool id and version must be the ones control named
+    box = staged[3]
+    original = ep._Router.execute
+
+    def swapped(self, service, request, deadline, inputs=()):
+        result = original(self, service, request, deadline, inputs)
+        return {**result, "output": {**result["output"], "tool_id": "other_tool", "version": "9.9.9"},
+                "usage": {**result["usage"], "output_bytes": len(canonical_json(
+                    {**result["output"], "tool_id": "other_tool", "version": "9.9.9"}))}}
+
+    monkeypatch.setattr(ep._Router, "execute", swapped)
+    raised = observed_call(monkeypatch)
+    subject, run = started(tmp_path / "ledger")
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, bound(subject, tool_transport(subject, (text_input(b"hello"),)), tool_calls=1),
+              handlers(subject, [])).run()
+    assert raised[0].code == "transport_mismatch"
+    assert subject.ledger.get_attempt(writer_attempt_id(run))["terminal_outcome"] == "outcome_unknown"
+    assert box.get("served") == 1, box
+
+
+def test_a_text_profile_result_that_contradicts_the_streamed_bytes_is_never_sealed(tmp_path, staged, monkeypatch):
+    # review closure: the result is the worker's claim; the two facts control already holds
+    # (the input's digest and size) are cross-checked before the claim is sealed
+    box = staged[3]
+    original = ep._Router.execute
+
+    def forged(self, service, request, deadline, inputs=()):
+        result = original(self, service, request, deadline, inputs)
+        output = {**result["output"], "result": {**result["output"]["result"], "sha256": "f" * 64}}
+        return {**result, "output": output, "usage": {**result["usage"], "output_bytes": len(canonical_json(output))}}
+
+    monkeypatch.setattr(ep._Router, "execute", forged)
+    raised = observed_call(monkeypatch)
+    subject, run = started(tmp_path / "ledger")
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, bound(subject, tool_transport(subject, (text_input(b"hello"),)), tool_calls=1),
+              handlers(subject, [])).run()
+    assert raised[0].code == "transport_mismatch"
+    assert box.get("served") == 1, box
+
+
+@pytest.mark.parametrize("reply", [
+    {"outcome": "outcome_unknown", "usage_finality": "unknown", "remote_terminal_observed": "not_observed",
+     "reason_code": "transport_unknown", "usage": None, "output": None},
+    {"outcome": "cancelled", "usage_finality": "final", "remote_terminal_observed": "cancelled",
+     "reason_code": "cancel_requested", "usage": {**ep._ZERO_USAGE, "tool_calls": 1}, "output": None},
+    {"outcome": "failed", "usage_finality": "final", "remote_terminal_observed": "failed",
+     "reason_code": "deadline", "usage": dict(ep._ZERO_USAGE), "output": None},  # a call that ran claims its call
+])
+def test_a_read_effect_tool_cannot_answer_unknown_cancelled_or_an_uncalled_failure(tmp_path, staged, monkeypatch, reply):
+    # review closure: an in-process deterministic read-effect tool has no unknown or cancelled
+    # terminal — such an answer dodges the usage verification; and a failure after the call
+    # ran claims exactly one call (zero only for a refusal before it: validation_failed,
+    # permission_denied)
+    box = staged[3]
+    monkeypatch.setattr(ep._Router, "execute", lambda *args, **kwargs: dict(reply))
+    raised = observed_call(monkeypatch)
+    subject, run = started(tmp_path / "ledger")
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, bound(subject, tool_transport(subject, (text_input(b"hello"),)), tool_calls=1),
+              handlers(subject, [])).run()
+    assert raised[0].code == "transport_mismatch"
+    assert box.get("served") == 1, box
+
+
+def test_a_refusal_before_the_call_and_a_failure_after_it_settle_with_their_own_usage(tmp_path, staged, monkeypatch):
+    box = staged[3]
+    monkeypatch.setattr(ep._Router, "execute", lambda *args, **kwargs: {
+        "outcome": "failed", "usage_finality": "final", "remote_terminal_observed": "failed",
+        "reason_code": "permission_denied", "usage": dict(ep._ZERO_USAGE), "output": None})
+    subject, run = started(tmp_path / "ledger")
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, bound(subject, tool_transport(subject, (text_input(b"hello"),)), tool_calls=1),
+              handlers(subject, [])).run()
+    assert subject.ledger.get_attempt(writer_attempt_id(run))["terminal_outcome"] == "failed"
+    assert box.get("served") == 1, box
+
+
 def test_the_input_ceilings_agree_across_the_grammar_the_worker_and_control():
     from app.workers import extension_execute_messages as xm
 
@@ -335,7 +533,7 @@ def test_an_unregistered_operation_is_admitted_as_a_failed_attempt(tmp_path, sta
     box = staged[3]
     subject, run = started(tmp_path / "ledger")
     with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
-        build(subject, run, dispatcher(subject, transport(subject, operation="invoke_tool")),
+        build(subject, run, dispatcher(subject, transport(subject, operation="cancel")),
               handlers(subject, [])).run()
     attempt_id = writer_attempt_id(run)
     stored = subject.ledger.get_attempt(attempt_id)

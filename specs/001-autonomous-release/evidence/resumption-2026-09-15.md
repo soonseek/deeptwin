@@ -1291,3 +1291,15 @@ real factory under the hex base. `node --test` **31** (observe 5), shell assets 
 Details and hashes in `observe-page-mount-t048.md`. Full regression follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6258 passed, 2 skipped, 1 warning, 369
 subtests passed in 962.45s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## T087 — the first real tool `text_profile` and `invoke_tool` (2026-09-18)
+
+RED retained (no `tool` field, no `tool=` at build, registry pins at two operations, an empty table), GREEN after the
+grammar, the tool, the operation, the transport and the contract. Independent review ACCEPT WITH CHANGES (MUST:
+control streamed into a worker that had already refused and lost the refusal as unknown → the table mirrored at
+build; control sealed a result for a tool it did not name → checked; SHOULD: the result's digest/size cross-checked,
+encode-side wire limits, the expected-tool-calls rule, unknown/cancelled refused for a read-effect tool, the effect
+gate stated open, the counts' definitions, stale text; NITs) folded in RED-first. Covering **78 / 97 / 84 / 80** in
+separate processes; Ruff clean. Details and hashes in `worker-text-profile-tool-t087.md`. Full regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6278 passed, 2 skipped, 1 warning, 369
+subtests passed in 910.45s** — the two Linux-only skips. Hashes re-verified unchanged before commit.

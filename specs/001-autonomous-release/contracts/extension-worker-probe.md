@@ -87,10 +87,11 @@ worker's owned `ChannelSpec`, not an argv re-derivation. `registered_operations`
 key set of the worker's actual immutable semantic registry — the code-owned operation table
 of `app/workers/extension_probe.py` (`_OPERATIONS`), fixed at import and keyed by
 `tool-port-v1` operation names; since the T087 `describe_tools` slice it is
-`["describe_tools", "status"]` (the execute slice shipped `["status"]`, slice 3 `[]`); a placeholder
+`["describe_tools", "invoke_tool", "status"]` (the execute slice shipped `["status"]`, the tool-table slice
+`["describe_tools", "status"]`, slice 3 `[]`); a placeholder
 handler or a copy of the port catalog is forbidden. `describe_tools` answers from the worker's
-code-owned tool table (`_TOOLS`, fixed at import; empty until a real tool is implemented in the
-worker), never from the port catalog; the execute grammar carries no selection yet, so the whole
+code-owned tool table (`_TOOLS`, fixed at import; `text_profile` since the first-tool slice), never
+from the port catalog; the execute grammar carries no selection yet, so the whole
 table is described. Control does not trust the worker's counters for either read-class query.
 
 ### 2b. Closed execute messages (T087 execute slice)
@@ -135,14 +136,25 @@ a test-only handler under `invoke_tool` (profile `T-tool`).
 by test), `usage` (the seven exact counters iff `usage_finality == "final"`, else `null`),
 `output` (present iff `outcome == "succeeded"`; its grammar is selected by the reply's
 `operation`: for `status` exactly the probe reply's `service_identity` / `component` / `runtime`
-shape; for `describe_tools` exactly `{tools: [{tool_id, version, argument_schema_ref,
-result_schema_ref, effect_class, artifact_roles}]}` after extension-ports.md §3.2 with the wire's
+shape; for `describe_tools` exactly `{tools: [{tool_id, version, argument_schema_sha256,
+result_schema_sha256, effect_class, artifact_roles}]}` after extension-ports.md §3.2 with the wire's
 narrower grammars: `tool_id` and roles are §2 identifiers (no `:`, no `--`, ≤ 64), `version` is
-`[A-Za-z0-9][A-Za-z0-9_.+-]{0,63}` (no spaces or parentheses), references are four-field
-`EntityRef` shapes of any registered kind, `effect_class` a member of the closed effect classes,
+`[A-Za-z0-9][A-Za-z0-9_.+-]{0,63}` (no spaces or parentheses), the schemas are named by their
+sha256 digests — a worker cannot reference control-side schema records; control resolves and seals
+them later (T087) —, `effect_class` a member of the closed effect classes,
 roles sorted unique (≤ 256), one entry per tool in identifier order, at most 8 entries and — the
-binding bound — at most 3072 canonical bytes for the table so the reply can always carry it; a
-success under any other operation is outside the grammar until its output is defined). Invariants: an unknown outcome cannot claim
+binding bound — at most 3072 canonical bytes for the table so the reply can always carry it; for
+`invoke_tool` exactly `{tool_id, version, result}` — the tool's own bounded JSON object, which control
+seals as the attempt's artifact (the ports contract's `{tool_call_ref, result_ref}` are control-side
+records: the sealed artifact is the result, the `ToolCall` record stays open); a success under
+`cancel` is outside the grammar until its output is defined). The request carries `tool`
+(`{tool_id, version}`, required iff the operation is `invoke_tool`; arguments have no wire grammar
+yet — the first tool takes none). The worker's table holds `text_profile` 1.0.0 (effect `read`,
+exactly one `document_source` `text/plain` input, strict UTF-8): byte/character/line/word counts and
+the digest; a call naming another tool or version, or declaring other inputs, is the typed refusal
+`validation_failed` before any byte is read; bytes that are not a text are the tool's own terminal
+failure (`provider_terminal`, one tool call). Control verifies a tool call's usage: exactly one tool
+call (none when refused before it ran), no model call, measured bytes. Invariants: an unknown outcome cannot claim
 a known remote terminal; a succeeded outcome observes `succeeded`; a terminal outcome other than
 `succeeded` cannot observe `succeeded`. An unregistered operation is the typed refusal
 `failed` / `validation_failed` with final zero usage and no output. Control does not trust the
@@ -241,9 +253,10 @@ after each reply, and a later stage postcondition consumes the observation only 
 same-writer authority/currentness transaction. Gates reported, never claimed: both native
 architectures; the actual initializer/image/mount/UID/argv packaging of the fixed image (`main()`,
 `bin/worker`); allowed-manifest and OCI identity trust; the worker semantic registry beyond the
-two code-owned read-class operations, `status` and `describe_tools` over an empty tool table,
-and the artifact input leg with no registered consumer (T087: `invoke_tool`, `cancel`, a real
-tool in the table, an operation input in the execute grammar, worker-returned output artifacts,
+three code-owned operations — `status`, `describe_tools` over the one-tool table, and
+`invoke_tool` running `text_profile` over the artifact input leg (T087: `cancel`, tool arguments
+in the execute grammar, the `ToolCall` record and `{tool_call_ref, result_ref}` control-side,
+schema records resolved from the entries' digests, worker-returned output artifacts,
 the ports contract's per-tool input count (up to 32 for T-tool; the wire carries 8), role and
 selector binding to the ToolDefinition, every model-bearing port); the control observer and admission; positive Linux authentication (non-Linux hosts fail closed at
 peer credentials). No human/key authority, metadata mount, allowlist or core fixture lock is

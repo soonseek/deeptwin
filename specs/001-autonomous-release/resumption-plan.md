@@ -2457,9 +2457,10 @@ profile-gated admission, typed unknown on a broken stream; no registered consume
 as the public snapshot's run list (`run-list-source-t048.md`; a creation surface is blocked on the consent/design
 line — no production path records a run consent, environment or work revision). The shell mount landed as the
 public observation page (`observe-page-mount-t048.md`: `observe.html` beside the `/` stub, the session established
-from the cookie, the list and panel mounted). Next: a real tool / `invoke_tool` over the artifact leg (T087), then
-worker-returned output artifacts, then the owner setup/login UI (T025) so the page is reachable without a
-bootstrap client.
+from the cookie, the list and panel mounted). The first real tool landed (`worker-text-profile-tool-t087.md`: `text_profile` and `invoke_tool` over the leg,
+control mirroring the table and verifying the reply). Next: worker-returned output artifacts (the reverse leg), then
+the owner setup/login UI (T025) so the observation page is reachable without a bootstrap client, then the
+`ToolCall` record and effect gate for a tool call.
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;

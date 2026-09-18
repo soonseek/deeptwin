@@ -11,7 +11,8 @@ nonce. `extension-execute-result-v1` carries the runtime
 ledger's result vocabulary — outcome, usage finality, remote terminal
 observation, typed reason, the exact usage counters iff the usage is final —
 and, for a success, the output whose grammar the reply's operation selects
-(`status`: the worker's own reading; `describe_tools`: its tool table). The
+(`status`: the worker's own reading; `describe_tools`: its tool table;
+`invoke_tool`: the named tool's result). The
 worker package never imports the runtime: the closed sets are mirrored here
 and pinned equal by test.
 
@@ -22,6 +23,7 @@ limits as the probe grammar.
 from __future__ import annotations
 
 import re
+from copy import deepcopy
 from dataclasses import dataclass, field
 
 from ..domain.refs import DomainContractError, EntityRef, canonical_json, uuid_string
@@ -97,8 +99,12 @@ USAGE_FIELDS = (
 _REF_FIELDS = ("kind", "id", "version", "sha256")
 _REQUEST_FIELDS = (
     "schema_version", "attempt_id", "execution_id", "operation", "envelope_ref",
-    "profile_ref", "remaining_ms", "challenge", "artifact_batch_id", "artifact_inputs",
+    "profile_ref", "remaining_ms", "challenge", "artifact_batch_id", "artifact_inputs", "tool",
 )
+# `invoke_tool` names the exact tool it invokes (ports contract: tool_id, tool_version);
+# arguments have no wire grammar yet (the first tool takes none)
+_TOOL_SELECTION_FIELDS = ("tool_id", "version")
+_TOOL_OUTPUT_FIELDS = ("tool_id", "version", "result")
 MAX_REMAINING_MS = 30_000  # the channel's operation cap
 # the request's declared artifact inputs (T018/T087 artifact leg): descriptors
 # only — the bytes travel after the request frame over the channel's artifact
@@ -114,8 +120,11 @@ _REPLY_FIELDS = (
 )
 _OUTPUT_FIELDS = ("service_identity", "component", "runtime")
 # `describe_tools` output (extension-ports.md §3.2): the worker's actual tool table
-_TOOL_FIELDS = ("tool_id", "version", "argument_schema_ref", "result_schema_ref",
+# a worker cannot reference control-side schema records: an entry carries the
+# digests of its argument and result schemas (control resolves and seals later)
+_TOOL_FIELDS = ("tool_id", "version", "argument_schema_sha256", "result_schema_sha256",
                 "effect_class", "artifact_roles")
+_SHA256_TEXT = re.compile(r"[0-9a-f]{64}")
 _TOOLS_FIELDS = ("tools",)
 # the wire's version text is narrower than the ports contract's `version-text`
 # (no spaces or parentheses, 64 chars), as the identifier is narrower than its
@@ -129,7 +138,7 @@ MAX_ROLES = 256  # artifact roles per entry (ports contract: T[] up to 256)
 MAX_TOOLS_BYTES = 3_072
 # the operations whose successful output has a closed grammar here; a success
 # under any other operation is outside the grammar until its output is defined
-OUTPUT_OPERATIONS = frozenset({"status", "describe_tools"})
+OUTPUT_OPERATIONS = frozenset({"status", "describe_tools", "invoke_tool"})
 _KNOWN_SCHEMAS = frozenset({
     PROBE_REQUEST_SCHEMA, PROBE_REPLY_SCHEMA, REQUEST_SCHEMA, REPLY_SCHEMA,
 })
@@ -137,8 +146,8 @@ _KNOWN_SCHEMAS = frozenset({
 
 def _limits(max_bytes: int) -> WireLimits:
     # the probe limits, two levels deeper: the reply nests the runtime's
-    # operation list under the output (depth 5) and a tool entry's schema
-    # references under the tool table (depth 6)
+    # operation list under the output (depth 5) and a tool result's own
+    # objects under the output (three levels, depth 6)
     return WireLimits(
         max_bytes=max_bytes,
         max_depth=6,
@@ -155,6 +164,17 @@ class ExecuteMessageError(ValueError):
     def __init__(self, *_ignored) -> None:
         # copy/pickle re-invoke __init__ with the stored args: accept and drop them
         super().__init__("invalid execute message")
+
+
+@dataclass(frozen=True, slots=True)
+class ToolSelection:
+    """The exact tool an `invoke_tool` request invokes."""
+
+    tool_id: str
+    version: str
+
+    def as_dict(self) -> dict:
+        return {"tool_id": self.tool_id, "version": self.version}
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,6 +205,7 @@ class ExecuteRequest:
     challenge: bytes = field(repr=False)
     artifact_batch_id: str | None = None
     artifact_inputs: tuple[ArtifactInputDeclaration, ...] = ()
+    tool: ToolSelection | None = None
 
     def artifact_descriptors(self, request_id: str) -> list[ArtifactDescriptor]:
         """The stream descriptors of the declared batch under this request's id
@@ -232,6 +253,42 @@ def _operation(value) -> str:
     if type(value) is not str or value not in OPERATIONS:
         raise ExecuteMessageError()
     return value
+
+
+def _version_text(value) -> str:
+    if type(value) is not str or _VERSION_TEXT.fullmatch(value) is None:
+        raise ExecuteMessageError()
+    return value
+
+
+def _tool_selection(value, operation) -> ToolSelection | None:
+    if operation != "invoke_tool":
+        if value is not None:
+            raise ExecuteMessageError()  # a query names no tool
+        return None
+    if type(value) is ToolSelection:
+        value = value.as_dict()
+    if type(value) is not dict or tuple(sorted(value)) != tuple(sorted(_TOOL_SELECTION_FIELDS)):
+        raise ExecuteMessageError()  # invoke_tool names its tool, exactly
+    return ToolSelection(tool_id=_wrap(_identifier, value["tool_id"]),
+                         version=_version_text(value["version"]))
+
+
+def _tool_output(value) -> dict:
+    if type(value) is not dict or tuple(sorted(value)) != tuple(sorted(_TOOL_OUTPUT_FIELDS)):
+        raise ExecuteMessageError()
+    result = value["result"]
+    if type(result) is not dict:
+        raise ExecuteMessageError()
+    # the tool's own JSON object, closed over the wire limits where it is built (depth,
+    # members, items, strings, integers) so a reply the parser would refuse is never sent
+    try:
+        parse_json_object(canonical_json({"output": {"result": result}}), required=("output",),
+                          limits=_limits(MAX_REPLY_BYTES))
+    except (WireInputError, DomainContractError, TypeError, ValueError):
+        raise ExecuteMessageError() from None
+    return {"tool_id": _wrap(_identifier, value["tool_id"]), "version": _version_text(value["version"]),
+            "result": deepcopy(result)}
 
 
 def _artifact_input(value, ordinal, count) -> ArtifactInputDeclaration:
@@ -330,16 +387,17 @@ def _sorted_unique_identifiers(value, limit) -> list[str]:
 def _tool(value) -> dict:
     if type(value) is not dict or tuple(sorted(value)) != tuple(sorted(_TOOL_FIELDS)):
         raise ExecuteMessageError()
-    version = value["version"]
-    if type(version) is not str or _VERSION_TEXT.fullmatch(version) is None:
-        raise ExecuteMessageError()
+    version = _version_text(value["version"])
     if type(value["effect_class"]) is not str or value["effect_class"] not in EFFECT_CLASSES:
         raise ExecuteMessageError()
+    for name in ("argument_schema_sha256", "result_schema_sha256"):
+        if type(value[name]) is not str or _SHA256_TEXT.fullmatch(value[name]) is None:
+            raise ExecuteMessageError()
     return {
         "tool_id": _wrap(_identifier, value["tool_id"]),
         "version": version,
-        "argument_schema_ref": _any_ref_dict(value["argument_schema_ref"]),
-        "result_schema_ref": _any_ref_dict(value["result_schema_ref"]),
+        "argument_schema_sha256": value["argument_schema_sha256"],
+        "result_schema_sha256": value["result_schema_sha256"],
         "effect_class": value["effect_class"],
         "artifact_roles": _sorted_unique_identifiers(value["artifact_roles"], MAX_ROLES),
     }
@@ -368,6 +426,8 @@ def _output(value, operation) -> dict | None:
         raise ExecuteMessageError()  # no success grammar for this operation yet
     if operation == "describe_tools":
         return _tools_output(value)
+    if operation == "invoke_tool":
+        return _tool_output(value)
     if type(value) is not dict or tuple(sorted(value)) != tuple(sorted(_OUTPUT_FIELDS)):
         raise ExecuteMessageError()
     component = _wrap(_component, value["component"])
@@ -446,7 +506,7 @@ def peek_schema(raw) -> str:
 
 def encode_execute_request(
     *, attempt_id, execution_id, operation, envelope_ref, profile_ref, remaining_ms,
-    challenge, artifact_batch_id=None, artifact_inputs=(),
+    challenge, artifact_batch_id=None, artifact_inputs=(), tool=None,
 ) -> bytes:
     if type(artifact_inputs) in (tuple, list):
         artifact_inputs = [
@@ -454,17 +514,20 @@ def encode_execute_request(
             for item in artifact_inputs
         ]
     batch_id, declarations = _artifact_inputs(artifact_batch_id, artifact_inputs)
+    operation = _operation(operation)
+    selection = _tool_selection(tool, operation)
     return _wrap(_encode, {
         "schema_version": REQUEST_SCHEMA,
         "attempt_id": _uuid(attempt_id),
         "execution_id": _uuid(execution_id),
-        "operation": _operation(operation),
+        "operation": operation,
         "envelope_ref": _ref_value(envelope_ref, "execution_envelope").as_dict(),
         "profile_ref": _ref_value(profile_ref, "runtime_profile").as_dict(),
         "remaining_ms": _remaining(remaining_ms),
         "challenge": _nonce_text(_wrap(_nonce_bytes, challenge)),
         "artifact_batch_id": batch_id,
         "artifact_inputs": [item.as_dict() for item in declarations],
+        "tool": None if selection is None else selection.as_dict(),
     }, max_bytes=MAX_REQUEST_BYTES)
 
 
@@ -472,16 +535,18 @@ def parse_execute_request(raw) -> ExecuteRequest:
     value = _parse(raw, schema=REQUEST_SCHEMA, fields=_REQUEST_FIELDS,
                    max_bytes=MAX_REQUEST_BYTES)
     batch_id, declarations = _artifact_inputs(value["artifact_batch_id"], value["artifact_inputs"])
+    operation = _operation(value["operation"])
     return ExecuteRequest(
         attempt_id=_uuid(value["attempt_id"]),
         execution_id=_uuid(value["execution_id"]),
-        operation=_operation(value["operation"]),
+        operation=operation,
         envelope_ref=_ref_dict(value["envelope_ref"], "execution_envelope"),
         profile_ref=_ref_dict(value["profile_ref"], "runtime_profile"),
         remaining_ms=_remaining(value["remaining_ms"]),
         challenge=_wrap(_parse_nonce, value["challenge"]),
         artifact_batch_id=batch_id,
         artifact_inputs=declarations,
+        tool=_tool_selection(value["tool"], operation),
     )
 
 

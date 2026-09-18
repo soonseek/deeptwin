@@ -11,9 +11,9 @@ control-side as an immutable `artifact` record — the worker never touches
 the store — and its reference is the transport result; admission still
 happens only through `accept_result_and_settle`. Any failure raises a typed
 error, which the dispatcher records as `outcome_unknown` (the send may have
-started). No provider, model, effort or paid call is involved: the only
-operations a worker offers today are the read-class queries `status` and
-`describe_tools` (over an empty tool table).
+started). No provider, model, effort or paid call is involved: a worker offers
+the read-class queries `status` and `describe_tools` and `invoke_tool` over its
+one-tool table (`text_profile`, a deterministic read-effect reading).
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from types import MappingProxyType
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from ..deployment.stage_observer import _process_boot_id
@@ -104,8 +105,22 @@ def _unsent(deadline, code_if_open="transport_unavailable"):
     )
 
 
-# the read-class queries whose usage control measures itself (never trusted)
-_CONTROL_MEASURED = frozenset({"status", "describe_tools"})
+# the operations whose usage control verifies itself (never trusted): the
+# read-class queries make no call at all; a tool call is exactly one tool call
+# (none when the worker refused it before it ran: validation_failed,
+# permission_denied)
+_CONTROL_MEASURED = frozenset({"status", "describe_tools", "invoke_tool"})
+_EXPECTED_TOOL_CALLS = {"status": 0, "describe_tools": 0, "invoke_tool": 1}
+_REFUSED_BEFORE_THE_CALL = frozenset({"validation_failed", "permission_denied"})
+# the worker's tool table, mirrored statically on control until ToolDefinition
+# records exist (pinned equal to the worker's entries by test): what each tool
+# takes — so a call declaring other inputs is refused at build, never streamed
+# into a worker that would refuse it before reading a byte (control would only
+# see the reply mid-stream as an unknown outcome) — and its effect class
+TOOL_INPUT_CONTRACTS = MappingProxyType({
+    ("text_profile", "1.0.0"): (("document_source", "text/plain"),),
+})
+TOOL_EFFECTS = MappingProxyType({("text_profile", "1.0.0"): "read"})
 ARTIFACT_TYPE = "extension-artifact-v1"
 _STREAM_LIMITS = StreamLimits(max_artifact_bytes=MAX_INPUT_BYTES, max_total_bytes=MAX_INPUT_BYTES)
 
@@ -146,6 +161,7 @@ class ExtensionArtifactInput:
             envelope_ref=EntityRef("execution_envelope", _PLACEHOLDER, 1, "0" * 64),
             profile_ref=EntityRef("runtime_profile", _PLACEHOLDER, 1, "0" * 64),
             remaining_ms=1, challenge=bytes(_NONCE_BYTES), artifact_batch_id=_PLACEHOLDER,
+            tool={"tool_id": "placeholder", "version": "0"},
             artifact_inputs=[
                 {"ordinal": index, "media_type": self.media_type, "declared_size": self.declared_size,
                  "sha256": self.sha256, "role": self.role} if index == ordinal else
@@ -164,14 +180,14 @@ class ExtensionAttemptTransport:
     """Built only by `build`; one bound operation over one extension slot."""
 
     __slots__ = ("_artifact_inputs", "_attempt_ms", "_domain", "_instance_id", "_operation",
-                 "_slot_number")
+                 "_slot_number", "_tool")
 
     def __init__(self) -> None:
         raise TypeError("Use ExtensionAttemptTransport.build")
 
     @classmethod
     def build(cls, *, domain_store, instance_id, slot_number, operation="status",
-              attempt_ms=ATTEMPT_MS, artifact_inputs=()):
+              attempt_ms=ATTEMPT_MS, artifact_inputs=(), tool=None):
         if type(domain_store) is not DomainStore:
             raise TypeError("Exact DomainStore required")
         if type(instance_id) is not str or not instance_id:
@@ -193,6 +209,28 @@ class ExtensionAttemptTransport:
                 raise ValueError("this operation takes no request artifacts")
             if sum(item.declared_size for item in artifact_inputs) > MAX_INPUT_BYTES:
                 raise ValueError("artifact inputs exceed the input byte ceiling")
+        if (operation == "invoke_tool") != (tool is not None):
+            raise ValueError("invoke_tool names its tool; a query names none")
+        if tool is not None:
+            key = (tool.get("tool_id"), tool.get("version")) if type(tool) is dict else None
+            if key not in TOOL_INPUT_CONTRACTS:
+                raise ValueError("the named tool is not in the worker's table mirror")
+            declared = tuple((item.role, item.media_type) for item in artifact_inputs
+                             if type(item) is ExtensionArtifactInput)
+            if declared != TOOL_INPUT_CONTRACTS[key]:
+                raise ValueError("the declared inputs are not the tool's input contract")
+        if tool is not None:
+            if type(tool) is not dict:
+                raise TypeError("tool must be a {tool_id, version} mapping")
+            try:
+                tool = parse_execute_request(encode_execute_request(
+                    attempt_id=_PLACEHOLDER, execution_id=_PLACEHOLDER, operation="invoke_tool",
+                    envelope_ref=EntityRef("execution_envelope", _PLACEHOLDER, 1, "0" * 64),
+                    profile_ref=EntityRef("runtime_profile", _PLACEHOLDER, 1, "0" * 64),
+                    remaining_ms=1, challenge=bytes(_NONCE_BYTES), tool=tool,
+                )).tool
+            except ExecuteMessageError:
+                raise ValueError("tool selection is outside the grammar") from None
         transport = object.__new__(cls)
         transport._domain = domain_store
         transport._instance_id = instance_id
@@ -200,6 +238,7 @@ class ExtensionAttemptTransport:
         transport._operation = operation
         transport._attempt_ms = attempt_ms
         transport._artifact_inputs = artifact_inputs
+        transport._tool = tool
         return transport
 
     @property
@@ -249,6 +288,7 @@ class ExtensionAttemptTransport:
                 remaining_ms=min(remaining_ms, MAX_REMAINING_MS), challenge=challenge,
                 artifact_batch_id=str(uuid4()) if inputs else None,
                 artifact_inputs=declarations,
+                tool=self._tool,
             )
         except ExecuteMessageError:
             raise ExtensionTransportError("transport_invalid",
@@ -334,25 +374,42 @@ class ExtensionAttemptTransport:
 
     def _result(self, permit, request, reply) -> AttemptTransportResult:
         usage = None
-        if (self._operation in _CONTROL_MEASURED and reply.outcome in ("succeeded", "failed")
-                and reply.usage is None):
-            # a completed read-class query has no unknown usage: control measures
-            # it, so a claim of unknown finality is a dodge, not an observation
+        if self._operation in _CONTROL_MEASURED and reply.outcome not in ("succeeded", "failed"):
+            # a read-class query, and an in-process deterministic read-effect tool, has
+            # no unknown or cancelled terminal: such an answer dodges the verification
+            # (an external-effect tool would be class C for real; none is in the table)
+            raise ExtensionTransportError("transport_mismatch")
+        if self._operation in _CONTROL_MEASURED and reply.usage is None:
+            # a completed query or call has no unknown usage: control measures it,
+            # so a claim of unknown finality is a dodge, not an observation
             raise ExtensionTransportError("transport_mismatch")
         if reply.usage is not None:
+            refused = reply.outcome == "failed" and reply.reason_code in _REFUSED_BEFORE_THE_CALL
             if self._operation in _CONTROL_MEASURED and reply.usage != {
-                "model_calls": 0, "tool_calls": 0, "node_visits": 1, "loop_rounds": 0,
+                "model_calls": 0,
+                "tool_calls": 0 if refused else _EXPECTED_TOOL_CALLS[self._operation],
+                "node_visits": 1, "loop_rounds": 0,
                 "output_bytes": 0 if reply.output is None else len(canonical_json(reply.output)),
                 "candidates": 0, "api_microunits": None,
             }:
-                # a read-class query (`status`, `describe_tools`) makes no model or
-                # tool call and control measures its only real counter itself:
-                # any other claim is a lie
+                # a read-class query makes no call at all; a tool call is exactly one
+                # tool call (none when refused before it ran); control measures the
+                # bytes itself: any other claim is a lie
                 raise ExtensionTransportError("transport_mismatch")
             try:
                 usage = BudgetUsage.create(**reply.usage)
             except (TypeError, ValueError):
                 raise ExtensionTransportError("transport_invalid") from None
+        if self._operation == "invoke_tool" and reply.output is not None:
+            # the result must be the named tool's, and the facts control already holds
+            # about the streamed bytes (digest, size) must agree with its claim; the
+            # rest of the result is the worker's claim, sealed as such
+            if (reply.output["tool_id"], reply.output["version"]) != (self._tool.tool_id, self._tool.version):
+                raise ExtensionTransportError("transport_mismatch")
+            if self._tool.tool_id == "text_profile":
+                result, (item,) = reply.output["result"], self._artifact_inputs
+                if result.get("sha256") != item.sha256 or result.get("byte_count") != item.declared_size:
+                    raise ExtensionTransportError("transport_mismatch")
         result_ref = None
         if reply.outcome == "succeeded":
             result_ref = self._seal(permit, request, reply)

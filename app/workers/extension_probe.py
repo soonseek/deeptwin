@@ -13,7 +13,8 @@ the fences before the first read and after each reply, and closes after the
 second reply. An execute connection (the first frame's schema is
 `extension-execute-v1`) answers exactly one request through the private
 router's code-owned operation table (`_OPERATIONS`: `status` since the T087
-execute slice, `describe_tools` since the tool-table slice) and closes; the probe reply's `registered_operations` is that
+execute slice, `describe_tools` since the tool-table slice, `invoke_tool` over
+the one-tool table since the first-tool slice) and closes; the probe reply's `registered_operations` is that
 table's exact key set. No placeholder handler exists.
 
 A reply is a self-reported observation over one connection; the service
@@ -25,9 +26,10 @@ or `app.server`.
 
 from __future__ import annotations
 
+import re
 import secrets
 import threading
-from copy import deepcopy
+from hashlib import sha256
 from types import MappingProxyType
 from typing import Self
 from uuid import uuid4
@@ -142,10 +144,104 @@ def _status_operation(service: WorkerProbeService, request, deadline, inputs) ->
     }
 
 
+# the first real tool: `text_profile` reads exactly one streamed `document_source`
+# text/plain artifact (strict UTF-8) and returns its byte/character/line/word
+# counts and digest — a deterministic read-effect reading, no arguments
+TEXT_PROFILE_ARGUMENT_SCHEMA = {"type": "object", "additionalProperties": False, "properties": {}}
+TEXT_PROFILE_RESULT_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "required": ["byte_count", "char_count", "line_count", "word_count", "sha256", "utf8"],
+    "properties": {
+        "byte_count": {"type": "integer", "minimum": 0}, "char_count": {"type": "integer", "minimum": 0},
+        "line_count": {"type": "integer", "minimum": 0}, "word_count": {"type": "integer", "minimum": 0},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "utf8": {"const": True},
+    },
+}
+TEXT_PROFILE_ENTRY = MappingProxyType({
+    "tool_id": "text_profile", "version": "1.0.0",
+    "argument_schema_sha256": sha256(canonical_json(TEXT_PROFILE_ARGUMENT_SCHEMA)).hexdigest(),
+    "result_schema_sha256": sha256(canonical_json(TEXT_PROFILE_RESULT_SCHEMA)).hexdigest(),
+    "effect_class": "read", "artifact_roles": ("document_source",),
+})
+_TEXT_PROFILE_INPUT = ("document_source", "text/plain")  # exactly one input of this role and media
+
 # the code-owned tool table of this worker (tool-port-v1 `describe_tools`
-# entries): fixed at import, empty until a real tool is implemented here —
-# never a copy of the port catalogue, never a placeholder
-_TOOLS: tuple[dict, ...] = ()
+# entries): fixed at import — never a copy of the port catalogue, never a
+# placeholder
+_TOOLS: tuple[MappingProxyType, ...] = (TEXT_PROFILE_ENTRY,)
+
+
+def tool_descriptions() -> list[dict]:
+    """The table as `describe_tools` describes it: one plain wire entry per tool."""
+
+    return [{**dict(entry), "artifact_roles": list(entry["artifact_roles"])} for entry in _TOOLS]
+
+
+def _tool_contract_admits(request) -> bool:
+    """Whether an `invoke_tool` request names a tool of the table and declares
+    exactly the inputs that tool takes — checked before any artifact byte is read."""
+
+    if request.tool is None:
+        return False
+    entry = next((item for item in _TOOLS if item["tool_id"] == request.tool.tool_id), None)
+    if entry is None or entry["version"] != request.tool.version:
+        return False
+    if entry["tool_id"] == "text_profile":
+        declared = [(item.role, item.media_type) for item in request.artifact_inputs]
+        return declared == [_TEXT_PROFILE_INPUT]
+    return False
+
+
+_ASCII_WHITESPACE = re.compile(r"[ \t\n\r\f\v]+")
+
+
+def _text_profile(raw: bytes) -> dict | None:
+    """The definitions a non-Python worker can repeat under the same result schema
+    digest: `byte_count` = the bytes; `char_count` = Unicode code points (a BOM is
+    kept and counted); `line_count` = "\\n"-terminated segments plus one final
+    unterminated segment (no other separator breaks a line); `word_count` = runs
+    between ASCII whitespace (space, tab, LF, CR, FF, VT); `sha256` = the bytes'."""
+
+    try:
+        text = raw.decode("utf-8", "strict")
+    except UnicodeDecodeError:
+        return None
+    lines = text.count("\n") + (1 if text and not text.endswith("\n") else 0)
+    words = len([run for run in _ASCII_WHITESPACE.split(text) if run])
+    return {
+        "byte_count": len(raw), "char_count": len(text), "line_count": lines,
+        "word_count": words, "sha256": sha256(raw).hexdigest(), "utf8": True,
+    }
+
+
+def _invoke_tool_operation(service: WorkerProbeService, request, deadline, inputs) -> dict:
+    """`invoke_tool` (tool-port-v1, class C, effect from the tool): runs the named
+    tool of the table over the admitted inputs; the reply carries the tool's own
+    result, which control seals as the attempt's artifact. Usage: one tool call."""
+
+    if not _tool_contract_admits(request) or len(inputs) != 1:
+        return {
+            "outcome": "failed", "usage_finality": "final",
+            "remote_terminal_observed": "failed", "reason_code": "validation_failed",
+            "usage": dict(_ZERO_USAGE), "output": None,
+        }
+    _declaration, raw = inputs[0]
+    result = _text_profile(raw)
+    if result is None:
+        # the bytes were read (the call happened) but are not a text: the tool's own failure
+        return {
+            "outcome": "failed", "usage_finality": "final",
+            "remote_terminal_observed": "failed", "reason_code": "provider_terminal",
+            "usage": {**_ZERO_USAGE, "tool_calls": 1}, "output": None,
+        }
+    output = {"tool_id": TEXT_PROFILE_ENTRY["tool_id"], "version": TEXT_PROFILE_ENTRY["version"],
+              "result": result}
+    return {
+        "outcome": "succeeded", "usage_finality": "final",
+        "remote_terminal_observed": "succeeded", "reason_code": "provider_terminal",
+        "usage": {**_ZERO_USAGE, "tool_calls": 1, "output_bytes": len(canonical_json(output))},
+        "output": output,
+    }
 
 
 def _describe_tools_operation(service: WorkerProbeService, request, deadline, inputs) -> dict:
@@ -153,7 +249,7 @@ def _describe_tools_operation(service: WorkerProbeService, request, deadline, in
     worker actually offers, from its code-owned table; the execute grammar carries
     no selection yet, so the whole table is described."""
 
-    output = {"tools": [deepcopy(entry) for entry in _TOOLS]}
+    output = {"tools": tool_descriptions()}
     return {
         "outcome": "succeeded", "usage_finality": "final",
         "remote_terminal_observed": "succeeded", "reason_code": "provider_terminal",
@@ -166,6 +262,7 @@ def _describe_tools_operation(service: WorkerProbeService, request, deadline, in
 _OPERATIONS: MappingProxyType[str, object] = MappingProxyType({
     "status": _status_operation,
     "describe_tools": _describe_tools_operation,
+    "invoke_tool": _invoke_tool_operation,
 })
 
 
@@ -194,7 +291,10 @@ class _Router:
         if request.operation not in self._handlers:
             return False
         profile = OPERATION_CONTRACTS[(PORT_CONTRACT_VERSION, request.operation)]
-        return profile.request_artifact_profile != "E"
+        if profile.request_artifact_profile == "E":
+            return False
+        # a tool call streams only what the named tool takes (its input contract)
+        return request.operation != "invoke_tool" or _tool_contract_admits(request)
 
     def execute(self, service: WorkerProbeService, request, deadline, inputs=()) -> dict:
         handler = self._handlers.get(request.operation)
