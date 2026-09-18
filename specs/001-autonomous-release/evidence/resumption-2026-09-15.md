@@ -1170,3 +1170,19 @@ after the closures; Ruff: no new findings. Details and hashes in `shell-assets-s
 regression follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6205 passed, 2 skipped, 1 warning, 369
 subtests passed in 889.12s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## Run cancellation — the `runs.cancel` route (2026-09-18)
+
+RED retained (no `cancel_run`/`attempts_for_run`, 404 on the cancel path, the GUI phase mirror), GREEN after the
+ledger command and reader, the service's lock-guarded durable closure with per-attempt gate requests, the route and
+descriptor, the pins and the browser module. Independent review ACCEPT WITH CHANGES (the public snapshot refused
+cancelled runs; a cancel racing a live execution double-stopped; retry on a moved attempt revision; closure without
+an executor; the two a11y rows; a past rejection kept) folded in RED-first. Ledger **2**, routes **+6**, `node --test`
+**14**; covering **312** then **137** after the closures; Ruff: no new findings. Details and hashes in
+`run-cancel-route.md`. Full regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s), first run: **6212 passed, 1 failed, 2 skipped** — the
+failure `test_design_store.py::test_a_persisted_approval_resolves_its_owner_evidence_in_this_vault` (a tampered
+approval "DID NOT RAISE"), outside this slice; it passes alone (4) and with every design/owner-decision module
+together (98), so it is an order-dependent flake of the full run, recorded here for a later look. Second full run:
+**6213 passed, 2 skipped, 1 warning, 369 subtests passed in 892.75s** — the two Linux-only skips. Hashes
+re-verified unchanged before commit.

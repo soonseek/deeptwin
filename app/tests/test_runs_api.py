@@ -16,6 +16,7 @@ No model, tool or paid call; the fake transport only.
 """
 
 import threading
+import time
 from contextlib import contextmanager
 from types import SimpleNamespace
 from uuid import uuid4
@@ -286,9 +287,9 @@ def test_the_composition_carries_the_run_routes(tmp_path):
     with owner_app(tmp_path, Executor()) as subject:
         composition = subject.app.state.route_composition
         assert "runs-v1" in composition.contribution_ids
-        for route_id in ("runs.create", "runs.read", "runs.resume"):
+        for route_id in ("runs.create", "runs.read", "runs.resume", "runs.cancel"):
             assert route_id in composition.route_ids
-        assert composition.route_count == 18
+        assert composition.route_count == 19
 
 
 def test_a_router_run_with_an_untaken_branch_completes(tmp_path):
@@ -466,3 +467,225 @@ def test_a_failed_execution_is_stopped_and_a_resume_is_a_new_execution(tmp_path)
         assert recovered.status_code == 201 and recovered.json()["phase"] == "completed"
         stopped = events(subject, "run.stopped")
         assert len(stopped) == 3 and stopped[-1]["public_metadata"]["reason_code"] == "completed"
+
+
+def cancel(subject, run_path, command_id=None):
+    return post(subject, {"command_id": command_id or str(uuid4())}, run_path + "/cancel")
+
+
+def test_the_owner_cancels_a_waiting_run_and_nothing_resumes_it(tmp_path):
+    executor = Executor()
+    with owner_app(tmp_path, executor) as subject:
+        created = post(subject, command(subject, graph_record(subject, graph_value())))
+        receipt = created.json()
+        assert receipt["phase"] == "awaiting_human"
+        assert receipt["cancellation"] == {"requested": False, "attempts": []}
+        run_path = receipt["links"]["self"]
+        command_id = str(uuid4())
+        cancelled = cancel(subject, run_path, command_id)
+        assert cancelled.status_code == 200, cancelled.text
+        body = cancelled.json()
+        assert body["phase"] == "cancelled" and body["command_id"] == command_id
+        assert body["cancellation"] == {"requested": True, "attempts": []}
+        assert body["outcome"]["completed_node_ids"] == receipt["outcome"]["completed_node_ids"]
+        assert body["outcome"]["awaiting_human"] == []  # a cancelled run waits on nobody
+        stopped = events(subject, "run.stopped")
+        assert len(stopped) == 1 and stopped[0]["public_metadata"]["reason_code"] == "cancelled"
+        # exact replay and a fresh cancel are both honest: one stop event, same phase
+        assert cancel(subject, run_path, command_id).json() == body
+        assert cancel(subject, run_path).json()["phase"] == "cancelled"
+        assert len(events(subject, "run.stopped")) == 1
+        # nothing resumes a cancelled run, an approval included
+        resumed = post(subject, {"command_id": str(uuid4())}, run_path + "/resume")
+        assert resumed.status_code == 409 and resumed.json()["code"] == "conflict"
+        approved = post(subject, {
+            "command_id": str(uuid4()), "node_id": "owner-gate",
+            "approval_scope": "release-output", "decision": "approved",
+        }, run_path + "/approvals")
+        assert approved.status_code == 201
+        assert post(subject, {"command_id": str(uuid4())}, run_path + "/resume").status_code == 409
+        assert executor.calls == ["intake", "writer"]
+        read = subject.client.get(run_path, headers=headers(subject.profile)).json()
+        assert read["phase"] == "cancelled" and read["cancellation"]["requested"] is True
+        # the vault's public snapshot (the SSE gap-recovery path) still serves
+        snapshot = subject.client.get(subject.profile.base_path + "api/v1/snapshot",
+                                      headers=headers(subject.profile))
+        assert snapshot.status_code == 200, snapshot.text
+        # a replay of the create command reports the cancelled run without executing
+        replay = post(subject, command(subject, graph_record(subject, graph_value()),
+                                       command_id=receipt["command_id"]) | {"graph_ref": receipt["graph_ref"]})
+        assert replay.status_code == 201 and replay.json()["phase"] == "cancelled"
+        assert executor.calls == ["intake", "writer"]
+
+
+def test_a_completed_run_cannot_be_cancelled(tmp_path):
+    executor = Executor()
+    with owner_app(tmp_path, executor) as subject:
+        created = post(subject, command(subject, graph_record(subject, linear_graph())))
+        run_path = created.json()["links"]["self"]
+        refused = cancel(subject, run_path)
+        assert refused.status_code == 409 and refused.json()["code"] == "conflict"
+        stopped = events(subject, "run.stopped")
+        assert len(stopped) == 1 and stopped[0]["public_metadata"]["reason_code"] == "completed"
+        assert subject.client.get(run_path, headers=headers(subject.profile)).json()["phase"] == "completed"
+        # closed shapes: a read on the cancel path, a missing command, an unknown run
+        assert subject.client.get(run_path + "/cancel", headers=headers(subject.profile)).status_code == 400
+        assert post(subject, {}, run_path + "/cancel").status_code == 400
+        unknown = cancel(subject, subject.path + "/" + str(uuid4()))
+        assert unknown.status_code == 404 and unknown.json()["code"] == "not_found"
+
+
+def test_cancel_closes_the_dispatch_gate_of_the_runs_live_attempts(tmp_path):
+    from app.runtime.ledger import AttemptSpec, ExecutionSpec, OwnerIdentity
+    from app.tests.test_server_api_v1 import immutable as seal
+
+    executor = Executor()
+    with owner_app(tmp_path, executor) as subject:
+        created = post(subject, command(subject, graph_record(subject, graph_value())))
+        receipt = created.json()
+        run_path = receipt["links"]["self"]
+        ledger = subject.app.state.runtime_ledger
+        roots = subject.domain.roots()
+        envelope = seal(subject.domain, roots, "execution_envelope").ref
+        profile_ref = seal(subject.domain, roots, "runtime_profile").ref
+        # an attempt of this run past its send-intent barrier (the test-only unbudgeted hook)
+        execution = ExecutionSpec(str(uuid4()), receipt["run_id"], "writer", str(uuid4()), (1,), ())
+        ledger.create_execution(str(uuid4()), execution)
+        owner = OwnerIdentity(str(uuid4()), 4321, 900, str(uuid4()))
+        attempt = AttemptSpec(str(uuid4()), execution.execution_id, 1, envelope, profile_ref,
+                              subject.refs.budget, str(uuid4()), "effect:" + str(uuid4()), owner,
+                              time.time_ns() // 1_000_000 + 60_000)
+        ledger.reserve_attempt(str(uuid4()), attempt, lease_duration_ms=60_000)
+        ledger._commit_unbudgeted_send_intent_for_test(str(uuid4()), attempt.attempt_id, owner,
+                                                       expected_revision=1)
+        body = cancel(subject, run_path).json()
+        assert body["phase"] == "cancelled"
+        assert body["cancellation"]["requested"] is True
+        assert body["cancellation"]["attempts"] == [{
+            "attempt_id": attempt.attempt_id, "execution_id": execution.execution_id,
+            "phase": "send_intent", "cancel_state": "requested", "dispatch_gate": "closed",
+            "remote_terminal_observed": "not_observed",
+        }]
+        stored = ledger.get_attempt(attempt.attempt_id)
+        assert stored["cancel_state"] == "requested" and stored["dispatch_gate"] == "closed"
+        # the request closes the gate; it is never evidence that the remote work stopped
+        assert stored["phase"] == "send_intent" and stored["terminal_outcome"] is None
+        assert cancel(subject, run_path).json()["cancellation"]["attempts"][0]["cancel_state"] == "requested"
+
+
+def test_a_cancel_during_a_live_execution_ends_the_run_once(tmp_path):
+    reached = threading.Event()
+    release = threading.Event()
+
+    class BlockingExecutor(Executor):
+        def scheduler(self, compiled, *, ledger, run_id, approvals):
+            def slow(context, view):
+                self.calls.append(context.node_id)
+                if context.node_id == "publish":
+                    reached.set()
+                    assert release.wait(10)
+                return self.result
+
+            def route(context, view):
+                self.calls.append(context.node_id)
+                return "accept"
+
+            handlers = {key: slow for key in ("core.deterministic", "core.agent", "core.join", "core.human_gate")}
+            handlers["core.router"] = route
+            return sch.build_scheduler(compiled, ledger=ledger, run_id=run_id, handlers=handlers)
+
+    executor = BlockingExecutor()
+    with owner_app(tmp_path, executor) as subject:
+        results = {}
+
+        def start():
+            results["create"] = post(subject, command(subject, graph_record(subject, linear_graph())))
+
+        thread = threading.Thread(target=start)
+        thread.start()
+        assert reached.wait(10)
+        # the run id is deterministic in the command; the manifest is already sealed
+        listing = events(subject, "run.started")
+        assert len(listing) == 1
+        run_id = None
+        from app.services.runs import run_identity
+        for item in subject.app.state.first_party_exports["runs.service"]._locks:
+            run_id = item
+        assert run_id is not None
+        run_path = subject.path + "/" + run_id
+        cancelled = cancel(subject, run_path)
+        assert cancelled.status_code == 200, cancelled.text
+        assert cancelled.json()["phase"] == "cancelled"
+        release.set()
+        thread.join(10)
+        # the execution that was in flight ended the run once, as cancelled
+        assert results["create"].status_code in {201, 503}, results["create"].text
+        stopped = events(subject, "run.stopped")
+        assert [item["public_metadata"]["reason_code"] for item in stopped] == ["cancelled"]
+        read = subject.client.get(run_path, headers=headers(subject.profile)).json()
+        assert read["phase"] == "cancelled"
+        assert run_identity(results["create"].json().get("command_id", "00000000-0000-4000-8000-000000000000")) in {run_id, run_identity("00000000-0000-4000-8000-000000000000")}
+
+
+def test_a_cancel_that_loses_an_attempt_revision_race_retries_and_completes(tmp_path, monkeypatch):
+    from app.runtime.ledger import (
+        AttemptSpec,
+        ExecutionSpec,
+        OwnerIdentity,
+        RevisionConflict,
+    )
+    from app.tests.test_server_api_v1 import immutable as seal
+
+    executor = Executor()
+    with owner_app(tmp_path, executor) as subject:
+        created = post(subject, command(subject, graph_record(subject, graph_value())))
+        receipt = created.json()
+        run_path = receipt["links"]["self"]
+        ledger = subject.app.state.runtime_ledger
+        roots = subject.domain.roots()
+        envelope = seal(subject.domain, roots, "execution_envelope").ref
+        profile_ref = seal(subject.domain, roots, "runtime_profile").ref
+        execution = ExecutionSpec(str(uuid4()), receipt["run_id"], "writer", str(uuid4()), (1,), ())
+        ledger.create_execution(str(uuid4()), execution)
+        owner = OwnerIdentity(str(uuid4()), 4321, 900, str(uuid4()))
+        attempt = AttemptSpec(str(uuid4()), execution.execution_id, 1, envelope, profile_ref,
+                              subject.refs.budget, str(uuid4()), "effect:" + str(uuid4()), owner,
+                              time.time_ns() // 1_000_000 + 60_000)
+        ledger.reserve_attempt(str(uuid4()), attempt, lease_duration_ms=60_000)
+        original = ledger.request_cancel
+        state = {"raised": False}
+
+        def racing(command_id, attempt_id, *, expected_revision):
+            if not state["raised"]:
+                state["raised"] = True
+                # the worker moved the attempt between the snapshot and the cancel
+                ledger._commit_unbudgeted_send_intent_for_test(str(uuid4()), attempt_id, owner,
+                                                               expected_revision=expected_revision)
+                raise RevisionConflict("moved")
+            return original(command_id, attempt_id, expected_revision=expected_revision)
+
+        monkeypatch.setattr(ledger, "request_cancel", racing)
+        cancelled = cancel(subject, run_path)
+        assert cancelled.status_code == 200, cancelled.text
+        assert cancelled.json()["cancellation"]["attempts"][0]["cancel_state"] == "requested"
+        assert ledger.get_attempt(attempt.attempt_id)["dispatch_gate"] == "closed"
+        assert len(events(subject, "run.stopped")) == 1
+
+
+def test_a_cancel_closes_the_run_even_when_the_executor_cannot_compile(tmp_path, monkeypatch):
+    executor = Executor()
+    with owner_app(tmp_path, executor) as subject:
+        created = post(subject, command(subject, graph_record(subject, graph_value())))
+        receipt = created.json()
+        run_path = receipt["links"]["self"]
+        monkeypatch.setattr(executor, "compile", lambda graph: (_ for _ in ()).throw(RuntimeError("PRIVATE")))
+        cancelled = cancel(subject, run_path)
+        # the durable closure does not depend on the executor; the receipt may not be buildable
+        assert cancelled.status_code in {200, 503}
+        assert subject.app.state.runtime_ledger.get_run(receipt["run_id"])["phase"] == "cancelled"
+        assert [item["public_metadata"]["reason_code"] for item in events(subject, "run.stopped")] == ["cancelled"]
+        monkeypatch.undo()
+        read = subject.client.get(run_path, headers=headers(subject.profile)).json()
+        assert read["phase"] == "cancelled"
+        assert cancel(subject, run_path).status_code == 200
+        assert len(events(subject, "run.stopped")) == 1

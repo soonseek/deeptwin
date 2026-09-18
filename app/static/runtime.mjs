@@ -17,13 +17,14 @@
 // The node universe is what the run has touched unless the caller supplies
 // the graph's node ids (`nodeIds`), which makes never-visited nodes visible.
 
-export const PHASES = Object.freeze(['created', 'running', 'awaiting_human', 'rejected', 'completed']);
+export const PHASES = Object.freeze(['created', 'running', 'awaiting_human', 'rejected', 'cancelled', 'completed']);
 // experience.md §9/§12: the state is named in text, never by colour alone
 export const PHASE_LABELS = Object.freeze({
   created: '시작 전',
   running: '실행 중',
   awaiting_human: '사람 대기',
   rejected: '거절됨',
+  cancelled: '취소됨',
   completed: '완료',
 });
 export const NODE_STATES = Object.freeze(['completed', 'pending', 'awaiting_human', 'rejected', 'not_visited']);
@@ -152,11 +153,12 @@ function scopesByNode(list) {
 
 // The phase is the server's (app/services/runs.py `_phase`); the receipt is
 // refused when its own identities contradict it (대기를 완료 처리 금지).
-function checkPhase(phase, { awaiting, rejected, pending, visited }) {
-  const expected = awaiting.length ? 'awaiting_human'
-    : rejected.length ? 'rejected'
-      : pending.length ? 'running'
-        : visited ? 'completed' : 'created';
+function checkPhase(phase, { cancelled, awaiting, rejected, pending, visited }) {
+  const expected = cancelled ? 'cancelled'
+    : awaiting.length ? 'awaiting_human'
+      : rejected.length ? 'rejected'
+        : pending.length ? 'running'
+          : visited ? 'completed' : 'created';
   if (phase !== expected) {
     fail(phase === 'completed' ? 'a waiting run cannot be complete' : `a ${expected} run cannot be ${phase}`);
   }
@@ -199,7 +201,24 @@ export function runView(receipt, basePath = '/', { nodeIds = null } = {}) {
   if (!Array.isArray(outcome.activations)) fail('activations must be a list');
   if (!Array.isArray(outcome.approvals)) fail('approvals must be a list');
   const visited = Object.values(counters).some(count => count > 0);
-  checkPhase(phase, { awaiting, rejected, pending, visited });
+  // experience.md §9: new dispatch closed and each call's termination are two facts
+  const cancellation = receipt.cancellation;
+  if (typeof cancellation !== 'object' || cancellation === null || typeof cancellation.requested !== 'boolean'
+      || !Array.isArray(cancellation.attempts)) fail('receipt must carry its cancellation facts');
+  const attempts = cancellation.attempts.map(entry => {
+    if (typeof entry !== 'object' || entry === null) fail('cancellation attempts are objects');
+    for (const name of ['phase', 'cancel_state', 'dispatch_gate', 'remote_terminal_observed']) {
+      if (typeof entry[name] !== 'string') fail(`cancellation attempt ${name} is not a string`);
+    }
+    return Object.freeze({
+      attemptId: requireUuid(entry.attempt_id, 'attempt id'),
+      executionId: requireUuid(entry.execution_id, 'execution id'),
+      phase: entry.phase, cancelState: entry.cancel_state, dispatchGate: entry.dispatch_gate,
+      remoteTerminalObserved: entry.remote_terminal_observed,
+    });
+  });
+  if (cancellation.requested && awaiting.length) fail('a cancelled run waits on nobody');
+  checkPhase(phase, { cancelled: cancellation.requested, awaiting, rejected, pending, visited });
   const complete = phase === 'completed';
 
   const resultByExecution = new Map();
@@ -300,6 +319,7 @@ export function runView(receipt, basePath = '/', { nodeIds = null } = {}) {
     routes: Object.freeze(routesTaken),
     awaiting: Object.freeze(awaiting),
     rejected: Object.freeze(rejected),
+    cancellation: Object.freeze({ requested: cancellation.requested, attempts: Object.freeze(attempts) }),
     approvalsPath: links.approvals,
     eventsPath: links.events,
     eventCursor: receipt.event_cursor,
@@ -310,13 +330,23 @@ export function runView(receipt, basePath = '/', { nodeIds = null } = {}) {
 // relation as the graph; the state is spelled out, never colour alone.
 export function accessibleRows(view) {
   if (typeof view !== 'object' || view === null || !Array.isArray(view.nodes)) fail('view must be a run view');
-  return view.nodes.map(node => {
+  const rows = [];
+  if (view.cancellation?.requested) {
+    // experience.md §9 row 294: new dispatch closed and each call's termination, separately
+    rows.push('취소 요청됨: 새 dispatch 중단');
+    for (const call of view.cancellation.attempts) {
+      const gate = call.dispatchGate === 'closed' ? '게이트 닫힘' : '게이트 열림';
+      const remote = call.remoteTerminalObserved === 'not_observed' ? '원격 종료 미확인' : `원격 종료 확인됨 (${call.remoteTerminalObserved})`;
+      rows.push(`호출 ${call.attemptId}: ${gate}, ${remote}`);
+    }
+  }
+  return rows.concat(view.nodes.map(node => {
     const parts = [`${node.nodeId}: ${node.stateLabel}`, `수행 ${node.visits}회`, `산출물 ${node.resultRefs.length}건`];
     if (node.awaitingScopes.length) parts.push(`대기 근거: ${node.awaitingScopes.join(', ')}`);
     if (node.rejectedScopes.length) parts.push(`거절: ${node.rejectedScopes.join(', ')}`);
     if (node.approvalRefs.length) parts.push(`승인 기록 ${node.approvalRefs.length}건`);
     return parts.join(', ');
-  });
+  }));
 }
 
 function viewKey(view) {

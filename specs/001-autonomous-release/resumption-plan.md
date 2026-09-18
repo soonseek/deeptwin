@@ -2441,9 +2441,11 @@ transport for that operation. The connected browser path's route layer landed as
 contribution (`runs-routes-browser-path.md`: create / read / resume a run of a stored graph through the
 scheduler with an injected code-owned executor; no DOM yet). The run GUI's logic half
 (`app/static/runtime.mjs`, `runtime-gui-logic-t048.md`) is complete, and the supported factory serves
-every shell module with the shell on `X-DeepTwin-CSRF` (`shell-assets-supported-factory.md`). Next: the run
-view wired in the shell against the supported routes (its CSRF source and base path; T048/T049) and
-cancel/recovery routes; T087 operations beyond `status` and the artifact stream stay open.
+every shell module with the shell on `X-DeepTwin-CSRF` (`shell-assets-supported-factory.md`); the cancel
+route landed (`run-cancel-route.md`: a durable run phase, live attempts' gates closed, never a claim of remote
+termination). Next: the recovery/retry route after an outcome check, and the run view wired in the shell
+against the supported routes (its CSRF source and base path; T048/T049); T087 operations beyond `status`
+and the artifact stream stay open.
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;

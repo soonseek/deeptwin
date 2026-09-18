@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from functools import wraps
 from uuid import NAMESPACE_URL, uuid5
@@ -57,7 +57,7 @@ from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore, _writer
 from ..runtime.budgets import BudgetBook, BudgetPolicy
 from ..runtime.graph import CompiledGraph
-from ..runtime.ledger import RunSpec, RuntimeLedger
+from ..runtime.ledger import RevisionConflict, RunSpec, RuntimeLedger
 from ..runtime.scheduler import GraphScheduler, SchedulerError, SchedulerOutcome
 from .design_persistence import DesignPersistenceError, decode_design_refs
 from .owner_auth import OwnerAuthError, PersistentOwnerAuthority
@@ -68,7 +68,8 @@ __all__ = ["PersistentRuns", "RunServiceError", "manifest_identity", "projection
 MANIFEST_SCHEMA = "run-manifest-v1"
 COMMAND_SCHEMA = "run-create-command-v1"
 RESUME_SCHEMA = "run-resume-command-v1"
-PHASES = ("created", "running", "awaiting_human", "rejected", "completed")
+PHASES = ("created", "running", "awaiting_human", "rejected", "cancelled", "completed")
+CANCEL_SCHEMA = "run-cancel-command-v1"
 CODES = frozenset({
     "invalid_input", "unauthenticated", "access_denied", "not_found", "conflict",
     "too_large", "unavailable",
@@ -187,10 +188,13 @@ def projection(outcome: SchedulerOutcome) -> dict:
     }
 
 
-def _phase(outcome: SchedulerOutcome) -> str:
-    """The run's honest phase from its durable head: waiting on a gate, stopped
-    by a rejected gate, finished (nothing pending), not started, or running."""
+def _phase(outcome: SchedulerOutcome, *, cancelled: bool = False) -> str:
+    """The run's honest phase from its durable head: cancelled by the owner,
+    waiting on a gate, stopped by a rejected gate, finished (nothing pending),
+    not started, or running."""
 
+    if cancelled:
+        return "cancelled"
     if outcome.awaiting_human:
         return "awaiting_human"
     if outcome.rejected_human:
@@ -339,6 +343,29 @@ class PersistentRuns:
             raise RunServiceError("unavailable")
         return compiled, scheduler
 
+    def _cancelled(self, run_id: str) -> bool:
+        return self._ledger.get_run(run_id)["phase"] == "cancelled"
+
+    def _cancellation(self, run_id: str) -> dict:
+        """The two facts experience.md §9 keeps apart: whether new dispatch is
+        closed, and per live attempt whether its gate is closed — never a claim
+        that the remote work stopped."""
+
+        return {
+            "requested": self._cancelled(run_id),
+            "attempts": [
+                {
+                    "attempt_id": item["spec"]["attempt_id"],
+                    "execution_id": item["spec"]["execution_id"],
+                    "phase": item["phase"],
+                    "cancel_state": item["cancel_state"],
+                    "dispatch_gate": item["dispatch_gate"],
+                    "remote_terminal_observed": item["remote_terminal_observed"],
+                }
+                for item in self._ledger.attempts_for_run(run_id)
+            ],
+        }
+
     def _receipt(self, manifest: RunManifest, outcome, *, command_id, base_path) -> dict:
         root = base_path.rstrip("/")
         with self._domain._connection() as db:
@@ -346,12 +373,17 @@ class PersistentRuns:
             cursor = _event_cursor_in_transaction(
                 db, vault_id=roots.genesis.id, sequence=manifest.event_sequence, event_types=()
             )
+        cancellation = self._cancellation(manifest.run_id)
+        if cancellation["requested"]:
+            # a cancelled run waits on nobody; an earlier rejection stays a past fact
+            outcome = replace(outcome, awaiting_human=())
         return {
             "command_id": command_id,
             "run_id": manifest.run_id,
             "graph_ref": manifest.graph_ref.as_dict(),
             "graph_digest": manifest.graph_digest,
-            "phase": _phase(outcome),
+            "phase": _phase(outcome, cancelled=cancellation["requested"]),
+            "cancellation": cancellation,
             "outcome": projection(outcome),
             "links": {
                 "self": f"{root}/api/v1/runs/{manifest.run_id}",
@@ -398,15 +430,20 @@ class PersistentRuns:
         with self._guard:
             return self._locks.setdefault(run_id, threading.Lock())
 
-    def _execute(self, actor_ref, manifest, scheduler) -> SchedulerOutcome:
+    def _execute(self, actor_ref, manifest, scheduler, *, resume=False) -> SchedulerOutcome:
         """Run the durable head, exclusively per run and outside any store writer.
-        A head that is complete, waiting or rejected is reported, never re-run."""
+        A head that is complete, waiting, rejected or cancelled is reported,
+        never re-run; resuming a cancelled run is a conflict."""
 
         lock = self._lock(manifest.run_id)
         if not lock.acquire(blocking=False):
             raise RunServiceError("conflict")  # another execution of this run is live
         try:
             before = scheduler.observe()
+            if self._cancelled(manifest.run_id):
+                if resume:
+                    raise RunServiceError("conflict")
+                return before
             phase = _phase(before)
             if phase == "rejected":
                 # the owner's rejection ends the run: `cancelled`, durably once
@@ -417,12 +454,16 @@ class PersistentRuns:
             try:
                 outcome = scheduler.run()
             except SchedulerError as error:
-                if str(error).startswith("approval_rejected:"):
+                if str(error).startswith("approval_rejected:") or self._cancelled(manifest.run_id):
+                    # the owner's rejection or cancellation ended the run
                     self._stop_event(actor_ref, manifest, "cancelled", once=True)
                     return scheduler.observe()
                 self._stop_event(actor_ref, manifest, "infrastructure_failure")
                 raise RunServiceError("unavailable") from None
-            if _phase(outcome) == "completed":
+            if self._cancelled(manifest.run_id):
+                # the owner cancelled while this execution ran: it ended the run, once
+                self._stop_event(actor_ref, manifest, "cancelled", once=True)
+            elif _phase(outcome) == "completed":
                 self._stop_event(actor_ref, manifest, "completed", once=True)
             return outcome
         finally:
@@ -535,8 +576,75 @@ class PersistentRuns:
         if manifest is None:
             raise RunServiceError("not_found")
         _compiled, scheduler = self._prepare(manifest)
-        outcome = self._execute(actor_ref, manifest, scheduler)
+        outcome = self._execute(actor_ref, manifest, scheduler, resume=True)
         return self._receipt(manifest, outcome, command_id=command_id, base_path=base_path)
+
+    @_closed
+    def cancel(self, request, run_id, payload, *, base_path) -> dict:
+        """Cancel the run: the durable run phase first, then each live attempt's
+        dispatch gate, then `run.stopped(cancelled)` once. A completed run cannot be
+        cancelled (conflict); the receipt states what was closed, never that the
+        remote work stopped."""
+
+        _authenticate_owner(self._owner, request)
+        if (type(payload) is not dict or set(payload) != {"schema_version", "command_id"}
+                or payload["schema_version"] != CANCEL_SCHEMA):
+            raise RunServiceError("invalid_input")
+        command_id = _uuid(payload["command_id"])
+        run_id = _uuid(run_id)
+        with _writer(), self._domain._connection(write=True) as db:
+            actor = _authenticate_owner(self._owner, request, db)
+            roots = self._domain._read_roots(db)
+            actor_ref = _owner_actor_ref(db, actor)
+            manifest = self._manifest_by_run(db, roots, run_id)
+        if manifest is None:
+            raise RunServiceError("not_found")
+        # the durable closure never depends on the executor: the run's phase, then
+        # every live attempt's gate, then the stop event — under the run lock when
+        # no execution is live (so completion cannot slip in between the check and
+        # the closure); a live execution ends the run itself, once
+        lock = self._lock(run_id)
+        held = lock.acquire(blocking=False)
+        try:
+            if held and not self._cancelled(run_id) and self._completed(manifest):
+                raise RunServiceError("conflict")  # a finished run has nothing to cancel
+            self._ledger.cancel_run(command_id, run_id)
+        finally:
+            if held:
+                lock.release()
+        self._close_attempts(command_id, run_id)
+        self._stop_event(actor_ref, manifest, "cancelled", once=True)
+        _compiled, scheduler = self._prepare(manifest)
+        return self._receipt(manifest, scheduler.observe(), command_id=command_id,
+                             base_path=base_path)
+
+    def _completed(self, manifest: RunManifest) -> bool:
+        with self._domain._connection() as db:
+            roots = self._domain._read_roots(db)
+            return self._stop_recorded(db, roots, manifest, "completed")
+
+    def _close_attempts(self, command_id: str, run_id: str, *, passes: int = 3) -> None:
+        """Request the cancel of every live attempt of the run; an attempt that moved
+        between the snapshot and the request is re-read and requested again
+        (bounded), with one deterministic command per (cancel command, attempt)."""
+
+        for _ in range(passes):
+            conflict = False
+            for item in self._ledger.attempts_for_run(run_id):
+                if item["phase"] == "terminal" or item["cancel_state"] != "none":
+                    continue
+                attempt_id = item["spec"]["attempt_id"]
+                try:
+                    self._ledger.request_cancel(
+                        str(uuid5(NAMESPACE_URL,
+                                  f"deeptwin:command:run-cancel:{command_id}:{attempt_id}")),
+                        attempt_id, expected_revision=item["revision"],
+                    )
+                except RevisionConflict:
+                    conflict = True
+            if not conflict:
+                return
+        raise RunServiceError("unavailable")
 
     @_closed
     def read(self, run_id, *, base_path) -> dict:

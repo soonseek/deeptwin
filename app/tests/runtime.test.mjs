@@ -55,7 +55,7 @@ function receipt(changes = {}, base = '/') {
     phase: 'completed', outcome: outcome(),
     links: { self: `${prefix}/api/v1/runs/${RUN_ID}`, approvals: `${prefix}/api/v1/runs/${RUN_ID}/approvals`,
              events: `${prefix}/api/v1/events` },
-    event_cursor: 'opaque-cursor', ...changes,
+    event_cursor: 'opaque-cursor', cancellation: { requested: false, attempts: [] }, ...changes,
   };
 }
 
@@ -105,7 +105,7 @@ test('the create and resume commands are closed and mirror the server grammar', 
 
 test('a completed receipt becomes an honest view: states from identities, visits distinct', () => {
   const view = runView(receipt());
-  assert.deepEqual([...PHASES], ['created', 'running', 'awaiting_human', 'rejected', 'completed']);
+  assert.deepEqual([...PHASES], ['created', 'running', 'awaiting_human', 'rejected', 'cancelled', 'completed']);
   assert.equal(view.runId, RUN_ID);
   assert.equal(view.phase, 'completed');
   assert.equal(view.phaseLabel, PHASE_LABELS.completed);
@@ -429,4 +429,44 @@ test('an error for another run never leaves the previous run on screen', async (
   fails = true;
   await assert.rejects(observer.read(RUN_ID));
   assert.equal(observer.snapshot().view.runId, RUN_ID);
+});
+
+
+test('a cancelled receipt names what was closed and never claims the remote work stopped', () => {
+  const attempt = {
+    attempt_id: '88888888-8888-4888-8888-888888888888', execution_id: '99999999-9999-4999-8999-999999999999',
+    phase: 'send_intent', cancel_state: 'requested', dispatch_gate: 'closed', remote_terminal_observed: 'not_observed',
+  };
+  const view = runView(receipt({ phase: 'cancelled', cancellation: { requested: true, attempts: [attempt] },
+    outcome: outcome({ completed_node_ids: ['intake', 'writer'], counters: { intake: 1, writer: 1 },
+      execution_ids: [['intake', 'e-intake'], ['writer', 'e-writer']], result_refs: [],
+      pending_node_ids: ['owner-gate'] }) }));
+  assert.equal(view.phase, 'cancelled');
+  assert.equal(view.phaseLabel, PHASE_LABELS.cancelled);
+  assert.equal(view.complete, false);
+  assert.deepEqual(view.cancellation, { requested: true, attempts: [{
+    attemptId: attempt.attempt_id, executionId: attempt.execution_id, phase: 'send_intent',
+    cancelState: 'requested', dispatchGate: 'closed', remoteTerminalObserved: 'not_observed',
+  }] });
+  assert.throws(() => runView(receipt({ phase: 'cancelled', cancellation: { requested: true, attempts: [] },
+    outcome: outcome({ awaiting_human: [['owner-gate', 'release-output']], pending_node_ids: ['owner-gate'],
+      completed_node_ids: ['intake', 'writer'], counters: { intake: 1, writer: 1 },
+      execution_ids: [['intake', 'e-intake'], ['writer', 'e-writer']], result_refs: [] }) })));
+  assert.throws(() => runView(receipt({ phase: 'cancelled' })));
+  assert.throws(() => runView(receipt({ cancellation: { requested: 'yes', attempts: [] } })));
+  // the owner's earlier rejection is a past fact a cancelled run may still carry
+  const rejectedThenCancelled = runView(receipt({ phase: 'cancelled', cancellation: { requested: true, attempts: [] },
+    outcome: outcome({ rejected_human: [['owner-gate', 'release-output']], pending_node_ids: ['owner-gate'],
+      completed_node_ids: ['intake', 'writer'], counters: { intake: 1, writer: 1 },
+      execution_ids: [['intake', 'e-intake'], ['writer', 'e-writer']], result_refs: [] }) }));
+  assert.equal(rejectedThenCancelled.phase, 'cancelled');
+  assert.deepEqual(rejectedThenCancelled.rejected, [{ nodeId: 'owner-gate', scope: 'release-output' }]);
+  // experience.md §9 row 294: the two facts are spelled out separately in the accessible rows
+  const rows = accessibleRows(view);
+  assert.match(rows[0], /취소 요청됨/);
+  assert.match(rows[0], /새 dispatch 중단/);
+  const call = rows.find(row => row.includes(attempt.attempt_id));
+  assert.match(call, /게이트 닫힘/);
+  assert.match(call, /원격 종료 미확인/);
+  assert.equal(accessibleRows(runView(receipt())).some(row => row.includes('취소')), false);
 });

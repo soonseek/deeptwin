@@ -8,6 +8,7 @@ from starlette.concurrency import run_in_threadpool
 
 from ..domain.refs import uuid_string
 from ..services.runs import (
+    CANCEL_SCHEMA,
     COMMAND_SCHEMA,
     RESUME_SCHEMA,
     PersistentRuns,
@@ -59,7 +60,7 @@ def run_error(error):
 
 
 def is_run_path(path: str) -> bool:
-    """`/api/v1/runs`, `/api/v1/runs/{id}` and `/api/v1/runs/{id}/resume`; the
+    """`/api/v1/runs`, `/api/v1/runs/{id}`, `/{id}/resume` and `/{id}/cancel`; the
     approvals routes under the same prefix keep their own adapter."""
 
     if path == PATH:
@@ -67,7 +68,7 @@ def is_run_path(path: str) -> bool:
     if not path.startswith(PATH + "/") or is_approval_path(path):
         return False
     parts = path[len(PATH) + 1:].split("/")
-    return len(parts) == 1 or (len(parts) == 2 and parts[1] == "resume")
+    return len(parts) == 1 or (len(parts) == 2 and parts[1] in {"resume", "cancel"})
 
 
 def _ref_shape(value):
@@ -110,7 +111,8 @@ def preflight(scope, body, content_type):
                                   max_string_bytes=256),
             )
             uuid_string(value["command_id"])
-            return {"schema_version": RESUME_SCHEMA, "run_id": run_id, **value}
+            schema = RESUME_SCHEMA if parts[1] == "resume" else CANCEL_SCHEMA
+            return {"schema_version": schema, "run_id": run_id, **value}
         if method not in {"GET", "HEAD"} or body:
             raise RunRouteError()
         return None
@@ -153,6 +155,19 @@ def create_router(*, runs, base_path):
             payload = request.state.run_payload
             value = await run_in_threadpool(
                 runs.resume, request.state.authenticated_request, run_id,
+                {"schema_version": payload["schema_version"], "command_id": payload["command_id"]},
+                base_path=base_path,
+            )
+            return JSONResponse(value)
+        except RunServiceError as error:
+            return run_error(error)
+
+    @router.post(PATH + "/{run_id}/cancel")
+    async def cancel(request: Request, run_id: str):
+        try:
+            payload = request.state.run_payload
+            value = await run_in_threadpool(
+                runs.cancel, request.state.authenticated_request, run_id,
                 {"schema_version": payload["schema_version"], "command_id": payload["command_id"]},
                 base_path=base_path,
             )

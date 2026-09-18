@@ -53,6 +53,7 @@ MAX_NODE_ID_BYTES = 256
 MAX_IDEMPOTENCY_KEY_BYTES = 512
 
 RUN_MODES = frozenset({"live", "replay", "snapshot", "isolated-comparison"})
+RUN_PHASES = frozenset({"created", "cancelled"})  # a run's durable phase; cancellation is final
 PHASES = frozenset({
     "reserved", "preflighting", "awaiting_human", "send_intent",
     "running", "validating", "terminal",
@@ -1016,7 +1017,7 @@ class RuntimeLedger:
     def _run_snapshot(self, row):
         spec_value = _decode_canonical(row["spec"], row["spec_digest"], "run spec")
         spec = RunSpec.from_dict(spec_value)
-        if spec.run_id != row["id"] or row["phase"] != "created":
+        if spec.run_id != row["id"] or row["phase"] not in RUN_PHASES:
             raise CorruptLedger("Runtime run row does not match its frozen spec")
         revision = positive_integer(row["revision"])
         core = {"spec": spec.as_dict(), "phase": row["phase"], "revision": revision,
@@ -1319,10 +1320,12 @@ class RuntimeLedger:
             if replay is not None:
                 return replay
             now = self._now(db)
-            run = db.execute("SELECT 1 FROM runtime_runs WHERE vault_id=? AND id=?",
+            run = db.execute("SELECT phase FROM runtime_runs WHERE vault_id=? AND id=?",
                              (self.vault_id, spec.run_id)).fetchone()
             if run is None:
                 raise KeyError(spec.run_id)
+            if run["phase"] == "cancelled":
+                raise DispatchBlocked("A cancelled run admits no new execution")
             for parent in spec.parent_execution_ids:
                 found = db.execute("SELECT run_id FROM runtime_node_executions "
                     "WHERE vault_id=? AND id=?", (self.vault_id, parent)).fetchone()
@@ -1381,8 +1384,10 @@ class RuntimeLedger:
             if execution is None:
                 raise KeyError(spec.execution_id)
             self._validated_run_checkpoints(db, execution["run_id"])
-            run_row = db.execute("SELECT spec,spec_digest FROM runtime_runs WHERE vault_id=? AND id=?",
+            run_row = db.execute("SELECT spec,spec_digest,phase FROM runtime_runs WHERE vault_id=? AND id=?",
                                  (self.vault_id, execution["run_id"])).fetchone()
+            if run_row["phase"] == "cancelled":
+                raise DispatchBlocked("A cancelled run admits no new attempt")
             run_spec = RunSpec.from_dict(_decode_canonical(
                 run_row["spec"], run_row["spec_digest"], "run spec"))
             if run_spec.budget_policy_ref != spec.budget_policy_ref:
@@ -2908,6 +2913,54 @@ class RuntimeLedger:
             spec = ExecutionSpec.from_dict(result["spec"])
             self._validate_execution_bindings(db, spec)
             return result
+
+    def cancel_run(self, command_id, run_id):
+        """Durably close the run: a replayable command moving it to `cancelled`,
+        after which no new execution or attempt of the run is admitted. It
+        touches no attempt (the caller requests each live attempt's cancel) and
+        proves nothing about remote work."""
+
+        uuid_string(run_id)
+        payload = self._command_payload({"run_id": run_id})
+        with self._transaction(write=True) as db:
+            replay = self._command_replay(db, command_id, "cancel_run", payload)
+            if replay is not None:
+                return replay
+            now = self._now(db)
+            row = db.execute("SELECT * FROM runtime_runs WHERE vault_id=? AND id=?",
+                             (self.vault_id, run_id)).fetchone()
+            if row is None:
+                raise KeyError(run_id)
+            applied = False
+            if row["phase"] == "created":
+                changed = db.execute(
+                    "UPDATE runtime_runs SET phase='cancelled',revision=revision+1 "
+                    "WHERE vault_id=? AND id=? AND phase='created' AND revision=?",
+                    (self.vault_id, run_id, row["revision"])).rowcount
+                if changed != 1:
+                    raise RevisionConflict("Run cancellation lost its CAS")
+                applied = True
+                row = db.execute("SELECT * FROM runtime_runs WHERE vault_id=? AND id=?",
+                                 (self.vault_id, run_id)).fetchone()
+            result = {"applied": applied, "run": self._run_snapshot(row)}
+            self._record_command(db, command_id, "cancel_run", payload, result, now)
+            return result
+
+    def attempts_for_run(self, run_id):
+        """Read-only: every attempt of every execution of one run, in insertion
+        order; grants no dispatch, result or recovery authority."""
+
+        uuid_string(run_id)
+        with self._transaction() as db:
+            if db.execute("SELECT 1 FROM runtime_runs WHERE vault_id=? AND id=?",
+                          (self.vault_id, run_id)).fetchone() is None:
+                raise KeyError(run_id)
+            rows = db.execute(
+                "SELECT a.* FROM runtime_attempts a JOIN runtime_node_executions e "
+                "ON e.vault_id=a.vault_id AND e.id=a.execution_id "
+                "WHERE a.vault_id=? AND e.run_id=? ORDER BY a.rowid",
+                (self.vault_id, run_id)).fetchall()
+            return [self._attempt_snapshot(row) for row in rows]
 
     def executions_for_run(self, run_id):
         """Read-only: every recorded node execution of one run in insertion order.

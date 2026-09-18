@@ -42,6 +42,7 @@ from ..runtime.budgets import (
 )
 from ..runtime.ledger import (
     PHASES,
+    RUN_PHASES,
     CorruptLedger,
     LedgerError,
     OwnerIdentity,
@@ -401,7 +402,7 @@ def _snapshot(root, request):
             for row in run_rows:
                 uuid_string(row["id"])
                 positive_integer(row["revision"])
-                if row["phase"] != "created":
+                if row["phase"] not in RUN_PHASES:
                     raise DomainContractError("Invalid public run phase")
             for row in attempt_rows:
                 uuid_string(row["id"])
