@@ -815,7 +815,10 @@ class ToolCallSpec:
     until ToolDefinition records exist — not a verified definition), the ordered
     artifact inputs it declared, and the action approval that admitted an
     external or instance-critical effect (required for those, refused for the
-    rest; its existence, scope and expiry are not verified here)."""
+    rest; the transport verifies it against the owner's recorded decision for
+    the run, node and tool scope before the send — the ledger records the
+    reference it was given; no expiry exists on a decision, so none is
+    verified anywhere)."""
 
     tool_call_id: str
     attempt_id: str

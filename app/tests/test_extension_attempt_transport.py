@@ -13,6 +13,7 @@ Linux authentication, a real image or a container.
 """
 
 import time
+from types import SimpleNamespace
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import pytest
@@ -773,10 +774,11 @@ def test_the_effect_gate_requires_an_approval_for_an_external_effect_and_refuses
         xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
                                            operation="invoke_tool", artifact_inputs=(text_input(b"hello"),),
                                            tool=TEXT_PROFILE, effect_approval_ref=EntityRef("artifact", str(uuid4()), 1, "a" * 64))
-    built = xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
-                                               operation="invoke_tool", artifact_inputs=(text_input(b"hello"),),
-                                               tool=TEXT_PROFILE, effect_approval_ref=approval, ledger=subject.ledger)
-    assert built.operation == "invoke_tool"
+    with pytest.raises(ValueError):  # and the authority that recorded it, to verify it before the send
+        xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
+                                           operation="invoke_tool", artifact_inputs=(text_input(b"hello"),),
+                                           tool=TEXT_PROFILE, effect_approval_ref=approval, ledger=subject.ledger)
+    # (the built, verified transport is exercised over the real socket in the verification test)
     # the intent an external call records persists the approval that admitted it (the ledger
     # refuses an external intent without one), so the gate leaves a trace
     from app.runtime.ledger import ToolCallSpec, tool_call_identity
@@ -1028,3 +1030,150 @@ def test_a_policy_cap_under_the_bound_refuses_the_attempt_before_any_row(tmp_pat
     assert subject.book.status(subject.budget_session_id)["blocked_reason"] is None
     assert box.get("served") is None, box
 
+
+
+def app_subject(app):
+    """The transport test's subject over a real factory's components (the owner
+    authority records approvals): refs, a budget session, a run, real-clock deadlines."""
+    import time
+
+    from app.domain.permissions import Grant, Principal
+    from app.domain.schemas import Actor
+    from app.runtime.budgets import BudgetPolicy
+    from app.runtime.ledger import OwnerIdentity, RunSpec
+    from app.tests.test_runtime_ledger import identifier, immutable
+
+    domain, ledger, book = app.state.domain_store, app.state.runtime_ledger, app.state.budget_book
+    roots = domain.roots()
+    ledger.reconcile_startup(identifier(), observed_owners={})
+    policy = BudgetPolicy.create(
+        profile="execution", provider_mode="subscription", max_model_calls=3, max_tool_calls=5,
+        max_node_visits=7, max_loop_rounds=2, max_output_bytes=OUTPUT_CAP, max_concurrency=2,
+        max_wall_seconds=60, max_candidates=1)
+    refs = SimpleNamespace(
+        work=immutable(domain, roots, "work_revision"), environment=immutable(domain, roots, "environment"),
+        consent=immutable(domain, roots, "run_consent"),
+        budget=immutable(domain, roots, "budget_policy", content=policy.domain_content()),
+        manifest=immutable(domain, roots, "run_manifest"), envelope=immutable(domain, roots, "execution_envelope"),
+        profile=immutable(domain, roots, "runtime_profile"), result=immutable(domain, roots, "artifact"),
+        produced=immutable(domain, roots, "artifact"))
+    session = identifier()
+    book.start(session, policy)
+    later = int(time.time() * 1000) + 3_600_000
+    principal = Principal(identifier(), Actor(identifier(), "test_actor", "test_fixture"), "runtime", "operational", later)
+    grant = Grant(identifier(), identifier(), principal.id, refs.envelope, "read", "operational", None, later, 1)
+    run = RunSpec(identifier(), refs.work, refs.environment, refs.consent, "live", refs.budget, session, refs.manifest)
+    ledger.create_run(identifier(), run)
+    subject = SimpleNamespace(domain=domain, ledger=ledger, book=book, refs=refs, principal=principal, grant=grant,
+                              budget_session_id=session, owner=OwnerIdentity(identifier(), 4321, 900, identifier()),
+                              deadline=later)
+    return subject, run
+
+
+def real_clock_dispatcher(subject, transport_):
+    return na.NodeAttemptDispatcher.build(
+        ledger=subject.ledger, budget_book=subject.book, owner=subject.owner,
+        bindings={"writer": na.AttemptBinding.create(
+            envelope_ref=subject.refs.envelope, profile_ref=subject.refs.profile,
+            budget_policy_ref=subject.refs.budget, deadline_at_ms=subject.deadline,
+            lease_duration_ms=1_000, model_calls=1, tool_calls=1, node_visits=1,
+            loop_rounds=0, output_bytes=transport_.output_bytes_bound, candidates=0, api_microunits=None,
+            principal=subject.principal, grant=subject.grant,
+        )},
+        transport=transport_,
+    )
+
+
+def test_an_external_effects_approval_is_verified_against_the_recorded_decision_before_the_send(tmp_path_factory, staged, monkeypatch):
+    # T087: the approval the gate requires is not a claim — before any byte leaves, control
+    # reads the owner's recorded decision for this run, node and tool scope and requires it
+    # to be an approval and the exact record the caller named; a refusal is a vouched
+    # non-send (the worker is never contacted, no ToolCall intent exists)
+    from types import MappingProxyType
+
+    from app.services.run_approvals import PersistentRunApprovals
+    from app.tests.test_extension_candidates_persistent import owner
+
+    box = staged[3]
+    monkeypatch.setattr(xt, "TOOL_EFFECTS", MappingProxyType({**xt.TOOL_EFFECTS, ("text_profile", "1.0.0"): "external_irreversible"}))
+    scope = xt.tool_approval_scope("text_profile", "1.0.0")
+    # review closure: the scope is delimiter-proof and fixed-length (uuid5 over the canonical
+    # pair), so every tool id and version the execute grammar admits can be approved
+    assert scope.startswith("tool:") and len(scope) == 5 + 36
+    assert xt.tool_approval_scope("text_profile", "1.0.0") == scope
+    assert xt.tool_approval_scope("x", "1.0.0+build.5") != xt.tool_approval_scope("x", "1.0.0")
+    assert xt.tool_approval_scope("a:b", "1") != xt.tool_approval_scope("a", "b:1")
+    from app.runtime.gates import LOCAL
+
+    assert LOCAL.fullmatch(xt.tool_approval_scope("t" * 64, "v" * 64)) is not None
+    # the slot's pair root is the test directory itself (its group is the pair group, inherited
+    # by children on macOS): the owner's session root lives in a sibling directory
+    with owner(tmp_path_factory.mktemp("owner")) as (app, _client, request, _profile, _arguments):
+        approvals = PersistentRunApprovals(app.state.domain_store, app.state.owner_authority)
+
+        def decide(run_id, node_id, decision, approval_scope=scope):
+            subject.ledger.request_gate_approval(run_id, node_id, approval_scope)
+            receipt = approvals.record(request, {
+                "schema_version": "run-approval-command-v1", "command_id": str(uuid4()), "run_id": run_id,
+                "node_id": node_id, "approval_scope": approval_scope, "decision": decision})
+            return EntityRef.from_dict(receipt["approval_ref"])
+
+        def transport_for(ref, **overrides):
+            return xt.ExtensionAttemptTransport.build(
+                domain_store=app.state.domain_store, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+                artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, effect_approval_ref=ref,
+                ledger=subject.ledger, **{"approvals": approvals, **overrides})
+
+        subject, run = app_subject(app)
+        # build: an approval needs the authority that can read it, over the same store
+        with pytest.raises(ValueError):
+            transport_for(EntityRef("action_approval", str(uuid4()), 1, "a" * 64), approvals=None)
+        with pytest.raises(TypeError):
+            transport_for(EntityRef("action_approval", str(uuid4()), 1, "a" * 64), approvals=object())
+        # a rejection, another node's approval, and a forged reference are each refused before the send
+        rejected = decide(run.run_id, "writer", "rejected")
+        with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+            build(subject, run, real_clock_dispatcher(subject, transport_for(rejected)), handlers(subject, [])).run()
+        assert box.get("served") is None, box
+        assert subject.ledger.tool_calls_for_attempt(writer_attempt_id(run)) == []
+        # review closure (stated, not fixed here): the dispatcher records every transport
+        # refusal after the send intent as an unknown outcome, even a vouched non-send —
+        # honouring `definitely_not_sent` after the intent is a separate slice
+        stored = subject.ledger.get_attempt(writer_attempt_id(run))
+        assert stored["terminal_outcome"] == "outcome_unknown" and stored["send_finality"] == "may_have_started"
+        # an approval of the same node in another run, and a later version of the genuine id
+        _subject5, run5 = app_subject(app)
+        other_run = decide(run5.run_id, "writer", "approved")
+        subject6, run6 = app_subject(app)
+        with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+            build(subject6, run6, real_clock_dispatcher(subject6, transport_for(other_run)), handlers(subject6, [])).run()
+        assert box.get("served") is None, box
+        subject7, run7 = app_subject(app)
+        genuine7 = decide(run7.run_id, "writer", "approved")
+        later_version = EntityRef("action_approval", genuine7.id, 2, genuine7.sha256)
+        with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+            build(subject7, run7, real_clock_dispatcher(subject7, transport_for(later_version)), handlers(subject7, [])).run()
+        assert box.get("served") is None, box
+        subject2, run2 = app_subject(app)
+        elsewhere = decide(run2.run_id, "publish", "approved")
+        with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+            build(subject2, run2, real_clock_dispatcher(subject2, transport_for(elsewhere)), handlers(subject2, [])).run()
+        assert box.get("served") is None, box
+        subject3, run3 = app_subject(app)
+        genuine = decide(run3.run_id, "writer", "approved")
+        forged = EntityRef("action_approval", genuine.id, 1, "b" * 64)
+        with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+            build(subject3, run3, real_clock_dispatcher(subject3, transport_for(forged)), handlers(subject3, [])).run()
+        assert box.get("served") is None, box
+        assert subject3.ledger.tool_calls_for_attempt(writer_attempt_id(run3)) == []
+        # the owner's recorded approval for this run, node and tool: the call runs and its
+        # intent carries the verified reference
+        subject4, run4 = app_subject(app)
+        approved = decide(run4.run_id, "writer", "approved")
+        outcome = build(subject4, run4, real_clock_dispatcher(subject4, transport_for(approved)), handlers(subject4, [])).run()
+        assert dict(outcome.result_refs)
+        calls = subject4.ledger.tool_calls_for_attempt(writer_attempt_id(run4))
+        assert len(calls) == 1 and calls[0]["state"] == "succeeded"
+        assert calls[0]["approval_ref"] == approved.as_dict()
+        assert calls[0]["effect_class"] == "external_irreversible"
+        assert box.get("served") == 1, box

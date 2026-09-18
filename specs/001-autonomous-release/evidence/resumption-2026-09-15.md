@@ -1370,3 +1370,13 @@ typing during a save dropped, no way to keep a draft over the latest) folded in 
 Python **140**; Ruff clean. Details and hashes in `intake-page-t023.md`. Full regression: **6335 passed, 2 skipped**
 (Linux-only), 369 subtests, 16m08s.
 
+## T087 — the approval's verification for a tool call (2026-09-19)
+
+RED retained (no scope helper, no approvals authority at build), GREEN after the uuid5 scope, the build rule and the
+verification before the channel, the connection and the intent. Independent review ACCEPT WITH CHANGES (SHOULD: the
+refusal recorded as an unknown outcome by the dispatcher — stated and pinned, the honouring open; the gate request
+under the tool-calling node open; reuse across executions open; the scope grammar mismatch — closed by the uuid5 scope;
+no expiry — stated) folded in RED-first. Transport **41**, covering **124**; Ruff: no new findings. Details and hashes
+in `tool-call-approval-verification-t087.md`. Full regression: **6336 passed, 2 skipped** (Linux-only), 369 subtests,
+16m01s.
+

@@ -32,6 +32,7 @@ from ..domain.refs import DomainContractError, EntityRef, canonical_json, uuid_s
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore
 from ..extensions.port_contracts import OPERATION_CONTRACTS
+from ..services.run_approvals import PersistentRunApprovals, RunApprovalError
 from ..workers import broker, ipc_root, listener
 from ..workers.artifact_stream import (
     ArtifactStreamError,
@@ -60,6 +61,7 @@ from ..workers.extension_execute_messages import (
 )
 from .artifact_cas import store_received_artifact
 from .budgets import BudgetUsage
+from .gates import LOCAL
 from .ledger import (
     TOOL_APPROVAL_EFFECTS,
     ConsumedDispatchWindow,
@@ -116,6 +118,25 @@ def sealed_artifact_identity(send_command_id) -> str:
 
     uuid_string(send_command_id)
     return str(uuid5(NAMESPACE_URL, f"deeptwin:artifact:execute:{send_command_id}"))
+
+
+def tool_approval_scope(tool_id, version) -> str:
+    """The gate scope an owner's approval of one tool call names — `tool:` and the
+    uuid5 of the canonical (tool id, version) pair: delimiter-proof and fixed-length,
+    so every id and version the execute grammar admits fits the gate scope grammar.
+    The approvals service records the owner's decision against (run, node, scope)
+    once the ledger holds a gate request for it; the transport verifies the named
+    approval is that decision. Open: no production path asks the ledger for this
+    gate under the tool-calling node yet (the scheduler asks only under `human_gate`
+    nodes, under their own ids), so a passing verification today needs the request
+    made explicitly; one decision admits every execution of the node — retries and
+    loop iterations alike — and no expiry is recorded, so none is checked."""
+
+    pair = canonical_json({"tool_id": tool_id, "version": version}).decode()
+    scope = "tool:" + str(uuid5(NAMESPACE_URL, f"deeptwin:tool-approval-scope:{pair}"))
+    if LOCAL.fullmatch(scope) is None:  # closed by construction; the grammar is pinned by test
+        raise ValueError("the tool and version cannot be named as an approval scope")
+    return scope
 
 
 def _unsent(deadline, code_if_open="transport_unavailable"):
@@ -220,8 +241,8 @@ _PLACEHOLDER = "00000000-0000-4000-8000-000000000000"
 class ExtensionAttemptTransport:
     """Built only by `build`; one bound operation over one extension slot."""
 
-    __slots__ = ("_artifact_inputs", "_attempt_ms", "_domain", "_effect_approval_ref", "_instance_id",
-                 "_ledger", "_operation", "_slot_number", "_tool")
+    __slots__ = ("_approvals", "_artifact_inputs", "_attempt_ms", "_domain", "_effect_approval_ref",
+                 "_instance_id", "_ledger", "_operation", "_slot_number", "_tool")
 
     def __init__(self) -> None:
         raise TypeError("Use ExtensionAttemptTransport.build")
@@ -229,7 +250,7 @@ class ExtensionAttemptTransport:
     @classmethod
     def build(cls, *, domain_store, instance_id, slot_number, operation="status",
               attempt_ms=ATTEMPT_MS, artifact_inputs=(), tool=None, ledger=None,
-              effect_approval_ref=None):
+              effect_approval_ref=None, approvals=None):
         if type(domain_store) is not DomainStore:
             raise TypeError("Exact DomainStore required")
         if type(instance_id) is not str or not instance_id:
@@ -258,6 +279,11 @@ class ExtensionAttemptTransport:
         if effect_approval_ref is not None and (type(effect_approval_ref) is not EntityRef
                                                 or effect_approval_ref.kind != "action_approval"):
             raise TypeError("an effect approval is an exact action_approval reference")
+        if approvals is not None and (type(approvals) is not PersistentRunApprovals
+                                      or approvals._domain is not domain_store):
+            raise TypeError("approvals must be the exact PersistentRunApprovals over this store")
+        if (effect_approval_ref is not None) != (approvals is not None):
+            raise ValueError("an approval is verified through the authority that recorded it, and only then")
         if tool is not None:
             key = (tool.get("tool_id"), tool.get("version")) if type(tool) is dict else None
             if key not in TOOL_INPUT_CONTRACTS:
@@ -269,6 +295,8 @@ class ExtensionAttemptTransport:
             # the effect gate, from the mirror's effect class
             if (TOOL_EFFECTS[key] in APPROVAL_EFFECTS) != (effect_approval_ref is not None):
                 raise ValueError("an external effect requires an explicit approval; a read carries none")
+            if effect_approval_ref is not None:
+                tool_approval_scope(key[0], key[1])  # the scope must be nameable at build
         elif effect_approval_ref is not None:
             raise ValueError("a query carries no effect approval")
         if tool is not None:
@@ -293,6 +321,7 @@ class ExtensionAttemptTransport:
         transport._tool = tool
         transport._ledger = ledger
         transport._effect_approval_ref = effect_approval_ref
+        transport._approvals = approvals
         return transport
 
     @property
@@ -341,6 +370,8 @@ class ExtensionAttemptTransport:
         if remaining_ms <= 0:
             raise ExtensionTransportError("transport_deadline",
                                           dispatch_effect="definitely_not_sent")
+        # the approval an external effect names is verified before any byte leaves
+        self._verify_effect_approval(request)
         try:
             root, spec = extension_channel(
                 instance_id=self._instance_id, slot_number=self._slot_number
@@ -402,6 +433,27 @@ class ExtensionAttemptTransport:
                                "succeeded" if result.outcome == "succeeded" else "failed",
                                result.result_ref)
         return result
+
+    def _verify_effect_approval(self, request):
+        """The named approval must be the owner's recorded decision for this run, this
+        node and this tool's scope (existence, authorship and binding are the approvals
+        service's checks), an approval rather than a rejection, and the exact record
+        named (version and digest) — any other is refused before a byte leaves. The
+        refusal is raised as `definitely_not_sent`; the dispatcher today records every
+        transport failure after the send intent as an unknown outcome (honouring the
+        vouched non-send there is a separate slice). No expiry is recorded on a decision
+        or a gate request, so none is checked (runtime.md names stale approvals: open)."""
+
+        if self._effect_approval_ref is None:
+            return
+        try:
+            found = self._approvals.lookup(request.run_id, request.node_id,
+                                           tool_approval_scope(self._tool.tool_id, self._tool.version))
+        except RunApprovalError:
+            raise ExtensionTransportError("transport_unavailable",
+                                          dispatch_effect="definitely_not_sent") from None
+        if found is None or found.decision != "approved" or found.approval_ref != self._effect_approval_ref:
+            raise ExtensionTransportError("transport_invalid", dispatch_effect="definitely_not_sent")
 
     def _record_tool_call_intent(self, permit, request, declarations):
         """The ToolCall's write-ahead intent, recorded in the ledger before the request
