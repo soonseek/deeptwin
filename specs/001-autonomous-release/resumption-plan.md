@@ -2453,8 +2453,10 @@ the request adapter for the observer and the approvals module); the run view's D
 (`run-panel-dom-t048.md`: `run-panel.mjs`, not yet mounted — the shell has no run source); the worker's
 `describe_tools` landed over its empty tool table (`worker-describe-tools-t087.md`); the artifact input leg of the
 execute exchange landed over T018's bounded stream (`worker-artifact-input-leg-t018-t087.md`: declared inputs,
-profile-gated admission, typed unknown on a broken stream; no registered consumer yet). Next: the shell's run
-source (graph/run creation surface) before the run panel's mount, then a real tool / `invoke_tool` over the leg
+profile-gated admission, typed unknown on a broken stream; no registered consumer yet). The run source landed
+as the public snapshot's run list (`run-list-source-t048.md`; a creation surface is blocked on the consent/design
+line — no production path records a run consent, environment or work revision). Next: the shell mount of the run
+list + panel on the supported factory (the `/` stub, T025/T048), then a real tool / `invoke_tool` over the leg
 (T087), then worker-returned output artifacts.
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;

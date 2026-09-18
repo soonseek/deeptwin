@@ -1268,3 +1268,15 @@ open, weak/missing tests; three NITs) folded in RED-first. Covering **58 / 139 /
 Ruff clean. Details and hashes in `worker-artifact-input-leg-t018-t087.md`. Full regression follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6252 passed, 2 skipped, 1 warning, 369
 subtests passed in 904.43s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## T048 — the run panel's run source (2026-09-18)
+
+RED retained (`run-list.mjs` absent from the tree and the catalogue), GREEN after the module and the entry. The
+creation surface is blocked honestly (no production producer of `run_consent` / `environment` / `work_revision`,
+reviewer-verified), so the source is the public snapshot's durable run rows. Independent review ACCEPT WITH CHANGES
+(MUST: the list's bound below the server's snapshot bound; SHOULD: `in` on a plain object, a failed refresh wiping
+the list and the choice, fixtures misstating the served shape; NITs) folded in RED-first. `node --test` **44**
+(run-list 8), mirror **4**, covering **144**; Ruff clean. Details and hashes in `run-list-source-t048.md`. Full
+regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6256 passed, 2 skipped, 1 warning, 369
+subtests passed in 900.00s** — the two Linux-only skips. Hashes re-verified unchanged before commit.

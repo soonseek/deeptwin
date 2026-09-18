@@ -36,6 +36,7 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "runtime.mjs": "application/javascript",
         "session.mjs": "application/javascript",
         "run-panel.mjs": "application/javascript",
+        "run-list.mjs": "application/javascript",
     }
     assert "index.html" not in MODULES
 
