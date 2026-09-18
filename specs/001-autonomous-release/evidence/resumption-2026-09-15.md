@@ -1145,3 +1145,15 @@ folded in RED-first. Runs API **19 passed**; covering **365 passed** (+ the adap
 findings. Details and hashes in `runs-routes-browser-path.md`. Full regression follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6195 passed, 2 skipped, 1 warning, 369
 subtests passed in 880.75s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## T048 logic half — `app/static/runtime.mjs` (2026-09-18)
+
+RED retained (module absent: `ERR_MODULE_NOT_FOUND` and the mirror's `FileNotFoundError`), GREEN after the
+pure module; independent review ACCEPT WITH CHANGES (generation-ordered observer, error partition by envelope
+code or HTTP status with the CSRF contract stated, both gate scope kinds, visits vs retries vocabulary and
+`거절됨`, the visit-gap invariant, activations and approvals kept, target-scoped errors, an optional graph node
+universe, the full phase rule, async-only failures; six NITs) folded in RED-first. `node --test` **13 passed**
+(other .mjs suites unchanged: 7/8/4/5); mirror **4 passed**. Details and hashes in `runtime-gui-logic-t048.md`.
+Full regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6199 passed, 2 skipped, 1 warning, 369
+subtests passed in 927.77s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
