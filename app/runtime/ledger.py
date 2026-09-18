@@ -2767,6 +2767,33 @@ class RuntimeLedger:
         self._validated_bound_checkpoints(db, sorted({row["run_id"] for row in rows}))
         return rows
 
+    def bound_checkpoints_for_run(self, run_id, namespace):
+        """Read-only: every checkpoint row of one run bound to an attempt, as
+        `(revision, bound_execution_id, bound_attempt_id)` in revision order, read
+        and re-verified in one transaction (each row still matches its attempt's
+        exact state and names an execution of this run). Trace readers attribute a
+        result to its producing attempt from these; nothing here grants dispatch.
+        """
+        uuid_string(run_id)
+        _bounded_text("checkpoint namespace", namespace, 128,
+                      pattern=r"[A-Za-z0-9][A-Za-z0-9_.:-]*")
+        with self._transaction() as db:
+            if db.execute("SELECT 1 FROM runtime_runs WHERE vault_id=? AND id=?",
+                          (self.vault_id, run_id)).fetchone() is None:
+                raise KeyError(run_id)
+            rows = db.execute(
+                "SELECT revision FROM runtime_checkpoints WHERE vault_id=? AND run_id=? "
+                "AND namespace=? AND bound_attempt_id IS NOT NULL ORDER BY revision",
+                (self.vault_id, run_id, namespace)).fetchall()
+            if len(rows) > MAX_CHECKPOINTS_PER_NAMESPACE:
+                raise CorruptLedger("Bound checkpoint bound exceeded")
+            bound = []
+            for row in rows:
+                checkpoint = self._checkpoint(db, run_id, namespace, revision=row["revision"])
+                bound.append((checkpoint["revision"], checkpoint["bound_execution_id"],
+                              checkpoint["bound_attempt_id"]))
+            return bound
+
     def checkpoint_for_replay(self, run_id, namespace, *, revision=None):
         uuid_string(run_id)
         _bounded_text("checkpoint namespace", namespace, 128,

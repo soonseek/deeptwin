@@ -1209,3 +1209,15 @@ findings. Details and hashes in `checkpoint-attempt-binding-t040.md`. T040 is ma
 follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6225 passed, 2 skipped, 1 warning, 369
 subtests passed in 909.89s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## T048 — the run trace's attempt layer (2026-09-18)
+
+RED retained (`attempts` / `producing_attempt_id` absent, no `TraceAttempt`), GREEN after the dataclass, the
+bound-row map and the attempt grouping. Independent review ACCEPT WITH CHANGES (MUST: raw ledger exceptions leaked
+from the new revision loop → one closed read boundary; SHOULD: one-transaction `bound_checkpoints_for_run`, results
+from the head's pending writes so a crash between the bound row and the merging checkpoint is not a gap, the three
+states documented and pinned; three NITs) folded in RED-first. Run trace **+4**, ledger **+1**; covering **252**;
+Ruff clean (ledger 18/18 pre-existing). Details and hashes in `run-trace-attempt-layer-t048.md`. Full regression
+follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6230 passed, 2 skipped, 1 warning, 369
+subtests passed in 904.01s** — the two Linux-only skips. Hashes re-verified unchanged before commit.

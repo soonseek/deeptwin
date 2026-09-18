@@ -910,3 +910,29 @@ def test_a_checkpoint_binding_that_no_longer_matches_the_attempt_is_refused_ever
                                        lease_duration_ms=1_000)
     with pytest.raises(subject.module.CorruptLedger):
         subject.ledger.reconcile_startup(identifier(), observed_owners={})
+
+
+def test_bound_checkpoints_for_run_enumerates_verified_bound_rows_only(tmp_path):
+    # the trace's attempt layer reads which attempt produced which execution's result
+    # from the bound rows: revision order, unbound rows skipped, verified on read,
+    # scoped to the run and the namespace, read-only
+    subject = opened(tmp_path)
+    run, execution, _lease_owner, attempt, _ = prepared(subject)
+    with pytest.raises(KeyError):
+        subject.ledger.bound_checkpoints_for_run(identifier(), "main")
+    assert subject.ledger.bound_checkpoints_for_run(run.run_id, "main") == []
+    subject.ledger.write_checkpoint(identifier(), run.run_id, "main", b"input", expected_revision=0)
+    subject.ledger.write_checkpoint(identifier(), run.run_id, "main", b"bound",
+                                    expected_revision=1, attempt_id=attempt.attempt_id)
+    subject.ledger.write_checkpoint(identifier(), run.run_id, "main", b"merged", expected_revision=2)
+    assert subject.ledger.bound_checkpoints_for_run(run.run_id, "main") == [
+        (2, execution.execution_id, attempt.attempt_id),
+    ]
+    assert subject.ledger.bound_checkpoints_for_run(run.run_id, "other") == []
+    with pytest.raises(ValueError):
+        subject.ledger.bound_checkpoints_for_run(run.run_id, "not a namespace!")
+    before = subject.ledger.read_checkpoint(run.run_id, "main")["revision"]
+    _tamper(subject, run.run_id, 2, bound_attempt_revision=99)
+    with pytest.raises(subject.module.CorruptLedger):
+        subject.ledger.bound_checkpoints_for_run(run.run_id, "main")
+    assert subject.ledger.read_checkpoint(run.run_id, "main")["revision"] == before

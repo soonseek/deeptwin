@@ -37,8 +37,32 @@ def _issue(cls, **fields):
 
 
 @dataclass(frozen=True, slots=True, init=False)
+class TraceAttempt:
+    """One attempt (시도) of a visit as the ledger recorded it: its number, its
+    terminal facts, and whether it is the attempt the bound checkpoint row names
+    as the producer of the visit's durable result."""
+
+    attempt_id: str
+    attempt_no: int
+    phase: str
+    terminal_outcome: str | None
+    remote_terminal_observed: str
+    usage_finality: str
+    cancel_state: str
+    produced_result: bool
+    bound_revision: int | None
+
+
+@dataclass(frozen=True, slots=True, init=False)
 class TraceExecution:
-    """One recorded node visit and its durable result reference, if any."""
+    """One recorded node visit (수행), its attempts, and its durable result
+    reference, if any. Three honest states: no attempts (a handler-produced
+    visit; nothing to attribute), a result attributed to the one attempt a
+    bound checkpoint row names (`producing_attempt_id`, `produced_result`),
+    or attempts with a result that no bound row names (a result produced
+    outside the dispatcher, e.g. a resume with a plain handler after a failed
+    attempt): then `producing_attempt_id` is None and no attempt claims it —
+    a past attempt never carries a later result."""
 
     execution_id: str
     node_id: str
@@ -46,6 +70,8 @@ class TraceExecution:
     parents: tuple[str, ...]
     result_ref: EntityRef | None
     created_at_ms: int
+    attempts: tuple[TraceAttempt, ...]
+    producing_attempt_id: str | None
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -102,6 +128,9 @@ def read_run_trace(ledger, run_id, compiled) -> RunTrace:
     except KeyError:
         raise RunTraceError("unknown run") from None
     node_ids = tuple(node.node_id for node in compiled.nodes)
+    # one closed read boundary over the journal and the ledger: a trace is never
+    # assembled against the wrong compilation, and no ledger or storage detail
+    # (a session refusal, a missing row, a corrupt binding) leaks past it
     try:
         saver = LedgerCheckpointSaver(
             ledger,
@@ -114,32 +143,77 @@ def read_run_trace(ledger, run_id, compiled) -> RunTrace:
             {"configurable": {"thread_id": run_id, "checkpoint_ns": ""}}
         )
     except CheckpointError:
-        # the journal is bound to another graph/authority or is unreadable:
-        # a trace must never be assembled against the wrong compilation
         raise RunTraceError("checkpoint journal is not bound to this graph") from None
+    try:
+        try:
+            revision = ledger.checkpoint_for_replay(run_id, NAMESPACE)["revision"]
+        except KeyError:
+            revision = 0
+        # the bound rows name, per execution, the attempt that produced its
+        # result; the ledger re-verified each row and that the execution is this
+        # run's. One execution has at most one bound row (the registry binds one
+        # attempt per execution); a later row for the same execution would win
+        bound = {}
+        for row_revision, execution_id, attempt_id in ledger.bound_checkpoints_for_run(
+            run_id, NAMESPACE
+        ):
+            bound[execution_id] = (attempt_id, row_revision)
+        attempts_by_execution = {}
+        for item in ledger.attempts_for_run(run_id):
+            attempts_by_execution.setdefault(item["spec"]["execution_id"], []).append(
+                item
+            )
+        execution_rows = ledger.executions_for_run(run_id)
+    except Exception:  # noqa: BLE001 - ledger and storage detail stays private
+        raise RunTraceError("run journal is not readable") from None
+    # the durable results: the head's merged channel, then the head's pending
+    # writes — a result the journal preserved (a crash between the bound
+    # pending-writes row and the merging checkpoint) is still the visit's result
     results = {}
     if head is not None:
-        for execution_id, ref in (
-            head.checkpoint["channel_values"].get("results", {}).items()
-        ):
-            if type(ref) is EntityRef:
-                results[execution_id] = ref
-    try:
-        revision = ledger.checkpoint_for_replay(run_id, NAMESPACE)["revision"]
-    except KeyError:
-        revision = 0
+        values = head.checkpoint["channel_values"].get("results", {})
+        pending = [
+            value
+            for _, channel, value in head.pending_writes
+            if channel == "results" and type(value) is dict
+        ]
+        for mapping in (values, *pending):
+            for execution_id, ref in mapping.items():
+                if type(ref) is EntityRef:
+                    results[execution_id] = ref
     executions = []
-    for row in ledger.executions_for_run(run_id):
+    for row in execution_rows:
         spec = row["spec"]
+        execution_id = spec["execution_id"]
+        producing, bound_revision = bound.get(execution_id, (None, None))
+        attempts = tuple(
+            _issue(
+                TraceAttempt,
+                attempt_id=item["spec"]["attempt_id"],
+                attempt_no=item["spec"]["attempt_no"],
+                phase=item["phase"],
+                terminal_outcome=item["terminal_outcome"],
+                remote_terminal_observed=item["remote_terminal_observed"],
+                usage_finality=item["usage_finality"],
+                cancel_state=item["cancel_state"],
+                produced_result=item["spec"]["attempt_id"] == producing,
+                bound_revision=(
+                    bound_revision if item["spec"]["attempt_id"] == producing else None
+                ),
+            )
+            for item in attempts_by_execution.get(execution_id, ())
+        )
         executions.append(
             _issue(
                 TraceExecution,
-                execution_id=spec["execution_id"],
+                execution_id=execution_id,
                 node_id=spec["node_id"],
                 loop_index=spec["loop_indices"][0] if spec["loop_indices"] else 0,
                 parents=tuple(spec["parent_execution_ids"]),
-                result_ref=results.get(spec["execution_id"]),
+                result_ref=results.get(execution_id),
                 created_at_ms=row["created_at_ms"],
+                attempts=attempts,
+                producing_attempt_id=producing,
             )
         )
     gaps = tuple(item.execution_id for item in executions if item.result_ref is None)
