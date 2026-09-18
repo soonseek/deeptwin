@@ -26,6 +26,7 @@ here at all (T042).
 
 from __future__ import annotations
 
+import inspect
 import uuid
 from dataclasses import dataclass
 
@@ -275,6 +276,21 @@ class NodeAttemptDispatcher:
                 raise TypeError("Bindings must be exact AttemptBinding values")
         if not callable(transport) or isinstance(transport, str):
             raise TypeError("Transport must be callable")
+        # a code-owned transport may state the most output bytes an attempt can
+        # produce; every binding reserves at least that, or the ledger would settle
+        # the attempt as an accounting overrun that blocks the whole budget session
+        # (a present bound that fails to read propagates: it never turns the gate off)
+        stated = None
+        if inspect.getattr_static(transport, "output_bytes_bound", None) is not None:
+            stated = transport.output_bytes_bound
+        if stated is not None:
+            if type(stated) is not int:
+                raise TypeError("a transport's output bound is an exact count")
+            if stated < 0:
+                raise ValueError("a transport's output bound is never negative")
+            for node_id, binding in bindings.items():
+                if binding.output_bytes < stated:
+                    raise ValueError(f"binding for {node_id} reserves less than the transport's output bound")
         dispatcher = object.__new__(cls)
         dispatcher._ledger = ledger
         dispatcher._book = budget_book

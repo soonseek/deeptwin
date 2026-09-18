@@ -2462,9 +2462,9 @@ control mirroring the table and verifying the reply). The reverse leg landed wit
 (`worker-output-artifacts-t018-t087.md`: output artifacts offered before the reply, admitted, verified, imported and
 sealed). The first screen landed (`first-screen-setup-login-t025.md`: setup on an ownerless instance, login otherwise,
 the public setup state on `/health`, the observation page reachable after either). The `ToolCall` record and the effect
-gate landed (`tool-call-record-effect-gate-t087.md`). Next: the `output_bytes` reservation from the tool's bound,
-then the intake screen on the supported factory (T023/T025, §5.1.4), then the approval's verification and the
-ToolDefinition-backed gate (T087).
+gate landed (`tool-call-record-effect-gate-t087.md`); the `output_bytes` reservation from the tool's bound landed
+(`output-bytes-reservation-t087.md`). Next: the intake screen on the supported factory (T023/T025, §5.1.4), then
+the approval's verification and the ToolDefinition-backed gate (T087).
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;

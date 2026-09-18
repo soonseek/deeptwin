@@ -48,6 +48,7 @@ from ..workers.extension_channel import ExtensionChannelError, extension_channel
 from ..workers.extension_execute_messages import (
     MAX_INPUT_BYTES,
     MAX_REMAINING_MS,
+    MAX_REPLY_BYTES,
     OPERATIONS,
     REPLY_SCHEMA,
     ArtifactInputDeclaration,
@@ -153,8 +154,10 @@ TOOL_EFFECTS = MappingProxyType({("text_profile", "1.0.0"): "read", ("text_norma
 # or reversible effect carries no approval requirement)
 APPROVAL_EFFECTS = TOOL_APPROVAL_EFFECTS  # the ledger's, pinned to the ports contract
 # what each tool can return in bytes: (growth factor over the input, absolute ceiling)
-# — a caller reserving `output_bytes` for the attempt needs both (the tool's derived text
-# is at most three times its input under NFC, never over the leg's ceiling)
+# — `output_bytes_bound` reserves from both and `_result` enforces the artifact part
+# (the tool's derived text is at most three times its input under NFC: the widest
+# UTF-8 growth of any code point is 3.0, the U+1D15E–U+1D1C0 musical-symbol family,
+# 4 bytes to 12; never over the leg's ceiling)
 TOOL_OUTPUT_BOUNDS = MappingProxyType({
     ("text_profile", "1.0.0"): (0, 0),
     ("text_normalize", "1.0.0"): (3, MAX_INPUT_BYTES),
@@ -295,6 +298,25 @@ class ExtensionAttemptTransport:
     @property
     def operation(self) -> str:
         return self._operation
+
+    @property
+    def output_bytes_bound(self) -> int:
+        """The most output bytes control will measure for one attempt of this
+        bound operation: the reply's canonical output (a closed sub-object of a
+        reply frame the grammar accepts only when the raw bytes equal their
+        canonical encoding, within the frame's ceiling — so a re-encoding never
+        grows past it) plus the output artifacts the tool can return (its stated
+        growth over the declared inputs, never over the leg's ceiling; `_result`
+        refuses a batch over it). The dispatcher refuses a binding reserving
+        less, so an attempt never settles as an accounting overrun that blocks
+        the whole budget session."""
+        return MAX_REPLY_BYTES + self._artifact_output_bound()
+
+    def _artifact_output_bound(self) -> int:
+        if self._tool is None:
+            return 0
+        growth, ceiling = TOOL_OUTPUT_BOUNDS[(self._tool.tool_id, self._tool.version)]
+        return min(growth * sum(item.declared_size for item in self._artifact_inputs), ceiling)
 
     def __call__(self, permit, request, window) -> AttemptTransportResult:
         if type(permit) is not DispatchPermit:
@@ -570,6 +592,10 @@ class ExtensionAttemptTransport:
             ]
             if len(received) != len(contract) or reply.output["artifacts"] != expected or any(
                     item.descriptor.media_type != media for (_role, media), item in zip(contract, received, strict=True)):
+                raise ExtensionTransportError("transport_mismatch")
+            # the tool's stated output bound is enforced, not measured: a worker returning
+            # more than the growth over its inputs is a mismatch, never an accounting overrun
+            if sum(item.descriptor.declared_size for item in received) > self._artifact_output_bound():
                 raise ExtensionTransportError("transport_mismatch")
         result_ref = None
         if reply.outcome == "succeeded":

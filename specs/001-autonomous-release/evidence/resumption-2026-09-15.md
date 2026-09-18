@@ -1340,3 +1340,12 @@ where `test_runs_api`'s gated-run test answered 503 on creation only in that com
 Ruff: no new findings. Details and hashes in `tool-call-record-effect-gate-t087.md`. Full regression: **6304 passed, 2 skipped** (Linux-only),
 369 subtests, 16m10s — the gated-run test passed in the standard order (the covering failure is order-dependent).
 
+## T087 — the `output_bytes` reservation from the tool's bound (2026-09-18)
+
+RED retained (no `output_bytes_bound`, the dispatcher not refusing), GREEN after the transport's stated bound and
+the dispatcher's build-time gate. Independent review ACCEPT WITH CHANGES (MUST: the bound measured, not enforced
+— an inflating worker still blocked the session; SHOULD: the policy-cap path unpinned, an incidental docstring
+reason, a raising property silently skipping the gate; NITs) folded in RED-first. Covering **74 / 41**; Ruff: no new
+findings. Details and hashes in `output-bytes-reservation-t087.md`. Full regression: **6310 passed, 2 skipped** (Linux-only),
+369 subtests, 15m58s.
+

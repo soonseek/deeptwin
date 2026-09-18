@@ -21,6 +21,7 @@ from app.domain.refs import EntityRef, canonical_json
 from app.runtime import extension_attempt_transport as xt
 from app.runtime import node_attempts as na
 from app.runtime import scheduler as sch
+from app.runtime.budgets import BudgetExceeded
 from app.runtime.ledger import ConsumedDispatchWindow
 from app.tests.test_extension_listener import INSTANCE
 from app.tests.test_extension_probe import (  # noqa: F401 - fixture re-exports
@@ -31,17 +32,25 @@ from app.tests.test_extension_probe import (  # noqa: F401 - fixture re-exports
     slot,
     worker_tree,
 )
-from app.tests.test_runtime_budget_dispatch import budget_row
+from app.tests.test_runtime_budget_dispatch import budget_row, opened
 from app.tests.test_runtime_result_settlement import dispatched
 from app.tests.test_scheduler_attempt_dispatch import (
     build,
-    dispatcher,
     handlers,
-    started,
     writer_attempt_id,
 )
+from app.tests.test_scheduler_attempt_dispatch import started as _started
+from app.workers import extension_execute_messages as xm
 from app.workers import extension_probe as ep
 from app.workers import listener
+
+# the transport states a bound of at least the reply frame's ceiling (4 KiB); the
+# shared subject's 1 000-byte policy cap cannot admit an attempt reserved from it
+OUTPUT_CAP = xm.MAX_REPLY_BYTES + xt.MAX_INPUT_BYTES
+
+
+def started(path):
+    return _started(path, max_output_bytes=OUTPUT_CAP)
 
 
 @pytest.fixture
@@ -77,18 +86,28 @@ def staged(slot, monkeypatch):  # noqa: F811 - the imported fixture
 
 
 def bound(subject, transport, *, tool_calls=0):
-    # the status output is a few hundred bytes: reserve within the policy cap; a tool
-    # call reserves its one call
+    # an attempt reserves the output bytes the transport states it can produce (the
+    # dispatcher refuses less); a tool call reserves its one call
     return na.NodeAttemptDispatcher.build(
         ledger=subject.ledger, budget_book=subject.book, owner=subject.owner,
         bindings={"writer": na.AttemptBinding.create(
             envelope_ref=subject.refs.envelope, profile_ref=subject.refs.profile,
             budget_policy_ref=subject.refs.budget, deadline_at_ms=10_000,
             lease_duration_ms=1_000, model_calls=1, tool_calls=tool_calls, node_visits=1,
-            loop_rounds=0, output_bytes=1_000, candidates=0, api_microunits=None,
+            loop_rounds=0, output_bytes=transport.output_bytes_bound, candidates=0, api_microunits=None,
             principal=subject.principal, grant=subject.grant,
         )},
         transport=transport,
+    )
+
+
+def binding_with(subject, *, output_bytes):
+    return na.AttemptBinding.create(
+        envelope_ref=subject.refs.envelope, profile_ref=subject.refs.profile,
+        budget_policy_ref=subject.refs.budget, deadline_at_ms=10_000,
+        lease_duration_ms=1_000, model_calls=1, tool_calls=0, node_visits=1,
+        loop_rounds=0, output_bytes=output_bytes, candidates=0, api_microunits=None,
+        principal=subject.principal, grant=subject.grant,
     )
 
 
@@ -278,7 +297,7 @@ def test_declared_inputs_stream_after_the_request_and_a_typed_result_settles(tmp
             envelope_ref=subject.refs.envelope, profile_ref=subject.refs.profile,
             budget_policy_ref=subject.refs.budget, deadline_at_ms=10_000,
             lease_duration_ms=1_000, model_calls=1, tool_calls=1, node_visits=1,
-            loop_rounds=0, output_bytes=1_000, candidates=0, api_microunits=None,
+            loop_rounds=0, output_bytes=transport_.output_bytes_bound, candidates=0, api_microunits=None,
             principal=subject.principal, grant=subject.grant,
         )},
         transport=transport_, retry_after_terminal=True,
@@ -789,7 +808,7 @@ def test_an_unregistered_operation_is_admitted_as_a_failed_attempt(tmp_path, sta
     box = staged[3]
     subject, run = started(tmp_path / "ledger")
     with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
-        build(subject, run, dispatcher(subject, transport(subject, operation="cancel")),
+        build(subject, run, bound(subject, transport(subject, operation="cancel")),
               handlers(subject, [])).run()
     attempt_id = writer_attempt_id(run)
     stored = subject.ledger.get_attempt(attempt_id)
@@ -807,7 +826,7 @@ def test_no_reachable_worker_is_an_unknown_outcome(tmp_path, slot, monkeypatch):
                         lambda *, instance_id, slot_number: (root, spec))
     subject, run = started(tmp_path / "ledger")
     with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
-        build(subject, run, dispatcher(subject, transport(subject)), handlers(subject, [])).run()
+        build(subject, run, bound(subject, transport(subject)), handlers(subject, [])).run()
     attempt_id = writer_attempt_id(run)
     stored = subject.ledger.get_attempt(attempt_id)
     assert stored["terminal_outcome"] == "outcome_unknown"
@@ -890,3 +909,122 @@ def test_the_worker_cannot_inflate_the_usage_of_status(tmp_path, staged, monkeyp
     assert subject.ledger.get_attempt(attempt_id)["terminal_outcome"] == "outcome_unknown"
     assert budget_row(subject, na.reservation_identity(attempt_id))["state"] == "unknown"
     assert box.get("served") == 1, box
+
+
+def test_the_transport_states_the_output_bytes_an_attempt_can_produce(tmp_path):
+    # the reservation of `output_bytes` from the tool's stated bound: control measures
+    # the reply's canonical output (inside the reply frame's ceiling) plus the output
+    # artifacts it admits (the tool's growth factor over its inputs, never over the
+    # leg's ceiling); a caller reserves exactly this and never overruns
+    subject = opened(tmp_path)
+    assert transport(subject).output_bytes_bound == xm.MAX_REPLY_BYTES
+    assert transport(subject, operation="describe_tools").output_bytes_bound == xm.MAX_REPLY_BYTES
+    assert tool_transport(subject, (text_input(b"hello"),)).output_bytes_bound == xm.MAX_REPLY_BYTES
+    normalize = xt.ExtensionAttemptTransport.build(
+        domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+        artifact_inputs=(text_input(b"a\r\nb"),), tool=TEXT_NORMALIZE)
+    assert normalize.output_bytes_bound == xm.MAX_REPLY_BYTES + 3 * 4
+    at_ceiling = xt.ExtensionAttemptTransport.build(
+        domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+        artifact_inputs=(text_input(b"x" * xt.MAX_INPUT_BYTES),), tool=TEXT_NORMALIZE)
+    assert at_ceiling.output_bytes_bound == xm.MAX_REPLY_BYTES + xt.MAX_INPUT_BYTES
+    assert xm.MAX_REPLY_BYTES == 4_096  # the reply frame's ceiling (extension_execute_messages)
+
+
+def test_an_attempt_reserved_from_the_bound_never_overruns_even_when_the_text_grows(tmp_path, staged):
+    # an NFC expansion: U+0344 (2 bytes) derives U+0308 U+0301 (4 bytes) — the derived text
+    # is larger than the input, within the stated growth; reserved from the bound, the
+    # attempt finalizes with its measured usage under the reservation
+    box = staged[3]
+    subject, run = started(tmp_path / "ledger")
+    raw = "\u0344" * 3
+    transport_ = xt.ExtensionAttemptTransport.build(
+        domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+        artifact_inputs=(text_input(raw.encode()),), tool=TEXT_NORMALIZE)
+    outcome = build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
+    writer_execution = sch.execution_identity(run.run_id, "writer", 0)
+    content = subject.domain.get(dict(outcome.result_refs)[writer_execution]).body["content"]
+    expected = "\u0308\u0301" * 3
+    assert content["artifacts"][0]["blob"]["size"] == len(expected.encode()) > len(raw.encode())
+    row = budget_row(subject, na.reservation_identity(writer_attempt_id(run)))
+    assert row["state"] == "finalized" and row["output_bytes"] == transport_.output_bytes_bound
+    assert row["actual_output_bytes"] == len(canonical_json(content["output"])) + len(expected.encode())
+    assert row["actual_output_bytes"] <= row["output_bytes"]
+    assert subject.book.status(subject.budget_session_id)["blocked_reason"] is None
+    assert box.get("served") == 1, box
+
+
+def test_an_attempt_reserved_under_the_bound_is_refused_at_build_not_settled_as_an_overrun(tmp_path, staged):
+    # the transport's bound is authoritative: the dispatcher refuses a binding under it at
+    # build (the ledger would otherwise settle the attempt as an accounting overrun that
+    # blocks the whole budget session — pinned below through a transport that states no bound)
+    box = staged[3]
+    subject, run = started(tmp_path / "ledger")
+    transport_ = transport(subject)
+    with pytest.raises(ValueError, match="output bound"):
+        na.NodeAttemptDispatcher.build(
+            ledger=subject.ledger, budget_book=subject.book, owner=subject.owner,
+            bindings={"writer": binding_with(subject, output_bytes=transport_.output_bytes_bound - 1)},
+            transport=transport_)
+    # the same exchange under-reserved through a bare callable stating no bound: the
+    # attempt itself still succeeds, but the ledger settles its reservation as an
+    # accounting overrun that blocks the whole budget session for every later
+    # reservation — the reason the bound exists
+    def bare(permit, request, window):
+        return transport_(permit, request, window)
+
+    dispatcher = na.NodeAttemptDispatcher.build(
+        ledger=subject.ledger, budget_book=subject.book, owner=subject.owner,
+        bindings={"writer": binding_with(subject, output_bytes=1)}, transport=bare)
+    build(subject, run, dispatcher, handlers(subject, [])).run()
+    row = budget_row(subject, na.reservation_identity(writer_attempt_id(run)))
+    assert row["state"] == "overage" and row["actual_output_bytes"] > 1
+    status = subject.book.status(subject.budget_session_id)
+    assert status["blocked_reason"] == "reservation_overrun" and status["usage_finality"] == "known_overrun"
+    with pytest.raises(BudgetExceeded):
+        subject.book.reserve(subject.budget_session_id, str(uuid4()), model_calls=0, tool_calls=0,
+                             node_visits=1, loop_rounds=0, output_bytes=1, api_microunits=None)
+    assert box.get("served") == 1, box
+
+
+def test_a_worker_returning_more_than_the_tools_stated_bound_is_never_admitted(tmp_path, staged, monkeypatch):
+    # review MUST: the bound is a fact control enforces, not a claim it measures — a worker
+    # returning more bytes than the tool's stated growth over its inputs (still under the
+    # leg's ceiling) is refused as a mismatch, so the attempt never settles as an
+    # accounting overrun that blocks the session
+    box = staged[3]
+    monkeypatch.setattr(ep, "_text_normalize", lambda raw: (b"x" * 10_000, True))
+    raised = observed_call(monkeypatch)
+    subject, run = started(tmp_path / "ledger")
+    transport_ = xt.ExtensionAttemptTransport.build(
+        domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+        artifact_inputs=(text_input(b"hello"),), tool=TEXT_NORMALIZE)
+    assert transport_.output_bytes_bound == xm.MAX_REPLY_BYTES + 15
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
+    assert raised[0].code == "transport_mismatch"
+    attempt_id = writer_attempt_id(run)
+    assert subject.ledger.get_attempt(attempt_id)["terminal_outcome"] == "outcome_unknown"
+    assert budget_row(subject, na.reservation_identity(attempt_id))["state"] == "unknown"
+    assert subject.book.status(subject.budget_session_id)["blocked_reason"] is None
+    assert box.get("served") == 1 or type(box.get("error")) is ep.ProbeServiceError, box
+
+
+def test_a_policy_cap_under_the_bound_refuses_the_attempt_before_any_row(tmp_path, staged):
+    # review SHOULD: the shared subject's 1 000-byte cap cannot admit the reply frame's
+    # ceiling — the budget refuses before any attempt or reservation row exists and the
+    # session stays open (runtime.md: a spend cap is the owner's decision, never a
+    # stranded open attempt)
+    box = staged[3]
+    subject, run = _started(tmp_path / "ledger")  # the 1 000-byte cap
+    transport_ = transport(subject)
+    assert transport_.output_bytes_bound > 1_000
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, bound(subject, transport_), handlers(subject, [])).run()
+    attempt_id = writer_attempt_id(run)
+    with pytest.raises(KeyError):
+        subject.ledger.get_attempt(attempt_id)
+    assert budget_row(subject, na.reservation_identity(attempt_id)) is None
+    assert subject.book.status(subject.budget_session_id)["blocked_reason"] is None
+    assert box.get("served") is None, box
+

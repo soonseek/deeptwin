@@ -57,7 +57,7 @@ def immutable(domain, roots, kind, *, content=None):
     return record.ref
 
 
-def opened(tmp_path, *, policy_content=True, max_model_calls=3):
+def opened(tmp_path, *, policy_content=True, max_model_calls=3, max_output_bytes=1_000):
     legacy = Store(tmp_path / "vault")
     domain = DomainStore(legacy)
     roots = domain.initialize_vault()
@@ -68,7 +68,7 @@ def opened(tmp_path, *, policy_content=True, max_model_calls=3):
         max_tool_calls=5,
         max_node_visits=7,
         max_loop_rounds=2,
-        max_output_bytes=1_000,
+        max_output_bytes=max_output_bytes,
         max_concurrency=2,
         max_wall_seconds=60,
         max_candidates=1,

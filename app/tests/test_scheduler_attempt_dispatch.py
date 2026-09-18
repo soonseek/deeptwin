@@ -29,8 +29,8 @@ from app.tests.test_runtime_budget_dispatch import (
 )
 
 
-def started(tmp_path):
-    subject = opened(tmp_path)
+def started(tmp_path, **policy):
+    subject = opened(tmp_path, **policy)
     run = RunSpec(
         identifier(), subject.refs.work, subject.refs.environment, subject.refs.consent,
         "live", subject.refs.budget, subject.budget_session_id, subject.refs.manifest,
@@ -612,3 +612,55 @@ def test_a_tampered_bound_row_refuses_the_next_scheduler_build(tmp_path):
     with pytest.raises(sch.SchedulerError, match="checkpoint journal binding failed"):
         build(subject, run, dispatcher(subject, transport), handlers(subject, []))
     assert transport.calls and len(transport.calls) == 1
+
+
+def test_a_transport_stating_an_output_bound_refuses_a_binding_under_it_at_build(tmp_path):
+    # a code-owned transport may state the most output bytes an attempt can produce;
+    # every binding must reserve at least that (an under-reservation would settle as an
+    # accounting overrun that blocks the budget session); a transport stating none, or a
+    # bound that is not an exact count, is refused only when it lies about the shape
+    subject, _run = started(tmp_path)
+
+    class Stating(Transport):
+        output_bytes_bound = 101
+
+    with pytest.raises(ValueError, match="output bound"):
+        dispatcher(subject, Stating(succeeded(subject)))  # the shared binding reserves 100
+
+    class Exact(Transport):
+        output_bytes_bound = 100
+
+    assert dispatcher(subject, Exact(succeeded(subject))).node_ids == frozenset({"writer"})
+
+    class Lying(Transport):
+        output_bytes_bound = "100"
+
+    with pytest.raises(TypeError):
+        dispatcher(subject, Lying(succeeded(subject)))
+
+    class Bool(Transport):
+        output_bytes_bound = True
+
+    with pytest.raises(TypeError):
+        dispatcher(subject, Bool(succeeded(subject)))
+
+    class Negative(Transport):
+        output_bytes_bound = -1
+
+    with pytest.raises(ValueError, match="output bound"):
+        dispatcher(subject, Negative(succeeded(subject)))
+
+    class Zero(Transport):
+        output_bytes_bound = 0
+
+    assert dispatcher(subject, Zero(succeeded(subject))).node_ids == frozenset({"writer"})
+    assert dispatcher(subject, Transport(succeeded(subject))).node_ids == frozenset({"writer"})
+
+    # review SHOULD: a bound that is present but fails to read never turns the gate off
+    class Broken(Transport):
+        @property
+        def output_bytes_bound(self):
+            raise AttributeError("PRIVATE")
+
+    with pytest.raises(AttributeError):
+        dispatcher(subject, Broken(succeeded(subject)))

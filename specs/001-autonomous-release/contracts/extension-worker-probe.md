@@ -290,9 +290,9 @@ control-side, schema records resolved from the entries' digests and the result v
 them, the effect gate and grant check for a tool call (`effect_class` is the entry's claim, mirrored
 on control, enforced by nothing yet), class-C terminals for external-effect tools, the tool table
 learned from `describe_tools` instead of the static mirror, a worker-owned scratch for larger
-outputs (in-memory sinks bound both legs to 1 MiB), the reservation of `output_bytes` from the tool's
-stated output bound (`TOOL_OUTPUT_BOUNDS`; an under-reserved attempt settles as an overrun that blocks
-the budget session — the caller, not the transport, sizes it today), optional outputs (an omissions
+outputs (in-memory sinks bound both legs to 1 MiB; the transport states `output_bytes_bound` — the reply
+frame's ceiling plus the tool's stated growth over its inputs from `TOOL_OUTPUT_BOUNDS` — enforces the artifact
+part against what it received, and the dispatcher refuses a binding reserving less), optional outputs (an omissions
 policy; the wire binds exactly the contract's count), the data-model `Artifact` entity for the sealed
 output (an inline blob reference today; a seal failure after the import leaves a registered,
 unreferenced content-addressed blob),
