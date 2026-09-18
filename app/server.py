@@ -853,7 +853,7 @@ def create_development_app(data_dir, port=4193, *, codex_factory=None, understan
 
 def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, expected_gid,
                runtime_dispatch_resolver=None, worker_dispatch_factory=None,
-               first_party_startup_values=None, additional_protected_roots=()):
+               first_party_startup_values=None, additional_protected_roots=(), run_executor=None):
     """Supported web factory: exact deployment authority, no host provider discovery."""
     from .api.first_party import (
         ApplicationContext,
@@ -924,8 +924,11 @@ def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, e
             if authority._closed:
                 raise OwnerAuthError('unavailable')
             await run_in_threadpool(publication.activate_startup)
-            if worker_dispatch_factory is not None:
+            if worker_dispatch_factory is not None or run_executor is not None:
+                # a dispatching worker or a run executor needs the ledger's startup
+                # reconciliation before any attempt or checkpoint journal is opened
                 await run_in_threadpool(components.runtime_ledger.reconcile_startup, str(uuid4()), observed_owners={})
+            if worker_dispatch_factory is not None:
                 worker = await run_in_threadpool(worker_dispatch_factory, components)
                 if type(worker) is not WorkerDispatchService:
                     raise TypeError('Worker dispatch factory returned an invalid service')
@@ -966,7 +969,7 @@ def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, e
         publication = compose_first_party(application, ApplicationContext(
             components=components, owner_authority=authority, base_path=profile.base_path,
             runtime_dispatch_resolver=runtime_dispatch_resolver, worker_dispatch_slot=slot,
-            startup_inputs=startup_inputs))
+            startup_inputs=startup_inputs, run_executor=run_executor))
         application.state.route_composition = publication.receipt
         application.state.first_party_exports = publication.exports
         application.include_router(create_session_router(authority))

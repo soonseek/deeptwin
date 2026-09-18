@@ -145,6 +145,9 @@ class ApplicationContext:
     runtime_dispatch_resolver: Callable | None = None
     worker_dispatch_slot: WorkerDispatchServiceSlot | None = None
     startup_inputs: StartupInputs = field(default_factory=StartupInputs)
+    # the code-owned run executor (compilation authority + handler registry);
+    # trusted host wiring, never page input; None leaves the run routes unavailable
+    run_executor: object | None = None
 
     def __post_init__(self):
         if (
@@ -156,6 +159,11 @@ class ApplicationContext:
             or (
                 self.runtime_dispatch_resolver is not None
                 and not callable(self.runtime_dispatch_resolver)
+            )
+            or (
+                self.run_executor is not None
+                and not (callable(getattr(self.run_executor, "compile", None))
+                         and callable(getattr(self.run_executor, "scheduler", None)))
             )
         ):
             raise TypeError(

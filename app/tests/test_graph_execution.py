@@ -265,7 +265,9 @@ def test_scheduler_runs_a_sequential_chain_with_ledger_reconciled_executions(tmp
     assert set(outcome.__dataclass_fields__) == {
         "run_id", "graph_digest", "completed_node_ids", "execution_ids",
         "result_refs", "counters", "activations", "awaiting_human", "approvals",
+        "pending_node_ids", "rejected_human",
     }
+    assert outcome.pending_node_ids == () and outcome.rejected_human == ()
     assert outcome.counters == {"intake": 1, "writer": 1, "publish": 1}
 
 

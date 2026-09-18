@@ -187,6 +187,11 @@ class SchedulerOutcome:
     awaiting_human: tuple[tuple[str, str], ...]
     # (gate node, approval refs) actually consumed to pass each gate
     approvals: tuple[tuple[str, tuple[EntityRef, ...]], ...]
+    # node ids the durable head still has to visit (empty when the run is finished):
+    # an allowlisted identity, not raw channel state
+    pending_node_ids: tuple[str, ...] = ()
+    # (gate node, scope) pairs the owner has rejected; the run stops there
+    rejected_human: tuple[tuple[str, str], ...] = ()
 
 
 def _detached_view(state: dict) -> dict:
@@ -256,7 +261,45 @@ class GraphScheduler:
             raise SchedulerError("checkpoint journal halted") from None
         except Exception:  # noqa: BLE001 - never surface private graph or provider detail
             raise SchedulerError("scheduler_failed") from None
-        return self._project(final, awaiting)
+        try:
+            pending = self._pending_nodes(config)
+        except Exception:  # noqa: BLE001 - never surface private graph detail
+            raise SchedulerError("scheduler_failed") from None
+        return self._project(final, awaiting, pending=pending)
+
+    def _pending_nodes(self, config: dict) -> tuple[str, ...]:
+        node_ids = {node.node_id for node in self._compiled.nodes}
+        return tuple(sorted(
+            node for node in self._graph.get_state(config).next if node in node_ids
+        ))
+
+    def observe(self) -> SchedulerOutcome:
+        """The bounded projection of the durable head without executing anything:
+        no node runs, no resume, no approval request is recorded. A pending gate
+        is reported as awaiting unless the owner's approval is already recorded."""
+
+        config = {"configurable": {"thread_id": self._run_id, "checkpoint_ns": ""}}
+        try:
+            head = self._saver.get_tuple(config)
+            if head is None:
+                return self._project({"results": {}, "counters": {}})
+            state = self._graph.get_state(config)
+            awaiting, rejected = [], []
+            for node in self._pending_gates(config):
+                for scope in self._gates[node]:
+                    found = self._approvals.lookup(self._run_id, node, scope)
+                    if found is None:
+                        awaiting.append((node, scope))
+                    elif found.decision != "approved":
+                        rejected.append((node, scope))
+            return self._project(state.values, tuple(awaiting), pending=self._pending_nodes(config),
+                                 rejected=tuple(rejected))
+        except SchedulerError:
+            raise
+        except CheckpointError:
+            raise SchedulerError("checkpoint journal halted") from None
+        except Exception:  # noqa: BLE001 - never surface private graph detail
+            raise SchedulerError("scheduler_failed") from None
 
     def _pending_gates(self, config: dict) -> tuple[str, ...]:
         return tuple(
@@ -330,7 +373,8 @@ class GraphScheduler:
         return tuple(activations)
 
     def _project(
-        self, state: dict, awaiting: tuple[tuple[str, str], ...] = ()
+        self, state: dict, awaiting: tuple[tuple[str, str], ...] = (), *,
+        pending: tuple[str, ...] = (), rejected: tuple[tuple[str, str], ...] = (),
     ) -> SchedulerOutcome:
         node_ids = {node.node_id for node in self._compiled.nodes}
         raw_counters = state.get("counters", {})
@@ -359,6 +403,8 @@ class GraphScheduler:
             activations=self._sealed_activations(raw_counters),
             awaiting_human=awaiting,
             approvals=self._consumed_approvals(counters),
+            pending_node_ids=pending,
+            rejected_human=rejected,
         )
 
 

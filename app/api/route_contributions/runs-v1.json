@@ -1,0 +1,35 @@
+{
+  "schema_version": "deeptwin-first-party-route-contribution-v1",
+  "contribution_id": "runs-v1",
+  "factory": "app.api.runs:create_router",
+  "routes": [
+    {
+      "route_id": "runs.create",
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/v1/runs",
+      "auth_policy": "browser_session",
+      "required_scope": "work.command"
+    },
+    {
+      "route_id": "runs.read",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "path": "/api/v1/runs/{run_id}",
+      "auth_policy": "browser_session",
+      "required_scope": "work.read"
+    },
+    {
+      "route_id": "runs.resume",
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/v1/runs/{run_id}/resume",
+      "auth_policy": "browser_session",
+      "required_scope": "work.command"
+    }
+  ]
+}

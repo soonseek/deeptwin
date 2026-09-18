@@ -1133,3 +1133,15 @@ passed**; covering **266 passed**; Ruff: no new findings. Details and hashes in
 `worker-execute-transport-t087.md`. Full regression follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6176 passed, 2 skipped, 1 warning, 369
 subtests passed in 870.68s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## Connected browser path — the `runs-v1` route contribution (2026-09-18)
+
+RED retained (`create_app` refused `run_executor`; then 400/503 at each missing layer), GREEN after the
+`PersistentRuns` service, the adapter/descriptor/catalog/boundary wiring, `create_app(run_executor=)` with
+ledger startup reconciliation, and `GraphScheduler.observe()`. Independent review ACCEPT WITH CHANGES (manifest
+replay after a crash, `pending_node_ids` for untaken branches, per-run execution lock, conflicts on any input,
+stop-event semantics decided and durable, rejected gates reported, replay-before-execution executes; six NITs)
+folded in RED-first. Runs API **19 passed**; covering **365 passed** (+ the adapted dispatch pin); Ruff: no new
+findings. Details and hashes in `runs-routes-browser-path.md`. Full regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6195 passed, 2 skipped, 1 warning, 369
+subtests passed in 880.75s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
