@@ -8,11 +8,14 @@ boundary: reserve → budgeted send intent → a code-owned transport under the
 one-shot permit → `accept_result_and_settle`. The node's `EntityRef` is the
 accepted `succeeded` result and nothing else: a transport response, a fault or
 an unknown outcome is admitted as what it is (the reservation retained as
-unknown usage) and fails the visit. A retry after a sent attempt stays
-unimplemented; the only continuation is the ledger's own proof that an earlier
-attempt of the visit was definitely never sent (a crash before the send-intent
-barrier, reconciled at startup), in which case the next attempt number of the
-same execution is reserved and the visit proceeds, bounded.
+unknown usage) and fails the visit. The continuations are the ledger's own
+proofs: an earlier attempt of the visit definitely never sent (a crash before
+the send-intent barrier, reconciled at startup) always admits the next attempt
+number of the same execution; an earlier attempt observed terminal with final
+usage (`failed`, `timed_out`, `cancelled`, the remote terminal observed) admits
+the next attempt only when the dispatcher was built for the owner's recovery
+(`retry_after_terminal=True`) — never by default, never after an unknown
+outcome. Both are bounded.
 
 The transport is an injected callable `(permit, request, window) -> AttemptTransportResult`
 (the window is the consumed one-shot permit window);
@@ -28,7 +31,7 @@ from dataclasses import dataclass
 
 from ..domain.permissions import Grant, Principal
 from ..domain.refs import MAX_INTEGER, EntityRef, uuid_string
-from .budgets import BudgetBook, BudgetDispatchRequest, BudgetUsage
+from .budgets import BudgetBook, BudgetDispatchRequest, BudgetExceeded, BudgetUsage
 from .ledger import (
     REMOTE_TERMINALS,
     RESULT_REASONS,
@@ -43,6 +46,7 @@ from .ledger import (
 )
 
 __all__ = [
+    "MAX_ATTEMPTS_PER_VISIT",
     "AttemptBinding",
     "AttemptDispatchError",
     "AttemptDispatchRequest",
@@ -55,8 +59,9 @@ __all__ = [
 
 _MAX_NODE_ID = 128
 _MAX_BINDINGS = 256
-# attempts of one visit proven never sent before a fresh one is reserved
-_MAX_UNSENT_ATTEMPTS = 4
+# at most this many attempts per visit, unsent continuations and the owner's
+# recovery retries together; each attempt reserves and finalizes its own budget
+MAX_ATTEMPTS_PER_VISIT = 4
 
 
 class AttemptDispatchError(RuntimeError):
@@ -238,13 +243,16 @@ class VisitAttempt:
 class NodeAttemptDispatcher:
     """Binds agent nodes to ledger attempts; built only by `build`."""
 
-    __slots__ = ("_bindings", "_book", "_ledger", "_owner", "_transport")
+    __slots__ = ("_bindings", "_book", "_ledger", "_owner", "_retry", "_transport")
 
     def __init__(self):
         raise TypeError("Use NodeAttemptDispatcher.build")
 
     @classmethod
-    def build(cls, *, ledger, budget_book, owner, bindings, transport):
+    def build(cls, *, ledger, budget_book, owner, bindings, transport,
+              retry_after_terminal=False):
+        if type(retry_after_terminal) is not bool:
+            raise TypeError("retry_after_terminal must be a bool")
         if type(ledger) is not RuntimeLedger:
             raise TypeError("Exact RuntimeLedger required")
         if type(budget_book) is not BudgetBook:
@@ -267,6 +275,7 @@ class NodeAttemptDispatcher:
         dispatcher._owner = owner
         dispatcher._bindings = dict(bindings)
         dispatcher._transport = transport
+        dispatcher._retry = retry_after_terminal
         return dispatcher
 
     @property
@@ -291,7 +300,7 @@ class NodeAttemptDispatcher:
     def _dispatch(self, run_id, node_id, execution_id, loop_index, binding):
         ledger = self._ledger
         budget_session_id = ledger.get_run(run_id)["spec"]["budget_session_id"]
-        for attempt_index in range(_MAX_UNSENT_ATTEMPTS):
+        for attempt_index in range(MAX_ATTEMPTS_PER_VISIT):
             request = AttemptDispatchRequest(
                 run_id=run_id, node_id=node_id, execution_id=execution_id,
                 attempt_id=attempt_identity(run_id, node_id, loop_index, attempt_index),
@@ -304,7 +313,7 @@ class NodeAttemptDispatcher:
                 return outcome
             # the ledger proved this attempt definitely never sent: the next
             # attempt number of the same execution is the honest continuation
-        raise AttemptDispatchError("attempt_unsent_bound")
+        raise AttemptDispatchError("attempt_bound")
 
     def _dispatch_attempt(self, request, attempt_no, binding, budget_session_id):
         ledger, book = self._ledger, self._book
@@ -316,6 +325,9 @@ class NodeAttemptDispatcher:
             f"deeptwin:attempt:{request.run_id}:{request.node_id}:{attempt_id}",
             self._owner, binding.deadline_at_ms,
         )
+        # a spent budget is refused before any row is reserved: runtime.md wants a
+        # spend cap visible as the owner's decision, never a stranded open attempt
+        self._require_budget(budget_session_id, binding)
         # replay-safe by the deterministic command id and the idempotency key;
         # the reserve snapshot (first or replayed) carries the revision the
         # send-intent CAS binds to, so an unobserved mutation refuses the send
@@ -335,12 +347,19 @@ class NodeAttemptDispatcher:
                 budget_request=budget_request, principal=binding.principal,
                 grant=binding.grant,
             )
+        except BudgetExceeded:
+            raise AttemptDispatchError("attempt_budget_exceeded") from None
         except LedgerError:
             if self._definitely_unsent(attempt_id):
                 return None
             raise
         if permit is None:
             if self._definitely_unsent(attempt_id):
+                return None
+            if self._retry and self._observed_terminal(attempt_id):
+                # the owner's recovery: the ledger proved this attempt terminal,
+                # observed and finally accounted, so the next attempt number of the
+                # same execution is admitted (the reserve enforces the same proof)
                 return None
             # exact replay: the send may have started in an earlier process, so
             # only a committed accepted result can resolve this visit; never re-send
@@ -389,6 +408,31 @@ class NodeAttemptDispatcher:
             remote_terminal_observed=result.remote_terminal_observed,
             reason_code=result.reason_code,
         )
+
+    def _require_budget(self, budget_session_id, binding):
+        remaining = self._book.status(budget_session_id)["remaining"]
+        for name in ("model_calls", "tool_calls", "node_visits", "loop_rounds", "output_bytes",
+                     "candidates"):
+            if getattr(binding, name) > remaining[name]:
+                raise AttemptDispatchError("attempt_budget_exceeded")
+        api = binding.api_microunits
+        if api is not None and (remaining["api_microunits"] is None or api > remaining["api_microunits"]):
+            raise AttemptDispatchError("attempt_budget_exceeded")
+
+    def _observed_terminal(self, attempt_id):
+        """The ledger's retry-safety proof, mirrored: terminal, the remote terminal
+        observed, the usage final, no late evidence. A cancelled attempt is excluded
+        here: its ledger finality is not the budget book's (nothing in tree settles
+        a cancellation), so it is never a retry proof for the dispatcher."""
+
+        row = self._ledger.get_attempt(attempt_id)
+        if not (row["phase"] == "terminal"
+                and row["terminal_outcome"] in {"failed", "timed_out"}
+                and row["remote_terminal_observed"] == row["terminal_outcome"]
+                and row["usage_finality"] == "final"):
+            return False
+        return not any(item["classification"] == "late"
+                       for item in self._ledger.result_observations(attempt_id))
 
     def _definitely_unsent(self, attempt_id):
         row = self._ledger.get_attempt(attempt_id)

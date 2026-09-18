@@ -413,3 +413,158 @@ def test_a_result_the_ledger_cannot_observe_is_an_unknown_outcome(tmp_path):
     assert stored["terminal_outcome"] == "outcome_unknown" and stored["phase"] == "terminal"
     assert stored["remote_terminal_observed"] == "not_observed"
     assert budget_row(subject, na.reservation_identity(attempt_id))["state"] == "unknown"
+
+
+def failed_result(subject):
+    return na.AttemptTransportResult(
+        outcome="failed", result_ref=None, usage_finality="final",
+        remote_terminal_observed="failed", reason_code="provider_terminal",
+        usage=BudgetUsage.create(model_calls=1, tool_calls=0, node_visits=1, loop_rounds=0,
+                                 output_bytes=0, candidates=0, api_microunits=None),
+    )
+
+
+class FailingOnce:
+    """A transport whose first call ends in an observed terminal failure."""
+
+    def __init__(self, subject):
+        self.subject = subject
+        self.calls = []
+
+    def __call__(self, permit, request, window):
+        self.calls.append(request.attempt_id)
+        if len(self.calls) == 1:
+            return failed_result(self.subject)
+        return succeeded(self.subject)
+
+
+def test_a_sent_attempt_is_retried_only_on_the_owners_recovery_and_only_after_an_observed_terminal(tmp_path):
+    subject, run = started(tmp_path)
+    transport = FailingOnce(subject)
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, dispatcher(subject, transport), handlers(subject, [])).run()
+    first = na.attempt_identity(run.run_id, "writer", 0, 0)
+    assert subject.ledger.get_attempt(first)["terminal_outcome"] == "failed"
+    assert transport.calls == [first]
+    # a plain resume never re-sends a sent attempt: the failure stands
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, dispatcher(subject, transport), handlers(subject, [])).run()
+    assert transport.calls == [first]
+    # the owner's recovery admits the next attempt of the same execution, because the
+    # ledger proved the first one terminal, observed and finally accounted
+    retrying = na.NodeAttemptDispatcher.build(
+        ledger=subject.ledger, budget_book=subject.book, owner=subject.owner,
+        bindings={"writer": binding(subject)}, transport=transport, retry_after_terminal=True,
+    )
+    calls = []
+    outcome = build(subject, run, retrying, handlers(subject, calls)).run()
+    second = na.attempt_identity(run.run_id, "writer", 0, 1)
+    assert transport.calls == [first, second]
+    assert calls == ["writer", "publish"]
+    assert dict(outcome.result_refs)[sch.execution_identity(run.run_id, "writer", 0)] == subject.refs.produced
+    stored = subject.ledger.get_attempt(second)
+    assert stored["spec"]["attempt_no"] == 2 and stored["terminal_outcome"] == "succeeded"
+    assert subject.ledger.get_attempt(first)["terminal_outcome"] == "failed"  # the past stays
+    assert budget_row(subject, na.reservation_identity(first))["state"] == "finalized"
+    assert budget_row(subject, na.reservation_identity(second))["state"] == "finalized"
+    # a recovery over an unknown outcome is never a retry: nothing was observed terminal
+    subject2, run2 = started(tmp_path / "second")
+    unknown = Transport(na.AttemptTransportResult(
+        outcome="outcome_unknown", result_ref=None, usage_finality="unknown",
+        remote_terminal_observed="not_observed", reason_code="transport_unknown", usage=None,
+    ))
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject2, run2, dispatcher(subject2, unknown), handlers(subject2, [])).run()
+    retrying2 = na.NodeAttemptDispatcher.build(
+        ledger=subject2.ledger, budget_book=subject2.book, owner=subject2.owner,
+        bindings={"writer": binding(subject2)}, transport=unknown, retry_after_terminal=True,
+    )
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject2, run2, retrying2, handlers(subject2, [])).run()
+    assert len(unknown.calls) == 1
+    with pytest.raises(TypeError):
+        na.NodeAttemptDispatcher.build(
+            ledger=subject.ledger, budget_book=subject.book, owner=subject.owner,
+            bindings={"writer": binding(subject)}, transport=transport, retry_after_terminal="yes",
+        )
+
+
+def retrying(subject, transport):
+    return na.NodeAttemptDispatcher.build(
+        ledger=subject.ledger, budget_book=subject.book, owner=subject.owner,
+        bindings={"writer": binding(subject)}, transport=transport, retry_after_terminal=True,
+    )
+
+
+def test_late_evidence_on_the_failed_attempt_forbids_the_recovery_retry(tmp_path):
+    from app.runtime.ledger import ResultObservation
+
+    subject, run = started(tmp_path)
+    transport = FailingOnce(subject)
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, dispatcher(subject, transport), handlers(subject, [])).run()
+    first = na.attempt_identity(run.run_id, "writer", 0, 0)
+    # a different observation arriving after the terminal is late evidence: the
+    # ledger's retry-safety proof no longer holds and the dispatcher must not
+    # even reserve the next attempt
+    late = subject.ledger.accept_result(identifier(), ResultObservation(
+        observation_id=identifier(), attempt_id=first, outcome="failed", result_ref=None,
+        usage_finality="final", remote_terminal_observed="failed", reason_code="validation_failed",
+    ))
+    assert late["classification"] == "late"
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, retrying(subject, transport), handlers(subject, [])).run()
+    assert transport.calls == [first]
+    with pytest.raises(KeyError):
+        subject.ledger.get_attempt(na.attempt_identity(run.run_id, "writer", 0, 1))
+
+
+def test_recovery_stops_at_the_budget_without_stranding_a_reserved_attempt(tmp_path):
+    subject, run = started(tmp_path)  # the fixture policy admits three model calls
+
+    class AlwaysFailing(FailingOnce):
+        def __call__(self, permit, request, window):
+            self.calls.append(request.attempt_id)
+            return failed_result(self.subject)
+
+    transport = AlwaysFailing(subject)
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, dispatcher(subject, transport), handlers(subject, [])).run()
+    for _ in range(2):
+        with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+            build(subject, run, retrying(subject, transport), handlers(subject, [])).run()
+    assert len(transport.calls) == 3
+    assert subject.book.status(subject.budget_session_id)["remaining"]["model_calls"] == 0
+    # the budget is spent: the next recovery is refused before any reserve, so no
+    # attempt row is stranded open and the book keeps no pending reservation
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, retrying(subject, transport), handlers(subject, [])).run()
+    assert len(transport.calls) == 3
+    with pytest.raises(KeyError):
+        subject.ledger.get_attempt(na.attempt_identity(run.run_id, "writer", 0, 3))
+    status = subject.book.status(subject.budget_session_id)
+    assert status["active_reservations"] == 0
+    assert na.MAX_ATTEMPTS_PER_VISIT == 4
+
+
+def test_the_retry_proof_never_admits_a_cancelled_or_unsettled_attempt(tmp_path, monkeypatch):
+    subject, _run = started(tmp_path)
+    attempts = retrying(subject, Transport())
+    rows = {
+        "failed": {"phase": "terminal", "terminal_outcome": "failed", "remote_terminal_observed": "failed",
+                   "usage_finality": "final"},
+        "cancelled": {"phase": "terminal", "terminal_outcome": "cancelled",
+                      "remote_terminal_observed": "cancelled", "usage_finality": "final"},
+        "timed_out": {"phase": "terminal", "terminal_outcome": "timed_out",
+                      "remote_terminal_observed": "not_observed", "usage_finality": "unknown"},
+        "unknown": {"phase": "terminal", "terminal_outcome": "outcome_unknown",
+                    "remote_terminal_observed": "not_observed", "usage_finality": "unknown"},
+    }
+    monkeypatch.setattr(subject.ledger, "get_attempt", lambda attempt_id: rows[attempt_id])
+    monkeypatch.setattr(subject.ledger, "result_observations", lambda attempt_id: [])
+    assert attempts._observed_terminal("failed") is True
+    # a cancelled attempt's usage finality is the ledger's, not the book's: no
+    # in-tree producer settles it, so it is never a retry proof here
+    assert attempts._observed_terminal("cancelled") is False
+    assert attempts._observed_terminal("timed_out") is False
+    assert attempts._observed_terminal("unknown") is False

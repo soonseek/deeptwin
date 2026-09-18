@@ -64,6 +64,8 @@ test('routes bind the base path and the run id without path injection', () => {
   assert.equal(routes.create, '/api/v1/runs');
   assert.equal(routes.read(RUN_ID), `/api/v1/runs/${RUN_ID}`);
   assert.equal(routes.resume(RUN_ID), `/api/v1/runs/${RUN_ID}/resume`);
+  assert.equal(routes.cancel(RUN_ID), `/api/v1/runs/${RUN_ID}/cancel`);
+  assert.equal(routes.recover(RUN_ID), `/api/v1/runs/${RUN_ID}/recover`);
   assert.equal(runRoutes(BASE).read(RUN_ID), `/${'2'.repeat(32)}/api/v1/runs/${RUN_ID}`);
   for (const bad of ['not-a-uuid', `${RUN_ID}/..`, '', 42]) {
     assert.throws(() => routes.read(bad));
@@ -283,6 +285,12 @@ test('the observer starts, reads and resumes through the injected request only',
     { method: 'POST', body: { command_id: '77777777-7777-4777-8777-777777777777' } }]);
   assert.equal(observer.snapshot().view.complete, true);
   assert.equal(observer.snapshot().error, null);
+  await observer.cancel(RUN_ID, '77777777-7777-4777-8777-777777777777');
+  assert.deepEqual(calls[3], [`/api/v1/runs/${RUN_ID}/cancel`,
+    { method: 'POST', body: { command_id: '77777777-7777-4777-8777-777777777777' } }]);
+  await observer.recover(RUN_ID, '77777777-7777-4777-8777-777777777777');
+  assert.deepEqual(calls[4], [`/api/v1/runs/${RUN_ID}/recover`,
+    { method: 'POST', body: { command_id: '77777777-7777-4777-8777-777777777777' } }]);
   // the closed error partition: a failure carrying the envelope code keeps it, a failure
   // carrying only the HTTP status (app.mjs's api helper) maps by status, anything else is unavailable
   const conflict = Object.assign(new Error('same command, different inputs'), { code: 'conflict' });
@@ -435,6 +443,7 @@ test('an error for another run never leaves the previous run on screen', async (
 test('a cancelled receipt names what was closed and never claims the remote work stopped', () => {
   const attempt = {
     attempt_id: '88888888-8888-4888-8888-888888888888', execution_id: '99999999-9999-4999-8999-999999999999',
+    attempt_no: 2,
     phase: 'send_intent', cancel_state: 'requested', dispatch_gate: 'closed', remote_terminal_observed: 'not_observed',
   };
   const view = runView(receipt({ phase: 'cancelled', cancellation: { requested: true, attempts: [attempt] },
@@ -445,9 +454,13 @@ test('a cancelled receipt names what was closed and never claims the remote work
   assert.equal(view.phaseLabel, PHASE_LABELS.cancelled);
   assert.equal(view.complete, false);
   assert.deepEqual(view.cancellation, { requested: true, attempts: [{
-    attemptId: attempt.attempt_id, executionId: attempt.execution_id, phase: 'send_intent',
+    attemptId: attempt.attempt_id, executionId: attempt.execution_id, attemptNo: 2, phase: 'send_intent',
     cancelState: 'requested', dispatchGate: 'closed', remoteTerminalObserved: 'not_observed',
   }] });
+  assert.throws(() => runView(receipt({ phase: 'cancelled', cancellation: { requested: true,
+    attempts: [{ ...attempt, attempt_no: 0 }] }, outcome: outcome({ completed_node_ids: ['intake', 'writer'],
+    counters: { intake: 1, writer: 1 }, execution_ids: [['intake', 'e-intake'], ['writer', 'e-writer']],
+    result_refs: [], pending_node_ids: ['owner-gate'] }) })));
   assert.throws(() => runView(receipt({ phase: 'cancelled', cancellation: { requested: true, attempts: [] },
     outcome: outcome({ awaiting_human: [['owner-gate', 'release-output']], pending_node_ids: ['owner-gate'],
       completed_node_ids: ['intake', 'writer'], counters: { intake: 1, writer: 1 },
@@ -466,6 +479,7 @@ test('a cancelled receipt names what was closed and never claims the remote work
   assert.match(rows[0], /취소 요청됨/);
   assert.match(rows[0], /새 dispatch 중단/);
   const call = rows.find(row => row.includes(attempt.attempt_id));
+  assert.match(call, /^시도 2 /);
   assert.match(call, /게이트 닫힘/);
   assert.match(call, /원격 종료 미확인/);
   assert.equal(accessibleRows(runView(receipt())).some(row => row.includes('취소')), false);

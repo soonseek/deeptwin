@@ -70,6 +70,7 @@ COMMAND_SCHEMA = "run-create-command-v1"
 RESUME_SCHEMA = "run-resume-command-v1"
 PHASES = ("created", "running", "awaiting_human", "rejected", "cancelled", "completed")
 CANCEL_SCHEMA = "run-cancel-command-v1"
+RECOVER_SCHEMA = "run-recover-command-v1"
 CODES = frozenset({
     "invalid_input", "unauthenticated", "access_denied", "not_found", "conflict",
     "too_large", "unavailable",
@@ -323,9 +324,11 @@ class PersistentRuns:
             raise RunServiceError("unavailable")
         return manifest
 
-    def _prepare(self, manifest: RunManifest) -> tuple[CompiledGraph, GraphScheduler]:
+    def _prepare(self, manifest: RunManifest, *, retry: bool = False) -> tuple[CompiledGraph, GraphScheduler]:
         """The run's scheduler over its durable head, rebuilt from the stored graph
-        by the injected executor; refused if the executor no longer matches."""
+        by the injected executor; refused if the executor no longer matches. With
+        `retry` (the owner's recovery) the executor may admit one more attempt of
+        an execution whose sent attempt was observed terminal."""
 
         if self._executor is None:
             raise RunServiceError("unavailable")
@@ -336,8 +339,10 @@ class PersistentRuns:
         if (compiled.graph_digest != manifest.graph_digest
                 or compiled.authority_digest != manifest.authority_digest):
             raise RunServiceError("unavailable")
+        options = {"retry": True} if retry else {}
         scheduler = self._executor.scheduler(
-            compiled, ledger=self._ledger, run_id=manifest.run_id, approvals=self._approvals
+            compiled, ledger=self._ledger, run_id=manifest.run_id, approvals=self._approvals,
+            **options,
         )
         if type(scheduler) is not GraphScheduler:
             raise RunServiceError("unavailable")
@@ -357,6 +362,7 @@ class PersistentRuns:
                 {
                     "attempt_id": item["spec"]["attempt_id"],
                     "execution_id": item["spec"]["execution_id"],
+                    "attempt_no": item["spec"]["attempt_no"],
                     "phase": item["phase"],
                     "cancel_state": item["cancel_state"],
                     "dispatch_gate": item["dispatch_gate"],
@@ -576,6 +582,36 @@ class PersistentRuns:
         if manifest is None:
             raise RunServiceError("not_found")
         _compiled, scheduler = self._prepare(manifest)
+        outcome = self._execute(actor_ref, manifest, scheduler, resume=True)
+        return self._receipt(manifest, outcome, command_id=command_id, base_path=base_path)
+
+    @_closed
+    def recover(self, request, run_id, payload, *, base_path) -> dict:
+        """The owner's recovery after an outcome check: run the head again and let
+        an execution whose sent attempt was observed terminal (final usage, remote
+        terminal observed, no late evidence) take one more attempt, at most
+        `MAX_ATTEMPTS_PER_VISIT` per visit across recoveries, each reserving and
+        finalizing its own budget; a spent budget refuses before any reserve.
+        Never after an unknown outcome (the dispatcher refuses), never on a
+        completed or cancelled run (conflict). The dispatcher's typed reasons
+        surface here only as `unavailable` (closed enums)."""
+
+        _authenticate_owner(self._owner, request)
+        if (type(payload) is not dict or set(payload) != {"schema_version", "command_id"}
+                or payload["schema_version"] != RECOVER_SCHEMA):
+            raise RunServiceError("invalid_input")
+        command_id = _uuid(payload["command_id"])  # a receipt label, not a ledger command
+        run_id = _uuid(run_id)
+        with _writer(), self._domain._connection(write=True) as db:
+            actor = _authenticate_owner(self._owner, request, db)
+            roots = self._domain._read_roots(db)
+            actor_ref = _owner_actor_ref(db, actor)
+            manifest = self._manifest_by_run(db, roots, run_id)
+        if manifest is None:
+            raise RunServiceError("not_found")
+        if self._completed(manifest):
+            raise RunServiceError("conflict")  # a finished run has nothing to recover
+        _compiled, scheduler = self._prepare(manifest, retry=True)
         outcome = self._execute(actor_ref, manifest, scheduler, resume=True)
         return self._receipt(manifest, outcome, command_id=command_id, base_path=base_path)
 

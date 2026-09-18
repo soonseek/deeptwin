@@ -39,6 +39,15 @@
       "path": "/api/v1/runs/{run_id}/cancel",
       "auth_policy": "browser_session",
       "required_scope": "work.command"
+    },
+    {
+      "route_id": "runs.recover",
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/v1/runs/{run_id}/recover",
+      "auth_policy": "browser_session",
+      "required_scope": "work.command"
     }
   ]
 }

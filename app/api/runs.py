@@ -10,6 +10,7 @@ from ..domain.refs import uuid_string
 from ..services.runs import (
     CANCEL_SCHEMA,
     COMMAND_SCHEMA,
+    RECOVER_SCHEMA,
     RESUME_SCHEMA,
     PersistentRuns,
     RunServiceError,
@@ -60,15 +61,15 @@ def run_error(error):
 
 
 def is_run_path(path: str) -> bool:
-    """`/api/v1/runs`, `/api/v1/runs/{id}`, `/{id}/resume` and `/{id}/cancel`; the
-    approvals routes under the same prefix keep their own adapter."""
+    """`/api/v1/runs`, `/api/v1/runs/{id}`, `/{id}/resume`, `/{id}/cancel` and
+    `/{id}/recover`; the approvals routes under the same prefix keep their own adapter."""
 
     if path == PATH:
         return True
     if not path.startswith(PATH + "/") or is_approval_path(path):
         return False
     parts = path[len(PATH) + 1:].split("/")
-    return len(parts) == 1 or (len(parts) == 2 and parts[1] in {"resume", "cancel"})
+    return len(parts) == 1 or (len(parts) == 2 and parts[1] in {"resume", "cancel", "recover"})
 
 
 def _ref_shape(value):
@@ -111,7 +112,8 @@ def preflight(scope, body, content_type):
                                   max_string_bytes=256),
             )
             uuid_string(value["command_id"])
-            schema = RESUME_SCHEMA if parts[1] == "resume" else CANCEL_SCHEMA
+            schema = {"resume": RESUME_SCHEMA, "cancel": CANCEL_SCHEMA,
+                      "recover": RECOVER_SCHEMA}[parts[1]]
             return {"schema_version": schema, "run_id": run_id, **value}
         if method not in {"GET", "HEAD"} or body:
             raise RunRouteError()
@@ -155,6 +157,19 @@ def create_router(*, runs, base_path):
             payload = request.state.run_payload
             value = await run_in_threadpool(
                 runs.resume, request.state.authenticated_request, run_id,
+                {"schema_version": payload["schema_version"], "command_id": payload["command_id"]},
+                base_path=base_path,
+            )
+            return JSONResponse(value)
+        except RunServiceError as error:
+            return run_error(error)
+
+    @router.post(PATH + "/{run_id}/recover")
+    async def recover(request: Request, run_id: str):
+        try:
+            payload = request.state.run_payload
+            value = await run_in_threadpool(
+                runs.recover, request.state.authenticated_request, run_id,
                 {"schema_version": payload["schema_version"], "command_id": payload["command_id"]},
                 base_path=base_path,
             )

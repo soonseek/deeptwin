@@ -1186,3 +1186,14 @@ approval "DID NOT RAISE"), outside this slice; it passes alone (4) and with ever
 together (98), so it is an order-dependent flake of the full run, recorded here for a later look. Second full run:
 **6213 passed, 2 skipped, 1 warning, 369 subtests passed in 892.75s** — the two Linux-only skips. Hashes
 re-verified unchanged before commit.
+
+## Owner recovery — `runs.recover`, the retry after a sent attempt (2026-09-18)
+
+RED retained (no `retry_after_terminal`, 404 on the recover path, the browser routes), GREEN after the dispatcher's
+recovery arm, the service's `recover`, the route and descriptor, the pins and the module. Independent review
+ACCEPT WITH CHANGES (the late-evidence clause, a spent budget refused before any reserve, the cancelled arm
+dropped, the per-visit bound named; attempt numbers on the receipt rows and the a11y rows) folded in RED-first.
+Dispatch **+4**, routes **+2**, `node --test` **14**; covering **249** then **140** after the closures; Ruff clean.
+Details and hashes in `run-recover-route.md`. Full regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6219 passed, 2 skipped, 1 warning, 369
+subtests passed in 953.52s** — the two Linux-only skips. Hashes re-verified unchanged before commit.

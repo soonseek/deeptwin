@@ -108,6 +108,12 @@ export function runRoutes(basePath = '/') {
     resume(runId) {
       return `${create}/${requireUuid(runId, 'run id')}/resume`;
     },
+    cancel(runId) {
+      return `${create}/${requireUuid(runId, 'run id')}/cancel`;
+    },
+    recover(runId) {
+      return `${create}/${requireUuid(runId, 'run id')}/recover`;
+    },
   });
 }
 
@@ -124,13 +130,16 @@ export function runCommand(fields) {
   return command;
 }
 
-export function resumeCommand(fields) {
+// the closed `{command_id}` body shared by resume, cancel and recover
+export function commandBody(fields) {
   if (typeof fields !== 'object' || fields === null) fail('command must be an object');
   for (const name of Object.keys(fields)) {
     if (name !== 'commandId') fail(`unexpected command field ${name}`);
   }
   return { command_id: requireUuid(fields.commandId, 'command id') };
 }
+
+export const resumeCommand = commandBody;
 
 function pairs(value, label) {
   if (!Array.isArray(value)) fail(`${label} must be a list`);
@@ -210,9 +219,11 @@ export function runView(receipt, basePath = '/', { nodeIds = null } = {}) {
     for (const name of ['phase', 'cancel_state', 'dispatch_gate', 'remote_terminal_observed']) {
       if (typeof entry[name] !== 'string') fail(`cancellation attempt ${name} is not a string`);
     }
+    if (!Number.isInteger(entry.attempt_no) || entry.attempt_no < 1) fail('cancellation attempt number is not positive');
     return Object.freeze({
       attemptId: requireUuid(entry.attempt_id, 'attempt id'),
       executionId: requireUuid(entry.execution_id, 'execution id'),
+      attemptNo: entry.attempt_no,
       phase: entry.phase, cancelState: entry.cancel_state, dispatchGate: entry.dispatch_gate,
       remoteTerminalObserved: entry.remote_terminal_observed,
     });
@@ -337,7 +348,7 @@ export function accessibleRows(view) {
     for (const call of view.cancellation.attempts) {
       const gate = call.dispatchGate === 'closed' ? '게이트 닫힘' : '게이트 열림';
       const remote = call.remoteTerminalObserved === 'not_observed' ? '원격 종료 미확인' : `원격 종료 확인됨 (${call.remoteTerminalObserved})`;
-      rows.push(`호출 ${call.attemptId}: ${gate}, ${remote}`);
+      rows.push(`시도 ${call.attemptNo} 호출 ${call.attemptId}: ${gate}, ${remote}`);
     }
   }
   return rows.concat(view.nodes.map(node => {
@@ -422,6 +433,12 @@ export function createRunObserver({ request, basePath = '/', onChange = () => {}
     },
     resume(runId, commandId) {
       return exchange(() => [routes.resume(runId), { method: 'POST', body: resumeCommand({ commandId }) }]);
+    },
+    cancel(runId, commandId) {
+      return exchange(() => [routes.cancel(runId), { method: 'POST', body: commandBody({ commandId }) }]);
+    },
+    recover(runId, commandId) {
+      return exchange(() => [routes.recover(runId), { method: 'POST', body: commandBody({ commandId }) }]);
     },
     snapshot() {
       return state;

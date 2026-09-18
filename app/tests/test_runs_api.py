@@ -46,7 +46,9 @@ class Executor:
     def compile(self, graph):
         return compile_graph(graph, authority())
 
-    def scheduler(self, compiled, *, ledger, run_id, approvals):
+    def scheduler(self, compiled, *, ledger, run_id, approvals, retry=False):
+        # `retry` is the owner's recovery; this executor dispatches no attempts, so
+        # it has nothing to retry and ignores it
         def produce(context, view):
             self.calls.append(context.node_id)
             return self.result
@@ -287,9 +289,9 @@ def test_the_composition_carries_the_run_routes(tmp_path):
     with owner_app(tmp_path, Executor()) as subject:
         composition = subject.app.state.route_composition
         assert "runs-v1" in composition.contribution_ids
-        for route_id in ("runs.create", "runs.read", "runs.resume", "runs.cancel"):
+        for route_id in ("runs.create", "runs.read", "runs.resume", "runs.cancel", "runs.recover"):
             assert route_id in composition.route_ids
-        assert composition.route_count == 19
+        assert composition.route_count == 20
 
 
 def test_a_router_run_with_an_untaken_branch_completes(tmp_path):
@@ -563,8 +565,8 @@ def test_cancel_closes_the_dispatch_gate_of_the_runs_live_attempts(tmp_path):
         assert body["cancellation"]["requested"] is True
         assert body["cancellation"]["attempts"] == [{
             "attempt_id": attempt.attempt_id, "execution_id": execution.execution_id,
-            "phase": "send_intent", "cancel_state": "requested", "dispatch_gate": "closed",
-            "remote_terminal_observed": "not_observed",
+            "attempt_no": 1, "phase": "send_intent", "cancel_state": "requested",
+            "dispatch_gate": "closed", "remote_terminal_observed": "not_observed",
         }]
         stored = ledger.get_attempt(attempt.attempt_id)
         assert stored["cancel_state"] == "requested" and stored["dispatch_gate"] == "closed"
@@ -689,3 +691,149 @@ def test_a_cancel_closes_the_run_even_when_the_executor_cannot_compile(tmp_path,
         assert read["phase"] == "cancelled"
         assert cancel(subject, run_path).status_code == 200
         assert len(events(subject, "run.stopped")) == 1
+
+
+def recover(subject, run_path, command_id=None):
+    return post(subject, {"command_id": command_id or str(uuid4())}, run_path + "/recover")
+
+
+class AttemptExecutor(Executor):
+    """An executor whose agent node dispatches real ledger attempts through the
+    injected transport; `retry` is the owner's recovery, never a default."""
+
+    def __init__(self, transport):
+        super().__init__()
+        self.transport = transport
+        self.bindings = None
+
+    def scheduler(self, compiled, *, ledger, run_id, approvals, retry=False):
+        from app.runtime import node_attempts as na
+
+        def produce(context, view):
+            self.calls.append(context.node_id)
+            if context.attempt is not None:
+                return context.attempt.dispatch()
+            return self.result
+
+        handlers = {key: produce for key in (
+            "core.deterministic", "core.agent", "core.join", "core.router", "core.human_gate",
+        )}
+        attempts = na.NodeAttemptDispatcher.build(
+            ledger=ledger, budget_book=self.book, owner=self.owner, bindings=self.bindings,
+            transport=self.transport, retry_after_terminal=retry,
+        )
+        return sch.build_scheduler(compiled, ledger=ledger, run_id=run_id, handlers=handlers,
+                                   attempts=attempts)
+
+
+def bind_attempts(subject, executor):
+    from app.domain.permissions import Grant, Principal
+    from app.domain.schemas import Actor
+    from app.runtime import node_attempts as na
+    from app.runtime.ledger import OwnerIdentity
+    from app.tests.test_server_api_v1 import immutable as seal
+
+    roots = subject.domain.roots()
+    envelope = seal(subject.domain, roots, "execution_envelope").ref
+    profile_ref = seal(subject.domain, roots, "runtime_profile").ref
+    now = int(time.time())
+    principal = Principal(str(uuid4()), Actor(str(uuid4()), "test_actor", "test_fixture"),
+                          "runtime", "operational", now + 3_600)
+    grant = Grant(str(uuid4()), str(uuid4()), principal.id, envelope, "read", "operational",
+                  None, now + 3_600, 1)
+    executor.book = subject.app.state.budget_book
+    executor.owner = OwnerIdentity(str(uuid4()), 4321, 900, str(uuid4()))
+    executor.bindings = {"writer": na.AttemptBinding.create(
+        envelope_ref=envelope, profile_ref=profile_ref, budget_policy_ref=subject.refs.budget,
+        deadline_at_ms=time.time_ns() // 1_000_000 + 600_000, lease_duration_ms=60_000,
+        model_calls=1, tool_calls=0, node_visits=1, loop_rounds=0, output_bytes=100,
+        candidates=0, api_microunits=None, principal=principal, grant=grant,
+    )}
+    return envelope
+
+
+class FlakyTransport:
+    def __init__(self, failures=1):
+        self.calls = []
+        self.failures = failures
+        self.produced = None
+
+    def __call__(self, permit, request, window):
+        from app.runtime import node_attempts as na
+        from app.runtime.budgets import BudgetUsage
+
+        self.calls.append(request.attempt_id)
+        usage = BudgetUsage.create(model_calls=1, tool_calls=0, node_visits=1, loop_rounds=0,
+                                   output_bytes=10, candidates=0, api_microunits=None)
+        if len(self.calls) <= self.failures:
+            return na.AttemptTransportResult(
+                outcome="failed", result_ref=None, usage_finality="final",
+                remote_terminal_observed="failed", reason_code="provider_terminal", usage=usage,
+            )
+        return na.AttemptTransportResult(
+            outcome="succeeded", result_ref=self.produced, usage_finality="final",
+            remote_terminal_observed="succeeded", reason_code="provider_terminal", usage=usage,
+        )
+
+
+def test_the_owner_recovers_a_run_whose_sent_attempt_failed_by_one_more_attempt(tmp_path):
+    from app.runtime import node_attempts as na
+    from app.tests.test_server_api_v1 import immutable as seal
+
+    transport = FlakyTransport(failures=1)
+    executor = AttemptExecutor(transport)
+    with owner_app(tmp_path, executor) as subject:
+        bind_attempts(subject, executor)
+        transport.produced = seal(subject.domain, subject.domain.roots(), "artifact").ref
+        body = command(subject, graph_record(subject, linear_graph()))
+        failed = post(subject, body)
+        assert failed.status_code == 503, failed.text
+        from app.services.runs import run_identity
+        run_path = subject.path + "/" + run_identity(body["command_id"])
+        first = na.attempt_identity(run_identity(body["command_id"]), "writer", 0, 0)
+        assert transport.calls == [first]
+        assert subject.app.state.runtime_ledger.get_attempt(first)["terminal_outcome"] == "failed"
+        stopped = events(subject, "run.stopped")
+        assert [item["public_metadata"]["reason_code"] for item in stopped] == ["infrastructure_failure"]
+        # a plain resume never re-sends a sent attempt
+        resumed = post(subject, {"command_id": str(uuid4())}, run_path + "/resume")
+        assert resumed.status_code == 503 and transport.calls == [first]
+        # the owner's recovery is the explicit outcome check: one more attempt of the same execution
+        command_id = str(uuid4())
+        recovered = recover(subject, run_path, command_id)
+        assert recovered.status_code == 200, recovered.text
+        receipt = recovered.json()
+        assert receipt["phase"] == "completed" and receipt["command_id"] == command_id
+        second = na.attempt_identity(run_identity(body["command_id"]), "writer", 0, 1)
+        assert transport.calls == [first, second]
+        writer_execution = sch.execution_identity(run_identity(body["command_id"]), "writer", 0)
+        assert dict(receipt["outcome"]["result_refs"])[writer_execution] == transport.produced.as_dict()
+        stopped = events(subject, "run.stopped")
+        assert [item["public_metadata"]["reason_code"] for item in stopped][-1] == "completed"
+        assert receipt["cancellation"]["attempts"][0]["attempt_id"] == first
+        assert receipt["cancellation"]["attempts"][1]["attempt_id"] == second
+        # past attempts stay distinct: each call names its attempt number (시도)
+        assert [item["attempt_no"] for item in receipt["cancellation"]["attempts"]] == [1, 2]
+        # the recovery command is a receipt label: once the run is complete, any further
+        # recovery (the same command included) is a conflict, like a cancel, and sends nothing
+        for again in (recover(subject, run_path, command_id), recover(subject, run_path)):
+            assert again.status_code == 409 and again.json()["code"] == "conflict"
+        assert transport.calls == [first, second]
+        assert subject.client.get(run_path, headers=headers(subject.profile)).json()["phase"] == "completed"
+
+
+def test_recovery_of_waiting_cancelled_or_unknown_runs_is_honest(tmp_path):
+    executor = Executor()
+    with owner_app(tmp_path, executor) as subject:
+        created = post(subject, command(subject, graph_record(subject, graph_value())))
+        run_path = created.json()["links"]["self"]
+        # nothing failed: a recovery of a waiting run keeps waiting, like a resume
+        waiting = recover(subject, run_path)
+        assert waiting.status_code == 200 and waiting.json()["phase"] == "awaiting_human"
+        assert executor.calls == ["intake", "writer"]
+        assert cancel(subject, run_path).status_code == 200
+        refused = recover(subject, run_path)
+        assert refused.status_code == 409 and refused.json()["code"] == "conflict"
+        unknown = recover(subject, subject.path + "/" + str(uuid4()))
+        assert unknown.status_code == 404
+        assert subject.client.get(run_path + "/recover", headers=headers(subject.profile)).status_code == 400
