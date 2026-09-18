@@ -871,3 +871,42 @@ def test_gate_approval_requests_are_replayable_run_bound_commands(tmp_path):
     assert subject.ledger.gate_approval_requested(run.run_id, "owner-gate", "third") is False
     assert subject.ledger.gate_approval_requested(identifier(), "owner-gate", "release") is False
     assert subject.ledger.gate_approval_requested(run.run_id, "owner-gate", "bad scope!") is False
+
+
+def _tamper(subject, run_id, revision, **columns):
+    assignments = ", ".join(f"{name}=?" for name in columns)
+    with sqlite3.connect(subject.legacy.path) as db:
+        db.execute(f"UPDATE runtime_checkpoints SET {assignments} WHERE run_id=? AND revision=?",
+                   (*columns.values(), run_id, revision))
+
+
+@pytest.mark.parametrize("tamper", [
+    {"bound_attempt_revision": 99},
+    {"bound_execution_id": "00000000-0000-4000-8000-00000000c0c1"},
+    {"bound_envelope_sha256": "f" * 64},
+    {"bound_envelope_sha256": None},
+])
+def test_a_checkpoint_binding_that_no_longer_matches_the_attempt_is_refused_everywhere(tmp_path, tamper):
+    # T040 checkpoint↔attempt binding: a bound row is verified on every read, on the
+    # next reserve of the run and at startup — a non-head bound row included
+    subject = opened(tmp_path)
+    run, execution, lease_owner, attempt, _ = prepared(subject)
+    bound = subject.ledger.write_checkpoint(identifier(), run.run_id, "main", b"bound",
+                                            expected_revision=0, attempt_id=attempt.attempt_id)
+    assert bound["bound_attempt_id"] == attempt.attempt_id
+    assert bound["bound_attempt_revision"] == subject.ledger.get_attempt(attempt.attempt_id)["revision"]
+    assert bound["bound_execution_id"] == execution.execution_id
+    assert bound["bound_envelope_sha256"] == attempt.envelope_ref.sha256
+    subject.ledger.write_checkpoint(identifier(), run.run_id, "main", b"merged", expected_revision=1)
+    assert subject.ledger.read_checkpoint(run.run_id, "main")["bound_attempt_id"] is None
+    _tamper(subject, run.run_id, 1, **tamper)
+    with pytest.raises(subject.module.CorruptLedger):
+        subject.ledger.checkpoint_for_replay(run.run_id, "main", revision=1)
+    # the next visit's attempt on this run is refused although the tampered row is not the head
+    other = execution_spec(subject, run.run_id)
+    subject.ledger.create_execution(identifier(), other)
+    with pytest.raises(subject.module.CorruptLedger):
+        subject.ledger.reserve_attempt(identifier(), attempt_spec(subject, other.execution_id, lease_owner),
+                                       lease_duration_ms=1_000)
+    with pytest.raises(subject.module.CorruptLedger):
+        subject.ledger.reconcile_startup(identifier(), observed_owners={})

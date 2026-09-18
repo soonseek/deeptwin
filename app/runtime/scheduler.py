@@ -61,7 +61,12 @@ from langgraph.types import Command
 
 from ..domain.refs import EntityRef, canonical_json
 from ..services.run_approvals import PersistentRunApprovals
-from .checkpoints import NAMESPACE, CheckpointError, LedgerCheckpointSaver
+from .checkpoints import (
+    NAMESPACE,
+    AttemptBindings,
+    CheckpointError,
+    LedgerCheckpointSaver,
+)
 from .graph import HANDLER_KEYS, CompiledGraph
 from .ledger import ExecutionSpec, RuntimeLedger
 from .node_attempts import NodeAttemptDispatcher
@@ -573,6 +578,8 @@ def build_scheduler(
         node_id: sources for node_id, sources in compiled.activation_predecessors
     }
 
+    # the per-run registry binding each bound visit's result row to its attempt
+    bindings = AttemptBindings() if attempts is not None else None
     scheduler = object.__new__(GraphScheduler)
     scheduler._compiled = compiled
     scheduler._ledger = ledger
@@ -598,6 +605,7 @@ def build_scheduler(
             graph_digest=compiled.graph_digest,
             authority_digest=compiled.authority_digest,
             node_ids=tuple(kinds),
+            attempt_bindings=bindings,
         )
     except CheckpointError:
         raise SchedulerError("checkpoint journal binding failed") from None
@@ -681,6 +689,9 @@ def build_scheduler(
             ):
                 # a bound node's result is the accepted attempt result, nothing else
                 raise _NodeFailure(node_id)
+            if visit_attempt is not None:
+                # the saver binds the row that first carries this result to the attempt
+                bindings.set(execution_id, visit_attempt.accepted_attempt)
             return {
                 "results": {execution_id: result},
                 "counters": {node_id: loop_index + 1},

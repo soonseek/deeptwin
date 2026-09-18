@@ -513,3 +513,65 @@ def test_recovery_rejects_non_null_noop_marker_in_committed_journal(tmp_path):
                    (raw, sha256(raw).hexdigest()))
     with pytest.raises(module.CheckpointError):
         saver(module, subject, run)
+
+
+def test_pending_writes_bind_the_attempt_registered_for_their_execution(tmp_path):
+    # T040: the journal row that first carries a bound node's accepted result is
+    # bound to the attempt that produced it; every other row stays unbound
+    from app.tests.test_runtime_ledger import attempt_spec, execution_spec, owner
+
+    module, subject, run = setup(tmp_path)
+    bindings = module.AttemptBindings()
+    saved = saver(module, subject, run, attempt_bindings=bindings)
+    cp = checkpoint()
+    cfg = put(saved, run, cp)
+    execution = execution_spec(subject, run.run_id)
+    subject.ledger.create_execution(identifier(), execution)
+    lease_owner = owner(subject)
+    spec = attempt_spec(subject, execution.execution_id, lease_owner)
+    subject.ledger.reserve_attempt(identifier(), spec, lease_duration_ms=1_000)
+    bindings.set(execution.execution_id, spec.attempt_id)
+    saved.put_writes(cfg, [("results", {execution.execution_id: subject.refs.result})], identifier(),
+                     "~__pregel_pull, first")
+    row = subject.ledger.read_checkpoint(run.run_id, module.NAMESPACE)
+    assert row["revision"] == 2
+    assert row["bound_attempt_id"] == spec.attempt_id
+    assert row["bound_execution_id"] == execution.execution_id
+    assert row["bound_envelope_sha256"] == spec.envelope_ref.sha256
+    assert row["bound_attempt_revision"] == subject.ledger.get_attempt(spec.attempt_id)["revision"]
+    # an unregistered execution, a counters-only write and the merging checkpoint stay unbound
+    saved.put_writes(cfg, [("results", {identifier(): subject.refs.result})], identifier())
+    assert subject.ledger.read_checkpoint(run.run_id, module.NAMESPACE)["bound_attempt_id"] is None
+    saved.put_writes(cfg, [("counters", {"first": 1})], identifier())
+    assert subject.ledger.read_checkpoint(run.run_id, module.NAMESPACE)["bound_attempt_id"] is None
+    merged = checkpoint()
+    merged["channel_values"] = {"results": {execution.execution_id: subject.refs.result}, "counters": {}}
+    merged["channel_versions"] = {"results": 2, "counters": 1}
+    saved.put(config(run, cp["id"]), merged, {"source": "loop", "step": 0, "parents": {}}, {"results": 2})
+    assert subject.ledger.read_checkpoint(run.run_id, module.NAMESPACE)["bound_attempt_id"] is None
+    # the bound row replays on reopen and the binding is verified by the ledger
+    reopen(subject, tmp_path)
+    replayed = saver(module, subject, run, attempt_bindings=module.AttemptBindings())
+    assert replayed.get_tuple(config(run)).checkpoint["channel_values"]["results"] == {
+        execution.execution_id: subject.refs.result,
+    }
+    assert subject.ledger.checkpoint_for_replay(run.run_id, module.NAMESPACE, revision=2)["bound_attempt_id"] == spec.attempt_id
+    # a registry entry naming an attempt of another run never commits: the saver halts
+    other = run_spec(subject)
+    subject.ledger.create_run(identifier(), other)
+    other_execution = execution_spec(subject, other.run_id)
+    subject.ledger.create_execution(identifier(), other_execution)
+    foreign = attempt_spec(subject, other_execution.execution_id, owner(subject))
+    subject.ledger.reserve_attempt(identifier(), foreign, lease_duration_ms=1_000)
+    poisoned = module.AttemptBindings()
+    poisoned.set(execution.execution_id, foreign.attempt_id)
+    halting = saver(module, subject, run, attempt_bindings=poisoned)
+    head = subject.ledger.read_checkpoint(run.run_id, module.NAMESPACE)["revision"]
+    with pytest.raises(module.CheckpointError):
+        halting.put_writes(config(run, merged["id"]),
+                           [("results", {execution.execution_id: subject.refs.result})], identifier())
+    assert subject.ledger.read_checkpoint(run.run_id, module.NAMESPACE)["revision"] == head
+    with pytest.raises(module.CheckpointError):
+        halting.put_writes(config(run, merged["id"]), [("counters", {"first": 2})], identifier())
+    with pytest.raises(module.CheckpointError):
+        saver(module, subject, run, attempt_bindings=object())

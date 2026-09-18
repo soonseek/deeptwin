@@ -214,23 +214,29 @@ class VisitAttempt:
     callable and its outcome. Handlers are code-owned registry entries, so this
     is a documented trust boundary, not a sandbox."""
 
-    __slots__ = ("_committed", "_run", "_state")
+    __slots__ = ("_accepted", "_committed", "_run", "_state")
 
     def __init__(self, run):
         self._run = run
         self._state = "ready"
         self._committed = None
+        self._accepted = None
 
     @property
     def committed(self):
         """The accepted `succeeded` result reference once dispatched, else None."""
         return self._committed
 
+    @property
+    def accepted_attempt(self):
+        """The id of the attempt whose accepted result `committed` is, else None."""
+        return self._accepted
+
     def dispatch(self):
         if self._state != "ready":
             raise AttemptDispatchError("attempt_already_dispatched")
         self._state = "dispatching"
-        self._committed = self._run()
+        self._committed, self._accepted = self._run()
         self._state = "committed"
         return self._committed
 
@@ -310,7 +316,7 @@ class NodeAttemptDispatcher:
             outcome = self._dispatch_attempt(request, attempt_index + 1, binding,
                                              budget_session_id)
             if outcome is not None:
-                return outcome
+                return outcome, request.attempt_id
             # the ledger proved this attempt definitely never sent: the next
             # attempt number of the same execution is the honest continuation
         raise AttemptDispatchError("attempt_bound")

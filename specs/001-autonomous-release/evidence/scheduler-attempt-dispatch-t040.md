@@ -98,5 +98,5 @@ default breaks no assertion. Closures, RED-first:
 - No worker message, provider, model, effort or paid call: the transport is an injected callable
   and the only transports today are the tests' in-process fakes (the worker-side operation
   registry is T087/T018; frozen turns and adapters are T042). No raw graph state in the outcome
-  (field set unchanged). Retry after a sent attempt stays unimplemented. Checkpoints stay unbound
-  to attempts (a separate decision). The live container/socket/worker run remains the host gate.
+  (field set unchanged). Retry after a sent attempt stays unimplemented. Checkpoints were unbound to attempts at this slice; the binding landed later the same day
+  (`checkpoint-attempt-binding-t040.md`). The live container/socket/worker run remains the host gate.

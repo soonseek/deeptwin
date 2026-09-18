@@ -78,11 +78,44 @@ class _NoObjectSerializer:
         raise CheckpointError("Object deserialization is unsupported")
 
 
+class AttemptBindings:
+    """The per-run registry of which accepted attempt produced which execution's
+    result (T040 checkpoint↔attempt binding). The scheduler registers a pair after
+    the visit's capability committed; the saver binds each pending-writes row that
+    carries exactly that execution's result to the attempt, and nothing else. In
+    memory only, bounded by the journal's own record limit: on restart the rows
+    already carry their binding and no already-durable result is written again."""
+
+    __slots__ = ("_entries", "_lock")
+
+    def __init__(self):
+        self._entries = {}
+        self._lock = RLock()
+
+    def set(self, execution_id, attempt_id):
+        execution_id, attempt_id = _uuid(execution_id), _uuid(attempt_id)
+        with self._lock:
+            current = self._entries.get(execution_id)
+            _require(current is None or current == attempt_id,
+                     "An execution's result is produced by one attempt")
+            _require(current is not None or len(self._entries) < MAX_RECORDS,
+                     "Attempt binding registry bound reached")
+            self._entries[execution_id] = attempt_id
+
+    def get(self, execution_id):
+        with self._lock:
+            return self._entries.get(execution_id)
+
+
 class LedgerCheckpointSaver(BaseCheckpointSaver[int]):
     def __init__(self, ledger, run_id, *, graph_digest, authority_digest,
-                 node_ids=(), max_records=MAX_RECORDS, max_history_bytes=MAX_HISTORY_BYTES):
+                 node_ids=(), max_records=MAX_RECORDS, max_history_bytes=MAX_HISTORY_BYTES,
+                 attempt_bindings=None):
         super().__init__(serde=_NoObjectSerializer())
         _require(type(ledger) is RuntimeLedger, "An exact RuntimeLedger is required")
+        _require(attempt_bindings is None or type(attempt_bindings) is AttemptBindings,
+                 "An exact AttemptBindings registry is required")
+        self._bindings = attempt_bindings
         self._ledger, self._run_id = ledger, _uuid(run_id)
         for digest in (graph_digest, authority_digest):
             _require(type(digest) is str and _DIGEST.fullmatch(digest) is not None)
@@ -312,14 +345,29 @@ class LedgerCheckpointSaver(BaseCheckpointSaver[int]):
             raise CheckpointError("Checkpoint serialization limit or grammar violation") from None
         _require(len(raw) <= MAX_CHECKPOINT_BYTES and self._revision < self._max_records
                  and self._bytes + len(raw) <= self._max_bytes, "Checkpoint journal limit reached")
+        attempt_id = self._bound_attempt(kind, data)
         try:
             row = self._ledger.write_checkpoint(str(uuid4()), self._run_id, NAMESPACE, raw,
-                                                 expected_revision=self._revision)
+                                                 expected_revision=self._revision,
+                                                 attempt_id=attempt_id)
             _require(row["revision"] == self._revision + 1 and row["cursor"] == raw)
             self._consume(raw)
         except Exception:  # noqa: BLE001 - Uncertain commits must halt without leaking storage errors.
             self._halted = True
             raise CheckpointError("Checkpoint commit failed; saver halted") from None
+
+    def _bound_attempt(self, kind, data):
+        """The attempt a pending-writes row binds: exactly one `results` write naming
+        exactly one execution the registry knows; every other row stays unbound
+        (a guessed or partial binding would be a permanent integrity failure)."""
+
+        if self._bindings is None or kind != "writes":
+            return None
+        results = [entry for entry in data["writes"] if entry["channel"] == "results"]
+        if len(results) != 1 or type(results[0]["value"]) is not dict or len(results[0]["value"]) != 1:
+            return None
+        execution_id = next(iter(results[0]["value"]))
+        return self._bindings.get(execution_id)
 
     def put(self, config, checkpoint, metadata, new_versions):
         with self._lock:

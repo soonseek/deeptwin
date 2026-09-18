@@ -47,6 +47,7 @@ MAX_ACTIVE_ATTEMPTS = 1_000
 MAX_ATTEMPTS_PER_EXECUTION = 1_000
 MAX_CHECKPOINT_BYTES = 1_048_576
 MAX_CHECKPOINT_NAMESPACES = 128
+MAX_CHECKPOINTS_PER_NAMESPACE = 4_096  # the saver's own record bound
 MAX_RESULT_OBSERVATIONS = 1_000
 MAX_PAGE = 1_000
 MAX_NODE_ID_BYTES = 256
@@ -2726,7 +2727,23 @@ class RuntimeLedger:
         for checkpoint in rows:
             self._checkpoint(db, checkpoint["run_id"], checkpoint["namespace"],
                              revision=checkpoint["revision"])
+        self._validated_bound_checkpoints(db, (run_id,))
         return rows
+
+    def _validated_bound_checkpoints(self, db, run_ids):
+        """Every checkpoint row bound to an attempt is re-verified, not only the
+        head: a bound row records which accepted attempt produced a result and
+        must still match the attempt's exact ledger state (T040)."""
+
+        for run_id in run_ids:
+            rows = db.execute(
+                "SELECT namespace,revision FROM runtime_checkpoints WHERE vault_id=? AND run_id=? "
+                "AND bound_attempt_id IS NOT NULL ORDER BY namespace,revision",
+                (self.vault_id, run_id)).fetchall()
+            if len(rows) > MAX_CHECKPOINT_NAMESPACES * MAX_CHECKPOINTS_PER_NAMESPACE:
+                raise CorruptLedger("Bound checkpoint recovery bound exceeded")
+            for row in rows:
+                self._checkpoint(db, run_id, row["namespace"], revision=row["revision"])
 
     def _validated_active_checkpoints(self, db):
         rows = db.execute(
@@ -2747,6 +2764,7 @@ class RuntimeLedger:
         for checkpoint in rows:
             self._checkpoint(db, checkpoint["run_id"], checkpoint["namespace"],
                              revision=checkpoint["revision"])
+        self._validated_bound_checkpoints(db, sorted({row["run_id"] for row in rows}))
         return rows
 
     def checkpoint_for_replay(self, run_id, namespace, *, revision=None):

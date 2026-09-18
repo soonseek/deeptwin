@@ -2444,9 +2444,10 @@ scheduler with an injected code-owned executor; no DOM yet). The run GUI's logic
 every shell module with the shell on `X-DeepTwin-CSRF` (`shell-assets-supported-factory.md`); the cancel
 route landed (`run-cancel-route.md`: a durable run phase, live attempts' gates closed, never a claim of remote
 termination) and the owner's recovery (`run-recover-route.md`: the retry after a sent attempt on the ledger's
-proof, at most four attempts per visit). Next: the run view wired in the shell against the supported routes
-(its CSRF source and base path; T048/T049) and the attempt layer in the run trace; T087 operations beyond
-`status` and the artifact stream stay open.
+proof, at most four attempts per visit); the checkpoint↔attempt binding landed
+(`checkpoint-attempt-binding-t040.md`), closing T040. Next: the attempt layer in the run trace (T048) and
+the run view wired in the shell against the supported routes (its CSRF source and base path; T048/T049);
+T087 operations beyond `status` and the artifact stream stay open.
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;

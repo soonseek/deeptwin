@@ -1197,3 +1197,15 @@ Dispatch **+4**, routes **+2**, `node --test` **14**; covering **249** then **14
 Details and hashes in `run-recover-route.md`. Full regression follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6219 passed, 2 skipped, 1 warning, 369
 subtests passed in 953.52s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## T040 complete — checkpoint↔attempt binding (2026-09-18)
+
+RED retained (`AttemptBindings` absent, bound rows empty, no `accepted_attempt`), GREEN after the registry, the
+saver's bound pending-writes rows, the dispatcher's accepted attempt and the scheduler wiring. Independent review
+ACCEPT WITH CHANGES (the ledger re-verifies every bound row of the run on reserve and startup, not only the head;
+tamper refusals pinned on read, reserve, startup and scheduler build; the docs close the item; three NITs) folded
+in RED-first. Checkpoints **+1**, dispatch **+2**, ledger **+4**; covering **185** and **145**; Ruff: no new
+findings. Details and hashes in `checkpoint-attempt-binding-t040.md`. T040 is marked complete. Full regression
+follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6225 passed, 2 skipped, 1 warning, 369
+subtests passed in 909.89s** — the two Linux-only skips. Hashes re-verified unchanged before commit.

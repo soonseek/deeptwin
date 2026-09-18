@@ -117,13 +117,40 @@ def writer_attempt_id(run):
     return na.attempt_identity(run.run_id, "writer", 0, 0)
 
 
+def bound_rows(subject, run):
+    """The journal rows of the run carrying an attempt binding, in revision order."""
+    from app.runtime.checkpoints import NAMESPACE
+
+    head = subject.ledger.read_checkpoint(run.run_id, NAMESPACE)["revision"]
+    rows = [subject.ledger.checkpoint_for_replay(run.run_id, NAMESPACE, revision=revision)
+            for revision in range(1, head + 1)]
+    return [row for row in rows if row["bound_attempt_id"] is not None]
+
+
 def test_a_bound_agent_visit_dispatches_one_attempt_and_admits_the_accepted_result(tmp_path):
     subject, run = started(tmp_path)
     transport = Transport(succeeded(subject))
     calls = []
-    outcome = build(subject, run, dispatcher(subject, transport), handlers(subject, calls)).run()
+    seen = {}
+
+    def dispatching(context, view):
+        calls.append(context.node_id)
+        result = context.attempt.dispatch()
+        seen["accepted"] = context.attempt.accepted_attempt
+        return result
+
+    outcome = build(subject, run, dispatcher(subject, transport),
+                    handlers(subject, calls, agent=dispatching)).run()
     assert calls == ["intake", "writer", "publish"]
     writer_execution = sch.execution_identity(run.run_id, "writer", 0)
+    # the capability names the accepted attempt, and the journal row that first
+    # carries the writer's result is bound to it (T040 checkpoint↔attempt binding)
+    assert seen["accepted"] == writer_attempt_id(run)
+    bound = bound_rows(subject, run)
+    assert [row["bound_attempt_id"] for row in bound] == [writer_attempt_id(run)]
+    assert bound[0]["bound_execution_id"] == writer_execution
+    assert bound[0]["bound_envelope_sha256"] == subject.refs.envelope.sha256
+    assert bound[0]["bound_attempt_revision"] == subject.ledger.get_attempt(writer_attempt_id(run))["revision"]
     assert dict(outcome.result_refs)[writer_execution] == subject.refs.produced
     assert set(outcome.__dataclass_fields__) == {
         "run_id", "graph_digest", "completed_node_ids", "execution_ids",
@@ -376,6 +403,8 @@ def test_restart_before_the_send_reserves_the_next_unsent_attempt_and_dispatches
     assert budget_row(subject, na.reservation_identity(second))["state"] == "finalized"
     # the ledger-only reservation of the unsent attempt never reached the book
     assert budget_row(subject, na.reservation_identity(unsent)) is None
+    # the result's journal row is bound to the attempt that produced it, not the unsent one
+    assert [row["bound_attempt_id"] for row in bound_rows(subject, run)] == [second]
 
 
 def test_a_success_with_an_unresolvable_result_is_an_unknown_outcome(tmp_path):
@@ -568,3 +597,18 @@ def test_the_retry_proof_never_admits_a_cancelled_or_unsettled_attempt(tmp_path,
     assert attempts._observed_terminal("cancelled") is False
     assert attempts._observed_terminal("timed_out") is False
     assert attempts._observed_terminal("unknown") is False
+
+
+def test_a_tampered_bound_row_refuses_the_next_scheduler_build(tmp_path):
+    import sqlite3
+
+    subject, run = started(tmp_path)
+    transport = Transport(succeeded(subject))
+    build(subject, run, dispatcher(subject, transport), handlers(subject, [])).run()
+    [bound] = bound_rows(subject, run)
+    with sqlite3.connect(subject.legacy.path) as db:
+        db.execute("UPDATE runtime_checkpoints SET bound_attempt_revision=99 WHERE run_id=? AND revision=?",
+                   (run.run_id, bound["revision"]))
+    with pytest.raises(sch.SchedulerError, match="checkpoint journal binding failed"):
+        build(subject, run, dispatcher(subject, transport), handlers(subject, []))
+    assert transport.calls and len(transport.calls) == 1
