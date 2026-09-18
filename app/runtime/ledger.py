@@ -14,6 +14,7 @@ import os
 import re
 import sqlite3
 import time
+import uuid
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from hashlib import sha256
@@ -725,6 +726,13 @@ _DDL = (
     "REFERENCES runtime_result_observations(vault_id,id), "
     "FOREIGN KEY(vault_id,kind,id,version,sha256) "
     "REFERENCES domain_records(vault_id,kind,id,version,sha256))",
+    ("CREATE TABLE runtime_tool_calls (vault_id TEXT NOT NULL, id TEXT NOT NULL, attempt_id TEXT NOT NULL, "
+     "tool_id TEXT NOT NULL, version TEXT NOT NULL, effect_class TEXT NOT NULL, inputs BLOB NOT NULL, "
+     "inputs_digest TEXT NOT NULL, state TEXT NOT NULL, result_kind TEXT, result_id TEXT, "
+     "result_version INTEGER, result_sha256 TEXT, command_id TEXT NOT NULL, created_at_ms INTEGER NOT NULL, "
+     "settled_at_ms INTEGER, approval_kind TEXT, approval_id TEXT, approval_version INTEGER, "
+     "approval_sha256 TEXT, PRIMARY KEY(vault_id,id), UNIQUE(vault_id,attempt_id), UNIQUE(vault_id,command_id), "
+     "FOREIGN KEY(vault_id,attempt_id) REFERENCES runtime_attempts(vault_id,id))"),
     "CREATE TABLE runtime_checkpoints (vault_id TEXT NOT NULL, run_id TEXT NOT NULL, namespace TEXT NOT NULL, "
     "revision INTEGER NOT NULL, cursor BLOB NOT NULL, cursor_sha256 TEXT NOT NULL, "
     "bound_attempt_id TEXT, bound_attempt_revision INTEGER, bound_execution_id TEXT, "
@@ -747,7 +755,7 @@ _OWNED_TABLES = frozenset({
     "runtime_migrations", "runtime_control", "runtime_commands", "runtime_runs",
     "runtime_run_refs", "runtime_node_executions", "runtime_execution_parents",
     "runtime_attempts", "runtime_attempt_refs", "runtime_result_observations",
-    "runtime_result_refs", "runtime_checkpoints", "runtime_attempt_journal",
+    "runtime_result_refs", "runtime_tool_calls", "runtime_checkpoints", "runtime_attempt_journal",
     "runtime_public_events",
 })
 _LEDGER_TABLES = _OWNED_TABLES - {"runtime_migrations"}
@@ -772,6 +780,84 @@ for _statement in _DDL:
     _EXPECTED_LEDGER_SCHEMA[_schema_match.group(2)] = (
         _schema_match.group(1).casefold(), _normalize_schema_sql(_statement)
     )
+
+
+# the ToolCall of one attempt (data-model §4): the write-ahead intent of a tool
+# call — tool and version, the effect class control mirrors, the ordered
+# artifact inputs — recorded before the send and settled after; the ports'
+# effect classes (extension-ports.md) are its vocabulary
+TOOL_CALL_STATES = frozenset({"intent", "succeeded", "failed", "unknown"})
+TOOL_CALL_OUTCOMES = frozenset({"succeeded", "failed", "unknown"})
+# the ports contract's effect classes (app/extensions/port_contracts.EFFECT_CLASSES,
+# pinned equal by test); the four that require an explicit action approval
+TOOL_EFFECT_CLASSES = frozenset({
+    "none", "read", "write_reversible", "external_reversible", "external_irreversible",
+    "instance_critical_secret", "instance_critical_storage",
+})
+TOOL_APPROVAL_EFFECTS = frozenset({
+    "external_reversible", "external_irreversible", "instance_critical_secret",
+    "instance_critical_storage",
+})
+_TOOL_INPUT_FIELDS = ("ordinal", "media_type", "declared_size", "sha256", "role")
+MAX_TOOL_CALL_INPUTS = 8  # the execute grammar's MAX_ARTIFACT_INPUTS, pinned equal by test
+
+
+def tool_call_identity(attempt_id):
+    """One tool call per attempt: deterministic in the attempt."""
+    uuid_string(attempt_id)
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"deeptwin:tool-call:{attempt_id}"))
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCallSpec:
+    """The write-ahead intent of one attempt's tool call: the tool and version
+    control named, the effect class control mirrors for it (the mirror's claim
+    until ToolDefinition records exist — not a verified definition), the ordered
+    artifact inputs it declared, and the action approval that admitted an
+    external or instance-critical effect (required for those, refused for the
+    rest; its existence, scope and expiry are not verified here)."""
+
+    tool_call_id: str
+    attempt_id: str
+    tool_id: str
+    version: str
+    effect_class: str
+    artifact_inputs: tuple
+    approval_ref: EntityRef | None = None
+
+    def __post_init__(self):
+        uuid_string(self.tool_call_id)
+        uuid_string(self.attempt_id)
+        if self.tool_call_id != tool_call_identity(self.attempt_id):
+            raise ValueError("tool call id must be the attempt's tool call identity")
+        _bounded_text("tool id", self.tool_id, 64, pattern=r"[A-Za-z0-9][A-Za-z0-9_.:-]*")
+        _bounded_text("tool version", self.version, 64, pattern=r"[A-Za-z0-9][A-Za-z0-9_.+-]*")
+        if self.effect_class not in TOOL_EFFECT_CLASSES:
+            raise ValueError("effect class is outside the closed set")
+        if self.approval_ref is not None and (type(self.approval_ref) is not EntityRef
+                                              or self.approval_ref.kind != "action_approval"):
+            raise TypeError("an approval is an exact action_approval reference")
+        if (self.effect_class in TOOL_APPROVAL_EFFECTS) != (self.approval_ref is not None):
+            raise ValueError("an external effect requires an approval; any other carries none")
+        if type(self.artifact_inputs) is not tuple or len(self.artifact_inputs) > MAX_TOOL_CALL_INPUTS:
+            raise TypeError("artifact inputs must be a bounded tuple")
+        for index, item in enumerate(self.artifact_inputs):
+            if type(item) is not dict or tuple(sorted(item)) != tuple(sorted(_TOOL_INPUT_FIELDS)):
+                raise TypeError("artifact input must carry exactly its five fields")
+            if item["ordinal"] != index:
+                raise ValueError("artifact inputs must be the exact ordered sequence")
+            if type(item["declared_size"]) is not int or item["declared_size"] < 0:
+                raise ValueError("artifact input size must be a nonnegative integer")
+            if type(item["sha256"]) is not str or re.fullmatch(r"[0-9a-f]{64}", item["sha256"]) is None:
+                raise ValueError("artifact input digest must be sha256")
+            _bounded_text("artifact input media type", item["media_type"], 128)
+            _bounded_text("artifact input role", item["role"], 64, pattern=r"[A-Za-z0-9][A-Za-z0-9_.:-]*")
+
+    def as_dict(self):
+        return {"tool_call_id": self.tool_call_id, "attempt_id": self.attempt_id, "tool_id": self.tool_id,
+                "version": self.version, "effect_class": self.effect_class,
+                "artifact_inputs": [dict(item) for item in self.artifact_inputs],
+                "approval_ref": None if self.approval_ref is None else self.approval_ref.as_dict()}
 
 
 class RuntimeLedger:
@@ -1345,6 +1431,114 @@ class RuntimeLedger:
             result = self._execution_snapshot(row)
             self._record_command(db, command_id, "create_execution", payload, result, now)
             return result
+
+    def _tool_call_snapshot(self, row):
+        """The read projection of one tool call row: identities, the mirror's effect
+        class, the declared inputs, the state, the sealed result and the approval."""
+
+        result_ref = None
+        if row["result_kind"] is not None:
+            result_ref = {"kind": row["result_kind"], "id": row["result_id"],
+                          "version": row["result_version"], "sha256": row["result_sha256"]}
+        approval_ref = None
+        if row["approval_kind"] is not None:
+            approval_ref = {"kind": row["approval_kind"], "id": row["approval_id"],
+                            "version": row["approval_version"], "sha256": row["approval_sha256"]}
+        return {"tool_call_id": row["id"], "attempt_id": row["attempt_id"], "tool_id": row["tool_id"],
+                "version": row["version"], "effect_class": row["effect_class"],
+                "artifact_inputs": _decode_canonical(row["inputs"], row["inputs_digest"], "tool call inputs"),
+                "state": row["state"], "result_ref": result_ref, "approval_ref": approval_ref,
+                "command_id": row["command_id"],
+                "created_at_ms": row["created_at_ms"], "settled_at_ms": row["settled_at_ms"]}
+
+    def record_tool_call(self, command_id, spec):
+        """The write-ahead intent of one attempt's tool call, recorded before the send
+        (replayable by command; a different intent for the same attempt is refused)."""
+
+        if type(spec) is not ToolCallSpec:
+            raise TypeError("record_tool_call requires an exact ToolCallSpec")
+        payload = self._command_payload({"spec": spec.as_dict()})
+        with self._transaction(write=True) as db:
+            replay = self._command_replay(db, command_id, "record_tool_call", payload)
+            if replay is not None:
+                return replay
+            now = self._now(db)
+            attempt = db.execute("SELECT id FROM runtime_attempts WHERE vault_id=? AND id=?",
+                                 (self.vault_id, spec.attempt_id)).fetchone()
+            if attempt is None:
+                raise KeyError(spec.attempt_id)
+            existing = db.execute("SELECT * FROM runtime_tool_calls WHERE vault_id=? AND attempt_id=?",
+                                  (self.vault_id, spec.attempt_id)).fetchone()
+            if existing is not None:
+                # the same intent again (under any command) is the same intent; a different
+                # intent for the attempt is refused — one tool call per attempt
+                snapshot = self._tool_call_snapshot(existing)
+                same = spec.as_dict()
+                if all(snapshot[name] == same[name] for name in
+                       ("tool_id", "version", "effect_class", "artifact_inputs", "approval_ref")):
+                    self._record_command(db, command_id, "record_tool_call", payload, snapshot, now)
+                    return snapshot
+                raise LedgerError("The attempt already recorded a different tool call intent")
+            encoded = canonical_json(spec.as_dict()["artifact_inputs"])
+            approval = spec.approval_ref
+            db.execute("INSERT INTO runtime_tool_calls VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                       (self.vault_id, spec.tool_call_id, spec.attempt_id, spec.tool_id, spec.version,
+                        spec.effect_class, encoded, _digest(encoded), "intent", None, None, None, None,
+                        command_id, now, None,
+                        None if approval is None else approval.kind, None if approval is None else approval.id,
+                        None if approval is None else approval.version,
+                        None if approval is None else approval.sha256))
+            row = db.execute("SELECT * FROM runtime_tool_calls WHERE vault_id=? AND id=?",
+                             (self.vault_id, spec.tool_call_id)).fetchone()
+            result = self._tool_call_snapshot(row)
+            self._record_command(db, command_id, "record_tool_call", payload, result, now)
+            return result
+
+    def settle_tool_call(self, command_id, tool_call_id, *, outcome, result_ref):
+        """Settle one tool call: `succeeded` with its sealed result, `failed`, or
+        `unknown` (a refused reply, a broken exchange — the effect uncertainty stays
+        recorded; a later real outcome may settle it). A final outcome never changes."""
+
+        uuid_string(tool_call_id)
+        if outcome not in TOOL_CALL_OUTCOMES:
+            raise ValueError("outcome is outside the closed set")
+        if (outcome == "succeeded") != (result_ref is not None):
+            raise LedgerError("A succeeded tool call carries its result; nothing else does")
+        if result_ref is not None and type(result_ref) is not EntityRef:
+            raise TypeError("result_ref must be an exact EntityRef")
+        payload = self._command_payload({"tool_call_id": tool_call_id, "outcome": outcome,
+                                         "result_ref": None if result_ref is None else result_ref.as_dict()})
+        with self._transaction(write=True) as db:
+            replay = self._command_replay(db, command_id, "settle_tool_call", payload)
+            if replay is not None:
+                return replay
+            now = self._now(db)
+            row = db.execute("SELECT * FROM runtime_tool_calls WHERE vault_id=? AND id=?",
+                             (self.vault_id, tool_call_id)).fetchone()
+            if row is None:
+                raise KeyError(tool_call_id)
+            if row["state"] not in ("intent", "unknown"):
+                raise LedgerError("A final tool call outcome never changes")
+            ref = result_ref
+            db.execute("UPDATE runtime_tool_calls SET state=?,result_kind=?,result_id=?,result_version=?,"
+                       "result_sha256=?,settled_at_ms=? WHERE vault_id=? AND id=?",
+                       (outcome, None if ref is None else ref.kind, None if ref is None else ref.id,
+                        None if ref is None else ref.version, None if ref is None else ref.sha256,
+                        now, self.vault_id, tool_call_id))
+            row = db.execute("SELECT * FROM runtime_tool_calls WHERE vault_id=? AND id=?",
+                             (self.vault_id, tool_call_id)).fetchone()
+            result = self._tool_call_snapshot(row)
+            self._record_command(db, command_id, "settle_tool_call", payload, result, now)
+            return result
+
+    def tool_calls_for_attempt(self, attempt_id):
+        """Read-only: the tool calls of one attempt (at most one today)."""
+
+        uuid_string(attempt_id)
+        with self._transaction() as db:
+            rows = db.execute("SELECT * FROM runtime_tool_calls WHERE vault_id=? AND attempt_id=? "
+                              "ORDER BY created_at_ms,id", (self.vault_id, attempt_id)).fetchall()
+            return [self._tool_call_snapshot(row) for row in rows]
 
     def reserve_attempt(self, command_id, spec, *, lease_duration_ms):
         if type(spec) is not AttemptSpec:
@@ -2918,6 +3112,32 @@ class RuntimeLedger:
                                   {"outcome": "outcome_unknown", "reason": "restart"}, now)
                     self._event(db, "attempt.terminal", "attempt", row["id"],
                                 {"outcome": "outcome_unknown"}, now)
+            # a crash between a tool call's intent and its settlement: the call settles from
+            # its attempt's own terminal outcome — succeeded with the accepted result, failed
+            # for a failed/denied/timed-out attempt, unknown only when the attempt is unknown
+            # or cancelled — instead of an intent in flight
+            orphans = db.execute(
+                "SELECT call.id AS call_id, attempt.terminal_outcome AS outcome, "
+                "ref.kind AS kind, ref.id AS ref_id, ref.version AS version, ref.sha256 AS sha256 "
+                "FROM runtime_tool_calls AS call JOIN runtime_attempts AS attempt "
+                "ON attempt.vault_id=call.vault_id AND attempt.id=call.attempt_id "
+                "LEFT JOIN runtime_result_refs AS ref ON ref.vault_id=attempt.vault_id "
+                "AND ref.observation_id=attempt.accepted_observation_id "
+                "WHERE call.vault_id=? AND call.state='intent' AND attempt.phase='terminal'",
+                (self.vault_id,)).fetchall()
+            for orphan in orphans:
+                outcome = orphan["outcome"]
+                if outcome == "succeeded" and orphan["kind"] is not None:
+                    state, ref = "succeeded", orphan
+                elif outcome in ("failed", "denied", "timed_out"):
+                    state, ref = "failed", None
+                else:
+                    state, ref = "unknown", None
+                db.execute("UPDATE runtime_tool_calls SET state=?,result_kind=?,result_id=?,result_version=?,"
+                           "result_sha256=?,settled_at_ms=? WHERE vault_id=? AND id=?",
+                           (state, None if ref is None else ref["kind"], None if ref is None else ref["ref_id"],
+                            None if ref is None else ref["version"], None if ref is None else ref["sha256"],
+                            now, self.vault_id, orphan["call_id"]))
             result = {"recovery_pending_count": recovery_pending, "unknown_count": unknown,
                       "definitely_unsent_count": definitely_unsent,
                       "checkpoint_count": len(checkpoints), "redispatched_count": 0}

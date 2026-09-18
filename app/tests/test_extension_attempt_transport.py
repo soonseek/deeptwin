@@ -13,11 +13,11 @@ Linux authentication, a real image or a container.
 """
 
 import time
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import pytest
 
-from app.domain.refs import canonical_json
+from app.domain.refs import EntityRef, canonical_json
 from app.runtime import extension_attempt_transport as xt
 from app.runtime import node_attempts as na
 from app.runtime import scheduler as sch
@@ -641,6 +641,140 @@ def test_the_output_contracts_have_unique_roles_and_a_stated_output_bound():
     # the derived text is at most three times the input (NFC growth) and never over the ceiling
     assert xt.TOOL_OUTPUT_BOUNDS[("text_normalize", "1.0.0")] == (3, xt.MAX_INPUT_BYTES)
     assert xt.TOOL_OUTPUT_BOUNDS[("text_profile", "1.0.0")] == (0, 0)
+
+
+def test_a_tool_call_intent_is_recorded_before_the_send_and_settled_after_the_reply(tmp_path, staged, monkeypatch):
+    # T087 ToolCall: control records the write-ahead intent in the ledger before the request
+    # frame leaves (the worker sees it already recorded), and settles it with the sealed
+    # result after the reply; the effect class is the mirror's
+    seen = {}
+    original = ep._Router.execute
+
+    def observing(self, service, request, deadline, inputs=()):
+        seen["intents"] = [(call["state"], call["tool_id"], call["effect_class"])
+                           for call in subject.ledger.tool_calls_for_attempt(request.attempt_id)]
+        return original(self, service, request, deadline, inputs)
+
+    monkeypatch.setattr(ep._Router, "execute", observing)
+    box = staged[3]
+    subject, run = started(tmp_path / "ledger")
+    transport_ = xt.ExtensionAttemptTransport.build(
+        domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+        artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, ledger=subject.ledger)
+    outcome = build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
+    assert seen["intents"] == [("intent", "text_profile", "read")]
+    attempt_id = writer_attempt_id(run)
+    calls = subject.ledger.tool_calls_for_attempt(attempt_id)
+    writer_execution = sch.execution_identity(run.run_id, "writer", 0)
+    assert len(calls) == 1 and calls[0]["state"] == "succeeded"
+    assert calls[0]["result_ref"] == dict(outcome.result_refs)[writer_execution].as_dict()
+    assert calls[0]["artifact_inputs"] == [text_input(b"hello").declaration(0, 1).as_dict()]
+    assert calls[0]["version"] == "1.0.0"
+    assert box.get("served") == 1, box
+
+
+def test_a_tool_call_settles_failed_or_unknown_by_what_control_observed(tmp_path, staged, monkeypatch):
+    box = staged[3]
+    original = ep._Router.execute
+
+    def lying(self, service, request, deadline, inputs=()):
+        result = original(self, service, request, deadline, inputs)
+        return {**result, "output": {**result["output"], "tool_id": "other_tool", "version": "9.9.9"}}
+
+    monkeypatch.setattr(ep._Router, "execute", lying)
+    subject, run = started(tmp_path / "ledger")
+    transport_ = xt.ExtensionAttemptTransport.build(
+        domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+        artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, ledger=subject.ledger)
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
+    calls = subject.ledger.tool_calls_for_attempt(writer_attempt_id(run))
+    assert [call["state"] for call in calls] == ["unknown"]  # a refused reply: the effect is unknown
+    assert box.get("served") == 1, box
+    # a worker's typed failure settles the call as failed
+    again = box["serve_again"]()
+    subject2, run2 = started(tmp_path / "ledger2")
+    monkeypatch.setattr(ep._Router, "execute", lambda *args, **kwargs: {
+        "outcome": "failed", "usage_finality": "final", "remote_terminal_observed": "failed",
+        "reason_code": "provider_terminal", "usage": {**ep._ZERO_USAGE, "tool_calls": 1}, "output": None})
+    transport2 = xt.ExtensionAttemptTransport.build(
+        domain_store=subject2.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+        artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, ledger=subject2.ledger)
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject2, run2, bound(subject2, transport2, tool_calls=1), handlers(subject2, [])).run()
+    assert [call["state"] for call in subject2.ledger.tool_calls_for_attempt(writer_attempt_id(run2))] == ["failed"]
+    assert again.get("served") == 1, again
+
+
+def test_a_tool_call_never_stays_intent_on_a_terminal_attempt_in_process(tmp_path, staged, monkeypatch):
+    # review closures: any exception out of the exchange settles the call unknown before it
+    # propagates (not only the typed transport error); a vouched non-send settles it failed
+    # — the call definitely never ran
+    box = staged[3]
+    subject, run = started(tmp_path / "ledger")
+    monkeypatch.setattr(xt.ExtensionAttemptTransport, "_result", lambda *args, **kwargs: (_ for _ in ()).throw(TypeError("PRIVATE")))
+    transport_ = xt.ExtensionAttemptTransport.build(
+        domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+        artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, ledger=subject.ledger)
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
+    assert [call["state"] for call in subject.ledger.tool_calls_for_attempt(writer_attempt_id(run))] == ["unknown"]
+    assert box.get("served") == 1, box
+    # the intent is recorded once the connection stands; a vouched non-send from the exchange
+    # then settles it failed (the worker sees a connection that sends nothing and closes)
+    box["serve_again"]()
+    subject2, run2 = started(tmp_path / "ledger2")
+    monkeypatch.setattr(xt.ExtensionAttemptTransport, "_exchange", lambda *args, **kwargs: (_ for _ in ()).throw(
+        xt.ExtensionTransportError("transport_unavailable", dispatch_effect="definitely_not_sent")))
+    transport2 = xt.ExtensionAttemptTransport.build(
+        domain_store=subject2.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+        artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, ledger=subject2.ledger)
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject2, run2, bound(subject2, transport2, tool_calls=1), handlers(subject2, [])).run()
+    assert [call["state"] for call in subject2.ledger.tool_calls_for_attempt(writer_attempt_id(run2))] == ["failed"]
+
+
+def test_the_effect_gate_requires_an_approval_for_an_external_effect_and_refuses_one_for_a_read(tmp_path, monkeypatch):
+    # T087 effect gate (ports contract: the ToolDefinition's effect class is authoritative;
+    # external effects need an explicit approval): the mirror's effect class decides at build
+    subject, _run = started(tmp_path / "ledger")
+    approval = EntityRef("action_approval", str(uuid4()), 1, "a" * 64)
+    with pytest.raises(ValueError):  # a read effect carries no approval requirement
+        xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
+                                           operation="invoke_tool", artifact_inputs=(text_input(b"hello"),),
+                                           tool=TEXT_PROFILE, effect_approval_ref=approval)
+    from types import MappingProxyType
+
+    monkeypatch.setattr(xt, "TOOL_EFFECTS", MappingProxyType({**xt.TOOL_EFFECTS, ("text_profile", "1.0.0"): "external_irreversible"}))
+    with pytest.raises(ValueError):  # an external effect requires one
+        xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
+                                           operation="invoke_tool", artifact_inputs=(text_input(b"hello"),),
+                                           tool=TEXT_PROFILE)
+    with pytest.raises(TypeError):  # of the exact kind
+        xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
+                                           operation="invoke_tool", artifact_inputs=(text_input(b"hello"),),
+                                           tool=TEXT_PROFILE, effect_approval_ref=EntityRef("artifact", str(uuid4()), 1, "a" * 64))
+    built = xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
+                                               operation="invoke_tool", artifact_inputs=(text_input(b"hello"),),
+                                               tool=TEXT_PROFILE, effect_approval_ref=approval, ledger=subject.ledger)
+    assert built.operation == "invoke_tool"
+    # the intent an external call records persists the approval that admitted it (the ledger
+    # refuses an external intent without one), so the gate leaves a trace
+    from app.runtime.ledger import ToolCallSpec, tool_call_identity
+
+    attempt_id = str(uuid4())
+    with pytest.raises(ValueError):
+        ToolCallSpec(tool_call_id=tool_call_identity(attempt_id), attempt_id=attempt_id, tool_id="text_profile",
+                     version="1.0.0", effect_class="external_irreversible", artifact_inputs=(), approval_ref=None)
+    from app.runtime import ledger as ledger_module
+
+    assert xt.APPROVAL_EFFECTS == ledger_module.TOOL_APPROVAL_EFFECTS
+    assert xt.APPROVAL_EFFECTS == frozenset({"external_reversible", "external_irreversible",
+                                             "instance_critical_secret", "instance_critical_storage"})
+    with pytest.raises(TypeError):
+        xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
+                                           operation="invoke_tool", artifact_inputs=(text_input(b"hello"),),
+                                           tool=TEXT_PROFILE, ledger="nope")
 
 
 def test_the_input_ceilings_agree_across_the_grammar_the_worker_and_control():

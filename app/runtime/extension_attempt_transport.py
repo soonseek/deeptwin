@@ -59,7 +59,14 @@ from ..workers.extension_execute_messages import (
 )
 from .artifact_cas import store_received_artifact
 from .budgets import BudgetUsage
-from .ledger import ConsumedDispatchWindow, DispatchPermit
+from .ledger import (
+    TOOL_APPROVAL_EFFECTS,
+    ConsumedDispatchWindow,
+    DispatchPermit,
+    RuntimeLedger,
+    ToolCallSpec,
+    tool_call_identity,
+)
 from .node_attempts import AttemptDispatchRequest, AttemptTransportResult
 from .worker_coordinator import ReceivedWorkerArtifact
 
@@ -141,6 +148,10 @@ TOOL_OUTPUT_CONTRACTS = MappingProxyType({
     ("text_normalize", "1.0.0"): (("normalized_text", "text/plain"),),
 })
 TOOL_EFFECTS = MappingProxyType({("text_profile", "1.0.0"): "read", ("text_normalize", "1.0.0"): "read"})
+# the effect gate (ports contract: the ToolDefinition's effect class is authoritative;
+# external and instance-critical effects require an explicit action approval; a read
+# or reversible effect carries no approval requirement)
+APPROVAL_EFFECTS = TOOL_APPROVAL_EFFECTS  # the ledger's, pinned to the ports contract
 # what each tool can return in bytes: (growth factor over the input, absolute ceiling)
 # — a caller reserving `output_bytes` for the attempt needs both (the tool's derived text
 # is at most three times its input under NFC, never over the leg's ceiling)
@@ -206,15 +217,16 @@ _PLACEHOLDER = "00000000-0000-4000-8000-000000000000"
 class ExtensionAttemptTransport:
     """Built only by `build`; one bound operation over one extension slot."""
 
-    __slots__ = ("_artifact_inputs", "_attempt_ms", "_domain", "_instance_id", "_operation",
-                 "_slot_number", "_tool")
+    __slots__ = ("_artifact_inputs", "_attempt_ms", "_domain", "_effect_approval_ref", "_instance_id",
+                 "_ledger", "_operation", "_slot_number", "_tool")
 
     def __init__(self) -> None:
         raise TypeError("Use ExtensionAttemptTransport.build")
 
     @classmethod
     def build(cls, *, domain_store, instance_id, slot_number, operation="status",
-              attempt_ms=ATTEMPT_MS, artifact_inputs=(), tool=None):
+              attempt_ms=ATTEMPT_MS, artifact_inputs=(), tool=None, ledger=None,
+              effect_approval_ref=None):
         if type(domain_store) is not DomainStore:
             raise TypeError("Exact DomainStore required")
         if type(instance_id) is not str or not instance_id:
@@ -238,6 +250,11 @@ class ExtensionAttemptTransport:
                 raise ValueError("artifact inputs exceed the input byte ceiling")
         if (operation == "invoke_tool") != (tool is not None):
             raise ValueError("invoke_tool names its tool; a query names none")
+        if ledger is not None and type(ledger) is not RuntimeLedger:
+            raise TypeError("ledger must be the exact RuntimeLedger")
+        if effect_approval_ref is not None and (type(effect_approval_ref) is not EntityRef
+                                                or effect_approval_ref.kind != "action_approval"):
+            raise TypeError("an effect approval is an exact action_approval reference")
         if tool is not None:
             key = (tool.get("tool_id"), tool.get("version")) if type(tool) is dict else None
             if key not in TOOL_INPUT_CONTRACTS:
@@ -246,6 +263,11 @@ class ExtensionAttemptTransport:
                              if type(item) is ExtensionArtifactInput)
             if declared != TOOL_INPUT_CONTRACTS[key]:
                 raise ValueError("the declared inputs are not the tool's input contract")
+            # the effect gate, from the mirror's effect class
+            if (TOOL_EFFECTS[key] in APPROVAL_EFFECTS) != (effect_approval_ref is not None):
+                raise ValueError("an external effect requires an explicit approval; a read carries none")
+        elif effect_approval_ref is not None:
+            raise ValueError("a query carries no effect approval")
         if tool is not None:
             if type(tool) is not dict:
                 raise TypeError("tool must be a {tool_id, version} mapping")
@@ -266,6 +288,8 @@ class ExtensionAttemptTransport:
         transport._attempt_ms = attempt_ms
         transport._artifact_inputs = artifact_inputs
         transport._tool = tool
+        transport._ledger = ledger
+        transport._effect_approval_ref = effect_approval_ref
         return transport
 
     @property
@@ -327,14 +351,72 @@ class ExtensionAttemptTransport:
         except (broker.BrokerError, listener.ListenerError, ipc_root.IpcRootError,
                 OSError):
             raise _unsent(deadline) from None  # nothing was written yet
+        # the ToolCall's write-ahead intent, recorded before the request frame leaves
+        tool_call_id = self._record_tool_call_intent(permit, request, declarations)
         try:
-            reply, received = self._exchange(connection, permit, request, payload, challenge, deadline)
-        finally:
             try:
-                connection.close()
-            except OSError:
-                pass  # a close fault cannot unmake a reply already in hand
-        return self._result(permit, request, reply, received)
+                reply, received = self._exchange(connection, permit, request, payload, challenge, deadline)
+            finally:
+                try:
+                    connection.close()
+                except OSError:
+                    pass  # a close fault cannot unmake a reply already in hand
+            result = self._result(permit, request, reply, received)
+        except ExtensionTransportError as error:
+            # a vouched non-send: the call definitely never ran; anything else (a refused
+            # reply, a broken exchange): the call's effect is unknown
+            self._settle_tool_call(permit, tool_call_id,
+                                   "failed" if error.dispatch_effect == "definitely_not_sent" else "unknown",
+                                   None)
+            raise
+        except Exception:
+            # any other fault out of the exchange leaves the dispatcher an unknown outcome:
+            # the call must not stay an intent on a terminal attempt until the next startup
+            self._settle_tool_call(permit, tool_call_id, "unknown", None)
+            raise
+        # `_result` admits only succeeded|failed for a tool call (anything else is a
+        # mismatch above), so the remaining arms are closed by construction
+        self._settle_tool_call(permit, tool_call_id,
+                               "succeeded" if result.outcome == "succeeded" else "failed",
+                               result.result_ref)
+        return result
+
+    def _record_tool_call_intent(self, permit, request, declarations):
+        """The ToolCall's write-ahead intent, recorded in the ledger before the request
+        frame leaves (a failure here is `definitely_not_sent`); nothing when no ledger is
+        bound or the operation is not a tool call."""
+
+        if self._ledger is None or self._operation != "invoke_tool":
+            return None
+        try:
+            spec = ToolCallSpec(
+                tool_call_id=tool_call_identity(request.attempt_id), attempt_id=request.attempt_id,
+                tool_id=self._tool.tool_id, version=self._tool.version,
+                effect_class=TOOL_EFFECTS[(self._tool.tool_id, self._tool.version)],
+                artifact_inputs=tuple(item.as_dict() for item in declarations),
+                approval_ref=self._effect_approval_ref,
+            )
+            self._ledger.record_tool_call(str(uuid5(NAMESPACE_URL, f"deeptwin:command:tool-call:{permit.command_id}")), spec)
+        except Exception:  # noqa: BLE001 - the ledger's detail stays private
+            raise ExtensionTransportError("transport_invalid", dispatch_effect="definitely_not_sent") from None
+        return spec.tool_call_id
+
+    def _settle_tool_call(self, permit, tool_call_id, outcome, result_ref):
+        """Settle the ToolCall from what control observed. A settlement fault after a
+        succeeded reply raises `transport_invalid`: the attempt is recorded unknown, the
+        call stays intent and the sealed result is not re-linked (open)."""
+
+        if tool_call_id is None:
+            return
+        try:
+            self._ledger.settle_tool_call(
+                str(uuid5(NAMESPACE_URL, f"deeptwin:command:tool-call:{permit.command_id}:{outcome}")),
+                tool_call_id, outcome=outcome, result_ref=result_ref,
+            )
+        except Exception:  # noqa: BLE001 - the ledger's detail stays private
+            # an unrecordable settlement: control must not claim a result whose call it
+            # cannot account for — the attempt is recorded unknown, the call stays intent
+            raise ExtensionTransportError("transport_invalid") from None
 
     def _exchange(self, connection, permit, request, payload, challenge, deadline):
         message_id = permit.command_id

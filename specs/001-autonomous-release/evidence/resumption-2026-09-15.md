@@ -1328,3 +1328,15 @@ off the server's, `preventDefault` unasserted, no Python end to end; NITs) folde
 Full regression follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6295 passed, 2 skipped, 1 warning, 369
 subtests passed in 985.36s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## T087 — the ToolCall record and the effect gate (2026-09-18)
+
+RED retained (no tool-call identity in the ledger, no ledger binding at build), GREEN after the table, the spec, the
+replayable intent and settlement commands, the read, the startup settlement and the transport's intent-before-send,
+settlement and gate. Independent review ACCEPT WITH CHANGES (SHOULD: a non-transport fault leaving an intent, startup
+ignoring the attempt's own terminal outcome, a vouched non-send as unknown, the approval unpersisted, vocabularies
+unpinned, docs; NITs) folded in RED-first. Covering **81 / 178 / 97**, and **208 passed, 1 failed** in one process
+where `test_runs_api`'s gated-run test answered 503 on creation only in that combination (passes alone and paired);
+Ruff: no new findings. Details and hashes in `tool-call-record-effect-gate-t087.md`. Full regression: **6304 passed, 2 skipped** (Linux-only),
+369 subtests, 16m10s — the gated-run test passed in the standard order (the covering failure is order-dependent).
+

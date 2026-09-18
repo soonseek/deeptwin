@@ -936,3 +936,160 @@ def test_bound_checkpoints_for_run_enumerates_verified_bound_rows_only(tmp_path)
     with pytest.raises(subject.module.CorruptLedger):
         subject.ledger.bound_checkpoints_for_run(run.run_id, "main")
     assert subject.ledger.read_checkpoint(run.run_id, "main")["revision"] == before
+
+
+def tool_call_spec(subject, attempt_id, **changes):
+    fields = {
+        "tool_call_id": subject.module.tool_call_identity(attempt_id), "attempt_id": attempt_id,
+        "tool_id": "text_profile", "version": "1.0.0", "effect_class": "read",
+        "artifact_inputs": ({"ordinal": 0, "media_type": "text/plain", "declared_size": 5,
+                             "sha256": "d" * 64, "role": "document_source"},),
+        **changes,
+    }
+    return subject.module.ToolCallSpec(**fields)
+
+
+def test_a_tool_call_is_a_replayable_write_ahead_intent_bound_to_its_attempt(tmp_path):
+    # T087 ToolCall (data-model §4): attempt ref, tool/version, ordered artifact inputs,
+    # effect class, idempotency (the command), state/result — recorded BEFORE the send as
+    # intent, settled after; a second intent for the same attempt must be the same intent
+    subject = opened(tmp_path)
+    _run, _execution, _lease_owner, attempt, _ = prepared(subject)
+    spec = tool_call_spec(subject, attempt.attempt_id)
+    command = identifier()
+    recorded = subject.ledger.record_tool_call(command, spec)
+    assert recorded["tool_call_id"] == spec.tool_call_id and recorded["state"] == "intent"
+    assert recorded["attempt_id"] == attempt.attempt_id and recorded["result_ref"] is None
+    assert recorded["tool_id"] == "text_profile" and recorded["effect_class"] == "read"
+    assert subject.ledger.record_tool_call(command, spec) == recorded  # exact replay
+    with pytest.raises(subject.module.LedgerError):
+        subject.ledger.record_tool_call(identifier(), tool_call_spec(subject, attempt.attempt_id, version="2.0.0"))
+    with pytest.raises(subject.module.LedgerError):
+        subject.ledger.record_tool_call(command, tool_call_spec(subject, attempt.attempt_id, version="2.0.0"))
+    with pytest.raises(KeyError):
+        subject.ledger.record_tool_call(identifier(), tool_call_spec(subject, identifier()))
+    assert subject.ledger.tool_calls_for_attempt(attempt.attempt_id) == [recorded]
+    assert subject.ledger.tool_calls_for_attempt(identifier()) == []
+    with pytest.raises(TypeError):
+        subject.ledger.record_tool_call(identifier(), {"tool_id": "x"})
+    for change in [{"effect_class": "wild"}, {"tool_id": "Bad Id"}, {"version": ""},
+                   {"artifact_inputs": ({"ordinal": 1},)}, {"tool_call_id": "nope"}]:
+        with pytest.raises((ValueError, TypeError)):
+            tool_call_spec(subject, attempt.attempt_id, **change)
+
+
+def test_an_identical_tool_call_intent_replays_under_any_command_and_carries_its_approval(tmp_path):
+    # review closures: the same intent recorded again (a new command id) is the same intent,
+    # not a refusal — only a different intent for the attempt is; and an intent for an
+    # external effect persists the approval that admitted it (a read carries none)
+    subject = opened(tmp_path)
+    _run, _execution, _lease_owner, attempt, _ = prepared(subject)
+    spec = tool_call_spec(subject, attempt.attempt_id)
+    first = subject.ledger.record_tool_call(identifier(), spec)
+    assert subject.ledger.record_tool_call(identifier(), spec) == first
+    assert first["approval_ref"] is None
+    with pytest.raises(subject.module.LedgerError):
+        subject.ledger.record_tool_call(identifier(), tool_call_spec(subject, attempt.attempt_id, tool_id="other"))
+    approval = EntityRef("action_approval", identifier(), 1, "a" * 64)
+    with pytest.raises(ValueError):  # a read effect carries no approval
+        tool_call_spec(subject, attempt.attempt_id, approval_ref=approval)
+    with pytest.raises(ValueError):  # an external effect requires one
+        tool_call_spec(subject, attempt.attempt_id, effect_class="external_irreversible")
+    with pytest.raises(TypeError):
+        tool_call_spec(subject, attempt.attempt_id, effect_class="external_irreversible",
+                       approval_ref=EntityRef("artifact", identifier(), 1, "a" * 64))
+    other = opened(tmp_path / "other")
+    _run, _execution, _owner, other_attempt, _ = prepared(other)
+    external = tool_call_spec(other, other_attempt.attempt_id, effect_class="external_irreversible",
+                              approval_ref=approval)
+    recorded = other.ledger.record_tool_call(identifier(), external)
+    assert recorded["approval_ref"] == approval.as_dict() and recorded["effect_class"] == "external_irreversible"
+    assert other.ledger.tool_calls_for_attempt(other_attempt.attempt_id)[0]["approval_ref"] == approval.as_dict()
+    # the vocabularies are the ports contract's, pinned
+    from app.extensions.port_contracts import EFFECT_CLASSES
+    from app.workers.extension_execute_messages import MAX_ARTIFACT_INPUTS
+
+    assert subject.module.TOOL_EFFECT_CLASSES == EFFECT_CLASSES
+    assert subject.module.TOOL_APPROVAL_EFFECTS == frozenset({
+        "external_reversible", "external_irreversible", "instance_critical_secret", "instance_critical_storage"})
+    assert subject.module.MAX_TOOL_CALL_INPUTS == MAX_ARTIFACT_INPUTS
+
+
+def test_a_tool_call_settles_once_with_a_result_only_on_success(tmp_path):
+    subject = opened(tmp_path)
+    _run, _execution, _lease_owner, attempt, _ = prepared(subject)
+    spec = tool_call_spec(subject, attempt.attempt_id)
+    subject.ledger.record_tool_call(identifier(), spec)
+    result_ref = EntityRef("artifact", identifier(), 1, "c" * 64)
+    with pytest.raises(subject.module.LedgerError):
+        subject.ledger.settle_tool_call(identifier(), spec.tool_call_id, outcome="failed", result_ref=result_ref)
+    with pytest.raises(subject.module.LedgerError):
+        subject.ledger.settle_tool_call(identifier(), spec.tool_call_id, outcome="succeeded", result_ref=None)
+    with pytest.raises(ValueError):
+        subject.ledger.settle_tool_call(identifier(), spec.tool_call_id, outcome="done", result_ref=None)
+    command = identifier()
+    settled = subject.ledger.settle_tool_call(command, spec.tool_call_id, outcome="succeeded", result_ref=result_ref)
+    assert settled["state"] == "succeeded" and settled["result_ref"] == result_ref.as_dict()
+    assert settled["settled_at_ms"] is not None
+    assert subject.ledger.settle_tool_call(command, spec.tool_call_id, outcome="succeeded", result_ref=result_ref) == settled
+    with pytest.raises(subject.module.LedgerError):  # a final outcome never changes
+        subject.ledger.settle_tool_call(identifier(), spec.tool_call_id, outcome="failed", result_ref=None)
+    with pytest.raises(KeyError):
+        subject.ledger.settle_tool_call(identifier(), identifier(), outcome="failed", result_ref=None)
+    # unknown is not final: a later real outcome may settle it
+    other = opened(tmp_path / "other")
+    _run, _execution, _owner, other_attempt, _ = prepared(other)
+    other_spec = tool_call_spec(other, other_attempt.attempt_id)
+    other.ledger.record_tool_call(identifier(), other_spec)
+    unknown = other.ledger.settle_tool_call(identifier(), other_spec.tool_call_id, outcome="unknown", result_ref=None)
+    assert unknown["state"] == "unknown"
+    assert other.ledger.settle_tool_call(identifier(), other_spec.tool_call_id, outcome="failed", result_ref=None)["state"] == "failed"
+
+
+def test_startup_settles_an_orphaned_tool_call_intent_of_a_terminal_attempt_as_unknown(tmp_path):
+    # a crash between the intent and the settlement: the call's effect is unknown; the
+    # ledger says so at startup instead of leaving an intent that looks in flight
+    subject = opened(tmp_path)
+    _run, _execution, lease_owner, attempt, _ = prepared(subject)
+    spec = tool_call_spec(subject, attempt.attempt_id)
+    subject.ledger.record_tool_call(identifier(), spec)
+    send(subject, attempt, lease_owner)
+    # a fresh process over the same durable state: rebuild the store and the ledger, reconcile
+    domain = DomainStore(Store(tmp_path / "vault"))
+    reopened_ledger = subject.module.RuntimeLedger(domain, clock_ms=lambda: subject.clock[0])
+    reopened_ledger.reconcile_startup(identifier(), observed_owners={})
+    calls = reopened_ledger.tool_calls_for_attempt(attempt.attempt_id)
+    assert [call["state"] for call in calls] == ["unknown"]
+    assert reopened_ledger.get_attempt(attempt.attempt_id)["terminal_outcome"] == "outcome_unknown"
+    # the migration digest and the owned tables include the new table
+    assert "runtime_tool_calls" in subject.module._OWNED_TABLES
+
+
+def test_startup_settles_an_orphaned_intent_from_the_attempts_own_terminal_outcome(tmp_path):
+    # review closure: an attempt that terminated succeeded with a sealed result (a crash
+    # after the acceptance, before the settlement) settles its call succeeded with that
+    # result; a failed attempt's call failed; only an unknown attempt leaves the call unknown
+    subject = opened(tmp_path)
+    _run, _execution, lease_owner, attempt, _ = prepared(subject)
+    spec = tool_call_spec(subject, attempt.attempt_id)
+    subject.ledger.record_tool_call(identifier(), spec)
+    send(subject, attempt, lease_owner)
+    result_ref = subject.refs.result
+    subject.ledger.accept_result(identifier(), result(subject, attempt.attempt_id))
+    assert subject.ledger.get_attempt(attempt.attempt_id)["terminal_outcome"] == "succeeded"
+    domain = DomainStore(Store(tmp_path / "vault"))
+    reopened_ledger = subject.module.RuntimeLedger(domain, clock_ms=lambda: subject.clock[0])
+    reopened_ledger.reconcile_startup(identifier(), observed_owners={})
+    calls = reopened_ledger.tool_calls_for_attempt(attempt.attempt_id)
+    assert [(call["state"], call["result_ref"]) for call in calls] == [("succeeded", result_ref.as_dict())]
+    # a failed attempt's orphaned intent settles failed
+    failed = opened(tmp_path / "failed")
+    _run, _execution, owner_f, attempt_f, _ = prepared(failed)
+    failed.ledger.record_tool_call(identifier(), tool_call_spec(failed, attempt_f.attempt_id))
+    send(failed, attempt_f, owner_f)
+    failed.ledger.accept_result(identifier(), result(failed, attempt_f.attempt_id, outcome="failed", result_ref=None,
+                                                     remote_terminal_observed="failed"))
+    domain_f = DomainStore(Store(tmp_path / "failed" / "vault"))
+    ledger_f = failed.module.RuntimeLedger(domain_f, clock_ms=lambda: failed.clock[0])
+    ledger_f.reconcile_startup(identifier(), observed_owners={})
+    assert [call["state"] for call in ledger_f.tool_calls_for_attempt(attempt_f.attempt_id)] == ["failed"]
