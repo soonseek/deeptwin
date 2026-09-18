@@ -664,3 +664,100 @@ def test_a_transport_stating_an_output_bound_refuses_a_binding_under_it_at_build
 
     with pytest.raises(AttributeError):
         dispatcher(subject, Broken(succeeded(subject)))
+
+
+class VouchedFault(RuntimeError):
+    """A transport fault that vouches for its dispatch effect (the extension
+    transport's own error shape): recorded, never trusted as a retry proof."""
+
+    def __init__(self, effect):
+        super().__init__("PRIVATE_VOUCHED_CANARY")
+        self.dispatch_effect = effect
+
+
+@pytest.mark.parametrize("effect", ["definitely_not_sent", "may_have_started"])
+def test_a_transport_fault_that_vouches_its_effect_is_journaled_before_the_unknown_outcome(tmp_path, effect):
+    # the dispatcher records the transport's vouched effect as the attempt's transport
+    # observation (the worker-dispatch precedent), then accepts the unknown outcome: the
+    # ledger's trust model keeps a committed send intent as possibly sent — the journal and
+    # the dispatch status carry the vouched effect, the attempt is still terminal unknown
+    subject, run = started(tmp_path)
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, dispatcher(subject, Transport(fault=VouchedFault(effect))), handlers(subject, [])).run()
+    attempt_id = writer_attempt_id(run)
+    stored = subject.ledger.get_attempt(attempt_id)
+    assert stored["terminal_outcome"] == "outcome_unknown" and stored["phase"] == "terminal"
+    assert stored["send_finality"] == "may_have_started"  # a committed intent is never a safe non-send here
+    status = subject.ledger.dispatch_status(na._command_identity(attempt_id, "send"))
+    assert status["dispatch"] == {"state": "recovery_pending", "effect": effect}
+    assert budget_row(subject, na.reservation_identity(attempt_id))["state"] == "unknown"
+    with subject.ledger._domain._connection() as db:
+        journal = [bytes(row["payload"]) for row in db.execute(
+            "SELECT payload FROM runtime_attempt_journal WHERE attempt_id=? AND transition='transport_observed'",
+            (attempt_id,))]
+    assert len(journal) == 1 and b"PRIVATE_VOUCHED_CANARY" not in journal[0]  # identities and the effect only
+    # a fault vouching nothing is journaled as nothing: the status reports only the unknown outcome
+    subject2, run2 = started(tmp_path / "plain")
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject2, run2, dispatcher(subject2, Transport(fault=ConnectionError("x"))), handlers(subject2, [])).run()
+    plain = subject2.ledger.dispatch_status(na._command_identity(writer_attempt_id(run2), "send"))
+    assert plain["dispatch"] == {"state": "recovery_pending", "effect": "outcome_unknown"}
+
+
+class Unhashable(RuntimeError):
+    @property
+    def dispatch_effect(self):
+        return []
+
+
+class Raising(RuntimeError):
+    @property
+    def dispatch_effect(self):
+        raise KeyError("PRIVATE")
+
+
+@pytest.mark.parametrize("fault", [Unhashable("x"), Raising("x")])
+def test_a_fault_whose_vouch_cannot_be_read_is_still_an_unknown_outcome(tmp_path, fault):
+    # review MUST: the vouch check itself never escapes the "a fault is an unknown outcome"
+    # contract — an unhashable or raising `dispatch_effect` is ignored, the attempt accepted
+    subject, run = started(tmp_path)
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, dispatcher(subject, Transport(fault=fault)), handlers(subject, [])).run()
+    attempt_id = writer_attempt_id(run)
+    stored = subject.ledger.get_attempt(attempt_id)
+    assert stored["terminal_outcome"] == "outcome_unknown" and stored["phase"] == "terminal"
+    assert budget_row(subject, na.reservation_identity(attempt_id))["state"] == "unknown"
+    assert subject.ledger._pending_permits == {}
+
+
+def test_a_journal_failure_never_changes_the_outcome_and_the_crash_window_is_recoverable(tmp_path, monkeypatch):
+    # review SHOULD: the observation is evidence — a ledger fault while recording it is
+    # suppressed and the unknown outcome still accepted; a crash between the journal write and
+    # the acceptance leaves the attempt gated and recovery-pending (the worker dispatch's own
+    # shape), and the restart reconciles it as unknown
+    subject, run = started(tmp_path)
+    monkeypatch.setattr(subject.ledger, "record_transport_observation",
+                        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("PRIVATE_JOURNAL_CANARY")))
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, dispatcher(subject, Transport(fault=VouchedFault("definitely_not_sent"))), handlers(subject, [])).run()
+    attempt_id = writer_attempt_id(run)
+    assert subject.ledger.get_attempt(attempt_id)["terminal_outcome"] == "outcome_unknown"
+    assert subject.ledger.dispatch_status(na._command_identity(attempt_id, "send"))["dispatch"]["effect"] == "outcome_unknown"
+    monkeypatch.undo()
+    # the crash window
+    subject2, run2 = started(tmp_path / "crash")
+    real_accept = subject2.ledger.accept_result_and_settle
+    monkeypatch.setattr(subject2.ledger, "accept_result_and_settle",
+                        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("PRIVATE_CRASH_CANARY")))
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject2, run2, dispatcher(subject2, Transport(fault=VouchedFault("definitely_not_sent"))), handlers(subject2, [])).run()
+    monkeypatch.setattr(subject2.ledger, "accept_result_and_settle", real_accept)
+    attempt2 = writer_attempt_id(run2)
+    mid = subject2.ledger.get_attempt(attempt2)
+    assert mid["phase"] == "send_intent" and mid["dispatch_gate"] == "closed" and mid["recovery_state"] == "pending"
+    assert subject2.ledger.dispatch_status(na._command_identity(attempt2, "send"))["state"] == "blocked"
+    restart(subject2, tmp_path / "crash")
+    after = subject2.ledger.get_attempt(attempt2)
+    assert after["phase"] == "terminal" and after["terminal_outcome"] == "outcome_unknown"
+    assert after["recovery_state"] == "reconciled"
+

@@ -2465,10 +2465,11 @@ the public setup state on `/health`, the observation page reachable after either
 gate landed (`tool-call-record-effect-gate-t087.md`); the `output_bytes` reservation from the tool's bound landed
 (`output-bytes-reservation-t087.md`); the intake's server surface landed (`works-v1`, `works-routes-intake-t023.md`)
 and the intake page over it (`intake-page-t023.md`); the approval's verification landed
-(`tool-call-approval-verification-t087.md`). Next: honouring a vouched non-send after the send intent in the dispatcher
-(the attempt is recorded `may_have_started` today), then the ToolDefinition-backed gate (T087; the tool boundary's
-four-class effect vocabulary must first be reconciled with the ports contract's seven), then run creation from the
-intake once the consent/design line records a run consent and an environment.
+(`tool-call-approval-verification-t087.md`); the transport's vouched dispatch effect is journaled by the dispatcher
+(`vouched-transport-effect-journal.md`; a free retry after a committed send intent is a ledger trust-model change
+runtime.md does not yet state — open). Next: the ToolDefinition-backed gate (T087; the tool boundary's four-class
+effect vocabulary must first be reconciled with the ports contract's seven), then run creation from the intake once
+the consent/design line records a run consent and an environment.
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;

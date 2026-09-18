@@ -439,9 +439,10 @@ class ExtensionAttemptTransport:
         node and this tool's scope (existence, authorship and binding are the approvals
         service's checks), an approval rather than a rejection, and the exact record
         named (version and digest) — any other is refused before a byte leaves. The
-        refusal is raised as `definitely_not_sent`; the dispatcher today records every
-        transport failure after the send intent as an unknown outcome (honouring the
-        vouched non-send there is a separate slice). No expiry is recorded on a decision
+        refusal is raised as `definitely_not_sent`; the dispatcher journals that vouched
+        effect as the attempt's transport observation and still records the attempt as
+        an unknown outcome (a committed send intent is possibly sent in the ledger's
+        trust model; a free retry after it stays open). No expiry is recorded on a decision
         or a gate request, so none is checked (runtime.md names stale approvals: open)."""
 
         if self._effect_approval_ref is None:

@@ -1380,3 +1380,12 @@ no expiry — stated) folded in RED-first. Transport **41**, covering **124**; R
 in `tool-call-approval-verification-t087.md`. Full regression: **6336 passed, 2 skipped** (Linux-only), 369 subtests,
 16m01s.
 
+## T040/T087 — the transport's vouched dispatch effect journaled (2026-09-19)
+
+RED retained (the dispatch status reported only the unknown outcome), GREEN after the dispatcher journals a fault's
+vouched effect as the attempt's transport observation before accepting the unknown outcome; the ledger's trust model
+unchanged. Independent review ACCEPT WITH CHANGES (MUST: an unreadable vouch escaped the fault contract and stranded
+the attempt; SHOULD: the suppress path and the crash window unpinned) folded in RED-first. Dispatcher **21**, covering
+**157**; Ruff clean. Details and hashes in `vouched-transport-effect-journal.md`. Full regression: **6341 passed,
+2 skipped** (Linux-only), 369 subtests, 16m18s.
+

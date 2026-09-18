@@ -19,8 +19,10 @@ outcome. Both are bounded.
 
 The transport is an injected callable `(permit, request, window) -> AttemptTransportResult`
 (the window is the consumed one-shot permit window);
-no worker-side operation exists yet (T087/T018), so the only transports today are
-in-process fakes owned by tests. Effort, models and providers are not modelled
+the extension attempt transport (T087/T018) is the code-owned one over the
+worker channel; the tests here use in-process fakes. A fault vouching its
+dispatch effect is journaled as the attempt's transport observation before the
+unknown outcome is accepted. Effort, models and providers are not modelled
 here at all (T042).
 """
 
@@ -28,6 +30,7 @@ from __future__ import annotations
 
 import inspect
 import uuid
+from contextlib import suppress
 from dataclasses import dataclass
 
 from ..domain.permissions import Grant, Principal
@@ -44,6 +47,7 @@ from .ledger import (
     OwnerIdentity,
     ResultObservation,
     RuntimeLedger,
+    TransportObservation,
 )
 
 __all__ = [
@@ -63,6 +67,8 @@ _MAX_BINDINGS = 256
 # at most this many attempts per visit, unsent continuations and the owner's
 # recovery retries together; each attempt reserves and finalizes its own budget
 MAX_ATTEMPTS_PER_VISIT = 4
+# the dispatch effects a transport may vouch for beyond the default unknown outcome
+_VOUCHED_EFFECTS = frozenset({"definitely_not_sent", "may_have_started"})
 
 
 class AttemptDispatchError(RuntimeError):
@@ -402,7 +408,12 @@ class NodeAttemptDispatcher:
                     # observed; an unresolvable claim is a broken transport
                     ledger._verify_refs((result.result_ref,))
                 observation = self._observation(attempt_id, result)
-            except Exception:  # noqa: BLE001 - a transport fault is an unknown outcome
+            except Exception as error:  # noqa: BLE001 - a transport fault is an unknown outcome
+                # a fault vouching its dispatch effect (the extension transport's own error
+                # shape) is journaled as the attempt's transport observation first, so the
+                # dispatch status carries the vouched effect; the ledger's trust model still
+                # keeps a committed send intent as possibly sent, so the outcome stays unknown
+                self._journal_vouched_effect(permit, error)
                 result = _UNKNOWN
                 observation = self._observation(attempt_id, result)
             accepted = ledger.accept_result_and_settle(
@@ -418,6 +429,19 @@ class NodeAttemptDispatcher:
         if result.outcome != "succeeded":
             raise AttemptDispatchError(f"attempt_{result.outcome}")
         return result.result_ref
+
+    def _journal_vouched_effect(self, permit, error):
+        # the vouch is read inside the guard too: a fault whose effect cannot be read (an
+        # unhashable or raising attribute) is a plain fault, never an escape from the
+        # "a fault is an unknown outcome" contract
+        with suppress(Exception):  # the journal entry is evidence, never the outcome
+            effect = getattr(error, "dispatch_effect", None)
+            if type(effect) is not str or effect not in _VOUCHED_EFFECTS:
+                return
+            self._ledger.record_transport_observation(permit, TransportObservation(
+                permit_id=permit.permit_id, command_id=permit.command_id, attempt_id=permit.attempt_id,
+                effect=effect, connection_id=None, worker_boot_id=None, message_id=None,
+                message_type=None, payload_bytes=None, payload_sha256=None))
 
     @staticmethod
     def _observation(attempt_id, result):
