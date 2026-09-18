@@ -1096,3 +1096,16 @@ Ruff clean. Task 24 (a)–(f) is complete. Details and hashes in `consume-route-
 follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6114 passed, 2 skipped, 1 warning, 369
 subtests passed in 855.83s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## T040 slice — atomic semantic acceptance and budget settlement (2026-09-18)
+
+RED retained (`BudgetUsage` absent), GREEN after `BudgetBook._settle_in_transaction` and
+`RuntimeLedger.accept_result_and_settle` on the ledger's single write transaction; two test-side slips
+(the commands column `kind`, the typed reason `transport_unknown`) and one draft default (`candidates`
+explicit) corrected by the existing suites. Independent review ACCEPT WITH CHANGES (exact-transaction
+guard, reservation shared by another attempt and session binding, counters validated before the
+transaction, deadline quarantine retaining the reservation as unknown, test lint; five NITs) folded in
+RED-first. Settlement **12 passed**; covering ledger/budgets/dispatch **129 passed**; Ruff: no new
+findings. Details and hashes in `runtime-result-settlement-t040.md`. Full regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6126 passed, 2 skipped, 1 warning, 369
+subtests passed in 886.95s** — the two Linux-only skips. Hashes re-verified unchanged before commit.

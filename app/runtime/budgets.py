@@ -284,6 +284,45 @@ for _statement in _DDL:
     _EXPECTED_SCHEMA_SQL[_match.group(1)] = _normalize_schema_sql(_statement)
 
 
+@dataclass(frozen=True, slots=True)
+class BudgetUsage:
+    """Typed known usage settled by the atomic result-acceptance boundary."""
+
+    model_calls: int
+    tool_calls: int
+    node_visits: int
+    loop_rounds: int
+    output_bytes: int
+    candidates: int
+    api_microunits: int | None
+
+    @classmethod
+    def create(cls, *, model_calls, tool_calls, node_visits, loop_rounds, output_bytes,
+               candidates, api_microunits=None):
+        values = {name: _count(name, value) for name, value in {
+            "model_calls": model_calls,
+            "tool_calls": tool_calls,
+            "node_visits": node_visits,
+            "loop_rounds": loop_rounds,
+            "output_bytes": output_bytes,
+            "candidates": candidates,
+        }.items()}
+        if api_microunits is not None:
+            api_microunits = _count("api_microunits", api_microunits)
+        return cls(**values, api_microunits=api_microunits)
+
+    def as_dict(self):
+        return {
+            "model_calls": self.model_calls,
+            "tool_calls": self.tool_calls,
+            "node_visits": self.node_visits,
+            "loop_rounds": self.loop_rounds,
+            "output_bytes": self.output_bytes,
+            "candidates": self.candidates,
+            "api_microunits": self.api_microunits,
+        }
+
+
 class BudgetBook:
     """SQLite budget owner with an internal same-transaction dispatch boundary."""
 
@@ -1079,26 +1118,64 @@ class BudgetBook:
                api_microunits=None, candidates=None):
         if usage_finality not in ("known", "unknown"):
             raise ValueError("Usage finality must be known or unknown")
+        if usage_finality == "unknown":
+            if any(value is not None for value in
+                   (model_calls, tool_calls, node_visits, loop_rounds, output_bytes,
+                    api_microunits, candidates)):
+                raise ValueError("Unknown usage retains the full reservation")
+            usage = None
+        else:
+            usage = BudgetUsage.create(
+                model_calls=model_calls, tool_calls=tool_calls, node_visits=node_visits,
+                loop_rounds=loop_rounds, output_bytes=output_bytes,
+                candidates=candidates,
+                api_microunits=api_microunits)
         with self._connection(immediate=True) as db:
-            row, session, policy, now = self._request(db, request_id)
-            if row["state"] != "dispatched":
-                raise ReservationConflict("Only a dispatched request can settle")
-            if usage_finality == "unknown":
-                if any(value is not None for value in
-                       (model_calls, tool_calls, node_visits, loop_rounds, output_bytes,
-                        api_microunits, candidates)):
-                    raise ValueError("Unknown usage retains the full reservation")
-                db.execute("UPDATE runtime_budget_reservations SET state='unknown',"
-                           "usage_finality='unknown',settled_at=? WHERE request_id=?",
-                           (now, request_id))
-                self._append_reservation_audit(db, request_id, now)
-                return
-            values = dict(model_calls=model_calls, tool_calls=tool_calls,
-                          node_visits=node_visits, loop_rounds=loop_rounds,
-                          output_bytes=output_bytes,
-                          candidates=candidates,
-                          api_microunits=api_microunits)
-            self._finalize(db, row, session, policy, now, values)
+            return self._settle_in_transaction(db, request_id, usage_finality=usage_finality,
+                                               usage=usage)
+
+    def _reservation_state_in_transaction(self, db, request_id):
+        """The stored state of one reservation on a caller-owned transaction (None when
+        unknown to this book); a read only, no clock or session side effect."""
+        uuid_string(request_id)
+        self._assert_transaction_schema(db)
+        row = db.execute("SELECT state FROM runtime_budget_reservations WHERE request_id=?",
+                         (request_id,)).fetchone()
+        return None if row is None else row["state"]
+
+    def _settle_in_transaction(self, db, request_id, *, usage_finality, usage,
+                               session_id=None):
+        """Settle one dispatched reservation on a caller-owned transaction over this
+        exact DB: the runtime ledger's atomic result-acceptance boundary shares it.
+        Known usage finalizes (or records an overage); unknown usage retains the
+        full reservation. A `session_id` binds the reservation to that session and
+        refuses any other. Returns `{"request_id", "state", "usage_finality"}` as
+        stored after the settlement."""
+        if usage_finality not in ("known", "unknown"):
+            raise ValueError("Usage finality must be known or unknown")
+        if (usage_finality == "known") != (type(usage) is BudgetUsage):
+            raise ValueError("Known usage needs exact counters; unknown usage none")
+        if (type(db) is not sqlite3.Connection or not db.in_transaction
+                or db.row_factory is not sqlite3.Row):
+            raise CorruptBudget("Budget settlement requires an exact transaction")
+        self._assert_transaction_schema(db)
+        row, session, policy, now = self._request(db, request_id)
+        if session_id is not None and row["session_id"] != session_id:
+            raise ReservationConflict("Budget reservation belongs to another session")
+        if row["state"] != "dispatched":
+            raise ReservationConflict("Only a dispatched request can settle")
+        if usage_finality == "unknown":
+            db.execute("UPDATE runtime_budget_reservations SET state='unknown',"
+                       "usage_finality='unknown',settled_at=? WHERE request_id=?",
+                       (now, request_id))
+            self._append_reservation_audit(db, request_id, now)
+        else:
+            self._finalize(db, row, session, policy, now, usage.as_dict())
+        settled = db.execute(
+            "SELECT state,usage_finality FROM runtime_budget_reservations WHERE request_id=?",
+            (request_id,)).fetchone()
+        return {"request_id": request_id, "state": settled["state"],
+                "usage_finality": settled["usage_finality"]}
 
     def reconcile_unknown(self, request_id, *, model_calls, tool_calls, node_visits,
                           loop_rounds, output_bytes, candidates, api_microunits):

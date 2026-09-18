@@ -34,7 +34,7 @@ from ..domain.refs import (
     uuid_string,
 )
 from ..domain.store import DomainStore, StorageError, _writer
-from .budgets import BudgetBook, BudgetDispatchRequest
+from .budgets import BudgetBook, BudgetDispatchRequest, BudgetUsage
 from .gates import (
     GATE_REQUEST_COMMAND,
     gate_request_identity,
@@ -2396,15 +2396,57 @@ class RuntimeLedger:
         return result_value
 
     def accept_result(self, command_id, observation):
+        return self._accept_result(command_id, observation, budget_book=None, usage=None)
+
+    def accept_result_and_settle(self, command_id, observation, *, budget_book, usage):
+        """Accept one terminal result and settle its budget reservation in the one
+        transaction this ledger opens (T040): an accepted classification settles
+        the attempt's reservation — known usage finalizes, anything short of a
+        final usage retains the reservation as unknown — a duplicate or late
+        classification settles nothing, and a budget failure rolls the acceptance
+        back. A result arriving at or after the attempt deadline quarantines the
+        attempt as timed out and, when the attempt was sent, retains its dispatched
+        reservation as unknown usage in the same transaction. An observation the
+        plain `accept_result` already accepted is reused with `settlement` None:
+        calling the public `accept_result` and `settle` in sequence is not this
+        boundary, and only the public `settle` releases a reservation stranded that
+        way. The reservation must belong to this attempt alone and to the run's
+        frozen budget session."""
+        if type(budget_book) is not BudgetBook:
+            raise TypeError("Exact BudgetBook required")
+        if (type(budget_book._domain) is not DomainStore
+                or budget_book._domain.path != self._domain.path
+                or budget_book._domain.data_dir != self._domain.data_dir):
+            raise LedgerError("BudgetBook must share the same exact vault")
+        if type(observation) is not ResultObservation:
+            raise TypeError("accept_result_and_settle requires an exact ResultObservation")
+        if usage is not None and type(usage) is not BudgetUsage:
+            raise TypeError("Exact BudgetUsage or None required")
+        if (observation.usage_finality == "final") != (usage is not None):
+            raise ValueError("Final usage needs exact counters; provisional or unknown "
+                             "usage retains the reservation and takes none")
+        if usage is not None:
+            usage = BudgetUsage.create(**usage.as_dict())  # counters refused before any write
+        return self._accept_result(command_id, observation, budget_book=budget_book,
+                                   usage=usage)
+
+    def _accept_result(self, command_id, observation, *, budget_book, usage):
         if type(observation) is not ResultObservation:
             raise TypeError("accept_result requires an exact ResultObservation")
         if observation.result_ref is not None:
             self._verify_refs((observation.result_ref,))
-        payload = self._command_payload({"observation": observation.as_dict()})
+        settling = budget_book is not None
+        command_kind = "accept_result_and_settle" if settling else "accept_result"
+        payload_value = {"observation": observation.as_dict()}
+        if settling:
+            payload_value["usage"] = None if usage is None else usage.as_dict()
+        payload = self._command_payload(payload_value)
         encoded = canonical_json(observation.as_dict())
         semantic = _digest(canonical_json(observation.semantic_dict()))
         with self._transaction(write=True) as db:
-            replay = self._command_replay(db, command_id, "accept_result", payload)
+            if settling:
+                BudgetBook._assert_transaction_schema(db)
+            replay = self._command_replay(db, command_id, command_kind, payload)
             if replay is not None:
                 if replay.get("classification") == "accepted":
                     self._revoke_permits(observation.attempt_id)
@@ -2422,7 +2464,9 @@ class RuntimeLedger:
                 result_value = {"classification": existing["classification"],
                                 "observation_id": observation.observation_id,
                                 "attempt": self._attempt_snapshot(row)}
-                self._record_command(db, command_id, "accept_result", payload, result_value, now)
+                if settling:
+                    result_value["settlement"] = None  # nothing new was settled
+                self._record_command(db, command_id, command_kind, payload, result_value, now)
                 if existing["classification"] == "accepted":
                     self._revoke_permits(observation.attempt_id)
                 return result_value
@@ -2435,6 +2479,17 @@ class RuntimeLedger:
                 raise LedgerError("Result observation bound reached")
             spec = AttemptSpec.from_dict(_decode_canonical(
                 row["spec"], row["spec_digest"], "attempt spec"))
+            settlement = None
+            if settling:
+                # the reservation settles for this attempt alone, bound to the run's
+                # frozen budget session; refused before any write
+                shared = db.execute(
+                    "SELECT count(*) FROM runtime_attempts WHERE vault_id=? AND "
+                    "reservation_id=? AND id<>?",
+                    (self.vault_id, spec.reservation_id, observation.attempt_id)).fetchone()[0]
+                if shared:
+                    raise LedgerError("Budget reservation is shared by another attempt")
+                budget_session_id = self._run_spec_for_attempt(db, spec).budget_session_id
             if (now >= spec.deadline_at_ms and row["phase"] != "terminal"
                     and row["cancel_state"] == "none"):
                 sent = row["send_intent_at_ms"] is not None
@@ -2453,6 +2508,12 @@ class RuntimeLedger:
                               {"outcome": "timed_out", "reason": "deadline"}, now)
                 self._event(db, "attempt.terminal", "attempt", observation.attempt_id,
                             {"outcome": "timed_out"}, now)
+                if (settling and sent and budget_book._reservation_state_in_transaction(
+                        db, spec.reservation_id) == "dispatched"):
+                    # the quarantined attempt's usage is unknown: retain the reservation
+                    settlement = budget_book._settle_in_transaction(
+                        db, spec.reservation_id, usage_finality="unknown", usage=None,
+                        session_id=budget_session_id)
                 row = self._load_attempt(db, observation.attempt_id)
             accepted = None
             if row["accepted_observation_id"] is not None:
@@ -2515,7 +2576,16 @@ class RuntimeLedger:
             result_value = {"classification": classification,
                             "observation_id": observation.observation_id,
                             "attempt": self._attempt_snapshot(updated)}
-            self._record_command(db, command_id, "accept_result", payload, result_value, now)
+            if settling:
+                # the same transaction: an accepted result settles the attempt's
+                # reservation; a budget failure here rolls the acceptance back
+                if classification == "accepted":
+                    settlement = budget_book._settle_in_transaction(
+                        db, spec.reservation_id,
+                        usage_finality="known" if usage is not None else "unknown",
+                        usage=usage, session_id=budget_session_id)
+                result_value["settlement"] = settlement
+            self._record_command(db, command_id, command_kind, payload, result_value, now)
         if classification == "accepted":
             self._revoke_permits(observation.attempt_id)
         return result_value

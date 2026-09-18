@@ -2429,7 +2429,11 @@ storage and migration, the acceptance writer and the service transaction
 (`journal-v3-storage-task24e1.md`, `acceptance-writer-task24e2a.md`,
 `consume-transaction-task24e2b.md`); (f) the route (`consume-route-task24f.md`). The boundary
 statements below stand; the live end-to-end run remains the Docker/colima host gate. Continue
-with the Continuation section (T040 scheduler/ledger/worker integration).
+with the Continuation section (T040 scheduler/ledger/worker integration). 2026-09-18: the first
+Continuation slice, the atomic semantic acceptance + budget settlement
+(`RuntimeLedger.accept_result_and_settle`, `runtime-result-settlement-t040.md`), is complete; the
+Task 6 boundary (transport evidence releases no unknown-use reservation) is preserved. Next:
+worker/attempt dispatch through the scheduler.
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;
