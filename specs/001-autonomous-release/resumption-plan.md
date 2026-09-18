@@ -2447,8 +2447,10 @@ termination) and the owner's recovery (`run-recover-route.md`: the retry after a
 proof, at most four attempts per visit); the checkpoint↔attempt binding landed
 (`checkpoint-attempt-binding-t040.md`), closing T040; the run trace's attempt layer landed
 (`run-trace-attempt-layer-t048.md`: attempts per visit, the result attributed to the producing attempt only,
-one closed read boundary, pending-write results). Next: the run view wired in the shell against the supported
-routes (its CSRF source and base path; T048/T049); T087 operations beyond `status` and the artifact stream stay open.
+one closed read boundary, pending-write results); the shell's supported session client landed
+(`shell-session-client-supported.md`: `session.mjs` — base path from the location, the token from `GET {base}session`,
+the request adapter for the observer and the approvals module). Next: the run view's DOM half over that client
+(T048/T049); T087 operations beyond `status` and the artifact stream stay open.
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;

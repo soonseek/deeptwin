@@ -1221,3 +1221,14 @@ Ruff clean (ledger 18/18 pre-existing). Details and hashes in `run-trace-attempt
 follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6230 passed, 2 skipped, 1 warning, 369
 subtests passed in 904.01s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## T048/T025 — the shell's supported session client (2026-09-18)
+
+RED retained (`session.mjs` absent from the tree and the catalogue), GREEN after the module and the catalogue entry.
+Independent review ACCEPT WITH CHANGES (SHOULD: a command's 403 must drop the session after a rotated cookie; the
+mirror must exercise the real factory, not string-match source; NITs: the partition comment, non-object
+successes, vacuous leak assertions; two design notes kept) folded in RED-first. `node --test` session **9**
+(30 with runtime and approvals), mirror **4**, covering **115**; Ruff clean. Details and hashes in
+`shell-session-client-supported.md`. Full regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6234 passed, 2 skipped, 1 warning, 369
+subtests passed in 904.21s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
