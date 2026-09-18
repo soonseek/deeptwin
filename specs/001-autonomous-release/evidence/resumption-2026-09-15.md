@@ -1232,3 +1232,15 @@ successes, vacuous leak assertions; two design notes kept) folded in RED-first. 
 `shell-session-client-supported.md`. Full regression follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6234 passed, 2 skipped, 1 warning, 369
 subtests passed in 904.21s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## T048 — the run view's DOM half (2026-09-18)
+
+RED retained (`run-panel.mjs` absent from the tree and the catalogue), GREEN after the module and the entry; the
+panel test found an observer gap (a refused cancel/recover wiped the view) pinned RED in the runtime suite before the
+fix. Independent review ACCEPT WITH CHANGES (MUST: resume gating inverted against the server's admission; the
+`unavailable` text denied a state change a 503 can make; SHOULD: 미완료 for a `running` head, attempts as rows
+without a cancel, re-read after a refusal, a superseded late failure, the non-UUID path tested; NITs) folded in
+RED-first. `node --test` **43** (run-panel 10, runtime 18, session 9, approvals 7), Python pins **13**, covering
+**142**; Ruff clean. Details and hashes in `run-panel-dom-t048.md`. Full regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6234 passed, 2 skipped, 1 warning, 369
+subtests passed in 956.94s** — the two Linux-only skips. Hashes re-verified unchanged before commit.

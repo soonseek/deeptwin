@@ -419,6 +419,63 @@ test('overlapping exchanges never publish a stale view or a false idle', async (
   assert.equal(quiet[quiet.length - 1].view, quiet[after - 1].view);
 });
 
+test('a refused cancel or recover of the shown run keeps its last honest view', async () => {
+  // the DOM half found this: a conflict on cancel wiped the view although the run is the same
+  const conflict = Object.assign(new Error('same command, different inputs'), { code: 'conflict' });
+  for (const command of ['cancel', 'recover']) {
+    let reply = receipt();
+    const observer = createRunObserver({ request: async () => { if (reply) return reply; throw conflict; } });
+    await observer.read(RUN_ID);
+    reply = null;
+    await assert.rejects(observer[command](RUN_ID, '77777777-7777-4777-8777-777777777777'));
+    assert.equal(observer.snapshot().view?.runId, RUN_ID, command);
+    assert.equal(observer.snapshot().error.code, 'conflict');
+  }
+});
+
+test('past attempts stay distinct rows whether or not a cancel was requested', () => {
+  // review SHOULD (T048/UX-AC04): a completed run after a recovery carries two attempts
+  // of one visit; the rows name each, without a cancellation claim
+  const attempt = no => ({
+    attempt_id: `88888888-8888-4888-8888-88888888888${no}`, execution_id: '99999999-9999-4999-8999-999999999999',
+    attempt_no: no, phase: 'terminal', cancel_state: 'none', dispatch_gate: 'open', remote_terminal_observed: 'failed',
+  });
+  const view = runView(receipt({ cancellation: { requested: false, attempts: [attempt(1), attempt(2)] } }));
+  const rows = accessibleRows(view);
+  assert.equal(rows.some(row => row.startsWith('취소 요청됨')), false);
+  assert.match(rows[0], /^시도 1 호출 88888888-8888-4888-8888-888888888881: 게이트 열림/);
+  assert.match(rows[1], /^시도 2 호출 88888888-8888-4888-8888-888888888882/);
+  assert.equal(rows.length, 2 + view.nodes.length);
+});
+
+test('a superseded exchange never wipes the newer run, even when it fails late', async () => {
+  // review SHOULD: read(OTHER) pending, read(RUN) succeeds, then OTHER's late 404 arrives
+  const OTHER = '99999999-9999-4999-8999-999999999999';
+  let releaseOther;
+  const observer = createRunObserver({ request: async path => {
+    if (path.endsWith(OTHER)) await new Promise(resolve => { releaseOther = resolve; });
+    if (path.endsWith(OTHER)) throw Object.assign(new Error('x'), { status: 404 });
+    return receipt();
+  } });
+  const late = observer.read(OTHER).catch(error => error);
+  await observer.read(RUN_ID);
+  assert.equal(observer.snapshot().view.runId, RUN_ID);
+  releaseOther();
+  await late;
+  assert.equal(observer.snapshot().view?.runId, RUN_ID);
+  assert.equal(observer.snapshot().error, null);
+  assert.equal(observer.snapshot().busy, false);
+});
+
+test('a throwing renderer never leaves the observer busy forever', async () => {
+  let calls = 0;
+  const observer = createRunObserver({ request: async () => receipt(), onChange: () => { calls += 1; if (calls === 1) throw new Error('render'); } });
+  await assert.rejects(observer.read(RUN_ID));
+  assert.equal(observer.snapshot().busy, false);
+  await observer.read(RUN_ID);
+  assert.equal(observer.snapshot().view.runId, RUN_ID);
+});
+
 test('an error for another run never leaves the previous run on screen', async () => {
   let fails = false;
   const observer = createRunObserver({ request: async (path) => {

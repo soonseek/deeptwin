@@ -342,14 +342,13 @@ export function runView(receipt, basePath = '/', { nodeIds = null } = {}) {
 export function accessibleRows(view) {
   if (typeof view !== 'object' || view === null || !Array.isArray(view.nodes)) fail('view must be a run view');
   const rows = [];
-  if (view.cancellation?.requested) {
-    // experience.md §9 row 294: new dispatch closed and each call's termination, separately
-    rows.push('취소 요청됨: 새 dispatch 중단');
-    for (const call of view.cancellation.attempts) {
-      const gate = call.dispatchGate === 'closed' ? '게이트 닫힘' : '게이트 열림';
-      const remote = call.remoteTerminalObserved === 'not_observed' ? '원격 종료 미확인' : `원격 종료 확인됨 (${call.remoteTerminalObserved})`;
-      rows.push(`시도 ${call.attemptNo} 호출 ${call.attemptId}: ${gate}, ${remote}`);
-    }
+  // experience.md §9 row 294: new dispatch closed and each call's termination, separately
+  if (view.cancellation?.requested) rows.push('취소 요청됨: 새 dispatch 중단');
+  // experience.md §7 / UX-AC04: every past attempt stays a distinct row, cancelled or not
+  for (const call of view.cancellation?.attempts ?? []) {
+    const gate = call.dispatchGate === 'closed' ? '게이트 닫힘' : '게이트 열림';
+    const remote = call.remoteTerminalObserved === 'not_observed' ? '원격 종료 미확인' : `원격 종료 확인됨 (${call.remoteTerminalObserved})`;
+    rows.push(`시도 ${call.attemptNo} 호출 ${call.attemptId}: ${gate}, ${remote}`);
   }
   return rows.concat(view.nodes.map(node => {
     const parts = [`${node.nodeId}: ${node.stateLabel}`, `수행 ${node.visits}회`, `산출물 ${node.resultRefs.length}건`];
@@ -401,9 +400,10 @@ export function createRunObserver({ request, basePath = '/', onChange = () => {}
   async function exchange(prepare) {
     const mine = ++generation;
     inflight += 1;
-    publish({ busy: true, error: null });
     let path = null;
     try {
+      // inside the boundary: a throwing renderer must not leave the observer busy forever
+      publish({ busy: true, error: null });
       const [target, options] = prepare();
       path = target;
       const view = runView(await request(target, options), basePath);
@@ -416,9 +416,15 @@ export function createRunObserver({ request, basePath = '/', onChange = () => {}
       const failure = Object.freeze({
         code: partition(error), message: String(error?.message ?? error), target: path,
       });
+      // a superseded exchange never touches the view or the error the newer one owns
+      if (mine !== generation) {
+        publish({ busy: inflight > 0 });
+        throw error;
+      }
       // an error for another run never leaves the previous run on screen
       const sameRun = state.view !== null && path !== null
-        && (path === routes.read(state.view.runId) || path === routes.resume(state.view.runId));
+        && [routes.read, routes.resume, routes.cancel, routes.recover]
+          .some(route => path === route(state.view.runId));
       publish({ busy: inflight > 0, error: failure, view: sameRun ? state.view : null });
       throw error;
     }
