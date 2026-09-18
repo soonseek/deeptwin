@@ -14,7 +14,8 @@ second reply. An execute connection (the first frame's schema is
 `extension-execute-v1`) answers exactly one request through the private
 router's code-owned operation table (`_OPERATIONS`: `status` since the T087
 execute slice, `describe_tools` since the tool-table slice, `invoke_tool` over
-the one-tool table since the first-tool slice) and closes; the probe reply's `registered_operations` is that
+the two-tool table — `text_profile`, `text_normalize` — since the first-tool
+and reverse-leg slices) and closes; the probe reply's `registered_operations` is that
 table's exact key set. No placeholder handler exists.
 
 A reply is a self-reported observation over one connection; the service
@@ -29,6 +30,7 @@ from __future__ import annotations
 import re
 import secrets
 import threading
+import unicodedata
 from hashlib import sha256
 from types import MappingProxyType
 from typing import Self
@@ -39,7 +41,15 @@ from ..extensions.lineage_contracts import LineageContractError
 from ..extensions.port_contracts import OPERATION_CONTRACTS
 from . import broker, ipc_root, listener
 from . import extension_metadata as em
-from .artifact_stream import ArtifactStreamError, BytesSink, StreamLimits, receive_batch
+from .artifact_stream import (
+    ArtifactDescriptor,
+    ArtifactStreamError,
+    BytesSink,
+    BytesSource,
+    StreamLimits,
+    receive_batch,
+    send_batch,
+)
 from .artifact_stream_transport import ConnectionStreamTransport
 from .extension_channel import ExtensionChannelError, extension_channel
 from .extension_execute_messages import (
@@ -165,10 +175,38 @@ TEXT_PROFILE_ENTRY = MappingProxyType({
 })
 _TEXT_PROFILE_INPUT = ("document_source", "text/plain")  # exactly one input of this role and media
 
+# the second real tool: `text_normalize` derives a normalized text (NFC, LF line
+# endings, a leading BOM removed, nothing else changed) from exactly one streamed
+# `document_source` text/plain artifact and returns it as its output artifact
+# (`normalized_text`, text/plain) over the reverse leg; a deterministic reading
+# with no external effect — the derived artifact is sealed by control
+TEXT_NORMALIZE_RESULT_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "required": ["byte_count_in", "byte_count_out", "changed", "sha256_in", "sha256_out"],
+    "properties": {
+        "byte_count_in": {"type": "integer", "minimum": 0}, "byte_count_out": {"type": "integer", "minimum": 0},
+        "changed": {"type": "boolean"},
+        "sha256_in": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "sha256_out": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    },
+}
+TEXT_NORMALIZE_ENTRY = MappingProxyType({
+    "tool_id": "text_normalize", "version": "1.0.0",
+    "argument_schema_sha256": sha256(canonical_json(TEXT_PROFILE_ARGUMENT_SCHEMA)).hexdigest(),
+    "result_schema_sha256": sha256(canonical_json(TEXT_NORMALIZE_RESULT_SCHEMA)).hexdigest(),
+    "effect_class": "read", "artifact_roles": ("document_source", "normalized_text"),
+})
+_TEXT_NORMALIZE_OUTPUT = ("normalized_text", "text/plain")
+# what each tool takes: exactly these (role, media) inputs, in order
+_TOOL_INPUT_CONTRACTS = MappingProxyType({
+    ("text_profile", "1.0.0"): (_TEXT_PROFILE_INPUT,),
+    ("text_normalize", "1.0.0"): (_TEXT_PROFILE_INPUT,),
+})
+
 # the code-owned tool table of this worker (tool-port-v1 `describe_tools`
-# entries): fixed at import — never a copy of the port catalogue, never a
-# placeholder
-_TOOLS: tuple[MappingProxyType, ...] = (TEXT_PROFILE_ENTRY,)
+# entries, identifier order): fixed at import — never a copy of the port
+# catalogue, never a placeholder
+_TOOLS: tuple[MappingProxyType, ...] = (TEXT_NORMALIZE_ENTRY, TEXT_PROFILE_ENTRY)
 
 
 def tool_descriptions() -> list[dict]:
@@ -183,13 +221,10 @@ def _tool_contract_admits(request) -> bool:
 
     if request.tool is None:
         return False
-    entry = next((item for item in _TOOLS if item["tool_id"] == request.tool.tool_id), None)
-    if entry is None or entry["version"] != request.tool.version:
+    contract = _TOOL_INPUT_CONTRACTS.get((request.tool.tool_id, request.tool.version))
+    if contract is None:
         return False
-    if entry["tool_id"] == "text_profile":
-        declared = [(item.role, item.media_type) for item in request.artifact_inputs]
-        return declared == [_TEXT_PROFILE_INPUT]
-    return False
+    return tuple((item.role, item.media_type) for item in request.artifact_inputs) == contract
 
 
 _ASCII_WHITESPACE = re.compile(r"[ \t\n\r\f\v]+")
@@ -214,33 +249,68 @@ def _text_profile(raw: bytes) -> dict | None:
     }
 
 
+def _text_normalize(raw: bytes) -> tuple[bytes, bool] | None:
+    """NFC; CRLF and a lone CR become LF; one leading BOM is removed; nothing else
+    changes. Returns the derived bytes and whether they differ from the input."""
+
+    try:
+        text = raw.decode("utf-8", "strict")
+    except UnicodeDecodeError:
+        return None
+    text = text.removeprefix("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+    derived = unicodedata.normalize("NFC", text).encode("utf-8")
+    return derived, derived != raw
+
+
+def _tool_failed(reason_code: str, tool_calls: int) -> dict:
+    return {
+        "outcome": "failed", "usage_finality": "final",
+        "remote_terminal_observed": "failed", "reason_code": reason_code,
+        "usage": {**_ZERO_USAGE, "tool_calls": tool_calls}, "output": None,
+    }
+
+
 def _invoke_tool_operation(service: WorkerProbeService, request, deadline, inputs) -> dict:
     """`invoke_tool` (tool-port-v1, class C, effect from the tool): runs the named
     tool of the table over the admitted inputs; the reply carries the tool's own
-    result, which control seals as the attempt's artifact. Usage: one tool call."""
+    result and binds its output artifacts, which travel as an offered batch before
+    the reply (`artifacts` here: the bindings and bytes the serve loop streams);
+    control seals both. Usage: one tool call; the reply bytes plus the artifact
+    bytes as the output."""
 
     if not _tool_contract_admits(request) or len(inputs) != 1:
-        return {
-            "outcome": "failed", "usage_finality": "final",
-            "remote_terminal_observed": "failed", "reason_code": "validation_failed",
-            "usage": dict(_ZERO_USAGE), "output": None,
-        }
+        return _tool_failed("validation_failed", 0)
     _declaration, raw = inputs[0]
-    result = _text_profile(raw)
-    if result is None:
-        # the bytes were read (the call happened) but are not a text: the tool's own failure
-        return {
-            "outcome": "failed", "usage_finality": "final",
-            "remote_terminal_observed": "failed", "reason_code": "provider_terminal",
-            "usage": {**_ZERO_USAGE, "tool_calls": 1}, "output": None,
-        }
-    output = {"tool_id": TEXT_PROFILE_ENTRY["tool_id"], "version": TEXT_PROFILE_ENTRY["version"],
-              "result": result}
+    if request.tool.tool_id == "text_profile":
+        result = _text_profile(raw)
+        if result is None:
+            # the bytes were read (the call happened) but are not a text: the tool's own failure
+            return _tool_failed("provider_terminal", 1)
+        output = {"tool_id": TEXT_PROFILE_ENTRY["tool_id"], "version": TEXT_PROFILE_ENTRY["version"],
+                  "result": result, "artifacts": []}
+        produced = ()
+    else:
+        normalized = _text_normalize(raw)
+        if normalized is None:
+            return _tool_failed("provider_terminal", 1)
+        derived, changed = normalized
+        if len(derived) > MAX_INPUT_BYTES:
+            # NFC can triple UTF-8 bytes: a legal input under the ceiling may derive an
+            # output the reply cannot carry — the tool's own typed failure, never no answer
+            return _tool_failed("provider_terminal", 1)
+        binding = {"ordinal": 0, "role": _TEXT_NORMALIZE_OUTPUT[0], "media_type": _TEXT_NORMALIZE_OUTPUT[1],
+                   "declared_size": len(derived), "sha256": sha256(derived).hexdigest()}
+        output = {"tool_id": TEXT_NORMALIZE_ENTRY["tool_id"], "version": TEXT_NORMALIZE_ENTRY["version"],
+                  "result": {"byte_count_in": len(raw), "byte_count_out": len(derived), "changed": changed,
+                             "sha256_in": sha256(raw).hexdigest(), "sha256_out": binding["sha256"]},
+                  "artifacts": [binding]}
+        produced = ((binding, derived),)
     return {
         "outcome": "succeeded", "usage_finality": "final",
         "remote_terminal_observed": "succeeded", "reason_code": "provider_terminal",
-        "usage": {**_ZERO_USAGE, "tool_calls": 1, "output_bytes": len(canonical_json(output))},
-        "output": output,
+        "usage": {**_ZERO_USAGE, "tool_calls": 1,
+                  "output_bytes": len(canonical_json(output)) + sum(len(raw) for _, raw in produced)},
+        "output": output, "artifacts": produced,
     }
 
 
@@ -494,7 +564,8 @@ class WorkerProbeService:
             except ArtifactStreamError:
                 raise ProbeServiceError() from None
             inputs = tuple(zip(request.artifact_inputs, [sink.value for sink in sinks], strict=True))
-        result = self._router.execute(self, request, deadline, inputs)
+        result = dict(self._router.execute(self, request, deadline, inputs))
+        produced = result.pop("artifacts", ())
         reply_id = str(uuid4())
         while reply_id == message_id:
             reply_id = str(uuid4())
@@ -502,6 +573,24 @@ class WorkerProbeService:
             attempt_id=request.attempt_id, operation=request.operation,
             challenge=request.challenge, **result,
         )
+        if produced:
+            # the reverse leg: the tool's output artifacts go as an offered batch on
+            # the artifact type, correlated to the request, before the reply frame
+            batch_id = str(uuid4())
+            descriptors = [
+                ArtifactDescriptor(batch_id=batch_id, request_id=message_id, ordinal=index,
+                                   count=len(produced), media_type=binding["media_type"],
+                                   declared_size=len(raw), sha256=sha256(raw).hexdigest())
+                for index, (binding, raw) in enumerate(produced)
+            ]
+            try:
+                send_batch(
+                    ConnectionStreamTransport(connection, message_type=ARTIFACT_TYPE,
+                                              correlation_id=message_id, deadline=deadline),
+                    descriptors, [BytesSource(raw) for _, raw in produced], limits=EXECUTE_STREAM_LIMITS,
+                )
+            except ArtifactStreamError:
+                raise ProbeServiceError() from None
         connection.write(
             message_id=reply_id,
             correlation_id=message_id,

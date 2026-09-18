@@ -128,9 +128,9 @@ def test_execute_describe_tools_answers_the_workers_actual_tool_table(slot):  # 
             assert reply.remote_terminal_observed == "succeeded"
             assert reply.reason_code == "provider_terminal"
             assert reply.output == {"tools": ep.tool_descriptions()}
-            assert reply.output["tools"][0]["tool_id"] == "text_profile"
-            assert reply.output["tools"][0]["effect_class"] == "read"
-            assert reply.output["tools"][0]["artifact_roles"] == ["document_source"]
+            assert [entry["tool_id"] for entry in reply.output["tools"]] == ["text_normalize", "text_profile"]
+            assert reply.output["tools"][1]["effect_class"] == "read"
+            assert reply.output["tools"][1]["artifact_roles"] == ["document_source"]
             assert reply.usage == {
                 "model_calls": 0, "tool_calls": 0, "node_visits": 1, "loop_rounds": 0,
                 "output_bytes": len(canonical_json(reply.output)), "candidates": 0,
@@ -144,7 +144,7 @@ def test_execute_describe_tools_answers_the_workers_actual_tool_table(slot):  # 
     finally:
         service.close()
     # the tool table is code-owned and immutable, like the operation table
-    assert ep._TOOLS == (ep.TEXT_PROFILE_ENTRY,)
+    assert ep._TOOLS == (ep.TEXT_NORMALIZE_ENTRY, ep.TEXT_PROFILE_ENTRY)
     with pytest.raises(AttributeError):
         ep._TOOLS.append  # noqa: B018
 
@@ -384,7 +384,7 @@ def test_invoke_tool_runs_the_real_text_profile_over_the_streamed_input(slot):  
             assert reply.output == {"tool_id": "text_profile", "version": "1.0.0", "result": {
                 "byte_count": len(text), "char_count": len(text.decode()), "line_count": 2, "word_count": 4,
                 "sha256": hashlib.sha256(text).hexdigest(), "utf8": True,
-            }}
+            }, "artifacts": []}
             assert reply.usage == {
                 "model_calls": 0, "tool_calls": 1, "node_visits": 1, "loop_rounds": 0,
                 "output_bytes": len(canonical_json(reply.output)), "candidates": 0, "api_microunits": None,
@@ -434,6 +434,107 @@ def test_invoke_tool_refuses_a_call_outside_the_tools_contract_before_running_it
         assert box.get("served") == 1, box
     finally:
         service.close()
+
+
+def receive_offered(client, message_id, policy_media, max_artifacts):
+    from app.workers.artifact_stream import (
+        BytesSink,
+        OfferedBatchPolicy,
+        PushbackTransport,
+        receive_offered_batch,
+    )
+    from app.workers.artifact_stream_transport import ConnectionStreamTransport
+
+    first = client.read(deadline=deadline())
+    assert first.envelope.message_type == "extension-artifact-v1"
+    assert first.envelope.correlation_id == message_id
+    transport = PushbackTransport(ConnectionStreamTransport(client, message_type="extension-artifact-v1",
+                                                            correlation_id=message_id, deadline=deadline()),
+                                  first=first.payload)
+    policy = OfferedBatchPolicy(request_id=message_id, allowed_media_types=policy_media, max_artifacts=max_artifacts)
+    return receive_offered_batch(transport, policy, lambda _descriptor: BytesSink(), limits=ep.EXECUTE_STREAM_LIMITS)
+
+
+def test_text_normalize_returns_its_derived_text_as_an_offered_artifact_before_the_reply(slot):  # noqa: F811
+    # T087 second real tool and the reverse leg: `text_normalize` streams its derived text
+    # (NFC, LF line endings, no BOM) as an offered batch on the artifact type before its
+    # reply; the reply binds the artifact — role, media, exact size and digest — and the
+    # result says what changed; usage is one tool call and the measured bytes (reply plus
+    # artifact bytes)
+    import hashlib
+    import unicodedata
+
+    raw = ("\ufeff" + unicodedata.normalize("NFD", "café") + "\r\nline two\r\n").encode()
+    expected = ("café\nline two\n").encode()
+    assert unicodedata.normalize("NFC", expected.decode()) == expected.decode()
+    root, spec, side, _tree = slot
+    service = open_service()
+    try:
+        box, thread = served(service, side)
+        client = connect(root, spec)
+        try:
+            message_id, fields = invoke(client, [raw], ["document_source"],
+                                        tool={"tool_id": "text_normalize", "version": "1.0.0"})
+            stream_inputs(client, message_id, fields, [raw])
+            admitted = receive_offered(client, message_id, ("text/plain",), 1)
+            assert [(d.media_type, d.declared_size, d.sha256, sink.value) for d, sink in admitted] == [
+                ("text/plain", len(expected), hashlib.sha256(expected).hexdigest(), expected)]
+            assert admitted[0][0].request_id == message_id
+            reply = xm.parse_execute_reply(client.read(deadline=deadline()).payload)
+            assert reply.outcome == "succeeded"
+            assert reply.output == {"tool_id": "text_normalize", "version": "1.0.0", "result": {
+                "byte_count_in": len(raw), "byte_count_out": len(expected), "changed": True,
+                "sha256_in": hashlib.sha256(raw).hexdigest(), "sha256_out": hashlib.sha256(expected).hexdigest(),
+            }, "artifacts": [{"ordinal": 0, "role": "normalized_text", "media_type": "text/plain",
+                              "declared_size": len(expected), "sha256": hashlib.sha256(expected).hexdigest()}]}
+            assert reply.usage == {
+                "model_calls": 0, "tool_calls": 1, "node_visits": 1, "loop_rounds": 0,
+                "output_bytes": len(canonical_json(reply.output)) + len(expected), "candidates": 0,
+                "api_microunits": None,
+            }
+            closed_after(client)
+        finally:
+            client.close()
+        thread.join(5)
+        assert box.get("served") == 1, box
+    finally:
+        service.close()
+    assert [entry["tool_id"] for entry in ep.tool_descriptions()] == ["text_normalize", "text_profile"]
+    assert ep.TEXT_NORMALIZE_ENTRY["artifact_roles"] == ("document_source", "normalized_text")
+
+
+def test_text_normalize_refuses_an_output_the_reply_could_not_carry_as_its_own_failure():
+    # review MUST: NFC can triple UTF-8 bytes, so a legal input under the ceiling can derive
+    # an output over it; the tool must answer its own typed failure, never fail to answer
+    import hashlib
+
+    raw = ("\U0001d163" * 100_000).encode()  # 400 000 B in; NFC decomposes each to 12 B
+    assert len(raw) <= xm.MAX_INPUT_BYTES
+    derived, _changed = ep._text_normalize(raw)
+    assert len(derived) > xm.MAX_INPUT_BYTES
+    request = xm.parse_execute_request(xm.encode_execute_request(
+        attempt_id=str(uuid4()), execution_id=str(uuid4()), operation="invoke_tool",
+        envelope_ref=ref("execution_envelope"), profile_ref=ref("runtime_profile"), remaining_ms=1_500,
+        challenge=os.urandom(32), artifact_batch_id=str(uuid4()),
+        artifact_inputs=[{"ordinal": 0, "media_type": "text/plain", "declared_size": len(raw),
+                          "sha256": hashlib.sha256(raw).hexdigest(), "role": "document_source"}],
+        tool={"tool_id": "text_normalize", "version": "1.0.0"}))
+    result = ep._invoke_tool_operation(None, request, None, ((request.artifact_inputs[0], raw),))
+    assert result["outcome"] == "failed" and result["reason_code"] == "provider_terminal"
+    assert result["usage"]["tool_calls"] == 1 and result["output"] is None and not result.get("artifacts")
+    # the reply the worker builds from it is within the grammar
+    xm.encode_execute_reply(attempt_id=request.attempt_id, operation="invoke_tool", challenge=request.challenge,
+                            **{key: value for key, value in result.items() if key != "artifacts"})
+
+
+def test_text_normalize_definitions_are_stated():
+    # NFC; CRLF and lone CR become LF; a leading BOM is removed; nothing else changes;
+    # an already-normal text is unchanged and still offered (the artifact is the result)
+    assert ep._text_normalize(b"a\r\nb\rc\n") == (b"a\nb\nc\n", True)
+    assert ep._text_normalize("\ufeffx".encode()) == (b"x", True)
+    assert ep._text_normalize(b"plain\n") == (b"plain\n", False)
+    assert ep._text_normalize(b"") == (b"", False)
+    assert ep._text_normalize(b"\xff") is None
 
 
 def test_text_profile_counts_are_defined_not_pythons_defaults():

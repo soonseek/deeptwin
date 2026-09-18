@@ -1303,3 +1303,16 @@ gate stated open, the counts' definitions, stale text; NITs) folded in RED-first
 separate processes; Ruff clean. Details and hashes in `worker-text-profile-tool-t087.md`. Full regression follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6278 passed, 2 skipped, 1 warning, 369
 subtests passed in 910.45s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## T018/T087 — worker-returned output artifacts and `text_normalize` (2026-09-18)
+
+RED retained (the bindings absent from the grammar, no `text_normalize`, no output contracts, no offered batch), GREEN
+after the grammar, the tool, the serve loop's send, control's receive/verify/seal and the contract. Independent review
+ACCEPT WITH CHANGES (MUST: NFC growth could make a legal input's output uncarriable and the tool unanswerable → its own
+typed failure; the output digest/size/`changed` sealed unverified → checked; SHOULD: the output-bytes reservation
+stated as open with the tool's bound, the "refusal" wording, stale one-tool text; NITs) folded in RED-first. The
+previous slice's contract closures, which its patch had not written, are landed and stated here. Covering
+**89 / 97 / 68 / 80** in separate processes; Ruff clean. Details and hashes in `worker-output-artifacts-t018-t087.md`.
+Full regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6289 passed, 2 skipped, 1 warning, 369
+subtests passed in 924.79s** — the two Linux-only skips. Hashes re-verified unchanged before commit.

@@ -361,7 +361,7 @@ def test_invoke_tool_names_its_tool_in_the_request_and_answers_with_the_tools_re
         with pytest.raises(xm.ExecuteMessageError):
             xm.encode_execute_request(**request_fields(**change))
     result = {"byte_count": 5, "char_count": 5, "line_count": 1, "word_count": 1, "sha256": "e" * 64, "utf8": True}
-    output = {"tool_id": "text_profile", "version": "1.0.0", "result": result}
+    output = {"tool_id": "text_profile", "version": "1.0.0", "result": result, "artifacts": []}
     reply = xm.parse_execute_reply(xm.encode_execute_reply(**reply_fields(
         operation="invoke_tool", output=output,
         usage={**usage_fields(), "tool_calls": 1, "output_bytes": len(canonical_json(output))})))
@@ -369,7 +369,7 @@ def test_invoke_tool_names_its_tool_in_the_request_and_answers_with_the_tools_re
     assert "invoke_tool" in xm.OUTPUT_OPERATIONS
     for change in [
         {"operation": "invoke_tool", "output": {"tools": []}},
-        {"operation": "invoke_tool", "output": {"tool_id": "text_profile", "version": "1.0.0"}},
+        {"operation": "invoke_tool", "output": {"tool_id": "text_profile", "version": "1.0.0", "artifacts": []}},
         {"operation": "invoke_tool", "output": {**output, "extra": 1}},
         {"operation": "invoke_tool", "output": {**output, "result": []}},
         {"operation": "invoke_tool", "output": {**output, "result": "x"}},
@@ -385,7 +385,7 @@ def test_a_tool_result_is_closed_over_the_wire_limits_at_encode_as_at_parse():
     # review closure: a handler result the reply cannot carry must be refused where it is
     # built, not by control's parser (which would make a deterministic tool unknown)
     def reply(result):
-        output = {"tool_id": "text_profile", "version": "1.0.0", "result": result}
+        output = {"tool_id": "text_profile", "version": "1.0.0", "result": result, "artifacts": []}
         return reply_fields(operation="invoke_tool", output=output, usage={**usage_fields(), "tool_calls": 1})
     nested = {"a": {"b": {"c": {"d": {"e": 1}}}}}  # five levels under the result
     with pytest.raises(xm.ExecuteMessageError):
@@ -397,3 +397,35 @@ def test_a_tool_result_is_closed_over_the_wire_limits_at_encode_as_at_parse():
     with pytest.raises(xm.ExecuteMessageError):
         xm.encode_execute_reply(**reply({"n": 1.5}))  # no floats on the wire
     xm.parse_execute_reply(xm.encode_execute_reply(**reply({"a": {"b": {"c": 1}}})))
+
+
+def test_invoke_tool_output_binds_the_artifacts_the_worker_offered_before_its_reply():
+    # the reverse leg: a tool's output artifacts travel as an offered batch before the reply
+    # (the same digest/chunk/credit stream); the reply binds them — ordinal, role, media,
+    # exact size and digest — so control can match what it admitted, field for field
+    binding = {"ordinal": 0, "role": "normalized_text", "media_type": "text/plain", "declared_size": 5,
+               "sha256": "e" * 64}
+    output = {"tool_id": "text_normalize", "version": "1.0.0", "result": {"changed": True},
+              "artifacts": [binding]}
+    reply = xm.parse_execute_reply(xm.encode_execute_reply(**reply_fields(
+        operation="invoke_tool", output=output, usage={**usage_fields(), "tool_calls": 1})))
+    assert reply.output == output
+    # no artifacts: an empty list, present
+    none = {**output, "artifacts": []}
+    assert xm.parse_execute_reply(xm.encode_execute_reply(**reply_fields(
+        operation="invoke_tool", output=none, usage={**usage_fields(), "tool_calls": 1}))).output == none
+    for change in [
+        {"tool_id": "text_normalize", "version": "1.0.0", "result": {}},  # the list is required
+        {**output, "artifacts": [{**binding, "ordinal": 1}]},
+        {**output, "artifacts": [binding, binding]},
+        {**output, "artifacts": [{**binding, "role": "Bad Role"}]},
+        {**output, "artifacts": [{**binding, "media_type": "Text/Plain"}]},
+        {**output, "artifacts": [{**binding, "sha256": "E" * 64}]},
+        {**output, "artifacts": [{**binding, "declared_size": xm.MAX_INPUT_BYTES + 1}]},
+        {**output, "artifacts": [{**binding, "extra": 1}]},
+        {**output, "artifacts": [{**binding, "ordinal": n} for n in range(xm.MAX_ARTIFACT_INPUTS + 1)]},
+        {**output, "artifacts": "nope"},
+    ]:
+        with pytest.raises(xm.ExecuteMessageError):
+            xm.encode_execute_reply(**reply_fields(operation="invoke_tool", output=change,
+                                                   usage={**usage_fields(), "tool_calls": 1}))

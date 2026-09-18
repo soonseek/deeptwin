@@ -13,7 +13,8 @@ happens only through `accept_result_and_settle`. Any failure raises a typed
 error, which the dispatcher records as `outcome_unknown` (the send may have
 started). No provider, model, effort or paid call is involved: a worker offers
 the read-class queries `status` and `describe_tools` and `invoke_tool` over its
-one-tool table (`text_profile`, a deterministic read-effect reading).
+two-tool table (`text_profile`, `text_normalize`: deterministic read-effect
+readings; the second returns its derived text over the reverse leg).
 """
 
 from __future__ import annotations
@@ -32,7 +33,16 @@ from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore
 from ..extensions.port_contracts import OPERATION_CONTRACTS
 from ..workers import broker, ipc_root, listener
-from ..workers.artifact_stream import BytesSource, StreamLimits, send_batch
+from ..workers.artifact_stream import (
+    ArtifactStreamError,
+    BytesSink,
+    BytesSource,
+    OfferedBatchPolicy,
+    PushbackTransport,
+    StreamLimits,
+    receive_offered_batch,
+    send_batch,
+)
 from ..workers.artifact_stream_transport import ConnectionStreamTransport
 from ..workers.extension_channel import ExtensionChannelError, extension_channel
 from ..workers.extension_execute_messages import (
@@ -47,9 +57,11 @@ from ..workers.extension_execute_messages import (
     parse_execute_request,
     peek_schema,
 )
+from .artifact_cas import store_received_artifact
 from .budgets import BudgetUsage
 from .ledger import ConsumedDispatchWindow, DispatchPermit
 from .node_attempts import AttemptDispatchRequest, AttemptTransportResult
+from .worker_coordinator import ReceivedWorkerArtifact
 
 __all__ = [
     "OUTPUT_SCHEMA",
@@ -119,8 +131,23 @@ _REFUSED_BEFORE_THE_CALL = frozenset({"validation_failed", "permission_denied"})
 # see the reply mid-stream as an unknown outcome) — and its effect class
 TOOL_INPUT_CONTRACTS = MappingProxyType({
     ("text_profile", "1.0.0"): (("document_source", "text/plain"),),
+    ("text_normalize", "1.0.0"): (("document_source", "text/plain"),),
 })
-TOOL_EFFECTS = MappingProxyType({("text_profile", "1.0.0"): "read"})
+# what each tool returns over the reverse leg: exactly these (role, media)
+# output artifacts, in order; an offered batch for a tool that returns none, or
+# not matching, is never admitted
+TOOL_OUTPUT_CONTRACTS = MappingProxyType({
+    ("text_profile", "1.0.0"): (),
+    ("text_normalize", "1.0.0"): (("normalized_text", "text/plain"),),
+})
+TOOL_EFFECTS = MappingProxyType({("text_profile", "1.0.0"): "read", ("text_normalize", "1.0.0"): "read"})
+# what each tool can return in bytes: (growth factor over the input, absolute ceiling)
+# — a caller reserving `output_bytes` for the attempt needs both (the tool's derived text
+# is at most three times its input under NFC, never over the leg's ceiling)
+TOOL_OUTPUT_BOUNDS = MappingProxyType({
+    ("text_profile", "1.0.0"): (0, 0),
+    ("text_normalize", "1.0.0"): (3, MAX_INPUT_BYTES),
+})
 ARTIFACT_TYPE = "extension-artifact-v1"
 _STREAM_LIMITS = StreamLimits(max_artifact_bytes=MAX_INPUT_BYTES, max_total_bytes=MAX_INPUT_BYTES)
 
@@ -301,13 +328,13 @@ class ExtensionAttemptTransport:
                 OSError):
             raise _unsent(deadline) from None  # nothing was written yet
         try:
-            reply = self._exchange(connection, permit, request, payload, challenge, deadline)
+            reply, received = self._exchange(connection, permit, request, payload, challenge, deadline)
         finally:
             try:
                 connection.close()
             except OSError:
                 pass  # a close fault cannot unmake a reply already in hand
-        return self._result(permit, request, reply)
+        return self._result(permit, request, reply, received)
 
     def _exchange(self, connection, permit, request, payload, challenge, deadline):
         message_id = permit.command_id
@@ -344,8 +371,36 @@ class ExtensionAttemptTransport:
                 )
             except Exception:  # noqa: BLE001 - effect-preserving barrier
                 raise ExtensionTransportError("transport_stream") from None
+        received = []
         try:
             frame = connection.read(deadline=deadline)
+            if (frame.envelope.message_type == ARTIFACT_TYPE
+                    and frame.envelope.correlation_id == message_id):
+                # the reverse leg: an offered batch before the reply, admitted only under
+                # the named tool's output contract (media types, count, the byte ceiling)
+                contract = (TOOL_OUTPUT_CONTRACTS.get((self._tool.tool_id, self._tool.version), ())
+                            if self._tool is not None else ())
+                if not contract:
+                    raise ExtensionTransportError("transport_invalid")
+                policy = OfferedBatchPolicy(
+                    request_id=message_id,
+                    allowed_media_types=tuple(sorted({media for _, media in contract})),
+                    max_artifacts=len(contract),
+                )
+                try:
+                    admitted = receive_offered_batch(
+                        PushbackTransport(
+                            ConnectionStreamTransport(connection, message_type=ARTIFACT_TYPE,
+                                                      correlation_id=message_id, deadline=deadline),
+                            first=frame.payload,
+                        ),
+                        policy, lambda _descriptor: BytesSink(), limits=_STREAM_LIMITS,
+                    )
+                except ArtifactStreamError:
+                    raise ExtensionTransportError("transport_stream") from None
+                received = [ReceivedWorkerArtifact(descriptor=descriptor, payload=sink.value)
+                            for descriptor, sink in admitted]
+                frame = connection.read(deadline=deadline)
             connection.recheck()
         except broker.DeadlineExceeded:
             raise ExtensionTransportError("transport_deadline") from None
@@ -370,10 +425,12 @@ class ExtensionAttemptTransport:
         if (reply.attempt_id != request.attempt_id or reply.operation != self._operation
                 or reply.challenge != challenge):
             raise ExtensionTransportError("transport_mismatch")
-        return reply
+        return reply, received
 
-    def _result(self, permit, request, reply) -> AttemptTransportResult:
+    def _result(self, permit, request, reply, received=()) -> AttemptTransportResult:
         usage = None
+        if received and (self._operation != "invoke_tool" or reply.outcome != "succeeded"):
+            raise ExtensionTransportError("transport_invalid")  # artifacts belong to a succeeded tool call
         if self._operation in _CONTROL_MEASURED and reply.outcome not in ("succeeded", "failed"):
             # a read-class query, and an in-process deterministic read-effect tool, has
             # no unknown or cancelled terminal: such an answer dodges the verification
@@ -389,12 +446,13 @@ class ExtensionAttemptTransport:
                 "model_calls": 0,
                 "tool_calls": 0 if refused else _EXPECTED_TOOL_CALLS[self._operation],
                 "node_visits": 1, "loop_rounds": 0,
-                "output_bytes": 0 if reply.output is None else len(canonical_json(reply.output)),
+                "output_bytes": (0 if reply.output is None else len(canonical_json(reply.output)))
+                + sum(item.descriptor.declared_size for item in received),
                 "candidates": 0, "api_microunits": None,
             }:
                 # a read-class query makes no call at all; a tool call is exactly one
                 # tool call (none when refused before it ran); control measures the
-                # bytes itself: any other claim is a lie
+                # bytes itself (the reply and the artifacts): any other claim is a lie
                 raise ExtensionTransportError("transport_mismatch")
             try:
                 usage = BudgetUsage.create(**reply.usage)
@@ -410,9 +468,30 @@ class ExtensionAttemptTransport:
                 result, (item,) = reply.output["result"], self._artifact_inputs
                 if result.get("sha256") != item.sha256 or result.get("byte_count") != item.declared_size:
                     raise ExtensionTransportError("transport_mismatch")
+            if self._tool.tool_id == "text_normalize":
+                # control holds the input it streamed and the output it admitted: the
+                # result's digests, sizes and `changed` are facts, not the worker's claim
+                result, (item,) = reply.output["result"], self._artifact_inputs
+                if result.get("sha256_in") != item.sha256 or result.get("byte_count_in") != item.declared_size:
+                    raise ExtensionTransportError("transport_mismatch")
+                if len(received) != 1 or (
+                        result.get("sha256_out") != received[0].descriptor.sha256
+                        or result.get("byte_count_out") != received[0].descriptor.declared_size
+                        or result.get("changed") is not (received[0].payload != item.payload)):
+                    raise ExtensionTransportError("transport_mismatch")
+            # the bindings must be exactly the tool's output contract over what was admitted
+            contract = TOOL_OUTPUT_CONTRACTS[(self._tool.tool_id, self._tool.version)]
+            expected = [
+                {"ordinal": index, "role": role, "media_type": item.descriptor.media_type,
+                 "declared_size": item.descriptor.declared_size, "sha256": item.descriptor.sha256}
+                for index, ((role, _media), item) in enumerate(zip(contract, received, strict=False))
+            ]
+            if len(received) != len(contract) or reply.output["artifacts"] != expected or any(
+                    item.descriptor.media_type != media for (_role, media), item in zip(contract, received, strict=True)):
+                raise ExtensionTransportError("transport_mismatch")
         result_ref = None
         if reply.outcome == "succeeded":
-            result_ref = self._seal(permit, request, reply)
+            result_ref = self._seal(permit, request, reply, received)
         return AttemptTransportResult(
             outcome=reply.outcome, result_ref=result_ref,
             usage_finality=reply.usage_finality,
@@ -420,12 +499,18 @@ class ExtensionAttemptTransport:
             reason_code=reply.reason_code, usage=usage,
         )
 
-    def _seal(self, permit, request, reply) -> EntityRef:
+    def _seal(self, permit, request, reply, received=()) -> EntityRef:
         """Seal the operation's output as an immutable artifact of this vault,
-        descending from the attempt's envelope; the worker never writes here."""
+        descending from the attempt's envelope, with each admitted output artifact
+        imported as registered content first; the worker never writes here."""
 
         try:
             roots = self._domain.roots()
+            artifacts = []
+            for index, item in enumerate(received):
+                blob = store_received_artifact(self._domain, item, purpose="operational")
+                artifacts.append({"ordinal": index, "role": reply.output["artifacts"][index]["role"],
+                                  "media_type": item.descriptor.media_type, "blob": blob.as_dict()})
             record = ImmutableRecord.create(
                 kind="artifact", id=sealed_artifact_identity(permit.command_id), version=1,
                 created_at_utc=datetime.fromtimestamp(time.time(), UTC).strftime(
@@ -440,6 +525,7 @@ class ExtensionAttemptTransport:
                     "execution_id": request.execution_id,
                     "send_command_id": permit.command_id,
                     "output": reply.output,
+                    "artifacts": artifacts,
                 },
             )
             self._domain.put(record)

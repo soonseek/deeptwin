@@ -352,7 +352,8 @@ def test_the_real_tool_runs_end_to_end_and_its_result_is_the_sealed_node_result(
     assert content["operation"] == "invoke_tool"
     assert content["output"] == {"tool_id": "text_profile", "version": "1.0.0", "result": {
         "byte_count": len(text), "char_count": len(text.decode()), "line_count": 2, "word_count": 3,
-        "sha256": sha256(text).hexdigest(), "utf8": True}}
+        "sha256": sha256(text).hexdigest(), "utf8": True}, "artifacts": []}
+    assert content["artifacts"] == []
     attempt_id = writer_attempt_id(run)
     stored = subject.ledger.get_attempt(attempt_id)
     assert stored["terminal_outcome"] == "succeeded" and stored["usage_finality"] == "final"
@@ -424,8 +425,12 @@ def test_build_mirrors_the_tools_input_contract_so_a_refusal_is_never_lost_as_un
     subject, _run = started(tmp_path / "ledger")
     text = b"hello"
     assert xt.TOOL_INPUT_CONTRACTS[("text_profile", "1.0.0")] == (("document_source", "text/plain"),)
+    assert xt.TOOL_INPUT_CONTRACTS[("text_normalize", "1.0.0")] == (("document_source", "text/plain"),)
+    assert set(xt.TOOL_INPUT_CONTRACTS) == set(xt.TOOL_OUTPUT_CONTRACTS) == set(xt.TOOL_EFFECTS) == {
+        (entry["tool_id"], entry["version"]) for entry in ep.tool_descriptions()}
     assert tuple(ep.TEXT_PROFILE_ENTRY["artifact_roles"]) == ("document_source",)
-    assert dict(xt.TOOL_EFFECTS) == {("text_profile", "1.0.0"): ep.TEXT_PROFILE_ENTRY["effect_class"]}
+    assert dict(xt.TOOL_EFFECTS) == {(entry["tool_id"], entry["version"]): entry["effect_class"]
+                                     for entry in ep.tool_descriptions()}
     tool_transport(subject, (text_input(text),))  # the exact contract builds
     for inputs in [
         (text_input(text), text_input(text)),
@@ -519,6 +524,123 @@ def test_a_refusal_before_the_call_and_a_failure_after_it_settle_with_their_own_
               handlers(subject, [])).run()
     assert subject.ledger.get_attempt(writer_attempt_id(run))["terminal_outcome"] == "failed"
     assert box.get("served") == 1, box
+
+
+TEXT_NORMALIZE = {"tool_id": "text_normalize", "version": "1.0.0"}
+
+
+def test_a_tools_output_artifacts_are_admitted_imported_and_sealed_into_the_node_result(tmp_path, staged):
+    # the reverse leg end to end: control admits the offered batch under the tool's mirrored
+    # output contract, imports each artifact as registered content, checks the reply's
+    # bindings against what it received, and seals the blob references into the attempt's
+    # artifact; the budget row counts the reply and the artifact bytes
+    from hashlib import sha256
+
+    from app.domain.store import BlobRef
+
+    box = staged[3]
+    subject, run = started(tmp_path / "ledger")
+    raw = b"a\r\nb\n"
+    expected = b"a\nb\n"
+    transport_ = xt.ExtensionAttemptTransport.build(
+        domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+        artifact_inputs=(text_input(raw),), tool=TEXT_NORMALIZE)
+    assert xt.TOOL_OUTPUT_CONTRACTS[("text_normalize", "1.0.0")] == (("normalized_text", "text/plain"),)
+    assert xt.TOOL_OUTPUT_CONTRACTS[("text_profile", "1.0.0")] == ()
+    outcome = build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
+    writer_execution = sch.execution_identity(run.run_id, "writer", 0)
+    content = subject.domain.get(dict(outcome.result_refs)[writer_execution]).body["content"]
+    assert content["output"]["tool_id"] == "text_normalize"
+    assert content["output"]["result"]["changed"] is True
+    assert [item["role"] for item in content["artifacts"]] == ["normalized_text"]
+    blob = BlobRef.from_dict(content["artifacts"][0]["blob"])
+    assert blob.sha256 == sha256(expected).hexdigest() and blob.size == len(expected)
+    assert subject.domain.read_blob(blob, purpose="operational") == expected
+    assert content["artifacts"][0]["media_type"] == "text/plain"
+    row = budget_row(subject, na.reservation_identity(writer_attempt_id(run)))
+    assert row["state"] == "finalized"
+    assert row["actual_output_bytes"] == len(canonical_json(content["output"])) + len(expected)
+    assert box.get("served") == 1, box
+
+
+def test_an_offered_artifact_outside_the_tools_output_contract_is_never_admitted(tmp_path, staged, monkeypatch):
+    # a worker offering an artifact for a tool whose contract yields none, or one more than
+    # the contract, or a binding that does not match what was received, is refused
+    from hashlib import sha256
+
+    box = staged[3]
+    original = ep._Router.execute
+
+    def offering(self, service, request, deadline, inputs=()):
+        result = original(self, service, request, deadline, inputs)
+        return {**result, "artifacts": (({"role": "normalized_text", "media_type": "text/plain"}, b"smuggled"),)}
+
+    monkeypatch.setattr(ep._Router, "execute", offering)
+    raised = observed_call(monkeypatch)
+    subject, run = started(tmp_path / "ledger")
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, bound(subject, tool_transport(subject, (text_input(b"hello"),)), tool_calls=1),
+              handlers(subject, [])).run()
+    assert raised[0].code in {"transport_invalid", "transport_mismatch"}
+    assert subject.ledger.get_attempt(writer_attempt_id(run))["terminal_outcome"] == "outcome_unknown"
+    assert sha256(b"smuggled").hexdigest() not in repr(subject.domain.roots())
+    # control closed the stream on the worker: its send fails as a sanitized local error
+    assert box.get("served") == 1 or type(box.get("error")) is ep.ProbeServiceError, box
+
+
+def test_a_binding_that_contradicts_the_received_artifact_is_never_sealed(tmp_path, staged, monkeypatch):
+    box = staged[3]
+    original = ep._Router.execute
+
+    def lying(self, service, request, deadline, inputs=()):
+        result = original(self, service, request, deadline, inputs)
+        output = {**result["output"], "artifacts": [{**result["output"]["artifacts"][0], "sha256": "f" * 64}]}
+        return {**result, "output": output}
+
+    monkeypatch.setattr(ep._Router, "execute", lying)
+    raised = observed_call(monkeypatch)
+    subject, run = started(tmp_path / "ledger")
+    transport_ = xt.ExtensionAttemptTransport.build(
+        domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+        artifact_inputs=(text_input(b"a\r\n"),), tool=TEXT_NORMALIZE)
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
+    assert raised[0].code == "transport_mismatch"
+    assert box.get("served") == 1, box
+
+
+@pytest.mark.parametrize("lie", [{"sha256_out": "f" * 64}, {"byte_count_out": 999}, {"changed": False}])
+def test_a_text_normalize_result_that_contradicts_the_received_output_is_never_sealed(tmp_path, staged, monkeypatch, lie):
+    # review MUST: control received and digest-verified the output bytes; the result's
+    # output digest, size and `changed` are facts control holds, not the worker's to claim
+    box = staged[3]
+    original = ep._Router.execute
+
+    def lying(self, service, request, deadline, inputs=()):
+        result = original(self, service, request, deadline, inputs)
+        output = {**result["output"], "result": {**result["output"]["result"], **lie}}
+        return {**result, "output": output, "usage": {**result["usage"], "output_bytes":
+                len(canonical_json(output)) + sum(len(raw) for _, raw in result["artifacts"])}}
+
+    monkeypatch.setattr(ep._Router, "execute", lying)
+    raised = observed_call(monkeypatch)
+    subject, run = started(tmp_path / "ledger")
+    transport_ = xt.ExtensionAttemptTransport.build(
+        domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+        artifact_inputs=(text_input(b"a\r\n"),), tool=TEXT_NORMALIZE)
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
+    assert raised[0].code == "transport_mismatch"
+    assert box.get("served") == 1, box
+
+
+def test_the_output_contracts_have_unique_roles_and_a_stated_output_bound():
+    for key, contract in xt.TOOL_OUTPUT_CONTRACTS.items():
+        roles = [role for role, _media in contract]
+        assert len(roles) == len(set(roles)), key
+    # the derived text is at most three times the input (NFC growth) and never over the ceiling
+    assert xt.TOOL_OUTPUT_BOUNDS[("text_normalize", "1.0.0")] == (3, xt.MAX_INPUT_BYTES)
+    assert xt.TOOL_OUTPUT_BOUNDS[("text_profile", "1.0.0")] == (0, 0)
 
 
 def test_the_input_ceilings_agree_across_the_grammar_the_worker_and_control():

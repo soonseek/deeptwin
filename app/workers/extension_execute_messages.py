@@ -102,9 +102,12 @@ _REQUEST_FIELDS = (
     "profile_ref", "remaining_ms", "challenge", "artifact_batch_id", "artifact_inputs", "tool",
 )
 # `invoke_tool` names the exact tool it invokes (ports contract: tool_id, tool_version);
-# arguments have no wire grammar yet (the first tool takes none)
+# arguments have no wire grammar yet (the tools take none)
 _TOOL_SELECTION_FIELDS = ("tool_id", "version")
-_TOOL_OUTPUT_FIELDS = ("tool_id", "version", "result")
+_TOOL_OUTPUT_FIELDS = ("tool_id", "version", "result", "artifacts")
+# the reverse leg: a tool's output artifacts travel as an offered batch before the
+# reply; the reply binds each (ordinal, role, media, exact size, digest)
+_ARTIFACT_BINDING_FIELDS = ("ordinal", "role", "media_type", "declared_size", "sha256")
 MAX_REMAINING_MS = 30_000  # the channel's operation cap
 # the request's declared artifact inputs (T018/T087 artifact leg): descriptors
 # only — the bytes travel after the request frame over the channel's artifact
@@ -288,7 +291,21 @@ def _tool_output(value) -> dict:
     except (WireInputError, DomainContractError, TypeError, ValueError):
         raise ExecuteMessageError() from None
     return {"tool_id": _wrap(_identifier, value["tool_id"]), "version": _version_text(value["version"]),
-            "result": deepcopy(result)}
+            "result": deepcopy(result), "artifacts": _artifact_bindings(value["artifacts"])}
+
+
+def _artifact_bindings(items) -> list[dict]:
+    if type(items) is not list or len(items) > MAX_ARTIFACT_INPUTS:
+        raise ExecuteMessageError()
+    bindings = []
+    for index, item in enumerate(items):
+        if type(item) is not dict or tuple(sorted(item)) != tuple(sorted(_ARTIFACT_BINDING_FIELDS)):
+            raise ExecuteMessageError()
+        declaration = _artifact_input(item, index, len(items))
+        bindings.append(declaration.as_dict())
+    if sum(item["declared_size"] for item in bindings) > MAX_INPUT_BYTES:
+        raise ExecuteMessageError()
+    return bindings
 
 
 def _artifact_input(value, ordinal, count) -> ArtifactInputDeclaration:

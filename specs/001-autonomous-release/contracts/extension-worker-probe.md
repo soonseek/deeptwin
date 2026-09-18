@@ -90,16 +90,16 @@ of `app/workers/extension_probe.py` (`_OPERATIONS`), fixed at import and keyed b
 `["describe_tools", "invoke_tool", "status"]` (the execute slice shipped `["status"]`, the tool-table slice
 `["describe_tools", "status"]`, slice 3 `[]`); a placeholder
 handler or a copy of the port catalog is forbidden. `describe_tools` answers from the worker's
-code-owned tool table (`_TOOLS`, fixed at import; `text_profile` since the first-tool slice), never
+code-owned tool table (`_TOOLS`, fixed at import; `text_profile` since the first-tool slice,
+`text_normalize` since the reverse-leg slice), never
 from the port catalog; the execute grammar carries no selection yet, so the whole
 table is described. Control does not trust the worker's counters for either read-class query.
 
 ### 2b. Closed execute messages (T087 execute slice)
 
 `extension-execute-v1` (request, ≤ 4096 B pre-envelope since the artifact leg — up to eight declared
-inputs; wire depth ≤ 6 since the `describe_tools`
-slice — a tool entry's schema-reference objects sit at depth 5 and their scalar members at 6, root
-being 1 — otherwise §2's limits):
+inputs; wire depth ≤ 6 — a tool result's own objects
+reach three levels under the output, root being 1 — otherwise §2's limits):
 `schema_version`, `attempt_id` (uuid), `execution_id` (uuid), `operation` (a member of the
 port's closed operation set), `envelope_ref` and `profile_ref` (four-field `EntityRef` shapes of
 kinds `execution_envelope` / `runtime_profile`), `remaining_ms` (1..30000, the requester's
@@ -126,9 +126,13 @@ final acceptance leaves the run possible. Control applies the same profile gate 
 with inputs; an input carries its bytes (bounded by the ceiling) so every attempt of the visit,
 the owner's recovery retry included, streams them again from a fresh source. Stream frames carry
 fresh message ids; their integrity is the channel's sequence and HMAC, and their binding to the
-request is the correlation id and the offers' batch/request ids matched field for field. No
-registered operation takes inputs today: the byte route is exercised end to end in tests through
-a test-only handler under `invoke_tool` (profile `T-tool`).
+request is the correlation id and the offers' batch/request ids matched field for field. Control
+mirrors the tool table statically (`TOOL_INPUT_CONTRACTS`, `TOOL_OUTPUT_CONTRACTS`, `TOOL_EFFECTS`,
+pinned equal to the worker's entries by test until ToolDefinition records exist), so a tool call
+declaring other inputs is refused at build — never streamed into a worker that would refuse it before
+reading a byte, which control could only see mid-stream as an unknown outcome. The registered
+consumer of the leg is `invoke_tool`; the multi-input route is still exercised in tests through a
+test-only handler.
 
 `extension-execute-result-v1` (reply, ≤ 4096 B): `schema_version`, `attempt_id`, `operation`,
 `challenge` (echoed), `outcome` / `usage_finality` / `remote_terminal_observed` / `reason_code`
@@ -144,17 +148,43 @@ sha256 digests — a worker cannot reference control-side schema records; contro
 them later (T087) —, `effect_class` a member of the closed effect classes,
 roles sorted unique (≤ 256), one entry per tool in identifier order, at most 8 entries and — the
 binding bound — at most 3072 canonical bytes for the table so the reply can always carry it; for
-`invoke_tool` exactly `{tool_id, version, result}` — the tool's own bounded JSON object, which control
-seals as the attempt's artifact (the ports contract's `{tool_call_ref, result_ref}` are control-side
-records: the sealed artifact is the result, the `ToolCall` record stays open); a success under
-`cancel` is outside the grammar until its output is defined). The request carries `tool`
-(`{tool_id, version}`, required iff the operation is `invoke_tool`; arguments have no wire grammar
-yet — the first tool takes none). The worker's table holds `text_profile` 1.0.0 (effect `read`,
-exactly one `document_source` `text/plain` input, strict UTF-8): byte/character/line/word counts and
-the digest; a call naming another tool or version, or declaring other inputs, is the typed refusal
-`validation_failed` before any byte is read; bytes that are not a text are the tool's own terminal
-failure (`provider_terminal`, one tool call). Control verifies a tool call's usage: exactly one tool
-call (none when refused before it ran), no model call, measured bytes. Invariants: an unknown outcome cannot claim
+`invoke_tool` exactly `{tool_id, version, result, artifacts}` — the tool's own bounded JSON object,
+closed over the wire limits where it is built so a reply the parser would refuse is never sent, and
+the bindings of its output artifacts (≤ 8: ordinal, role, media type, exact size, digest; the same
+grammar as the declared inputs). The output artifacts travel as an offered batch on the artifact
+type, correlated to the request, **before** the reply frame — the reverse leg: `send_batch` on the
+worker, `receive_offered_batch` on control under a policy from the named tool's mirrored output
+contract (media types, count, the 1 MiB ceiling); an offered batch for a tool whose contract yields
+none, or bindings that are not exactly what was admitted, is refused as a transport mismatch and
+recorded `outcome_unknown` — honest, because control observed no reply it could call a terminal (the
+worker's send fails once control stops reading), and a worker outside the protocol in one place is
+not trusted elsewhere; a worker that streams artifacts and then answers a non-succeeded terminal is
+refused the same way (ports contract: artifacts are `[]` for every non-succeeded terminal). Control imports each admitted
+artifact as registered content and seals its blob reference into the attempt's artifact beside the
+output (`artifacts: [{ordinal, role, media_type, blob}]`), counting the artifact bytes with the reply
+as the measured output; the sealed artifact is the result (the ports contract's `{tool_call_ref,
+result_ref}` are control-side records; the `ToolCall` record stays open); a success under `cancel`
+is outside the grammar until its output is defined). The request carries `tool` (`{tool_id,
+version}`, required iff the operation is `invoke_tool`; arguments have no wire grammar yet — the
+tools take none). The worker's table holds `text_profile` 1.0.0 (effect `read`, exactly one
+`document_source` `text/plain` input, strict UTF-8): byte/character/line/word counts and the digest,
+with stated definitions a non-Python worker can repeat under the same result schema digest — bytes;
+code points (a BOM kept and counted); `\n`-terminated segments plus one final unterminated segment;
+runs between ASCII whitespace; the bytes' sha256 — and `text_normalize` 1.0.0 (effect `read`, the
+same input; NFC, CRLF and a lone CR to LF, one leading BOM removed, nothing else changed; the derived
+text is its one output artifact `normalized_text` text/plain over the reverse leg; the result names
+the input and output digests and sizes and whether anything changed; NFC can triple UTF-8 bytes, so
+the derived text is at most three times the input and, over the 1 MiB ceiling, the tool's own terminal
+failure). A call naming another tool or
+version, or declaring other inputs, is the typed refusal `validation_failed` before any byte is read;
+bytes that are not a text are the tool's own terminal failure (`provider_terminal`, one tool call).
+Control verifies a tool call: the reply's tool id and version are the ones it named; the result's
+input digest and byte count agree with the streamed input it holds, and its output digest, size and
+`changed` with the output it admitted (the rest of the result is the
+worker's claim, sealed as such); usage is exactly one tool call (none when refused before it ran:
+`validation_failed`, `permission_denied`), no model call, the reply and artifact bytes measured; an
+in-process read-effect tool has no `outcome_unknown` or `cancelled` terminal (class C's terminals
+pass through only for an external-effect tool, and none is in the table). Invariants: an unknown outcome cannot claim
 a known remote terminal; a succeeded outcome observes `succeeded`; a terminal outcome other than
 `succeeded` cannot observe `succeeded`. An unregistered operation is the typed refusal
 `failed` / `validation_failed` with final zero usage and no output. Control does not trust the
@@ -253,10 +283,19 @@ after each reply, and a later stage postcondition consumes the observation only 
 same-writer authority/currentness transaction. Gates reported, never claimed: both native
 architectures; the actual initializer/image/mount/UID/argv packaging of the fixed image (`main()`,
 `bin/worker`); allowed-manifest and OCI identity trust; the worker semantic registry beyond the
-three code-owned operations — `status`, `describe_tools` over the one-tool table, and
-`invoke_tool` running `text_profile` over the artifact input leg (T087: `cancel`, tool arguments
-in the execute grammar, the `ToolCall` record and `{tool_call_ref, result_ref}` control-side,
-schema records resolved from the entries' digests, worker-returned output artifacts,
+three code-owned operations — `status`, `describe_tools` over the two-tool table, and
+`invoke_tool` running `text_profile` and `text_normalize` over both artifact legs (T087: `cancel`,
+tool arguments in the execute grammar, the `ToolCall` record and `{tool_call_ref, result_ref}`
+control-side, schema records resolved from the entries' digests and the result validated against
+them, the effect gate and grant check for a tool call (`effect_class` is the entry's claim, mirrored
+on control, enforced by nothing yet), class-C terminals for external-effect tools, the tool table
+learned from `describe_tools` instead of the static mirror, a worker-owned scratch for larger
+outputs (in-memory sinks bound both legs to 1 MiB), the reservation of `output_bytes` from the tool's
+stated output bound (`TOOL_OUTPUT_BOUNDS`; an under-reserved attempt settles as an overrun that blocks
+the budget session — the caller, not the transport, sizes it today), optional outputs (an omissions
+policy; the wire binds exactly the contract's count), the data-model `Artifact` entity for the sealed
+output (an inline blob reference today; a seal failure after the import leaves a registered,
+unreferenced content-addressed blob),
 the ports contract's per-tool input count (up to 32 for T-tool; the wire carries 8), role and
 selector binding to the ToolDefinition, every model-bearing port); the control observer and admission; positive Linux authentication (non-Linux hosts fail closed at
 peer credentials). No human/key authority, metadata mount, allowlist or core fixture lock is
