@@ -14,7 +14,8 @@ attempt of the visit was definitely never sent (a crash before the send-intent
 barrier, reconciled at startup), in which case the next attempt number of the
 same execution is reserved and the visit proceeds, bounded.
 
-The transport is an injected callable `(permit, request) -> AttemptTransportResult`;
+The transport is an injected callable `(permit, request, window) -> AttemptTransportResult`
+(the window is the consumed one-shot permit window);
 no worker-side operation exists yet (T087/T018), so the only transports today are
 in-process fakes owned by tests. Effort, models and providers are not modelled
 here at all (T042).
@@ -348,22 +349,21 @@ class NodeAttemptDispatcher:
             raise AttemptDispatchError("permit_invalid")
         try:
             try:
-                result = self._transport(permit, request)
+                # the one-shot use of the permit: consumed once, revalidated
+                # against the attempt, lease, run budget session and reservation;
+                # the conservative window travels with the permit to the transport
+                window = ledger.consume_dispatch_permit_window(permit, budget_book=book)
+                result = self._transport(permit, request, window)
                 if type(result) is not AttemptTransportResult:
                     raise TypeError("transport result must be an exact AttemptTransportResult")
                 if result.result_ref is not None:
                     # a claimed result must resolve in the domain before it is
                     # observed; an unresolvable claim is a broken transport
                     ledger._verify_refs((result.result_ref,))
+                observation = self._observation(attempt_id, result)
             except Exception:  # noqa: BLE001 - a transport fault is an unknown outcome
                 result = _UNKNOWN
-            observation = ResultObservation(
-                observation_id=_observation_identity(attempt_id), attempt_id=attempt_id,
-                outcome=result.outcome, result_ref=result.result_ref,
-                usage_finality=result.usage_finality,
-                remote_terminal_observed=result.remote_terminal_observed,
-                reason_code=result.reason_code,
-            )
+                observation = self._observation(attempt_id, result)
             accepted = ledger.accept_result_and_settle(
                 _command_identity(attempt_id, "accept"), observation, budget_book=book,
                 usage=result.usage,
@@ -377,6 +377,18 @@ class NodeAttemptDispatcher:
         if result.outcome != "succeeded":
             raise AttemptDispatchError(f"attempt_{result.outcome}")
         return result.result_ref
+
+    @staticmethod
+    def _observation(attempt_id, result):
+        # the ledger's own observation rules apply (an unknown outcome claims no
+        # known terminal); a result they refuse is a broken transport
+        return ResultObservation(
+            observation_id=_observation_identity(attempt_id), attempt_id=attempt_id,
+            outcome=result.outcome, result_ref=result.result_ref,
+            usage_finality=result.usage_finality,
+            remote_terminal_observed=result.remote_terminal_observed,
+            reason_code=result.reason_code,
+        )
 
     def _definitely_unsent(self, attempt_id):
         row = self._ledger.get_attempt(attempt_id)

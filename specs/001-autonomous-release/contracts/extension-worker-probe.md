@@ -33,8 +33,12 @@ profile constants:
 | frame / in-flight / queue / operation | 65536 B / 1 / 16 / 30000 ms |
 
 `<I>` is lowercase hex32 (`contracts.identifier`), `<NN>` the two-digit slot 01..16. The
-artifact type exists so a later semantic route can bind the same channel (`WorkerRouteBinding`
-needs a distinct bidirectional artifact type); the probe never sends it. Fixed image argv: a
+artifact type exists so a later semantic route can stream artifacts on the same channel
+(`WorkerRouteBinding` needs a distinct bidirectional artifact type); the probe never sends it.
+Decision (T087 execute slice, 2026-09-18): the execute request/reply of §2b rides on the same
+`extension-request-v1` / `extension-result-v1` types — the type tuples are part of the
+authenticated channel identity and stay unchanged — and the connection mode is selected by the
+first frame's exact request schema (§3). Fixed image argv: a
 `list` of exactly five `str` — `[executable, --instance-id, <hex32>, --slot-number, <1..16>]`,
 no leading zero, no other flag; argv[0] is image packaging and is not compared.
 
@@ -80,8 +84,33 @@ constrained to `tool-port-v1` by `parse_build_identity`), never a literal restat
 worker; `runtime.platform`/`uid`/`gid` are the reading's own fresh observations
 (`WorkerMetadataReading.platform/uid/gid`); `service_identity` is the `responder_service` of the
 worker's owned `ChannelSpec`, not an argv re-derivation. `registered_operations` is the exact
-key set of the worker's actual immutable semantic registry — for slice 3 that registry is empty
-and the reply says `[]`; a placeholder handler or a copy of the port catalog is forbidden.
+key set of the worker's actual immutable semantic registry — the code-owned operation table
+of `app/workers/extension_probe.py` (`_OPERATIONS`), fixed at import and keyed by
+`tool-port-v1` operation names; since the T087 execute slice it is `["status"]` (slice 3 shipped
+it empty, `[]`); a placeholder handler or a copy of the port catalog is forbidden.
+
+### 2b. Closed execute messages (T087 execute slice)
+
+`extension-execute-v1` (request, ≤ 2048 B pre-envelope; wire depth ≤ 5, otherwise §2's limits):
+`schema_version`, `attempt_id` (uuid), `execution_id` (uuid), `operation` (a member of the
+port's closed operation set), `envelope_ref` and `profile_ref` (four-field `EntityRef` shapes of
+kinds `execution_envelope` / `runtime_profile`), `remaining_ms` (1..30000, the requester's
+effective remaining window after permit consumption — the worker may bound its work by it; it
+is not an absolute clock value), `challenge` (32-byte nonce, base64url). Identities and
+references only; never bytes, never model input.
+
+`extension-execute-result-v1` (reply, ≤ 4096 B): `schema_version`, `attempt_id`, `operation`,
+`challenge` (echoed), `outcome` / `usage_finality` / `remote_terminal_observed` / `reason_code`
+(the runtime ledger's closed result vocabulary, mirrored in the worker package and pinned equal
+by test), `usage` (the seven exact counters iff `usage_finality == "final"`, else `null`),
+`output` (present iff `outcome == "succeeded"`; for `status` exactly the probe reply's
+`service_identity` / `component` / `runtime` shape). Invariants: an unknown outcome cannot claim
+a known remote terminal; a succeeded outcome observes `succeeded`; a terminal outcome other than
+`succeeded` cannot observe `succeeded`. An unregistered operation is the typed refusal
+`failed` / `validation_failed` with final zero usage and no output. Control does not trust the
+worker's counters for `status`: the only real counter (`output_bytes`) is measured control-side
+and any other claim is a mismatch. A succeeded output is sealed control-side as an `artifact`
+record whose id derives from the send-intent command; the worker never touches the store.
 
 ### 2a. Pure interfaces (slice 1b)
 
@@ -118,15 +147,20 @@ fresh canonical lowercase UUID `message_id`, `correlation_id=null`; reply
 `message_type="extension-result-v1"`, a new UUID `message_id`, `correlation_id` equal to the
 request's `message_id`. The framing accepts the nil UUID; the probe service and observer refuse
 it (`refs.uuid_string` semantics). All four message ids of a connection (two requests, two
-replies) are distinct. The first authenticated application frame selects observation-only mode
-by the exact request schema. Per connection: at most two probes, distinct message ids and
+replies) are distinct. The first authenticated application frame selects the connection mode
+by the exact request schema: `extension-stage-probe-v1` (observation-only, at most two probes)
+or `extension-execute-v1` (one execute request, one reply, then the worker closes; a second
+request of either schema, or a reply schema on a request frame, closes the connection).
+Observation-only connections: at most two probes, distinct message ids and
 nonces, identical `request_blob_sha256`/`receipt_blob_sha256`; the worker remembers only those
 bounded values locally and closes after the second reply. A repeated challenge, a third probe, a
 different digest pair, any other message type (the framing permits `extension-artifact-v1`; the
 probe rejects it here), an artifact or semantic payload, a malformed correlation (request
 `correlation_id != null`, reply `correlation_id != request.message_id`) or an unexpected frame
 closes the connection with a sanitized local error. No retry, no failure-success envelope, no
-artifact stream, no semantic dispatch. Each reply is built from an actual
+artifact stream; semantic dispatch is admitted only through the execute schema selected by the
+first frame (§2b) — a semantic payload on a probe connection still closes it. Each probe reply
+is built from an actual
 `read_current(deadline=...)` of the worker's metadata source per probe; readiness never
 substitutes for that read. Control rejects a reply whose `service_identity` differs from the
 `responder_service` of the authenticated session's `ChannelSpec`.
@@ -137,7 +171,9 @@ Control attempt ≤ 2000 ms measured from before connect; final probe ≤ 500 ms
 remaining attempt budget. Worker accepted connection ≤ 2000 ms; metadata reads ≤ 500 ms as
 contracted. Handshake packets ≤ 4096 B in the private extension wrappers (the existing frame
 decoder may buffer ≤ 65536 B before the tighter payload rejection). At most four handshake packets
-and two request/reply pairs per connection; payload caps are §2's pre-envelope byte sizes. Worker
+and two request/reply pairs per probe connection (one per execute connection); payload caps are
+§2's pre-envelope byte sizes (probe: 1024 B / 4096 B, depth 4) and §2b's (execute: 2048 B /
+4096 B, depth 5). Worker
 service total owned FDs ≤ 64 including the metadata source's 13 retained + ≤ 32 transient (45 at
 peak), leaving ≤ 19 for generation, listener, connection and fence descriptors. Digests, nonces
 and bytes never appear in logs. Metadata syscall stalls cannot be preempted; control enforces its
@@ -165,8 +201,9 @@ Control separately compares the kernel peer uid/gid, rechecks its retained sourc
 after each reply, and a later stage postcondition consumes the observation only inside its own
 same-writer authority/currentness transaction. Gates reported, never claimed: both native
 architectures; the actual initializer/image/mount/UID/argv packaging of the fixed image (`main()`,
-`bin/worker`); allowed-manifest and OCI identity trust; the worker semantic registry (T087); the
-control observer and admission; positive Linux authentication (non-Linux hosts fail closed at
+`bin/worker`); allowed-manifest and OCI identity trust; the worker semantic registry beyond the
+one code-owned `status` operation (T087: `invoke_tool`, `describe_tools`, `cancel`, every
+model-bearing port); the control observer and admission; positive Linux authentication (non-Linux hosts fail closed at
 peer credentials). No human/key authority, metadata mount, allowlist or core fixture lock is
 introduced; boot IDs are per-process `secrets.token_hex(32)` labels, never owner accounts;
 `app/workers` imports nothing from `app.api`, `app.static` or `app.server`; no GUI.

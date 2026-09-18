@@ -1,0 +1,234 @@
+"""T087/T018 slice: the real attempt transport replaces the injected fake.
+
+`ExtensionAttemptTransport` performs one authenticated AF_UNIX exchange with
+the in-process worker service under the one-shot permit: it writes the
+execute request for the bound operation, reads the one reply, verifies the
+correlation, attempt, operation and nonce, rechecks the fences, and maps the
+reply to the ledger's result vocabulary. A succeeded `status` reply is
+sealed control-side as an immutable `artifact` record (the worker never
+touches the store); admission still happens only through
+`accept_result_and_settle` inside `NodeAttemptDispatcher`. Same macOS seams
+as the probe tests: service, operation and transport logic, never positive
+Linux authentication, a real image or a container.
+"""
+
+import time
+from uuid import NAMESPACE_URL, uuid5
+
+import pytest
+
+from app.domain.refs import canonical_json
+from app.runtime import extension_attempt_transport as xt
+from app.runtime import node_attempts as na
+from app.runtime import scheduler as sch
+from app.runtime.ledger import ConsumedDispatchWindow
+from app.tests.test_extension_listener import INSTANCE
+from app.tests.test_extension_probe import (  # noqa: F401 - fixture re-exports
+    SLOT,
+    channel,
+    open_service,
+    serve_in_thread,
+    slot,
+    worker_tree,
+)
+from app.tests.test_runtime_budget_dispatch import budget_row
+from app.tests.test_runtime_result_settlement import dispatched
+from app.tests.test_scheduler_attempt_dispatch import (
+    build,
+    dispatcher,
+    handlers,
+    started,
+    writer_attempt_id,
+)
+from app.workers import extension_probe as ep
+from app.workers import listener
+
+
+@pytest.fixture
+def staged(slot, monkeypatch):  # noqa: F811 - the imported fixture
+    root, spec, side, tree = slot
+
+    def derived(*, instance_id, slot_number):
+        assert (instance_id, slot_number) == (INSTANCE, SLOT)
+        return root, spec
+
+    monkeypatch.setattr(xt, "extension_channel", derived)
+    service = open_service()
+    box = {}
+    thread = serve_in_thread(service, box, side, deadline_ms=20_000)
+    try:
+        yield root, spec, tree, box
+    finally:
+        thread.join(25)
+        try:
+            service.close()
+        except ep.ProbeServiceError:
+            pass
+
+
+def bound(subject, transport):
+    # the status output is a few hundred bytes: reserve within the policy cap
+    return na.NodeAttemptDispatcher.build(
+        ledger=subject.ledger, budget_book=subject.book, owner=subject.owner,
+        bindings={"writer": na.AttemptBinding.create(
+            envelope_ref=subject.refs.envelope, profile_ref=subject.refs.profile,
+            budget_policy_ref=subject.refs.budget, deadline_at_ms=10_000,
+            lease_duration_ms=1_000, model_calls=1, tool_calls=0, node_visits=1,
+            loop_rounds=0, output_bytes=1_000, candidates=0, api_microunits=None,
+            principal=subject.principal, grant=subject.grant,
+        )},
+        transport=transport,
+    )
+
+
+def transport(subject, *, operation="status"):
+    return xt.ExtensionAttemptTransport.build(
+        domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
+        operation=operation,
+    )
+
+
+def test_status_executes_over_the_socket_and_the_sealed_output_is_the_node_result(
+    tmp_path, staged
+):
+    _root, spec, tree, box = staged
+    subject, run = started(tmp_path / "ledger")
+    calls = []
+    outcome = build(subject, run, bound(subject, transport(subject)),
+                    handlers(subject, calls)).run()
+    assert calls == ["intake", "writer", "publish"]
+    writer_execution = sch.execution_identity(run.run_id, "writer", 0)
+    result_ref = dict(outcome.result_refs)[writer_execution]
+    record = subject.domain.get(result_ref)
+    assert record.body["kind"] == "artifact" and record.body["purpose"] == "operational"
+    content = record.body["content"]
+    assert content["schema_version"] == "extension-execute-output-v1"
+    assert content["operation"] == "status"
+    assert content["attempt_id"] == writer_attempt_id(run)
+    assert content["execution_id"] == writer_execution
+    assert content["output"]["service_identity"] == spec.responder_service
+    assert content["output"]["component"]["build_identity_digest"] == tree["identity_digest"]
+    assert content["output"]["runtime"]["registered_operations"] == ["status"]
+    assert record.body["parent_refs"] == [subject.refs.envelope.as_dict()]
+    # the sealed artifact is addressable from the send command: one id per attempt
+    assert content["send_command_id"] == na._command_identity(writer_attempt_id(run), "send")
+    assert result_ref.id == xt.sealed_artifact_identity(content["send_command_id"])
+    assert result_ref.id == str(uuid5(NAMESPACE_URL,
+                                      "deeptwin:artifact:execute:" + content["send_command_id"]))
+    attempt_id = writer_attempt_id(run)
+    stored = subject.ledger.get_attempt(attempt_id)
+    assert stored["terminal_outcome"] == "succeeded" and stored["usage_finality"] == "final"
+    row = budget_row(subject, na.reservation_identity(attempt_id))
+    assert row["state"] == "finalized" and row["usage_finality"] == "known"
+    assert row["actual_output_bytes"] == len(canonical_json(content["output"]))
+    assert 0 < row["actual_output_bytes"] <= 1_000
+    assert row["actual_model_calls"] == 0 and row["actual_node_visits"] == 1
+    assert subject.ledger._pending_permits == {}
+    assert box.get("served") == 1, box
+
+
+def test_an_unregistered_operation_is_admitted_as_a_failed_attempt(tmp_path, staged):
+    box = staged[3]
+    subject, run = started(tmp_path / "ledger")
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, dispatcher(subject, transport(subject, operation="invoke_tool")),
+              handlers(subject, [])).run()
+    attempt_id = writer_attempt_id(run)
+    stored = subject.ledger.get_attempt(attempt_id)
+    assert stored["terminal_outcome"] == "failed" and stored["usage_finality"] == "final"
+    observations = subject.ledger.result_observations(attempt_id)
+    assert len(observations) == 1
+    assert observations[0]["reason_code"] == "validation_failed"
+    assert budget_row(subject, na.reservation_identity(attempt_id))["state"] == "finalized"
+    assert box.get("served") == 1, box
+
+
+def test_no_reachable_worker_is_an_unknown_outcome(tmp_path, slot, monkeypatch):  # noqa: F811
+    root, spec, _side, _tree = slot
+    monkeypatch.setattr(xt, "extension_channel",
+                        lambda *, instance_id, slot_number: (root, spec))
+    subject, run = started(tmp_path / "ledger")
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, dispatcher(subject, transport(subject)), handlers(subject, [])).run()
+    attempt_id = writer_attempt_id(run)
+    stored = subject.ledger.get_attempt(attempt_id)
+    assert stored["terminal_outcome"] == "outcome_unknown"
+    assert budget_row(subject, na.reservation_identity(attempt_id))["state"] == "unknown"
+    assert subject.ledger._pending_permits == {}
+
+
+def test_build_refuses_wrong_stores_operations_and_slots(tmp_path):
+    subject, _ = started(tmp_path / "ledger")
+    with pytest.raises(TypeError):
+        xt.ExtensionAttemptTransport.build(domain_store=object(), instance_id=INSTANCE,
+                                           slot_number=SLOT, operation="status")
+    with pytest.raises(ValueError):
+        xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE,
+                                           slot_number=SLOT, operation="model_step")
+    with pytest.raises((TypeError, ValueError)):
+        xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE,
+                                           slot_number=0, operation="status")
+    with pytest.raises(TypeError):
+        xt.ExtensionAttemptTransport()
+
+
+def permit_and_request(tmp_path):
+    subject, attempt, _request, permit = dispatched(tmp_path / "ledger")
+    run_id = subject.ledger.get_execution(attempt.execution_id)["spec"]["run_id"]
+    request = na.AttemptDispatchRequest(
+        run_id=run_id, node_id="writer", execution_id=attempt.execution_id,
+        attempt_id=attempt.attempt_id, envelope_ref=subject.refs.envelope,
+        profile_ref=subject.refs.profile, deadline_at_ms=10_000,
+    )
+    return subject, permit, request
+
+
+def window(permit, *, runtime_ms=5_000, budget_ms=5_000):
+    return ConsumedDispatchWindow(permit=permit, runtime_remaining_ms=runtime_ms,
+                                  budget_remaining_ms=budget_ms,
+                                  anchor_monotonic=time.monotonic())
+
+
+def test_an_exhausted_window_never_connects(tmp_path, slot, monkeypatch):  # noqa: F811
+    root, spec, _side, _tree = slot
+    monkeypatch.setattr(xt, "extension_channel", lambda *, instance_id, slot_number: (root, spec))
+    subject, permit, request = permit_and_request(tmp_path)
+
+    def boom(*args, **kwargs):
+        raise AssertionError("connected with no window")
+
+    monkeypatch.setattr(listener, "_connect_extension_authenticated", boom)
+    with pytest.raises(xt.ExtensionTransportError) as failure:
+        transport(subject)(permit, request, window(permit, runtime_ms=0))
+    assert failure.value.code == "transport_deadline"
+    assert failure.value.dispatch_effect == "definitely_not_sent"
+
+
+def test_a_connect_refusal_is_definitely_not_sent(tmp_path, slot, monkeypatch):  # noqa: F811
+    root, spec, _side, _tree = slot  # nothing listens on the slot
+    monkeypatch.setattr(xt, "extension_channel", lambda *, instance_id, slot_number: (root, spec))
+    subject, permit, request = permit_and_request(tmp_path)
+    with pytest.raises(xt.ExtensionTransportError) as failure:
+        transport(subject)(permit, request, window(permit))
+    assert failure.value.code in {"transport_unavailable", "transport_deadline"}
+    assert failure.value.dispatch_effect == "definitely_not_sent"
+    assert xt.ExtensionTransportError("transport_invalid").dispatch_effect == "outcome_unknown"
+
+
+def test_the_worker_cannot_inflate_the_usage_of_status(tmp_path, staged, monkeypatch):
+    box = staged[3]
+    original = ep._Router.execute
+
+    def inflated(self, service, request, deadline):
+        result = original(self, service, request, deadline)
+        result["usage"] = {**result["usage"], "model_calls": 7}
+        return result
+
+    monkeypatch.setattr(ep._Router, "execute", inflated)
+    subject, run = started(tmp_path / "ledger")
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, bound(subject, transport(subject)), handlers(subject, [])).run()
+    attempt_id = writer_attempt_id(run)
+    assert subject.ledger.get_attempt(attempt_id)["terminal_outcome"] == "outcome_unknown"
+    assert budget_row(subject, na.reservation_identity(attempt_id))["state"] == "unknown"
+    assert box.get("served") == 1, box

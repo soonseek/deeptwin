@@ -10,9 +10,11 @@ listener fence, answers at most two probes — distinct message ids and
 nonces, an identical request/receipt digest pair — with replies built from
 an actual `read_current` per probe (readiness never substitutes), rechecks
 the fences before the first read and after each reply, and closes after the
-second reply. The private router created here has an empty semantic
-registry: the reply's `registered_operations` is `[]`; no placeholder
-handler exists and the T087 semantic registry is a separate owner.
+second reply. An execute connection (the first frame's schema is
+`extension-execute-v1`) answers exactly one request through the private
+router's code-owned operation table (`_OPERATIONS`: `status` since the T087
+execute slice) and closes; the probe reply's `registered_operations` is that
+table's exact key set. No placeholder handler exists.
 
 A reply is a self-reported observation over one connection; the service
 compares nothing to an expected tuple, admits nothing and proves nothing
@@ -29,11 +31,23 @@ from types import MappingProxyType
 from typing import Self
 from uuid import uuid4
 
-from ..domain.refs import DomainContractError, uuid_string
+from ..domain.refs import DomainContractError, canonical_json, uuid_string
 from ..extensions.lineage_contracts import LineageContractError
 from . import broker, ipc_root, listener
 from . import extension_metadata as em
 from .extension_channel import ExtensionChannelError, extension_channel
+from .extension_execute_messages import (
+    REQUEST_SCHEMA as EXECUTE_SCHEMA,
+)
+from .extension_execute_messages import (
+    ExecuteMessageError,
+    encode_execute_reply,
+    parse_execute_request,
+    peek_schema,
+)
+from .extension_probe_messages import (
+    REQUEST_SCHEMA as PROBE_SCHEMA,
+)
 from .extension_probe_messages import (
     ProbeMessageError,
     encode_probe_reply,
@@ -43,6 +57,7 @@ from .extension_probe_messages import (
 REQUEST_TYPE = "extension-request-v1"
 RESULT_TYPE = "extension-result-v1"
 MAX_PROBES = 2
+MAX_EXECUTES = 1  # one execute request per accepted connection
 _CONNECTION_MS = 2_000  # contract §4: worker accepted connection
 _READ_MS = 500  # contract §4: metadata reads
 _BOOT_ID_BYTES = 32
@@ -73,24 +88,73 @@ _SANITIZED = (
     ipc_root.IpcRootError,
     em.WorkerMetadataError,
     ProbeMessageError,
+    ExecuteMessageError,
     DomainContractError,
     LineageContractError,
     OSError,
 )
 
+_ZERO_USAGE = {
+    "model_calls": 0, "tool_calls": 0, "node_visits": 1, "loop_rounds": 0,
+    "output_bytes": 0, "candidates": 0, "api_microunits": None,
+}
+
+
+def _status_operation(service: WorkerProbeService, request, deadline) -> dict:
+    """`status` (tool-port-v1): the worker's own reading — the same actual
+    measurement the probe reports — as the operation's output."""
+
+    reading = service._source.read_current(deadline=deadline.bounded(_READ_MS))
+    identity = reading.build_identity
+    output = {
+        "service_identity": service._listener.spec.responder_service,
+        "component": {
+            "build_identity_digest": identity.digest,
+            "port_contract_version": identity.as_dict()["port_contract_version"],
+            "port_schema_set_digest": identity.schema_set_digest,
+        },
+        "runtime": {
+            "platform": reading.platform,
+            "uid": reading.uid,
+            "gid": reading.gid,
+            "registered_operations": list(service._router.operations()),
+        },
+    }
+    return {
+        "outcome": "succeeded", "usage_finality": "final",
+        "remote_terminal_observed": "succeeded", "reason_code": "provider_terminal",
+        "usage": {**_ZERO_USAGE, "output_bytes": len(canonical_json(output))},
+        "output": output,
+    }
+
+
+# the code-owned semantic registry of this worker: exact port operations only
+_OPERATIONS: MappingProxyType[str, object] = MappingProxyType({"status": _status_operation})
+
 
 class _Router:
-    """The worker's private router. Its semantic registry is empty in this
-    slice: nothing can be registered through it, and the reply reports the
-    exact (empty) key set. The T087 semantic registry is not this object."""
+    """The worker's private router over the code-owned operation table. There
+    is no registration surface: the table is fixed at import, keyed by
+    tool-port-v1 operation names, and the probe reply reports its exact key
+    set. An unregistered operation is a typed refusal, never a placeholder."""
 
     __slots__ = ("_handlers",)
 
     def __init__(self) -> None:
-        self._handlers: MappingProxyType[str, object] = MappingProxyType({})
+        self._handlers: MappingProxyType[str, object] = _OPERATIONS
 
     def operations(self) -> tuple[str, ...]:
         return tuple(sorted(self._handlers))
+
+    def execute(self, service: WorkerProbeService, request, deadline) -> dict:
+        handler = self._handlers.get(request.operation)
+        if handler is None:
+            return {
+                "outcome": "failed", "usage_finality": "final",
+                "remote_terminal_observed": "failed", "reason_code": "validation_failed",
+                "usage": dict(_ZERO_USAGE), "output": None,
+            }
+        return handler(service, request, deadline)
 
     def __reduce__(self) -> object:
         raise TypeError("the worker router is not serializable")
@@ -187,16 +251,22 @@ class WorkerProbeService:
         digests: tuple[str, str] | None = None
         answered = 0
         connection.recheck()
+        # the first authenticated application frame selects the mode by its
+        # exact request schema (contract §3): probe or execute, never both
+        first = connection.read(deadline=deadline)
+        if peek_schema(first.payload) == EXECUTE_SCHEMA:
+            return self._serve_execute(connection, first, deadline)
         while answered < MAX_PROBES:
-            try:
-                frame = connection.read(deadline=deadline)
-            except broker.TransportClosed:
-                if answered:
+            if first is not None:
+                frame, first = first, None
+            else:
+                try:
+                    frame = connection.read(deadline=deadline)
+                except broker.TransportClosed:
                     # the requester ended the connection after a reply; a
                     # truncated later request is indistinguishable and is
                     # equally the requester's end of the exchange
                     return answered
-                raise
             envelope = frame.envelope
             if envelope.message_type != REQUEST_TYPE or envelope.correlation_id is not None:
                 raise ProbeServiceError()
@@ -204,6 +274,8 @@ class WorkerProbeService:
             if message_id in seen_ids:
                 raise ProbeServiceError()
             seen_ids.add(message_id)
+            if peek_schema(frame.payload) != PROBE_SCHEMA:
+                raise ProbeServiceError()  # the mode was selected by the first frame
             request = parse_probe_request(frame.payload)
             pair = (request.request_blob_sha256, request.receipt_blob_sha256)
             if digests is None:
@@ -243,6 +315,33 @@ class WorkerProbeService:
             answered += 1
             connection.recheck()
         return answered
+
+    def _serve_execute(self, connection: listener.ExtensionConnection, frame,
+                       deadline: broker.Deadline) -> int:
+        """Execute mode: exactly one request, one reply, then the worker closes."""
+
+        envelope = frame.envelope
+        if envelope.message_type != REQUEST_TYPE or envelope.correlation_id is not None:
+            raise ProbeServiceError()
+        message_id = uuid_string(envelope.message_id)
+        request = parse_execute_request(frame.payload)
+        result = self._router.execute(self, request, deadline)
+        reply_id = str(uuid4())
+        while reply_id == message_id:
+            reply_id = str(uuid4())
+        payload = encode_execute_reply(
+            attempt_id=request.attempt_id, operation=request.operation,
+            challenge=request.challenge, **result,
+        )
+        connection.write(
+            message_id=reply_id,
+            correlation_id=message_id,
+            message_type=RESULT_TYPE,
+            payload=payload,
+            deadline=deadline,
+        )
+        connection.recheck()
+        return MAX_EXECUTES
 
     def close(self) -> None:
         if not self._lock.acquire(blocking=False):

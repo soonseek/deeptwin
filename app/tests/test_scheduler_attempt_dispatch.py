@@ -77,7 +77,10 @@ class Transport:
         self.result = result
         self.fault = fault
 
-    def __call__(self, permit, request):
+    def __call__(self, permit, request, window):
+        # the consumed one-shot window travels with the permit (T087 slice)
+        assert type(window).__name__ == "ConsumedDispatchWindow"
+        assert window.permit is permit
         self.calls.append((permit, request))
         if self.fault is not None:
             raise self.fault
@@ -392,3 +395,20 @@ def test_a_success_with_an_unresolvable_result_is_an_unknown_outcome(tmp_path):
     assert not any(
         entry[0].attempt_id == attempt_id for entry in subject.ledger._pending_permits.values()
     )
+
+
+def test_a_result_the_ledger_cannot_observe_is_an_unknown_outcome(tmp_path):
+    # the transport vocabulary admits a pair the ledger refuses (an unknown outcome
+    # claiming a known remote terminal): recorded as unknown, never stranded
+    subject, run = started(tmp_path)
+    claimed = na.AttemptTransportResult(
+        outcome="outcome_unknown", result_ref=None, usage_finality="unknown",
+        remote_terminal_observed="failed", reason_code="transport_unknown", usage=None,
+    )
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, dispatcher(subject, Transport(claimed)), handlers(subject, [])).run()
+    attempt_id = writer_attempt_id(run)
+    stored = subject.ledger.get_attempt(attempt_id)
+    assert stored["terminal_outcome"] == "outcome_unknown" and stored["phase"] == "terminal"
+    assert stored["remote_terminal_observed"] == "not_observed"
+    assert budget_row(subject, na.reservation_identity(attempt_id))["state"] == "unknown"

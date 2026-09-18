@@ -184,7 +184,7 @@ def test_observation_against_the_actual_probe_service_yields_the_evidence_blob(o
         reply = probe["reply"]
         assert reply["service_identity"] == spec.responder_service
         assert reply["component"]["build_identity_digest"] == expected.build_identity_digest
-        assert reply["runtime"]["registered_operations"] == []
+        assert reply["runtime"]["registered_operations"] == ["status"]  # T087 execute slice
     assert "observed_at" in value and value["observed_at"].endswith("Z")
     # the evidence is an inert frozen value: no live socket, no construction, no mutation
     with pytest.raises(TypeError):

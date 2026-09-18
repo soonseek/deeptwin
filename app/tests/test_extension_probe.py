@@ -9,7 +9,8 @@ most two probes (distinct message ids and nonces, identical digest pair)
 with replies built from an actual `read_current` each, rechecks every fence
 before the first read and after each reply, and closes after the second
 reply. The private router's semantic registry is empty: the reply says
-`registered_operations=[]`. `extension_worker.main()` parses only the fixed
+`registered_operations=["status"]` since the T087 execute slice (see
+test_extension_execute.py). `extension_worker.main()` parses only the fixed
 argv and serves until stopped.
 
 macOS honesty: the listener, source and fences run through the same seams
@@ -220,7 +221,8 @@ def test_service_opens_source_before_listener_and_answers_two_probes(slot, monke
                 assert reply.component.port_contract_version == "tool-port-v1"
                 assert reply.runtime.platform == "linux/amd64"
                 assert (reply.runtime.uid, reply.runtime.gid) == (UID, GID)
-                assert reply.runtime.registered_operations == ()
+                # the code-owned registry carries `status` (T087 execute slice)
+                assert reply.runtime.registered_operations == ("status",)
             assert len(set(ids)) == 4
             assert len(reads) == 2  # one actual read per probe, never readiness
             assert reply.component.port_schema_set_digest == (
@@ -493,9 +495,9 @@ def test_open_failure_after_the_source_releases_every_descriptor(slot, monkeypat
     assert open_fds() == baseline
 
 
-def test_registry_is_empty_and_private(slot):
+def test_registry_is_code_owned_and_private(slot):
     router = ep._Router()
-    assert router.operations() == ()
+    assert router.operations() == ("status",)  # the T087 execute slice's one operation
     assert not hasattr(router, "register")
     with pytest.raises(TypeError):
         pickle.dumps(router)

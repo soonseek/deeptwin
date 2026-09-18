@@ -1120,3 +1120,16 @@ RED-first. Dispatch **9 passed**; covering dispatch/graph execution/checkpoints/
 **117 passed**; Ruff clean. Details and hashes in `scheduler-attempt-dispatch-t040.md`. Full regression follows.
 Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6135 passed, 2 skipped, 1 warning, 369
 subtests passed in 881.56s** — the two Linux-only skips. Hashes re-verified unchanged before commit.
+
+## T087/T018 slice — worker execute operation and the real attempt transport (2026-09-18)
+
+RED retained (both new modules absent), GREEN after the execute grammar, the worker's code-owned `status`
+operation with first-frame mode selection, the control-side transport over the authenticated extension
+client and the dispatcher passing the consumed window; three adapted pins (`registered_operations`
+`[]` → `["status"]`). Independent review ACCEPT WITH CHANGES (unknown-terminal invariant inside the fault
+boundary, contract amendment, window-bounded exchange, control-measured usage, send-command-keyed sealed
+artifact, dispatch effect carried, `remaining_ms`; four NITs) folded in RED-first. New suites **36
+passed**; covering **266 passed**; Ruff: no new findings. Details and hashes in
+`worker-execute-transport-t087.md`. Full regression follows.
+Full regression (`app/tests deploy/tests`, watchdog 1500 s): **6176 passed, 2 skipped, 1 warning, 369
+subtests passed in 870.68s** — the two Linux-only skips. Hashes re-verified unchanged before commit.

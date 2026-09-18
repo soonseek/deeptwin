@@ -2434,9 +2434,11 @@ Continuation slice, the atomic semantic acceptance + budget settlement
 (`RuntimeLedger.accept_result_and_settle`, `runtime-result-settlement-t040.md`), is complete; the
 Task 6 boundary (transport evidence releases no unknown-use reservation) is preserved. The second
 slice, attempt dispatch through the scheduler (`NodeAttemptDispatcher`, `build_scheduler(attempts=)`,
-`scheduler-attempt-dispatch-t040.md`), is complete with an injected transport only. Next: the core
-semantic-port dependencies (T087 worker-side operation registry / T018 worker message) so a real
-transport can replace the injected one, then the connected browser path.
+`scheduler-attempt-dispatch-t040.md`), is complete. The third, the worker's first real operation
+(`status`) behind the closed execute grammar and the real AF_UNIX attempt transport
+(`worker-execute-transport-t087.md`; contract `extension-worker-probe.md` §2b), replaces the injected
+transport for that operation. Next: the connected browser path under the unchanged canonical plan;
+T087 operations beyond `status` and the artifact stream stay open.
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;
