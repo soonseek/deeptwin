@@ -18,12 +18,12 @@ from .credential_channel import (
     RESULT_TYPE,
     CredentialGatewayClient,
     GatewayServiceError,
-    decode_op,
+    _read_logical_connection,
+    _write_logical_connection,
     encode_op,
-    _read_logical,
-    _write_logical,
 )
 from .credential_vault import CredentialVault, CredentialVaultError
+
 
 class CredentialGatewayService:
     """One vault's frame-served operation surface inside the gateway boundary."""
@@ -78,6 +78,15 @@ class CredentialGatewayService:
             return self._vault.health()
         return self._vault.capabilities()
 
+    @property
+    def spec(self) -> broker.ChannelSpec:
+        return self._spec
+
+    @property
+    def vault(self) -> CredentialVault:
+        """The exact vault served (borrowed by the ingress, never closed through it)."""
+        return self._vault
+
     def serve_one(
         self,
         sock: socket.socket,
@@ -86,12 +95,39 @@ class CredentialGatewayService:
         deadline: broker.Deadline,
         wire_log: list | None = None,
     ) -> None:
-        """Answer exactly one complete logical operation on the authenticated codec."""
+        """Answer exactly one complete logical operation on the authenticated codec (the
+        raw entry: the same engine through a borrowing adapter). One behaviour moved with
+        the shared grammar: a fragment transfer whose reconstruction is not strict JSON is
+        refused before any reply (the codec closed, `GatewayServiceError` raised) where the
+        raw entry once answered a sanitized rejection; every plain request keeps its reply."""
+        from .gateway_connection import _RawConnection
 
-        message_id, incoming = _read_logical(sock, codec, message_type=REQUEST_TYPE,
+        self._serve_connection(_RawConnection(sock, codec), deadline=deadline, wire_log=wire_log)
+
+    def serve_connection(self, owner, *, deadline: broker.Deadline) -> None:
+        """Answer exactly one complete logical operation on a factory-issued owner of
+        this gateway's channel (the owner's session digest must be this spec's, its local
+        side the responder). The owner stays the caller's to close."""
+        from .listener import AuthenticatedConnection
+
+        if type(owner) is not AuthenticatedConnection or type(deadline) is not broker.Deadline:
+            raise GatewayServiceError("an exact issued owner and deadline are required")
+        if (owner.session.channel_spec_sha256 != broker._spec_digest(self._spec)
+                or owner.session.local_service != self._spec.responder_service):
+            raise GatewayServiceError("the owner is not this gateway's responder")
+        self._serve_connection(owner, deadline=deadline)
+
+    def _serve_connection(self, connection, *, deadline, wire_log=None) -> None:
+        message_id, _incoming, request = _read_logical_connection(connection, message_type=REQUEST_TYPE,
             correlation_id=None, deadline=deadline)
+        self._serve_logical(connection, message_id=message_id, request=request, deadline=deadline,
+                            wire_log=wire_log)
+
+    def _serve_logical(self, connection, *, message_id, request, deadline, wire_log=None) -> None:
+        """The already-read logical handoff: one dispatch of one decoded request, one
+        bounded reply correlated to it. `_dispatch` stays the sole operation/field
+        validator; its sanitized codes are the only failure the wire carries."""
         try:
-            request = decode_op(incoming)
             deadline.require()
             result = self._dispatch(request)
             response = {"ok": True, "result": result}
@@ -102,8 +138,8 @@ class CredentialGatewayService:
             payload = encode_op(response)
         if wire_log is not None:
             wire_log.append(("out", payload))
-        _write_logical(
-            sock, codec,
+        _write_logical_connection(
+            connection,
             message_id=str(uuid4()),
             correlation_id=message_id,
             message_type=RESULT_TYPE,

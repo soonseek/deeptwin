@@ -91,7 +91,10 @@ def test_a_persisted_approval_resolves_its_owner_evidence_in_this_vault(vault, d
     bindings = approval.model_bindings
     for wrong in (
         tampered(approver_evidence=other.approver_evidence),  # another design's decision
-        tampered(approver_id=other.approver_id[:-1] + "0"),
+        # the last hex digit replaced by one it is not: a 1-in-16 no-op tamper (an id
+        # already ending in "0") was a hidden flake of this pin
+        tampered(approver_id=approval.approver_id[:-1]
+                 + ("1" if approval.approver_id.endswith("0") else "0")),
         tampered(approved_at="2026-09-13T09:00:00.000000Z"),
         tampered(model_bindings=dataclasses.replace(bindings, kind="grant")),  # kind is bound
     ):

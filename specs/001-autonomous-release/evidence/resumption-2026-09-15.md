@@ -1410,3 +1410,17 @@ full run 2 **9,201 passed / 0 failed / 82 errors** (the errors' hidden cause rev
 full run 3 **9,280 passed / 3 failed / 0 errors** (1h22m) — the three pass alone and are timing/order-dependent under
 load, recorded as such. Checkpoint committed.
 
+## Task 51 — the owned shared gateway prerequisite, G1–G10 (2026-09-22)
+
+Three TDD stages, each RED retained (the profile module absent; no `deadline`/`read_duplex`/issuance on the owner; the
+ingress module absent; the client's channel keyed on raw resources), GREEN after each implementation, each with an
+independent adversarial review: A ACCEPT WITH CHANGES (1 MUST: a concurrent close mid-poll leaked a bare `ValueError`),
+B ACCEPT WITH CHANGES (1 MUST: a listener fault escaped `for_gateway`), C **REJECT** (3 MUST: a losing commit tore down
+the in-flight ready-cancel winner; a failed cancel-frame write left a dead dialogue on the runtime's process-lifetime
+client; a flaky gate test), then a re-review of the C closures ACCEPT WITH CHANGES (1 MUST: the stream engine's wrapper
+escaped unmapped; SHOULD: an identity-blind close, the claim order not the wire order, the raw pair's re-raise). Every
+finding folded RED-first (fourteen closure tests RED first in stage C alone). Owned module **40**, owner **16**, profile
+**3**; the raw pair and its consumers **258**; Ruff: no finding introduced. Full regression on the frozen identities:
+**9,341 passed, 1 failed, 2 skipped** (Linux-only), 369 subtests, 1h22m — the failure a pre-existing 1-in-16 flake of a
+design-store pin (a no-op tamper), fixed at cause and looped 12× green. Details and hashes in
+`owned-shared-gateway-task51.md`.

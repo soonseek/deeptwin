@@ -7,18 +7,29 @@ import time
 from copy import deepcopy
 from datetime import datetime, timezone
 from queue import Empty, Queue
-import select
 from uuid import uuid4
 
 from ..domain.refs import canonical_json
 from . import broker
-from .artifact_stream import (ArtifactDescriptor, BytesSink, BytesSource, StreamLimits,
-                              receive_batch, send_batch)
+from .artifact_stream import (
+    ArtifactDescriptor,
+    BytesSink,
+    BytesSource,
+    StreamLimits,
+    receive_batch,
+    send_batch,
+)
 from .credential_channel import decode_op, encode_op
+from .listener import ListenerError
 from .provider_gateway import CredentialedProviderTransport, GatewayError
 from .provider_send_messages import (
-    GatewayExchangeLease, ProviderSendCancellation, ProviderSendError, ProviderSendObservation,
-    ProviderSendPrepare, failure_class, prepare_from_header,
+    GatewayExchangeLease,
+    ProviderSendCancellation,
+    ProviderSendError,
+    ProviderSendObservation,
+    ProviderSendPrepare,
+    failure_class,
+    prepare_from_header,
 )
 
 _REQUEST, _RESULT = "credential_op", "credential_result"
@@ -37,21 +48,22 @@ def _sequence(value, expected):
 
 
 class _GatewayStreamTransport:
-    """Artifact frames are asymmetric: gateway receives op and sends result frames."""
-    def __init__(self, sock, codec, correlation_id, deadline, *, service=None,
+    """Artifact frames are asymmetric: gateway receives op and sends result frames.
+    Over the private connection surface: the owner or the raw adapter alike."""
+    def __init__(self, connection, correlation_id, deadline, *, service=None,
                  lease=None, dialogue_id=None, sequence=None):
-        self.sock, self.codec = sock, codec
+        self.connection = connection
         self.correlation_id, self.deadline = correlation_id, deadline
         self.service, self.lease = service, lease
         self.dialogue_id, self.sequence = dialogue_id, sequence
 
     def send(self, payload):
-        self.codec.write(self.sock, message_id=str(uuid4()), correlation_id=self.correlation_id,
-                         message_type=_RESULT, payload=payload, deadline=self.deadline)
+        self.connection.write(message_id=str(uuid4()), correlation_id=self.correlation_id,
+                              message_type=_RESULT, payload=payload, deadline=self.deadline)
 
     def receive(self):
         while True:
-            frame = self.codec.read(self.sock, deadline=self.deadline)
+            frame = self.connection.read(deadline=self.deadline)
             if (frame.envelope.message_type != _REQUEST
                     or frame.envelope.correlation_id != self.correlation_id):
                 raise ProviderSendError("stream frame is not phase-bound")
@@ -67,7 +79,7 @@ class _GatewayStreamTransport:
                     raise ProviderSendError("result-stream cancellation is not bound")
                 self.sequence["core"] += 1
                 cancelled = self.service.cancel(self.lease.exchange_id, value["reason"])
-                self.codec.write(self.sock, message_id=str(uuid4()),
+                self.connection.write(message_id=str(uuid4()),
                     correlation_id=self.correlation_id, message_type=_RESULT,
                     payload=encode_op({"schema": "provider-send-cancelled-v1",
                         "dialogue_id": self.dialogue_id,
@@ -92,6 +104,18 @@ class ProviderSendService:
         self._states = {}
         self._identity = object()
         self._usable = True
+
+    @property
+    def usable(self) -> bool:
+        """False once an HTTP thread outlived its cleanup deadline: the service refuses
+        further dialogues rather than start beside the retained thread."""
+        return self._usable
+
+    @property
+    def vault(self):
+        """The exact vault the transport delivers custody from (borrowed, never closed
+        here); the ingress requires the credential service to share it."""
+        return self._transport._vault
 
     def prepare(self, message: ProviderSendPrepare, *, deadline_end_monotonic=None):
         if type(message) is not ProviderSendPrepare:
@@ -323,33 +347,54 @@ class ProviderSendService:
         return bounded
 
     def serve_authenticated(self, sock, codec, *, deadline):
-        """Serve one prepare/commit/result dialogue on an authenticated FrameCodec."""
+        """Serve one prepare/commit/result dialogue on an authenticated FrameCodec (the
+        raw entry: the same engine through a borrowing adapter)."""
+        from .gateway_connection import _RawConnection
+
         if type(codec) is not broker.FrameCodec or type(deadline) is not broker.Deadline:
             raise ProviderSendError("authenticated transport required")
+        self._serve_dialogue(_RawConnection(sock, codec), start_frame=None, header=None, deadline=deadline)
+
+    def serve_connection(self, owner, *, deadline):
+        """Serve one dialogue on a factory-issued owner of the gateway channel whose local
+        side is the responder; the owner stays the caller's to close."""
+        from .listener import AuthenticatedConnection
+
+        if type(owner) is not AuthenticatedConnection or type(deadline) is not broker.Deadline:
+            raise ProviderSendError("authenticated transport required")
+        self._serve_dialogue(owner, start_frame=None, header=None, deadline=deadline)
+
+    def _serve_dialogue(self, connection, *, start_frame, header, deadline):
+        """The engine: the actual first frame and its decoded header when a router already
+        read them (both or neither), else read here; the existing prepare/header/body
+        validators, ready, commit-or-cancel, the HTTP exchange polled beside the owner's
+        control frames, the result and its stream, all under the shrinking deadlines."""
+        if (start_frame is None) != (header is None):
+            raise ProviderSendError("a start frame and its header travel together")
         exchange_id = None
         lease = None
         exchange_thread = None
         try:
-            start = codec.read(sock, deadline=deadline)
+            start = connection.read(deadline=deadline) if start_frame is None else start_frame
             if start.envelope.message_type != _REQUEST or start.envelope.correlation_id is not None:
                 raise ProviderSendError("prepare frame is not bound")
-            header = _control(start.payload)
+            header = _control(start.payload) if header is None else header
             deadline = self._prepare_wire_deadline(header, deadline)
             sink = BytesSink()
             if header.get("body_descriptor") is not None:
                 descriptor = self._descriptor(header["body_descriptor"], header.get("request_id"))
-                receive_batch(_GatewayStreamTransport(sock, codec, start.envelope.message_id, deadline),
+                receive_batch(_GatewayStreamTransport(connection, start.envelope.message_id, deadline),
                     [descriptor], [sink], limits=_STREAM_LIMITS)
             prepared = prepare_from_header(header, b"" if header.get("body_descriptor") is None
                                            else sink.value)
             ready = self.prepare(prepared, deadline_end_monotonic=deadline.end_monotonic)
             exchange_id = ready["exchange_id"]
             ready_id = str(uuid4())
-            codec.write(sock, message_id=ready_id, correlation_id=start.envelope.message_id,
+            connection.write(message_id=ready_id, correlation_id=start.envelope.message_id,
                 message_type=_RESULT, payload=encode_op({"schema": "provider-send-ready-v1",
                     "dialogue_id": prepared.dialogue_id, "seq": 0, **ready}),
                 deadline=deadline)
-            commit = codec.read(sock, deadline=deadline)
+            commit = connection.read(deadline=deadline)
             value = _control(commit.payload)
             if (commit.envelope.message_type == _REQUEST
                     and commit.envelope.correlation_id == start.envelope.message_id
@@ -360,7 +405,7 @@ class ProviderSendService:
                     and _sequence(value["seq"], 1)
                     and value["exchange_id"] == exchange_id):
                 cancelled = self.cancel(exchange_id, value["reason"])
-                codec.write(sock, message_id=str(uuid4()), correlation_id=start.envelope.message_id,
+                connection.write(message_id=str(uuid4()), correlation_id=start.envelope.message_id,
                     message_type=_RESULT, payload=encode_op({
                         "schema": "provider-send-cancelled-v1", "dialogue_id": prepared.dialogue_id,
                         "seq": 1,
@@ -404,10 +449,12 @@ class ProviderSendService:
                     break
                 except Empty:
                     pass
-                readable, _, _ = select.select([sock], [], [], min(0.010, deadline.require()))
-                if not readable:
+                # the owner is polled in bounded idle slices beside the completion queue: a
+                # silent peer never blocks a completed exchange, a cancel never waits behind
+                # a full-deadline read
+                control = connection.read_duplex(deadline=deadline, idle_timeout_ms=10)
+                if control is None:
                     continue
-                control = codec.read(sock, deadline=deadline)
                 control_value = _control(control.payload)
                 if (control.envelope.message_type != _REQUEST
                         or control.envelope.correlation_id != start.envelope.message_id
@@ -421,7 +468,7 @@ class ProviderSendService:
                     raise ProviderSendError("exchange control frame is not bound")
                 core_seq += 1
                 cancelled = self.cancel(lease.exchange_id, control_value["reason"])
-                codec.write(sock, message_id=str(uuid4()), correlation_id=start.envelope.message_id,
+                connection.write(message_id=str(uuid4()), correlation_id=start.envelope.message_id,
                     message_type=_RESULT, payload=encode_op({
                         "schema": "provider-send-cancelled-v1", "dialogue_id": prepared.dialogue_id,
                         "seq": gateway_seq,
@@ -441,7 +488,7 @@ class ProviderSendService:
                 "complete" if observed.failure_class is None and observed.status is not None
                 and 200 <= observed.status < 300 else "unknown")
             result_id = str(uuid4())
-            codec.write(sock, message_id=result_id, correlation_id=start.envelope.message_id,
+            connection.write(message_id=result_id, correlation_id=start.envelope.message_id,
                 message_type=_RESULT, payload=encode_op({
                     "schema": "provider-send-result-v1", "dialogue_id": prepared.dialogue_id,
                     "seq": gateway_seq, "exchange_id": observed.exchange_id,
@@ -454,12 +501,13 @@ class ProviderSendService:
                 deadline=deadline)
             if response_descriptor is not None:
                 stream_sequence = {"core": core_seq, "gateway": gateway_seq + 1}
-                send_batch(_GatewayStreamTransport(sock, codec, start.envelope.message_id, deadline,
+                send_batch(_GatewayStreamTransport(connection, start.envelope.message_id, deadline,
                     service=self, lease=lease, dialogue_id=prepared.dialogue_id,
                     sequence=stream_sequence),
                     [self._descriptor(response_descriptor, prepared.request_id)],
                     [BytesSource(observed.body)], limits=_STREAM_LIMITS)
-        except (broker.BrokerError, ValueError, TypeError, OSError) as exc:
+        except (broker.BrokerError, ListenerError, ValueError, TypeError, OSError):
+            # the owner's listener categories are adapted here, at the engine boundary
             raise ProviderSendError("authenticated provider dialogue failed") from None
         finally:
             if lease is not None and exchange_thread is not None and exchange_thread.is_alive():

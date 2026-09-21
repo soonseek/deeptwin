@@ -2470,9 +2470,12 @@ and the intake page over it (`intake-page-t023.md`); the approval's verification
 runtime.md does not yet state — open); the tool boundary's effect vocabulary is the ports contract's
 (`tool-effect-vocabulary-t047-t087.md`); the ToolDefinition-backed gate landed (`tooldefinition-effect-gate-t087.md`).
 2026-09-22: the parallel orchestration's tasks 27–50 (below, `## Continuation` at the end of this plan) were brought to
-one green full run (`merged-tree-reconciliation-2026-09-22.md`) and checkpointed. Next: Task 51 (the owned shared
-gateway prerequisite, the plan's own tail) under this loop's review cycle, then run creation from the intake once the
-consent/design line records a run consent and an environment.
+one green full run (`merged-tree-reconciliation-2026-09-22.md`) and checkpointed. Task 51 (the owned shared gateway
+prerequisite, the plan's own tail) landed under this loop's review cycle in three reviewed stages plus a re-review of
+the stage C closures (`owned-shared-gateway-task51.md`): the fixed profile, the generic owner, the shared ingress and
+the owned send dialogue with linearized control. Next: run creation from the intake once the consent/design line
+records a run consent and an environment; the semantic artifact admission and current binding that connect the owned
+gateway to the runtime (Task 51's own "next" in its plan) follow it.
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;
@@ -4429,11 +4432,14 @@ your complete requirements, exact values, owned files and test gates. Then read
 the adopted master and its full R1 snapshot identified there. Do not reread this
 entire resumption plan or reopen accepted Task49.
 
-- [ ] Pin the fixed profile and generic owned acquisition/duplex lifetime with tests.
-- [ ] Share the bounded credential grammar and authenticated vault/send first-frame ingress.
-- [ ] Implement owned send/control/deadline/cleanup behavior and actual positive HTTP proofs.
-- [ ] Self-review the exact12paths, report G1–G10 evidence and hold for independent review.
-- [ ] Resolve review findings; root runs final13 once and records bounded acceptance.
+- [x] Pin the fixed profile and generic owned acquisition/duplex lifetime with tests.
+- [x] Share the bounded credential grammar and authenticated vault/send first-frame ingress.
+- [x] Implement owned send/control/deadline/cleanup behavior and actual positive HTTP proofs.
+- [x] Self-review the exact12paths, report G1–G10 evidence and hold for independent review.
+- [x] Resolve review findings; root runs final13 once and records bounded acceptance.
+  (2026-09-22, this loop: three stage reviews A/B/C and a re-review of the C closures, every
+  finding folded RED first; the plan's final13 on the held bytes and one full regression;
+  `evidence/owned-shared-gateway-task51.md`.)
 
 One writer only, no helpers or commits. Global constraints and all exact paths are
 in the complete task plan. Report: `.superpowers/sdd/resumption-plan/task-51-report.md`.

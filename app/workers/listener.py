@@ -8,10 +8,11 @@ skip the broker's Linux peer-credential and mutual-handshake checks.
 
 from __future__ import annotations
 
+import contextlib
+import errno
 import fcntl
 import hashlib
 import hmac
-import errno
 import json
 import os
 import re
@@ -238,8 +239,32 @@ class VerifiedListener:
         self.close()
 
 
+_ISSUE = object()  # the factories' private issuance token
+_IDLE_SLICE_MAX_MS = 10
+
+
 class AuthenticatedConnection:
-    __slots__ = ("_closed", "_codec", "_generation", "_socket", "session")
+    """One factory-issued generic owner: the accepted or connected socket, its
+    authenticated session and codec, and the generation lease it was
+    acquired under, retained from acquisition to close (Task51, design §6).
+
+    The owner keeps one deadline, bounded by the channel's operation cap and
+    retained before acquisition; every later read, write or poll takes the
+    minimum of the supplied and the retained end. One nonblocking reader latch
+    covers `read` and `read_duplex` (a competing read fails before consuming a
+    byte and never closes the legitimate reader); a bounded writer latch
+    encodes through the codec and writes the encoded bytes without holding the
+    codec's lock over socket waits (a failed encoded write closes the owner:
+    the advanced sequence is never reused). Close detaches its finite
+    resources first, shuts the socket down to wake readers and writers,
+    attempts codec, socket and generation independently, and raises the first
+    cleanup failure. Nonconstructible, uncopyable, unserializable. The generic
+    owner gains no extension fences (no recheck, mount or readiness claims);
+    an accepted owner outlives listener close.
+    """
+
+    __slots__ = ("_closed", "_codec", "_codec_was_closed", "_deadline", "_generation",
+                 "_read_latch", "_socket", "_write_latch", "session")
 
     def __init__(
         self,
@@ -248,12 +273,22 @@ class AuthenticatedConnection:
         session: broker.AuthenticatedSession,
         codec: broker.FrameCodec,
         generation: ipc_root.GenerationLease,
+        deadline: broker.Deadline,
+        _issued: object = None,
     ) -> None:
+        if _issued is not _ISSUE:
+            raise TypeError("AuthenticatedConnection is issued by the listener factories only")
+        if type(deadline) is not broker.Deadline:
+            raise ListenerIntegrityError()
         self._socket = connection
         self.session = session
         self._codec = codec
         self._generation = generation
+        self._deadline = deadline
         self._closed = False
+        self._codec_was_closed = False
+        self._read_latch = threading.Lock()
+        self._write_latch = threading.Lock()
 
     @property
     def closed(self) -> bool:
@@ -261,7 +296,21 @@ class AuthenticatedConnection:
 
     @property
     def codec_closed(self) -> bool:
-        return self._codec.closed
+        codec = self._codec
+        if codec is None:
+            return self._codec_was_closed
+        return codec.closed
+
+    @property
+    def deadline(self) -> broker.Deadline:
+        """The retained end: the caller's deadline at acquisition, bounded by
+        the channel's operation cap."""
+        return self._deadline
+
+    def _effective(self, deadline: broker.Deadline) -> broker.Deadline:
+        if type(deadline) is not broker.Deadline:
+            raise ListenerIntegrityError()
+        return broker.Deadline(min(deadline.end_monotonic, self._deadline.end_monotonic))
 
     def write(
         self,
@@ -272,39 +321,128 @@ class AuthenticatedConnection:
         payload: bytes,
         deadline: broker.Deadline,
     ) -> None:
+        effective = self._effective(deadline)
         if self._closed:
             raise broker.TransportClosed()
+        if not self._write_latch.acquire(timeout=effective.require()):
+            raise broker.DeadlineExceeded()
         try:
-            self._codec.write(
-                self._socket,
-                message_id=message_id,
-                correlation_id=correlation_id,
-                message_type=message_type,
-                payload=payload,
-                deadline=deadline,
-            )
-        except BaseException:
-            self.close()
-            raise
+            codec, sock = self._codec, self._socket
+            if self._closed or codec is None or sock is None:
+                raise broker.TransportClosed()
+            try:
+                # the codec's own lock is held for the encode only; the socket wait
+                # happens outside it so a reader or a close is never blocked behind it
+                raw = codec.encode(
+                    message_id=message_id,
+                    correlation_id=correlation_id,
+                    message_type=message_type,
+                    payload=payload,
+                )
+                try:
+                    broker._validate_socket(sock)
+                except broker.EndpointViolation:
+                    if self._closed:  # a concurrent close, not an endpoint fault
+                        raise broker.TransportClosed() from None
+                    raise
+                broker._send_exact(sock, struct.pack(">I", len(raw)) + raw, effective)
+            except BaseException:
+                self._close_after_failure()
+                raise
+        finally:
+            self._write_latch.release()
 
     def read(self, *, deadline: broker.Deadline) -> broker.ReceivedFrame:
+        frame = self.read_duplex(deadline=deadline)
+        if frame is None:  # closed by construction: no idle slice was asked for
+            raise broker.TransportClosed(dispatch_effect="outcome_unknown")
+        return frame
+
+    def read_duplex(
+        self,
+        *,
+        deadline: broker.Deadline,
+        idle_timeout_ms: int | None = None,
+    ) -> broker.ReceivedFrame | None:
+        """Receive one authenticated frame, or None when `idle_timeout_ms` (an
+        exact int 1..10) elapsed before any prefix byte became readable. Once a
+        prefix begins the whole frame is finished under the effective deadline
+        or the owner closes: a short poll never consumes half a frame. EOF,
+        errors and a partial prefix or body are never idle."""
+
+        if idle_timeout_ms is not None and (
+            type(idle_timeout_ms) is not int or not 1 <= idle_timeout_ms <= _IDLE_SLICE_MAX_MS
+        ):
+            raise broker.ChannelConfigurationError()
+        effective = self._effective(deadline)
         if self._closed:
             raise broker.TransportClosed(dispatch_effect="outcome_unknown")
+        if not self._read_latch.acquire(blocking=False):
+            raise ListenerBusy()
         try:
-            return self._codec.read(self._socket, deadline=deadline)
-        except BaseException:
+            codec, sock = self._codec, self._socket
+            if self._closed or codec is None or sock is None:
+                raise broker.TransportClosed(dispatch_effect="outcome_unknown")
+            try:
+                effective.require(dispatch_effect="outcome_unknown")
+                if idle_timeout_ms is not None:
+                    slice_s = min(idle_timeout_ms / 1000.0, effective.remaining())
+                    try:
+                        readable, _writable, _errors = select.select([sock], [], [], slice_s)
+                    except (OSError, ValueError):
+                        # a concurrent close emptied the descriptor mid-poll
+                        raise broker.TransportClosed(dispatch_effect="outcome_unknown") from None
+                    if not readable:
+                        return None
+                try:
+                    broker._validate_socket(sock)
+                except broker.EndpointViolation:
+                    if self._closed:  # a concurrent close, not an endpoint fault
+                        raise broker.TransportClosed(dispatch_effect="outcome_unknown") from None
+                    raise
+                header = broker._read_exact(sock, 4, effective)
+                (size,) = struct.unpack(">I", header)
+                if not 1 <= size <= codec._spec.max_frame_bytes:
+                    raise broker.ProtocolViolation(dispatch_effect="outcome_unknown")
+                raw = broker._read_exact(sock, size, effective)
+                frame = codec.decode(raw)  # the codec's lock for the MAC/sequence check only
+                if self._closed:
+                    raise broker.TransportClosed(dispatch_effect="outcome_unknown")
+                return frame
+            except BaseException:
+                self._close_after_failure()
+                raise
+        finally:
+            self._read_latch.release()
+
+    def _close_after_failure(self) -> None:
+        with contextlib.suppress(Exception):  # the operation failure is the primary
             self.close()
-            raise
 
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
+        # the closed latch detaches the finite set before any fallible close
+        codec, connection, generation = self._codec, self._socket, self._generation
+        self._codec = self._socket = self._generation = None
+        first_error = None
         try:
-            self._codec.close()
-            self._socket.close()
-        finally:
-            self._generation.close()
+            connection.shutdown(socket.SHUT_RDWR)  # wakes a blocked reader or writer
+        except OSError as error:
+            if error.errno not in {errno.ENOTCONN, errno.EBADF}:
+                first_error = error
+        except BaseException as error:  # noqa: BLE001 - recorded, every resource still attempted
+            first_error = error
+        for owned in (codec, connection, generation):
+            try:
+                owned.close()
+            except BaseException as error:  # noqa: BLE001 - recorded, every resource still attempted
+                if first_error is None:
+                    first_error = error
+        self._codec_was_closed = codec.closed  # honest even when the codec's own close failed
+        if first_error is not None:
+            raise first_error
 
     def __enter__(self) -> Self:
         if self._closed:
@@ -313,6 +451,18 @@ class AuthenticatedConnection:
 
     def __exit__(self, _kind: object, _value: object, _traceback: object) -> None:
         self.close()
+
+    def __copy__(self) -> object:
+        raise TypeError("AuthenticatedConnection is not copyable")
+
+    def __deepcopy__(self, _memo: object) -> object:
+        raise TypeError("AuthenticatedConnection is not copyable")
+
+    def __reduce__(self) -> object:
+        raise TypeError("AuthenticatedConnection is not serializable")
+
+    def __repr__(self) -> str:
+        return f"AuthenticatedConnection(closed={self._closed})"
 
 
 class WorkerListener:
@@ -361,18 +511,32 @@ class WorkerListener:
         if self._closed or type(deadline) is not broker.Deadline:
             raise ListenerIntegrityError()
         operation_deadline = deadline.bounded(self.spec.max_operation_ms)
+        connection: socket.socket | None = None
         try:
             self._socket.settimeout(operation_deadline.require())
             connection, _address = self._socket.accept()
             broker._validate_socket(connection)
-            self._socket.settimeout(None)
-            return connection
+            result, connection = connection, None
+            return result
         except broker.BrokerError:
             raise
         except TimeoutError:
             raise broker.DeadlineExceeded() from None
         except OSError:
             raise broker.TransportClosed() from None
+        finally:
+            # an accepted socket that failed validation is unwound here, and the
+            # listening socket's timeout is restored on every exit without replacing
+            # the primary exception
+            if connection is not None:
+                try:
+                    connection.close()
+                except OSError:
+                    pass
+            try:
+                self._socket.settimeout(None)
+            except OSError:
+                pass
 
     def accept_authenticated(
         self,
@@ -380,38 +544,50 @@ class WorkerListener:
         requester_boot_id: str,
         deadline: broker.Deadline,
     ) -> AuthenticatedConnection:
+        if type(deadline) is not broker.Deadline:
+            raise ListenerIntegrityError()
+        # the owner's one deadline is retained before acquisition, bounded by the
+        # channel's operation cap; every later stage takes the minimum of it
+        retained = deadline.bounded(self.spec.max_operation_ms)
         generation = ipc_root.acquire_generation(self.root_spec)
         connection: socket.socket | None = None
+        codec: broker.FrameCodec | None = None
         try:
             if (
                 generation.generation_id != self.record.generation_id
                 or generation.endpoint_identity != self._generation.endpoint_identity
             ):
                 raise ListenerIntegrityError()
-            connection = self._accept_transport(deadline)
+            connection = self._accept_transport(retained)
             session = broker.server_handshake(
                 connection,
                 self.spec,
                 generation.secret,
                 requester_boot_id=requester_boot_id,
                 responder_boot_id=self.record.responder_boot_id,
-                deadline=deadline,
+                deadline=retained,
             )
             codec = broker.FrameCodec(
                 self.spec,
                 session,
                 local_service=self.spec.responder_service,
             )
+            retained.require()
             result = AuthenticatedConnection(
                 connection=connection,
                 session=session,
                 codec=codec,
                 generation=generation,
+                deadline=retained,
+                _issued=_ISSUE,
             )
             connection = None
+            codec = None
             generation = None  # type: ignore[assignment]
             return result
         except BaseException:
+            if codec is not None:
+                codec.close()
             if connection is not None:
                 connection.close()
             raise
@@ -1166,13 +1342,21 @@ def connect_authenticated(
     """Verify readiness, connect to its inode, then complete the public handshake."""
 
     _validate_pair_channel(root, spec)
+    if type(deadline) is not broker.Deadline:
+        raise ListenerIntegrityError()
+    # the owner's one deadline is retained before readiness, connect and handshake,
+    # bounded by the channel's operation cap
+    retained = deadline.bounded(spec.max_operation_ms)
+    retained.require()
     verified = verify_listener(root, spec)
     connection: socket.socket | None = None
+    codec: broker.FrameCodec | None = None
     try:
+        retained.require()
         connection, endpoint_identity, _peer = broker.connect_verified(
             spec,
             local_service=spec.requester_service,
-            deadline=deadline,
+            deadline=retained,
         )
         if (
             endpoint_identity.device != verified.record.socket.device
@@ -1188,23 +1372,31 @@ def connect_authenticated(
             verified.generation.secret,
             requester_boot_id=requester_boot_id,
             responder_boot_id=verified.record.responder_boot_id,
-            deadline=deadline,
+            deadline=retained,
         )
         codec = broker.FrameCodec(
             spec,
             session,
             local_service=spec.requester_service,
         )
+        retained.require()
         result = AuthenticatedConnection(
             connection=connection,
             session=session,
             codec=codec,
             generation=verified.generation,
+            deadline=retained,
+            _issued=_ISSUE,
         )
         connection = None
+        codec = None
         verified._closed = True
         return result
     finally:
+        # every acquired resource is unwound on failure; the original exception is
+        # preserved (the generation is released by the verifier's own close)
+        if codec is not None:
+            codec.close()
         if connection is not None:
             connection.close()
         verified.close()

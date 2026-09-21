@@ -424,16 +424,16 @@ def test_slow_partial_transfer_uses_one_absolute_deadline(tmp_path):
 
 def test_deadline_is_checked_after_strict_decode_before_dispatch(tmp_path, monkeypatch):
     import time
-    from app.workers import credential_gateway_service as service_module
+    from app.workers import credential_channel as channel_module
     from app.workers.credential_channel import encode_op
     from app.workers.credential_contracts import b64u
     args = initialized(tmp_path)
-    original = service_module.decode_op
+    original = channel_module.decode_op
     def slow(payload):
         value = original(payload)
         time.sleep(0.08)
         return value
-    monkeypatch.setattr(service_module, "decode_op", slow)
+    monkeypatch.setattr(channel_module, "decode_op", slow)  # the one grammar's strict decode
     with CredentialVault(**args) as vault, authenticated_pair(tmp_path) as (left, cc, right, sc, spec, boot):
         request = dict(schema="credential-op-v2", op="store_at", metadata=metadata(), secret_b64u=b64u(b"synthetic"))
         cc.write(left, message_id=str(uuid4()), correlation_id=None, message_type="credential_op", payload=encode_op(request), deadline=broker.Deadline.after_ms(1000))

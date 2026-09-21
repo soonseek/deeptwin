@@ -1,6 +1,6 @@
 # DeepTwin autonomous delivery progress
 
-Updated: 2026-09-21 (Asia/Seoul). Status: Claude Code additions inspected; continuous implementation
+Updated: 2026-09-22 (Asia/Seoul). Status: Claude Code additions inspected; continuous implementation
 resumed from the existing worktree at a2f85d5 with the six inherited dirty files preserved. The
 subsequent task-scoped changes below are also uncommitted. ADR-014 revision 7 closed the design gate; T089's
 build-input scope remains closed. No whole-product implementation or release qualification is
@@ -8,7 +8,18 @@ implied. See `evidence/resumption-2026-09-15.md` and the scoped `resumption-plan
 
 ## Current resumption checkpoints
 
-### Latest snapshot — Task49 accepted; Task51 shared gateway implementation next
+### Latest snapshot — Task51 owned shared gateway landed (2026-09-22)
+
+- Task51 (the owned shared gateway prerequisite, G1–G10) landed under this loop's review cycle:
+  the fixed profile, the generic authenticated owner, the shared vault/send ingress and the owned
+  send dialogue with linearized control, three stage reviews plus a re-review of the stage C
+  closures folded in RED-first, one full regression (**9,341 passed / 1 failed / 2 skipped**; the
+  failure a pre-existing 1-in-16 flake of a design-store pin, fixed at cause), committed and
+  pushed. See `evidence/owned-shared-gateway-task51.md`. Semantic artifact admission and the
+  current binding that connect it to the runtime remain next; no deployment, model activation or
+  browser journey is claimed.
+
+### Earlier snapshot — Task49 accepted; Task51 shared gateway implementation next
 
 - Task47 final regression completed on the independently reviewed source: **1,341 passed,
   1 inherited warning in 475.89 seconds**, exit 0. All 826 source hashes were unchanged
@@ -388,6 +399,7 @@ whole-story gates. Tasks.md currently has 40/90 tasks checked; that ratio is not
 | T047/T087: one effect vocabulary for tools | the in-memory tool boundary takes the ports contract's seven effect classes as its closed set and the ports' external family as its approval rule (equal to the ledger's set); the earlier four names are refused (a legacy `external` never stated reversibility); an N-family tool never records an unknown outcome; runtime.md's tool-port row corrected | 2026-09-19 | Independent review ACCEPT WITH CHANGES (2 MUST, 3 SHOULD) folded in RED-first; boundary+audit 39, covering 147; Ruff clean | evidence/tool-effect-vocabulary-t047-t087.md |
 | T087: the ToolDefinition-backed effect gate | the compilation authority's trusted tool definition carries the tool's identity and effect class (ports vocabulary; one class per tool; the worker's identifier grammar); an external-family definition's approval scope is derived and a node bound to such a tool must require it (bound by structure to a human gate's approval edge); `CompiledGraph.tool_effects` states the facts; the transport takes the class from the binding, refuses a disagreeing mirror and looks the decision up under the graph's gate | 2026-09-19/22 | Independent review ACCEPT WITH CHANGES (5 SHOULD) folded in RED-first; graph contract+transport+design generation 134, transport 48 | evidence/tooldefinition-effect-gate-t087.md |
 | Merged tree reconciliation | the parallel orchestration's tasks 27–50 (uncommitted, verified only by subsets) brought to one green full run: 81 fixed-date time bombs, 3 core import boundary violations, 2 stale route pins, 6 detached-field assertions, 1 schema branch, and an in-process module reload that poisoned every later `create_app` (82 setup errors) — each reproduced then fixed at its cause | 2026-09-22 | full run 1: 9,104 passed / 95 failed / 82 errors → run 2: 9,201 passed / 0 failed / 82 errors → run 3: 9,280 passed / 3 failed (timing-dependent, pass alone) / 0 errors | evidence/merged-tree-reconciliation-2026-09-22.md |
+| Task 51: the owned shared gateway prerequisite (G1–G10) | the fixed `cp-provider` profile; the factory-issued authenticated owner with a retained deadline, one reader latch, bounded duplex reads and an identity-bound close; one shared frame/fragment grammar for the vault and send engines behind a serial ingress (one first-frame decode, one dispatch, the legacy shapes closed); the owned send dialogue with linearized commit/cancel control — the claim order is the wire order, a losing caller never closes a claimant or a successor, every transport and stream fault mapped to the closed failure classes, a cleanup failure of any local kind never erases a validated cancellation or observation | 2026-09-22 | three independent adversarial stage reviews (A/B ACCEPT WITH CHANGES, C REJECT) and a re-review of the C closures (ACCEPT WITH CHANGES) folded in RED-first; profile 3 + owner 16 + owned 40; full regression 9,341 passed / 1 failed (a pre-existing 1-in-16 flake of a design-store pin, fixed at cause) / 2 skipped | evidence/owned-shared-gateway-task51.md |
 | LangGraph scheduling adapter (T040 slices 1–3) | app/runtime/scheduler.py: closed code-owned handler registry, deterministic ledger-reconciled node visits via command replay, sealed router activations and bounded-loop controllers routed by Command (closed facts, termination expression, hard cap fails loudly, every iteration a new visit), opaque saver cursors, no streaming, sanitized failures; human gates stop before the node and resume only on owner-recorded approvals (rejection fails, absence reports awaiting_human); 16 real StateGraph+SQLite tests incl. restart after failure, restart inside a loop and gate wait/approve/reject. independent review (2026-09-17) found 4 Important (double fan-in visit, gate in loop, forged newer approval version, GUI base path) — all closed RED-first; retry/budget/semantic admission remain open |
 
 These are scoped engineering checkpoints, not whole user-story completion or a release claim.
