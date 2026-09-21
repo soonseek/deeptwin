@@ -305,11 +305,13 @@ def design_authority():
                 EntityRef.from_dict(ref("tool_definition", 214)),
                 EntityRef.from_dict(ref("grant", 211)),
                 ("browser.read",),
+                "browser_read", "1.0.0", "read",
             ),
             (
                 EntityRef.from_dict(ref("tool_definition", 216)),
                 EntityRef.from_dict(ref("grant", 212)),
                 ("document.create", "pdf.create"),
+                "document_create", "1.0.0", "write_reversible",
             ),
         ],
         grant_refs=[

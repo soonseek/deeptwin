@@ -2468,10 +2468,11 @@ and the intake page over it (`intake-page-t023.md`); the approval's verification
 (`tool-call-approval-verification-t087.md`); the transport's vouched dispatch effect is journaled by the dispatcher
 (`vouched-transport-effect-journal.md`; a free retry after a committed send intent is a ledger trust-model change
 runtime.md does not yet state — open); the tool boundary's effect vocabulary is the ports contract's
-(`tool-effect-vocabulary-t047-t087.md`). Next: the ToolDefinition-backed gate (T087: the compilation authority's
-trusted tool definition carries the effect class, a binding to an approval-requiring tool must name its approval
-scope, the transport takes the class from the binding and refuses a disagreeing mirror), then run creation from the
-intake once the consent/design line records a run consent and an environment.
+(`tool-effect-vocabulary-t047-t087.md`); the ToolDefinition-backed gate landed (`tooldefinition-effect-gate-t087.md`).
+2026-09-22: the parallel orchestration's tasks 27–50 (below, `## Continuation` at the end of this plan) were brought to
+one green full run (`merged-tree-reconciliation-2026-09-22.md`) and checkpointed. Next: Task 51 (the owned shared
+gateway prerequisite, the plan's own tail) under this loop's review cycle, then run creation from the intake once the
+consent/design line records a run consent and an environment.
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;
@@ -2595,7 +2596,1576 @@ authority/currentness contract; no extra human/key authority, metadata mount or 
 no GUI. The actual worker image, native architectures and container/socket runtime are
 deployment-operator/host authority (Docker/colima gate) and are reported, never claimed.
 
+### Task 26: Close authenticated connections when tool-intent recording fails
+
+2026-09-19 continuation after the user's explicit audit/fix/finish request. Task22–25 and the
+subsequent Claude scheduler/shell/tool slices already landed; do not replay those tasks. Base is
+`a2f85d578c47a0e59c1850ac1840cf8baceb0d96` plus the six inherited dirty files recorded by the
+controller. This is a bounded correction to an existing flow, not a new protocol or approval model.
+
+**Files:** Modify only `app/runtime/extension_attempt_transport.py` and
+`app/tests/test_extension_attempt_transport.py`. Preserve the inherited effect-class/gate-ID
+changes in those files and all other dirty files. Do not change `graph.py`, `gates.py`, worker,
+ledger, schemas, dependencies, documentation, index or commits. Exact before copies and hashes
+are in `.superpowers/sdd/resumption-plan/task-26-before/` and `task-26-before.sha256`.
+
+**Defect and intended change:** `ExtensionAttemptTransport.__call__` acquires its actual
+authenticated connection, then `_record_tool_call_intent` can raise outside the connection's
+`finally`. Put every post-acquisition step, including intent recording, inside one lifetime
+guard. Retain the existing ordering: approval verification, connection, intent, request frame,
+reply validation and settlement. Missing intent is not a sent tool call; keep existing sanitized
+`definitely_not_sent` classification on ordinary intent errors. No new retry, effect fallback or
+successful callback. `connection.close()` must run once on intent Exception/BaseException,
+exchange failure and success, without a close OSError hiding the original result/failure.
+
+- [x] Add RED regressions at the actual transport boundary using the existing temporary staged
+  worker/real socket and ledger fixtures. Force `record_tool_call` to fail after connection;
+  track the returned real connection's close, assert its owned resources close and no execute
+  frame is sent. Preserve the original sanitized unsent error and no result/ToolCall success.
+  Also exercise a BaseException from the intent boundary and an OSError during cleanup without
+  leaking the underlying real connection. A tracking wrapper may delegate to the actual close;
+  a fake successful connection is not proof of resource cleanup. Keep fixture threads finite.
+
+  ```python
+  # The fixture captures the connection actually returned by the normal connector.
+  assert captured.close_calls == 1
+  assert captured.connection.closed
+  assert captured.execute_frames == 0
+  ```
+
+  Match the existing connection API when writing the concrete assertions: if there is no public
+  `closed` property, inspect the actual owned socket/FD state and record that adjustment rather
+  than inventing a production property just for the test.
+- [x] Apply the minimal lifetime change; initialize optional intent identity only where needed
+  so an early failure cannot introduce an unbound local or settle a non-existent call. The exact
+  current `ExtensionConnection.close` ownership remains authoritative. No semantic scope changes.
+- [x] Run focused new regressions to GREEN, then freeze both files after self-review and scoped
+  static checks. Run complete covering selection once on those frozen bytes: project Python -B
+  pytest `app/tests/test_extension_attempt_transport.py app/tests/test_scheduler_attempt_dispatch.py
+  app/tests/test_extension_execute_messages.py app/tests/test_extension_listener.py` with all
+  tracing disabled, `-q -p no:cacheprovider`. Verify exact filenames first; ask controller about a
+  missing named file rather than silently substituting it. Record all terminal output/IDs,
+  RED/GREEN, unchanged out-of-scope hashes and limitations in `task-26-report.md`. Independent
+  spec/quality review follows; no full Python/browser repetition for this local lifetime fix.
+
+### Task 27: Enforce compiled tool bindings at dispatch and contain legacy effect approvals
+
+**Why now:** The compiler produces tool facts that the scheduler/transport do not consume.
+A caller can choose another tool/effect/gate independently. V1 owner approval is per run/node/
+tool scope, not an exact per-attempt action. This correction does not manufacture missing
+persistent qualification/binding authority.
+
+**Files:** Modify `app/runtime/graph.py`, `app/runtime/node_attempts.py`,
+`app/runtime/scheduler.py`, `app/runtime/extension_attempt_transport.py`,
+`app/tests/test_graph_contract.py`, `app/tests/test_scheduler_attempt_dispatch.py`,
+`app/tests/test_extension_attempt_transport.py`. Add
+`app/tests/test_compiled_tool_dispatch.py` if useful. Preserve inherited changes and Task26.
+No ledger schema, legacy approval identity/records, worker protocol, deployment, provider,
+web UI, dependencies or other tests without a controller ruling.
+
+**Required integration:**
+
+- Represent one compiler-resolved binding with node ID, graph binding ID, exact definition/
+  grant refs, tool ID/version/effect and supplying human gate (if any), alongside graph and
+  authority digests. Derive it from the validated graph and CompilationAuthority, not a
+  separate transport argument or worker claim. Preserve `tool_effects` compatibility; the
+  new projection must agree with the exact graph and compiler authority.
+- An `invoke_tool` transport must bind one compiled graph/node/binding and the same exact
+  RuntimeLedger/DomainStore as its dispatcher. Resolve tool/effect from the binding; conflicting
+  explicit legacy selections fail, never get ignored. Status/describe queries retain separate
+  read-only semantics. Unbound invocation and invocation without ToolCall tracking fail before
+  connection. No optional parameter or public legacy constructor may still invoke unbound tools.
+- At scheduler construction and before a bound visit reserves/sends, compare the transport
+  binding with the scheduler's exact graph/authority and calling node. Validate definition/
+  grant/binding refs and effect together, not tool ID alone. Refuse reuse under another graph/
+  authority/node and direct visit misuse. Do not mutate shared transports to the latest scheduler.
+  The generic code-owned callable remains an injected-executor/test seam, not a qualified SPI.
+  Use a small shared immutable type or existing graph module to avoid import cycles; no marker-
+  attribute or dynamic-import bypass. These are coherence checks, not canonical authorization.
+- **External-family effects remain unavailable at this transport**, even with genuine v1
+  approval or a manually requested gate. Existing read tools work through the real worker.
+  Preserve historical approval records/static gate semantics and graph approval-edge validation.
+  Do not relabel them exact action authority. Restore external support only after prepared
+  exact input/action/expiry/use approval and durable continuation are actually integrated.
+- Preserve budget, replay/unknown-outcome holds, stream verification, Task26 lifetime, exact
+  output bounds and real ToolCall settlement. Canonical persistent qualification and registered-
+  input lineage remain explicit next gates; this task does not claim them.
+
+**TDD and acceptance:**
+
+- [x] RED: reproduce mismatched graph-to-read-tool dispatch, absent-ledger/unbound invocation,
+  and the inadequate legacy external approval path. Controlled effect-table changes may prove
+  rejection only; they are not positive real external-tool evidence.
+- [x] GREEN: actual temporary worker/socket + ledger + compiler + scheduler executes both
+  installed read tools under matching graph bindings. Verify real output bytes and one tracked
+  ToolCall/attempt, input order and no duplicate sends on restart/replay. Label controlled
+  compilation authority and platform seams, never production qualification.
+- [x] Deny wrong graph/authority/node/binding/definition/grant/tool/version/effect, unbound or
+  wrong-ledger invocation, missing ledger, disconnected/manual gate, genuine legacy approval,
+  and direct transport/visit bypass. Assert zero connector/send; scheduler-coherence failures
+  also precede attempt/budget reservation.
+- [x] Update old fixture assembly to supply genuine matching compiled bindings, not global
+  monkeypatched success. Replace unsafe positive external-approval tests with refusal
+  regressions; retain scope-identity/owner evidence and unrelated assertions. Diagnose any
+  inherited checkpoint failure seen during Task26; never hide it with retries.
+- [x] Self-review; focused RED/GREEN; freeze owned files; run once with project Python -B pytest,
+  tracing disabled, `-q -p no:cacheprovider`:
+  `app/tests/test_graph_contract.py app/tests/test_design_generation.py
+  app/tests/test_scheduler_attempt_dispatch.py app/tests/test_extension_attempt_transport.py
+  app/tests/test_graph_execution.py app/tests/test_runs_api.py
+  app/tests/test_compiled_tool_dispatch.py` (omit only the new file if not created).
+  Scoped lint/diff checks; report terminal output, inherited failures, final hashes and
+  limitations. Independent spec/quality review before acceptance; no automatic whole/browser run.
+
+Task27 review correction: independent review proved a direct consumed-window issuer gap even
+with another RuntimeLedger over the same DomainStore. Fixround1 additionally owns
+`app/runtime/ledger.py` and `app/tests/test_runtime_budget_dispatch.py` for exact process-local
+issued-window validation, with no persistent schema/protocol change. The five writable fix
+files and seven covering suites are specified in the ledger-linked task-27-r1-brief.md.
+This expands the implementation seam, not the graph/tool authority or product scope.
+
+Task27 accepted after independent fix-round1 rereview: exact compiler/dispatch coherence and
+ledger-issued window identity, with external effects unavailable. Initial corrected covering
+245passed; R1 covering249passed; parent finalfocused7passed. Ten frozen hashes/603outside files
+verified. Persistent qualification, exact-action approval and source lineage remain separate.
+
+### Task 28: Normalize actual LangGraph whole-second timestamps without widening stored journals
+
+**Evidence:** Parent ran a real StateGraph with the installed
+`langgraph.pregel._checkpoint` UTC clock fixed at microsecond0 and a temporary real saver/store:
+the producer emitted `2026-09-19T00:00:00+00:00` and the saver rejected it as unsupported.
+The identical nonzero-microsecond123456 control passed. This is a separate confirmed defect;
+do not claim it caused Task26's unexplained historical failure.
+
+**Files:** Modify only `app/runtime/checkpoints.py` and
+`app/tests/test_langgraph_checkpoints.py`. Preserve Task27 and all other bytes.
+
+- [x] RED: deterministic actual StateGraph checkpoint production at an exact UTC second through
+  the existing temporary SQLite saver; retain a nonzero-microsecond control. Patch only the
+  installed producer clock through scoped test fixtures, not adapter validation or success.
+  Confirm actual emitted timestamp, expected error before fix and successful state after fix.
+- [x] Normalize only legitimate producer input at the saver ingress: accept the exact existing
+  six-fractional-digit UTC form or the same form with no fractional part; strictly validate
+  calendar/time and timezone. Normalize the latter to six zero fractional digits before
+  canonical storage. Do not change the caller's checkpoint dictionary.
+- [x] Persisted/replayed journal grammar stays the existing six-digit UTC form. Do not accept
+  noncanonical whole-second stored records, alter existing bytes/IDs/digests, rewrite history,
+  relax the safe serializer or add a journal migration merely for ingress normalization.
+  Keep malformed/naive/non-UTC/Z-suffixed, invalid calendar, wrong-type, malformed precision and
+  overlong forms rejected. No general permissive datetime parser.
+- [x] Verify real graph pause/reopen/resume, normalized stored timestamps, immutable raw history
+  and nonzero-microsecond preservation. Add invalid-shape/decoding regressions; exercise year
+  bounds without platform-dependent strftime padding. Cover the exact timestamp producer
+  imported by the installed graph loop, not only deprecated checkpoint helper utilities.
+- [x] After self-review freeze both files and run project Python -B pytest
+  `app/tests/test_langgraph_checkpoints.py app/tests/test_graph_execution.py
+  app/tests/test_scheduler_attempt_dispatch.py app/tests/test_extension_attempt_transport.py`
+  with tracing disabled and `-q -p no:cacheprovider`. These exact filenames are verified present;
+  the scheduler's graph tests are in `test_graph_execution.py`, not `test_scheduler.py`.
+  Scoped lint/diff and preservation checks; exact RED/GREEN/terminal output and finalhashes.
+  Independent spec/quality review required; do not re-run whole suite/browser automatically.
+
+Task28 accepted: actual-producer RED1fail/1controlpass; frozen4filecover163passed;
+parent actualproducer/yearbounds4passed. Independent specPASS/qualityApproved, no Critical/
+Important, inherited warning retained. Two frozen hashes/611outside files verified. This is
+not causal proof for Task26's historical failure.
+
+### Task 29: Connect file-first original material intake to the supported work page
+
+**Authority:** `contracts/owner-material-intake.md`, read fully, plus existing
+`contracts/experience.md` §5.2 and the approved first-use product shell plan. This is a real
+original-storage slice of T023, not extraction, understanding or whole-US1 completion.
+
+**Dependency/order:** After Task28 acceptance. Owner authentication/CAS are already available;
+this work does not depend on model/tool qualification. The durable qualification and exact-action
+approval roadmap remains mandatory and resumes afterwards. No concurrent implementation writer.
+
+**Files:** Existing `app/services/works.py`, `app/api/works.py`, `app/api/web_boundary.py`,
+`app/api/route_contributions/works-v1.json`, `app/domain/schemas.py`,
+`app/domain/schema_exports.py`, generated `schemas/v1/domain-envelopes.schema.json`,
+`app/static/work.html`, `app/static/work.mjs`, `app/static/styles.css`,
+`app/static/session.mjs` (source-upload method only; existing JSON/session semantics preserved),
+`app/tests/session.test.mjs`,
+`app/tests/test_works_api.py`, `app/tests/work.test.mjs`, `app/tests/test_domain_schema_exports.py`,
+and `app/tests/test_first_party.py`, `app/tests/test_web_owner_integration.py`,
+`app/tests/test_runs_api.py` (these three: route-count expectations only, plus the same exact
+route-ID composition expectation in owner integration). New focused intake-contract,
+upload-lock and service modules under `app/services/`; optional pure profile module
+`app/domain/owner_material.py` and source API helper under `app/api/` if needed. Keep domain
+profile validation independent of HTTP/session services. New tests `app/tests/test_owner_material_intake.py`,
+`app/tests/test_owner_material_upload_boundary.py`, `app/tests/test_owner_material_upload_lock.py`,
+`app/tests/browser-owner-material-intake.test.mjs`, and its dedicated temporary owner-server
+fixture under `app/tests/fixtures/`. Choose exact new helper names in report before edits.
+No runtime/extension/provider/deployment changes, legacy ingestion route activation, dependencies,
+or user files. Request controller ruling for any additional necessary existing-file edit.
+
+- [x] TDD actual API create-v2 file-first/empty text → exact source upload → saved work revision
+  → authenticated reload/identical download. Retain v1 behavior and all prior attachments on
+  later text edits; event/source/artifact/receipt relation commits atomically.
+- [x] Implement the exact closed wire/content profiles, bounded authenticated receiving,
+  cross-process upload lock, CAS publication, revision/command replay and safe membership-scoped
+  reads required by the contract. Preserve historical records/schema evidence. No extraction
+  or parser/provider call; actual media indication is explicitly not format validation.
+- [x] Cover security, failure and recovery matrix from the contract using real temporary stores,
+  actual bounded ASGI receive and independent lock-holder processes. Validate unchanged replay
+  after later revisions and reject command reuse across text/upload; no retry masks failures.
+- [x] Enable the existing work page's accessible materials controls, sequential revision-aware
+  uploads, truthful saved/not-read states, limits, retry/cancel/receipt recovery and safe download.
+  Keep unsaved edits and file objects while the page lives. Preserve existing palette, responsive
+  layout and focus; no new wizard or decorative graph. Use frontend-design skill faithfully.
+- [x] Add one bounded controlled browser fixture using the actual supported owner boundary and
+  canonical PersistentWorks routes, not legacy `/api/works`/launch-token intake. Reuse accepted
+  finite process lifecycle helpers. Verify actual persistence/download/reload, file-first,
+  concurrent draft edits/cancel, keyboard and 360/1024/wide light/dark screenshots. No fake
+  API success, user credentials, model, microphone or unrelated server process.
+- [x] Self-review/freeze, scoped Python tests above plus `test_web_owner_integration.py`,
+  `test_first_party_dependencies.py`, `test_session_gui_mirror.py`, and `test_runs_api.py`;
+  Node work/session tests plus the new bounded
+  browser suite. Existing legacy browser suites are not proof of this supported route. Record
+  commands, exact RED/GREEN/final output, screenshots, changed schema digests/qualification
+  implications, preservation and limitations. Independent spec+quality review. Do not check
+  whole T023/US1 as done or run the entire suite automatically for this slice.
+
+Task-scoped result: accepted after independent I1 correction for late receipt/reselected-original
+recovery. Final unchanged backend246Python; amended44Node/3actualownerbrowser; parent6backend
+and4receipt-race cases. Independent rereview: I1addressed, no newbreakage.28frozenhashes and595
+outsidebaseline files verified;6viewport/theme visual checks. Originals stored, not parsed/read;
+changed source schema still needs freshqualification, wholeT023/US1 staysopen. No commits.
+
+### Task 30: Replace raw credential custody with encrypted initial storage
+
+**Authority:** `contracts/encrypted-credential-custody.md` (read fully), ADR-012,
+operations §3 and T025/T090. Diagnosis is
+`.superpowers/sdd/resumption-plan/credential-custody-diagnosis.md`; the actual synthetic
+backend stored plaintext and its digest. This task does not enable a provider or qualify release.
+
+**Dependency/order:** After Task29 independent acceptance and the encrypted-custody contract's
+bounded design review. One implementation writer only. This corrects a concrete prerequisite
+for the upcoming canonical understanding/model-call journey; original durable tool qualification,
+exact-action authority and all seven user stories remain mandatory.
+
+**Existing files:** `app/workers/credential_vault.py`,
+`app/workers/credential_gateway_service.py`, `app/workers/credential_channel.py`,
+`app/workers/provider_gateway.py`; `app/tests/test_credential_vault.py`,
+`app/tests/test_credential_gateway_service.py`, `app/tests/test_provider_transport.py`,
+`app/tests/test_credential_routes.py` (last: actual encrypted gateway/legacy refusal fixture
+adjustments only, not replacing the owner-route contract). Preserve HTTP framing, secret-safe
+errors, transport destination/header limits and actual authenticated channel assertions.
+
+**New files:** `app/workers/credential_root.py`, `app/workers/credential_envelope.py`,
+`app/workers/credential_journal.py`, `app/workers/credential_contracts.py`,
+`app/workers/credential_files.py` (shared checked filesystem primitives, no domain-store import),
+`app/operations/credential_root_init.py`, `app/tests/test_credential_root.py`,
+`app/tests/test_credential_custody.py`, `app/tests/test_credential_import_boundary.py`.
+No other existing-file edits without a controller ruling. Reuse the existing control-facing
+channel client instead of adding a competing facade. No package, image, static topology,
+qualification manifest, provider catalog, first-party owner route or active Task29 file edits.
+
+**Interfaces:** Deployment-only initializer has the exact signature in the contract; no HTTP
+route calls it. Serving `CredentialVault` accepts keyword-only root/records directories,
+vault identity and expected owner/group, verifies the initialized pair and supports close/
+context management. Legacy raw constructor calls fail without writes. The encrypted backend
+implements exact `store_at`, `query_record`, `retire`, safe metadata/health/capabilities and
+private authenticated cryptographic checks. Existing channel client gains these typed v2
+operations; v1 writes/delete refuse explicitly. Production `resolve_for_gateway` cannot use
+stored_unbound/retired records or manufacture binding authority. Public metadata replaces
+provider transport's private `_record` coupling. No root or decryption method crosses the channel.
+
+- [x] Capture exact before snapshots/manifest. Add and run a regression proving the original
+  backend fails ciphertext/plaintext-hash absence, not merely a missing-symbol failure.
+  Keep the concrete baseline diagnostic as evidence. New root/format APIs receive their own
+  RED tests before implementation. Only synthetic temporary secrets/directories are allowed.
+- [x] Implement strict envelope/root/layout and checked lifecycle/mutation exclusion according
+  to the contract. Initializer creates only approved empty targets and fsyncs; serving never
+  initializes, repairs or migrates. Verify legacy-byte preservation, malformed/swap/nonce/tag
+  cases and independent-process genesis/mutation races. No fallbacks or ignored exceptions.
+- [x] Implement bounded nonsecret intent/nonce/receipt/retirement journal and encrypted
+  publication/recovery. Tests inject actual failure points before/after reservation, encrypted
+  staging, immutable publication and receipt commit. Reopen recovers the exact old record or
+  reports loss/quarantine; never compares/replaces secrets or deletes an orphan automatically.
+  A representative required assertion is:
+
+  ```python
+  receipt = client.store_at(metadata=metadata, secret=synthetic_secret)
+  assert client.query_record(metadata=metadata) == receipt
+  assert receipt["state"] == "stored_unbound"
+  assert synthetic_secret not in persisted_gateway_bytes()
+  assert sha256(synthetic_secret).hexdigest().encode() not in persisted_gateway_bytes()
+  ```
+
+  Here `metadata` is the exact contract object; test-owned `persisted_gateway_bytes()` reads
+  only the temporary gateway fixture's files/sidecars, never a user's directory. Add deliberate
+  changed-secret replay with identical metadata: no new encryption/nonce/record and no secret
+  comparison; changed metadata conflicts. Query while an actual store is delayed cannot declare
+  safe absence or authorize replacement. Count retained nonce reservations after reopen.
+- [x] Wire real credential v2 frames over the existing authenticated channel. Preserve peer/
+  correlation/MAC protections and bounded secret-free failures. Store/query/retire are actual
+  encrypted operations. Old v1 write/delete and unbound provider resolution fail closed;
+  no activation test flag. Keep real loopback HTTP validation tests using a clearly test-only
+  synthetic custody seam, and separately prove the actual unbound backend sends zero requests.
+- [x] Replace old tests that demanded startup orphan deletion/immediate erasure with the
+  normative retained/quarantined/cleanup_pending expectations, retaining equivalent failure and
+  concurrency coverage. Bound helper process/socket cleanup and close every root/vault handle.
+  Import-boundary tests prove control imports no root/vault/cryptographic implementation.
+- [x] Freeze and run new root/custody/import tests plus existing credential vault/gateway/
+  ingress/routes/provider-transport suites. Record commands, exact output, every changed path,
+  full before/final hashes, warnings and actual limitations. Independently review spec and
+  quality. Whole T025/T090, maintenance rotation/erasure, native isolation and live model use
+  remain open. No automatic whole-suite repeat, commit, user-key enrollment or deployment.
+
+Task-scoped result: initial161coveringpass/1Starlettewarning; independentreviewfoundtwo recovery
+Important defects. R1 genuine10RED/2controls→12GREEN; final87changed-familypass10.14s/no warnings,
+parent7regressionspass0.28s. Independent scopedrereview:I1/I2addressed,no newbreakage.17finalhashes
+and632-filemanifest verified; R1exact3files/629unchanged. NativeSQLiteVFS/UID/mount/peer isolation,
+realenrollment/providerbinding/rotation/erasure andwholeT025/T090 remainopen. Noactualkeys/commits.
+
+### Task 31: Centralize the existing node dispatch context without changing stored bytes
+
+**Authority:** runtime ledger/budget contracts and the unchanged pre-environment understanding
+requirement. Read-only maps `.superpowers/sdd/resumption-plan/preenvironment-generation-contract-map.md`
+and `generation-subject-slices.md` establish the mismatch; they are advisory, not permission
+to migrate or enable generation. This is only their first, behavior-preserving prerequisite.
+
+**Dependency/order:** After Task30 independent acceptance; one implementation writer. No schema
+migration, new generation job/call, model transmission, provider authority or new UI in this slice.
+The subsequent tagged-subject migration requires its own explicit contract and review; never
+fabricate an environment, node, run consent or a second budget/dispatch engine for understanding.
+
+**Files:** existing `app/runtime/ledger.py` only; new
+`app/tests/test_dispatch_subject_context.py`. Existing tests are covering oracles, not editable
+expectations. Request a controller ruling before any additional file edit. Keep the small private
+context value and resolver in the existing module; no new hierarchy, public callback or registry.
+
+**Interfaces:** Introduce a private frozen node-dispatch context, produced only by a ledger
+transaction-scoped resolver over an exact AttemptSpec and the existing same-vault DB rows.
+It exposes the validated ExecutionSpec and RunSpec and the needed current run phase; it is
+not an execution permission and no public method accepts caller-created context as authority.
+Resolve exact execution/run snapshots and parent/ref bindings, including the attempt's budget
+policy equality. A missing execution/run or corrupt/mismatched binding remains a typed denial.
+Only the existing node-execution variant exists. Do not add an unchecked alternate tag.
+
+The first scope consolidates the duplicated traversal in `_load_attempt`,
+`_commit_send_intent` and `_run_spec_for_attempt`. The last remains a compatibility delegate
+returning the same RunSpec for capture/settlement callers. Do not change reservation admission,
+checkpoint/run cancellation queries, permit fields/issuer/window checks or public signatures
+merely to broaden this refactor. The resolver must not call `_load_attempt` recursively.
+
+- [x] Capture exact before bytes and baseline manifest. Add characterization tests on the
+  existing implementation for actual run/execution/attempt→send→response/settlement paths,
+  using existing deterministic fixtures. Preserve exact v1 serialized spec bytes, hashes,
+  object snapshot shapes, command payload/result/receipt bytes and capture fingerprints.
+  Characterization passes are not falsely reported as RED. Add focused resolver regression
+  tests before implementation and honestly separate missing-interface RED from behavior defects.
+- [x] Consolidate the three named traversals into the private resolver. Validate inside the
+  existing transaction; no nested writer or SQLite I/O outside caller ownership. Preserve check
+  ordering affecting command replay, lease/revision/expiry, budget/session and replay/snapshot
+  send denial. Keep the old RunSpec compatibility return and all existing error categories.
+  If stronger checks reveal an actual behavior change, report the concrete case for a ruling.
+- [x] Test valid context identity, same-vault reference/parent validation, corrupted execution
+  and run snapshots/refs, wrong budget policy/session, exact replay without a second permit,
+  replay/snapshot modes, reopen and accepted capture of the original send after lease changes.
+  Use real temporary SQLite/owned sockets where existing fixtures provide them; no constructor
+  or mocked lookup alone as end-to-end proof. Tests must not grant any generation send path.
+- [x] Freeze and run the new file plus `test_runtime_ledger.py`,
+  `test_runtime_budget_dispatch.py`, `test_api_command_transaction.py`,
+  `test_worker_response_capture.py`, `test_worker_coordinator.py`,
+  `test_worker_dispatch.py`, `test_scheduler_attempt_dispatch.py` and
+  `test_extension_attempt_transport.py`. Preserve actual failure output; no repeat-to-green.
+  Independently review the exact before/current delta; no whole-suite run or commits.
+  Record the limitation: this reduces the legacy coupling only; it neither introduces generation
+  subjects nor completes T023/T042, understanding, tool qualification or a live owner journey.
+
+### Task 32: Add explicit runtime subjects and bounded offline v1-to-v2 migration
+
+**Authority:** Complete contract `contracts/runtime-dispatch-subjects.md`, unchanged runtime/
+budget/owner boundaries and pre-environment understanding requirement. Its bounded architecture
+review and amended-scope rereview passed; this is structural preparation, not generation sends.
+Execute only after Task31 independent acceptance and this task's file/interface preflight.
+
+**Files:** Existing `app/runtime/ledger.py` (versioned schema integration, node subject writes,
+shared pure history validation delegates), `app/runtime/worker_response_capture.py` (extract/
+reuse only pure original-send/capture relationship validation), `app/services/owner_admission.py`
+(existing-lock-only acquisition and fixed-inode validation, existing serving behavior retained),
+`app/tests/test_runtime_ledger.py` (fresh-v2 migration-chain assertion only) and
+`app/tests/test_owner_admission.py` (existing-lock/no-repair regression).
+New `app/runtime/ledger_schema.py` (exact v1/v2 tuple, compiled shape and version validation),
+`app/runtime/ledger_history.py` (private constructor-free pure SQL/canonical history checks),
+`app/runtime/ledger_migrations.py` (bounded same-name FK-on rebuild),
+`app/operations/runtime_ledger_migrate.py` (checked deployment-only offline entry),
+`app/tests/test_runtime_subject_schema.py` and `app/tests/test_runtime_ledger_migration.py`.
+No other source edit without ruling. No domain schema/exports, budgets, gateway, UI, model
+selection, credential custody, deployment image or qualification manifest changes.
+
+**Interfaces:** The public-to-deployment-only function signature and exact result/error grammar
+are in the contract; it is not exported to HTTP or called on ordinary startup. Use exact pinned
+`LEDGER_V1_DDL`, `LEDGER_V2_DDL`, `LEDGER_V1_SHA256`, `LEDGER_V2_SHA256` in ledger_schema;
+compatibility `ledger.RUNTIME_MIGRATION_SHA256` stays v1. Private
+`_schema_version(db) -> int` validates exact supported shape/history, not a caller-selected
+version. Private history checking takes an existing checked transaction and vault UUID,
+shares pure current validators and grants no live ledger/permission/dispatch interface.
+ServingLock gains keyword-only `create=True`; offline calls use `create=False`, never
+manufacture a missing lock. Its ordinary default behavior is unchanged and all modes check
+the acquired inode against its directory entry. No process stopping or real migration.
+
+- [x] Capture exact before files/full manifest after31; verify v1 tuple digest remains
+  `b761957cfb9c21a63f928ba5c7d173ba7a4804d0dc72b240fdade0bc860ad118`.
+  Read complete contract and existing snapshot/ref/capture helpers; no generation objects.
+  Characterize existing v1 flows without calling them failing tests. Build new test-owned
+  historical stores from the exact original v1DDL, not by degrading real stores.
+- [x] Add genuine missing-v2/module RED and real fresh-schema/migration tests before code.
+  An empty-history test creates its own Store/DomainStore, installs the pinned v1DDL and
+  control/migration rows in that test database, creates/releases its own ServingLock and
+  invokes only the deployment operation:
+  ~~~python
+  result = migrate_runtime_ledger_v1_to_v2(
+      data_directory, expected_uid=os.geteuid(), expected_gid=os.getegid(),
+      expected_vault_id=vault_id, expected_v1_digest=LEDGER_V1_SHA256)
+  assert result["state"] == "migrated"
+  assert result["from_version"] == 1 and result["to_version"] == 2
+  assert result["attempts"] == result["executions"] == 0
+  assert migrate_runtime_ledger_v1_to_v2(
+      data_directory, expected_uid=os.geteuid(), expected_gid=os.getegid(),
+      expected_vault_id=vault_id, expected_v1_digest=LEDGER_V1_SHA256
+  )["state"] == "already_current"
+  ~~~
+  Test fixture variables above come from the actual temporary store, never invented authority.
+  Extend with real existing producer/capture/checkpoint fixtures for populated histories.
+- [x] Extract exact versioned shape and pure validation without changing legacy bytes. Fresh
+  ledger initializes2 with both pinned migration rows; existing1 stays1 and runs normally.
+  Validate partial/unknown/extra runtime shape before mutation. V2 node creation atomically
+  inserts its node subject; reserve_attempt adds exact relational subject columns. Context
+  checks reject mismatch/generation; old command replay/snapshots/permits remain byte-identical.
+  Update only the fresh-v2 expected migration row in the existing ledger test; do not weaken
+  corrupt-schema/digest/session/budget or Task27 issuer tests.
+- [x] Implement existing-lock-only/no-repair path and hardened mode=rw offline connection
+  exactly as contract, including effectiveUID/GID, held/visible identity/sidecar checks,
+  FKON/WAL verification, original30second deadline/5second busy cap and cleanup on BaseException.
+  Pre-size100000row/64MiB aggregate before reading large values. No FKoff, SQLTEMP, sidecar
+  deletion, constructor writes, unbounded history or argument that asserts offline authority.
+- [x] Implement complete bounded canonical/SQL history preflight and preservation snapshots;
+  no physical blob availability claim. Verify actual inboundNOACTION FKs and no triggers.
+  Under EXCLUSIVE transaction, backfill subjects, deferFKON, explicitlydeleteattempts,
+  drop, same-nameCREATE, reinsertexactoldcolumns+derivedsubject, recreateindex. Stream-compare
+  old rows and preserve children/sequences/capture/checkpoint metadata. Appendv2 andCOMMIT with
+  FKchecksactive; exact target compiledshape+wholeDBFKcheck+freshreopenverification mandatory.
+  Beforecommit failure rollback; ambiguouscommit/postcommitfailure→outcome_unknown, no blindretry.
+- [x] Cover per-stage crash/fault rollback, omittedparent restoration actualCOMMITfailure,
+  rename-rebuild failing control, malformed v1/v2 constraints/NULLarm/extraFK/CASCADE/trigger,
+  changedvault/ref/digest and semanticlinks; real process servinglock anddirectDBwriter contention,
+  missing/unsafe/substitutedpath/sidecar, rows/bytes/deadlines beforedestructive SQL, no payload
+  error leakage, repeatv2 and freshFKenforcement. Generation admission/dispatch must stay denied.
+  Preserve original authenticated capture afterleasechanges and loadedcheckpointcontinuity.
+- [x] Freeze once and run newtwo files plus test_owner_admission.py, test_runtime_ledger.py,
+  test_runtime_budget_dispatch.py, test_api_command_transaction.py,
+  test_worker_response_capture.py, test_langgraph_checkpoints.py,
+  test_scheduler_attempt_dispatch.py, test_extension_attempt_transport.py and
+  test_web_owner_integration.py and unchanged test_dispatch_subject_context.py (the accepted
+  resolver boundary directly changed here). Focusedtests whileiterating; no whole-repo reruns.
+  Record failures/warnings honestly, staticdiffcheck/exacthashes and unchangedoutsidefiles.
+  Full report in .superpowers/sdd/resumption-plan/task-32-report.md; independent gate required.
+  No commit/push/actualuserDB/nativequalification; fullT023/T042/US1+US2 remain open.
+
+
+### Task 33: Implement an authenticated private Claude text/catalog worker
+
+**State:** ACCEPTED after independent R1 review; initial756 and amended243 scoped tests passed.
+
+**Authority:** Complete `contracts/private-provider-worker.md`; independent architecture preflight
+and scoped amendment review in `.superpowers/sdd/resumption-plan/task-33-plan-review.md` are ready.
+Execute only after Task32 independent acceptance and explicit single-writer dispatch. This is the
+actual isolated semantic-producer prerequisite, not provider installation, qualification, network
+send, model-choice authority, UI status decoration or whole T042 closure.
+
+**Files (20 source/test paths):** Modify only `app/adapters/claude_api.py` (small pure JSON/SSE
+delegates preserving legacy lazy behavior/error codes) and `app/workers/extension_metadata.py`
+(shared fixed-file machinery delegation, old source/error API unchanged).
+Create `app/adapters/claude_protocol.py`, `app/extensions/provider_identity.py`,
+`app/extensions/provider_identity_schema_exports.py`,
+`schemas/v2/extensions/provider-build-identity-v2.schema.json`,
+`app/workers/_fixed_image_metadata.py`, `app/workers/provider_metadata.py`,
+`app/workers/provider_messages.py`, `app/workers/provider_transform.py`,
+`app/workers/provider_service.py`, `app/workers/provider_worker.py`.
+Create `app/tests/test_provider_protocol.py`, `app/tests/test_provider_identity.py`,
+`app/tests/test_provider_metadata.py`, `app/tests/test_provider_messages.py`,
+`app/tests/test_provider_transform.py`, `app/tests/test_provider_service.py`,
+`app/tests/test_provider_worker.py`, and `app/tests/_provider_worker_fixture.py`
+(test-owned real-file/framed requester fixtures only). No other source edit without ruling;
+no broker/listener/stream/semantic-port table, gateway/custody/runtime/domain or existing test
+oracle changes. No release/qualification image or historical manifest updates.
+
+**Interfaces:** Consume actual `extension_channel`, listener authenticated connection,
+`ConnectionStreamTransport`/`send_batch`/`receive_batch`, fixed-file/mount helpers and the
+unchanged four provider semantic schemas. The contract fixes all private wire fields, schema
+versions, bounds, state/reason table, metadata checkpoints and exact rejected-block matrix.
+Produce exact `ProviderBuildIdentity`, `parse_provider_build_identity(raw)`,
+`validate_provider_schema_bytes(identity,schema_bytes)->None`, separate public metadata reading/
+source types and no-argument `open_provider_metadata_source()`.
+Pure protocol exports `decode_json`, lazy bounded `SSEDecoder.feed/finish` parse-step iterators
+(an event or no-event step, so wrappers own cancellation/deadline checks). Preserve old JSON finite
+floats above which private integer constraints apply. One explicit controller-reviewed exception:
+reject nested float overflow such as 1e999 for every shared-decoder consumer, including legacy
+adapter paths. Preserve existing sanitized detail codes and finite controls; add RED/GREEN
+coverage. No legacy bypass. The contract records why old parse_constant checks missed it.
+Pure transform exports
+`prepare_text(plan,input_bytes)->bytes`, incremental `TextResponseAccumulator` (accept decoded
+event; finish into inert observation), `parse_text_response(requested_model,chunks)` convenience,
+and `CatalogAccumulator.accept_page(raw)->next_cursor|None` / `finish()`.
+Service exposes `open_provider_worker_service(*,instance_id,slot_number)` and nonconstructible
+owned `serve_one(deadline)/close/closed`; fixed worker `main(argv=None)`. These interfaces
+grant no admission/billing/catalog-currentness authority.
+
+**Review focus:** legacy event then later-error order; image drift between dialogue phases; long
+escaped text exceeding encoded bounds; incomplete/cursor-loop catalogs never selectable; refusal/
+unsupported blocks with later cumulative usage. Each is explicitly tested below.
+
+- [x] Capture exact two before files and full accepted-source manifest after32; verify all18
+  additions absent. Read full contract and actual extension_probe/artifact_stream interfaces.
+  Add new-file characterization tests for old metadata FD/cleanup/error behavior and old lazy SSE
+  event/error/cancel/deadline order, finite floats, comments, duplicate fields and fixed failure
+  codes. Run those first as expected PASS, not mislabeled RED. Preserve current old schema exports.
+- [x] Add missing-interface RED tests for new identity/metadata/transform/service entrypoints and
+  exact codec behavior before production edits. The first pure text oracle is concrete:
+  ~~~python
+  from hashlib import sha256
+  import json
+  def test_request_body_preserves_only_explicit_text():
+      from app.workers.provider_transform import prepare_text
+      raw = "내 업무 자료".encode("utf-8")
+      plan = {"profile": "claude-text-transform-v1", "model_id": "fixture-model",
+              "max_output_tokens": 32,
+              "messages": [{"role": "user", "input_ordinals": [0]}],
+              "inputs": [{"size": len(raw), "sha256": sha256(raw).hexdigest()}]}
+      assert json.loads(prepare_text(plan, (raw,))) == {
+          "model": "fixture-model", "max_tokens": 32, "stream": True,
+          "messages": [{"role": "user", "content": [
+              {"type": "text", "text": "내 업무 자료"}]}]}
+  ~~~
+  Other RED fixtures use actual temporary identity/schema/entrypoint files and owned authenticated
+  connections, not caller-fabricated admission/qualification refs. Distinguish fixture mistakes.
+- [x] Implement provider-only v2 identity/parser/schema validator/export. Extract fixed-file
+  machinery into private two-code-owned-profile helper; separate public tool/provider types and
+  errors, no public path/profile/expected-fact injection. Revalidate actual immutable files on
+  every contract checkpoint; preserve13steady/32transientFD and acquisition/read/lifetime bounds.
+  Test replacement/aliases/symlinks/mount/platform/mode/owner/hash drift, partial acquire, poison
+  versus deadline, close/busy and unsupported host. Missing provider files prevent listener bind.
+- [x] Extract only pure JSON/SSE framing with lazy parse-step order and unchanged legacy wrappers.
+  Implement closed provider control/plan/result codecs separately from existing artifact grammar.
+  Add long UTF8 text above64KiB, split multibyte/CRLF, escaped body>1MiB, floats/duplicates/extra
+  fields and exact media/ID/phase checks. Keep pure import graph free of ClaudeAPIAdapter,
+  keychain/custody/SDK/HTTP/runtime/permission imports; test transitive boundary in a fresh process.
+- [x] Implement text FSM and complete catalog accumulator per contract. Test ping/comment/error,
+  plural deltas, nullable atomic cumulative counters, decreasing/invalid counter, rejection-drain
+  matrix, end_turn with refusal details, drift/fallback, wrong index/order, late corruption and
+  fixed failure precedence. No generated cache zeros. Catalog tests preserve bounded nested
+  capabilities/effort/token-limit evidence, empty terminal page, duplicate/cursor loop/incomplete
+  pagination, per-page/aggregate/result caps and no selected prefix. No prose-based refusal rule.
+- [x] Implement actual serial provider service and fixed worker, no production control-side
+  adapter. A test-owned requester uses real FrameCodec/ExtensionConnection plus stream protocol
+  for identify, text body proposal→supplied SSE→result, and two-page catalog. Assert exact
+  correlations, fresh control/batch IDs, final stream acknowledgement, one unchanged deadline,
+  whole-dialogue bidirectional frame-payload accounting, no decoded-byte double count, metadata
+  rereads on every successful/unsuccessful publication boundary, peer/generation drift closure,
+  malformed input/EOF/timeout/credit/hash/budget refusal, local cancellation and owned-resource
+  cleanup. Neither mock invoke return nor helper-only calls establish the service acceptance.
+- [x] Freeze and run all7new test files plus existing `test_claude_api.py`,
+  `test_provider_transport.py`, `test_extension_lineage_contracts.py`,
+  `test_extension_worker_metadata.py`, `test_extension_probe.py`,
+  `test_extension_probe_messages.py`, `test_extension_execute.py`,
+  `test_extension_execute_messages.py`, `test_extension_port_schemas.py`,
+  `test_extension_port_schema_generation.py`, `test_artifact_stream_transport.py` and
+  `test_worker_artifact_stream.py`. Use project Python -B, disabled tracing, -q -p no:cacheprovider.
+  Preserve real failures/warnings, exact command/results, all20hashes and unchanged outside
+  manifest. No whole-repository repeat or changing old oracles. Report
+  `.superpowers/sdd/resumption-plan/task-33-report.md`; independent spec/quality gate before
+  acceptance. No live provider, user key, native image qualification, commits or push.
+  Keep canonical provider staging/qualification/connection/model selection, gateway send issuer,
+  pre-environment generation consent and the connected browser graph journey explicitly open.
+
+### Task 34: Add provider image lineage and exact descriptor/schema joins
+
+**State:** ACCEPTED; independent spec/quality Approved,297coveringpass,657baselinepaths unchanged.
+**Spec:** `contracts/provider-image-lineage.md` in full; provider staging advisory is not authority.
+This closes the pure provider build-lineage gap before versioned deployment continuation; no
+journal/API/host/activation changes. Original seven-story scope and unresolved release gates remain.
+
+**Files (four new paths only):**
+- `app/extensions/provider_lineage.py`
+- `app/extensions/provider_lineage_schema_exports.py`
+- `schemas/v2/extensions/provider-build-lineage-v2.schema.json`
+- `app/tests/test_provider_lineage.py`
+
+**Interfaces:** Consume accepted Task33 ProviderBuildIdentity parser/schema-byte validator and
+provider_build_identity_schema(), unchanged ExtensionServiceDescriptor and metadata_ref.
+Produce ProviderLineage/ProviderLineageError, parse_provider_lineage(raw),
+validate_provider_descriptor_lineage(lineage,descriptor,*,instance_id,slot_number,schema_bytes),
+provider_lineage_schema() and exported_schemas(). Exact signatures/values/bounds are in contract.
+No new generic authority abstraction or changes to existing tool parsers.
+
+- [x] Verify all four paths absent and capture the accepted Task33 source/deploy/schema manifest.
+  Read existing lineage_contracts.py, lineage_schema_exports.py and candidate descriptor shape,
+  plus the complete provider-image-lineage contract. Existing code is read-only.
+- [x] Add independently constructed provider fixtures and genuine missing-interface RED. The
+  following seed shows the exact identity conversion without relying on production parser output:
+
+  ```python
+  def provider_identity_fixture(platform, schema_bytes):
+      return {
+          "schema_version": "extension-build-identity-v2",
+          "extension_id": "synthetic-provider",
+          "extension_version": "1.0.0",
+          "platform": platform,
+          "port_contract_version": "provider-port-v1",
+          "worker_profile": "claude-text-transform-v1",
+          "inputs": {
+              "schema_version": "extension-build-inputs-v1",
+              "source_bundle": {"sha256": "1" * 64, "size_bytes": 1},
+              "build_recipe": {"sha256": "2" * 64, "size_bytes": 2},
+              "dependency_input_set": {"sha256": "3" * 64, "size_bytes": 3},
+          },
+          "entrypoint": {
+              "sha256": ("4" if platform == "linux/amd64" else "5") * 64,
+              "size_bytes": 100,
+          },
+          "port_schemas": [
+              {"role": role, "sha256": sha256(raw).hexdigest(), "size_bytes": len(raw)}
+              for role, raw in zip(
+                  ("config", "request", "result", "error"), schema_bytes, strict=True
+              )
+          ],
+      }
+  ```
+
+  Use candidate_payload's complete OCI objects as independent scaffold; explicitly assemble
+  the closed lineage fields and both provider identities, set descriptor port/ID/provenance/
+  fixed command per contract, and assert parse + join return None and selected projection equals
+  the literal five-field mapping. Record the preimplementation missing-module/interface failure.
+- [x] Implement the pure closed schema/parser/value in the new files only. Use actual provider
+  identity parser for both platforms and unchanged OCI shapes; no v1 byte rewriting as adapter.
+  Every public accessor/join revalidates bytes and rejects hollow/forged/subclass objects.
+  Implement the exact role-ordered schema-byte validation for both platform identities, full
+  enumerated OCI/provenance/command join, instance/slot-specific argv and non-reflective errors.
+  Do not test unrelated service/UID/socket/resource fields as equality-joined: contract explicitly
+  leaves their topology/policy authority to future staging. Reuse the provider identity schema
+  once under local $defs with position-specific allOf/$ref constraints, never duplicate its $id.
+- [x] Add each contract negative class as parametrized tests: malformed/bounded/canonical JSON;
+  either identity/platform/profile; all OCI fields and layer order; full descriptor/provenance/
+  argv; schema tuple roles/hash/size; type/hollow/forged objects; projection detachment;
+  tool/provider separation; import no I/O/runtime/credentials. Preserve repeated layer digests.
+  Explicitly cover digest/as_dict and both projection accessors plus join on hollow/forged/
+  subclass objects, including dependent identity/Candidate errors sanitized to ProviderLineageError.
+  Assert a full valid 128-layer-per-platform input passes if within wire limits; boundary values
+  and export mutation tests must derive expected values independently of the new parser.
+- [x] Export the new schema, verify exact byte parity and unchanged old v1 files. Run:
+  ```text
+  /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest
+    app/tests/test_provider_lineage.py app/tests/test_provider_identity.py
+    app/tests/test_extension_lineage_contracts.py app/tests/test_extension_candidates.py
+    app/tests/test_extension_port_schemas.py -q -p no:cacheprovider
+  ```
+  Set LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false DD_TRACE_ENABLED=false.
+  No broad suite or external/native model execution; no commit/push.
+- [x] Freeze exact four hashes and full source/deploy/schema manifest; record RED/GREEN,
+  covering command/output, no-outside-change evidence and explicit structural-only limitations
+  in .superpowers/sdd/resumption-plan/task-34-report.md (the only additional evidence write).
+  Controller supplies the accepted Task33 full manifest at explicit dispatch; do not infer it
+  from changing source. Independent spec/quality review gates acceptance, then continue source
+  geometry/publication and versioned staging work under concrete separately reviewed contracts.
+
+### Task 35: Produce exact provider source bundles and additive Compose artifacts
+
+**State:** ACCEPTED; independent spec/quality Approved,246coveringpass,661baselinefiles unchanged.
+**Spec:** `contracts/provider-source-production.md` in full. Task35 implements its pure producer;
+actual filesystem initializer section6 belongs to Task36 and is NOT part of this source ownership.
+All existing source/tests/schema/release inputs remain byte-identical. This is a source artifact,
+not a built image, source installation, stage/qualification/binding or provider-send claim.
+
+**Files (19 new paths only):**
+- `app/deployment/provider_geometry.py`
+- `app/deployment/provider_source_contracts.py`
+- `app/deployment/provider_source_schema_exports.py`
+- `app/deployment/provider_source_render.py`
+- `deploy/security/deployment-provider-source-recipe-v1.json`
+- `schemas/v2/deployment/provider-stage-geometry-v1.schema.json`
+- `schemas/v2/deployment/provider-source-recipe-v1.schema.json`
+- `schemas/v2/deployment/provider-source-instance-v1.schema.json`
+- `schemas/v2/deployment/provider-public-trust-set-v1.schema.json`
+- `schemas/v2/deployment/provider-outgoing-exchange-v1.schema.json`
+- `schemas/v2/deployment/provider-receipt-ingress-v1.schema.json`
+- `schemas/v2/deployment/provider-consumption-exchange-v1.schema.json`
+- `schemas/v2/deployment/provider-source-context-v1.schema.json`
+- `schemas/v2/deployment/provider-source-pins-v1.schema.json`
+- `schemas/v2/deployment/provider-source-expansion-record-v1.schema.json`
+- `app/tests/test_provider_geometry.py`
+- `app/tests/test_provider_source_contracts.py`
+- `app/tests/test_provider_source_render.py`
+- `app/tests/provider_source_fixture.py`
+
+**Interfaces:** Exact ProviderGeometry derive/parse/join, ten source-schema factories, nine closed
+document parsers, validate_provider_source_bundle(tuple[(name,bytes),...])->None, and keyword-only
+render_provider_sources(...) -> ProviderSourceArtifacts are fixed in contract sections1–5.
+Consume unchanged original recipe/OriginProfile/topology and seven-input render_receipt_sources.
+Do not create initializer/opener/journal/API/operator code or change shared helpers in this task.
+The renderer's fixed app.operations.deployment_provider_source_init consumer is a required next
+task; candidate Compose remains unqualified/unrunnable until that producer and image exist.
+
+- [x] After explicit dispatch, verify all19paths absent and capture the accepted full manifest.
+  Read contract, unchanged contracts.py/render.py/receipt_render.py/receipt_source_contracts.py
+  and existing source/render fixtures. Verify the four historical release input hashes and sizes
+  stated in contract; do not regenerate or reformat them.
+- [x] Add a concrete RED for final geometry before implementation, using only unchanged original
+  source inputs to form the oracle, for example:
+
+  ```python
+  def test_geometry_preserves_original_sixteen_slot_identity():
+      from hashlib import sha256
+      from app.tests.deployment_source_fixture import inputs
+      from app.deployment.render import render_prepare_sources
+      from app.deployment.provider_geometry import derive_provider_geometry
+      raw = inputs(capacity=16)
+      original = render_prepare_sources(*raw)
+      geometry = derive_provider_geometry(
+          original_recipe_bytes=raw[2],
+          original_instance_bytes=raw[3],
+          original_topology_bytes=original.topology_bytes,
+      ).as_dict()
+      assert geometry["original_topology"] == {
+          "sha256": sha256(original.topology_bytes).hexdigest(),
+          "size_bytes": len(original.topology_bytes),
+      }
+      assert geometry["slots"][-1]["socket_mount"] == {
+          "mount_id": "xs16",
+          "volume_name": "dt-" + "1" * 32 + "-ipc-xs16",
+          "container_path": "/run/deeptwin/ipc/xs16",
+          "read_only": False,
+          "purpose": "broker_pair",
+      }
+  ```
+
+  Independently assemble new recipe/trust/instance and exact18-file expected bundle in the new
+  fixture; old receipt_inputs scaffolding may be consumed unchanged, but no expected new values
+  are produced by the new parser/renderer under test. Test missing renderer/interface RED and
+  record genuine failure output, separate from already-passing old characterizations.
+- [x] Implement exact pure geometry and ten exported schemas/nine parsers. Runtime source
+  documents use strict integer-only canonical JSON; complete bundle validation reparses originals
+  and actual bytes, checks exact names/order/size/hash/profile/geometry/ID/recipe/channel/context/
+  pins. Derived hashes never substitute for actual source bytes. Enforce all contract bounds and
+  fixed errors, exact classes, hollow/forged values, detached projections and no import-time I/O.
+- [x] Implement the actual deterministic renderer: regenerate exact old receipt expansion, append
+  only four provider volumes/six external configs/one initializer service and specified control
+  additions; no topology/old service/source mutation. Build all18 static bundle files, validate
+  complete acyclic references and produce candidate Compose/pins/record. Compose uses the existing
+  sorted compact JSON codec preserving finite CPU fractions; never the domain no-float codec.
+  Externally supplied initializer image is a closed immutable declaration, not an authenticated
+  image or a default fixture value. Provider trust is a public declaration, not staged authority.
+- [x] Add contract positive and negative vectors across both origin modes/platforms/capacities1/16:
+  full independent byte/hash/name oracle, new/source ID conflicts, image grammar, both wrong and
+  structurally valid alternate original sources, key/recipe/context/role swaps, invalid JSON/
+  UTF8/numbers/types/caps, exact allowed Compose delta, finite CPU preservation, no secret/worker/
+  operator mounts, full bundle mutation and schema export parity. Fresh-process import test refuses
+  unexpected source opener/initializer/runtime/network/credential imports; pure methods do no I/O.
+- [x] Run only the new three test files plus unchanged test_deployment_source_render.py,
+  test_deployment_source_contracts.py and test_deployment_receipt_source_render.py using:
+  ```text
+  /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest
+    app/tests/test_provider_geometry.py app/tests/test_provider_source_contracts.py
+    app/tests/test_provider_source_render.py app/tests/test_deployment_source_render.py
+    app/tests/test_deployment_source_contracts.py app/tests/test_deployment_receipt_source_render.py
+    -q -p no:cacheprovider
+  ```
+  Tracing disabled; no live/native/credential/Docker/root initialization. Freeze all19hashes/full
+  source manifest, preserve outside bytes, and write only additional evidence file
+  .superpowers/sdd/resumption-plan/task-35-report.md with commands/output/limitations. Independent
+  spec/quality review gates acceptance; then implement initializer under the same complete contract.
+  No commit/push or task-checkbox claims about whole-product readiness.
+
+### Task 36: Initialize exact provider sources with bounded interruption-safe ownership
+
+**State:** ACCEPTED; frozen506covering tests, independent spec compliant/quality Approved, no findings.
+**Spec:** contracts/provider-source-production.md, contracts/provider-source-initialization.md
+and contracts/provider-source-observation.md in full. This is actual initializer code and controlled temporary-tree evidence, not real host
+initialization, image qualification, source admission, journal migration or provider execution.
+
+**Owned paths (six new, two narrowly modified):**
+- New app/operations/deployment_provider_source_init.py
+- New app/operations/_provider_source_init_files.py
+- New app/deployment/_provider_source_files.py
+- New app/tests/test_provider_source_init.py
+- New app/tests/provider_source_init_fixture.py
+- New app/tests/test_deployment_source_lifecycle.py
+- Modify app/deployment/files.py only enumerated acquisition/cleanup surfaces in contract.
+- Modify app/deployment/public_init_files.py only enumerated acquisition/cleanup surfaces.
+No other source/test/schema/release edit, including Task35 fixture. Additional evidence write only:
+.superpowers/sdd/resumption-plan/task-36-report.md. No commits/push or subagents.
+
+**Interfaces:** initialize_provider_sources()->exact three source digests; main(argv=None)->0/1/2.
+No caller path, native-test-mode, injected verifier or authority override. Consume accepted Task35
+ten-input renderer and bundle validator, unchanged original source parsers and retained file/mount
+mechanics. Four virgin/complete roots are preflighted together before any effect. Static18-file
+directory publication is no-replace; populated channels get complete metadata snapshots, no
+payload read/approval/repair. Old ordinary error classes/codes and data/policy behavior stay intact.
+
+- [x] At explicit dispatch, capture accepted Task35 full manifest and exact beforecopies of both
+  existing files, verify six new paths absent. Read all three complete contracts and named unchanged
+  helpers/old initializer patterns. No implementation against an unbuilt Task35 import.
+- [x] First add independent legacy lifecycle characterizations and run expected GREEN before
+  touching either helper. Then genuine RED interruption/secondary-cleanup cases for every named
+  acquisition/cleanup surface. Use real temp FDs and three primary sentinels; borrowed parent
+  remains usable. Expected failures are resource leaks/masked primary, not missing future modules.
+- [x] Correct only enumerated ownership paths; retain ordinary mappings/validation and mutation
+  order. Attempt every recorded owned close without double-close or masking a primary. No global
+  FD manager, thread/signal mechanism, arbitrary VM atomicity or shared RetainedHandle changes.
+  Cover no-primary aggregate close, idempotence, path-walk child handoff and namespace raw/retained
+  handoff. Cleanup refusal proves attempts, not successful OS closure. Preserve old tests unchanged.
+- [x] Add meaningful actual-initializer RED on a complete valid fixed temporary tree. Implement
+  fixed argv/euid/native guard, retained six configs/five release inputs, exact renderer/pins
+  recomputation and five original source comparisons. No mutation before ALL four target and
+  protected mount/file/name/FD/currentness checks succeed; malformed fourth root leaves earlier
+  virgin roots unchanged. Fixture ownership/native/mount facts explicitly simulated.
+- [x] Implement shared read-only pinned18-file observation under the dedicated observation contract:
+  initializer pin comes from retained-input rerender, require whole expected tuple equality, never
+  self-derived target expectations. Shared namespace policy/snapshot implementation is unique;
+  borrowed directories stay caller-owned. Cover actual coldread, wrongpin, substitutedinode,
+  borrowed-root survival and partial acquisition cleanup. No publication in shared helper.
+- [x] Implement private bounded18-file staging/commit with retained directory and
+  leaf identity across no-replace rename, exact bytes/modes/fsync, root reopen same device/inode.
+  Compare final shared observer's directory/leaf identities to retained staged identities before
+  transferring ownership and closing staged handles. Runtime later reuses this shared observer.
+  Recheck untouched protected boundaries before/after effects; track only own explained changes,
+  never refresh away external mutation. Failure preserves honest partial disk state without
+  rollback/deletion; retries refuse partial static trees.
+- [x] Initialize virgin channel roots in fixed order through corrected existing namespace helper.
+  Retain complete snapshots of all final AND staging entries with unchanged metadata scanner/new
+  provider policies. Existing completed roots receive no writes or payload opens/parsing. Test
+  malformed/false-signature/mismatched-hash payload preservation, all allowed stage metadata,
+  same-count mutation/replacement, incoming96/total240 bounds, cap/size violations and mixed roots.
+- [x] Cover every specified acquisition/publication/cleanup checkpoint, ≤256 measured peakFD,
+  primaryexception identity, no borrowed close or repair, source/mount races and exact main output.
+  Self-review owned diff; ordinary precharacterizations and old input/initializer oracles must
+  remain unchanged. Freeze eight hashes and full manifest before one exact narrow covering run:
+  ~~~text
+  /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest
+    app/tests/test_provider_source_init.py app/tests/test_deployment_source_lifecycle.py
+    app/tests/test_deployment_prepare_init.py app/tests/test_deployment_receipt_public_init.py
+    app/tests/test_deployment_source_files.py app/tests/test_provider_source_render.py
+    -q -p no:cacheprovider
+  ~~~
+  Disable tracing; no live/native/host/Docker/key/userdata operations. Report all RED/GREEN/failures/
+  commands/output, measured limits, eighthashes/outsidepreservation and simulated-evidence limits.
+  Independent spec/quality review gates acceptance; source opener and staging remain separate.
+
+### Task 37: Wire a retained provider source context into actual startup
+
+**State:** ACCEPTED; independent spec compliant / quality Approved; one inherited dependency warning recorded.
+**Spec:** contracts/provider-source-context.md and contracts/provider-source-observation.md in full;
+source-production/source-initialization define unchanged dependencies. No journal/lease/migration/
+operator/qualification/connection/model/billing/admission implementation in this tranche.
+
+**Owned paths (four new, three narrowly modified):**
+- New app/deployment/provider_sources.py
+- New app/tests/test_provider_sources.py
+- New app/tests/provider_source_reader_fixture.py
+- New app/tests/test_provider_source_startup.py
+- Modify app/deployment/source_common.py only four provider optional-root literals and the
+  contract-specified private alias-mapping extraction/thin old adapter, preserving old behavior.
+- Modify app/api/deployment_prepare.py only appended startup key + optional context open/own/export.
+- Modify app/api/first_party_catalog.py only matching provides entry.
+Shared app/deployment/_provider_source_files.py is acceptedTask36 code, not writable here.
+Only extra evidencewrite .superpowers/sdd/resumption-plan/task-37-report.md. No subagents/commit/push.
+
+**Outcome:** actual fixed startup pin is registered and retained once; ProviderSourceContext exposes
+only read_current/recheck_current/close over exact18 immutable byte files plus original-source/
+profile/native/mount/current channel-layout joins. Existing preparation service still receives only
+its historical five source arguments. No HTTP route or source mutation. Missing/invalid/unavailable
+new context exports None without disabling old services; process-control exceptions propagate.
+Runtime channel inventory may change between explicit checks, but each whole check requires stable
+complete before/after metadata snapshots. Static bytes/directory identities never rebase.
+
+- [x] At explicit dispatch capture accepted36manifest and exact threebeforecopies; fournewpaths
+  absent. Read fullcontracts and actual sharedobserver/startupcatalog/ownership/currentness APIs.
+  Dependency importabsence is not validRED. Preserve original tool topology/slots and oldoracles.
+- [x] Add independently assembled real-reader tree/positive assertion RED and actual startup key/
+  export ownership RED before corresponding code. Use accepted fixturebytes and literalpaths/caps;
+  simulate only metadata/native/mount sampling at testboundary, not successful reader validation.
+- [x] Implement fixed reader from sharedobserver: configuredcontextpin, full18bundlevalidator,
+  completeownerprofile/platform and actualfiveoriginalsource bytejoins; exact root/channel/protected
+  mounts and readonlyflags, no aliases/overlays. Retain known directory objects and immutablebytes;
+  ordinary checkfailure neverrebases; processcontrol closes ownedresources preservingprimary.
+- [x] Add within-call completechannel snapshots with fixedsharedpolicies, aggregate240/final-stage
+  caps and no payloadread; between-call safeupdates allowed, namespace replacement denied.
+  Test byteidenticalinode replacement, wrongpins, internallyvalidwrongsourcegraph, forged/closed
+  objects, non-Linuxrefusal, aliases/nestedoptionalroots, unchanged unrelatedmountordering,
+  actual≤256peakFD and allfailurecleanup. No automaticretry/reopen/repair.
+- [x] Add expected-GREEN oldmapping characterizations first, then share exact private
+  _source_mount_observations(observed,required,protected_paths) and thinoldadapter. One sample
+  per observation; old checkedreturn unchanged, newcontextretainsnormalized optionaltoo.
+  Cover safe/nested/crossgroup aliases and parity; appendfourroots, no copiedmappingblock.
+  Appendnewstartupkey preservingoldindexes; obtainpin/profile/protectedroots from frozenstartup
+  context only, ownimmediatelythrough_own_source and export optionaldeployment-provider.source-context.
+  Updateexactcatalogprovides; no router/reconcile/PersistentDeploymentPrepare signaturechanges.
+- [x] Testmissing/invalidpin opensnothing, frozenenvironmentsnapshot, unavailableexportNone,
+  actualreal-readerstartupsuccess, oldfivesourcesunchanged, construction/activation/shutdowncleanup.
+  Freeze sevenhashes/fullmanifest afterselfreview; run one boundedcover with tracingdisabled:
+  ~~~text
+  /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest
+    app/tests/test_provider_sources.py app/tests/test_provider_source_startup.py
+    app/tests/test_deployment_sources.py app/tests/test_deployment_receipt_sources.py
+    app/tests/test_deployment_source_files.py app/tests/test_deployment_source_lifecycle.py
+    app/tests/test_first_party_dependencies.py app/tests/test_deployment_prepare_api.py
+    app/tests/test_deployment_receipt_api.py -q -p no:cacheprovider
+  ~~~
+  Report allRED/GREEN/failures/output/hash/outsidepreservation and simulatedevidencelimits. No live/
+  native/Docker/key/userdataactions. Independent spec/quality gate; currenthandle is NOT admission.
+
+Accepted37 evidence: frozen nine-family549passed79.09s/oneStarlettewarning, peak113FD/111retained.
+Controller verified690paths=683unchanged+3mod+4new and independent review Approved. Historical
+RED/GREEN report and actual frozen manifest resolve review verification notes; native/live/admission
+remain explicit later gates. No Task39 accessor prebuilt; no whole-story completion claim.
+
+### Task 38: Freeze provider preparation wire and pure source/candidate joins
+
+R1 amendment: independent review found pure inventory admission leakage, oversize error
+classification and missing required negative proofs. Correct within the same ten paths.
+Before acceptance/release use source_documents for the exact18 named wrappers as fixed in the
+updated protocol; prove unchanged generic reference-walker compatibility. Actual domain
+put/load/graph proof remains Task41. No accepted wire or historical records are rewritten.
+
+**State:** ACCEPTED after R2; independent spec compliance/quality Approved, all review findings closed.
+Single-writer sequence; no Task39/40 or integrated producer code is authorized by this task.
+**Spec:** contracts/provider-prepare-protocol.md in full. Implements one dependency of FR-032/
+ADR-014 and T042/T087; not staging admission, production model use or a whole-story completion.
+
+**Owned paths (ten new; no existing source/schema/test edits):**
+- app/deployment/provider_prepare_contracts.py
+- app/deployment/provider_prepare_schema_exports.py
+- app/tests/test_provider_prepare_contracts.py
+- schemas/v2/deployment/provider-preserved-inventory-v1.schema.json
+- schemas/v2/deployment/provider-stage-request-v2.schema.json
+- schemas/v2/deployment/provider-request-v2.schema.json
+- schemas/v2/deployment/provider-prepare-input-v1.schema.json
+- schemas/v2/deployment/provider-cancel-input-v1.schema.json
+- schemas/v2/deployment/provider-cancellation-v1.schema.json
+- schemas/v2/deployment/provider-request-anchor-v2.schema.json
+Only additional evidence write .superpowers/sdd/resumption-plan/task-38-report.md.
+No subagents, commits/push, DB/source/route/catalog registration, I/O/clock/RNG or live model calls.
+
+**Interfaces:** consume accepted CandidateBundle/parse_bundle, ProviderLineage and exact descriptor
+join, eighteen-file source validator/geometry, OriginProfile and scalar/wire codecs. Produce exactly
+the nine parser/constructor/validator signatures and seven detached schema factories in the contract.
+make_provider_request returns canonical bytes; old make_request returning dict remains unchanged.
+Sources/candidates are inert data here, not caller-issued authority.
+
+- [x] At explicit dispatch capture accepted previous manifest, verify ten paths absent and read
+  full protocol plus actual dependency modules. No opportunistic existing helper refactor.
+- [x] Write independent minimal request fixture from accepted provider candidate/lineage and
+  independently expected eighteen-file source bundle. Missing this task's module is acceptable
+  initial RED; a broken upstream fixture/import is not. Pin expected selected slot/effect/digest
+  without calling the new constructor to derive its oracle.
+  ~~~python
+  raw = make_provider_request(**valid_inputs)
+  value = parse_provider_request(raw, profile=valid_inputs["profile"])
+  assert value["schema"] == "deployment-request-v2"
+  assert value["preconditions"] == {}
+  assert value["effect_payload"] == independently_expected_effect
+  assert raw == canonical_json(value)
+  ~~~
+- [x] Add failure-first tests for unknown/duplicate/noncanonical/oversized/malformed values,
+  bool-as-integer, hollow exact objects and frozen-cache substitution; implement bounded codecs
+  normalizing ordinary data errors into fixed DeploymentPrepareError while preserving control
+  exceptions. Seven exported schemas must be fresh, exact and byte-equal to checked-in files.
+- [x] Implement complete constructor joins with eight mode/platform/capacity combinations, actual
+  provenance/schema/command/UID/broker/mount/network/isolation/resource checks and selected slot
+  and candidate extension ID absent from preserved inventory. Test a valid other-slot preserved
+  installation of the same extension with refreshed inventory/request hashes. Test each deferred source edge with recomputed outer hashes,
+  an internally valid other profile/context, and each policy mismatch not covered by lineage.
+  ~~~python
+  with pytest.raises(DeploymentPrepareError):
+      validate_provider_request_sources(
+          raw, candidate_bundle=other_candidate, source_bundle_files=source_files,
+          provider_schema_bytes=schema_files, inventory_bytes=inventory, profile=profile)
+  ~~~
+- [x] Implement independent structural inventory ordering/uniqueness/caps and anchor names/order/
+  blob caps/vault consistency. head_digest is precisely the existing storage-v3 installation_heads
+  row hash from the contract preimage; pin independent bytes and reject mismatching hashes without
+  importing storage/DB. EntityRef has no vault field; do not fabricate one. Runtime service
+  will own actual vault/history verification; no history booleans accepted by this pure API.
+- [x] Pin actor/nonce/time/source/inventory digest sensitivity, cancellation boundaries and exact
+  binding. V1 parser must reject provider request and provider parser reject v1; old fixtures
+  byte-identical. Block effect APIs during pure calls and fresh-process import to prove no DB,
+  filesystem, network, clock/RNG initialization; schema fixture reads stay outside the blocker.
+  ~~~python
+  marker = make_provider_cancellation(raw, profile=profile, cancelled_ms=created_ms + 1)
+  assert parse_provider_cancellation(marker, profile=profile)["request_digest"] == value["request_digest"]
+  ~~~
+- [x] Self-review; freeze ten hashes/full manifest, run one narrow cover with tracing disabled:
+  ~~~text
+  /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest
+    app/tests/test_provider_prepare_contracts.py app/tests/test_provider_lineage.py
+    app/tests/test_provider_source_contracts.py app/tests/test_deployment_prepare_contracts.py
+    app/tests/test_deployment_source_contracts.py -q -p no:cacheprovider
+  ~~~
+  Record all RED/GREEN/failures/commands/results, exact hashes and outside preservation.
+  Independent spec/quality gate precedes acceptance. No v4 tables or native qualification claim.
+
+Accepted38 evidence: R1fivefamily366passed4.33s/no warnings, R2test-only68passed2.98s/no warnings.
+Independent scopedR2 Approved; actual700manifest verified690pre-task unchanged, finalR2onlytest
+changed/699same. AllthreeImportant and importminor closed. Exact18 source_documents wrappers
+retain genericwalker compatibility; no actualDB/admission/native/live claim or whole-story closure.
+
+
+### Task 39: Publish exact provider requests through a retained source-bound lease
+
+**State:** ACCEPTED; independent spec compliance/quality Approved, no blocking findings.
+**Spec:** contracts/provider-publication.md in full, with source-context/observation and prepare
+protocol as unchanged dependencies. This is the former advisory39A only; no DB/owner/routes/slot work.
+
+**Owned paths (three new, three narrowly modified):**
+- New app/deployment/provider_publication.py
+- New app/tests/test_provider_publication.py
+- New app/tests/test_provider_publication_lifecycle.py
+- Modify app/deployment/provider_sources.py only private _provider_publication_observation accessor and minimum private guard return plumbing: actual identity triple plus four equal guard-validated snapshots; public interfaces/behavior unchanged.
+- Modify app/deployment/_provider_source_files.py only shared fixed private policy resolver/use.
+- Modify app/deployment/publication.py only _existing_for_policy and _stage_payload cleanup ownership.
+Extra evidence write only .superpowers/sdd/resumption-plan/task-39-report.md. No other source/test/
+schema edit, including accepted source fixtures, sources.py/prepare_service.py/ipc_root.py.
+No subagents or commit/push. No native/root/Docker/userdata/key/live/provider operation.
+
+**Interfaces:** Consume actual ProviderSourceContext, Task38 parsers, fixed namespace snapshots/
+policy and existing _stage_payload/_commit_stage/_existing_for_policy. Produce exact retained lease,
+one-shot attempt and observe_existing/stage/commit/close interfaces in contract. Borrow context,
+own three new directories and at most one active attempt; no source/admission flag or path override.
+
+- [x] Capture accepted38baseline and exact threebeforecopies; three newpaths absent. Read complete
+  contract and actual dependencies. Preserve old bytes/policy/topology, no helper shadow copy.
+- [x] Add independent expected-GREEN old publication characterizations before helper edits, then
+  real FD cleanup-masking RED at exact helper checkpoints and all three primary sentinel types.
+  Correct only two listed bodies; old ordinary mappings/modes/effect order unchanged.
+- [x] Add actualreader+request/cancel positive publication RED after dependencies accepted. Expected
+  bytes and metadata are independent fixtures, not generated by the publisher:
+  ~~~python
+  lease = open_provider_outbox_lease(context, profile=profile, expected_payloads=payloads)
+  try:
+      assert lease.observe_existing(role="request", request_digest=digest) is None
+      attempt = lease.stage(role="request", request_digest=digest)
+      observed = lease.commit(attempt)
+      assert observed.request_digest == digest
+      assert actual_final_bytes == independently_expected_request
+  finally:
+      lease.close()
+  ~~~
+  This is a success-case test sketch; production error paths preserve their primary around close.
+  Only the exact listed public API is required; no extra context-manager surface.
+- [x] Implement bounded tuple parsing before directory acquisition: request/cancel role order,
+  digest order,16each/32total/1,179,648bytes, canonical/ID/duplicate/cancellation joins. Join actual
+  context/geometry/originalprofile/topology/slot facts; no candidate/history/vault admission.
+- [x] Implement actual borrowed-context identity guard, combined guarded identity/four-namespace observation and shared
+  fixed policy resolver, no copied policy/path table. Track owned directory/attempt identities and
+  enforce exact-type/cross-lease/closed/forged refusal. Context closure invalidates lease operations.
+- [x] Implement exact-existing observation/fsync and absent-only stage, one-shot no-replace commit
+  with exact/different-byte race handling, full before/after snapshots allowing the exact own transition
+  and target-only EEXIST exception. Obtain both complete observations around the entire operation;
+  receipts/consumed changes between successful guards must fail. Close genuine owned attempts on
+  every commit exit; cross-lease inputs never close another owner. Preserve primary; no unlink or retries.
+- [x] Test source/mount/metadata/byte replacement at boundaries, opaque incoming/consumed/stages,
+  capacity/type/size limits, safe between-call changes versus concurrent unexplained change,
+  all acquisitions/close failures/borrowed survival, true temporaryFD peak and no import-time effects.
+- [x] Freeze sixhashes/fullmanifest and run contract's exact sixfamilycover once with tracing off:
+  ~~~text
+  /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest
+    app/tests/test_provider_publication.py app/tests/test_provider_publication_lifecycle.py
+    app/tests/test_deployment_publication.py app/tests/test_deployment_source_lifecycle.py
+    app/tests/test_provider_sources.py app/tests/test_provider_source_startup.py
+    -q -p no:cacheprovider
+  ~~~
+  Report commands/RED/GREEN/failures/hash/preservation/native limits. Independent spec/quality gate.
+  Actual integrated owner producer/migration/history/API and complete slot-lifetime chain are
+  deliberately later; no whole T042/T087 or executable provider readiness claim.
+
+Accepted39: exactfrozen6family506passed33.33s/oneinheritedStarlettewarning; fresh703manifest
+verified697outsideunchanged+3mod+3new. IndependentreviewApproved. Measuredpeak122includingcaller;
+controllednative/syscallseams notLinuxqualification. Source-boundpublisher only, noowner/admission.
+
+
+### Task 40: Close the existing slot metadata acquisition lifetime
+
+**State:** ACCEPTED; independent spec compliant/quality Approved; finite lifetime correction only.
+**Spec:** contracts/provider-slot-lifetime.md in full. Existing tool acquisition correction and
+later provider producer prerequisite; not v4 migration, service/route delivery or native execution.
+
+**Owned paths (one new, three narrow modifications):**
+- New app/tests/test_provider_slot_lifecycle.py.
+- Modify app/workers/ipc_root.py only the contract's six exact metadata/raw-helper surfaces.
+- Modify app/deployment/sources.py only TopologySource.acquire_slot and SlotMetadataLease.close.
+- Modify app/deployment/prepare_service.py only PersistentDeploymentPrepare._acquire.
+Extra evidence only .superpowers/sdd/resumption-plan/task-40-report.md. No subagents/commits/push.
+
+**Interfaces:** Preserve all signatures, actual old slot facts, ordinary Busy/integrity/service
+mapping and metadata-only behavior. Consume accepted Directory lifetime and actual metadata lease;
+produce the same existing lease, with complete finite ownership transfer/unwind on failure.
+
+- [x] Capture accepted baseline and exact three beforecopies; new test absent. Read full contract
+  and actual consumed chain, without broad unrelated IPC refactoring or new public ownership API.
+- [x] Add expected-GREEN ordinary characterization BEFORE old helper edits, then actual real-FD
+  regression REDs at raw open/fstat, endpoint cleanup, shared lock and post-transfer recheck:
+  ~~~python
+  with pytest.raises(KeyboardInterrupt) as caught:
+      acquire_generation_metadata(spec)
+  assert caught.value is primary
+  assert every_owned_close_attempted_once
+  assert borrowed_sentinel_still_open
+  ~~~
+  Concrete fixtures must distinguish physical release from close refusal; booleans above are
+  assertions over instrumented actual descriptors, not caller admission inputs.
+- [x] Correct only finite acquisition ownership, local-to-complete-owner transfer and primary-
+  preserving attempt-all cleanup. Preserve _close_fd OSError suppression and every ordinary error
+  translation. Detach before one close attempt; never retry a possibly reused descriptor.
+- [x] Exercise actual _acquire→slot→metadata chain, including final topology digest interruption;
+  returned recheck owns only transient FD; caller still owns retained lease. Test all three control
+  sentinels, close secondary failures, shared lock release, repeated close, no secret read/listing.
+- [x] Self-review; freeze four hashes/full manifest and run exact seven-family contract command
+  once with tracing off/no cache. Report every failure/warning, scope preservation and temporary-
+  evidence limits. Independent spec/quality acceptance before next actual integrated producer.
+
+### Task 41: Connect actual provider owner commands, history and publication
+
+**State:** COMPLETE; independent R1 spec/quality Approved. Final199pass/one inherited warning;719 hashes verified. Historical graph RED deviation and distinct prior failed32/ordered421 evidence retained in the ledger.
+**Spec:** contracts/provider-request-integration.md in full. One real vertical delivery; no separate
+empty tables, second registry, synthetic route success or runtime provider-readiness claim.
+
+**Owned paths:** exactly30 enumerated in contract section2, fifteen new/fifteenmodified. No other
+source/test/schema edits; extra evidence only .superpowers/sdd/resumption-plan/task-41-report.md.
+No subagents/commits/push/native/Docker/real DB/key/live-model calls. Controlled temporary tests only.
+
+**Interfaces:** Existing PersistentDeploymentPrepare remains owner. Add optional borrowed context
+and actual prepare_provider/cancel_provider/read_provider methods, private same-service helpers,
+three HTTP routes under the existing contribution, exactv4 history verified in existing writer.
+Consume accepted37 actual source,38 pure codecs,39 publisher and40 slot lifetime unchanged.
+
+- [x] Capture accepted40 manifest/fifteen exactbeforecopies; fifteen newpaths absent. Read complete
+  normative contract and actual dependencies. Preserve old schema/wire/DDL literals and old tests
+  except seven precise current-startup/version/route-count/same-context-argument/import-isolation adaptations in section2.
+- [x] Add expected-GREEN original-history/replay characterizations, then meaningful migration and
+  graph REDs against real isolated owner/candidate/old service histories. Implement exact17-string
+  DDL_V4/C4 and same-writer v3→v4 migration plus full historical reconstruction; no disconnected
+  acceptance. Check unknown inboundFKs BEFORE mutation and rollback every destructive checkpoint.
+  ~~~python
+  before = capture_actual_legacy_history(db)
+  reopen_actual_preparation_service()
+  assert capture_old_history_projection(db) == before
+  assert actual_v4_checksums == expected_C1_C2_C3_C4
+  ~~~
+  Test helper names above denote actual row/record/event/HTTP observations, not production APIs.
+  Preserve immediate-v3 explicit rowids; do not invent retroactive v1/v2 physical identity claims.
+- [x] Build exact context18-doc CAS/index/anchor joins and frozen real0..1 legacy staged inventory,
+  after actual legacy history loading. Keep originalphysicalslot/extension reservations permanent.
+  Old body8192/edges4/blobs3 unchanged; exactprovider branch atmost20deduplicatedblobassociations.
+- [x] Add actual authenticated command/replay/race/time REDs, then atomic prepare/cancel/expiry/read.
+  Replay before current source/time/RNG; finalwriter reauth/replay/source/slot/inventory verification.
+  At expiry persist expired/suppressed before returning conflict outside transaction. No new
+  receipt/installation/qualification/binding producer or caller auth/source boolean.
+- [x] Add actual39 publication/crash REDs, then bounded same-service reconciliation. Exactfinal
+  after DB rollback is observed, not republished. Unavailable-source suppression is NOT proof of
+  non-exposure. Preserve olditem progress/error mapping and combinedFD<=256 measuredbound.
+- [x] Add real server/owner/contribution/web-boundary REDs and wire three routes/eightdeclarations,
+  same already-owned source, closed3response exports/error mappings/basepath/frozenreplay bytes.
+  ~~~python
+  receipt = actual_owner_post_provider_request()
+  assert actual_final_request_bytes == independently_expected_request
+  assert actual_owner_get_request()["request_digest"] == receipt["request_digest"]
+  assert repeated_same_command_response_bytes == original_response_bytes
+  ~~~
+  Use real isolated DB/owner/CAS/source/publisher paths, never mocked successful authentication,
+  currentness/journal checks or a publish=True substitute. Cover wrong-family endpoint refusal.
+- [x] Internally self-review migration/history→commands→publication→HTTP; freeze30hashes/fullmanifest
+  and run sixnew plus exact26existing contract-listed families (19unchanged/seven adapted) with tracing
+  disabled/no bytecode/no cache. Independent spec/quality whole-slice gate before acceptance.
+  Record all failures/warnings/FD measurements/preservation and simulated-vs-native boundaries.
+
+### Task 42: Close the existing populated requester connection lifetime
+
+**State:** COMPLETE after independent review and fixture-only R1; accepted720 snapshot.
+**Spec:** contracts/provider-stage-connection-lifetime.md in full. Concrete requester-side repair,
+not provider receipt/observer/migration delivery. Earlier task-42 advisory filenames discuss the
+subsequent consumer; this numbered task is its independently reviewable prerequisite.
+
+**Owned paths:** modify only app/workers/listener.py, app/workers/ipc_root.py,
+app/workers/broker.py within exact contract surfaces; add only
+app/tests/test_provider_stage_connection_lifecycle.py. No existing test changes.
+Extra evidence only .superpowers/sdd/resumption-plan/task-42-report.md.
+No subagents/commits/push/native/root/Docker/real user data/key/live/network effects.
+Controlled isolated local sockets/FDs/locks and public synthetic secrets only.
+
+**Interfaces:** all existing signatures and outputs unchanged; consume accepted40 raw helpers,
+actual GenerationLease/fence/VerifiedListener/FrameCodec/ExtensionConnection ownership. Produce
+the same owning objects and ordinary error semantics with complete finite failure cleanup.
+
+- [x] Capture accepted41 fullmanifest and exactthree beforecopies; verify newtest absent. Read
+  full contract and actual reached bodies. Do not alter40 accepted metadata/rawhelper surfaces.
+- [x] Add independent expected-GREEN normal generation and owning-connection characterizations
+  before editing existing methods. Example actual generation fixture assertion:
+  ~~~python
+  import os
+  import pytest
+  from app.workers import ipc_root
+  from app.tests.test_extension_listener import channel
+
+  def test_generation_returned_ownership_and_repeat_close(channel):
+      root, _spec = channel
+      lease = ipc_root.acquire_generation(root)
+      held = (lease.endpoint_fd, lease.lock_fd, lease.pair_fd)
+      lease.close()
+      lease.close()
+      assert lease.closed
+      for descriptor in held:
+          with pytest.raises(OSError):
+              os.fstat(descriptor)
+  ~~~
+  No intervening opens in this test; expanded fault accounting tracks acquisition instances,
+  not globally unique descriptor numbers. Cover actual read/write, identity, lock and refusal.
+- [x] Add decisive real-owned-resource REDs for every contract checkpoint before its correction;
+  primary sentinels plus secondary close failures, all aggregate positions, after-transfer failure
+  and unreturned-successful-socket loss. Fixture mistakes are not product RED evidence.
+- [x] Repair only finite local/returned ownership and primary-preserving cleanup. Preserve exact
+  old mapping, framing/peer/HMAC/mode/deadline and OSError suppression. Detach before one close;
+  never refresh/retry/reopen or scan process FDs. No new public ownership API.
+- [x] Test actual broker code separately: existing channel seams replaces connect_verified and
+  cannot establish its cleanup. Simulate only lower native/OS observations with real FD/socket
+  ownership. Test same primary, each close attempted, borrowed sentinel open, no double close,
+  and physical-release versus refused-close distinctions.
+- [x] Self-review; freeze fourhashes/fullmanifest and run exact seven-family contract command once
+  with tracingdisabled/-B/nocache. Report all failures/warnings and outsidepreservation; no
+  wholeprovider/native/qualification claim. Independent spec/quality gate before later observer.
+
+### Task 43: Connect provider receipt consumption, observation and staged installation
+
+**State:** ACCEPTED after independent scoped R1 spec/quality PASS. Exact8 affected cover95passed/
+1inheritedwarning405.89s;749postrunhashes verified. Native/live/qualification limits remain open.
+**Spec:** contracts/provider-receipt-consumption.md §§1–13, full authoritative fields/SQL/caps.
+**Execution brief:** .superpowers/sdd/resumption-plan/task-43-brief.md, full seven-phase sequence.
+The initial49-path table is preserved; post-freeze1 contract§13 adds one precisely bounded old
+test clock fixture: current50paths=29new/21modified. Baseline720: task-43-before.sha256;
+21exact beforecopies;29new paths absent. No production ownership expansion.
+
+- [x] Characterize old real-owner/replay behavior and construct genuine source/crypto/worker fixtures.
+- [x] Implement strict provider receipt/evidence/selector codecs and twelve detached exports.
+- [x] Implement retained incoming/consumed channels and two real authenticated identify connections.
+- [x] Integrate exact C5/v5 migration with old-row/hash preservation and complete historical graph.
+- [x] Connect actual import/cancel/expiry/consume, same-writer installation and durable publications.
+- [x] Connect authenticated HTTP, exact response bytes and restart/frozen replay.
+- [x] Preserve initial49-path freeze/all45 result; apply§13 test-only reconciliation and freeze
+  final50-path delta, run the exact three affected families, audit preservation and pass
+  independent spec/quality review. Native operator/qualification/binding/live readiness stay open.
+  Initial review found I1/I2 plus required S1/S2 gaps; original writer corrected exact8files and
+  passed95affectedtests/scopedre-review. See task-43-r1-review.md and accepted749manifest in scratch.
+  Earlier failed45, freeze2's51pass and R1's95pass are distinct evidence, not one all-green45run.
+
+### Task 44: Preserve shared-store connection cleanup primaries
+
+**State:** ACCEPTED after scoped R1 review: missing checkpoint-membership coverage addressed,
+no new breakage. Initial exact193-test cover passed/one inheritedwarning; test-only R1 passes both
+affected cases. Final750manifest e590a0c306fc44f77e2a8aa7bf6bca915721a15faf21b65a727369d6a4536282 verified.
+Accepted43 R1 snapshot and appended four receipt families frozen in brief.
+Independent bounded preflight and scoped docs R1 are READY. This is a bug correction, not a new
+provider authority or storage schema. Exact execution brief:
+`.superpowers/sdd/resumption-plan/task-44-brief.md`; prerequisite semantics and preflight report in
+the same workspace are required. Two modified files (domain/store.py, storage.py), one new
+test_domain_connection_lifecycle.py, three finite context-manager surfaces only. A fresh sole writer
+starts after accepted43; historical task-44-conformance drafts are future advisory work, likely45.
+
+- [x] Capture accepted43 baseline/two beforecopies and freeze exact shared-path plus receipt cover.
+- [x] Prove genuine temporary SQLite/verified-handle baselines and exact-type record restrictions.
+- [x] Reproduce and fix connection rollback/deregistration/close primary preservation.
+- [x] Reproduce and fix directory-child/duplicate ownership, preserving nested UnsafePath mapping.
+- [x] Prove integrated finite cleanup, committed-versus-uncertain state and refused-close limitation.
+- [x] Freeze three-file delta, run covering tests, verify all outside bytes and pass independent review.
+
+### Task 45: Execute and retain fixed private-provider conformance
+
+**State:** ACCEPTED after scoped R5 review:3addressed/0open, spec compliant/quality Approved.
+Final773 manifest d6cc1b4460d37b4cc0789c52e6e90b9a002c931f6796c8a51fa251c364b89ba6 freshly verified.
+Controller acceptance uses completed72 evidence plus final amended166pass/1authorizeddeselection,
+5shared-fixture compatibility passes and controlled RED/GREEN; not a new all-green72 run.
+Only4test/fixture paths changed after the completed full72; all production bytes preserved.
+Historical full72 worker-exception cause remains unproved; deterministic complete-input proof is
+not a production-latency claim. Detailed acceptance ruling is in the SDD ledger.
+The following is retained chronology: full72 completed RED13failed/2915passed/
+1warning3137.65s; all773R4hashes reverified. task-45-r5-brief.md authorizes a bounded test-only
+repair including two existing compatibility tests beyond original34; production remains frozen.
+R4scoped review: spec compliant, quality Approved, I3addressed,0open. New exact72 started
+2026-09-20 00:16:46 UTC, owned session90316; outputs task-45-final72-r4-run.md. R4changes3of34paths;
+773-path candidate SHA256398e305c820851ae2a46b4f0cab33206119de0f8ad53157c66905c74a2655e8d.
+Focused5RED→5GREEN and31compatibility results retained; independent snapshot verification complete.
+Full72 complete output32 retained; R5 covering proof and scoped review now pending.
+Historical R3review retained I3Important:
+first-observable identity/freshness boundary was still attempt-only. A fresh stronger sole writer
+followed task-45-r4-brief.md against the frozen R3fixbase; R4focused proof and scoped review passed.
+R3changes3of34paths;
+773-path candidate SHA256 fc605193c5e7c181d1ed9e82884a207f5a42f15ae4c7696158ba8bbe0ebce7fb.
+Focused tests and independent snapshot verification retained; full72 still pending after clean review.
+R2review addressed5of6findings; I3remains
+Important: observed mismatch can hide impossible trailing frames/later attempts. Original writer
+repairs this exact stopping boundary under task-45-r3-brief.md; focused proof and scoped review
+precede the mandatory full72. Frozen R2fixbase changes8of34paths;
+773-path candidate SHA256 9a2723a523bb7add048917b66b278aee44734075c293705107846f02ba02c9e0.
+Focused amended-path proof and independent scope/hash verification retained. Scoped review comes
+first; exact72-module cover remains mandatory on the same bytes after review is clean.
+R1 independent review addressed4originalfindings
+and left6consolidatedImportant/noCritical issues. Controller confirmed the cited contract/code
+contradictions and interrupted ONLY owned72attempt46145/PID28134: actual exit1, partial output
+retained, no GREEN/completed-cover claim. All773R1hashes were verified after that exit at
+eb555fc5abb12da5588d5bb2a44feaf38a9e468df05455bd999a007d032418f1, before the subsequently frozen R2.
+Initial/R1/R2 copies and the interrupted attempt remain retained. Historical design preflight
+found two contract gaps (Subject value and source-less restart fixture); design-only revision
+addressed both and passed scoped review before implementation began. That approved contract
+did not confer implementation acceptance or native/live/qualification authority.
+**Spec:** contracts/provider-conformance.md, complete normative values and34-path scope.
+**Brief:** .superpowers/sdd/resumption-plan/task-45-brief.md, full execution plan and72-module cover.
+**Baseline:** accepted44 R1 manifest750,11exact beforecopies,23new paths absent. Expected final773.
+
+- [x] Reconcile accepted42/43/44 actual interfaces and resolve independent full-preflight findings.
+- [x] Add exact closed Subject/types, literal vectors, independent oracle and additive exports/events.
+- [x] Execute real fixed requester/streams with finite ownership and bounded raw observations.
+- [x] Resolve same-writer staged subject; install additive tables and retained history/rehydration.
+- [x] Integrate authenticated intent/run/finalization, exact replay and expired-pending recovery.
+- [x] Integrate two real owner routes and source-less restart proof in both web profiles.
+- [x] Freeze original34paths plus2explicit compatibility tests, complete exact72 cover, repair its
+  failures with amended-path evidence, verify preservation and pass independent task review.
+
+### Task 46: Verify provider release evidence and retain the exact verified installation
+
+> **For the sole implementer:** REQUIRED SUB-SKILL: superpowers:executing-plans, then
+> systematic-debugging/TDD and verification-before-completion as applicable. No subagents/commits.
+
+**State:** DESIGN PROMOTED after independent preflight R1; implementation not accepted.
+**Goal:** Actual independent source -> raw release-evidence evaluation -> same-store verified2
+history/head/event -> authenticated browser command/replay -> exact verified-descendant B.
+**Spec:** Read `contracts/provider-installation-verification.md` in full, then its complete
+installation/adapter snapshots and expressly incorporated source/native/R1 field tables. Those
+exact values are binding. Historical draft names/status lines are governed by the promotion
+contract; they do not reopen the satisfied design or Task45 gates.
+
+**Baseline/ownership:** accepted773-path `task-46-before.sha256`,
+SHA256 d6cc1b4460d37b4cc0789c52e6e90b9a002c931f6796c8a51fa251c364b89ba6.
+HEAD a2f85d578c47a0e59c1850ac1840cf8baceb0d96 remains unchanged. Exactly34new+28modified paths
+are listed in the final installation snapshot §2. All28 exact beforecopies are in
+`.superpowers/sdd/resumption-plan/installation-before/`; all34new paths were absent.
+Expected final807=745unchanged+28modified+34new. No main-checkout or unrelated dirty-file edits.
+Controller-only `task-46-review-read.mjs` checks the exact scope/snapshots without writes.
+
+**Global constraints**
+
+- Claude API-only; Codex subscription and explicitly selected optional API remain required.
+- No new paid/live model calls, credential discovery/export, real microphone input or public push.
+- Use synthetic audio, local controlled HTTP/worker fixtures and temporary test stores.
+- Do not modify or terminate unrelated user processes or the old Claude session.
+- The supported product is the browser UI; development commands are not end-user instructions.
+- Preserve the existing branch and main-checkout untracked files. No automatic commits or push;
+  review the current diff plus newly created files, not an empty HEAD-to-HEAD comparison.
+- Keep T024/T042 and downstream whole-story tasks open unless all their original acceptance is met.
+- Missing authority/actual evidence must remain explicit; no automatic billing/model fallback.
+- No new package, network/native/root/Docker/image download/build/scanner run, real key/signature,
+  source provisioning, host deployment or actual user-store operation is authorized. Tests use
+  temporary sources/stores and ephemeral labeled test signatures, never production defaults.
+- No production/test dependency on .superpowers or Markdown truth. R1 retained-source grammar is
+  a byte contract, not an implemented/approved real producer. No caller-verifier injection.
+- Preserve old stage/B hashes/rows/events/replies, C1–C5 and historical V5 failure checkpoints.
+  Qualification, binding, live credentials/tools/models and full browser journey remain separate.
+
+**Review focus:** exact signed reachability and native inventory/finding policy; stage-history vs
+verified-current-head composition; v6 rollback/FKs/rowids; early-auth bounded cancellation-safe
+UploadLock.publish; exact old/new B admission/recovery/source-less replay. The final snapshots
+supply the actual mutation/authority assertions for each, not open-ended test instructions.
+
+**Report:** append all work and exact RED/GREEN/failure/exit/time evidence to
+`.superpowers/sdd/resumption-plan/task-46-report.md`. Distinguish missing-interface and fixture
+failures from product RED. Record synthetic/native/real-release limits and all owned process
+sessions. When final bytes are ready, notify controller BEFORE any final72 launch. Controller
+owns its scheduling; do not duplicate that expensive baseline. Use actual commands:
+`LANGCHAIN_TRACING_V2=false LANGSMITH_TRACING=false /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest -q -p no:cacheprovider ...`.
+No test removal, broad skip, retry-to-green or silent scope expansion. If a concrete interface
+or ownership conflict appears, send NEEDS_CONTEXT with exact evidence before changing it.
+
+The reviewed installation snapshot §9 is the executable A–D sequence, with exact files,
+interfaces, fixture definitions and example test bodies. Implement sequentially as one delivery;
+do not stop after source-only or parser-only milestones:
+
+- [x] A: write/observe source/policy PA and S failures; implement literal shared policy bytes,
+  two-file codecs/render/init/retention and startup-owned optional source export. Keep seven
+  contributions/35routes. Source tests must collect without new service/API imports.
+- [x] B: write/observe actual parser/assessment PB/E and provenance/policy failures; implement
+  the real active-writer stage-view delegate, bounded external parser and every selected native/
+  signature/toolset/provenance/coverage join. Preserve raw evidence and old domain branches.
+  Use actual accepted staging, not a constructed trusted view or future service mock.
+- [x] C: write/observe current-layout/migration/PC/V/H/ASGI failures; implement immediate v6,
+  mandatory composed historical/current journal, source/head/time/owner guards and one atomic
+  verified2/event/head/reply transition. Use existing UploadLock.publish through cancellation.
+  Register exactly the two named routes, eight contributions/37routes. Amend only the seven
+  owned old regression files' specified current-success expectations; keep historical checks.
+- [x] D: write/observe verified-descendant B cases with the real framed worker; implement explicit
+  command/admission/intent/report/reply variants without altering B SQL or the old21-field subject.
+  Prove fresh currentness and source-less exact replay/recovery, never qualification authority.
+- [x] Run all11 new test files and the exact seven-file C regression on the completed bytes.
+  Inspect all new schemas and ensure unowned generated exports remain byte-identical.
+- [x] Freeze807sourcepaths within exact scope, submit report, receive independent spec/quality review,
+  resolve findings and run the one controller-scheduled exact72 baseline below on final bytes.
+  A baseline containing the same seven C files fulfills their final connected coverage: map them,
+  do not launch an additional identical seven-file run after72 solely to duplicate evidence.
+- [x] Controller verifies final source preservation, reports all actual test results and limitations,
+  and separately accepts this connected slice. Do not mark T087 or whole product complete.
+
+**Exact inherited final72 command** (SHA25619f469978930a6fa9a182f2c087d4f929e15e90ebd8abb94ca01b882e6f3b6f3,
+72 ordered module arguments; prior RED remains retained, no new GREEN yet):
+
+```sh
+LANGCHAIN_TRACING_V2=false LANGSMITH_TRACING=false /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest -q -p no:cacheprovider \
+  app/tests/test_provider_client.py \
+  app/tests/test_provider_conformance_vectors.py \
+  app/tests/test_provider_conformance_contracts.py \
+  app/tests/test_provider_conformance_records.py \
+  app/tests/test_provider_conformance_storage.py \
+  app/tests/test_provider_conformance_service.py \
+  app/tests/test_provider_conformance_api.py \
+  app/tests/test_provider_conformance_lifecycle.py \
+  app/tests/test_provider_receipt_contracts.py \
+  app/tests/test_provider_receipt_schema_exports.py \
+  app/tests/test_provider_receipt_sources.py \
+  app/tests/test_provider_stage_observer.py \
+  app/tests/test_provider_receipt_migration.py \
+  app/tests/test_provider_receipt_records.py \
+  app/tests/test_provider_receipt_service.py \
+  app/tests/test_provider_receipt_reconciliation.py \
+  app/tests/test_provider_receipt_api.py \
+  app/tests/test_deployment_receipt_migration.py \
+  app/tests/test_deployment_journal_v3_migration.py \
+  app/tests/test_provider_prepare_migration.py \
+  app/tests/test_provider_prepare_api.py \
+  app/tests/test_first_party.py \
+  app/tests/test_provider_source_startup.py \
+  app/tests/test_deployment_prepare_integrity.py \
+  app/tests/test_deployment_receipt_api.py \
+  app/tests/test_provider_sources.py \
+  app/tests/test_deployment_prepare.py \
+  app/tests/test_deployment_prepare_storage.py \
+  app/tests/test_deployment_prepare_publication.py \
+  app/tests/test_deployment_prepare_api.py \
+  app/tests/test_deployment_prepare_contracts.py \
+  app/tests/test_deployment_prepare_v2_contracts.py \
+  app/tests/test_deployment_prepare_v3_contracts.py \
+  app/tests/test_deployment_prepare_v2_schema_exports.py \
+  app/tests/test_deployment_receipt_journal_integrity.py \
+  app/tests/test_deployment_receipt_journal_reconciliation.py \
+  app/tests/test_deployment_receipt_import.py \
+  app/tests/test_deployment_consume.py \
+  app/tests/test_deployment_consume_api.py \
+  app/tests/test_deployment_acceptance.py \
+  app/tests/test_first_party_dependencies.py \
+  app/tests/test_provider_prepare_contracts.py \
+  app/tests/test_provider_prepare_records.py \
+  app/tests/test_provider_prepare_service.py \
+  app/tests/test_provider_prepare_reconciliation.py \
+  app/tests/test_provider_prepare_api_schema_exports.py \
+  app/tests/test_provider_publication.py \
+  app/tests/test_provider_publication_lifecycle.py \
+  app/tests/test_provider_slot_lifecycle.py \
+  app/tests/test_provider_stage_connection_lifecycle.py \
+  app/tests/test_extension_listener.py \
+  app/tests/test_stage_observer.py \
+  app/tests/test_provider_worker.py \
+  app/tests/test_provider_messages.py \
+  app/tests/test_provider_service.py \
+  app/tests/test_extension_channel.py \
+  app/tests/test_artifact_stream_transport.py \
+  app/tests/test_worker_artifact_stream.py \
+  app/tests/test_domain_contracts.py \
+  app/tests/test_domain_storage.py \
+  app/tests/test_domain_schema_exports.py \
+  app/tests/test_domain_events.py \
+  app/tests/test_public_events.py \
+  app/tests/test_event_coverage.py \
+  app/tests/test_domain_connection_lifecycle.py \
+  app/tests/test_storage.py \
+  app/tests/test_domain_permissions.py \
+  app/tests/test_api_command_transaction.py \
+  app/tests/test_owner_admission.py \
+  app/tests/test_local_session.py \
+  app/tests/test_router_composition.py \
+  app/tests/test_web_owner_integration.py
+```
+
+### Task46 bounded regression amendment (2026-09-20; not acceptance)
+
+The exact72 command above ran once on frozen R1 and failed93/errored3 while2834 passed.
+Original result is retained, not replaced by a green claim. Diagnosis scopes a nine-path
+correction: provider_installation_records.py, test_provider_installation_contracts.py,
+test_provider_installation_service.py, test_provider_prepare_migration.py,
+test_deployment_journal_v3_migration.py, test_provider_conformance_contracts.py,
+test_deployment_prepare_integrity.py, test_deployment_receipt_api.py and
+test_provider_conformance_lifecycle.py (tests under app/tests; product under app/extensions).
+Last four are explicit test-only additions to original62 ownership, making66/807 scoped paths.
+Controller verified741 outside paths unchanged against accepted45 and all9 R1 beforecopies.
+
+Ruling: restore legacy/empty read-only journal inspection without relaxing exact-writer view
+issuance/retained verification; retain mandatory orphan/head/index validation. Repair current
+success/schema/export assertions and genuine held-V2 fixture setup without weakening historical
+negative or rollback proofs. Preserve FD cap256 and require same-process ownership-to-FD cover.
+Final-wall original2-of6 cause is unknown; metadata-only diagnostics must not be called a fix.
+Cost if wrong: false-positive compatibility or authority weakening; independent nine-path review
+and finite covering run are required. No production timing change or test retry loop.
+
+New correction evidence: guard RED2failed/2passed -> GREEN4passed; representative21passed;
+test-correction23passed, including real per-case FD restoration. All inherit one disclosed
+Starlette warning. Final807 repair freeze e451621e1dc53062c6643857d3d64c068dfaaae27761d57e225c5670d438162d;
+exact9 R1 deltas/798 unchanged. Scratch task-46-regression-scope.json and review package carry
+full hashes, before/after bytes and commands. Task46 remains open.
+
+After independent delta review, controller runs one finite22-selection cover recorded in
+task-46-regression-cover-preparation.md: all96 original failed/error nodes, six affected
+installation/verified modules, actual FD module LAST in same process. The unchanged64-run
+capacity case passed in frozen R1 exact72; retain its exact evidence rather than repeating
+that20-minute case. This explicitly revises post-failure scheduling only, not original acceptance
+requirements or historical results. No blanket full72 retry, skips/xfail or relaxed deadlines.
+
+**Task46 accepted scoped result:** after compatible/clean independent nine-path regression and
+one-file coldHTTP reviews, final807 db384ceb994654c40ae0388d3358e18f7edff90ee01197ce99f514fa9adf9318
+rehash confirms66owned/741outsideunchanged. Final22 retained548pass/1fail, then last test-only
+C6/V6 correction passed122 API→FD cases with806otherpaths unchanged. All96 original failed/error
+nodes have passing latest cover; no newly all-green22/72 claim. This explicit combined-evidence
+adjudication satisfies the amended finite Task46 verification sequence. Historical2of6cause is
+unknown and carried to integrated/native-fit/finalreview, not declared fixed. GETproof is status/
+fields; POST/cancel byte-exact. See evidence/resumption-2026-09-20.md and scratch acceptance.
+
 ## Continuation
+
+**Current checkpoint after Task45 acceptance:** Tasks26–45 are accepted within their recorded
+scopes, including the26cleanup correction and27compiled coherence/refusal boundary. Task37 retained
+runtime source context/startup integration and Task38 pure provider protocol are accepted.
+Task39 source-bound publisher and Task40 slot-lifetime correction are accepted.
+Task41 integrated producer/migration/owner routes is accepted after R1. Task42 populated-requester
+lifetime is accepted after fixture-only R1. Task43 provider consumer is accepted after bounded R1;
+Task44 shared-store cleanup is accepted after test-only R1. Task45 provider conformance is promoted
+after accepted44 reconciliation and full preflight/R1; external operator/
+release-producer drafts remain advisory.
+These bounded prerequisites do
+not close T042/T087 or silently replace the seven-story product. Continue through the original
+single-topology journal/staging/qualification/binding and canonical provider/model integration,
+then exact action authority and the connected graph-centred browser journey. The next paragraphs
+retain historical sequencing rationale, not a request to repeat accepted tasks.
+
+**2026-09-19 priority update (supersedes stale future-tense descriptions below):** Task24/25
+installation/probe slices and T040 scheduler implementation now exist. The audit freshly passed
+223 focused Python tests and58 shell-logic tests but found three remaining defects: this Task26
+cleanup fault, compiled tool authority not enforced at actual dispatch, and external approvals
+not bound to the exact action/input/use. Address the latter two in dependency order: Task27
+enforces current compiled coherence and refuses unsupported external effects; then persist
+verified qualification/binding through the existing stage lifecycle (not a second registry or
+staged-as-qualified shortcut), and add exact prepared-call owner approval, atomic approval-use/
+ToolCall/budget/send claim and durable intra-node pause/resume together. Only that complete
+integration closes exact-action authority. Preserve prior decisions throughout.
+Then connect the supported browser's work input/provider/source/STT/understanding to real graph
+generation/independent critique/selection/approval and production execution; use the already
+approved graph-centred UX, not a list-only replacement. Connect original/whole-or-partial human
+alternative, lens-driven inquiry, real paired old-queue reruns, product plateau and human promotion.
+Finally complete optional redacted log export, integrated regressions and unchanged release gates.
+These priorities implement the original seven-story scope, not a replacement/reduced roadmap.
 
 After these tasks, continue T040's scheduler/ledger/worker integration and the core semantic-port
 dependencies, then the connected browser path under the unchanged canonical plan. A transport
@@ -2624,3 +4194,247 @@ settlement in one shared transaction before ledger-reconciled scheduler dispatch
 supported browser journey. The current public `accept_result` and `settle` methods each own a
 transaction; calling them sequentially is not the required atomic integration. These are pending
 dependencies, not implementation or production qualification claims.
+
+### Task 47: Connect the conditional Claude text semantic worker, gateway and runtime
+
+**Authority:** accepted design contracts/provider-semantic-execution.md, all three incorporated
+normative snapshots in contracts/provider-semantic/, and retained official-source reference.
+Read them completely before code: main design7177e9cd27e1813f6b42344437e73593ef0ba1537714acfbefe6fd76bd02c513;
+literal appendixdcf68d94934aac3e0dc1078a9620f4cdb7c6c12c70682f32681c8ca19b410fd4;
+read/cancel amendment3599b84bbb08e5fdf93675f67dffb657d9cfcb48d2153c8904d231d5d97c4ebe.
+The master supersedes historical DRAFT/design-approval statements only. Literal appendix and
+adopted read/cancel amendment govern exact fields/semantics. No source Markdown is a runtime
+oracle or authority producer. Official format evidence is not real provider qualification.
+
+**Prerequisite now satisfied:** Task46 scoped acceptance, final807 manifest
+db384ceb994654c40ae0388d3358e18f7edff90ee01197ce99f514fa9adf9318, no whole-product/native/live claim.
+HEAD a2f85d578c47a0e59c1850ac1840cf8baceb0d96. Controller reconciled all19 new paths absent,
+seven existing paths present/exact; seven immutable beforecopies hash-verified. Full baseline:
+.superpowers/sdd/resumption-plan/task-47-before.sha256; beforecopy map task-47-owned-before.json.
+Final expected inventory826=807+19,800 existing unowned paths byte-identical. Unexpected necessary
+edits require concrete interface evidence and controller ruling BEFORE widening scope.
+
+**Purpose:** one real conditional Claude API text execution path across encrypted custody,
+authenticated frames/streams, controlled local HTTP/SSE, actual NodeAttemptDispatcher/ledger
+and provisional accounting. All five provider operations are required. Text-first no-tools/null
+effort profile is not a reduction of the broader product. Managed Codex subscription remains
+mandatory subsequent work; no automatic API fallback.
+
+**Global Constraints (verbatim):**
+- Claude API-only; Codex subscription and explicitly selected optional API remain required.
+- No new paid/live model calls, credential discovery/export, real microphone input or public push.
+- Use synthetic audio, local controlled HTTP/worker fixtures and temporary test stores.
+- Do not modify or terminate unrelated user processes or the old Claude session.
+- The supported product is the browser UI; development commands are not end-user instructions.
+- Preserve the existing branch and main-checkout untracked files. No automatic commits or push;
+  review the current diff plus newly created files, not an empty HEAD-to-HEAD comparison.
+- Keep T024/T042 and downstream whole-story tasks open unless all their original acceptance is met.
+- Missing authority/actual evidence must remain explicit; no automatic billing/model fallback.
+
+Additional scoped boundaries: no helpers/subagents, commits, dependency/SDK changes, native/root/
+Docker/image/scanner/key operations, real credentials or user-store access. No production factory/
+route/export registration, C/binding/currentness/reservation issuer, release-source change or
+test flag activation. No historical private B/worker/protocol/source18/port-schema/semantic-hash
+changes. No new EntityRef kind, schema/receipt migration or fixture imported by production.
+
+**Only writable product/test paths —19 new:**
+```text
+app/extensions/provider_semantic_contracts.py
+app/extensions/provider_semantic_records.py
+app/extensions/provider_semantic_context.py
+app/workers/provider_port_messages.py
+app/workers/provider_port_service.py
+app/workers/provider_port_client.py
+app/workers/provider_semantic_codec.py
+app/workers/provider_send_messages.py
+app/workers/provider_send_service.py
+app/workers/provider_send_client.py
+app/runtime/provider_attempt_transport.py
+app/tests/support/provider_semantic_harness.py
+app/tests/test_provider_semantic_contracts.py
+app/tests/test_provider_semantic_records.py
+app/tests/test_provider_semantic_worker.py
+app/tests/test_provider_send_gateway.py
+app/tests/test_provider_attempt_transport.py
+app/tests/test_provider_semantic_vertical.py
+app/tests/test_provider_semantic_codec.py
+```
+
+**Seven modified, exact before hashes in task-47-owned-before.json:**
+```text
+app/workers/provider_gateway.py
+app/workers/credential_vault.py
+app/workers/credential_files.py
+app/workers/credential_journal.py
+app/domain/schemas.py
+app/domain/schema_exports.py
+schemas/v1/domain-envelopes.schema.json
+```
+
+Sequence follows accepted main snapshot§9 A–C; one connected delivery, not separate parser-only
+milestones. Named failing tests precede implementation. Use actual existing primitives and
+framework tool boundaries, not fake vault success callbacks or core SDK calls. Surface exact
+contract conflicts to controller; routine implementation choices stay within the frozen profile.
+
+- [x] A: closed records/context. Seal actual UTF-8 input Artifacts in exact frozen order; verify
+  instruction projection digest, refs/media/ordinals/purpose/grants/envelope and acyclic evidence.
+  Rehash persisted bytes/refs; never grant authority from constructed values/worker refs/booleans.
+  Preserve every old content branch and unchanged published port schema/hash vectors.
+- [x] A: profile-scoped request UUID observations versus immutable same-ID replay; model-step
+  semantic-key no-resend remains exact. Pin sole connection snapshot handle through config/
+  binding/session/CM fingerprint/exact CR revision and reject coherent alternate-credential swaps.
+- [x] B: all five operations through real authenticated dialogues. Reuse frame/stream primitives,
+  not old private B semantics. Actual captured POST/SSE/text/usage/catalog; independently recompute
+  proposals and validate observed bytes in core. Strict bounded Models paging, unknown nullable
+  capabilities remain ineligible, no model-name/price hardcoding or fabricated source truth.
+- [x] B: real CredentialRoot/Vault sentinel ciphertext, authenticated prepare/commit and private
+  instance/session/identity-issued one-shot lease. Zero send before commit; duplicate commit at
+  most one send. Actual decryption only under delivery lease; two real encrypted credentials with
+  independent handle/config/binding/CM/CR/lease swaps refused. Keep old resolve_for_gateway denial.
+- [x] B: optional one absolute CustodyBudget through real RLock/flock/SQLite/progress/full metadata
+  integrity. Real independent contention/cancel/malformed-sibling proofs; old budget=None defaults
+  unchanged. No stacked waits, busy retries, abandoned helper threads or reduced validation.
+  Status/cancel must respond while upstream blocks; all owned resources actually unwind/join.
+  Secret sentinel only at controlled upstream auth header, never worker frames/results/errors.
+- [x] C: actual dispatcher/ledger/permit/window/cost flow. Exact frozen-envelope joins; one durable
+  send-intent before gateway commit; atomic accept_result_and_settle. Succeeded text with unknown
+  exact currency uses provisional usage=None and retains API reservation, never zero/final fiction.
+- [x] C: crash at commit/send/response/seal/accept boundaries returns retained result or unknown,
+  never resends; same-ID replay immutable, fresh status observes current state, cancellation intent
+  target-monotonic and acknowledgement distinct. All20 operation×terminal candidates, exactly12
+  permitted pairs; partial/late/unsupported artifacts quarantined outside semantic output.
+- [x] C: actual source-less restart/replay/unknown recovery, exact results/currentness/refusals,
+  import/non-registration boundary and unchanged default assembly. Test-only synthetic authority
+  exercises same concrete consumer, never constitutes genuine C/binding/connection/cost evidence.
+- [x] Run focused RED/GREEN behavioral and impact checks; inspect all new files/self-review and
+  report exact commands/results/limits. Hold all paths, no active tests; notify controller for
+  immutable26-path diff/new-file capture and independent spec/quality review. Do not claim DONE
+  with parser-only or always-denied code, or silently omit prescribed behavioral proofs.
+- [x] Resolve concrete findings via same writer; controller runs the agreed final35 command below
+  ONCE on final reviewed bytes, verifies all826/unowned preservation, then separately accepts scope.
+  No duplicate broad suites, skip/xfail, retry-to-green, paid calls or production activation.
+
+**Implementation details that must not regress:** main profile4inputs/4outputs/30s limits are
+provisional integration-fit caps; broader180s product target stays. Formats/pagination/usage/token
+grammar and exact wire/ID/deadline/session joins come from literal appendix, not guesses.
+Existing provider_gateway.send path grammar/behavior stays; new code-owned models cursor selector
+does not relax old arbitrary URL/query controls. Actual credential delivery is new, old resolver
+does not become an unqualified success path. Native uninterruptible-call timing remains a later
+measured gate, not a reason to abandon threads or falsify cancellation.
+
+Generated domain JSON: derive ONLY owned domain_schema() with Python exact integers, not bulk
+write_domain_schemas() (which would mutate three unowned artifacts). Use unambiguous whole-file
+apply_patch; verify full parse/exact factory parity plus unchanged old branches/exports.
+Runtime/tests must not load ignored scratch or Markdown for policy, verdicts or schema constants.
+
+**Retained observation for later review:** Task45/46 original intermittent final-wall worker
+completion cause is unknown. Current combined functional proof passed; not native latency or
+production reliability. Preserve bounded failure diagnostics, finite cleanup, serial test
+ownership and explicit host-fit gates. No speculative deadline relaxation or automatic retries.
+
+**Report:** .superpowers/sdd/resumption-plan/task-47-report.md; exact paths/hashes, RED/GREEN
+commands/output, actual behavior mapping, concerns and production nonclaims. No subagents.
+Root supplies reviewer and owns final35 scheduling AFTER report/review; do not launch it yourself.
+Final regression selection covers changed custody/gateway, legacy ingress/import boundaries,
+domain/schema variants, preserved protocol, actual runtime/window/ledger consumers and all seven
+new modules. Reconcile additional demonstrated impact explicitly rather than widening silently.
+
+```sh
+LANGCHAIN_TRACING_V2=false LANGSMITH_TRACING=false /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest -v -p no:cacheprovider app/tests/test_provider_transport.py app/tests/test_credential_vault.py app/tests/test_credential_custody.py app/tests/test_credential_gateway_service.py app/tests/test_credential_root.py app/tests/test_credential_routes.py app/tests/test_credential_import_boundary.py app/tests/test_credential_ingress.py app/tests/test_domain_contracts.py app/tests/test_domain_storage.py app/tests/test_domain_schema_exports.py app/tests/test_domain_permissions.py app/tests/test_extension_port_schemas.py app/tests/test_extension_port_schema_generation.py app/tests/test_provider_protocol.py app/tests/test_claude_api.py app/tests/test_provider_messages.py app/tests/test_provider_worker.py app/tests/test_provider_service.py app/tests/test_provider_client.py app/tests/test_dispatch_subject_context.py app/tests/test_runtime_budgets.py app/tests/test_runtime_budget_dispatch.py app/tests/test_runtime_ledger.py app/tests/test_runtime_ledger_migration.py app/tests/test_scheduler_attempt_dispatch.py app/tests/test_worker_response_capture.py app/tests/test_extension_attempt_transport.py app/tests/test_provider_semantic_contracts.py app/tests/test_provider_semantic_records.py app/tests/test_provider_semantic_worker.py app/tests/test_provider_send_gateway.py app/tests/test_provider_attempt_transport.py app/tests/test_provider_semantic_vertical.py app/tests/test_provider_semantic_codec.py > .superpowers/sdd/resumption-plan/task-47-final35.log 2>&1
+```
+
+This is scoped offline semantic behavior acceptance only. Actual native C/binding/current
+permissions/connection producers, text/compatibility/reservation review, new-artifact admission,
+production composition, authorized provider checks, mandatory Codex runner and graph-centered
+browser/lens/paired-evaluation/promotion integration remain later gates. Whole estimate50%±5.
+
+Task47 accepted 2026-09-21: independent R5 spec/quality PASS,0remaining Important/Critical;
+controller final35 once1341passed/1warning475.89s, all826source hashes unchanged.
+See evidence/resumption-2026-09-21.md and scratch task-47-acceptance.md for scope/nonclaims.
+
+### Task 48: Resolve the deployable semantic-provider integration boundary (design)
+
+**Goal:** Select the smallest behavior-bearing integration unit that connects the
+accepted semantic worker/gateway to actual owned service/deployment consumers,
+preserving the historical private-provider installation and conformance meanings.
+This is a design continuation, not product-code dispatch or activation authority.
+
+**Files:** Create only the task-48 design draft/report in this plan's scratch workspace.
+Requirements: `.superpowers/sdd/resumption-plan/task-48-design-brief.md`.
+Canonical spec, ADR-014 and the accepted provider contracts remain authoritative.
+
+- [x] Inspect owned connection/metadata/lifecycle and current fixed artifact admission.
+- [x] Compare new-candidate versus explicit replacement; choose a finite next unit with
+  concrete interfaces, ownership, downstream consumer and observable acceptance tests.
+- [x] Root reads complete draft and reconciles it with original product intent and
+  actual authority boundaries; independent design review precedes implementation.
+- [x] Publish a reviewed bounded contract and TDD implementation steps, or report
+  the exact genuine authority decision needed without manufacturing success.
+
+No automatic commits, product mutations, extra helpers, native provisioning or live calls.
+
+Task48 design accepted 2026-09-21 after R1 independent spec/readiness PASS; all four
+findings resolved. Contract: contracts/provider-owned-semantic-connection.md.
+
+### Task 49: Implement the owned semantic-worker connection prerequisite
+
+Read `.superpowers/sdd/resumption-plan/task-49-plan.md` first and completely: it is
+the complete finite requirements and exact values for this task. It incorporates
+the adopted `contracts/provider-owned-semantic-connection.md` and its R1 snapshot.
+Do not read the entire resumption plan or reopen completed Task47.
+
+- [x] Pin actual owned connection and duplex behavior with failing tests.
+- [x] Implement the seven-file owner-preserving worker path and cleanup/ack contract.
+- [x] Prove all five operations and the finite failure/currentness/host-boundary matrix.
+- [x] Self-review and report; hold all owned paths for root's independent task review.
+- [x] Resolve review findings; root runs final20 once on reviewed bytes and records scope.
+
+Sole implementer; no helpers, commits, dependencies, native provisioning, paid calls
+or production registration. Report `.superpowers/sdd/resumption-plan/task-49-report.md`.
+Root owns review/final20 scheduling. Global constraints and seven original owned paths
+plus the adopted diagnostic-only eighth test path are in the complete task plan;
+no other product/test edits without root ruling.
+
+Task49 accepted within its conditional owned-worker scope: independent R2 review
+spec/quality approved, all findings closed; root final20 once completed615passed,
+1 inherited warning in935.97s, exit0;828source hashes unchanged. Original catalog
+anomaly is historically unexplained and retained for integration/final review,
+not called fixed. See evidence/resumption-2026-09-21.md and the scratch reconciliation.
+
+### Task 50: Design the next assembled semantic-provider integration unit
+
+Read `.superpowers/sdd/resumption-plan/task-50-design-requirements.md` first: it is
+the complete finite requirements, input contracts, exact allowed outputs and global
+constraints. This design must advance the existing browser-first graph product;
+it does not authorize product changes, activation or a replacement framework.
+
+- [x] Inspect current gateway ownership/routing/provisioning and runtime identity consumers.
+- [x] Compare2–3 coherent integration scopes; recommend a behavior-bearing next unit.
+- [x] Specify exact interfaces/files and real positive/negative proofs, preserving old history.
+- [x] Record draft/report, self-review, and obtain independent scoped design review.
+- [x] Root adopts reviewed design and writes finite TDD plan without inventing native authority.
+
+Sole designer, no helpers or product/test mutations; root owns independent review.
+No commits, dependencies, live calls, credentials, native/root/container/scanner actions.
+
+Task50 accepted after independent R1 spec/readiness approval; the original-byte
+plain-frame bound finding is closed. Adopted contract: contracts/provider-owned-shared-gateway.md.
+Finite implementation plan: .superpowers/sdd/resumption-plan/task-51-plan.md.
+This is design acceptance only; actual runtime admission and bootstrap remain downstream.
+
+### Task 51: Implement the owned shared gateway prerequisite
+
+Read `.superpowers/sdd/resumption-plan/task-51-plan.md` first and completely: it is
+your complete requirements, exact values, owned files and test gates. Then read
+the adopted master and its full R1 snapshot identified there. Do not reread this
+entire resumption plan or reopen accepted Task49.
+
+- [ ] Pin the fixed profile and generic owned acquisition/duplex lifetime with tests.
+- [ ] Share the bounded credential grammar and authenticated vault/send first-frame ingress.
+- [ ] Implement owned send/control/deadline/cleanup behavior and actual positive HTTP proofs.
+- [ ] Self-review the exact12paths, report G1–G10 evidence and hold for independent review.
+- [ ] Resolve review findings; root runs final13 once and records bounded acceptance.
+
+One writer only, no helpers or commits. Global constraints and all exact paths are
+in the complete task plan. Report: `.superpowers/sdd/resumption-plan/task-51-report.md`.
+Root owns review and final13; no production/native/live/provider activation authority.

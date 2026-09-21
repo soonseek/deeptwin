@@ -21,6 +21,7 @@ from hashlib import sha256
 from pathlib import Path
 from threading import RLock
 from uuid import uuid4
+from weakref import ref as weakref_ref
 
 from ..domain.events import event_metadata
 from ..domain.permissions import Grant, Principal
@@ -391,6 +392,13 @@ class AttemptSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class _NodeDispatchContext:
+    execution_spec: ExecutionSpec
+    run_spec: RunSpec
+    run_phase: str
+
+
+@dataclass(frozen=True, slots=True)
 class ResultObservation:
     observation_id: str
     attempt_id: str
@@ -636,7 +644,7 @@ class DispatchPermit:
         return None if self.grant is None else self.grant.id
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True)
 class ConsumedDispatchWindow:
     """Conservative wall-clock windows anchored before durable validation."""
 
@@ -665,121 +673,18 @@ class ConsumedDispatchWindow:
         return self.anchor_monotonic + self.effective_remaining_ms / 1_000.0
 
 
-_DDL = (
-    "CREATE TABLE runtime_migrations (component TEXT NOT NULL, version INTEGER NOT NULL "
-    "CHECK(typeof(version)='integer' AND version>0), sha256 TEXT NOT NULL, "
-    "PRIMARY KEY(component,version))",
-    "CREATE TABLE runtime_control (singleton INTEGER PRIMARY KEY CHECK(singleton=1), "
-    "vault_id TEXT NOT NULL UNIQUE REFERENCES domain_vault(vault_id), "
-    "last_clock_ms INTEGER NOT NULL CHECK(typeof(last_clock_ms)='integer' AND last_clock_ms>=0), "
-    "active_session_id TEXT, reconciliation_generation INTEGER NOT NULL DEFAULT 0 "
-    "CHECK(typeof(reconciliation_generation)='integer' AND reconciliation_generation>=0))",
-    "CREATE TABLE runtime_commands (vault_id TEXT NOT NULL REFERENCES domain_vault(vault_id), "
-    "command_id TEXT NOT NULL, kind TEXT NOT NULL, payload BLOB NOT NULL, payload_digest TEXT NOT NULL, "
-    "result BLOB NOT NULL, result_digest TEXT NOT NULL, created_at_ms INTEGER NOT NULL, "
-    "PRIMARY KEY(vault_id,command_id))",
-    "CREATE TABLE runtime_runs (vault_id TEXT NOT NULL REFERENCES domain_vault(vault_id), "
-    "id TEXT NOT NULL, spec BLOB NOT NULL, spec_digest TEXT NOT NULL, phase TEXT NOT NULL, "
-    "revision INTEGER NOT NULL CHECK(typeof(revision)='integer' AND revision>0), "
-    "created_at_ms INTEGER NOT NULL, PRIMARY KEY(vault_id,id))",
-    "CREATE TABLE runtime_run_refs (vault_id TEXT NOT NULL, run_id TEXT NOT NULL, role TEXT NOT NULL, "
-    "kind TEXT NOT NULL, id TEXT NOT NULL, version INTEGER NOT NULL, sha256 TEXT NOT NULL, "
-    "PRIMARY KEY(vault_id,run_id,role), FOREIGN KEY(vault_id,run_id) "
-    "REFERENCES runtime_runs(vault_id,id), FOREIGN KEY(vault_id,kind,id,version,sha256) "
-    "REFERENCES domain_records(vault_id,kind,id,version,sha256))",
-    "CREATE TABLE runtime_node_executions (vault_id TEXT NOT NULL, id TEXT NOT NULL, "
-    "run_id TEXT NOT NULL, node_id TEXT NOT NULL, visit_id TEXT NOT NULL, spec BLOB NOT NULL, "
-    "spec_digest TEXT NOT NULL, phase TEXT NOT NULL, revision INTEGER NOT NULL "
-    "CHECK(typeof(revision)='integer' AND revision>0), created_at_ms INTEGER NOT NULL, "
-    "PRIMARY KEY(vault_id,id), UNIQUE(vault_id,run_id,node_id,visit_id), "
-    "FOREIGN KEY(vault_id,run_id) REFERENCES runtime_runs(vault_id,id))",
-    "CREATE TABLE runtime_execution_parents (vault_id TEXT NOT NULL, execution_id TEXT NOT NULL, "
-    "position INTEGER NOT NULL, parent_execution_id TEXT NOT NULL, "
-    "PRIMARY KEY(vault_id,execution_id,position), UNIQUE(vault_id,execution_id,parent_execution_id), "
-    "FOREIGN KEY(vault_id,execution_id) REFERENCES runtime_node_executions(vault_id,id), "
-    "FOREIGN KEY(vault_id,parent_execution_id) REFERENCES runtime_node_executions(vault_id,id))",
-    "CREATE TABLE runtime_attempts (vault_id TEXT NOT NULL, id TEXT NOT NULL, execution_id TEXT NOT NULL, "
-    "attempt_no INTEGER NOT NULL, idempotency_key TEXT NOT NULL, reservation_id TEXT NOT NULL, "
-    "spec BLOB NOT NULL, spec_digest TEXT NOT NULL, phase TEXT NOT NULL, dispatch_gate TEXT NOT NULL, "
-    "send_finality TEXT NOT NULL, cancel_state TEXT NOT NULL, recovery_state TEXT NOT NULL, "
-    "terminal_outcome TEXT, revision INTEGER NOT NULL CHECK(typeof(revision)='integer' AND revision>0), "
-    "lease_owner BLOB NOT NULL, lease_owner_digest TEXT NOT NULL, lease_fence INTEGER NOT NULL, "
-    "lease_expires_at_ms INTEGER NOT NULL, dispatch_blocked_at_ms INTEGER, send_intent_at_ms INTEGER, "
-    "local_transport_closed_at_ms INTEGER, owned_process_exit INTEGER, remote_terminal_observed TEXT NOT NULL, "
-    "usage_finality TEXT NOT NULL, accepted_observation_id TEXT, created_at_ms INTEGER NOT NULL, "
-    "updated_at_ms INTEGER NOT NULL, PRIMARY KEY(vault_id,id), "
-    "UNIQUE(vault_id,execution_id,attempt_no), UNIQUE(vault_id,idempotency_key), "
-    "FOREIGN KEY(vault_id,execution_id) REFERENCES runtime_node_executions(vault_id,id))",
-    "CREATE TABLE runtime_attempt_refs (vault_id TEXT NOT NULL, attempt_id TEXT NOT NULL, role TEXT NOT NULL, "
-    "kind TEXT NOT NULL, id TEXT NOT NULL, version INTEGER NOT NULL, sha256 TEXT NOT NULL, "
-    "PRIMARY KEY(vault_id,attempt_id,role), FOREIGN KEY(vault_id,attempt_id) "
-    "REFERENCES runtime_attempts(vault_id,id), FOREIGN KEY(vault_id,kind,id,version,sha256) "
-    "REFERENCES domain_records(vault_id,kind,id,version,sha256))",
-    "CREATE TABLE runtime_result_observations (sequence INTEGER PRIMARY KEY AUTOINCREMENT, "
-    "vault_id TEXT NOT NULL, id TEXT NOT NULL, "
-    "attempt_id TEXT NOT NULL, payload BLOB NOT NULL, payload_digest TEXT NOT NULL, "
-    "semantic_digest TEXT NOT NULL, classification TEXT NOT NULL, observed_at_ms INTEGER NOT NULL, "
-    "UNIQUE(vault_id,id), FOREIGN KEY(vault_id,attempt_id) REFERENCES runtime_attempts(vault_id,id))",
-    "CREATE TABLE runtime_result_refs (vault_id TEXT NOT NULL, observation_id TEXT NOT NULL, "
-    "kind TEXT NOT NULL, id TEXT NOT NULL, version INTEGER NOT NULL, sha256 TEXT NOT NULL, "
-    "PRIMARY KEY(vault_id,observation_id), FOREIGN KEY(vault_id,observation_id) "
-    "REFERENCES runtime_result_observations(vault_id,id), "
-    "FOREIGN KEY(vault_id,kind,id,version,sha256) "
-    "REFERENCES domain_records(vault_id,kind,id,version,sha256))",
-    ("CREATE TABLE runtime_tool_calls (vault_id TEXT NOT NULL, id TEXT NOT NULL, attempt_id TEXT NOT NULL, "
-     "tool_id TEXT NOT NULL, version TEXT NOT NULL, effect_class TEXT NOT NULL, inputs BLOB NOT NULL, "
-     "inputs_digest TEXT NOT NULL, state TEXT NOT NULL, result_kind TEXT, result_id TEXT, "
-     "result_version INTEGER, result_sha256 TEXT, command_id TEXT NOT NULL, created_at_ms INTEGER NOT NULL, "
-     "settled_at_ms INTEGER, approval_kind TEXT, approval_id TEXT, approval_version INTEGER, "
-     "approval_sha256 TEXT, PRIMARY KEY(vault_id,id), UNIQUE(vault_id,attempt_id), UNIQUE(vault_id,command_id), "
-     "FOREIGN KEY(vault_id,attempt_id) REFERENCES runtime_attempts(vault_id,id))"),
-    "CREATE TABLE runtime_checkpoints (vault_id TEXT NOT NULL, run_id TEXT NOT NULL, namespace TEXT NOT NULL, "
-    "revision INTEGER NOT NULL, cursor BLOB NOT NULL, cursor_sha256 TEXT NOT NULL, "
-    "bound_attempt_id TEXT, bound_attempt_revision INTEGER, bound_execution_id TEXT, "
-    "bound_envelope_sha256 TEXT, created_at_ms INTEGER NOT NULL, command_id TEXT NOT NULL, "
-    "PRIMARY KEY(vault_id,run_id,namespace,revision), UNIQUE(vault_id,command_id), "
-    "FOREIGN KEY(vault_id,run_id) REFERENCES runtime_runs(vault_id,id))",
-    "CREATE TABLE runtime_attempt_journal (sequence INTEGER PRIMARY KEY AUTOINCREMENT, "
-    "vault_id TEXT NOT NULL, attempt_id TEXT NOT NULL, transition TEXT NOT NULL, "
-    "payload BLOB NOT NULL, payload_digest TEXT NOT NULL, at_ms INTEGER NOT NULL, "
-    "FOREIGN KEY(vault_id,attempt_id) REFERENCES runtime_attempts(vault_id,id))",
-    "CREATE TABLE runtime_public_events (sequence INTEGER PRIMARY KEY AUTOINCREMENT, "
-    "vault_id TEXT NOT NULL, event_type TEXT NOT NULL, object_kind TEXT NOT NULL, "
-    "object_id TEXT NOT NULL, payload BLOB NOT NULL, payload_digest TEXT NOT NULL, at_ms INTEGER NOT NULL)",
-    "CREATE INDEX runtime_attempts_execution ON runtime_attempts(vault_id,execution_id,attempt_no)",
-    "CREATE INDEX runtime_results_attempt ON runtime_result_observations(vault_id,attempt_id,observed_at_ms,id)",
-    "CREATE INDEX runtime_checkpoints_latest ON runtime_checkpoints(vault_id,run_id,namespace,revision)",
+from .ledger_schema import (
+    LEDGER_V1_DDL as _DDL, LEDGER_V1_SHA256 as RUNTIME_MIGRATION_SHA256,
+    LEDGER_V2_DDL, LEDGER_V2_SHA256, _schema_version, _compiled_schema,
+    _normalize_schema_sql, _representation_version,
 )
-RUNTIME_MIGRATION_SHA256 = _digest("\n".join(_DDL).encode("utf-8"))
-_OWNED_TABLES = frozenset({
-    "runtime_migrations", "runtime_control", "runtime_commands", "runtime_runs",
-    "runtime_run_refs", "runtime_node_executions", "runtime_execution_parents",
-    "runtime_attempts", "runtime_attempt_refs", "runtime_result_observations",
-    "runtime_result_refs", "runtime_tool_calls", "runtime_checkpoints", "runtime_attempt_journal",
-    "runtime_public_events",
-})
+
+_EXPECTED_LEDGER_SCHEMA = _compiled_schema(_DDL)
+_OWNED_TABLES = frozenset(name for name, (kind, _) in _EXPECTED_LEDGER_SCHEMA.items()
+                          if kind == "table")
 _LEDGER_TABLES = _OWNED_TABLES - {"runtime_migrations"}
-_LEDGER_INDEXES = frozenset({
-    "runtime_attempts_execution", "runtime_results_attempt",
-    "runtime_checkpoints_latest",
-})
-
-
-def _normalize_schema_sql(value):
-    if type(value) is not str:
-        return ""
-    compact = " ".join(value.split()).casefold()
-    return re.sub(r"\s*([(),=<>])\s*", r"\1", compact)
-
-
-_EXPECTED_LEDGER_SCHEMA = {}
-for _statement in _DDL:
-    _schema_match = re.match(r"CREATE (TABLE|INDEX) ([a-z_]+)", _statement)
-    if _schema_match is None:  # pragma: no cover - constant construction invariant
-        raise RuntimeError("Invalid runtime ledger migration statement")
-    _EXPECTED_LEDGER_SCHEMA[_schema_match.group(2)] = (
-        _schema_match.group(1).casefold(), _normalize_schema_sql(_statement)
-    )
+_LEDGER_INDEXES = frozenset(name for name, (kind, _) in _EXPECTED_LEDGER_SCHEMA.items()
+                           if kind == "index")
 
 
 # the ToolCall of one attempt (data-model §4): the write-ahead intent of a tool
@@ -879,6 +784,7 @@ class RuntimeLedger:
         self._session_id = str(uuid4())
         self._startup_reconciled = False
         self._pending_permits = {}
+        self._consumed_windows = {}
         self._emergency_inhibited = set()
         self._global_emergency_inhibited = False
         self._clock_lock = RLock()
@@ -897,93 +803,27 @@ class RuntimeLedger:
 
     def _install_schema(self):
         with self._transaction(write=True) as db:
-            present = {row[0] for row in db.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name IN (%s)"
-                % ",".join("?" for _ in _OWNED_TABLES), tuple(sorted(_OWNED_TABLES)))}
-            migration_present = "runtime_migrations" in present
-            ledger_present = present - {"runtime_migrations"}
-            if ledger_present and ledger_present != _LEDGER_TABLES:
-                raise CorruptLedger("Partial runtime ledger schema")
-            if migration_present:
-                columns = [(row[1], row[2], row[3], row[5]) for row in
-                           db.execute("PRAGMA table_info(runtime_migrations)")]
-                expected = [("component", "TEXT", 1, 1), ("version", "INTEGER", 1, 2),
-                            ("sha256", "TEXT", 1, 0)]
-                if columns != expected:
-                    raise CorruptLedger("Incompatible shared runtime migration ledger")
-                probe = f"__ledger_schema_probe_{self._session_id}"
-                try:
-                    db.execute("INSERT INTO runtime_migrations VALUES (?,?,?)",
-                               (probe, 1, "0" * 64))
-                except sqlite3.IntegrityError as exc:
-                    raise CorruptLedger(
-                        "Shared runtime migration ledger rejects a valid version") from exc
-                else:
-                    db.execute("DELETE FROM runtime_migrations WHERE component=?", (probe,))
-                for suffix, invalid in (("zero", 0), ("real", 1.5)):
-                    try:
-                        db.execute("INSERT INTO runtime_migrations VALUES (?,?,?)",
-                                   (f"{probe}_{suffix}", invalid, "0" * 64))
-                    except sqlite3.IntegrityError:
-                        continue
-                    raise CorruptLedger(
-                        "Shared runtime migration ledger lacks the exact version constraint")
-            if not ledger_present:
-                for index, statement in enumerate(_DDL):
-                    if index == 0 and migration_present:
+            version = _schema_version(db)
+            if version == 0:
+                registry = db.execute("SELECT 1 FROM sqlite_master WHERE name='runtime_migrations'").fetchone()
+                for index, statement in enumerate(LEDGER_V2_DDL):
+                    if index == 0 and registry is not None:
                         continue
                     db.execute(statement)
-                existing = db.execute("SELECT 1 FROM runtime_migrations "
-                                      "WHERE component='ledger'").fetchone()
-                if existing is not None:
-                    raise CorruptLedger("Ledger migration row exists without ledger tables")
-                db.execute("INSERT INTO runtime_migrations VALUES ('ledger',1,?)",
-                           (RUNTIME_MIGRATION_SHA256,))
+                db.executemany("INSERT INTO runtime_migrations VALUES ('ledger',?,?)",
+                               ((1, RUNTIME_MIGRATION_SHA256), (2, LEDGER_V2_SHA256)))
                 db.execute("INSERT INTO runtime_control(singleton,vault_id,last_clock_ms) VALUES (1,?,0)",
                            (self.vault_id,))
-            else:
-                if not migration_present:
-                    raise CorruptLedger("Runtime ledger migration registry is missing")
-                rows = [tuple(row) for row in db.execute(
-                    "SELECT version,sha256 FROM runtime_migrations WHERE component='ledger' "
-                    "ORDER BY version")]
-                if rows != [(1, RUNTIME_MIGRATION_SHA256)]:
-                    raise CorruptLedger("Unknown or corrupt runtime ledger migration")
-                control = db.execute("SELECT * FROM runtime_control WHERE singleton=1").fetchone()
-                if (control is None or control["vault_id"] != self.vault_id
-                        or db.execute("SELECT count(*) FROM runtime_control").fetchone()[0] != 1):
-                    raise CorruptLedger("Runtime ledger control/vault binding is invalid")
-                self._validate_control(control)
+            control = db.execute("SELECT * FROM runtime_control WHERE singleton=1").fetchone()
+            if (control is None or control["vault_id"] != self.vault_id
+                    or db.execute("SELECT count(*) FROM runtime_control").fetchone()[0] != 1):
+                raise CorruptLedger("Runtime ledger control/vault binding is invalid")
+            self._validate_control(control)
 
     @staticmethod
     def _assert_dispatch_schema(db):
-        """Verify exact ledger tables/indexes and reject attached trigger hooks."""
-        names = tuple(sorted(_EXPECTED_LEDGER_SCHEMA))
-        stored = {row["name"]: (row["type"], _normalize_schema_sql(row["sql"]))
-                  for row in db.execute(
-            "SELECT type,name,sql FROM sqlite_master WHERE name IN (%s)"
-            % ",".join("?" for _ in names), names)}
-        if stored != _EXPECTED_LEDGER_SCHEMA:
-            raise CorruptLedger("Runtime ledger dispatch schema is inconsistent")
-        migrations = [tuple(row) for row in db.execute(
-            "SELECT version,sha256 FROM runtime_migrations WHERE component='ledger' "
-            "ORDER BY version")]
-        if migrations != [(1, RUNTIME_MIGRATION_SHA256)]:
-            raise CorruptLedger("Runtime ledger dispatch migration is inconsistent")
-        if db.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='trigger' LIMIT 1"
-        ).fetchone() is not None:
-            raise CorruptLedger("Unexpected shared-database trigger")
-        table_names = tuple(sorted(_OWNED_TABLES))
-        for row in db.execute(
-                "SELECT type,name,tbl_name,sql FROM sqlite_master "
-                "WHERE type='index' AND lower(tbl_name) IN (%s)"
-                % ",".join("?" for _ in table_names), table_names):
-            automatic = (row["type"] == "index" and row["sql"] is None
-                         and row["name"].casefold().startswith("sqlite_autoindex_"))
-            expected = row["name"].casefold() in _LEDGER_INDEXES
-            if not automatic and not expected:
-                raise CorruptLedger("Unexpected runtime ledger dispatch schema object")
+        if _schema_version(db) not in (1, 2):
+            raise CorruptLedger("Runtime ledger dispatch schema is absent")
 
     @staticmethod
     def _validate_control(row):
@@ -1127,6 +967,9 @@ class RuntimeLedger:
         return {"object_ref": self._object_ref("node_execution", spec.execution_id, revision, core), **core}
 
     def _attempt_snapshot(self, row):
+        if "subject_kind" in row.keys() and (row["subject_kind"] != "node_execution"
+                or row["subject_id"] != row["execution_id"]):
+            raise CorruptLedger("Only exact node execution subjects are supported")
         spec_value = _decode_canonical(row["spec"], row["spec_digest"], "attempt spec")
         spec = AttemptSpec.from_dict(spec_value)
         owner_value = _decode_canonical(row["lease_owner"], row["lease_owner_digest"], "lease owner")
@@ -1211,6 +1054,47 @@ class RuntimeLedger:
         }
         return {"object_ref": self._object_ref("attempt", spec.attempt_id, revision, core), **core}
 
+    def _resolve_node_dispatch_context(self, db, spec):
+        if type(spec) is not AttemptSpec:
+            raise TypeError("Node dispatch context requires an exact AttemptSpec")
+        if (type(db) is not sqlite3.Connection or not db.in_transaction
+                or db.row_factory is not sqlite3.Row):
+            raise LedgerError("Node dispatch context requires an active transaction")
+        if _representation_version(db) == 2:
+            subject = db.execute("SELECT * FROM runtime_dispatch_subjects WHERE vault_id=? "
+                "AND subject_kind='node_execution' AND subject_id=?",
+                (self.vault_id, spec.execution_id)).fetchone()
+            if (subject is None or subject["node_execution_id"] != spec.execution_id
+                    or any(subject[key] is not None for key in
+                           ("generation_kind", "generation_version", "generation_sha256"))):
+                raise CorruptLedger("Node dispatch subject is missing or changed")
+            attempt = db.execute("SELECT subject_kind,subject_id,execution_id FROM runtime_attempts "
+                "WHERE vault_id=? AND id=?", (self.vault_id, spec.attempt_id)).fetchone()
+            if attempt is not None and tuple(attempt) != (
+                    "node_execution", spec.execution_id, spec.execution_id):
+                raise CorruptLedger("Attempt dispatch subject changed")
+        execution = db.execute(
+            "SELECT * FROM runtime_node_executions WHERE vault_id=? AND id=?",
+            (self.vault_id, spec.execution_id),
+        ).fetchone()
+        if execution is None:
+            raise CorruptLedger("Attempt execution is missing")
+        execution_snapshot = self._execution_snapshot(execution)
+        execution_spec = ExecutionSpec.from_dict(execution_snapshot["spec"])
+        self._validate_execution_bindings(db, execution_spec)
+        run = db.execute(
+            "SELECT * FROM runtime_runs WHERE vault_id=? AND id=?",
+            (self.vault_id, execution_spec.run_id),
+        ).fetchone()
+        if run is None:
+            raise CorruptLedger("Attempt run is missing")
+        run_snapshot = self._run_snapshot(run)
+        run_spec = RunSpec.from_dict(run_snapshot["spec"])
+        self._validate_run_bindings(db, run_spec)
+        if run_spec.budget_policy_ref != spec.budget_policy_ref:
+            raise CorruptLedger("Attempt budget policy no longer matches its run")
+        return _NodeDispatchContext(execution_spec, run_spec, run_snapshot["phase"])
+
     def _load_attempt(self, db, attempt_id):
         uuid_string(attempt_id)
         row = db.execute("SELECT * FROM runtime_attempts WHERE vault_id=? AND id=?",
@@ -1223,20 +1107,7 @@ class RuntimeLedger:
             "envelope": spec.envelope_ref, "profile": spec.profile_ref,
             "budget_policy": spec.budget_policy_ref,
         })
-        execution = db.execute("SELECT * FROM runtime_node_executions WHERE vault_id=? AND id=?",
-                               (self.vault_id, spec.execution_id)).fetchone()
-        if execution is None:
-            raise CorruptLedger("Attempt execution is missing")
-        execution_spec = ExecutionSpec.from_dict(self._execution_snapshot(execution)["spec"])
-        self._validate_execution_bindings(db, execution_spec)
-        run = db.execute("SELECT * FROM runtime_runs WHERE vault_id=? AND id=?",
-                         (self.vault_id, execution_spec.run_id)).fetchone()
-        if run is None:
-            raise CorruptLedger("Attempt run is missing")
-        run_spec = RunSpec.from_dict(self._run_snapshot(run)["spec"])
-        self._validate_run_bindings(db, run_spec)
-        if run_spec.budget_policy_ref != spec.budget_policy_ref:
-            raise CorruptLedger("Attempt budget policy no longer matches its run")
+        self._resolve_node_dispatch_context(db, spec)
         if row["accepted_observation_id"] is not None:
             result = db.execute("SELECT * FROM runtime_result_observations "
                 "WHERE vault_id=? AND id=?", (self.vault_id,
@@ -1425,6 +1296,10 @@ class RuntimeLedger:
             db.execute("INSERT INTO runtime_node_executions VALUES (?,?,?,?,?,?,?,?,?,?)",
                        (self.vault_id, spec.execution_id, spec.run_id, spec.node_id,
                         spec.visit_id, encoded, _digest(encoded), "pending", 1, now))
+            if _representation_version(db) == 2:
+                db.execute("INSERT INTO runtime_dispatch_subjects VALUES "
+                           "(?,'node_execution',?,?,NULL,NULL,NULL)",
+                           (self.vault_id, spec.execution_id, spec.execution_id))
             for position, parent in enumerate(spec.parent_execution_ids):
                 db.execute("INSERT INTO runtime_execution_parents VALUES (?,?,?,?)",
                            (self.vault_id, spec.execution_id, position, parent))
@@ -1622,19 +1497,22 @@ class RuntimeLedger:
             lease_expires = min(now + duration, spec.deadline_at_ms)
             encoded = canonical_json(spec.as_dict())
             encoded_owner = canonical_json(spec.owner.as_dict())
+            v2 = _representation_version(db) == 2
             db.execute("INSERT INTO runtime_attempts (vault_id,id,execution_id,attempt_no,"
                        "idempotency_key,reservation_id,spec,spec_digest,phase,dispatch_gate,"
                        "send_finality,cancel_state,recovery_state,terminal_outcome,revision,"
                        "lease_owner,lease_owner_digest,lease_fence,lease_expires_at_ms,"
                        "dispatch_blocked_at_ms,send_intent_at_ms,local_transport_closed_at_ms,"
                        "owned_process_exit,remote_terminal_observed,usage_finality,"
-                       "accepted_observation_id,created_at_ms,updated_at_ms) "
-                       "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                       "accepted_observation_id,created_at_ms,updated_at_ms"
+                       + (",subject_kind,subject_id" if v2 else "") + ") VALUES ("
+                       + ",".join("?" for _ in range(30 if v2 else 28)) + ")",
                        (self.vault_id, spec.attempt_id, spec.execution_id, spec.attempt_no,
                         spec.idempotency_key, spec.reservation_id, encoded, _digest(encoded),
                         "reserved", "open", "not_started", "none", "clean", None, 1,
                         encoded_owner, _digest(encoded_owner), 1, lease_expires, None, None,
-                        None, None, "not_observed", "provisional", None, now, now))
+                        None, None, "not_observed", "provisional", None, now, now)
+                       + (("node_execution", spec.execution_id) if v2 else ()))
             self._insert_ref_roles(db, "runtime_attempt_refs", "attempt_id", spec.attempt_id, {
                 "envelope": spec.envelope_ref, "profile": spec.profile_ref,
                 "budget_policy": spec.budget_policy_ref,
@@ -1881,16 +1759,7 @@ class RuntimeLedger:
                           "attempt_id": attempt_id}
                 self._record_command(db, command_id, command_kind, payload, result, now)
                 return None
-            execution = db.execute("SELECT run_id FROM runtime_node_executions "
-                "WHERE vault_id=? AND id=?", (self.vault_id, spec.execution_id)).fetchone()
-            if execution is None:
-                raise CorruptLedger("Attempt execution is missing")
-            run = db.execute("SELECT spec,spec_digest FROM runtime_runs WHERE vault_id=? AND id=?",
-                             (self.vault_id, execution["run_id"])).fetchone()
-            if run is None:
-                raise CorruptLedger("Attempt run is missing")
-            run_spec = RunSpec.from_dict(_decode_canonical(
-                run["spec"], run["spec_digest"], "run spec"))
+            run_spec = self._resolve_node_dispatch_context(db, spec).run_spec
             if run_spec.mode in {"replay", "snapshot"}:
                 raise DispatchBlocked(f"{run_spec.mode} runs cannot dispatch external work")
             if (budget_request is not None
@@ -2018,6 +1887,7 @@ class RuntimeLedger:
         with self._permit_lock:
             self._global_emergency_inhibited = True
             self._pending_permits.clear()
+            self._consumed_windows.clear()
 
     def emergency_inhibit_attempt(self, attempt_id):
         """Fail closed in memory when a post-commit observation cannot persist."""
@@ -2027,6 +1897,9 @@ class RuntimeLedger:
             for permit_id, stored in tuple(self._pending_permits.items()):
                 if stored[0].attempt_id == attempt_id:
                     self._pending_permits.pop(permit_id, None)
+            for permit_id, stored in tuple(self._consumed_windows.items()):
+                if stored[1].attempt_id == attempt_id:
+                    self._consumed_windows.pop(permit_id, None)
 
     def emergency_inhibit_all_dispatch(self):
         """Public fail-closed latch for an unrecordable post-commit effect."""
@@ -2046,13 +1919,18 @@ class RuntimeLedger:
                 raise DispatchBlocked("Process-local emergency inhibition is active")
 
     def discard_dispatch_permit(self, permit):
-        """Remove an exact unconsumed permit without authorizing an external send."""
+        """Discard an exact pending permit or its issued transport window."""
         if type(permit) is not DispatchPermit:
             raise DispatchBlocked("Exact budget-bound dispatch permit required")
         with self._permit_lock:
+            issued = self._consumed_windows.get(permit.permit_id)
+            if issued is not None:
+                if issued[1] is not permit:
+                    raise DispatchBlocked("Consumed window permit identity changed")
+                self._consumed_windows.pop(permit.permit_id)
             stored = self._pending_permits.get(permit.permit_id)
             if stored is None:
-                return False
+                return issued is not None
             if (
                 type(stored) is not tuple
                 or len(stored) != 6
@@ -2293,23 +2171,7 @@ class RuntimeLedger:
             )
 
     def _run_spec_for_attempt(self, db, spec):
-        execution = db.execute(
-            "SELECT run_id FROM runtime_node_executions WHERE vault_id=? AND id=?",
-            (self.vault_id, spec.execution_id),
-        ).fetchone()
-        if execution is None:
-            raise CorruptLedger("Attempt execution is missing")
-        run = db.execute(
-            "SELECT * FROM runtime_runs WHERE vault_id=? AND id=?",
-            (self.vault_id, execution["run_id"]),
-        ).fetchone()
-        if run is None:
-            raise CorruptLedger("Attempt run is missing")
-        run_spec = RunSpec.from_dict(self._run_snapshot(run)["spec"])
-        self._validate_run_bindings(db, run_spec)
-        if run_spec.budget_policy_ref != spec.budget_policy_ref:
-            raise CorruptLedger("Attempt budget policy no longer matches its run")
-        return run_spec
+        return self._resolve_node_dispatch_context(db, spec).run_spec
 
     def _assert_committed_send(self, db, *, command_id, command_kind,
                                command_payload, command_result, spec, owner,
@@ -2458,27 +2320,72 @@ class RuntimeLedger:
                         != permit.budget_deadline_epoch_seconds):
                     raise DispatchBlocked("Dispatch budget binding changed")
                 self._assert_budget_policy_binding(db, spec.budget_policy_ref, policy)
-        # Both trusted clocks are integer/floor clocks.  Remove one source-clock
-        # tick so a transport deadline cannot extend into an unobserved partial tick.
-        runtime_remaining = max(
-            0,
-            min(permit.deadline_at_ms, permit.lease_expires_at_ms)
-            - runtime_now
-            - 1,
-        )
-        budget_remaining = min(
-            MAX_INTEGER,
-            max(
+            # Keep the writer boundary through publication so durable cancellation
+            # cannot revoke a not-yet-published window and then be overwritten here.
+            # The original anchor and conservative clock calculations are unchanged.
+            runtime_remaining = max(
                 0,
-                (permit.budget_deadline_epoch_seconds - budget_now - 1) * 1_000,
-            ),
-        )
-        return ConsumedDispatchWindow(
-            permit=permit,
-            runtime_remaining_ms=runtime_remaining,
-            budget_remaining_ms=budget_remaining,
-            anchor_monotonic=anchor_monotonic,
-        )
+                min(permit.deadline_at_ms, permit.lease_expires_at_ms)
+                - runtime_now
+                - 1,
+            )
+            budget_remaining = min(
+                MAX_INTEGER,
+                max(
+                    0,
+                    (permit.budget_deadline_epoch_seconds - budget_now - 1) * 1_000,
+                ),
+            )
+            window = ConsumedDispatchWindow(
+                permit=permit,
+                runtime_remaining_ms=runtime_remaining,
+                budget_remaining_ms=budget_remaining,
+                anchor_monotonic=anchor_monotonic,
+            )
+            owner_ref, permit_id = weakref_ref(self), permit.permit_id
+
+            def released(window_ref):
+                owner = owner_ref()
+                if owner is not None:
+                    with owner._permit_lock:
+                        stored = owner._consumed_windows.get(permit_id)
+                        if stored is not None and stored[0] is window_ref:
+                            owner._consumed_windows.pop(permit_id)
+
+            with self._permit_lock:
+                if self._global_emergency_inhibited or permit.attempt_id in self._emergency_inhibited:
+                    raise DispatchBlocked("Consumed window dispatch is inhibited")
+                self._consumed_windows[permit_id] = (
+                    weakref_ref(window, released), permit,
+                    (runtime_remaining, budget_remaining, anchor_monotonic),
+                )
+            return window
+
+    def assert_consumed_dispatch_window(self, window, *, permit):
+        """Validate this ledger's exact issued object, not matching durable rows.
+
+        The weak registration proves process-local issuance and preserves the
+        original bounds. It is neither persistent qualification nor a sandbox
+        against arbitrary in-process code. Validation does not refresh a deadline.
+        """
+        if type(window) is not ConsumedDispatchWindow or type(permit) is not DispatchPermit:
+            raise DispatchBlocked("Exact consumed dispatch window and permit required")
+        # A different ledger's startup can revoke this process's durable session
+        # without having access to this object's weak registrations.
+        self.assert_dispatch_session_ready()
+        with self._permit_lock:
+            stored = self._consumed_windows.get(permit.permit_id)
+            if (self._global_emergency_inhibited or permit.attempt_id in self._emergency_inhibited
+                    or stored is None or stored[0]() is not window
+                    or stored[1] is not permit or window.permit is not permit):
+                raise DispatchBlocked("Consumed window issuer is absent, changed, or revoked")
+            try:
+                window.__post_init__()
+            except (TypeError, ValueError):
+                raise DispatchBlocked("Consumed window fields changed") from None
+            if stored[2] != (window.runtime_remaining_ms, window.budget_remaining_ms,
+                             window.anchor_monotonic):
+                raise DispatchBlocked("Consumed window bounds changed")
 
     def consume_dispatch_permit_window(self, permit, *, budget_book=None):
         """Consume once and return conservative remaining windows for transport."""
@@ -2500,6 +2407,9 @@ class RuntimeLedger:
                 permit = stored[0]
                 if permit.attempt_id == attempt_id:
                     self._pending_permits.pop(permit_id, None)
+            for permit_id, stored in tuple(self._consumed_windows.items()):
+                if stored[1].attempt_id == attempt_id:
+                    self._consumed_windows.pop(permit_id, None)
 
     def request_cancel(self, command_id, attempt_id, *, expected_revision):
         payload = self._command_payload({"attempt_id": attempt_id,
@@ -3047,6 +2957,7 @@ class RuntimeLedger:
                     and current["active_session_id"] == self._session_id)
                 with self._permit_lock:
                     self._pending_permits.clear()
+                    self._consumed_windows.clear()
                 return replay
             now = self._now(db)
             rows = db.execute("SELECT * FROM runtime_attempts WHERE vault_id=? AND phase<>'terminal' "
@@ -3153,6 +3064,7 @@ class RuntimeLedger:
                        (self._session_id,))
         with self._permit_lock:
             self._pending_permits.clear()
+            self._consumed_windows.clear()
         self._startup_reconciled = True
         return result
 
@@ -3270,22 +3182,26 @@ class RuntimeLedger:
                 raise CorruptLedger("Result observation read bound exceeded")
             result = []
             for row in rows:
-                value = _decode_canonical(row["payload"], row["payload_digest"],
-                                          "result observation")
-                observation = ResultObservation.from_dict(value)
-                if (observation.attempt_id != attempt_id
-                        or _digest(canonical_json(observation.semantic_dict())) != row["semantic_digest"]
-                        or row["classification"] not in {"accepted", "duplicate", "late"}):
-                    raise CorruptLedger("Result observation index/payload mismatch")
+                observation = self._result_observation(row)
                 self._validate_result_binding(db, observation)
-                try:
-                    positive_integer(row["sequence"])
-                    _nonnegative("observed_at_ms", row["observed_at_ms"])
-                except (DomainContractError, ValueError) as exc:
-                    raise CorruptLedger("Result observation ordering metadata is invalid") from exc
                 result.append({**observation.as_dict(), "classification": row["classification"],
                                "observed_at_ms": row["observed_at_ms"]})
             return result
+
+    @staticmethod
+    def _result_observation(row):
+        observation = ResultObservation.from_dict(_decode_canonical(
+            row["payload"], row["payload_digest"], "result observation"))
+        if (observation.attempt_id != row["attempt_id"] or observation.observation_id != row["id"]
+                or _digest(canonical_json(observation.semantic_dict())) != row["semantic_digest"]
+                or row["classification"] not in {"accepted", "duplicate", "late"}):
+            raise CorruptLedger("Result observation index/payload mismatch")
+        try:
+            positive_integer(row["sequence"])
+            _nonnegative("observed_at_ms", row["observed_at_ms"])
+        except (DomainContractError, ValueError) as exc:
+            raise CorruptLedger("Result observation ordering metadata is invalid") from exc
+        return observation
 
     def lookup_committed_result(self, attempt_id, execution_id, envelope_ref):
         uuid_string(attempt_id)
@@ -3318,22 +3234,23 @@ class RuntimeLedger:
         with self._transaction() as db:
             rows = db.execute("SELECT * FROM runtime_public_events WHERE vault_id=? AND sequence>? "
                 "ORDER BY sequence LIMIT ?", (self.vault_id, after_sequence, limit)).fetchall()
-            result = []
-            for row in rows:
-                payload = _decode_canonical(row["payload"], row["payload_digest"], "public event")
-                try:
-                    validated = event_metadata(row["event_type"], payload)
-                    uuid_string(row["object_id"])
-                    positive_integer(row["sequence"])
-                    _nonnegative("event at_ms", row["at_ms"])
-                    if row["object_kind"] not in {"vault_genesis", "run", "attempt"}:
-                        raise DomainContractError("Invalid runtime event object kind")
-                except (DomainContractError, TypeError, ValueError) as exc:
-                    raise CorruptLedger("Persisted public runtime event is invalid") from exc
-                result.append({"sequence": row["sequence"], "event_type": row["event_type"],
-                               "object_kind": row["object_kind"], "object_id": row["object_id"],
-                               "payload": validated, "at_ms": row["at_ms"]})
-            return result
+            return [self._event_snapshot(row) for row in rows]
+
+    @staticmethod
+    def _event_snapshot(row):
+        payload = _decode_canonical(row["payload"], row["payload_digest"], "public event")
+        try:
+            validated = event_metadata(row["event_type"], payload)
+            uuid_string(row["object_id"])
+            positive_integer(row["sequence"])
+            _nonnegative("event at_ms", row["at_ms"])
+            if row["object_kind"] not in {"vault_genesis", "run", "attempt"}:
+                raise DomainContractError("Invalid runtime event object kind")
+        except (DomainContractError, TypeError, ValueError) as exc:
+            raise CorruptLedger("Persisted public runtime event is invalid") from exc
+        return {"sequence": row["sequence"], "event_type": row["event_type"],
+                "object_kind": row["object_kind"], "object_id": row["object_id"],
+                "payload": validated, "at_ms": row["at_ms"]}
 
     def attempt_journal(self, attempt_id, *, after_sequence=0, limit=MAX_PAGE):
         uuid_string(attempt_id)
@@ -3346,13 +3263,14 @@ class RuntimeLedger:
             rows = db.execute("SELECT * FROM runtime_attempt_journal WHERE vault_id=? "
                 "AND attempt_id=? AND sequence>? ORDER BY sequence LIMIT ?",
                 (self.vault_id, attempt_id, after_sequence, limit)).fetchall()
-            result = []
-            for row in rows:
-                payload = _decode_canonical(row["payload"], row["payload_digest"], "attempt journal")
-                if (row["transition"] not in JOURNAL_TRANSITIONS or type(payload) is not dict
-                        or type(row["sequence"]) is not int or row["sequence"] <= 0
-                        or type(row["at_ms"]) is not int or row["at_ms"] < 0):
-                    raise CorruptLedger("Attempt journal entry is invalid")
-                result.append({"sequence": row["sequence"], "transition": row["transition"],
-                               "payload": payload, "at_ms": row["at_ms"]})
-            return result
+            return [self._journal_snapshot(row) for row in rows]
+
+    @staticmethod
+    def _journal_snapshot(row):
+        payload = _decode_canonical(row["payload"], row["payload_digest"], "attempt journal")
+        if (row["transition"] not in JOURNAL_TRANSITIONS or type(payload) is not dict
+                or type(row["sequence"]) is not int or row["sequence"] <= 0
+                or type(row["at_ms"]) is not int or row["at_ms"] < 0):
+            raise CorruptLedger("Attempt journal entry is invalid")
+        return {"sequence": row["sequence"], "transition": row["transition"],
+                "payload": payload, "at_ms": row["at_ms"]}

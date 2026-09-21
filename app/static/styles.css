@@ -248,3 +248,31 @@ footer p { margin: 6px 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .001ms !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; }
 }
+/* The work's originals remain beside its editable explanation, with quiet,
+   distinct storage status and attachment-only actions. Existing theme tokens apply. */
+.original-list { list-style: none; padding: 0; margin: 1rem 0; }
+.original-list li { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem 1rem; padding: .85rem 0; border-bottom: 1px solid var(--line, #CFDDDF); }
+.original-name { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
+.original-state { font-size: .875rem; color: var(--muted, #53676E); }
+.original-list button, .original-list a { flex: 0 0 auto; }
+.materials > p { max-width: 65ch; }
+.owner-work-page main { max-width: 920px; padding-top: 24px; }
+.owner-work-page .app-header { max-width: 920px; padding-inline: 30px; }
+.owner-work-page .development-preview { margin-bottom: 20px; }
+.owner-work-page #session-status { color: var(--muted); font-size: 13px; margin-block: 8px 16px; }
+.owner-work-page .introduction { font-size: 13px; margin-bottom: 18px; }
+.owner-work-page .introduction p { margin-block: 5px; }
+.owner-work-page .introduction summary { margin-top: 8px; }
+.owner-work-page .original-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.owner-work-page .original-toolbar label { font-size: 14px; font-weight: 650; }
+.owner-work-page .original-toolbar button { flex-shrink: 0; }
+.owner-work-page #work-description:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.owner-work-page .materials { margin-top: 18px; font-size: 13px; line-height: 1.7; }
+@media (max-width: 480px) {
+  .owner-work-page main { padding-top: 18px; }
+  .owner-work-page .app-header { padding-inline: 18px; min-height: 66px; }
+  .owner-work-page .work-surface { padding: 18px; }
+  .owner-work-page .original-toolbar { align-items: flex-start; }
+  .original-name { flex-basis: 100%; }
+  .original-list li { align-items: flex-start; }
+}

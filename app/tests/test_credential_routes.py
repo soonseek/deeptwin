@@ -220,7 +220,7 @@ def test_status_read_rejects_a_misbehaving_snapshot(tmp_path):
 # --------------------------------------- end-to-end: HTTP to vault over frames
 
 
-def test_full_stack_credential_flow_over_authenticated_frames(tmp_path):
+def test_full_stack_legacy_credential_writes_refused_over_authenticated_frames(tmp_path):
     import socket as socket_module
     import threading as threading_module
 
@@ -234,8 +234,9 @@ def test_full_stack_credential_flow_over_authenticated_frames(tmp_path):
     from app.workers.credential_channel import CredentialGatewayClient
     from app.workers.credential_gateway_service import CredentialGatewayService
     from app.workers.credential_vault import CredentialVault
+    from app.tests.test_credential_root import initialized
 
-    vault = CredentialVault(str(tmp_path / "gateway-vault"))
+    vault = CredentialVault(**initialized(tmp_path))
     spec = channel_spec(tmp_path / "pair")
     boot_secret = broker.BootSecret(b"k" * broker.AUTH_SECRET_BYTES)
     service = CredentialGatewayService(vault, spec, boot_secret)
@@ -285,19 +286,16 @@ def test_full_stack_credential_flow_over_authenticated_frames(tmp_path):
     )
     with LocalTestClient(application, base_url=ORIGIN) as client:
         created = post_credentials(client, json.dumps(payload()))
-        assert created.status_code == 201, created.text
-        handle = created.json()["handle"]
+        assert created.status_code == 503, created.text
         assert SECRET not in created.text
-        assert vault.resolve_for_gateway(handle) == SECRET.encode("utf-8")
 
         listed = client.get("/api/v1/credentials", headers=FETCH)
-        assert listed.json() == {"credentials": [
-            {"handle": handle, "provider": "claude", "state": "active"},
-        ]}
+        assert listed.json() == {"credentials": []}
 
-        removed = delete_credential(client, handle)
-        assert removed.json() == {"handle": handle, "state": "erasure_completed"}
-        assert vault.health()["active"] == 0
+        removed = delete_credential(client, "f" * 32)
+        assert removed.status_code == 503
+        assert vault.health()["stored_unbound"] == 0
     for thread in threads:
         thread.join(5)
         assert not thread.is_alive()
+    vault.close()

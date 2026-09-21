@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:deeptwin:schemas:v2:deployment:installation-release-context-v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "installation-release-context-v1",
+      "type": "string"
+    },
+    "recipe_id": {
+      "const": "installation-release-source-recipe-v1",
+      "type": "string"
+    },
+    "layout_id": {
+      "const": "installation-release-source-layout-v1",
+      "type": "string"
+    },
+    "instance_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^(?:[0-9a-f]{32})$"
+    },
+    "origin_profile_digest": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^(?:[0-9a-f]{64})$"
+    },
+    "deployment_profile_id": {
+      "type": "string",
+      "enum": [
+        "local-no-terminal-v1",
+        "portable-compose-v1"
+      ]
+    },
+    "topology_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 36,
+      "pattern": "^(?:(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$"
+    },
+    "topology_revision": {
+      "const": 1,
+      "type": "integer"
+    },
+    "platform": {
+      "enum": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
+    },
+    "provider_source_context": {
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[0-9a-f]{64})$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384
+        }
+      },
+      "required": [
+        "sha256",
+        "size_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "provider_geometry": {
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[0-9a-f]{64})$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        }
+      },
+      "required": [
+        "sha256",
+        "size_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "release_trust": {
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[0-9a-f]{64})$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384
+        }
+      },
+      "required": [
+        "sha256",
+        "size_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "review_profile_id": {
+      "const": "provider-artifact-review-v1",
+      "type": "string"
+    },
+    "evidence_policy_sha256": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^(?:[0-9a-f]{64})$"
+    }
+  },
+  "required": [
+    "schema_version",
+    "recipe_id",
+    "layout_id",
+    "instance_id",
+    "origin_profile_digest",
+    "deployment_profile_id",
+    "topology_id",
+    "topology_revision",
+    "platform",
+    "provider_source_context",
+    "provider_geometry",
+    "release_trust",
+    "review_profile_id",
+    "evidence_policy_sha256"
+  ],
+  "additionalProperties": false
+}

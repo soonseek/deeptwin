@@ -108,8 +108,8 @@ def handlers(subject, calls, *, agent=None):
             "core.join": produce, "core.router": produce}
 
 
-def build(subject, run, attempts, registry):
-    return sch.build_scheduler(compile_value(linear_graph()), ledger=subject.ledger,
+def build(subject, run, attempts, registry, *, compiled=None):
+    return sch.build_scheduler(compiled or compile_value(linear_graph()), ledger=subject.ledger,
                                run_id=run.run_id, handlers=registry, attempts=attempts)
 
 
@@ -760,4 +760,3 @@ def test_a_journal_failure_never_changes_the_outcome_and_the_crash_window_is_rec
     after = subject2.ledger.get_attempt(attempt2)
     assert after["phase"] == "terminal" and after["terminal_outcome"] == "outcome_unknown"
     assert after["recovery_state"] == "reconciled"
-

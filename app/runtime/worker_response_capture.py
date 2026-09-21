@@ -101,7 +101,7 @@ def _original_binding(ledger, db, content):
             or request.get("session_id") != run.budget_session_id):
         raise CorruptLedger("Worker response capture attempt binding changed")
     entries = list(db.execute("SELECT * FROM runtime_attempt_journal WHERE vault_id=? "
-                              "AND attempt_id=? AND transition='send_intent'",
+                              "AND attempt_id=? AND transition='send_intent' LIMIT 2",
                               (ledger.vault_id, spec.attempt_id)))
     if len(entries) != 1:
         raise CorruptLedger("Worker response original intent is unavailable")
@@ -139,7 +139,7 @@ def _source(ledger, db, content, resources):
     return roots, envelope, descriptor
 
 
-def _validate_entry(ledger, db, entry, resources):
+def _capture_journal_value(entry):
     value = _decode_canonical(entry["payload"], entry["payload_digest"], "response capture journal")
     if (type(value) is not dict
             or set(value) != {"schema_version", "command_id", "capture_ref", "classification"}
@@ -149,33 +149,48 @@ def _validate_entry(ledger, db, entry, resources):
     ref = EntityRef.from_dict(value["capture_ref"])
     if ref.kind != "worker_response_capture":
         raise CorruptLedger("Worker response capture reference kind changed")
-    roots = ledger._domain._read_roots(db)
-    ledger._domain._check_graph(db, [ref], roots)
-    record = ledger._domain._load(db, ref, roots)[0]
-    content = record.body["content"]
+    return value, ref
+
+
+def _validate_capture_relationship(ledger, db, entry, value, record, roots, envelope):
+    """Shared canonical/SQL checks; no physical bytes or permission reconstruction."""
+    content, body, ref = record.body["content"], record.body, record.ref
+    validate_capture_content(content)
     _original_binding(ledger, db, content)
-    _, envelope, source = _source(ledger, db, content, resources)
-    descriptor = resources.get(ref)
-    body = record.body
-    if (content["command_id"] != value["command_id"]
+    if (envelope.body["purpose"] != "operational"
+            or content["command_id"] != value["command_id"]
             or content["attempt_id"] != entry["attempt_id"]
             or ref.id != content["command_id"] or ref.version != 1
             or body["actor_ref"] != roots.actor.as_dict()
             or body["parent_refs"] != [envelope.ref.as_dict()]
             or any(body[key] != envelope.body[key] for key in
                    ("purpose", "access_policy_ref", "retention_policy_ref"))
-            or descriptor is None or descriptor.record != record
-            or descriptor.episode_id != source.episode_id
-            or content["payload_blob"]["purpose"] != body["purpose"]
-            or (source.tainted and not descriptor.tainted)):
+            or content["payload_blob"]["purpose"] != body["purpose"]):
         raise CorruptLedger("Worker response capture policy binding changed")
     if value["classification"] == "pending_validation":
         observations = list(db.execute("SELECT * FROM runtime_attempt_journal WHERE vault_id=? "
-            "AND attempt_id=? AND transition='transport_observed'", (ledger.vault_id, entry["attempt_id"])))
+            "AND attempt_id=? AND transition='transport_observed' LIMIT 2", (ledger.vault_id, entry["attempt_id"])))
         if len(observations) != 1 or _decode_canonical(
                 observations[0]["payload"], observations[0]["payload_digest"], "capture transport"
                 ) != _transport_for_content(content).as_dict():
             raise CorruptLedger("Worker response capture transport gap")
+
+
+def _validate_entry(ledger, db, entry, resources):
+    value, ref = _capture_journal_value(entry)
+    roots = ledger._domain._read_roots(db)
+    ledger._domain._check_graph(db, [ref], roots)
+    record = ledger._domain._load(db, ref, roots)[0]
+    content = record.body["content"]
+    _, envelope, source = _source(ledger, db, content, resources)
+    _validate_capture_relationship(ledger, db, entry, value, record, roots, envelope)
+    descriptor = resources.get(ref)
+    body = record.body
+    if (descriptor is None or descriptor.record != record
+            or descriptor.episode_id != source.episode_id
+            or content["payload_blob"]["purpose"] != body["purpose"]
+            or (source.tainted and not descriptor.tainted)):
+        raise CorruptLedger("Worker response capture policy binding changed")
     return record, value["classification"]
 
 

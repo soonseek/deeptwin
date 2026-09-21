@@ -1,0 +1,1081 @@
+{
+  "$comment": "Structural only; pure parsing and joins grant no deployment authority.",
+  "$id": "urn:deeptwin:schemas:v2:deployment:provider-request-anchor-v2",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "candidate_ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "extension_manifest",
+          "type": "string"
+        },
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        },
+        "version": {
+          "const": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "version",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "prepare_command_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      },
+      "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+      "type": "string"
+    },
+    "preserved_inventory_blob_ref": {
+      "additionalProperties": false,
+      "properties": {
+        "purpose": {
+          "const": "operational",
+          "type": "string"
+        },
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        },
+        "size": {
+          "maximum": 16384,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "vault_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        }
+      },
+      "required": [
+        "vault_id",
+        "purpose",
+        "sha256",
+        "size"
+      ],
+      "type": "object"
+    },
+    "request_blob_ref": {
+      "additionalProperties": false,
+      "properties": {
+        "purpose": {
+          "const": "operational",
+          "type": "string"
+        },
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        },
+        "size": {
+          "maximum": 65536,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "vault_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        }
+      },
+      "required": [
+        "vault_id",
+        "purpose",
+        "sha256",
+        "size"
+      ],
+      "type": "object"
+    },
+    "request_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      },
+      "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+      "type": "string"
+    },
+    "reservation_revision": {
+      "const": 1,
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "deployment-provider-request-anchor-v2",
+      "type": "string"
+    },
+    "slot_id": {
+      "maximum": 16,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "source_documents": {
+      "items": false,
+      "maxItems": 18,
+      "minItems": 18,
+      "prefixItems": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 4096,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "original-prepare-recipe.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 4096,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "original-prepare-instance.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 65536,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "original-topology.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 8192,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "original-outgoing-exchange.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 4096,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "original-receipt-recipe.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 4096,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "original-receipt-instance.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 16384,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "original-trust-set.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 8192,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "original-receipt-ingress.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 8192,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "original-consumption-exchange.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 65536,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "geometry.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 8192,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "provider-recipe.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 8192,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "provider-instance.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 16384,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "provider-trust-set.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 8192,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "outgoing-exchange.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 8192,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "receipt-ingress.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 8192,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "consumption-exchange.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 16384,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "source-context.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blob_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "purpose": {
+                  "const": "operational",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 8192,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vault_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault_id",
+                "purpose",
+                "sha256",
+                "size"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "const": "source-pins.json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "blob_ref"
+          ],
+          "type": "object"
+        }
+      ],
+      "type": "array"
+    },
+    "topology_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      },
+      "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+      "type": "string"
+    },
+    "topology_revision": {
+      "const": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "request_id",
+    "request_blob_ref",
+    "source_documents",
+    "preserved_inventory_blob_ref",
+    "candidate_ref",
+    "topology_id",
+    "topology_revision",
+    "slot_id",
+    "reservation_revision",
+    "prepare_command_id"
+  ],
+  "type": "object"
+}

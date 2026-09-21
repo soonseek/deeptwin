@@ -4,6 +4,31 @@
   "factory": "app.api.works:create_router",
   "routes": [
     {
+      "route_id": "works.receipt", "methods": ["GET", "HEAD"],
+      "path": "/api/v1/works/commands/{command_id}",
+      "auth_policy": "browser_session", "required_scope": "work.read"
+    },
+    {
+      "route_id": "works.source_upload", "methods": ["POST"],
+      "path": "/api/v1/works/{work_id}/sources",
+      "auth_policy": "browser_session", "required_scope": "work.command"
+    },
+    {
+      "route_id": "works.revision", "methods": ["GET", "HEAD"],
+      "path": "/api/v1/works/{work_id}/revisions/{revision}",
+      "auth_policy": "browser_session", "required_scope": "work.read"
+    },
+    {
+      "route_id": "works.source", "methods": ["GET", "HEAD"],
+      "path": "/api/v1/works/{work_id}/sources/{source_id}",
+      "auth_policy": "browser_session", "required_scope": "work.read"
+    },
+    {
+      "route_id": "works.source_content", "methods": ["GET", "HEAD"],
+      "path": "/api/v1/works/{work_id}/sources/{source_id}/content",
+      "auth_policy": "browser_session", "required_scope": "work.read"
+    },
+    {
       "route_id": "works.create",
       "methods": [
         "POST"

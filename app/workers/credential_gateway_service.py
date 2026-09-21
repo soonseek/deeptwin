@@ -1,16 +1,13 @@
 """Credential gateway service over authenticated broker frames (T090).
 
-Gateway side only: dispatches the closed `credential_op` set — store, delete
-(retire of an active record followed by verified erase), redacted snapshot,
-health and capabilities — to the vault and answers with redacted results.
-`resolve_for_gateway` is deliberately not a channel operation: resolution stays
-inside the gateway for the provider transport alone. The control-plane client
-lives in :mod:`app.workers.credential_channel` and never imports this module.
+Gateway side only: v2 encrypted store/query/retire and safe metadata. Logical
+operations use bounded authenticated fragments, with no partial vault admission.
+Legacy write/delete, root access, decryption and provider binding are unavailable.
+The control-plane client never imports this module.
 """
 
 from __future__ import annotations
 
-import base64
 import socket
 from uuid import uuid4
 
@@ -23,11 +20,10 @@ from .credential_channel import (
     GatewayServiceError,
     decode_op,
     encode_op,
+    _read_logical,
+    _write_logical,
 )
 from .credential_vault import CredentialVault, CredentialVaultError
-
-_OPERATIONS = frozenset({"store", "delete", "snapshot", "health", "capabilities"})
-
 
 class CredentialGatewayService:
     """One vault's frame-served operation surface inside the gateway boundary."""
@@ -56,47 +52,28 @@ class CredentialGatewayService:
 
     def _dispatch(self, request: dict) -> dict:
         operation = request.get("op")
-        if operation not in _OPERATIONS:
-            raise CredentialVaultError("unsupported gateway operation")
-        if operation == "store":
-            raw = request.get("secret_b64")
-            if type(raw) is not str:
-                raise CredentialVaultError("store payload is malformed")
-            try:
-                secret = base64.b64decode(raw, validate=True)
-            except (ValueError, base64.binascii.Error) as exc:  # type: ignore[attr-defined]
-                raise CredentialVaultError("store payload is malformed") from exc
-            record = self._vault.store(
-                request.get("intent_id"),
-                request.get("provider"),
-                secret,
-                rotate_from=request.get("rotate_from"),
-            )
-            return {
-                "handle": record.handle,
-                "provider": record.provider,
-                "state": record.state,
-            }
-        if operation == "delete":
-            handle = request.get("handle")
-            record = self._vault._record(handle) if type(handle) is str else None
-            if record is not None and record["state"] == "active":
-                self._vault.retire(handle)
-            outcome = self._vault.erase(handle)
-            return {"handle": handle, "state": outcome}
+        if operation in ("store", "delete"):
+            raise CredentialVaultError("unsupported_operation")
+        keys = {
+            "store_at": {"schema", "op", "metadata", "secret_b64u"},
+            "query_record": {"schema", "op", "metadata"},
+            "retire": {"schema", "op", "command_id", "record", "reason"},
+            "snapshot": {"schema", "op"},
+            "health": {"schema", "op"},
+            "capabilities": {"schema", "op"},
+        }
+        if type(operation) is not str or operation not in keys:
+            raise CredentialVaultError("unsupported_operation")
+        if request.get("schema") != "credential-op-v2" or set(request) != keys[operation]:
+            raise CredentialVaultError("invalid_metadata")
+        if operation == "store_at":
+            return self._vault.store_at(metadata=request["metadata"], secret_b64u=request["secret_b64u"])
+        if operation == "query_record":
+            return self._vault.query_record(metadata=request["metadata"])
+        if operation == "retire":
+            return self._vault.retire(command_id=request["command_id"], record=request["record"], reason=request["reason"])
         if operation == "snapshot":
-            entries = [
-                {
-                    "handle": handle,
-                    "provider": record["provider"],
-                    "state": record["state"],
-                }
-                for handle, record in sorted(
-                    self._vault._index["records"].items()
-                )
-                if record["state"] != "erasure_completed"
-            ]
-            return {"credentials": entries}
+            return {"credentials": self._vault.snapshot()}
         if operation == "health":
             return self._vault.health()
         return self._vault.capabilities()
@@ -109,24 +86,26 @@ class CredentialGatewayService:
         deadline: broker.Deadline,
         wire_log: list | None = None,
     ) -> None:
-        """Answer exactly one operation frame on an authenticated codec."""
+        """Answer exactly one complete logical operation on the authenticated codec."""
 
-        frame = codec.read(sock, deadline=deadline)
-        if frame.envelope.message_type != REQUEST_TYPE:
-            raise GatewayServiceError("unexpected gateway request frame")
+        message_id, incoming = _read_logical(sock, codec, message_type=REQUEST_TYPE,
+            correlation_id=None, deadline=deadline)
         try:
-            result = self._dispatch(decode_op(frame.payload))
+            request = decode_op(incoming)
+            deadline.require()
+            result = self._dispatch(request)
             response = {"ok": True, "result": result}
-        except (CredentialVaultError, GatewayServiceError):
+            payload = encode_op(response)
+        except (CredentialVaultError, GatewayServiceError) as exc:
             # Sanitized by construction: vault errors never carry secret bytes.
-            response = {"ok": False, "code": "credential_operation_rejected"}
-        payload = encode_op(response)
+            response = {"ok": False, "code": exc.code}
+            payload = encode_op(response)
         if wire_log is not None:
             wire_log.append(("out", payload))
-        codec.write(
-            sock,
+        _write_logical(
+            sock, codec,
             message_id=str(uuid4()),
-            correlation_id=frame.envelope.message_id,
+            correlation_id=message_id,
             message_type=RESULT_TYPE,
             payload=payload,
             deadline=deadline,

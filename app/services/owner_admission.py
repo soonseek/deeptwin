@@ -13,7 +13,7 @@ class AdmissionRejected(RuntimeError):
 
 class ServingLock:
     """OS released exclusivity; the file holds no key or credential."""
-    def __init__(self, directory, *, expected_uid, expected_gid):
+    def __init__(self, directory, *, expected_uid, expected_gid, create=True):
         self._fd = None
         parent = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
@@ -22,6 +22,8 @@ class ServingLock:
                     or stat.S_IMODE(metadata.st_mode) != 0o700):
                 raise AdmissionRejected("Serving ownership unavailable")
             try:
+                if not create:
+                    raise FileExistsError
                 fd = os.open("owner-auth.lock", os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                              0o600, dir_fd=parent)
                 os.fsync(fd)
@@ -35,9 +37,14 @@ class ServingLock:
                     or stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_size != 0):
                 raise AdmissionRejected("Serving ownership unavailable")
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except (OSError, AdmissionRejected):
+            visible = os.stat("owner-auth.lock", dir_fd=parent, follow_symlinks=False)
+            if (metadata.st_dev, metadata.st_ino) != (visible.st_dev, visible.st_ino):
+                raise AdmissionRejected("Serving ownership unavailable")
+        except BaseException as exc:
             self.close()
-            raise AdmissionRejected("Serving ownership unavailable") from None
+            if isinstance(exc, (OSError, AdmissionRejected)):
+                raise AdmissionRejected("Serving ownership unavailable") from None
+            raise
         finally:
             os.close(parent)
 

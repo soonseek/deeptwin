@@ -1,0 +1,150 @@
+{
+  "$id": "urn:deeptwin:schemas:v2:extensions:provider-installation-reply-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "command_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "pattern": "^(?:(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$",
+      "type": "string"
+    },
+    "event_cursor": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "type": "string"
+    },
+    "links": {
+      "additionalProperties": false,
+      "properties": {
+        "events": {
+          "const": "/api/v1/events",
+          "type": "string"
+        },
+        "self": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "self",
+        "events"
+      ],
+      "type": "object"
+    },
+    "release_review_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "release_source_context_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "revision": {
+      "const": 2,
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "provider-installation-reply-v1",
+      "type": "string"
+    },
+    "staged_installation_ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "kind": {
+          "const": "extension_installation",
+          "type": "string"
+        },
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "version": {
+          "const": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "version",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "state": {
+      "const": "verified",
+      "type": "string"
+    },
+    "verified_at_ms": {
+      "maximum": 253402300799999,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "verified_installation_ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "kind": {
+          "const": "extension_installation",
+          "type": "string"
+        },
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "version": {
+          "const": 2,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "version",
+        "sha256"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "command_id",
+    "staged_installation_ref",
+    "verified_installation_ref",
+    "state",
+    "revision",
+    "release_review_sha256",
+    "release_source_context_sha256",
+    "verified_at_ms",
+    "event_cursor",
+    "links"
+  ],
+  "type": "object"
+}

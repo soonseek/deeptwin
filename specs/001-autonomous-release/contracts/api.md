@@ -449,8 +449,13 @@ command receipt. They never claim a cross-process DB+file transaction and never 
 key bytes, a key-derived verifier, prefix/suffix or generic journal payload. Restart reconciliation
 queries the exact record ID/version before deciding: it returns an already bound result, completes
 an exact stored-record binding, or quarantines a valid unbound record. If the pending intent exists
-but the record does not, it terminates as `secret_input_lost`; only a fresh command ID plus explicit
-secret re-entry may retry. It never applies a newly supplied secret under a consumed command ID. Changed
+but the gateway has not durably admitted that command, an exact query returns nonterminal
+`unknown`: a delayed accepted call may still commit. Absence alone never authorizes a new
+command ID, replacement secret, automatic retry or a terminal loss receipt. Only the gateway's
+durably journaled pending, never-receipted command with demonstrably irrecoverable ingress can
+return terminal `secret_input_lost`; after that terminal proof, a fresh command ID plus explicit
+secret re-entry may retry. Missing ciphertext of a previously receipted record is recovery or
+maintenance, not ingress loss. It never applies a newly supplied secret under a consumed command ID. Changed
 non-secret fields conflict and an intentional key change always uses a fresh command ID. Lost-response
 and concurrent duplicates follow this protocol rather than risking a second credential mutation.
 Create/rotate/revoke themselves perform zero provider check, catalog refresh, model call or runtime
@@ -530,6 +535,11 @@ The adapter maps the legacy sequence/utterance/final query exactly, fails interr
 and the bundled UI migrates to PUT and cannot rely on it for release qualification.
 
 ## 3. File and artifact delivery
+
+The planned first connected originals-only slice is specified in
+[`owner-material-intake.md`](owner-material-intake.md). Its design review is complete; its
+implementation/acceptance is not. It preserves originals without claiming extraction or the
+complete delivery contract below. File-first input requires no invented explanation.
 
 Upload streams into bounded staging with per-file limits; current 10 MiB input ceiling is a
 visible initial limit, not a silent truncation. Support larger artifacts via configurable

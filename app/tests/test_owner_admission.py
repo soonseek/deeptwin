@@ -80,6 +80,41 @@ def test_serving_lock_excludes_second_owner_and_releases_on_close(tmp_path):
     module.ServingLock(tmp_path, expected_uid=os.getuid(), expected_gid=os.getgid()).close()
 
 
+def test_existing_lock_only_never_creates_or_repairs(tmp_path):
+    import os
+    from app.services.owner_admission import ServingLock, AdmissionRejected
+    args = dict(expected_uid=os.geteuid(), expected_gid=os.getegid(), create=False)
+    with pytest.raises(AdmissionRejected):
+        ServingLock(tmp_path, **args)
+    path = tmp_path / "owner-auth.lock"
+    assert not path.exists()
+    ServingLock(tmp_path, expected_uid=os.geteuid(), expected_gid=os.getegid()).close()
+    inode = path.stat().st_ino
+    ServingLock(tmp_path, **args).close()
+    assert path.stat().st_ino == inode
+    path.chmod(0o640)
+    with pytest.raises(AdmissionRejected):
+        ServingLock(tmp_path, **args)
+    assert path.stat().st_mode & 0o777 == 0o640
+
+
+@pytest.mark.parametrize("create", [True, False])
+def test_serving_lock_rejects_inode_replacement_during_acquisition(tmp_path, monkeypatch, create):
+    import os
+    from app.services import owner_admission as module
+    args = dict(expected_uid=os.geteuid(), expected_gid=os.getegid())
+    module.ServingLock(tmp_path, **args).close()
+    original = module.fcntl.flock
+    def replace_lock(fd, flags):
+        path = tmp_path / "owner-auth.lock"
+        path.rename(tmp_path / "held.lock")
+        path.touch(mode=0o600)
+        original(fd, flags)
+    monkeypatch.setattr(module.fcntl, "flock", replace_lock)
+    with pytest.raises(module.AdmissionRejected):
+        module.ServingLock(tmp_path, **args, create=create)
+
+
 def test_lane_close_waits_for_native_completion_and_refuses_new_work():
     module = importlib.import_module("app.services.owner_admission")
     lane = module.PasswordLane()

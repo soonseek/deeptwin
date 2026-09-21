@@ -33,6 +33,11 @@ _OPTIONAL_SOURCE_ROOTS = (
     Path("/run/deeptwin/deployment-consumption-exchange"),
     Path("/run/deeptwin/deployment-receipts"),
     Path("/run/deeptwin/deployment-consumed"),
+    Path("/run/deeptwin/provider-stage-sources"),
+    Path("/run/deeptwin/provider-deployment-outbox"),
+    Path("/run/deeptwin/provider-deployment-receipts"),
+    Path("/run/deeptwin/provider-deployment-consumed"),
+    Path("/run/deeptwin/installation-release-sources"),
 )
 
 
@@ -46,6 +51,65 @@ def _validate_source_startup(*, profile, source_sha256, protected_roots):
     return m.native_platform()
 
 
+def _source_mount_observations(observed, required, protected_paths):
+    present = tuple(
+        path
+        for path in _OPTIONAL_SOURCE_ROOTS
+        if path not in required and any(item.mountpoint == path for item in observed)
+    )
+    checked = m.verify_boundaries(
+        observed,
+        required,
+        protected_paths,
+    )
+
+    def aliases(left, right):
+        left_path, left_mount, left_backing = left
+        right_path, right_mount, right_backing = right
+        return (
+            left_path.is_relative_to(right_path)
+            or right_path.is_relative_to(left_path)
+            or left_mount.device == right_mount.device
+            and (
+                left_backing.is_relative_to(right_backing)
+                or right_backing.is_relative_to(left_backing)
+            )
+        )
+
+    protected_observations = tuple(
+        (path, mount, backing) for path, (mount, backing) in checked
+    )
+    optional_observations = []
+    for optional_root in present:
+        root_mount = next(item for item in observed if item.mountpoint == optional_root)
+        optional_observations.append(
+            (
+                optional_root,
+                (optional_root, root_mount, m.backing(root_mount, optional_root)),
+            )
+        )
+        optional_observations.extend(
+            (
+                optional_root,
+                (item.mountpoint, item, m.backing(item, item.mountpoint)),
+            )
+            for item in observed
+            if item.mountpoint != optional_root
+            and item.mountpoint.is_relative_to(optional_root)
+        )
+    for index, (owner, candidate) in enumerate(optional_observations):
+        if any(aliases(candidate, retained) for retained in protected_observations):
+            raise c.DeploymentSourceError()
+        if any(
+            other_owner != owner and aliases(candidate, other)
+            for other_owner, other in optional_observations[:index]
+        ):
+            raise c.DeploymentSourceError()
+    return checked, tuple(
+        sorted(optional_observations, key=lambda item: (str(item[0]), str(item[1][0])))
+    )
+
+
 class _Source(f.RetainedHandle):
     def __init__(self):
         raise TypeError("source construction requires the fixed source factory")
@@ -54,62 +118,11 @@ class _Source(f.RetainedHandle):
         return self._mapping_for(self._required)
 
     def _mapping_for(self, own):
-        observed = m.read_mountinfo()
-        present = tuple(
-            path
-            for path in _OPTIONAL_SOURCE_ROOTS
-            if path not in own and any(item.mountpoint == path for item in observed)
-        )
-        checked = m.verify_boundaries(
-            observed,
+        checked, _optional = _source_mount_observations(
+            m.read_mountinfo(),
             own,
             tuple(directory.path for directory in self._protected),
         )
-
-        def aliases(left, right):
-            left_path, left_mount, left_backing = left
-            right_path, right_mount, right_backing = right
-            return (
-                left_path.is_relative_to(right_path)
-                or right_path.is_relative_to(left_path)
-                or left_mount.device == right_mount.device
-                and (
-                    left_backing.is_relative_to(right_backing)
-                    or right_backing.is_relative_to(left_backing)
-                )
-            )
-
-        protected_observations = tuple(
-            (path, mount, backing) for path, (mount, backing) in checked
-        )
-        optional_observations = []
-        for optional_root in present:
-            root_mount = next(
-                item for item in observed if item.mountpoint == optional_root
-            )
-            optional_observations.append(
-                (
-                    optional_root,
-                    (optional_root, root_mount, m.backing(root_mount, optional_root)),
-                )
-            )
-            optional_observations.extend(
-                (
-                    optional_root,
-                    (item.mountpoint, item, m.backing(item, item.mountpoint)),
-                )
-                for item in observed
-                if item.mountpoint != optional_root
-                and item.mountpoint.is_relative_to(optional_root)
-            )
-        for index, (owner, candidate) in enumerate(optional_observations):
-            if any(aliases(candidate, retained) for retained in protected_observations):
-                raise c.DeploymentSourceError()
-            if any(
-                other_owner != owner and aliases(candidate, other)
-                for other_owner, other in optional_observations[:index]
-            ):
-                raise c.DeploymentSourceError()
         retained_paths = set(own) | {directory.path for directory in self._protected}
         return tuple(item for item in checked if item[0] in retained_paths)
 

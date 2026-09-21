@@ -102,6 +102,9 @@ def disposition(outcome):
 
 
 def cancellation_payload(item, *, profile):
+    if item.get("anchor", {}).get("schema_version") == "deployment-provider-request-anchor-v2":
+        from .provider_prepare_lifecycle import cancellation_payload as provider_payload
+        return provider_payload(item, profile=profile)
     latest = item["history"][-1]
     emitter = cancellation if latest["revision"] == 2 else cancellation_v2
     return emitter(item["request"], latest["transitioned_ms"], profile=profile)
@@ -506,6 +509,9 @@ def append_staged_event(db, roots, item, *, now, actor_ref, installation_ref,
 
 
 def verify(db, roots, profile, item, commands):
+    if item["anchor"]["schema_version"] == "deployment-provider-request-anchor-v2":
+        from .provider_prepare_lifecycle import verify as verify_provider
+        return verify_provider(db, roots, profile, item, commands)
     history, outboxes = item["history"], item["outbox"]
     row, ref = item["row"], item["ref"]
     require(1 <= len(history) <= 3 and history[0]["state"] == "prepared", "unavailable")

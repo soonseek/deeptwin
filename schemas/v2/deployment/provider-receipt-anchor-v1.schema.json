@@ -1,0 +1,242 @@
+{
+  "$id": "urn:deeptwin:schemas:v2:deployment:provider-receipt-anchor-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "channel_identity": {
+      "additionalProperties": false,
+      "properties": {
+        "consumed": {
+          "additionalProperties": false,
+          "properties": {
+            "backing_root_digest": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "namespace": {
+              "additionalProperties": false,
+              "properties": {
+                "device": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "inode": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "device",
+                "inode"
+              ],
+              "type": "object"
+            },
+            "root": {
+              "additionalProperties": false,
+              "properties": {
+                "device": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "inode": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "device",
+                "inode"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "root",
+            "namespace",
+            "backing_root_digest"
+          ],
+          "type": "object"
+        },
+        "incoming": {
+          "additionalProperties": false,
+          "properties": {
+            "backing_root_digest": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "namespace": {
+              "additionalProperties": false,
+              "properties": {
+                "device": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "inode": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "device",
+                "inode"
+              ],
+              "type": "object"
+            },
+            "root": {
+              "additionalProperties": false,
+              "properties": {
+                "device": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "inode": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "device",
+                "inode"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "root",
+            "namespace",
+            "backing_root_digest"
+          ],
+          "type": "object"
+        },
+        "schema_version": {
+          "const": "deployment-provider-receipt-channel-identity-v1",
+          "type": "string"
+        },
+        "source_context_sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "source_context_sha256",
+        "incoming",
+        "consumed"
+      ],
+      "type": "object"
+    },
+    "import_command_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      },
+      "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+      "type": "string"
+    },
+    "receipt_blob_ref": {
+      "additionalProperties": false,
+      "properties": {
+        "purpose": {
+          "const": "operational",
+          "type": "string"
+        },
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        },
+        "size": {
+          "maximum": 16384,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "vault_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        }
+      },
+      "required": [
+        "vault_id",
+        "purpose",
+        "sha256",
+        "size"
+      ],
+      "type": "object"
+    },
+    "request_ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "deployment_request",
+          "type": "string"
+        },
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        },
+        "version": {
+          "const": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "version",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "deployment-provider-receipt-anchor-v1",
+      "type": "string"
+    },
+    "source_context_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "request_ref",
+    "receipt_blob_ref",
+    "source_context_sha256",
+    "channel_identity",
+    "import_command_id"
+  ],
+  "type": "object"
+}

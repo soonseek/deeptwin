@@ -1,0 +1,33 @@
+{
+  "$comment": "Structural only; pure parsing and joins grant no deployment authority.",
+  "$id": "urn:deeptwin:schemas:v2:deployment:provider-cancel-input-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "command_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      },
+      "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+      "type": "string"
+    },
+    "expected_revision": {
+      "const": 1,
+      "type": "integer"
+    },
+    "request_digest": {
+      "maxLength": 43,
+      "minLength": 1,
+      "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+      "type": "string"
+    }
+  },
+  "required": [
+    "command_id",
+    "request_digest",
+    "expected_revision"
+  ],
+  "type": "object"
+}

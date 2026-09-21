@@ -25,6 +25,70 @@ const HEX = '2'.repeat(32);
 const BASE = `/${HEX}/`;
 const RUN_ID = '00000000-0000-4000-8000-00000000b0b1';
 
+const sourceMeta = () => ({ schema_version: 'owner-source-upload-v1', command_id: RUN_ID,
+  expected_revision: 1, name: '자료.bin', declared_media_type: 'application/octet-stream', size: 3,
+  sha256: 'a'.repeat(64) });
+
+test('source upload keeps raw bytes and CSRF private under both deployment paths', async () => {
+  for (const basePath of ['/', BASE]) {
+    const { fetch, calls } = fakeFetch([jsonResponse(200, { state: 'authenticated', csrf_token: 'private' }),
+      jsonResponse(201, { revision: 2 })]);
+    const session = createSupportedSession({ fetch, basePath });
+    await session.establish();
+    const bytes = new Uint8Array([0, 255, 3]);
+    const controller = new AbortController();
+    const target = `${basePath}api/v1/works/${RUN_ID}/sources`;
+    assert.equal(typeof session.uploadSource, 'function');
+    assert.deepEqual(await session.uploadSource(target, { metadata: sourceMeta(), bytes, signal: controller.signal }), { revision: 2 });
+    const options = calls[1][1];
+    assert.deepEqual([...options.body], [0, 255, 3]);
+    assert.equal(options.signal, controller.signal);
+    assert.equal(options.credentials, 'same-origin');
+    assert.equal(options.headers['Content-Type'], 'application/octet-stream');
+    assert.equal(options.headers[CSRF_HEADER], 'private');
+    assert.deepEqual(JSON.parse(Buffer.from(options.headers['X-DeepTwin-Source-Metadata'], 'base64url')), sourceMeta());
+    assert.equal(JSON.stringify(session).includes('private'), false);
+    assert.equal(JSON.stringify(session.snapshot()).includes('private'), false);
+  }
+});
+
+test('source upload refuses wrong routes, overrides and unbounded metadata before network', async () => {
+  const { fetch, calls } = fakeFetch([jsonResponse(200, { state: 'authenticated', csrf_token: 'private' })]);
+  const session = createSupportedSession({ fetch, basePath: BASE });
+  await session.establish();
+  assert.equal(typeof session.uploadSource, 'function');
+  const target = `${BASE}api/v1/works/${RUN_ID}/sources`;
+  const options = { metadata: sourceMeta(), bytes: new Uint8Array(3) };
+  for (const path of [`/api/v1/works/${RUN_ID}/sources`, `${BASE}api/v1/runs/${RUN_ID}/sources`,
+    target + '?x=1', target + '/content', `${BASE}api/v1/works/commands/sources`]) {
+    await assert.rejects(session.uploadSource(path, options), { code: 'invalid_input' });
+  }
+  for (const changes of [{ headers: {} }, { credentials: 'include' }, { method: 'PUT' }, { bytes: new Uint8Array(4) },
+    { metadata: { ...sourceMeta(), expected_revision: true } }, { metadata: { ...sourceMeta(), name: '../bad' } },
+    { metadata: { ...sourceMeta(), extra: 1 } }, { metadata: { ...sourceMeta(), declared_media_type: 'Text/HTML' } }]) {
+    await assert.rejects(session.uploadSource(target, { ...options, ...changes }), { code: 'invalid_input' });
+  }
+  assert.equal(calls.length, 1);
+});
+
+test('source cancellation and command refusals preserve partition and invalidate sessions', async () => {
+  for (const code of [401, 403]) {
+    const { fetch } = fakeFetch([jsonResponse(200, { state: 'authenticated', csrf_token: 'private' }), jsonResponse(code, {})]);
+    const session = createSupportedSession({ fetch });
+    await session.establish();
+    assert.equal(typeof session.uploadSource, 'function');
+    await assert.rejects(session.uploadSource(`/api/v1/works/${RUN_ID}/sources`, { metadata: sourceMeta(), bytes: new Uint8Array(3) }));
+    assert.equal(session.snapshot().established, false);
+  }
+  const { fetch } = fakeFetch([jsonResponse(200, { state: 'authenticated', csrf_token: 'private' }),
+    async (_path, { signal }) => { signal.throwIfAborted(); }]);
+  const session = createSupportedSession({ fetch });
+  await session.establish();
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(session.uploadSource(`/api/v1/works/${RUN_ID}/sources`,
+    { metadata: sourceMeta(), bytes: new Uint8Array(3), signal: controller.signal }), { code: 'unavailable' });
+});
+
 function jsonResponse(status, payload) {
   return {
     ok: status >= 200 && status < 300,

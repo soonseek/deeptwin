@@ -23,6 +23,7 @@ independence_profile qualification extension_manifest extension_installation
 extension_qualification extension_binding backup_manifest export_manifest
 tool_definition grant execution_envelope task_spec rubric observation_contract worker_response_capture deployment_request
 deployment_receipt deployment_receipt_consumption
+provider_conformance_run
 """.split())
 LOCATOR_KINDS = ENTITY_KINDS | frozenset("""
 work setup session connection run node_execution attempt tool_call budget_reservation

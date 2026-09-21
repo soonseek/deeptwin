@@ -1,0 +1,9 @@
+{
+  "schema_version": "deeptwin-first-party-route-contribution-v1",
+  "contribution_id": "provider-installation-v1",
+  "factory": "app.api.provider_installation:create_router",
+  "routes": [
+    {"route_id":"extensions.provider-installation.execute","methods":["POST"],"path":"/api/v1/extensions/provider-installation","auth_policy":"browser_session","required_scope":"extension.manage"},
+    {"route_id":"extensions.provider-installation.read","methods":["GET","HEAD"],"path":"/api/v1/extensions/provider-installation/{command_id}","auth_policy":"browser_session","required_scope":"extension.read"}
+  ]
+}

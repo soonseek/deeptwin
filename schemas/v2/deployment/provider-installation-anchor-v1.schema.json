@@ -1,0 +1,267 @@
+{
+  "$id": "urn:deeptwin:schemas:v2:deployment:provider-installation-anchor-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "actor_ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "actor",
+          "type": "string"
+        },
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        },
+        "version": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "version",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "consume_command_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      },
+      "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+      "type": "string"
+    },
+    "extension_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])",
+      "type": "string"
+    },
+    "image_manifest_digest": {
+      "maxLength": 71,
+      "minLength": 1,
+      "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+      "type": "string"
+    },
+    "installed_at": {
+      "format": "date-time",
+      "maxLength": 24,
+      "minLength": 1,
+      "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+      "type": "string"
+    },
+    "manifest_digest": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+      "type": "string"
+    },
+    "platform": {
+      "enum": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "type": "string"
+    },
+    "postcondition_evidence_blob_ref": {
+      "additionalProperties": false,
+      "properties": {
+        "purpose": {
+          "const": "operational",
+          "type": "string"
+        },
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        },
+        "size": {
+          "maximum": 8192,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "vault_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        }
+      },
+      "required": [
+        "vault_id",
+        "purpose",
+        "sha256",
+        "size"
+      ],
+      "type": "object"
+    },
+    "preserved_inventory_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+      "type": "string"
+    },
+    "previous_record_digest": {
+      "type": "null"
+    },
+    "receipt_ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "deployment_receipt",
+          "type": "string"
+        },
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        },
+        "version": {
+          "const": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "version",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "request_ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "deployment_request",
+          "type": "string"
+        },
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        },
+        "version": {
+          "const": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "version",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "revision": {
+      "const": 1,
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "extension-provider-installation-anchor-v1",
+      "type": "string"
+    },
+    "selected_platform_entry_digest": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+      "type": "string"
+    },
+    "service_descriptor_digest": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+      "type": "string"
+    },
+    "service_identity": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])",
+      "type": "string"
+    },
+    "source_context_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+      "type": "string"
+    },
+    "stage_profile": {
+      "const": "claude-text-transform-v1",
+      "type": "string"
+    },
+    "staging_authority": {
+      "const": "deployment-provider-receipt-v1",
+      "type": "string"
+    },
+    "state": {
+      "const": "staged",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "extension_id",
+    "manifest_digest",
+    "service_descriptor_digest",
+    "selected_platform_entry_digest",
+    "image_manifest_digest",
+    "platform",
+    "service_identity",
+    "staging_authority",
+    "request_ref",
+    "receipt_ref",
+    "postcondition_evidence_blob_ref",
+    "consume_command_id",
+    "state",
+    "revision",
+    "previous_record_digest",
+    "installed_at",
+    "actor_ref",
+    "stage_profile",
+    "source_context_sha256",
+    "preserved_inventory_sha256"
+  ],
+  "type": "object"
+}

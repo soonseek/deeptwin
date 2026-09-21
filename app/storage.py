@@ -186,15 +186,33 @@ class Store:
                 try:
                     duplicate_database = os.dup(database_fd)
                 except BaseException:
-                    os.close(duplicate_directory)
+                    owned_directory = duplicate_directory
+                    duplicate_directory = None
+                    try:
+                        os.close(owned_directory)
+                    except BaseException:
+                        pass
                     raise
                 pair = (duplicate_directory, duplicate_database)
+        primary = None
         try:
             yield pair
+        except BaseException as exc:
+            primary = exc
+            raise
         finally:
             if pair is not None:
-                os.close(pair[1])
-                os.close(pair[0])
+                owned_pair = pair
+                pair = None
+                cleanup_error = None
+                for descriptor in reversed(owned_pair):
+                    try:
+                        os.close(descriptor)
+                    except BaseException as exc:
+                        if primary is None and cleanup_error is None:
+                            cleanup_error = exc
+                if primary is None and cleanup_error is not None:
+                    raise cleanup_error
 
     def close_verified_handles(self):
         """Idempotently revoke the server-retained filesystem capabilities."""

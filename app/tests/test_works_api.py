@@ -197,7 +197,7 @@ def test_the_composition_carries_the_work_routes(tmp_path):
         assert "works-v1" in composition.contribution_ids
         for route_id in ("works.create", "works.read", "works.revise"):
             assert route_id in composition.route_ids
-        assert composition.route_count == 23
+        assert composition.route_count == 37
 
 
 def test_the_text_bound_is_the_records_own_64_kib_and_never_a_storage_outage(tmp_path):
@@ -301,4 +301,3 @@ def test_a_text_quoting_another_command_never_masks_that_command(tmp_path):
         assert real.status_code == 201 and real.json()["text"] == "진짜"
         assert create(subject, text="진짜", command_id=other).json() == real.json()
         assert create(subject, text="가짜", command_id=other).status_code == 409
-

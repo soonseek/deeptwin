@@ -24,6 +24,8 @@ from app.tests.deployment_v1_history_fixture import v1_history
 C1 = "68a6ed89486cb48536873e4b107e2e7e1dd4061e5ce65773b0bebe46303cc2ec"
 C2 = "d35202bc3d2b3f7be9a0a0d86ba32171c4055334f11531c40497d9b54165693f"
 C3 = "ff0931661b7958805f3113bad954110ca702ba3c0205e6dadc73651508a51457"
+C4 = "f89a9a8ba7f98da44e4a48f63c0363d2bfa7fafe038bd19bfdc178396c4be7d2"
+C5 = "9f3b9426d465524036c8c3ca48db3ba3360e284149b5cee8611aba0d6b4907d2"
 KINDS = (
     "deployment_request",
     "deployment_receipt",
@@ -35,11 +37,13 @@ KINDS = (
 def snapshot(domain, tables, migrations):
     """Bounded deployment rows/records/events only; never owner or session storage."""
     with domain._connection() as db:
+        if "provider_context_id" in {row[1] for row in db.execute("PRAGMA table_info(deployment_prepare_receipts)")}:
+            assert all(tuple(row) == (None, 1) for row in db.execute("SELECT provider_context_id,source_singleton FROM deployment_prepare_receipts"))
         rows = {
             table: tuple(
                 tuple(row)
                 for row in db.execute(
-                    "SELECT * FROM deployment_prepare_"
+                    "SELECT " + (",".join(storage.COLUMNS_V2["receipts"]) if table == "receipts" else "*") + " FROM deployment_prepare_"
                     + table
                     + " ORDER BY 1,2 LIMIT ?",
                     (cap + 1,),
@@ -113,9 +117,9 @@ def test_ordinary_constructor_upgrades_actual_v2_history_without_sources(
                     "SELECT * FROM deployment_prepare_migrations ORDER BY version"
                 )
             ]
-            assert migrations == [(1, C1), (2, C2), (3, C3)]
-            assert storage.shape(db) == storage.SHAPE_V3
-            assert storage._layout(db) is storage._V3
+            assert migrations == [(1, C1), (2, C2), (3, C3), (4, C4), (5, C5), (6, storage.CHECKSUM_V6)]
+            assert storage.shape(db) == storage.SHAPE_V6
+            assert storage._layout(db) is storage._V6
             for table in ("installations", "installation_heads"):
                 assert (
                     db.execute(
@@ -144,7 +148,7 @@ def test_ordinary_constructor_upgrades_actual_v2_history_without_sources(
                 service.read(actual.read_request, reply["request_id"])["receipt"]
                 is None
             )
-        # a second ordinary construction is write-free and stays on v3
+        # A second ordinary construction is write-free and stays on current v4.
         again = snapshot_v3(actual.domain)
         assert not construct(actual)._unavailable
         assert snapshot_v3(actual.domain) == again
@@ -357,6 +361,7 @@ def test_a_v2_journal_with_a_consumed_receipt_migrates_with_its_children_in_plac
     # its consumption and pending consumed outbox (→ consumptions), receipts and
     # heads (→ lifecycle/commands) all survive the rebuild untouched
     from app.tests.deployment_receipt_import_fixture import receipt_context, signed_case
+    from app.tests.deployment_prepare_fixture import pre_deployment_catalog
 
     real = storage._rebuild_v2_as_v3
     gate = {"upgrade": False}
@@ -365,7 +370,9 @@ def test_a_v2_journal_with_a_consumed_receipt_migrates_with_its_children_in_plac
         "_rebuild_v2_as_v3",
         lambda db: real(db) if gate["upgrade"] else None,
     )
-    with receipt_context(tmp_path, monkeypatch) as actual:
+    # The genuine held-V2 journal is built by the actual receipt services, not
+    # composed with the newly installed route whose constructor requires V6.
+    with pre_deployment_catalog(), receipt_context(tmp_path, monkeypatch) as actual:
         prepared, command, _, _ = signed_case(
             actual, monkeypatch, case_name="valid_failed_absent"
         )
@@ -393,7 +400,7 @@ def test_a_v2_journal_with_a_consumed_receipt_migrates_with_its_children_in_plac
             journal = records.install(
                 actual.domain, db, actual.profile, candidate_registry=actual.registry
             )
-            assert storage._layout(db) is storage._V3
+            assert storage._layout(db) is storage._V6
         item = journal["requests"][prepared["request_id"]]
         assert (
             item["consumption"] is not None

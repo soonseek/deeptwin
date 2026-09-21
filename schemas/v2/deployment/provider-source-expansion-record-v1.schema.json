@@ -1,0 +1,105 @@
+{
+  "$id": "urn:deeptwin:schemas:v2:deployment:provider-source-expansion-record-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "context_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "expanded_compose_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "expanded_compose_size_bytes": {
+      "maximum": 1048576,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "geometry_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "initializer_id": {
+      "const": "deeptwin-provider-source-init-v1",
+      "type": "string"
+    },
+    "initializer_image": {
+      "maxLength": 584,
+      "minLength": 1,
+      "pattern": "^(?:[a-z0-9.:-]+/[a-z0-9/._-]+@sha256:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "original_expansion_record_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "original_expansion_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "original_expansion_size_bytes": {
+      "maximum": 1048576,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "pins_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "provider_instance_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "provider_recipe_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "renderer_id": {
+      "const": "deeptwin-provider-source-expand-v1",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "deployment-provider-source-expansion-record-v1",
+      "type": "string"
+    },
+    "scope": {
+      "const": "provider_sources_only",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "scope",
+    "renderer_id",
+    "initializer_id",
+    "original_expansion_sha256",
+    "original_expansion_size_bytes",
+    "original_expansion_record_sha256",
+    "provider_recipe_sha256",
+    "provider_instance_sha256",
+    "geometry_sha256",
+    "context_sha256",
+    "pins_sha256",
+    "initializer_image",
+    "expanded_compose_sha256",
+    "expanded_compose_size_bytes"
+  ],
+  "type": "object"
+}

@@ -5,11 +5,14 @@ predicate, binds a provider client, or converts a graph declaration into authori
 """
 
 import re
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from hashlib import sha256
 
 from ..domain.graph_schema import GraphContractError, GraphVersion
 from ..domain.refs import DomainContractError, EntityRef, canonical_json
+from ..extensions.port_contracts import EFFECT_CLASSES, EFFECT_FAMILIES
+from .gates import tool_approval_scope
 
 HANDLER_KEYS = {
     "agent": "core.agent",
@@ -46,17 +49,48 @@ def _trusted_capabilities(values, label, *, nonempty=True):
     return tuple(sorted(items))
 
 
+# the worker's execute identifier grammar (app/workers/broker.py): a definition the graph
+# vouches for must be one the transport can name
+_TOOL_ID = re.compile(r"(?=.{1,64}\Z)[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*\Z")
+_TOOL_VERSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+-]{0,63}\Z")
+
+
+def _trusted_text(value, pattern, label):
+    if type(value) is not str or pattern.fullmatch(value) is None:
+        raise GraphContractError(f"Trusted {label} is invalid")
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class TrustedToolDefinition:
+    """One tool the caller vouches for: its record, its grant, its capabilities, the
+    tool's identity (id, version) as the worker names it, and its effect class in the
+    ports contract's vocabulary — authoritative for every binding, never the worker's
+    claim (runtime.md §6; extension-ports.md `effect-class`)."""
+
     definition_ref: EntityRef
     required_grant_ref: EntityRef
     capabilities: tuple[str, ...]
+    tool_id: str
+    version: str
+    effect_class: str
+
+    @property
+    def approval_scope(self):
+        """The gate scope a binding to this tool requires when its effect needs an
+        explicit approval (the ports' external family), else None."""
+        if EFFECT_FAMILIES[self.effect_class] != "X":
+            return None
+        return tool_approval_scope(self.tool_id, self.version)
 
     def as_dict(self):
         return {
             "definition_ref": self.definition_ref.as_dict(),
             "required_grant_ref": self.required_grant_ref.as_dict(),
             "capabilities": list(self.capabilities),
+            "tool_id": self.tool_id,
+            "version": self.version,
+            "effect_class": self.effect_class,
         }
 
 
@@ -114,12 +148,18 @@ class CompilationAuthority:
             ))
         tools = []
         for item in raw_tools:
-            if type(item) is not tuple or len(item) != 3:
+            if type(item) is not tuple or len(item) != 6:
                 raise GraphContractError("Trusted tool authority tuple is invalid")
+            effect_class = item[5]
+            if type(effect_class) is not str or effect_class not in EFFECT_CLASSES:
+                raise GraphContractError("Trusted tool effect class is outside the ports contract")
             tools.append(TrustedToolDefinition(
                 _trusted_ref(item[0], "tool_definition", "tool definition"),
                 _trusted_ref(item[1], "grant", "tool grant"),
                 _trusted_capabilities(item[2], "tool"),
+                _trusted_text(item[3], _TOOL_ID, "tool id"),
+                _trusted_text(item[4], _TOOL_VERSION, "tool version"),
+                effect_class,
             ))
         grants = tuple(sorted(
             (_trusted_ref(item, "grant", "grant") for item in raw_grants),
@@ -142,6 +182,10 @@ class CompilationAuthority:
                 for item in raw_approvals)
                 or len(set(raw_approvals)) != len(raw_approvals)):
             raise GraphContractError("Trusted approval scopes are invalid")
+        # an external-family tool's approval scope is trusted by derivation from the
+        # definition the caller vouched for, never listed by hand
+        derived = {tool.approval_scope for tool in tools if tool.approval_scope is not None}
+        raw_approvals = tuple(sorted(set(raw_approvals) | derived))
         for values, key, label in (
             (models, lambda item: _ref_sort(item[0]), "model choice"),
             (tools, lambda item: _ref_sort(item.definition_ref), "tool definition"),
@@ -153,6 +197,13 @@ class CompilationAuthority:
             keys = [key(item) for item in values]
             if len(set(keys)) != len(keys):
                 raise GraphContractError(f"Duplicate trusted {label}")
+        # one effect class per tool identity: the gate's answer must not depend on which
+        # of two definitions of the same tool a graph happened to bind
+        by_identity = {}
+        for tool in tools:
+            claimed = by_identity.setdefault((tool.tool_id, tool.version), tool.effect_class)
+            if claimed != tool.effect_class:
+                raise GraphContractError("Trusted tool definitions disagree on a tool's effect class")
         result = object.__new__(cls)
         for name, value in {
             "model_choices": tuple(sorted(models, key=lambda item: _ref_sort(item[0]))),
@@ -200,6 +251,45 @@ class CompiledNode:
 
 
 @dataclass(frozen=True, slots=True)
+class CompiledToolBinding:
+    """Compiler projection, not persisted qualification or action authority."""
+
+    graph_digest: str
+    authority_digest: str
+    node_id: str
+    binding_id: str
+    definition_ref: EntityRef
+    grant_ref: EntityRef
+    tool_id: str
+    version: str
+    effect_class: str
+    approval_gate_node_id: str | None
+
+
+class CompiledToolTransport(ABC):
+    """Code-owned coherence interface; implementing it confers no qualification.
+
+    Shared here to avoid a cycle between the dispatcher and worker transport.
+    Generic injected executors remain a trusted test/code seam.
+    """
+
+    __slots__ = ()
+
+    @property
+    @abstractmethod
+    def compiled_tool_binding(self):
+        """One immutable compiler projection, or None for a read-only query."""
+
+    @abstractmethod
+    def require_dispatch_ledger(self, ledger):
+        """Require the invoking dispatcher to own this exact ledger/store."""
+
+    @abstractmethod
+    def require_compiled_context(self, compiled, node_id, ledger):
+        """Validate the complete graph/authority/node projection before reservation."""
+
+
+@dataclass(frozen=True, slots=True)
 class CompiledGraph:
     graph_digest: str
     entry_node_ids: tuple[str, ...]
@@ -209,6 +299,11 @@ class CompiledGraph:
     loop_regions: tuple[tuple[str, tuple[str, ...], int], ...]
     execution_graph: GraphVersion
     authority_digest: str
+    # per tool binding on a node: (node id, binding id, tool id, version, effect class, the
+    # human gate supplying the tool's approval scope or None) — the authority's facts, sorted
+    tool_effects: tuple[tuple[str, str, str, str, str, str | None], ...] = ()
+    tool_bindings: tuple[CompiledToolBinding, ...] = ()
+    compilation_authority: CompilationAuthority | None = None
 
 
 def graph_digest(graph):
@@ -571,6 +666,17 @@ def _validate_external_authority(graph, authority):
             raise GraphContractError("Graph tool binding does not use its authoritative grant")
         if not set(binding.capabilities) <= set(definition.capabilities):
             raise GraphContractError("Graph claims a capability absent from the authoritative tool")
+    # the ToolDefinition-backed effect gate: a node bound to a tool whose effect needs an
+    # explicit approval must require the tool's approval scope, which the structure already
+    # binds to an exact human-gate path
+    bindings = {item.binding_id: item for item in graph.tool_bindings}
+    for node in graph.nodes:
+        for binding_id in _bound_tool_ids(node):
+            definition = trusted_tools[bindings[binding_id].tool_definition_ref]
+            scope = definition.approval_scope
+            if scope is not None and scope not in node.required_approval_scopes:
+                raise GraphContractError(
+                    "a node bound to an external-family tool must require the tool's approval scope")
     scopes = {
         scope for node in graph.nodes for scope in node.required_approval_scopes
     }
@@ -604,7 +710,54 @@ def compile_graph(graph, authority=None):
     digest = sha256(canonical_json(graph.as_dict())).hexdigest()
     return CompiledGraph(digest, tuple(sorted(graph.entry_node_ids)), compiled_nodes,
                          tuple((node.node_id, HANDLER_KEYS[node.kind]) for node in compiled_nodes),
-                         predecessors, regions, graph, authority.digest)
+                         predecessors, regions, graph, authority.digest,
+                         _tool_effects(graph, authority), _tool_bindings(graph, authority, digest),
+                         authority)
+
+
+def resolve_compiled_tool_binding(compiled, node_id, binding_id):
+    """Recheck the projection against the validated graph and caller authority.
+
+    This only proves constructor coherence. A canonical persistent authority
+    loader and registered-input lineage are still required for production use.
+    """
+    if type(compiled) is not CompiledGraph:
+        raise GraphContractError("Exact compiled graph required for tool binding")
+    if compiled != compile_graph(compiled.execution_graph, compiled.compilation_authority):
+        raise GraphContractError("Compiled tool binding disagrees with graph or authority")
+    for binding in compiled.tool_bindings:
+        if binding.node_id == node_id and binding.binding_id == binding_id:
+            return binding
+    raise GraphContractError("Compiled graph has no matching node/tool binding")
+
+
+def _tool_bindings(graph, authority, digest):
+    bindings = {item.binding_id: item for item in graph.tool_bindings}
+    return tuple(CompiledToolBinding(
+        digest, authority.digest, node_id, binding_id,
+        bindings[binding_id].tool_definition_ref, bindings[binding_id].grant_ref,
+        tool_id, version, effect, gate,
+    ) for node_id, binding_id, tool_id, version, effect, gate in _tool_effects(graph, authority))
+
+
+def _bound_tool_ids(node):
+    getter = getattr(node.config, "get", None)
+    return tuple(getter("tool_binding_ids", ())) if callable(getter) else ()
+
+
+def _tool_effects(graph, authority):
+    trusted = {item.definition_ref: item for item in authority.tool_definitions}
+    bindings = {item.binding_id: item for item in graph.tool_bindings}
+    gates = {(edge.target_node_id, edge.data["approval_scope"]): edge.source_node_id
+             for edge in graph.edges if edge.kind == "approval"}
+    facts = []
+    for node in graph.nodes:
+        for binding_id in _bound_tool_ids(node):
+            definition = trusted[bindings[binding_id].tool_definition_ref]
+            scope = definition.approval_scope
+            facts.append((node.node_id, binding_id, definition.tool_id, definition.version,
+                          definition.effect_class, None if scope is None else gates[(node.node_id, scope)]))
+    return tuple(sorted(facts))
 
 
 def functional_projection(graph):

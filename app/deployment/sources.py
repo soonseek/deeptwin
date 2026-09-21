@@ -106,8 +106,15 @@ class SlotMetadataLease(f.RetainedHandle):
     def close(self):
         if not getattr(self, "_closed", True):
             self._closed = True
-            self._metadata.close()
-            self._directory.close()
+            first_error = None
+            for handle in (self._metadata, self._directory):
+                try:
+                    handle.close()
+                except BaseException as error:  # noqa: BLE001 - attempt both children
+                    if first_error is None:
+                        first_error = error
+            if first_error is not None:
+                raise first_error
 
 
 class TopologySource(_Source):
@@ -126,6 +133,8 @@ class TopologySource(_Source):
             search=True,
         )
         metadata = None
+        lease = None
+        transferred = False
         try:
             required = dict(self._required) | {directory.path: True}
             mapping = self._mapping_for(required)
@@ -147,15 +156,25 @@ class TopologySource(_Source):
                 directory,
                 False,
             )
+            directory = metadata = None
+            transferred = True
             lease.recheck_current()
             return lease
-        except (OSError, c.DeploymentSourceError, ipc_root.IpcRootError) as error:
-            directory.close()
-            if metadata is not None:
-                metadata.close()
+        except BaseException as error:
+            owned = (lease,) if transferred else (metadata, directory)
+            for handle in owned:
+                if handle is not None:
+                    try:
+                        handle.close()
+                    except BaseException:  # noqa: BLE001, S110 - preserve primary
+                        pass
             if isinstance(error, ipc_root.IpcRootBusy):
                 raise c.DeploymentSourceBusy() from None
-            raise c.DeploymentSourceError() from None
+            if isinstance(
+                error, (OSError, c.DeploymentSourceError, ipc_root.IpcRootError)
+            ):
+                raise c.DeploymentSourceError() from None
+            raise
 
 
 def open_topology_source(

@@ -35,6 +35,8 @@ MAX_HISTORY_BYTES = 16 * 1024 * 1024
 MAX_ENTRIES = 1024
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
+_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}\+00:00\Z")
+_WHOLE_SECOND_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00\Z")
 
 
 class CheckpointError(ValueError):
@@ -67,6 +69,20 @@ def _uuid(value):
 def _number(value, minimum=0, maximum=MAX_INTEGER):
     _require(type(value) is int and minimum <= value <= maximum)
     return value
+
+
+def _timestamp(value, *, decoding):
+    _require(type(value) is str)
+    if _TIMESTAMP.fullmatch(value) is not None:
+        normalized = value
+    else:
+        _require(not decoding and _WHOLE_SECOND_TIMESTAMP.fullmatch(value) is not None)
+        normalized = value[:-6] + ".000000+00:00"
+    try:
+        datetime.fromisoformat(normalized)
+    except ValueError:
+        raise CheckpointError("Invalid checkpoint timestamp") from None
+    return normalized
 
 
 class _NoObjectSerializer:
@@ -232,13 +248,7 @@ class LedgerCheckpointSaver(BaseCheckpointSaver[int]):
                         "versions_seen", "updated_channels"))
         _require(type(value["v"]) is int and value["v"] == 4)
         _uuid(value["id"])
-        stamp = value["ts"]
-        _require(type(stamp) is str and re.fullmatch(
-            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}\+00:00", stamp) is not None)
-        try:
-            datetime.fromisoformat(stamp)
-        except ValueError:
-            raise CheckpointError("Invalid checkpoint timestamp") from None
+        stamp = _timestamp(value["ts"], decoding=decoding)
         values = {key: self._value(key, item, decoding=decoding)
                   for key, item in _mapping(value["channel_values"]).items()}
         versions = self._versions(value["channel_versions"])
@@ -252,7 +262,7 @@ class LedgerCheckpointSaver(BaseCheckpointSaver[int]):
         _require(type(updated) is list and len(updated) <= MAX_ENTRIES)
         _require(all(type(key) is str and key in versions for key in updated))
         _require(len(set(updated)) == len(updated))
-        return {**value, "channel_values": values, "channel_versions": versions,
+        return {**value, "ts": stamp, "channel_values": values, "channel_versions": versions,
                 "versions_seen": seen, "updated_channels": list(updated)}
 
     def _metadata(self, value):

@@ -1,0 +1,640 @@
+{
+  "$comment": "Structural only; these values grant no authentication, qualification, installation, binding, measurement, trust, or execution authority.",
+  "$defs": {
+    "provider_identity": {
+      "$comment": "Structural only; these values grant no authentication, qualification, installation, binding, measurement, trust, or execution authority.",
+      "$id": "urn:deeptwin:schemas:v2:extensions:provider-build-identity-v2",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "entrypoint": {
+          "additionalProperties": false,
+          "properties": {
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 16777216,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        "extension_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])",
+          "type": "string"
+        },
+        "extension_version": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^(?:(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*))(?![\\s\\S])",
+          "type": "string"
+        },
+        "inputs": {
+          "additionalProperties": false,
+          "properties": {
+            "build_recipe": {
+              "additionalProperties": false,
+              "properties": {
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 1073741824,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "dependency_input_set": {
+              "additionalProperties": false,
+              "properties": {
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 1073741824,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "schema_version": {
+              "const": "extension-build-inputs-v1",
+              "type": "string"
+            },
+            "source_bundle": {
+              "additionalProperties": false,
+              "properties": {
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 1073741824,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "schema_version",
+            "source_bundle",
+            "build_recipe",
+            "dependency_input_set"
+          ],
+          "type": "object"
+        },
+        "platform": {
+          "enum": [
+            "linux/amd64",
+            "linux/arm64"
+          ],
+          "type": "string"
+        },
+        "port_contract_version": {
+          "const": "provider-port-v1"
+        },
+        "port_schemas": {
+          "items": false,
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "role": {
+                  "const": "config",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 262144,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "role",
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "role": {
+                  "const": "request",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 262144,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "role",
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "role": {
+                  "const": "result",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 262144,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "role",
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "role": {
+                  "const": "error",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 262144,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "role",
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            }
+          ],
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "extension-build-identity-v2"
+        },
+        "worker_profile": {
+          "const": "claude-text-transform-v1"
+        }
+      },
+      "required": [
+        "schema_version",
+        "extension_id",
+        "extension_version",
+        "platform",
+        "port_contract_version",
+        "inputs",
+        "entrypoint",
+        "port_schemas",
+        "worker_profile"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:deeptwin:schemas:v2:extensions:provider-build-lineage-v2",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "extension_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])",
+      "type": "string"
+    },
+    "extension_version": {
+      "maxLength": 32,
+      "minLength": 1,
+      "pattern": "^(?:(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*))(?![\\s\\S])",
+      "type": "string"
+    },
+    "index": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "maxLength": 71,
+          "minLength": 1,
+          "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        },
+        "media_type": {
+          "enum": [
+            "application/vnd.oci.image.index.v1+json"
+          ],
+          "type": "string"
+        },
+        "size_bytes": {
+          "maximum": 1099511627776,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "media_type",
+        "digest",
+        "size_bytes"
+      ],
+      "type": "object"
+    },
+    "launch_profile": {
+      "const": "provider-private-transform-v1",
+      "type": "string"
+    },
+    "platforms": {
+      "items": false,
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "build_identity": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/provider_identity"
+                },
+                {
+                  "properties": {
+                    "platform": {
+                      "const": "linux/amd64",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "platform"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "extraction_evidence_sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "measured_platform_entry": {
+              "additionalProperties": false,
+              "properties": {
+                "config": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "digest": {
+                      "maxLength": 71,
+                      "minLength": 1,
+                      "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                      "type": "string"
+                    },
+                    "media_type": {
+                      "enum": [
+                        "application/vnd.oci.image.config.v1+json"
+                      ],
+                      "type": "string"
+                    },
+                    "size_bytes": {
+                      "maximum": 1099511627776,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "media_type",
+                    "digest",
+                    "size_bytes"
+                  ],
+                  "type": "object"
+                },
+                "layers": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "digest": {
+                        "maxLength": 71,
+                        "minLength": 1,
+                        "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                        "type": "string"
+                      },
+                      "media_type": {
+                        "enum": [
+                          "application/vnd.oci.image.layer.v1.tar",
+                          "application/vnd.oci.image.layer.v1.tar+gzip",
+                          "application/vnd.oci.image.layer.v1.tar+zstd"
+                        ],
+                        "type": "string"
+                      },
+                      "position": {
+                        "maximum": 128,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "size_bytes": {
+                        "maximum": 1099511627776,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "position",
+                      "media_type",
+                      "digest",
+                      "size_bytes"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 128,
+                  "minItems": 1,
+                  "type": "array",
+                  "uniqueItems": false
+                },
+                "manifest": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "digest": {
+                      "maxLength": 71,
+                      "minLength": 1,
+                      "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                      "type": "string"
+                    },
+                    "media_type": {
+                      "enum": [
+                        "application/vnd.oci.image.manifest.v1+json"
+                      ],
+                      "type": "string"
+                    },
+                    "size_bytes": {
+                      "maximum": 1099511627776,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "media_type",
+                    "digest",
+                    "size_bytes"
+                  ],
+                  "type": "object"
+                },
+                "platform": {
+                  "const": "linux/amd64",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "platform",
+                "manifest",
+                "config",
+                "layers"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "measured_platform_entry",
+            "build_identity",
+            "extraction_evidence_sha256"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "build_identity": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/provider_identity"
+                },
+                {
+                  "properties": {
+                    "platform": {
+                      "const": "linux/arm64",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "platform"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "extraction_evidence_sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "measured_platform_entry": {
+              "additionalProperties": false,
+              "properties": {
+                "config": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "digest": {
+                      "maxLength": 71,
+                      "minLength": 1,
+                      "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                      "type": "string"
+                    },
+                    "media_type": {
+                      "enum": [
+                        "application/vnd.oci.image.config.v1+json"
+                      ],
+                      "type": "string"
+                    },
+                    "size_bytes": {
+                      "maximum": 1099511627776,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "media_type",
+                    "digest",
+                    "size_bytes"
+                  ],
+                  "type": "object"
+                },
+                "layers": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "digest": {
+                        "maxLength": 71,
+                        "minLength": 1,
+                        "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                        "type": "string"
+                      },
+                      "media_type": {
+                        "enum": [
+                          "application/vnd.oci.image.layer.v1.tar",
+                          "application/vnd.oci.image.layer.v1.tar+gzip",
+                          "application/vnd.oci.image.layer.v1.tar+zstd"
+                        ],
+                        "type": "string"
+                      },
+                      "position": {
+                        "maximum": 128,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "size_bytes": {
+                        "maximum": 1099511627776,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "position",
+                      "media_type",
+                      "digest",
+                      "size_bytes"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 128,
+                  "minItems": 1,
+                  "type": "array",
+                  "uniqueItems": false
+                },
+                "manifest": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "digest": {
+                      "maxLength": 71,
+                      "minLength": 1,
+                      "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                      "type": "string"
+                    },
+                    "media_type": {
+                      "enum": [
+                        "application/vnd.oci.image.manifest.v1+json"
+                      ],
+                      "type": "string"
+                    },
+                    "size_bytes": {
+                      "maximum": 1099511627776,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "media_type",
+                    "digest",
+                    "size_bytes"
+                  ],
+                  "type": "object"
+                },
+                "platform": {
+                  "const": "linux/arm64",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "platform",
+                "manifest",
+                "config",
+                "layers"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "measured_platform_entry",
+            "build_identity",
+            "extraction_evidence_sha256"
+          ],
+          "type": "object"
+        }
+      ],
+      "type": "array"
+    },
+    "port_contract_version": {
+      "const": "provider-port-v1",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "extension-build-lineage-v2",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "extension_id",
+    "extension_version",
+    "port_contract_version",
+    "launch_profile",
+    "index",
+    "platforms"
+  ],
+  "type": "object"
+}

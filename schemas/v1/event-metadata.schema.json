@@ -1414,6 +1414,49 @@
       },
       "type": "object"
     },
+    "provider.conformance_completed": {
+      "additionalProperties": false,
+      "properties": {
+        "completed_count": {
+          "maximum": 4,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "matched_count": {
+          "maximum": 4,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outcome": {
+          "enum": [
+            "matched",
+            "mismatch",
+            "incomplete"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "completed_count",
+        "matched_count",
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "provider.conformance_started": {
+      "additionalProperties": false,
+      "properties": {
+        "vector_count": {
+          "maximum": 4,
+          "minimum": 4,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "vector_count"
+      ],
+      "type": "object"
+    },
     "record.gap": {
       "additionalProperties": false,
       "properties": {

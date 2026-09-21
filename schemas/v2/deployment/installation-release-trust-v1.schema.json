@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:deeptwin:schemas:v2:deployment:installation-release-trust-v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "installation-release-trust-v1",
+      "type": "string"
+    },
+    "instance_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^(?:[0-9a-f]{32})$"
+    },
+    "origin_profile_digest": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^(?:[0-9a-f]{64})$"
+    },
+    "deployment_profile_id": {
+      "type": "string",
+      "enum": [
+        "local-no-terminal-v1",
+        "portable-compose-v1"
+      ]
+    },
+    "policy_generation": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "valid_from_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 253402300799999
+    },
+    "valid_until_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 253402300799999
+    },
+    "keys": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 36,
+            "pattern": "^(?:(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$"
+          },
+          "algorithm": {
+            "const": "ed25519",
+            "type": "string"
+          },
+          "public_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 43,
+            "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])$"
+          },
+          "role": {
+            "const": "provider_artifact_review",
+            "type": "string"
+          },
+          "review_profile_id": {
+            "const": "provider-artifact-review-v1",
+            "type": "string"
+          },
+          "issuance_not_before_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 253402300799999
+          },
+          "issuance_not_after_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 253402300799999
+          }
+        },
+        "required": [
+          "key_id",
+          "algorithm",
+          "public_key",
+          "role",
+          "review_profile_id",
+          "issuance_not_before_ms",
+          "issuance_not_after_ms"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "maxItems": 4
+    },
+    "allowed_releases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "extension_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)$"
+          },
+          "extension_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "pattern": "^(?:(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*))$"
+          },
+          "platform": {
+            "enum": [
+              "linux/amd64",
+              "linux/arm64"
+            ]
+          },
+          "image_index_sha256": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^(?:[0-9a-f]{64})$"
+          },
+          "selected_manifest_sha256": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^(?:[0-9a-f]{64})$"
+          },
+          "release_review": {
+            "type": "object",
+            "properties": {
+              "sha256": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^(?:[0-9a-f]{64})$"
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 262144
+              }
+            },
+            "required": [
+              "sha256",
+              "size_bytes"
+            ],
+            "additionalProperties": false
+          },
+          "key_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 36,
+            "pattern": "^(?:(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$"
+          }
+        },
+        "required": [
+          "extension_id",
+          "extension_version",
+          "platform",
+          "image_index_sha256",
+          "selected_manifest_sha256",
+          "release_review",
+          "key_id"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "maxItems": 1
+    },
+    "revoked_key_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 36,
+        "pattern": "^(?:(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$"
+      },
+      "minItems": 0,
+      "maxItems": 16
+    },
+    "revoked_review_sha256": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^(?:[0-9a-f]{64})$"
+      },
+      "minItems": 0,
+      "maxItems": 16
+    },
+    "revoked_manifest_sha256": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^(?:[0-9a-f]{64})$"
+      },
+      "minItems": 0,
+      "maxItems": 16
+    }
+  },
+  "required": [
+    "schema_version",
+    "instance_id",
+    "origin_profile_digest",
+    "deployment_profile_id",
+    "policy_generation",
+    "valid_from_ms",
+    "valid_until_ms",
+    "keys",
+    "allowed_releases",
+    "revoked_key_ids",
+    "revoked_review_sha256",
+    "revoked_manifest_sha256"
+  ],
+  "additionalProperties": false
+}

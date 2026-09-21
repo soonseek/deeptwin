@@ -7,6 +7,8 @@ from .deployment_prepare import (
 )
 from .extension_candidates import candidate_services
 from .first_party import InstalledContribution, core_services
+from .provider_conformance import conformance_services
+from .provider_installation import installation_services
 from .run_approvals import approval_services
 from .runs import run_services
 from .works import work_services
@@ -59,8 +61,26 @@ INSTALLED = (
         ("browser_session",),
         ("deployment.manage", "deployment.read"),
         requires=("extension-candidates.registry",),
-        provides=("deployment-prepare.service",),
+        provides=("deployment-prepare.service", "deployment-provider.source-context", "installation-release.source-context"),
         startup_keys=STARTUP_KEYS,
         startup_reconcile=reconcile_prepare_startup,
+    ),
+    InstalledContribution(
+        "provider-conformance-v1.json",
+        "app.api.provider_conformance:create_router",
+        conformance_services,
+        ("browser_session",),
+        ("extension.manage", "extension.read"),
+        requires=("deployment-prepare.service", "deployment-provider.source-context"),
+        provides=("provider-conformance.service",),
+    ),
+    InstalledContribution(
+        "provider-installation-v1.json",
+        "app.api.provider_installation:create_router",
+        installation_services,
+        ("browser_session",),
+        ("extension.manage", "extension.read"),
+        requires=("deployment-prepare.service", "installation-release.source-context"),
+        provides=("provider-installation.service",),
     ),
 )

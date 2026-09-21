@@ -46,6 +46,10 @@ def validate_anchor_content(content):
     from .store import BlobRef
 
     try:
+        if type(content) is dict and content.get("schema_version") == "deployment-provider-request-anchor-v2":
+            from ..deployment.provider_prepare_contracts import validate_provider_anchor_content
+            validate_provider_anchor_content(content)
+            return
         if len(canonical_json(content)) > 8192 or not Draft202012Validator(
             anchor_content_schema()
         ).is_valid(content):

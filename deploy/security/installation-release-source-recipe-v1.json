@@ -1,0 +1,8 @@
+{
+  "schema_version": "installation-release-source-recipe-v1",
+  "renderer_id": "installation-release-render-v1",
+  "initializer_id": "installation-release-init-v1",
+  "layout_id": "installation-release-source-layout-v1",
+  "file_count": 2,
+  "aggregate_bytes_max": 24576
+}

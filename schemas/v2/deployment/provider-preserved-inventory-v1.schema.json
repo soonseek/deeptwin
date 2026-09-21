@@ -1,0 +1,202 @@
+{
+  "$comment": "Structural only; pure parsing and joins grant no deployment authority.",
+  "$id": "urn:deeptwin:schemas:v2:deployment:provider-preserved-inventory-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "at_event_sequence": {
+      "maximum": 1099511627776,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "installations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted_event_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "not": {
+              "const": "00000000-0000-0000-0000-000000000000"
+            },
+            "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+            "type": "string"
+          },
+          "extension_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])",
+            "type": "string"
+          },
+          "head_digest": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+            "type": "string"
+          },
+          "head_revision": {
+            "const": 1,
+            "type": "integer"
+          },
+          "installation_ref": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "maxLength": 36,
+                "minLength": 1,
+                "not": {
+                  "const": "00000000-0000-0000-0000-000000000000"
+                },
+                "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                "type": "string"
+              },
+              "kind": {
+                "const": "extension_installation",
+                "type": "string"
+              },
+              "sha256": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                "type": "string"
+              },
+              "version": {
+                "const": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "version",
+              "sha256"
+            ],
+            "type": "object"
+          },
+          "request_ref": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "maxLength": 36,
+                "minLength": 1,
+                "not": {
+                  "const": "00000000-0000-0000-0000-000000000000"
+                },
+                "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                "type": "string"
+              },
+              "kind": {
+                "const": "deployment_request",
+                "type": "string"
+              },
+              "sha256": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                "type": "string"
+              },
+              "version": {
+                "const": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "version",
+              "sha256"
+            ],
+            "type": "object"
+          },
+          "service_identity": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])",
+            "type": "string"
+          },
+          "slot_id": {
+            "maximum": 16,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "staged_event_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "not": {
+              "const": "00000000-0000-0000-0000-000000000000"
+            },
+            "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+            "type": "string"
+          }
+        },
+        "required": [
+          "installation_ref",
+          "extension_id",
+          "request_ref",
+          "head_revision",
+          "head_digest",
+          "slot_id",
+          "service_identity",
+          "accepted_event_id",
+          "staged_event_id"
+        ],
+        "type": "object"
+      },
+      "maxItems": 16,
+      "minItems": 0,
+      "type": "array",
+      "uniqueItems": false
+    },
+    "instance_id": {
+      "maxLength": 32,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{32})(?![\\s\\S])",
+      "type": "string"
+    },
+    "origin_profile_digest": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "deployment-provider-preserved-inventory-v1",
+      "type": "string"
+    },
+    "topology_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      },
+      "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+      "type": "string"
+    },
+    "topology_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+      "type": "string"
+    },
+    "vault_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      },
+      "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "vault_id",
+    "instance_id",
+    "origin_profile_digest",
+    "topology_id",
+    "topology_sha256",
+    "at_event_sequence",
+    "installations"
+  ],
+  "type": "object"
+}

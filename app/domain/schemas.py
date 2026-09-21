@@ -1,13 +1,19 @@
 """Immutable domain envelopes. Actor provenance records do not grant authority."""
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from hashlib import sha256
-import re
 
-from .refs import (DomainContractError, EntityRef, canonical_json, parse_canonical,
-                   positive_integer, uuid_string, ENTITY_KINDS)
-
+from .refs import (
+    ENTITY_KINDS,
+    DomainContractError,
+    EntityRef,
+    canonical_json,
+    parse_canonical,
+    positive_integer,
+    uuid_string,
+)
 
 SCHEMA_VERSION = "domain-v1"
 PURPOSES = frozenset({"operational", "diagnosis", "inquiry_audit", "evaluation_development",
@@ -117,6 +123,9 @@ def _validate_body(body):
         raise DomainContractError("Self/future version cannot be a parent")
     if type(body["content"]) is not dict:
         raise DomainContractError("Content must be a schema-owned object")
+    from .owner_material import validate_body as validate_owner_material
+
+    validate_owner_material(body)
     if body["kind"] == "deployment_request":
         from .deployment_request import validate_anchor_body
 
@@ -139,6 +148,18 @@ def _validate_body(body):
         if body["version"] != 1:
             raise DomainContractError("Worker response capture requires version1")
         validate_capture_content(body["content"])
+    if body["kind"] == "provider_conformance_run":
+        from .provider_conformance import validate_body as validate_provider_conformance
+
+        validate_provider_conformance(body)
+    if type(body["content"].get("schema_version")) is str \
+            and body["content"]["schema_version"].startswith("provider-semantic-"):
+        from ..extensions.provider_semantic_contracts import validate_semantic_domain_body
+
+        try:
+            validate_semantic_domain_body(body)
+        except ValueError as exc:
+            raise DomainContractError("Invalid provider semantic content") from exc
 
 
 @dataclass(frozen=True, slots=True)

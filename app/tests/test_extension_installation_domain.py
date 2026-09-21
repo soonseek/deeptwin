@@ -331,7 +331,14 @@ def test_domain_envelope_export_covers_both_anchors_and_is_regenerated():
         for branch in schema["$defs"]["DomainBody"]["allOf"]
         if "if" in branch and "kind" in branch["if"].get("properties", {})
     }
-    installation = branches["extension_installation"]["then"]["properties"]
+    # the installation anchor is one variant beside the provider installation's
+    # verified record; the extension anchor's own shape is unchanged
+    installation_variants = {
+        alternative["properties"]["content"]["properties"]["schema_version"]["const"]: alternative["properties"]
+        for alternative in branches["extension_installation"]["then"]["oneOf"]
+    }
+    assert set(installation_variants) == {"extension-installation-anchor-v1", "provider-installation-verified-v1"}
+    installation = installation_variants["extension-installation-anchor-v1"]
     assert installation["version"]["const"] == 1
     assert (
         installation["content"]["properties"]["schema_version"]["const"]

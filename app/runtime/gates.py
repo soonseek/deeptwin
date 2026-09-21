@@ -18,6 +18,25 @@ LOCAL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}\Z")
 GATE_REQUEST_COMMAND = "request_gate_approval"
 
 
+def tool_approval_scope(tool_id, version) -> str:
+    """The gate scope an owner's approval of one tool call names — `tool-` and the
+    uuid5 of the canonical (tool id, version) pair: delimiter-proof, fixed-length and
+    lowercase, so every id and version the execute grammar admits fits the gate scope
+    grammar, the graph schema's local identifiers and the authority's scope grammar. The
+    compiled graph requires it on a node bound to an external-family tool, a human gate
+    supplies it through an approval edge, the scheduler asks the ledger for it under the
+    gate's id, the approvals service records the owner's decision against it, and the
+    extension transport verifies the named approval is that decision before the send."""
+
+    if type(tool_id) is not str or type(version) is not str:
+        raise ValueError("a tool approval scope names a tool id and a version")
+    pair = canonical_json({"tool_id": tool_id, "version": version}).decode()
+    scope = "tool-" + str(uuid5(NAMESPACE_URL, f"deeptwin:tool-approval-scope:{pair}"))
+    if LOCAL.fullmatch(scope) is None:  # closed by construction; the grammar is pinned by test
+        raise ValueError("the tool and version cannot be named as an approval scope")
+    return scope
+
+
 def local_identifier(value, label: str) -> str:
     if type(value) is not str or LOCAL.fullmatch(value) is None:
         raise ValueError(f"invalid {label}")

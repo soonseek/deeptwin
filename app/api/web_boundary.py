@@ -4,10 +4,15 @@ from starlette.concurrency import run_in_threadpool
 
 from ..deployment.prepare_contracts import DeploymentPrepareError
 from ..extensions.candidate_contracts import CandidateError
+from ..extensions.provider_conformance_contracts import ConformanceError
+from ..extensions.provider_installation_contracts import InstallationError
 from ..services.owner_auth import OwnerAuthError, validate_credentials
+from ..services.owner_material_intake import OwnerMaterialIntake
+from ..services.owner_material_upload_lock import UploadLock
 from ..services.run_approvals import RunApprovalError
 from ..services.runs import RunServiceError
 from ..services.works import WorkServiceError
+from . import owner_material_upload as material_upload
 from .assets import PUBLIC_ASSET_PATHS
 from .deployment_prepare import PATH as DEPLOYMENT_PATH
 from .deployment_prepare import deployment_error
@@ -15,6 +20,12 @@ from .deployment_prepare import preflight as deployment_preflight
 from .extension_candidates import PATH as CANDIDATE_PATH
 from .extension_candidates import candidate_error
 from .extension_candidates import preflight as candidate_preflight
+from .provider_deployment_prepare import PATH as PROVIDER_DEPLOYMENT_PATH
+from .provider_deployment_prepare import preflight as provider_deployment_preflight
+from .provider_conformance import PATH as PROVIDER_CONFORMANCE_PATH
+from .provider_conformance import conformance_error
+from .provider_conformance import preflight as provider_conformance_preflight
+from . import provider_installation as installation
 from .run_approvals import ApprovalRouteError, approval_error, is_approval_path
 from .run_approvals import preflight as approval_preflight
 from .runs import RunRouteError, is_run_path, run_error
@@ -68,12 +79,21 @@ class WebBoundary:
             await send(message)
 
         state = {}
+        provider_external = profile.base_path.rstrip("/") + PROVIDER_DEPLOYMENT_PATH
+        provider_route = scope.get("path", "") == provider_external or scope.get("path", "").startswith(provider_external + "/")
+        conformance_external = profile.base_path.rstrip("/") + PROVIDER_CONFORMANCE_PATH
+        conformance_route = (scope.get("path", "") == conformance_external
+            or scope.get("path", "").startswith(conformance_external + "/"))
+        installation_external = profile.base_path.rstrip('/')+installation.PATH
+        installation_route = (scope.get('path','') == installation_external
+            or scope.get('path','').startswith(installation_external+'/'))
         try:
             raw_headers = scope.get("headers", [])
             if len(raw_headers) > 256 or sum(len(k) + len(v) for k, v in raw_headers) > 65536:
                 raise OwnerAuthError("invalid_input")
             fields = parse_singleton_headers(raw_headers, names=("host", "origin", "sec-fetch-site", "cookie",
-                "x-deeptwin-csrf", "content-length", "content-type", "last-event-id"), required=("host",))
+                "x-deeptwin-csrf", "content-length", "content-type", "last-event-id",
+                "x-deeptwin-source-metadata", "content-encoding"), required=("host",))
             if any(name.lower() == b"forwarded" or name.lower().startswith(b"x-forwarded-")
                    or name.lower() in {b"x-original-url", b"x-rewrite-url"} for name, _ in raw_headers):
                 raise OwnerAuthError("access_denied")
@@ -96,6 +116,10 @@ class WebBoundary:
             method = scope["method"]
             candidate_route = path == CANDIDATE_PATH or path.startswith(CANDIDATE_PATH + "/")
             deployment_route = path == DEPLOYMENT_PATH or path.startswith(DEPLOYMENT_PATH + "/")
+            provider_route = path == PROVIDER_DEPLOYMENT_PATH or path.startswith(PROVIDER_DEPLOYMENT_PATH + "/")
+            conformance_route = (path == PROVIDER_CONFORMANCE_PATH
+                or path.startswith(PROVIDER_CONFORMANCE_PATH + "/"))
+            installation_route = path == installation.PATH or path.startswith(installation.PATH+'/')
             approval_route = is_approval_path(path)
             run_route = is_run_path(path)
             work_route = is_work_path(path)
@@ -108,13 +132,44 @@ class WebBoundary:
             if session_route or path in PUBLIC_ASSET_PATHS:
                 parse_query(scope.get("query_string", b""), allowed=())  # no query rides on an asset
             body = b""
-            if method not in {"GET", "HEAD"} or candidate_route or deployment_route or approval_route or run_route or work_route:
+            source_upload = material_upload.is_source_upload(path, method)
+            if installation_route:
+                declared = installation.preflight({**scope,'path':path},fields)
+                state['authenticated_request'] = await run_in_threadpool(self.authority.authenticate_request,
+                    method=method,host=fields['host'],origin=fields.get('origin'),
+                    sec_fetch_site=fields.get('sec-fetch-site'),cookie_header=fields.get('cookie'),
+                    csrf_token=fields.get('x-deeptwin-csrf'))
+                if method == 'POST':
+                    try: state['upload_lock'] = UploadLock(self.authority._domain.data_dir)
+                    except WorkServiceError as error: raise InstallationError(error.code) from None
+                    state['installation_packet'] = await installation.receive_packet(receive,declared)
+                else:
+                    message = await receive()
+                    if message['type'] == 'http.disconnect': return
+                    if message['type'] != 'http.request' or message.get('body',b'') or message.get('more_body',False):
+                        raise InstallationError()
+            elif source_upload:
+                work_id, meta = material_upload.preflight({**scope, "path": path}, fields)
+                authenticated = await run_in_threadpool(self.authority.authenticate_request,
+                    method=method, host=fields["host"], origin=fields.get("origin"),
+                    sec_fetch_site=fields.get("sec-fetch-site"), cookie_header=fields.get("cookie"),
+                    csrf_token=fields.get("x-deeptwin-csrf"))
+                state["authenticated_request"] = authenticated
+                lease = UploadLock(self.authority._domain.data_dir)
+                state["upload_lock"] = lease
+                intake = OwnerMaterialIntake(scope["app"].state.first_party_exports["works.service"])
+                await run_in_threadpool(intake.admit, authenticated, work_id, meta)
+                state["source_metadata"] = meta
+                state["source_bytes"] = await material_upload.receive_original(receive, meta)
+            elif method not in {"GET", "HEAD"} or candidate_route or deployment_route or provider_route or conformance_route or approval_route or run_route or work_route:
                 limit = 1048576 if path == CANDIDATE_PATH and method == "POST" else 8192 if session_route else 131072
-                if deployment_route or approval_route or run_route:
+                if deployment_route or provider_route or conformance_route or approval_route or run_route:
                     limit = 4096
                 if candidate_route and method in {"GET", "HEAD"}:
                     limit = 0
-                if deployment_route and method in {"GET", "HEAD"}:
+                if (deployment_route or provider_route) and method in {"GET", "HEAD"}:
+                    limit = 0
+                if conformance_route and method in {"GET", "HEAD"}:
                     limit = 0
                 if approval_route and method in {"GET", "HEAD"}:
                     limit = 0
@@ -126,7 +181,9 @@ class WebBoundary:
                 if not length.isdecimal():
                     raise OwnerAuthError("invalid_input")
                 if int(length) > limit:
-                    if deployment_route:
+                    if conformance_route:
+                        raise ConformanceError("invalid_input" if limit == 0 else "too_large")
+                    if deployment_route or provider_route:
                         raise DeploymentPrepareError("invalid_input" if limit == 0 else "too_large")
                     if candidate_route:
                         raise CandidateError("invalid_input" if limit == 0 else "too_large")
@@ -144,7 +201,9 @@ class WebBoundary:
                         return
                     chunk = message.get("body", b"")
                     if len(body) + len(chunk) > limit:
-                        if deployment_route:
+                        if conformance_route:
+                            raise ConformanceError("invalid_input" if limit == 0 else "too_large")
+                        if deployment_route or provider_route:
                             raise DeploymentPrepareError("invalid_input" if limit == 0 else "too_large")
                         if candidate_route:
                             raise CandidateError("invalid_input" if limit == 0 else "too_large")
@@ -172,7 +231,18 @@ class WebBoundary:
                     from ..domain.refs import uuid_string
                     uuid_string(data["command_id"])
                 state["owner_payload"] = data
-            if deployment_route:
+            if installation_route:
+                pass  # already preflighted and authenticated before any receive
+            elif conformance_route:
+                if method in {"GET", "HEAD"} and fields.get("content-length", "0") != "0":
+                    raise ConformanceError("invalid_input")
+                state["provider_conformance_payload"] = provider_conformance_preflight(
+                    {**scope, "path": path}, body, fields.get("content-type", ""))
+            elif provider_route:
+                if method in {"GET", "HEAD"} and fields.get("content-length", "0") != "0":
+                    raise DeploymentPrepareError()
+                state["provider_deployment_payload"] = provider_deployment_preflight({**scope, "path": path}, body, fields.get("content-type", ""))
+            elif deployment_route:
                 if method in {"GET", "HEAD"} and fields.get("content-length", "0") != "0":
                     raise DeploymentPrepareError()
                 state["deployment_payload"] = deployment_preflight({**scope, "path": path}, body, fields.get("content-type", ""))
@@ -188,16 +258,16 @@ class WebBoundary:
                 if method in {"GET", "HEAD"} and fields.get("content-length", "0") != "0":
                     raise RunRouteError()
                 state["run_payload"] = run_preflight({**scope, "path": path}, body, fields.get("content-type", ""))
-            elif work_route:
+            elif work_route and not source_upload:
                 if method in {"GET", "HEAD"} and fields.get("content-length", "0") != "0":
                     raise WorkRouteError()
                 state["work_payload"] = work_preflight({**scope, "path": path}, body, fields.get("content-type", ""))
-            elif path.startswith('/api/v1/'):
+            elif path.startswith('/api/v1/') and not source_upload:
                 from .routes import preflight_api_v1
                 preflight_api_v1({**scope, "path": path}, body)
             public = ((path in {"/", "/health"} or path in PUBLIC_ASSET_PATHS)
                       and method in {"GET", "HEAD"}) or establishment
-            if not public:
+            if not public and not source_upload and not installation_route:
                 try:
                     state["authenticated_request"] = await run_in_threadpool(
                         self.authority.authenticate_request, method=method, host=fields["host"],
@@ -224,7 +294,7 @@ class WebBoundary:
                     consumed = True
                     return {"type": "http.request", "body": body, "more_body": False}
                 return await receive()
-            await self.app(routed, replay if method not in {"GET", "HEAD"} or candidate_route or deployment_route or approval_route or run_route or work_route else receive, safe_send)
+            await self.app(routed, replay if method not in {"GET", "HEAD"} or candidate_route or deployment_route or provider_route or conformance_route or approval_route or run_route or work_route else receive, safe_send)
         except (RunRouteError, RunServiceError) as error:
             await run_error(error)(scope, receive, safe_send)
         except (WorkRouteError, WorkServiceError) as error:
@@ -235,12 +305,43 @@ class WebBoundary:
             await deployment_error(error)(scope, receive, safe_send)
         except CandidateError as error:
             await candidate_error(error)(scope, receive, safe_send)
+        except ConformanceError as error:
+            await conformance_error(error)(scope, receive, safe_send)
+        except InstallationError as error:
+            await installation.installation_error(error)(scope,receive,safe_send)
         except (WireInputError, ValueError) as error:
             error = error if isinstance(error, OwnerAuthError) else OwnerAuthError("invalid_input")
-            await auth_error(error)(scope, receive, safe_send)
+            response = (installation.installation_error(error) if installation_route else conformance_error(ConformanceError(error.code if error.code in
+                {"invalid_input", "unauthenticated", "access_denied", "unavailable", "capacity", "conflict"}
+                else "unavailable")) if conformance_route else
+                deployment_error(DeploymentPrepareError(error.code if error.code in {"invalid_input", "unauthenticated", "access_denied", "unavailable", "capacity", "conflict"} else "unavailable")) if provider_route else auth_error(error))
+            await response(scope, receive, safe_send)
         except OwnerAuthError as error:
-            await auth_error(error)(scope, receive, safe_send)
+            response = (installation.installation_error(error) if installation_route else conformance_error(ConformanceError(error.code if error.code in
+                {"invalid_input", "unauthenticated", "access_denied", "unavailable", "capacity", "conflict"}
+                else "unavailable")) if conformance_route else
+                deployment_error(DeploymentPrepareError(error.code if error.code in {"invalid_input", "unauthenticated", "access_denied", "unavailable", "capacity", "conflict"} else "unavailable")) if provider_route else auth_error(error))
+            await response(scope, receive, safe_send)
         finally:
-            if "owner_payload" in state:
-                state["owner_payload"].clear()
-            state.clear()
+            if installation_route:
+                # An intake/publication interruption remains the primary failure;
+                # nevertheless attempt every owned cleanup and drop request state.
+                import sys
+                primary = sys.exc_info()[1]
+                cleanup_error = None
+                for key, method in (("upload_lock", "close"), ("owner_payload", "clear")):
+                    if key in state:
+                        try:
+                            getattr(state[key], method)()
+                        except BaseException as error:
+                            if cleanup_error is None:
+                                cleanup_error = error
+                state.clear()
+                if primary is None and cleanup_error is not None:
+                    raise cleanup_error
+            else:
+                if "upload_lock" in state:
+                    state["upload_lock"].close()
+                if "owner_payload" in state:
+                    state["owner_payload"].clear()
+                state.clear()

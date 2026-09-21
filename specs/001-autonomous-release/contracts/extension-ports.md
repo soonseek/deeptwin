@@ -227,6 +227,10 @@ identifier is `unsupported_capability`, not an implicit capability.
 
 ### 3.1 Provider and model execution
 
+The code-owned `claude-api-text-semantic-v1` profile has the explicitly scoped read-observation
+and local-cancellation exception in §3.7 and
+[its adopted contract](provider-semantic-execution.md). No other profile inherits that exception.
+
 | Port | Exact closed `port_config` | Exact operation: `input` → successful `output` | Closed port-error enum |
 | --- | --- | --- | --- |
 | `provider-port-v1` | `{provider_id:identifier,auth_mode:api,api_origin:https-uri,egress_policy_ref:ref,catalog_ttl_seconds:positive-int<=86400,supported_modalities:sorted unique identifier[],supported_input_media_types:sorted unique media-type[]}` | `capabilities`: `{}` → `{modalities:sorted unique identifier[],tool_calling:bool,usage_reporting:bool,cancellation:bool}`; `catalog`: `{catalog_epoch?:ref}` → `{catalog_ref:ref,complete:bool,models:{model_id:identifier,display_name:short-text,modalities:sorted unique identifier[],effort_values:sorted unique effort-value[],capability_evidence_ref:ref}[]}`; `model_step`: `{frozen_turn_ref:ref,model_id:identifier,effort?:effort-value,requested_modalities:sorted unique identifier[],tool_definition_refs:sorted unique ref[],response_schema_ref?:ref}` → `{provider_id:identifier,model_id:identifier,content_block_refs:ref[],tool_proposal_refs:ref[],usage_report_ref?:ref,provider_response_ref:ref}`; `status`: `StatusOperation`; `cancel`: `CancelOperation` | `auth_failed\|catalog_incomplete\|model_unavailable\|rate_limited\|billing_blocked\|provider_protocol_error` |
@@ -281,6 +285,20 @@ The nullable `terminal_result_ref` is present with null when unavailable. These 
 definitions, not extension inheritance; a port without the named operation rejects it.
 
 ### 3.7 Per-operation effect, idempotency, cancellation and artifact constraints
+
+**Scoped exception, adopted 2026-09-20:** only `provider-port-v1` selected by trusted composition
+as `claude-api-text-semantic-v1` follows the
+[read-observation/cancel amendment](provider-semantic/post46-read-observation-amendment-draft.md)
+§§1–5, as promoted by [provider semantic execution](provider-semantic-execution.md).
+Fresh request UUIDs for `capabilities`, `catalog` and `status` may obtain fresh immutable
+observations under fresh admission/currentness; exact same-ID request bytes and config replay
+the original observation, while changed bytes/config under that ID conflict. The semantic key
+hash remains exactly §2.2. `cancel` instead uses one durable intent per exact target and fresh
+acknowledgements of its current local disposition, never a second model effect or a remote
+rollback guarantee. `model_step` keeps semantic-key deduplication and unknown-outcome no-resend.
+This changes no exported schema bytes, old histories or other port/profile behavior and cannot
+be selected by an input flag. Implementation/activation gates remain in the adopted contract.
+Except for that exact exception, the following general rule continues to apply unchanged.
 
 Every request is idempotent by the §2.2 key. Read/describe/capability/status/probe/validation/
 preparation operations require the exact `effect_class` fixed below and may be retried

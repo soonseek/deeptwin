@@ -60,6 +60,7 @@ SERVICE_CLIENT_DENIAL = Field("enum", (
     "credential", "expired", "revoked", "network", "scope", "owner", "identifier",
     "conflict", "expiry", "name", "state", "internal",
 ))
+CONFORMANCE_OUTCOME = Field("enum", ("matched", "mismatch", "incomplete"))
 _registry = {}
 
 
@@ -158,6 +159,9 @@ _register("managed_login.started managed_login.completed managed_login.cancelled
 _register("managed_login.failed", provider=PROVIDER, reason_code=GAP_REASON)
 _register("speech.interrupted", segment_count=COUNT)
 _register("speech.raw_unavailable", reason_code=GAP_REASON)
+_register("provider.conformance_started", vector_count=Field("integer", (4, 4)))
+_register("provider.conformance_completed", completed_count=Field("integer", (0, 4)),
+          matched_count=Field("integer", (0, 4)), outcome=CONFORMANCE_OUTCOME)
 EVENT_TYPES = frozenset(_registry)
 EVENT_REGISTRY = MappingProxyType(_registry)
 # Do not retain a separately mutable reference to the registry.
@@ -169,7 +173,8 @@ def event_schema(event_type):
         raise DomainContractError("Unregistered event type")
     result = {"type": "object", "properties": {name: field.schema()
             for name, field in EVENT_REGISTRY[event_type].items()}, "additionalProperties": False}
-    if event_type == "extension.candidate_registered":
+    if event_type in {"extension.candidate_registered", "provider.conformance_started",
+                      "provider.conformance_completed"}:
         result["required"] = list(EVENT_REGISTRY[event_type])
     return result
 
@@ -182,8 +187,11 @@ def event_metadata(event_type, payload):
     fields = EVENT_REGISTRY[event_type]
     if set(payload) - fields.keys():
         raise DomainContractError("Unregistered event metadata field")
-    if event_type == "extension.candidate_registered" and set(payload) != fields.keys():
-        raise DomainContractError("Candidate registration event requires exact observations")
+    if event_type in {"extension.candidate_registered", "provider.conformance_started",
+                      "provider.conformance_completed"} and set(payload) != fields.keys():
+        raise DomainContractError("Event requires exact observations")
     result = {name: fields[name].validate(value) for name, value in payload.items()}
+    if event_type == "provider.conformance_completed" and result["matched_count"] > result["completed_count"]:
+        raise DomainContractError("Invalid conformance event counts")
     canonical_json(result)
     return result

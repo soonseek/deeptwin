@@ -1,0 +1,4113 @@
+{
+  "$id": "urn:deeptwin:schemas:v2:extensions:provider-conformance-reply-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "completed_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "type": "null"
+            },
+            "state": {
+              "const": "pending",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "matched",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "command_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "completed_count": {
+          "maximum": 4,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "context_sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "event_cursor": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "type": "string"
+        },
+        "installation_ref": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "maxLength": 36,
+              "minLength": 36,
+              "not": {
+                "const": "00000000-0000-0000-0000-000000000000"
+              },
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "extension_installation",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "version": {
+              "const": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "version",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "intent_ref": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "maxLength": 36,
+              "minLength": 36,
+              "not": {
+                "const": "00000000-0000-0000-0000-000000000000"
+              },
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "provider_conformance_run",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "version": {
+              "const": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "version",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "links": {
+          "additionalProperties": false,
+          "properties": {
+            "events": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            "self": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "self",
+            "events"
+          ],
+          "type": "object"
+        },
+        "matched_count": {
+          "maximum": 4,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "result_ref": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "schema_version": {
+          "const": "provider-conformance-reply-v1",
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "matched",
+            "mismatch",
+            "incomplete"
+          ],
+          "type": "string"
+        },
+        "suite_sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "suite_version": {
+          "const": "private-provider-conformance-v1",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "command_id",
+        "installation_ref",
+        "intent_ref",
+        "suite_version",
+        "suite_sha256",
+        "context_sha256",
+        "event_cursor",
+        "links",
+        "result_ref",
+        "state",
+        "completed_count",
+        "matched_count"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "completed_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "type": "null"
+            },
+            "state": {
+              "const": "pending",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "matched",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "mismatch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 0,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 1,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 2,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 3,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "completed_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "matched_count": {
+              "const": 4,
+              "type": "integer"
+            },
+            "result_ref": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "const": "incomplete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "result_ref",
+            "state",
+            "completed_count",
+            "matched_count"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "admission_sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "command_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "completed_count": {
+          "maximum": 4,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "event_cursor": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "type": "string"
+        },
+        "intent_ref": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "maxLength": 36,
+              "minLength": 36,
+              "not": {
+                "const": "00000000-0000-0000-0000-000000000000"
+              },
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "provider_conformance_run",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "version": {
+              "const": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "version",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "links": {
+          "additionalProperties": false,
+          "properties": {
+            "events": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            "self": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "self",
+            "events"
+          ],
+          "type": "object"
+        },
+        "matched_count": {
+          "maximum": 4,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "result_ref": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_conformance_run",
+                  "type": "string"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 2,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "sha256"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "schema_version": {
+          "const": "provider-conformance-reply-v2",
+          "type": "string"
+        },
+        "stage_context_sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "staged_installation_ref": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "maxLength": 36,
+              "minLength": 36,
+              "not": {
+                "const": "00000000-0000-0000-0000-000000000000"
+              },
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "extension_installation",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "version": {
+              "const": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "version",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "matched",
+            "mismatch",
+            "incomplete"
+          ],
+          "type": "string"
+        },
+        "suite_sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "suite_version": {
+          "const": "private-provider-conformance-v1",
+          "type": "string"
+        },
+        "verified_installation_ref": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "maxLength": 36,
+              "minLength": 36,
+              "not": {
+                "const": "00000000-0000-0000-0000-000000000000"
+              },
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "extension_installation",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "version": {
+              "const": 2,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "version",
+            "sha256"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_version",
+        "command_id",
+        "intent_ref",
+        "suite_version",
+        "suite_sha256",
+        "event_cursor",
+        "links",
+        "result_ref",
+        "state",
+        "completed_count",
+        "matched_count",
+        "staged_installation_ref",
+        "verified_installation_ref",
+        "stage_context_sha256",
+        "admission_sha256"
+      ],
+      "type": "object"
+    }
+  ]
+}

@@ -2,6 +2,9 @@
 import importlib
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
+from datetime import UTC, datetime
+from hashlib import sha256
 from threading import Barrier
 from typing import Annotated, TypedDict
 
@@ -60,6 +63,141 @@ def put(subject, run, value=None, parent=None):
     return subject.put(config(run, parent), cp,
                        {"source": "input", "step": -1, "parents": {}},
                        cp["channel_versions"] if parent is None else {})
+
+
+def freeze_graph_checkpoint_clock(monkeypatch, microsecond):
+    """Freeze the clock used by the installed graph loop's checkpoint producer."""
+    producer = importlib.import_module("langgraph.pregel._checkpoint")
+    emitted = []
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            assert tz is UTC
+            value = cls(2026, 9, 19, 0, 0, 0, microsecond, tzinfo=tz)
+            emitted.append(value)
+            return value
+
+    monkeypatch.setattr(producer, "datetime", FrozenDatetime)
+    return emitted
+
+
+def journal_rows(subject):
+    with sqlite3.connect(subject.legacy.path) as db:
+        return db.execute(
+            "SELECT cursor,cursor_sha256 FROM runtime_checkpoints ORDER BY revision"
+        ).fetchall()
+
+
+def actual_graph_timestamp_round_trip(tmp_path, monkeypatch, microsecond):
+    from app.domain.refs import parse_canonical
+
+    emitted = freeze_graph_checkpoint_clock(monkeypatch, microsecond)
+    module, subject, run = setup(tmp_path)
+    calls = []
+    builder = (StateGraph(State)
+        .add_node("first", lambda state: calls.append("first") or {"counters": {"first": 1}})
+        .add_node("second", lambda state: calls.append("second") or {"counters": {"second": 1}})
+        .add_edge(START, "first").add_edge("first", "second").add_edge("second", END))
+    saved = saver(module, subject, run)
+    paused = builder.compile(checkpointer=saved, interrupt_before=["second"]).invoke(
+        {"results": {}, "counters": {}}, config(run), durability="sync")
+    assert paused["counters"] == {"first": 1}
+    assert calls == ["first"]
+
+    expected_emitted = ("2026-09-19T00:00:00+00:00" if microsecond == 0
+                        else "2026-09-19T00:00:00.123456+00:00")
+    expected_stored = ("2026-09-19T00:00:00.000000+00:00" if microsecond == 0
+                       else expected_emitted)
+    assert emitted and {value.isoformat() for value in emitted} == {expected_emitted}
+    prefix = journal_rows(subject)
+    assert all(sha256(raw).hexdigest() == digest for raw, digest in prefix)
+    assert {parse_canonical(raw)["data"]["checkpoint"]["ts"]
+            for raw, _ in prefix if parse_canonical(raw)["kind"] == "checkpoint"} == {
+                expected_stored,
+            }
+    before = list(saved.list(config(run), limit=10))
+
+    reopen(subject, tmp_path)
+    restored = saver(module, subject, run)
+    assert list(restored.list(config(run), limit=10)) == before
+    result = builder.compile(checkpointer=restored).invoke(None, config(run), durability="sync")
+    assert result == {"results": {}, "counters": {"first": 1, "second": 1}}
+    assert calls == ["first", "second"]
+    final_rows = journal_rows(subject)
+    assert final_rows[:len(prefix)] == prefix
+    assert all(sha256(raw).hexdigest() == digest for raw, digest in final_rows)
+    assert {parse_canonical(raw)["data"]["checkpoint"]["ts"]
+            for raw, _ in final_rows if parse_canonical(raw)["kind"] == "checkpoint"} == {
+                expected_stored,
+            }
+
+
+def test_actual_graph_whole_second_timestamp_pauses_reopens_and_resumes(tmp_path, monkeypatch):
+    actual_graph_timestamp_round_trip(tmp_path, monkeypatch, 0)
+
+
+def test_actual_graph_nonzero_microseconds_are_preserved(tmp_path, monkeypatch):
+    actual_graph_timestamp_round_trip(tmp_path, monkeypatch, 123456)
+
+
+@pytest.mark.parametrize("stamp,expected", [
+    ("0001-01-01T00:00:00+00:00", "0001-01-01T00:00:00.000000+00:00"),
+    ("9999-12-31T23:59:59+00:00", "9999-12-31T23:59:59.000000+00:00"),
+])
+def test_whole_second_ingress_normalizes_year_bounds_without_mutating_caller(
+        tmp_path, stamp, expected):
+    module, subject, run = setup(tmp_path)
+    saved = saver(module, subject, run)
+    cp = checkpoint()
+    cp["ts"] = stamp
+    original = deepcopy(cp)
+    cfg = put(saved, run, cp)
+    assert cp == original
+    assert saved.get_tuple(cfg).checkpoint["ts"] == expected
+
+
+@pytest.mark.parametrize("stamp", [
+    None,
+    "2026-09-19T00:00:00",
+    "2026-09-19T00:00:00Z",
+    "2026-09-19T00:00:00+01:00",
+    "2026-02-30T00:00:00+00:00",
+    "0000-01-01T00:00:00+00:00",
+    "2026-09-19T00:00:00.0+00:00",
+    "2026-09-19T00:00:00.12345+00:00",
+    "2026-09-19T00:00:00.1234567+00:00",
+    "2026-09-19T00:00:00.000000+00:00EXTRA",
+])
+def test_timestamp_ingress_rejects_wrong_type_shape_zone_calendar_and_precision(
+        tmp_path, stamp):
+    module, subject, run = setup(tmp_path)
+    saved = saver(module, subject, run)
+    cp = checkpoint()
+    cp["ts"] = stamp
+    with pytest.raises(module.CheckpointError):
+        put(saved, run, cp)
+    assert saved.get_tuple(config(run)) is None
+
+
+@pytest.mark.parametrize("stamp", [
+    "2026-09-19T00:00:00+00:00",
+    "2026-09-19T00:00:00Z",
+])
+def test_recovery_rejects_noncanonical_stored_timestamp_shapes(tmp_path, stamp):
+    from app.domain.refs import canonical_json, parse_canonical
+
+    module, subject, run = setup(tmp_path)
+    put(saver(module, subject, run), run)
+    with sqlite3.connect(subject.legacy.path) as db:
+        raw = db.execute("SELECT cursor FROM runtime_checkpoints WHERE revision=1").fetchone()[0]
+        record = parse_canonical(raw)
+        record["data"]["checkpoint"]["ts"] = stamp
+        damaged = canonical_json(record)
+        db.execute("UPDATE runtime_checkpoints SET cursor=?,cursor_sha256=? WHERE revision=1",
+                   (damaged, sha256(damaged).hexdigest()))
+    with pytest.raises(module.CheckpointError):
+        saver(module, subject, run)
 
 
 def test_sequential_graph_reopens_exact_refs_and_parent_history(tmp_path):

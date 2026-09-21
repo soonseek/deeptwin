@@ -1,0 +1,112 @@
+{
+  "$id": "urn:deeptwin:schemas:v2:deployment:provider-public-trust-set-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "adapter": {
+      "additionalProperties": false,
+      "properties": {
+        "deployment_profile_id": {
+          "enum": [
+            "local-no-terminal-v1",
+            "portable-compose-v1"
+          ],
+          "type": "string"
+        },
+        "operator_adapter": {
+          "const": "deeptwin-provider-stage-operator-v1",
+          "type": "string"
+        },
+        "operator_version": {
+          "const": "1.0.0",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operator_adapter",
+        "operator_version",
+        "deployment_profile_id"
+      ],
+      "type": "object"
+    },
+    "instance_id": {
+      "maxLength": 32,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{32})$",
+      "type": "string"
+    },
+    "keys": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "adapter_ids": {
+            "items": false,
+            "maxItems": 1,
+            "minItems": 1,
+            "prefixItems": [
+              {
+                "const": "deeptwin-provider-stage-operator-v1",
+                "type": "string"
+              }
+            ],
+            "type": "array"
+          },
+          "algorithm": {
+            "const": "ed25519",
+            "type": "string"
+          },
+          "key_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "pattern": "^(?:(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$",
+            "type": "string"
+          },
+          "public_key": {
+            "maxLength": 43,
+            "minLength": 1,
+            "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])$",
+            "type": "string"
+          },
+          "trust_class": {
+            "const": "instance_operator",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_id",
+          "algorithm",
+          "public_key",
+          "trust_class",
+          "adapter_ids"
+        ],
+        "type": "object"
+      },
+      "maxItems": 8,
+      "minItems": 1,
+      "type": "array"
+    },
+    "origin_profile_digest": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "deployment-provider-public-trust-set-v1",
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "version",
+    "instance_id",
+    "origin_profile_digest",
+    "keys",
+    "adapter"
+  ],
+  "type": "object"
+}

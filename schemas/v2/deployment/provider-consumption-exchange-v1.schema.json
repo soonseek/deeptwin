@@ -1,0 +1,205 @@
+{
+  "$id": "urn:deeptwin:schemas:v2:deployment:provider-consumption-exchange-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "control": {
+      "additionalProperties": false,
+      "properties": {
+        "gid": {
+          "const": 20102,
+          "type": "integer"
+        },
+        "service_identity": {
+          "const": "control",
+          "type": "string"
+        },
+        "uid": {
+          "const": 20102,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "service_identity",
+        "uid",
+        "gid"
+      ],
+      "type": "object"
+    },
+    "document_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "pattern": "^(?:(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$",
+      "type": "string"
+    },
+    "geometry_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "instance_id": {
+      "maxLength": 32,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{32})$",
+      "type": "string"
+    },
+    "origin_profile_digest": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "outgoing": {
+      "additionalProperties": false,
+      "properties": {
+        "container_path": {
+          "const": "/run/deeptwin/provider-deployment-consumed",
+          "type": "string"
+        },
+        "control_read_only": {
+          "const": false,
+          "type": "boolean"
+        },
+        "final_file_mode": {
+          "const": "0440",
+          "type": "string"
+        },
+        "group_gid": {
+          "const": 21201,
+          "type": "integer"
+        },
+        "namespace_mode": {
+          "const": "0750",
+          "type": "string"
+        },
+        "namespaces": {
+          "items": false,
+          "maxItems": 1,
+          "minItems": 1,
+          "prefixItems": [
+            {
+              "const": "consumed",
+              "type": "string"
+            }
+          ],
+          "type": "array"
+        },
+        "owner_uid": {
+          "const": 20102,
+          "type": "integer"
+        },
+        "reader_read_only": {
+          "const": true,
+          "type": "boolean"
+        },
+        "root_mode": {
+          "const": "0750",
+          "type": "string"
+        },
+        "volume_name": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^(?:dt-[0-9a-f]{32}-provider-deployment-consumed)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "volume_name",
+        "container_path",
+        "owner_uid",
+        "group_gid",
+        "root_mode",
+        "namespace_mode",
+        "final_file_mode",
+        "control_read_only",
+        "reader_read_only",
+        "namespaces"
+      ],
+      "type": "object"
+    },
+    "outgoing_exchange_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "provider_instance_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "provider_recipe_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "reader": {
+      "additionalProperties": false,
+      "properties": {
+        "gid": {
+          "const": 20113,
+          "type": "integer"
+        },
+        "pair_gid": {
+          "const": 21201,
+          "type": "integer"
+        },
+        "service_identity": {
+          "const": "deployment-receipt-job",
+          "type": "string"
+        },
+        "uid": {
+          "const": 20113,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "service_identity",
+        "uid",
+        "gid",
+        "pair_gid"
+      ],
+      "type": "object"
+    },
+    "receipt_ingress_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "revision": {
+      "const": 1,
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "deployment-provider-consumption-exchange-v1",
+      "type": "string"
+    },
+    "trust_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "document_id",
+    "revision",
+    "instance_id",
+    "origin_profile_digest",
+    "geometry_sha256",
+    "provider_recipe_sha256",
+    "provider_instance_sha256",
+    "outgoing_exchange_sha256",
+    "trust_sha256",
+    "receipt_ingress_sha256",
+    "control",
+    "reader",
+    "outgoing"
+  ],
+  "type": "object"
+}

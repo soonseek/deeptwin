@@ -350,6 +350,134 @@ def test_consumed_window_preserves_clock_domains_and_never_extends(tmp_path):
         )
 
 
+def issued_window(tmp_path):
+    subject = opened(tmp_path)
+    owner, attempt, request, _ = prepare(subject)
+    permit = commit(subject, owner, attempt, request)
+    window = subject.ledger.consume_dispatch_permit_window(permit, budget_book=subject.book)
+    return subject, permit, window
+
+
+def test_consumed_window_issuer_is_the_exact_ledger_not_its_store(tmp_path):
+    subject, permit, window = issued_window(tmp_path)
+    subject.ledger.assert_consumed_dispatch_window(window, permit=permit)
+    other = RuntimeLedger(subject.domain, clock_ms=lambda: subject.ledger_clock[0])
+    with pytest.raises(DispatchBlocked):
+        other.assert_consumed_dispatch_window(window, permit=permit)
+    # A failed check elsewhere cannot revoke the actual issuer's capability.
+    subject.ledger.assert_consumed_dispatch_window(window, permit=permit)
+
+
+def test_another_ledger_startup_revokes_the_old_issuers_window(tmp_path):
+    subject, permit, window = issued_window(tmp_path)
+    other = RuntimeLedger(subject.domain, clock_ms=lambda: subject.ledger_clock[0])
+    other.reconcile_startup(identifier(), observed_owners={})
+    with pytest.raises(DispatchBlocked):
+        subject.ledger.assert_consumed_dispatch_window(window, permit=permit)
+
+
+@pytest.mark.parametrize("change", ["fabricated", "copied", "replaced", "runtime", "budget", "anchor", "permit"])
+def test_consumed_window_identity_and_original_bounds_cannot_be_forged(tmp_path, change):
+    from copy import copy
+    from dataclasses import replace
+
+    subject, permit, window = issued_window(tmp_path)
+    if change == "fabricated":
+        candidate = ConsumedDispatchWindow(permit, window.runtime_remaining_ms,
+                                           window.budget_remaining_ms, window.anchor_monotonic)
+    elif change == "copied":
+        candidate = copy(window)
+    elif change == "replaced":
+        candidate = replace(window)
+    else:
+        candidate = window
+        field = {"runtime": "runtime_remaining_ms", "budget": "budget_remaining_ms",
+                 "anchor": "anchor_monotonic", "permit": "permit"}[change]
+        value = replace(permit) if change == "permit" else getattr(window, field) + 1
+        object.__setattr__(candidate, field, value)
+    with pytest.raises(DispatchBlocked):
+        subject.ledger.assert_consumed_dispatch_window(candidate, permit=permit)
+
+
+@pytest.mark.parametrize("revoke", ["discard", "cancel", "inhibit_attempt", "inhibit_all", "reconcile"])
+def test_consumed_window_is_revoked_with_its_dispatch_authority(tmp_path, revoke):
+    subject, permit, window = issued_window(tmp_path)
+    if revoke == "discard":
+        subject.ledger.discard_dispatch_permit(permit)
+    elif revoke == "cancel":
+        subject.ledger.request_cancel(identifier(), permit.attempt_id,
+                                      expected_revision=subject.ledger.get_attempt(permit.attempt_id)["revision"])
+    elif revoke == "inhibit_attempt":
+        subject.ledger.emergency_inhibit_attempt(permit.attempt_id)
+    elif revoke == "inhibit_all":
+        subject.ledger.emergency_inhibit_all_dispatch()
+    else:
+        subject.ledger.reconcile_startup(identifier(), observed_owners={})
+    with pytest.raises(DispatchBlocked):
+        subject.ledger.assert_consumed_dispatch_window(window, permit=permit)
+    assert subject.ledger._consumed_windows == {}
+
+
+def test_consumed_window_ownership_is_weak_and_does_not_retain_the_ledger(tmp_path):
+    import gc
+    from weakref import ref
+
+    subject, permit, window = issued_window(tmp_path)
+    window_ref = ref(window)
+    del window
+    gc.collect()
+    assert window_ref() is None
+    assert subject.ledger._consumed_windows == {}
+    # The weakref callback must not close over the ledger strongly.
+    subject2, _, still_live_window = issued_window(tmp_path / "another")
+    ledger_ref = ref(subject2.ledger)
+    del subject2.ledger
+    gc.collect()
+    assert ledger_ref() is None
+    assert still_live_window.permit is not permit
+
+
+def test_failed_consumption_registers_no_window(tmp_path):
+    subject = opened(tmp_path)
+    owner, attempt, request, _ = prepare(subject)
+    permit = commit(subject, owner, attempt, request)
+    subject.ledger_clock[0] = permit.deadline_at_ms
+    with pytest.raises(DispatchBlocked):
+        subject.ledger.consume_dispatch_permit_window(permit, budget_book=subject.book)
+    assert subject.ledger._consumed_windows == {}
+
+
+def test_cancellation_requested_during_consumption_cannot_leave_a_live_window(tmp_path, monkeypatch):
+    from threading import Event
+
+    subject = opened(tmp_path)
+    owner, attempt, request, _ = prepare(subject)
+    permit = commit(subject, owner, attempt, request)
+    revision = subject.ledger.get_attempt(permit.attempt_id)["revision"]
+    validated, cancellation_requested = Event(), Event()
+    original = subject.ledger._assert_budget_policy_binding
+
+    def pause_after_validation(*args):
+        result = original(*args)
+        validated.set()
+        assert cancellation_requested.wait(3)
+        return result
+
+    def cancel():
+        assert validated.wait(3)
+        cancellation_requested.set()
+        return subject.ledger.request_cancel(identifier(), permit.attempt_id, expected_revision=revision)
+
+    monkeypatch.setattr(subject.ledger, "_assert_budget_policy_binding", pause_after_validation)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        cancelled = pool.submit(cancel)
+        window = subject.ledger.consume_dispatch_permit_window(permit, budget_book=subject.book)
+        assert cancelled.result(timeout=3)["applied"] is True
+    with pytest.raises(DispatchBlocked):
+        subject.ledger.assert_consumed_dispatch_window(window, permit=permit)
+    assert subject.ledger._consumed_windows == {}
+
+
 def test_consumed_window_does_not_add_validation_latency_back(
     tmp_path,
     monkeypatch,

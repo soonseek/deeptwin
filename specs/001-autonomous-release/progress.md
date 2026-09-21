@@ -1,14 +1,321 @@
 # DeepTwin autonomous delivery progress
 
-Updated: 2026-09-16 (Asia/Seoul). Status: implementation resumed on the existing worktree after the user's
-handoff and fresh baseline verification. ADR-014 revision 7 closed the design gate; T089's
+Updated: 2026-09-21 (Asia/Seoul). Status: Claude Code additions inspected; continuous implementation
+resumed from the existing worktree at a2f85d5 with the six inherited dirty files preserved. The
+subsequent task-scoped changes below are also uncommitted. ADR-014 revision 7 closed the design gate; T089's
 build-input scope remains closed. No whole-product implementation or release qualification is
 implied. See `evidence/resumption-2026-09-15.md` and the scoped `resumption-plan.md` work steps.
 
 ## Current resumption checkpoints
 
+### Latest snapshot — Task49 accepted; Task51 shared gateway implementation next
+
+- Task47 final regression completed on the independently reviewed source: **1,341 passed,
+  1 inherited warning in 475.89 seconds**, exit 0. All 826 source hashes were unchanged
+  before/after the run. Independent R5 spec/quality review passed with no remaining
+  Critical/Important findings. See `evidence/resumption-2026-09-21.md`.
+- This closes the bounded Claude semantic worker/gateway/dispatcher task, not native
+  qualification, production activation, managed Codex, or the connected browser journey.
+  The earlier R0–R5 chronology below is retained history, not the current task state.
+- Task48's worker-only connection design passed independent R1 review with no
+  remaining findings and is adopted in `contracts/provider-owned-semantic-connection.md`.
+  Task49's owned connection implementation passed independent R2 spec/quality
+  review with all findings closed. Root ran the required20-file regression once:
+  **615 passed, 1 inherited warning in935.97 seconds**, exit0. All828 source hashes
+  were unchanged;820 outside the eight scoped paths remain unchanged.
+  This accepts real worker ownership, cancellation-compatible reads, deadline/
+  currentness checks and cleanup within conditional local tests. The original
+  intermediate catalog-refresh failure remains historically unexplained; its node
+  passed in final20, but that does not diagnose the old cause. Root's explicit
+  evidence disposition retains it for connected integration and final review.
+  Task50 gateway ownership/routing design passed independent R1 review and is
+  adopted; Task51's finite12-path TDD plan is ready for implementation. Actual
+  semantic artifact admission and current binding still must connect these
+  components to the runtime. No deployment,
+  model activation or complete browser experience is claimed from these steps.
+
+### User-visible delivery checkpoints (current, not checklist counts)
+
+| User action | Current boundary | Remaining connected proof |
+| --- | --- | --- |
+| Open the web app and describe/upload work | Owner/intake/original-file persistence exists | Provider setup, speech and actual understanding flow in the same browser journey |
+| Compare generated multi-agent graphs | Graph/design/critic modules exist in partial/offline form | Real purpose-preserving generation and independent critique, graph comparison and exact approval |
+| Run agents with selected models and inspect each artifact | Scheduler, worker transport, custody and conditional Claude semantic path have tested components | Genuine current provider binding, managed Codex, tool/multimodal workers and graph runtime UI |
+| Supply one's own whole/partial alternative artifact | Partial domain/service work exists | Connected original/alternative comparison and philosophy-grounded inquiry, not instruction-style feedback |
+| Re-evaluate prior queues and approve a better environment version | Partial evaluation/promotion modules exist | Actual paired replay, quality floor plus three-plateau termination, human exact-version approval |
+| Export a redacted feedback bundle when desired | Remains part of delivery scope | Whole-flow log completeness and user-controlled export; no automatic transmission |
+
+- Whole-product estimate remains **about50% ±5 including design**; the connected browser journey
+  is not complete. Graph/lens/paired-queue/human-promotion integration remains mandatory.
+- Task46 installation verification/source/history and verified-descendant execution is accepted
+  within its reviewed offline scope. Final807 hash db384ceb994654c40ae0388d3358e18f7edff90ee01197ce99f514fa9adf9318;
+  root verified34new+32modified=66owned and741 outside paths unchanged. No commits/push.
+- Exact72 remained93fail/2834pass/3error. Corrections had independent compatible/clean review.
+  Final22 completed548pass/1fail; the last test-only C6/V6 expectation correction then passed122
+  whole API→FD tests, all806 other paths unchanged. Root reconciled all96 original failed/error
+  nodes to passing latest cover. There is no newly all-green22/72 run; evidence is explicitly combined.
+- The original final-wall2-of6 cause remains unknown despite the current combined pass. This is
+  retained for integrated/native-fit/final review, not claimed fixed or production-qualified.
+  One inherited Starlette deprecation remains. ColdHTTP GET proof is status/fields; POST/cancel
+  have exact canonical-byte equality. No full GET-byte assertion is invented.
+- Task47's conditional Claude API semantic worker/gateway/dispatcher R0 was frozen
+  for its initial independent review:826 paths,19new+7modified and800 outside paths unchanged, manifest
+  e0c6f5a0cf3fd8d583a6498b76a47bd4ce39f228309657471ace91c551c6a125. Initial35 new/166 legacy
+  focused tests passed; later completion evidence includes codec12, records6, read/cancel2,
+  authenticated router2 and actual dispatcher1. These are combined focused evidence, not a final35
+  or whole-task acceptance. Independent review found15 Important defects in canonical admission,
+  independent result validation, replay/status/cancel/catalog composition, literal wire conformance,
+  absolute deadlines, custody/lease cleanup, HTTP/SSE handling and required behavioral proofs.
+  The sole writer has submitted formal R1 fixes under the unchanged26path scope; earlier
+  completeness claims are superseded by this review, not accepted. Exact R0 copies are retained.
+  Two literal interface conflicts were independently confirmed and corrected in the accepted master:
+  new gateway prepare/lease must explicitly carry semantic request_id for descriptor identity.
+  Reservation currency must use the existing uppercase API BudgetPolicy grammar and exact equality.
+  Each amendment/preflight is retained separately; original snapshot hashes stay unchanged.
+  These resolve design contradictions only, not R1 implementation or full operation acceptance.
+  Current R1 focused evidence includes authenticated two-page catalog refresh through durable
+  catalog/result sealing and actual model dispatch, accepted-state status/cancel, malformed
+  post-write unknown outcomes and pre-write currency refusal, six composed restart boundaries,
+  credential rotation/retirement, full-scan cancellation and authenticated session/fence refusal.
+  R1 review baseline was frozen: manifest84d26ab93aec1347f5e9df29a254065f0ac83c7b8539d75a2babdfb25e15e984,
+  23owned changes versusR0,800outside unchanged. Root checked report and held hashes; the same
+  independent reviewer completed re-review:3addressed (I3/I10/I13),12Important remain.
+  Remaining gaps include nested/admission checks, historical replay/query authority, complete
+  failure classification, exact wire/deadline/stream ownership, first-write ordering and cache
+  contradiction handling. R2 implementation was held for the same reviewer's scoped re-review,
+  against all26 preserved R1 beforecopies and a per-residual consumer/test checklist.
+  R2 manifest3e683af2089c7c7a91249167e3318cf3c8087411e0040f2b7ec7e9ab0ba35b2c covers826paths,
+  19owned changed versusR1 and800outside unchanged. All26 held hashes and exact R2 copies verified;
+  reportc14826677771bab649e79a608f46721ec234ad47842c9e44afa372a81d408f71 preserves R1 history.
+  A third demonstrated wire omission was independently preflighted and explicitly corrected:
+  new send-result/private response carry required nullable finite failure_class without raw
+  diagnostics or changed cancellation/deadline/effect rules. Original snapshots stay unchanged.
+  R2 focused cover includes controller6, gateway29, connected vertical27 and portable failure-class2
+  passes, plus per-finding runs. These are selected/combined evidence, not a new whole-suite pass.
+  Independent R2 review completed:3addressed (I2/I11/I14),9Important remain; priorI3/I10/I13
+  stay credited. Remaining selected-profile joins, error closure, concurrent ownership,
+  expired query replay, catalog admission, wire validation, actual I/O deadlines and
+  blocked-stream controls enter R3 with the original sole writer and exact R2 beforecopies.
+  The writer's R2 none-unmatched claim is superseded. R3 fixes are now held for scoped
+  independent re-review:826paths,13changed/800outside unchanged, manifest
+  67cbb9b3468bfd00476dcaef168ab7c4a9bb88b6bde1590e030949faae3cce5a.
+  Root verified26held hashes, exact report prefix, all22contract/reference hashes and
+  latest separate model12/catalog10/router7/preservation9/authority-order4 passing logs.
+  The same reviewer completed R3:3addressed (I6/I8/I12),6Important remain
+  (I1/I4/I5/I7/I9/I15),0Critical. Success/cancel races, pre-owner failure sealing,
+  remaining stage-local causes and shortest wire/lease deadlines need correction.
+  A fresh stronger sole implementer completed R4 fixes and holds all26 paths for the
+  same reviewer's scoped re-review. Final826 manifest89e304f50d099c9f7f36c2dac05b0afc35e51be81a32bec28a916a3a0a4d119e;
+  9owned changed/800outside unchanged. Root verified exact R3 report prefix/26held
+  hashes and all22contract/reference hashes. Family180pass/6fail was followed by
+  diagnosed code/fixture corrections; all6failed nodes have latest passing focused
+  cover, final16pass10.38s. This is combined evidence, not a new all-green family run.
+  R4 independent review completed:5addressed,1Important remains (I5 new fresh grant-
+  subset regression),0Critical. Original R3 counterexamples are fixed. A fresh stronger
+  writer owns final R5: restore canonical exact-ref subset admission for model/catalog,
+  preserve non-subset refusal, same-ID identity and R4 owner ordering. No acceptance
+  or final35 yet; source snapshots and all mixed historical evidence remain retained.
+  R5 is now held for the same reviewer's final scoped check:2owned files changed,
+  826-path manifestd9009207d9f10d510a372ed392a70cbfd9bc5863e07fc748715cbc8780eff419.
+  Proper-subset/non-subset4pass8.91s and ownership/replay18pass23.16s are verified
+  focused results, not a new whole-suite run. All800outside and22authorities unchanged.
+  R5 independent review now PASS: final I5 addressed,0remaining/new Critical/Important,
+  all prior14credits preserved. Root read full75-line report and rechecked source.
+  Final35 subsequently completed once on the held d9009207… source:1,341passed,
+  1warning475.89s. Conditional offline acceptance is now recorded separately.
+  No native/live/production/browser-readiness inference follows.
+  Whole browser/graph/lens/paired-evaluation journey remains incomplete.
+  Earlier focused evidence was combined; the final35 above is a fresh all-green selection.
+  R1 all-closed claim remains superseded. No production activation or paid/live call.
+  See evidence/resumption-2026-09-20.md and scratch task-46-acceptance.md for exact scope/limitations.
+
+### Retained earlier credit-restored chronology (superseded checkpoint states)
+
+- Whole-product estimate: **about50% ±5 including design**. This is not a test-count or
+  completed-work-step ratio; the allocation below remains unchanged.
+- Accepted baseline: Task45 provider conformance after clean R4 production and R5 test-repair
+  independent reviews; all773 final source hashes independently verified. Scoped checks cover actual
+  fixed-worker HTTP/restart/replay, a two-service single-dispatch race, admission/finalization
+  rollback,64-run capacity recovery, retained-history forgery and primary-error preservation.
+- Task45 evidence and limits: R4 scoped independent review is clean after the stopping-boundary
+  corrections; original findings are addressed. The exact72-module regression completed on
+  the verified773-path R4 freeze (session90316):13failed/2915passed/1warning in3137.65s(52:17).
+  R5 changed only four test/fixture paths, preserving all production bytes. Final amended cover:
+  166passed/1explicit unchanged-capacity deselection plus5HTTP/service compatibility passes;
+  all13 failed nodes now pass. Independent R5 review approved all3 regression causes,0open.
+  Controller accepts this combined scoped evidence, not a new all-green exact72 result. The precise
+  historical worker exception remains unproved; a controlled timing path and strengthened complete-input
+  precondition have separate RED/GREEN evidence. The earlier interrupted72attempt's
+  exit1/partial output remains separately retained, not a completed passing cover.
+  Intermediate runs are separate evidence, not one all-green
+  final run. They use controlled synthetic fixtures, not paid models or native qualification.
+- Usable journey boundary is unchanged: start/work pages persist text and original uploads;
+  production speech input, provider/model setup and input-to-design generation are not yet
+  connected there. Graph-centered execution, artifact comparison/lens inquiry and real prior-queue
+  improvement-to-human-promotion still need end-to-end integration.
+- Task46 installation/source/carrier/adapter design passed independent preflight after four bounded
+  corrections and is promoted for offline implementation; it is not implementation acceptance.
+  The exact source baseline and28beforecopies are verified;34new/28modified paths are scoped.
+  Current implementation has complete synthetic evidence assessment and focused actual storage,
+  HTTP and verified-descendant execution proof. Connected R0 product review is now dispatched:
+  all42 non-test product files held,62 scoped copies independently hash-verified,807paths/34new
+  and745 outside-scope files unchanged. Four test-only paths are still completing exact migration,
+  command-replay and source-race proof; this is not a final test freeze or acceptance. The retained
+  dpkg-status amendment is now explicit in the canonical installation master. The next Claude
+  model-call vertical design passed bounded independent R1 review after three corrections;
+  `contracts/provider-semantic-execution.md` adopts the exact read/cancel amendment and frozen
+  snapshots. Implementation still waits for accepted46 scope reconciliation; no provider is activated.
+  Task46's complete synthetic evidence assessment now has a237-test selected pass. Early independent
+  B review found a status-file symlink-resolution escape and a native/canonical codec limit mismatch.
+  The original two findings were corrected; R1 review identified two additional shared-path cases
+  (resolution exhaustion and protected ancestor aliases). These now have targeted RED/GREEN evidence:
+  24passed/205deselected in25.69s. The frozen R2 evidence module hash is
+  ccf976735c970932595be7ab8cf48bf6aa93c202297625e0b79e6165016acfc6; bounded independent R2 review
+  is clean with all B findings addressed. A/C/D connected review is still required.
+  Actual same-store service and source-less historical replay have2focused passes, binary authenticated
+  HTTP POST/read/HEAD/replay have2, receiver boundaries18, and the composed v6 migration suite5.
+  These are separate intermediate results, not complete final-byte or whole-task acceptance.
+  Actual cancellation-before/during-publication and source-less app restart have focused passes;
+  the first explicit verified-descendant fixed-worker execution and legacy-head refusal also pass.
+  Early A review found a missing post-metadata root fsync. A-R1 closes that defect at held helper
+  hash f4e74f1ae06fdcc82f06f94fcbbbd0cbf4c060a87b72102be37dd472b2d659a6, with7initializer passes.
+  The late clock-order defect now refuses admission before durable intent when current time precedes
+  actual installation verification; targeted RED/GREEN proves no worker and unchanged authority.
+  Exact old-tool/provider/completed-B V5 coexistence, during-read source changes and same-ID input
+  proof now pass focused checks. Connected R0 review found three additional P2 defects (SQL timestamp
+  bound, malformed generated schema and pre-count history loading); R1 closes all three with no new
+  actionable finding. All807 source/test paths are frozen at manifest
+  91dfa646c13e8fb80e5728f3e4606738d0729e62363ae0f67a344f8d39ae5919. Final11 completed exit0:
+  435passed/1 inherited warning in1042.20s; all807 postrun hashes unchanged. Root completed the
+  unchanged ordered exact72 sequentially (session25969, log task-46-final72-r1.log):
+  93failed/2834passed/3errors/1 inherited warning in3053.55s, exit1. Final807 hashes remain exactR1.
+  Task46 is not accepted. Diagnosis reconciled all96 outcomes across16 modules; the same writer
+  is repairing one product boundary and narrowly updating eight test files (four new ownership
+  additions, total66 scoped paths). Every repair has an immutable exact R1 beforecopy. Legacy/
+  empty history read compatibility now has genuine RED2failed/2passed then GREEN4passed;
+  verified-history and stage-view issuance still require the exact active writer. Remaining
+  stale schema/export/current-layout expectations and held-V2 fixture isolation are in progress.
+  The original final-wall worker2-of6 failure remains unexplained; its one diagnostic passed,
+  which is not proof of a fix. Finite cover completed548passed/1failed/1warning1612.22s:
+  95/96 original outcomes now pass, including final-wall and both actual FD peaks last in the
+  same process. Sole remaining coldV1HTTP test still expects currentC5/V5 after actualC6/V6
+  migration; historical before/after snapshot and login pass, later HTTP equality checks await
+  a narrow test-only expectation correction. All807 bytes stayed frozen through the run.
+  Independent nine-path review is spec-compatible/quality-clean; one-file follow-up remains.
+  No automatic rerun, skipped test or completed-story claim. The intermediate11 run
+  ended422passed/1failed before the corrections and is not final-byte cover. The literal
+  shared DomainStore64MiB/+1 test passes; the canonical master separately records the coherent
+  installation graph ceiling54657024<67108864, not a fabricated installation overflow test.
+  Historical integrity is now
+  explicitly separated from fresh admission in the installation master; no live evaluation on replay.
+  No real trust keys, native deployment,
+  credentials, live provider requests, image publication or whole-product release were authorized
+  or performed by this continuation. Whole-project completion time is not yet supportably estimated.
+  Current accepted evidence is recorded in `evidence/resumption-2026-09-20.md`.
+
+### Retained implementation chronology
+
+Starting resumption audit: 223 focused Python tests passed (one inherited Starlette warning), and 58 Node
+shell-logic tests passed. These are fresh scoped checks, not a new full-suite or browser E2E
+claim. Claude's separately recorded 6351-pass full suite predates the inherited dirty slice.
+Task26's reproduced connection leak is corrected and independently reviewed; final113covering
+tests passed on unchanged bytes, while its first unexplained checkpoint failure is retained.
+Task27 compiled-tool dispatch coherence and legacy-effect containment are accepted after an
+independent review correction for exact permit-window issuer identity (249 covering tests and
+7 parent-focused tests passed). Task28's separate whole-second checkpoint timestamp correction
+is also accepted (163 covering tests and 4 parent-focused tests; strict stored grammar preserved).
+Task29's actual file-first original intake is accepted after the independently reproduced
+late-receipt/reselected-file duplicate-upload defect was corrected and rereviewed. Unchanged
+backend246Python, amended44Node/3actual-owner-browser, parent6backend/4race tests pass.
+See `evidence/resumption-2026-09-19.md`. Task30 encrypted-custody correction is accepted after
+independent review found and R1 fixed false ciphertext-loss and mutation-before-global-validation.
+Initial161coveringpass/1upstreamwarning; amended87coveringpass/no warnings and parent7regressions.
+All17finalhashes andoutsidepreservation verified. This replaces actual plaintext/hash storage;
+native isolation/SQLiteVFS safety, real enrollment/provider binding and live sends remain open.
+Task31 shared node dispatch-context prerequisite is accepted: 337 scoped tests and 3 parent
+checks passed; independent spec/quality review approved, original bytes/check ordering preserved.
+Task32 tagged-subject/offline migration is accepted after independent R1 review closed two
+preflight defects: complete ToolCall references and projected target capacity before mutation.
+Earlier501pass/5fail and522pass/oneexistingwarning evidence remains recorded. R1 affected-family
+cover279passed/no warnings; parent6R1checks passed (plus3initialfreeze checks). All639sourcehashes
+verified, threeR1fileschanged/636unchanged. Actual temporary post-migration capture/settlement/
+replay/new-node proof passed; no actual user store was migrated or generation call authorized.
+Task33 private Claude text/catalog worker is accepted after independent review found and R1
+corrected malformed-SSE final publication and interruption-cleanup masking. Initial756 and
+amended243 scoped tests pass;657source manifest verified. Task34 pure provider image lineage/
+descriptor joins are also accepted: independent spec/quality Approved,297coveringpass and all657
+baselinefiles preserved. Task35 exact provider source bundles/additive deployment artifacts are
+accepted:246coveringpass, independent spec/quality Approved,661baselinefiles preserved. Task36
+is accepted after independent spec compliant/quality Approved, with no findings. Its controlled
+server initialization/lifecycle frozen six-family cover passed506tests27.90s,
+peak tracked ownedFD91/final0; controller verified2authorizedchanges+6new/678outsideunchanged.
+Task37 runtime source/startup integration is accepted: independent spec compliant/quality Approved,
+frozen nine-family549passed79.09s/one inheritedStarlettewarning, measuredpeak113FD/111retained.
+Controller freshly verified690paths=683unchanged+3modified+4new and allsevenhashes. Maincheckout
+remains clean; no native/live/admission claim. Task38 pure provider prepare/cancel protocol is
+accepted after R2 independent spec/quality Approved. R1five-family366passed4.33s/no warnings;
+R2test-only68passed2.98s/no warnings;700hashes verified. AllthreeImportant plus import-proof
+minor closed. The pre-acceptance source_documents correction preserves every named source ref
+without changing the generic reference walker. Task39 publisher is accepted after independent
+spec/quality Approved, frozen506coveringpass33.33s/oneinheritedwarning, fresh703manifest verified.
+Task40 existing slot-lifetime correction is accepted after independent spec/quality Approved:
+263coveringpass/1unchangedroot-requiredskip/1inheritedwarning;704hashesverified.
+Task41 actual owner/history/publication integration is accepted after independent-review fix round1;
+the reviewer reproduced primary process-control masking by secondary finalizer DB failure and
+identified missing required provider-path integration tests. R1 addresses both with one production
+finalizer correction and five fixture/test changes. Its fresh eight-family cover reports199passed/
+one inherited warning; controller independently matched all719 post-run hashes. Scoped independent
+re-review approved both findings with no new Critical/Important breakage. These results are not a
+whole-product qualification. Task42 requester lifetime is accepted after independent review and
+one fixture-only R1 correction: production-cover315passed/2inheritedskips/21subtests, then amended
+lifecycle203passed/no warnings;720hashes verified. Full per-checkpoint historical RED chronology
+was not met for supplemental cases and remains disclosed. Task43 connected provider receipt/
+observer/installation/history/API implementation is in progress after full preflight and actual42
+dependency reconciliation. Focused evidence now covers genuine signed import, two authenticated
+worker identifies, same-writer staged installation/history, real root/portable HTTP and source-closed
+restart/replay. Populated v4 migration reports29 injected destructive checkpoints rolled back;
+expiry, two-service races and consumed-publication recovery have focused checks. This is not final
+acceptance: initial frozen45-family cover reported1487passed/2failed/one inherited warning.
+The failures exposed timing-dependent test assumptions; a bounded two-test amendment preserves all
+production bytes and the separate deadline-refusal checks. Four focused checks and the amended
+three-family51-test cover pass; controller freshly verified749/749 frozen source hashes.
+Independent review found a missing successful-consume reconciliation call and a shipped test's
+private scratch dependency. R1 is assigned to the original writer, also closing explicitly
+required historical-column-order and observer/migration/schema boundary coverage gaps.
+R1's exact eight-family covering run passed95 tests with one inherited warning in405.89s;
+controller verified749/749 post-run hashes. Scoped independent re-review passed all I1/I2/S1/S2
+findings with no new breakage; Task43 is accepted within its recorded synthetic scope.
+No all-green45-family result is claimed. Task44's bounded shared-store cleanup passed its exact
+cover:193passed/one inheritedwarning290.22s; controller verified750/750 post-run hashes.
+Independent review found no product defect but one required checkpoint-membership assertion missing.
+The original writer corrected only the new lifecycle test:2affectedtests passed0.23s. Scoped R1
+review passed with no new breakage; Task44 is accepted. Its final750-path manifest preserves both
+product hashes and749other paths. This does not claim whole-store/native durability or safe replay
+after an ambiguous commit. Task45 fixed-provider conformance is actively being implemented after
+full preflight and two bounded design corrections. The worker reports green pure contracts,
+same-writer subject resolution, six real fixed-vector connections and actual HTTP/history/replay
+through source-less same-store restart. Negative-case hardening and the final frozen cover/review
+are still pending; these intermediate synthetic results are not task acceptance, native platform
+evidence or live-model operation. It does not activate credentials or qualify model dispatch.
+Task41's initial32-family run recorded1040passed/63failed.
+All63 failures were isolated to three obsolete/contaminating test functions; their approved
+test-only corrections passed a fresh ordered421-test cover (one inherited warning). All initial27
+implementation/new-test/schema files remained byte-identical; final30-path/719-file preservation
+was verified. These are distinct runs, not a fresh all-green32-family or whole-product test claim.
+No actual provider owner/admission/qualification approval follows from the lower-layer acceptance.
+This is not live activation, qualification or canonical
+model-choice authority. Overall delivery
+estimate remains roughly 50% (including design), not the passing-test or checklist ratio.
+Remaining are canonical tool authority and exact-action approval, encrypted provider/model
+integration and the actual browser input-to-graph-to-execution journey. Current accepted
+start/work pages save text and uploaded originals; STT, provider/model setup and
+design generation remain unconnected there. Run observation is a
+list projection, not the final graph-centered UX. Existing reusable modules do not close those
+whole-story gates. Tasks.md currently has 40/90 tasks checked; that ratio is not product coverage.
+
 | Scoped correction | Current evidence/status |
 | --- | --- |
+| File-first original intake on the actual owner work page | Task29 accepted after late-receipt duplicate-upload fix and independent rereview;246Python/44Node/3actual-owner-browser, parent6backend/4race checks. Exact originals/download/refresh/recovery and six responsive screenshots; no extraction/understanding or wholeUS1 claim |
 | Provider-advertised effort -> frozen turn -> port request representation | Nullable exact values reconciled across six generated schemas; independent review accepted and parent301 focused tests pass. Actual provider/dispatcher and durable qualification remain T042/T087 |
 | Finite speech fixture lifecycle | Implemented, independently reviewed; parent 81 controlled browser/lifecycle cases pass. Production STT and timeout-path detached browser termination are not claimed |
 | Real LangGraph ledger-backed checkpoint/pending-write recovery | Partial adapter and no-output correction independently reviewed; parent 148 focused tests pass. Full scheduler remains open |
@@ -79,6 +386,8 @@ implied. See `evidence/resumption-2026-09-15.md` and the scoped `resumption-plan
 | T087: the approval's verification for a tool call | before a byte leaves, the transport reads the owner's recorded decision for the run, node and tool scope (a delimiter-proof uuid5 scope) through the approvals service and requires an approval that is the exact record named; a rejection, another node's or run's approval, a forged digest or a later version is refused before the channel, the connection and the ToolCall intent | 2026-09-19 | Independent review ACCEPT WITH CHANGES (5 SHOULD) folded in RED-first; transport 41, covering 124; Ruff: no new findings | evidence/tool-call-approval-verification-t087.md |
 | T040/T087: the transport's vouched dispatch effect journaled | when a transport fault vouches `definitely_not_sent` or `may_have_started`, the dispatcher records it as the attempt's transport observation before accepting the unknown outcome, so the dispatch status carries the vouched effect; the ledger's trust model (a committed send intent is possibly sent) is unchanged — a free retry after it stays open; an unreadable vouch is a plain fault; the crash window reconciles as unknown | 2026-09-19 | Independent review ACCEPT WITH CHANGES (1 MUST, 2 SHOULD) folded in RED-first; dispatcher 21, covering 157; Ruff clean | evidence/vouched-transport-effect-journal.md |
 | T047/T087: one effect vocabulary for tools | the in-memory tool boundary takes the ports contract's seven effect classes as its closed set and the ports' external family as its approval rule (equal to the ledger's set); the earlier four names are refused (a legacy `external` never stated reversibility); an N-family tool never records an unknown outcome; runtime.md's tool-port row corrected | 2026-09-19 | Independent review ACCEPT WITH CHANGES (2 MUST, 3 SHOULD) folded in RED-first; boundary+audit 39, covering 147; Ruff clean | evidence/tool-effect-vocabulary-t047-t087.md |
+| T087: the ToolDefinition-backed effect gate | the compilation authority's trusted tool definition carries the tool's identity and effect class (ports vocabulary; one class per tool; the worker's identifier grammar); an external-family definition's approval scope is derived and a node bound to such a tool must require it (bound by structure to a human gate's approval edge); `CompiledGraph.tool_effects` states the facts; the transport takes the class from the binding, refuses a disagreeing mirror and looks the decision up under the graph's gate | 2026-09-19/22 | Independent review ACCEPT WITH CHANGES (5 SHOULD) folded in RED-first; graph contract+transport+design generation 134, transport 48 | evidence/tooldefinition-effect-gate-t087.md |
+| Merged tree reconciliation | the parallel orchestration's tasks 27–50 (uncommitted, verified only by subsets) brought to one green full run: 81 fixed-date time bombs, 3 core import boundary violations, 2 stale route pins, 6 detached-field assertions, 1 schema branch, and an in-process module reload that poisoned every later `create_app` (82 setup errors) — each reproduced then fixed at its cause | 2026-09-22 | full run 1: 9,104 passed / 95 failed / 82 errors → run 2: 9,201 passed / 0 failed / 82 errors → run 3: 9,280 passed / 3 failed (timing-dependent, pass alone) / 0 errors | evidence/merged-tree-reconciliation-2026-09-22.md |
 | LangGraph scheduling adapter (T040 slices 1–3) | app/runtime/scheduler.py: closed code-owned handler registry, deterministic ledger-reconciled node visits via command replay, sealed router activations and bounded-loop controllers routed by Command (closed facts, termination expression, hard cap fails loudly, every iteration a new visit), opaque saver cursors, no streaming, sanitized failures; human gates stop before the node and resume only on owner-recorded approvals (rejection fails, absence reports awaiting_human); 16 real StateGraph+SQLite tests incl. restart after failure, restart inside a loop and gate wait/approve/reject. independent review (2026-09-17) found 4 Important (double fan-in visit, gate in loop, forged newer approval version, GUI base path) — all closed RED-first; retry/budget/semantic admission remain open |
 
 These are scoped engineering checkpoints, not whole user-story completion or a release claim.
@@ -179,11 +488,40 @@ not development. This goal has no three-attempt development completion/stop rule
 
 ## Approximate weighted progress
 
-Current conservative estimate: **40–45% including design**. Eight overstated completion markers
+Current conservative estimate: **about 50% ±5 including design** (2026-09-21). This reflects the
+new persistent owner/run/worker/shell integrations, not a completed end-user journey. Eight previously overstated completion markers
 were reopened (T039/T041/T055/T056/T057/T061/T064/T065) without discarding their tested partial code.
 This is a scope-accounting correction, not a claim that existing functionality regressed. The
 table below preserves the **2026-09-13 historical estimate (46.2%)**; it is not current runnable
-product coverage. A new full weighted numerator is pending integrated execution evidence.
+product coverage. The following current rough allocation updates only evidence-supported partial
+engineering credit; it does not replace the separate full-story acceptance gates.
+
+### Current rough allocation — 2026-09-21, after accepted Task47
+
+Same original weights; fractions are estimates, not test-pass ratios. Accepted Tasks41–47 strengthen
+provider staging/history, fixed private conformance, installation verification and finite cleanup inside the existing partial
+infrastructure allocation; they do not yet close an additional browser journey. This bounded
+infrastructure acceptance does not justify a material whole-product percentage increase. Task47's
+accepted conditional execution receives no completed-browser-journey credit. Keep the same rounded estimate;
+contributions are below.
+
+| Work package | Weight | Rough fraction | Contribution | Current evidence boundary |
+| --- | ---: | ---: | ---: | --- |
+| Whole-product design and traceability |20|1.00|20.0|Accepted product design; implementation-era source/hash reconciliation and final coverage audit still required |
+| First use, input, providers and persistence |15|0.65|9.8|Actual owner/intake/original-file flow plus tested provider foundations; browser model setup, production STT and input-to-understanding still unconnected |
+| Graph generation, criticism and approval |15|0.20|3.0|Existing offline/value-layer work only; no added credit for a connected live graph-design experience |
+| Runtime, framework tools and artifacts |20|0.40|8.0|Accepted scheduler/attempt transport, source/publisher/cleanup and custody prerequisites; canonical provider binding/exact-action authority and graph runtime UI remain |
+| DeepTwin inquiry, paired evaluation and promotion |15|0.30|4.5|Retain partial module credit; actual lens-grounded inquiry, paired queue execution and connected human promotion remain |
+| Full-journey integration, security and effect evidence |10|0.20|2.0|No increased whole-story/native/live credit from scoped temporary tests |
+| Web distribution, recovery and release docs |5|0.34|1.7|Retain existing input-lock/static boundary credit; no final images/clean-host/signing/release completion |
+| Total |100|—|about49|User-facing rounded estimate remains about50% ±5, including design |
+
+The modest change from the historical46.2 estimate reflects actual intake and runtime prerequisites,
+not a claim that the end-user journey is half connected. Whole-goal ETA remains unsupported: no
+complete integrated story yet supplies comparable delivery throughput, and native/live/owner
+approval readiness cannot be converted to an invented finish date.
+
+### Historical allocation — 2026-09-13, retained unchanged
 
 Two historical table notes are superseded: LangGraph/checkpoint-sqlite are installed and import
 successfully in the development environment, so a main-checkout dependency edit does not block

@@ -1,0 +1,3949 @@
+{
+  "$id": "urn:deeptwin:schemas:v2:deployment:provider-receipt-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "claimed_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "completed_at": {
+          "format": "date-time",
+          "maxLength": 24,
+          "minLength": 1,
+          "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+          "type": "string"
+        },
+        "deployment_profile_id": {
+          "enum": [
+            "local-no-terminal-v1",
+            "portable-compose-v1"
+          ],
+          "type": "string"
+        },
+        "domain": {
+          "const": "deeptwin-deployment-provider-receipt-v1",
+          "type": "string"
+        },
+        "effect_result": {
+          "additionalProperties": false,
+          "properties": {
+            "expected_installation_head": {
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "type": "object"
+            },
+            "expected_next_installation_revision": {
+              "const": 1,
+              "type": "integer"
+            },
+            "extension_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])",
+              "type": "string"
+            },
+            "geometry": {
+              "additionalProperties": false,
+              "properties": {
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 65536,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "new_service": {
+              "additionalProperties": false,
+              "properties": {
+                "image_manifest_digest": {
+                  "maxLength": 71,
+                  "minLength": 1,
+                  "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "manifest_digest": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "observed_at": {
+                  "format": "date-time",
+                  "maxLength": 24,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+                  "type": "string"
+                },
+                "presence": {
+                  "const": "present",
+                  "type": "string"
+                },
+                "reachable_after_effect": {
+                  "type": "boolean"
+                },
+                "selected_platform_entry_digest": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "service_descriptor_digest": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "service_identity": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "presence",
+                "service_identity",
+                "manifest_digest",
+                "service_descriptor_digest",
+                "selected_platform_entry_digest",
+                "image_manifest_digest",
+                "reachable_after_effect",
+                "observed_at"
+              ],
+              "type": "object"
+            },
+            "old_service": {
+              "additionalProperties": false,
+              "properties": {
+                "presence": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "presence"
+              ],
+              "type": "object"
+            },
+            "preservation": {
+              "additionalProperties": false,
+              "properties": {
+                "observations": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "after": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "configured_gid": {
+                            "maximum": 4294967295,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "configured_uid": {
+                            "maximum": 4294967295,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "container_id": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "engine_id": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^(?:[A-Za-z0-9:._-]{1,128})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "image_config_digest": {
+                            "maxLength": 71,
+                            "minLength": 1,
+                            "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "init_pid": {
+                            "maximum": 2147483647,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "observed_at": {
+                            "format": "date-time",
+                            "maxLength": 24,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "restart_count": {
+                            "maximum": 2147483647,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "socket_path": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "pattern": "^(?:/run/deeptwin/ipc/xs(?:0[1-9]|1[0-6]))(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "socket_read_only": {
+                            "const": false,
+                            "type": "boolean"
+                          },
+                          "socket_volume": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "pattern": "^(?:dt-[0-9a-f]{32}-ipc-xs(?:0[1-9]|1[0-6]))(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "started_at": {
+                            "format": "date-time",
+                            "maxLength": 30,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{9}Z)(?![\\s\\S])",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "observed_at",
+                          "engine_id",
+                          "container_id",
+                          "image_config_digest",
+                          "started_at",
+                          "restart_count",
+                          "init_pid",
+                          "configured_uid",
+                          "configured_gid",
+                          "socket_volume",
+                          "socket_path",
+                          "socket_read_only"
+                        ],
+                        "type": "object"
+                      },
+                      "before": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "configured_gid": {
+                            "maximum": 4294967295,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "configured_uid": {
+                            "maximum": 4294967295,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "container_id": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "engine_id": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^(?:[A-Za-z0-9:._-]{1,128})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "image_config_digest": {
+                            "maxLength": 71,
+                            "minLength": 1,
+                            "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "init_pid": {
+                            "maximum": 2147483647,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "observed_at": {
+                            "format": "date-time",
+                            "maxLength": 24,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "restart_count": {
+                            "maximum": 2147483647,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "socket_path": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "pattern": "^(?:/run/deeptwin/ipc/xs(?:0[1-9]|1[0-6]))(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "socket_read_only": {
+                            "const": false,
+                            "type": "boolean"
+                          },
+                          "socket_volume": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "pattern": "^(?:dt-[0-9a-f]{32}-ipc-xs(?:0[1-9]|1[0-6]))(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "started_at": {
+                            "format": "date-time",
+                            "maxLength": 30,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{9}Z)(?![\\s\\S])",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "observed_at",
+                          "engine_id",
+                          "container_id",
+                          "image_config_digest",
+                          "started_at",
+                          "restart_count",
+                          "init_pid",
+                          "configured_uid",
+                          "configured_gid",
+                          "socket_volume",
+                          "socket_path",
+                          "socket_read_only"
+                        ],
+                        "type": "object"
+                      },
+                      "service_identity": {
+                        "maxLength": 64,
+                        "minLength": 1,
+                        "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])",
+                        "type": "string"
+                      },
+                      "slot_id": {
+                        "maximum": 16,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "slot_id",
+                      "service_identity",
+                      "before",
+                      "after"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 1,
+                  "minItems": 0,
+                  "type": "array",
+                  "uniqueItems": false
+                },
+                "state": {
+                  "const": "preserved",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "observations"
+              ],
+              "type": "object"
+            },
+            "preserved_inventory_sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "schema_id": {
+              "const": "deeptwin.provider-stage-result.v1",
+              "type": "string"
+            },
+            "source_context": {
+              "additionalProperties": false,
+              "properties": {
+                "context_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "epoch": {
+                  "const": 1,
+                  "type": "integer"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 16384,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "context_id",
+                "epoch",
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "stage_profile": {
+              "const": "claude-text-transform-v1",
+              "type": "string"
+            }
+          },
+          "required": [
+            "schema_id",
+            "extension_id",
+            "expected_installation_head",
+            "expected_next_installation_revision",
+            "old_service",
+            "new_service",
+            "stage_profile",
+            "source_context",
+            "geometry",
+            "preserved_inventory_sha256",
+            "preservation"
+          ],
+          "type": "object"
+        },
+        "failure_class": {
+          "type": "null"
+        },
+        "instance_id": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{32})(?![\\s\\S])",
+          "type": "string"
+        },
+        "key_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "extension_stage",
+          "type": "string"
+        },
+        "operator_adapter": {
+          "const": "deeptwin-provider-stage-operator-v1",
+          "type": "string"
+        },
+        "operator_version": {
+          "const": "1.0.0",
+          "type": "string"
+        },
+        "origin_profile_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "outcome": {
+          "const": "succeeded",
+          "type": "string"
+        },
+        "request_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_nonce": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "schema": {
+          "const": "deployment-provider-receipt-v1",
+          "type": "string"
+        },
+        "signature": {
+          "maxLength": 86,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{85}[AQgw])(?![\\s\\S])",
+          "type": "string"
+        },
+        "started_at": {
+          "format": "date-time",
+          "maxLength": 24,
+          "minLength": 1,
+          "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+          "type": "string"
+        },
+        "trust_class": {
+          "const": "instance_operator",
+          "type": "string"
+        },
+        "trust_set_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "unverified_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "verified_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schema",
+        "domain",
+        "request_id",
+        "request_digest",
+        "request_nonce",
+        "kind",
+        "instance_id",
+        "origin_profile_digest",
+        "deployment_profile_id",
+        "operator_adapter",
+        "operator_version",
+        "effect_result",
+        "started_at",
+        "completed_at",
+        "outcome",
+        "failure_class",
+        "claimed_facts",
+        "verified_facts",
+        "unverified_facts",
+        "key_id",
+        "trust_set_digest",
+        "trust_class",
+        "signature"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "claimed_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "completed_at": {
+          "format": "date-time",
+          "maxLength": 24,
+          "minLength": 1,
+          "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+          "type": "string"
+        },
+        "deployment_profile_id": {
+          "enum": [
+            "local-no-terminal-v1",
+            "portable-compose-v1"
+          ],
+          "type": "string"
+        },
+        "domain": {
+          "const": "deeptwin-deployment-provider-receipt-v1",
+          "type": "string"
+        },
+        "effect_result": {
+          "additionalProperties": false,
+          "properties": {
+            "expected_installation_head": {
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "type": "object"
+            },
+            "expected_next_installation_revision": {
+              "const": 1,
+              "type": "integer"
+            },
+            "extension_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])",
+              "type": "string"
+            },
+            "geometry": {
+              "additionalProperties": false,
+              "properties": {
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 65536,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "new_service": {
+              "additionalProperties": false,
+              "properties": {
+                "presence": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "presence"
+              ],
+              "type": "object"
+            },
+            "old_service": {
+              "additionalProperties": false,
+              "properties": {
+                "presence": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "presence"
+              ],
+              "type": "object"
+            },
+            "preservation": {
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "not_attempted",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "type": "object"
+            },
+            "preserved_inventory_sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "schema_id": {
+              "const": "deeptwin.provider-stage-result.v1",
+              "type": "string"
+            },
+            "source_context": {
+              "additionalProperties": false,
+              "properties": {
+                "context_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "epoch": {
+                  "const": 1,
+                  "type": "integer"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 16384,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "context_id",
+                "epoch",
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "stage_profile": {
+              "const": "claude-text-transform-v1",
+              "type": "string"
+            }
+          },
+          "required": [
+            "schema_id",
+            "extension_id",
+            "expected_installation_head",
+            "expected_next_installation_revision",
+            "old_service",
+            "new_service",
+            "stage_profile",
+            "source_context",
+            "geometry",
+            "preserved_inventory_sha256",
+            "preservation"
+          ],
+          "type": "object"
+        },
+        "failure_class": {
+          "enum": [
+            "operator_refused",
+            "precondition_failed",
+            "image_unavailable",
+            "effect_failed",
+            "observation_unavailable",
+            "deadline_exceeded",
+            "operator_interrupted",
+            "internal_error"
+          ],
+          "type": "string"
+        },
+        "instance_id": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{32})(?![\\s\\S])",
+          "type": "string"
+        },
+        "key_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "extension_stage",
+          "type": "string"
+        },
+        "operator_adapter": {
+          "const": "deeptwin-provider-stage-operator-v1",
+          "type": "string"
+        },
+        "operator_version": {
+          "const": "1.0.0",
+          "type": "string"
+        },
+        "origin_profile_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "outcome": {
+          "const": "failed",
+          "type": "string"
+        },
+        "request_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_nonce": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "schema": {
+          "const": "deployment-provider-receipt-v1",
+          "type": "string"
+        },
+        "signature": {
+          "maxLength": 86,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{85}[AQgw])(?![\\s\\S])",
+          "type": "string"
+        },
+        "started_at": {
+          "format": "date-time",
+          "maxLength": 24,
+          "minLength": 1,
+          "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+          "type": "string"
+        },
+        "trust_class": {
+          "const": "instance_operator",
+          "type": "string"
+        },
+        "trust_set_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "unverified_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "verified_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schema",
+        "domain",
+        "request_id",
+        "request_digest",
+        "request_nonce",
+        "kind",
+        "instance_id",
+        "origin_profile_digest",
+        "deployment_profile_id",
+        "operator_adapter",
+        "operator_version",
+        "effect_result",
+        "started_at",
+        "completed_at",
+        "outcome",
+        "failure_class",
+        "claimed_facts",
+        "verified_facts",
+        "unverified_facts",
+        "key_id",
+        "trust_set_digest",
+        "trust_class",
+        "signature"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "claimed_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "completed_at": {
+          "format": "date-time",
+          "maxLength": 24,
+          "minLength": 1,
+          "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+          "type": "string"
+        },
+        "deployment_profile_id": {
+          "enum": [
+            "local-no-terminal-v1",
+            "portable-compose-v1"
+          ],
+          "type": "string"
+        },
+        "domain": {
+          "const": "deeptwin-deployment-provider-receipt-v1",
+          "type": "string"
+        },
+        "effect_result": {
+          "additionalProperties": false,
+          "properties": {
+            "expected_installation_head": {
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "type": "object"
+            },
+            "expected_next_installation_revision": {
+              "const": 1,
+              "type": "integer"
+            },
+            "extension_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])",
+              "type": "string"
+            },
+            "geometry": {
+              "additionalProperties": false,
+              "properties": {
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 65536,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "new_service": {
+              "additionalProperties": false,
+              "properties": {
+                "presence": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "presence"
+              ],
+              "type": "object"
+            },
+            "old_service": {
+              "additionalProperties": false,
+              "properties": {
+                "presence": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "presence"
+              ],
+              "type": "object"
+            },
+            "preservation": {
+              "additionalProperties": false,
+              "properties": {
+                "observations": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "after": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "configured_gid": {
+                            "maximum": 4294967295,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "configured_uid": {
+                            "maximum": 4294967295,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "container_id": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "engine_id": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^(?:[A-Za-z0-9:._-]{1,128})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "image_config_digest": {
+                            "maxLength": 71,
+                            "minLength": 1,
+                            "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "init_pid": {
+                            "maximum": 2147483647,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "observed_at": {
+                            "format": "date-time",
+                            "maxLength": 24,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "restart_count": {
+                            "maximum": 2147483647,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "socket_path": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "pattern": "^(?:/run/deeptwin/ipc/xs(?:0[1-9]|1[0-6]))(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "socket_read_only": {
+                            "const": false,
+                            "type": "boolean"
+                          },
+                          "socket_volume": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "pattern": "^(?:dt-[0-9a-f]{32}-ipc-xs(?:0[1-9]|1[0-6]))(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "started_at": {
+                            "format": "date-time",
+                            "maxLength": 30,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{9}Z)(?![\\s\\S])",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "observed_at",
+                          "engine_id",
+                          "container_id",
+                          "image_config_digest",
+                          "started_at",
+                          "restart_count",
+                          "init_pid",
+                          "configured_uid",
+                          "configured_gid",
+                          "socket_volume",
+                          "socket_path",
+                          "socket_read_only"
+                        ],
+                        "type": "object"
+                      },
+                      "before": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "configured_gid": {
+                            "maximum": 4294967295,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "configured_uid": {
+                            "maximum": 4294967295,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "container_id": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "engine_id": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^(?:[A-Za-z0-9:._-]{1,128})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "image_config_digest": {
+                            "maxLength": 71,
+                            "minLength": 1,
+                            "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "init_pid": {
+                            "maximum": 2147483647,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "observed_at": {
+                            "format": "date-time",
+                            "maxLength": 24,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "restart_count": {
+                            "maximum": 2147483647,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "socket_path": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "pattern": "^(?:/run/deeptwin/ipc/xs(?:0[1-9]|1[0-6]))(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "socket_read_only": {
+                            "const": false,
+                            "type": "boolean"
+                          },
+                          "socket_volume": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "pattern": "^(?:dt-[0-9a-f]{32}-ipc-xs(?:0[1-9]|1[0-6]))(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "started_at": {
+                            "format": "date-time",
+                            "maxLength": 30,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{9}Z)(?![\\s\\S])",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "observed_at",
+                          "engine_id",
+                          "container_id",
+                          "image_config_digest",
+                          "started_at",
+                          "restart_count",
+                          "init_pid",
+                          "configured_uid",
+                          "configured_gid",
+                          "socket_volume",
+                          "socket_path",
+                          "socket_read_only"
+                        ],
+                        "type": "object"
+                      },
+                      "service_identity": {
+                        "maxLength": 64,
+                        "minLength": 1,
+                        "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])",
+                        "type": "string"
+                      },
+                      "slot_id": {
+                        "maximum": 16,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "slot_id",
+                      "service_identity",
+                      "before",
+                      "after"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 1,
+                  "minItems": 0,
+                  "type": "array",
+                  "uniqueItems": false
+                },
+                "state": {
+                  "const": "preserved",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "observations"
+              ],
+              "type": "object"
+            },
+            "preserved_inventory_sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "schema_id": {
+              "const": "deeptwin.provider-stage-result.v1",
+              "type": "string"
+            },
+            "source_context": {
+              "additionalProperties": false,
+              "properties": {
+                "context_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "epoch": {
+                  "const": 1,
+                  "type": "integer"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 16384,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "context_id",
+                "epoch",
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "stage_profile": {
+              "const": "claude-text-transform-v1",
+              "type": "string"
+            }
+          },
+          "required": [
+            "schema_id",
+            "extension_id",
+            "expected_installation_head",
+            "expected_next_installation_revision",
+            "old_service",
+            "new_service",
+            "stage_profile",
+            "source_context",
+            "geometry",
+            "preserved_inventory_sha256",
+            "preservation"
+          ],
+          "type": "object"
+        },
+        "failure_class": {
+          "enum": [
+            "operator_refused",
+            "precondition_failed",
+            "image_unavailable",
+            "effect_failed",
+            "observation_unavailable",
+            "deadline_exceeded",
+            "operator_interrupted",
+            "internal_error"
+          ],
+          "type": "string"
+        },
+        "instance_id": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{32})(?![\\s\\S])",
+          "type": "string"
+        },
+        "key_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "extension_stage",
+          "type": "string"
+        },
+        "operator_adapter": {
+          "const": "deeptwin-provider-stage-operator-v1",
+          "type": "string"
+        },
+        "operator_version": {
+          "const": "1.0.0",
+          "type": "string"
+        },
+        "origin_profile_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "outcome": {
+          "const": "failed",
+          "type": "string"
+        },
+        "request_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_nonce": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "schema": {
+          "const": "deployment-provider-receipt-v1",
+          "type": "string"
+        },
+        "signature": {
+          "maxLength": 86,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{85}[AQgw])(?![\\s\\S])",
+          "type": "string"
+        },
+        "started_at": {
+          "format": "date-time",
+          "maxLength": 24,
+          "minLength": 1,
+          "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+          "type": "string"
+        },
+        "trust_class": {
+          "const": "instance_operator",
+          "type": "string"
+        },
+        "trust_set_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "unverified_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "verified_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schema",
+        "domain",
+        "request_id",
+        "request_digest",
+        "request_nonce",
+        "kind",
+        "instance_id",
+        "origin_profile_digest",
+        "deployment_profile_id",
+        "operator_adapter",
+        "operator_version",
+        "effect_result",
+        "started_at",
+        "completed_at",
+        "outcome",
+        "failure_class",
+        "claimed_facts",
+        "verified_facts",
+        "unverified_facts",
+        "key_id",
+        "trust_set_digest",
+        "trust_class",
+        "signature"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "claimed_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "completed_at": {
+          "format": "date-time",
+          "maxLength": 24,
+          "minLength": 1,
+          "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+          "type": "string"
+        },
+        "deployment_profile_id": {
+          "enum": [
+            "local-no-terminal-v1",
+            "portable-compose-v1"
+          ],
+          "type": "string"
+        },
+        "domain": {
+          "const": "deeptwin-deployment-provider-receipt-v1",
+          "type": "string"
+        },
+        "effect_result": {
+          "additionalProperties": false,
+          "properties": {
+            "expected_installation_head": {
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "type": "object"
+            },
+            "expected_next_installation_revision": {
+              "const": 1,
+              "type": "integer"
+            },
+            "extension_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])",
+              "type": "string"
+            },
+            "geometry": {
+              "additionalProperties": false,
+              "properties": {
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 65536,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "new_service": {
+              "additionalProperties": false,
+              "properties": {
+                "presence": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "presence"
+              ],
+              "type": "object"
+            },
+            "old_service": {
+              "additionalProperties": false,
+              "properties": {
+                "presence": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "presence"
+              ],
+              "type": "object"
+            },
+            "preservation": {
+              "additionalProperties": false,
+              "properties": {
+                "failure_class": {
+                  "enum": [
+                    "observation_unavailable",
+                    "deadline_exceeded",
+                    "operator_interrupted",
+                    "internal_error"
+                  ],
+                  "type": "string"
+                },
+                "state": {
+                  "const": "unconfirmed",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "failure_class"
+              ],
+              "type": "object"
+            },
+            "preserved_inventory_sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "schema_id": {
+              "const": "deeptwin.provider-stage-result.v1",
+              "type": "string"
+            },
+            "source_context": {
+              "additionalProperties": false,
+              "properties": {
+                "context_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "epoch": {
+                  "const": 1,
+                  "type": "integer"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 16384,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "context_id",
+                "epoch",
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "stage_profile": {
+              "const": "claude-text-transform-v1",
+              "type": "string"
+            }
+          },
+          "required": [
+            "schema_id",
+            "extension_id",
+            "expected_installation_head",
+            "expected_next_installation_revision",
+            "old_service",
+            "new_service",
+            "stage_profile",
+            "source_context",
+            "geometry",
+            "preserved_inventory_sha256",
+            "preservation"
+          ],
+          "type": "object"
+        },
+        "failure_class": {
+          "enum": [
+            "operator_refused",
+            "precondition_failed",
+            "image_unavailable",
+            "effect_failed",
+            "observation_unavailable",
+            "deadline_exceeded",
+            "operator_interrupted",
+            "internal_error"
+          ],
+          "type": "string"
+        },
+        "instance_id": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{32})(?![\\s\\S])",
+          "type": "string"
+        },
+        "key_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "extension_stage",
+          "type": "string"
+        },
+        "operator_adapter": {
+          "const": "deeptwin-provider-stage-operator-v1",
+          "type": "string"
+        },
+        "operator_version": {
+          "const": "1.0.0",
+          "type": "string"
+        },
+        "origin_profile_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "outcome": {
+          "const": "failed",
+          "type": "string"
+        },
+        "request_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_nonce": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "schema": {
+          "const": "deployment-provider-receipt-v1",
+          "type": "string"
+        },
+        "signature": {
+          "maxLength": 86,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{85}[AQgw])(?![\\s\\S])",
+          "type": "string"
+        },
+        "started_at": {
+          "format": "date-time",
+          "maxLength": 24,
+          "minLength": 1,
+          "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+          "type": "string"
+        },
+        "trust_class": {
+          "const": "instance_operator",
+          "type": "string"
+        },
+        "trust_set_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "unverified_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "verified_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schema",
+        "domain",
+        "request_id",
+        "request_digest",
+        "request_nonce",
+        "kind",
+        "instance_id",
+        "origin_profile_digest",
+        "deployment_profile_id",
+        "operator_adapter",
+        "operator_version",
+        "effect_result",
+        "started_at",
+        "completed_at",
+        "outcome",
+        "failure_class",
+        "claimed_facts",
+        "verified_facts",
+        "unverified_facts",
+        "key_id",
+        "trust_set_digest",
+        "trust_class",
+        "signature"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "claimed_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "completed_at": {
+          "format": "date-time",
+          "maxLength": 24,
+          "minLength": 1,
+          "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+          "type": "string"
+        },
+        "deployment_profile_id": {
+          "enum": [
+            "local-no-terminal-v1",
+            "portable-compose-v1"
+          ],
+          "type": "string"
+        },
+        "domain": {
+          "const": "deeptwin-deployment-provider-receipt-v1",
+          "type": "string"
+        },
+        "effect_result": {
+          "additionalProperties": false,
+          "properties": {
+            "expected_installation_head": {
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "type": "object"
+            },
+            "expected_next_installation_revision": {
+              "const": 1,
+              "type": "integer"
+            },
+            "extension_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])",
+              "type": "string"
+            },
+            "geometry": {
+              "additionalProperties": false,
+              "properties": {
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 65536,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "new_service": {
+              "additionalProperties": false,
+              "properties": {
+                "expected_image_manifest_digest": {
+                  "maxLength": 71,
+                  "minLength": 1,
+                  "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "expected_manifest_digest": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "expected_selected_platform_entry_digest": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "expected_service_descriptor_digest": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "expected_service_identity": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])",
+                  "type": "string"
+                },
+                "failure_class": {
+                  "enum": [
+                    "observation_unavailable",
+                    "deadline_exceeded",
+                    "operator_interrupted",
+                    "internal_error"
+                  ],
+                  "type": "string"
+                },
+                "observed_at": {
+                  "format": "date-time",
+                  "maxLength": 24,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+                  "type": "string"
+                },
+                "presence": {
+                  "const": "unknown",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "presence",
+                "expected_service_identity",
+                "expected_manifest_digest",
+                "expected_service_descriptor_digest",
+                "expected_selected_platform_entry_digest",
+                "expected_image_manifest_digest",
+                "failure_class",
+                "observed_at"
+              ],
+              "type": "object"
+            },
+            "old_service": {
+              "additionalProperties": false,
+              "properties": {
+                "presence": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "presence"
+              ],
+              "type": "object"
+            },
+            "preservation": {
+              "additionalProperties": false,
+              "properties": {
+                "observations": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "after": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "configured_gid": {
+                            "maximum": 4294967295,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "configured_uid": {
+                            "maximum": 4294967295,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "container_id": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "engine_id": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^(?:[A-Za-z0-9:._-]{1,128})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "image_config_digest": {
+                            "maxLength": 71,
+                            "minLength": 1,
+                            "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "init_pid": {
+                            "maximum": 2147483647,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "observed_at": {
+                            "format": "date-time",
+                            "maxLength": 24,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "restart_count": {
+                            "maximum": 2147483647,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "socket_path": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "pattern": "^(?:/run/deeptwin/ipc/xs(?:0[1-9]|1[0-6]))(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "socket_read_only": {
+                            "const": false,
+                            "type": "boolean"
+                          },
+                          "socket_volume": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "pattern": "^(?:dt-[0-9a-f]{32}-ipc-xs(?:0[1-9]|1[0-6]))(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "started_at": {
+                            "format": "date-time",
+                            "maxLength": 30,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{9}Z)(?![\\s\\S])",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "observed_at",
+                          "engine_id",
+                          "container_id",
+                          "image_config_digest",
+                          "started_at",
+                          "restart_count",
+                          "init_pid",
+                          "configured_uid",
+                          "configured_gid",
+                          "socket_volume",
+                          "socket_path",
+                          "socket_read_only"
+                        ],
+                        "type": "object"
+                      },
+                      "before": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "configured_gid": {
+                            "maximum": 4294967295,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "configured_uid": {
+                            "maximum": 4294967295,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "container_id": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "engine_id": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^(?:[A-Za-z0-9:._-]{1,128})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "image_config_digest": {
+                            "maxLength": 71,
+                            "minLength": 1,
+                            "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "init_pid": {
+                            "maximum": 2147483647,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "observed_at": {
+                            "format": "date-time",
+                            "maxLength": 24,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "restart_count": {
+                            "maximum": 2147483647,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "socket_path": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "pattern": "^(?:/run/deeptwin/ipc/xs(?:0[1-9]|1[0-6]))(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "socket_read_only": {
+                            "const": false,
+                            "type": "boolean"
+                          },
+                          "socket_volume": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "pattern": "^(?:dt-[0-9a-f]{32}-ipc-xs(?:0[1-9]|1[0-6]))(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "started_at": {
+                            "format": "date-time",
+                            "maxLength": 30,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{9}Z)(?![\\s\\S])",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "observed_at",
+                          "engine_id",
+                          "container_id",
+                          "image_config_digest",
+                          "started_at",
+                          "restart_count",
+                          "init_pid",
+                          "configured_uid",
+                          "configured_gid",
+                          "socket_volume",
+                          "socket_path",
+                          "socket_read_only"
+                        ],
+                        "type": "object"
+                      },
+                      "service_identity": {
+                        "maxLength": 64,
+                        "minLength": 1,
+                        "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])",
+                        "type": "string"
+                      },
+                      "slot_id": {
+                        "maximum": 16,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "slot_id",
+                      "service_identity",
+                      "before",
+                      "after"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 1,
+                  "minItems": 0,
+                  "type": "array",
+                  "uniqueItems": false
+                },
+                "state": {
+                  "const": "preserved",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "observations"
+              ],
+              "type": "object"
+            },
+            "preserved_inventory_sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "schema_id": {
+              "const": "deeptwin.provider-stage-result.v1",
+              "type": "string"
+            },
+            "source_context": {
+              "additionalProperties": false,
+              "properties": {
+                "context_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "epoch": {
+                  "const": 1,
+                  "type": "integer"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 16384,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "context_id",
+                "epoch",
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "stage_profile": {
+              "const": "claude-text-transform-v1",
+              "type": "string"
+            }
+          },
+          "required": [
+            "schema_id",
+            "extension_id",
+            "expected_installation_head",
+            "expected_next_installation_revision",
+            "old_service",
+            "new_service",
+            "stage_profile",
+            "source_context",
+            "geometry",
+            "preserved_inventory_sha256",
+            "preservation"
+          ],
+          "type": "object"
+        },
+        "failure_class": {
+          "enum": [
+            "operator_refused",
+            "precondition_failed",
+            "image_unavailable",
+            "effect_failed",
+            "observation_unavailable",
+            "deadline_exceeded",
+            "operator_interrupted",
+            "internal_error"
+          ],
+          "type": "string"
+        },
+        "instance_id": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{32})(?![\\s\\S])",
+          "type": "string"
+        },
+        "key_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "extension_stage",
+          "type": "string"
+        },
+        "operator_adapter": {
+          "const": "deeptwin-provider-stage-operator-v1",
+          "type": "string"
+        },
+        "operator_version": {
+          "const": "1.0.0",
+          "type": "string"
+        },
+        "origin_profile_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "outcome": {
+          "const": "failed",
+          "type": "string"
+        },
+        "request_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_nonce": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "schema": {
+          "const": "deployment-provider-receipt-v1",
+          "type": "string"
+        },
+        "signature": {
+          "maxLength": 86,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{85}[AQgw])(?![\\s\\S])",
+          "type": "string"
+        },
+        "started_at": {
+          "format": "date-time",
+          "maxLength": 24,
+          "minLength": 1,
+          "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+          "type": "string"
+        },
+        "trust_class": {
+          "const": "instance_operator",
+          "type": "string"
+        },
+        "trust_set_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "unverified_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "verified_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schema",
+        "domain",
+        "request_id",
+        "request_digest",
+        "request_nonce",
+        "kind",
+        "instance_id",
+        "origin_profile_digest",
+        "deployment_profile_id",
+        "operator_adapter",
+        "operator_version",
+        "effect_result",
+        "started_at",
+        "completed_at",
+        "outcome",
+        "failure_class",
+        "claimed_facts",
+        "verified_facts",
+        "unverified_facts",
+        "key_id",
+        "trust_set_digest",
+        "trust_class",
+        "signature"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "claimed_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "completed_at": {
+          "format": "date-time",
+          "maxLength": 24,
+          "minLength": 1,
+          "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+          "type": "string"
+        },
+        "deployment_profile_id": {
+          "enum": [
+            "local-no-terminal-v1",
+            "portable-compose-v1"
+          ],
+          "type": "string"
+        },
+        "domain": {
+          "const": "deeptwin-deployment-provider-receipt-v1",
+          "type": "string"
+        },
+        "effect_result": {
+          "additionalProperties": false,
+          "properties": {
+            "expected_installation_head": {
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "type": "object"
+            },
+            "expected_next_installation_revision": {
+              "const": 1,
+              "type": "integer"
+            },
+            "extension_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])",
+              "type": "string"
+            },
+            "geometry": {
+              "additionalProperties": false,
+              "properties": {
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 65536,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "new_service": {
+              "additionalProperties": false,
+              "properties": {
+                "expected_image_manifest_digest": {
+                  "maxLength": 71,
+                  "minLength": 1,
+                  "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "expected_manifest_digest": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "expected_selected_platform_entry_digest": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "expected_service_descriptor_digest": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "expected_service_identity": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])",
+                  "type": "string"
+                },
+                "failure_class": {
+                  "enum": [
+                    "observation_unavailable",
+                    "deadline_exceeded",
+                    "operator_interrupted",
+                    "internal_error"
+                  ],
+                  "type": "string"
+                },
+                "observed_at": {
+                  "format": "date-time",
+                  "maxLength": 24,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+                  "type": "string"
+                },
+                "presence": {
+                  "const": "unknown",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "presence",
+                "expected_service_identity",
+                "expected_manifest_digest",
+                "expected_service_descriptor_digest",
+                "expected_selected_platform_entry_digest",
+                "expected_image_manifest_digest",
+                "failure_class",
+                "observed_at"
+              ],
+              "type": "object"
+            },
+            "old_service": {
+              "additionalProperties": false,
+              "properties": {
+                "presence": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "presence"
+              ],
+              "type": "object"
+            },
+            "preservation": {
+              "additionalProperties": false,
+              "properties": {
+                "failure_class": {
+                  "enum": [
+                    "observation_unavailable",
+                    "deadline_exceeded",
+                    "operator_interrupted",
+                    "internal_error"
+                  ],
+                  "type": "string"
+                },
+                "state": {
+                  "const": "unconfirmed",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "failure_class"
+              ],
+              "type": "object"
+            },
+            "preserved_inventory_sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "schema_id": {
+              "const": "deeptwin.provider-stage-result.v1",
+              "type": "string"
+            },
+            "source_context": {
+              "additionalProperties": false,
+              "properties": {
+                "context_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "epoch": {
+                  "const": 1,
+                  "type": "integer"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 16384,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "context_id",
+                "epoch",
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "stage_profile": {
+              "const": "claude-text-transform-v1",
+              "type": "string"
+            }
+          },
+          "required": [
+            "schema_id",
+            "extension_id",
+            "expected_installation_head",
+            "expected_next_installation_revision",
+            "old_service",
+            "new_service",
+            "stage_profile",
+            "source_context",
+            "geometry",
+            "preserved_inventory_sha256",
+            "preservation"
+          ],
+          "type": "object"
+        },
+        "failure_class": {
+          "enum": [
+            "operator_refused",
+            "precondition_failed",
+            "image_unavailable",
+            "effect_failed",
+            "observation_unavailable",
+            "deadline_exceeded",
+            "operator_interrupted",
+            "internal_error"
+          ],
+          "type": "string"
+        },
+        "instance_id": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{32})(?![\\s\\S])",
+          "type": "string"
+        },
+        "key_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "extension_stage",
+          "type": "string"
+        },
+        "operator_adapter": {
+          "const": "deeptwin-provider-stage-operator-v1",
+          "type": "string"
+        },
+        "operator_version": {
+          "const": "1.0.0",
+          "type": "string"
+        },
+        "origin_profile_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "outcome": {
+          "const": "failed",
+          "type": "string"
+        },
+        "request_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_nonce": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "schema": {
+          "const": "deployment-provider-receipt-v1",
+          "type": "string"
+        },
+        "signature": {
+          "maxLength": 86,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{85}[AQgw])(?![\\s\\S])",
+          "type": "string"
+        },
+        "started_at": {
+          "format": "date-time",
+          "maxLength": 24,
+          "minLength": 1,
+          "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+          "type": "string"
+        },
+        "trust_class": {
+          "const": "instance_operator",
+          "type": "string"
+        },
+        "trust_set_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "unverified_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "verified_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schema",
+        "domain",
+        "request_id",
+        "request_digest",
+        "request_nonce",
+        "kind",
+        "instance_id",
+        "origin_profile_digest",
+        "deployment_profile_id",
+        "operator_adapter",
+        "operator_version",
+        "effect_result",
+        "started_at",
+        "completed_at",
+        "outcome",
+        "failure_class",
+        "claimed_facts",
+        "verified_facts",
+        "unverified_facts",
+        "key_id",
+        "trust_set_digest",
+        "trust_class",
+        "signature"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "claimed_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "completed_at": {
+          "format": "date-time",
+          "maxLength": 24,
+          "minLength": 1,
+          "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+          "type": "string"
+        },
+        "deployment_profile_id": {
+          "enum": [
+            "local-no-terminal-v1",
+            "portable-compose-v1"
+          ],
+          "type": "string"
+        },
+        "domain": {
+          "const": "deeptwin-deployment-provider-receipt-v1",
+          "type": "string"
+        },
+        "effect_result": {
+          "additionalProperties": false,
+          "properties": {
+            "expected_installation_head": {
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "type": "object"
+            },
+            "expected_next_installation_revision": {
+              "const": 1,
+              "type": "integer"
+            },
+            "extension_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])",
+              "type": "string"
+            },
+            "geometry": {
+              "additionalProperties": false,
+              "properties": {
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 65536,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "new_service": {
+              "additionalProperties": false,
+              "properties": {
+                "expected_image_manifest_digest": {
+                  "maxLength": 71,
+                  "minLength": 1,
+                  "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "expected_manifest_digest": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "expected_selected_platform_entry_digest": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "expected_service_descriptor_digest": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "expected_service_identity": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])",
+                  "type": "string"
+                },
+                "failure_class": {
+                  "enum": [
+                    "observation_unavailable",
+                    "deadline_exceeded",
+                    "operator_interrupted",
+                    "internal_error"
+                  ],
+                  "type": "string"
+                },
+                "observed_at": {
+                  "format": "date-time",
+                  "maxLength": 24,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+                  "type": "string"
+                },
+                "presence": {
+                  "const": "unknown",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "presence",
+                "expected_service_identity",
+                "expected_manifest_digest",
+                "expected_service_descriptor_digest",
+                "expected_selected_platform_entry_digest",
+                "expected_image_manifest_digest",
+                "failure_class",
+                "observed_at"
+              ],
+              "type": "object"
+            },
+            "old_service": {
+              "additionalProperties": false,
+              "properties": {
+                "presence": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "presence"
+              ],
+              "type": "object"
+            },
+            "preservation": {
+              "additionalProperties": false,
+              "properties": {
+                "observations": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "after": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "configured_gid": {
+                            "maximum": 4294967295,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "configured_uid": {
+                            "maximum": 4294967295,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "container_id": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "engine_id": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^(?:[A-Za-z0-9:._-]{1,128})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "image_config_digest": {
+                            "maxLength": 71,
+                            "minLength": 1,
+                            "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "init_pid": {
+                            "maximum": 2147483647,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "observed_at": {
+                            "format": "date-time",
+                            "maxLength": 24,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "restart_count": {
+                            "maximum": 2147483647,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "socket_path": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "pattern": "^(?:/run/deeptwin/ipc/xs(?:0[1-9]|1[0-6]))(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "socket_read_only": {
+                            "const": false,
+                            "type": "boolean"
+                          },
+                          "socket_volume": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "pattern": "^(?:dt-[0-9a-f]{32}-ipc-xs(?:0[1-9]|1[0-6]))(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "started_at": {
+                            "format": "date-time",
+                            "maxLength": 30,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{9}Z)(?![\\s\\S])",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "observed_at",
+                          "engine_id",
+                          "container_id",
+                          "image_config_digest",
+                          "started_at",
+                          "restart_count",
+                          "init_pid",
+                          "configured_uid",
+                          "configured_gid",
+                          "socket_volume",
+                          "socket_path",
+                          "socket_read_only"
+                        ],
+                        "type": "object"
+                      },
+                      "before": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "configured_gid": {
+                            "maximum": 4294967295,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "configured_uid": {
+                            "maximum": 4294967295,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "container_id": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "engine_id": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^(?:[A-Za-z0-9:._-]{1,128})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "image_config_digest": {
+                            "maxLength": 71,
+                            "minLength": 1,
+                            "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "init_pid": {
+                            "maximum": 2147483647,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "observed_at": {
+                            "format": "date-time",
+                            "maxLength": 24,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "restart_count": {
+                            "maximum": 2147483647,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "socket_path": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "pattern": "^(?:/run/deeptwin/ipc/xs(?:0[1-9]|1[0-6]))(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "socket_read_only": {
+                            "const": false,
+                            "type": "boolean"
+                          },
+                          "socket_volume": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "pattern": "^(?:dt-[0-9a-f]{32}-ipc-xs(?:0[1-9]|1[0-6]))(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "started_at": {
+                            "format": "date-time",
+                            "maxLength": 30,
+                            "minLength": 1,
+                            "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{9}Z)(?![\\s\\S])",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "observed_at",
+                          "engine_id",
+                          "container_id",
+                          "image_config_digest",
+                          "started_at",
+                          "restart_count",
+                          "init_pid",
+                          "configured_uid",
+                          "configured_gid",
+                          "socket_volume",
+                          "socket_path",
+                          "socket_read_only"
+                        ],
+                        "type": "object"
+                      },
+                      "service_identity": {
+                        "maxLength": 64,
+                        "minLength": 1,
+                        "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])",
+                        "type": "string"
+                      },
+                      "slot_id": {
+                        "maximum": 16,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "slot_id",
+                      "service_identity",
+                      "before",
+                      "after"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 1,
+                  "minItems": 0,
+                  "type": "array",
+                  "uniqueItems": false
+                },
+                "state": {
+                  "const": "preserved",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "observations"
+              ],
+              "type": "object"
+            },
+            "preserved_inventory_sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "schema_id": {
+              "const": "deeptwin.provider-stage-result.v1",
+              "type": "string"
+            },
+            "source_context": {
+              "additionalProperties": false,
+              "properties": {
+                "context_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "epoch": {
+                  "const": 1,
+                  "type": "integer"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 16384,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "context_id",
+                "epoch",
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "stage_profile": {
+              "const": "claude-text-transform-v1",
+              "type": "string"
+            }
+          },
+          "required": [
+            "schema_id",
+            "extension_id",
+            "expected_installation_head",
+            "expected_next_installation_revision",
+            "old_service",
+            "new_service",
+            "stage_profile",
+            "source_context",
+            "geometry",
+            "preserved_inventory_sha256",
+            "preservation"
+          ],
+          "type": "object"
+        },
+        "failure_class": {
+          "enum": [
+            "observation_unavailable",
+            "deadline_exceeded",
+            "operator_interrupted",
+            "internal_error"
+          ],
+          "type": "string"
+        },
+        "instance_id": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{32})(?![\\s\\S])",
+          "type": "string"
+        },
+        "key_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "extension_stage",
+          "type": "string"
+        },
+        "operator_adapter": {
+          "const": "deeptwin-provider-stage-operator-v1",
+          "type": "string"
+        },
+        "operator_version": {
+          "const": "1.0.0",
+          "type": "string"
+        },
+        "origin_profile_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "outcome": {
+          "const": "unknown",
+          "type": "string"
+        },
+        "request_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_nonce": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "schema": {
+          "const": "deployment-provider-receipt-v1",
+          "type": "string"
+        },
+        "signature": {
+          "maxLength": 86,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{85}[AQgw])(?![\\s\\S])",
+          "type": "string"
+        },
+        "started_at": {
+          "format": "date-time",
+          "maxLength": 24,
+          "minLength": 1,
+          "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+          "type": "string"
+        },
+        "trust_class": {
+          "const": "instance_operator",
+          "type": "string"
+        },
+        "trust_set_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "unverified_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "verified_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schema",
+        "domain",
+        "request_id",
+        "request_digest",
+        "request_nonce",
+        "kind",
+        "instance_id",
+        "origin_profile_digest",
+        "deployment_profile_id",
+        "operator_adapter",
+        "operator_version",
+        "effect_result",
+        "started_at",
+        "completed_at",
+        "outcome",
+        "failure_class",
+        "claimed_facts",
+        "verified_facts",
+        "unverified_facts",
+        "key_id",
+        "trust_set_digest",
+        "trust_class",
+        "signature"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "claimed_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "completed_at": {
+          "format": "date-time",
+          "maxLength": 24,
+          "minLength": 1,
+          "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+          "type": "string"
+        },
+        "deployment_profile_id": {
+          "enum": [
+            "local-no-terminal-v1",
+            "portable-compose-v1"
+          ],
+          "type": "string"
+        },
+        "domain": {
+          "const": "deeptwin-deployment-provider-receipt-v1",
+          "type": "string"
+        },
+        "effect_result": {
+          "additionalProperties": false,
+          "properties": {
+            "expected_installation_head": {
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "type": "object"
+            },
+            "expected_next_installation_revision": {
+              "const": 1,
+              "type": "integer"
+            },
+            "extension_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])",
+              "type": "string"
+            },
+            "geometry": {
+              "additionalProperties": false,
+              "properties": {
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 65536,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "new_service": {
+              "additionalProperties": false,
+              "properties": {
+                "expected_image_manifest_digest": {
+                  "maxLength": 71,
+                  "minLength": 1,
+                  "pattern": "^(?:sha256:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "expected_manifest_digest": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "expected_selected_platform_entry_digest": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "expected_service_descriptor_digest": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "expected_service_identity": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*)(?![\\s\\S])",
+                  "type": "string"
+                },
+                "failure_class": {
+                  "enum": [
+                    "observation_unavailable",
+                    "deadline_exceeded",
+                    "operator_interrupted",
+                    "internal_error"
+                  ],
+                  "type": "string"
+                },
+                "observed_at": {
+                  "format": "date-time",
+                  "maxLength": 24,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+                  "type": "string"
+                },
+                "presence": {
+                  "const": "unknown",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "presence",
+                "expected_service_identity",
+                "expected_manifest_digest",
+                "expected_service_descriptor_digest",
+                "expected_selected_platform_entry_digest",
+                "expected_image_manifest_digest",
+                "failure_class",
+                "observed_at"
+              ],
+              "type": "object"
+            },
+            "old_service": {
+              "additionalProperties": false,
+              "properties": {
+                "presence": {
+                  "const": "absent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "presence"
+              ],
+              "type": "object"
+            },
+            "preservation": {
+              "additionalProperties": false,
+              "properties": {
+                "failure_class": {
+                  "enum": [
+                    "observation_unavailable",
+                    "deadline_exceeded",
+                    "operator_interrupted",
+                    "internal_error"
+                  ],
+                  "type": "string"
+                },
+                "state": {
+                  "const": "unconfirmed",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "failure_class"
+              ],
+              "type": "object"
+            },
+            "preserved_inventory_sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "schema_id": {
+              "const": "deeptwin.provider-stage-result.v1",
+              "type": "string"
+            },
+            "source_context": {
+              "additionalProperties": false,
+              "properties": {
+                "context_id": {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "not": {
+                    "const": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "epoch": {
+                  "const": 1,
+                  "type": "integer"
+                },
+                "sha256": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "maximum": 16384,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "context_id",
+                "epoch",
+                "sha256",
+                "size_bytes"
+              ],
+              "type": "object"
+            },
+            "stage_profile": {
+              "const": "claude-text-transform-v1",
+              "type": "string"
+            }
+          },
+          "required": [
+            "schema_id",
+            "extension_id",
+            "expected_installation_head",
+            "expected_next_installation_revision",
+            "old_service",
+            "new_service",
+            "stage_profile",
+            "source_context",
+            "geometry",
+            "preserved_inventory_sha256",
+            "preservation"
+          ],
+          "type": "object"
+        },
+        "failure_class": {
+          "enum": [
+            "observation_unavailable",
+            "deadline_exceeded",
+            "operator_interrupted",
+            "internal_error"
+          ],
+          "type": "string"
+        },
+        "instance_id": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{32})(?![\\s\\S])",
+          "type": "string"
+        },
+        "key_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "extension_stage",
+          "type": "string"
+        },
+        "operator_adapter": {
+          "const": "deeptwin-provider-stage-operator-v1",
+          "type": "string"
+        },
+        "operator_version": {
+          "const": "1.0.0",
+          "type": "string"
+        },
+        "origin_profile_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "outcome": {
+          "const": "unknown",
+          "type": "string"
+        },
+        "request_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_nonce": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "schema": {
+          "const": "deployment-provider-receipt-v1",
+          "type": "string"
+        },
+        "signature": {
+          "maxLength": 86,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{85}[AQgw])(?![\\s\\S])",
+          "type": "string"
+        },
+        "started_at": {
+          "format": "date-time",
+          "maxLength": 24,
+          "minLength": 1,
+          "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+          "type": "string"
+        },
+        "trust_class": {
+          "const": "instance_operator",
+          "type": "string"
+        },
+        "trust_set_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "unverified_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "verified_facts": {
+          "items": {
+            "enum": [
+              "request_binding",
+              "image_identity",
+              "mount_configuration",
+              "service_presence",
+              "service_reachability",
+              "network_configuration",
+              "resource_configuration",
+              "operator_preconditions"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schema",
+        "domain",
+        "request_id",
+        "request_digest",
+        "request_nonce",
+        "kind",
+        "instance_id",
+        "origin_profile_digest",
+        "deployment_profile_id",
+        "operator_adapter",
+        "operator_version",
+        "effect_result",
+        "started_at",
+        "completed_at",
+        "outcome",
+        "failure_class",
+        "claimed_facts",
+        "verified_facts",
+        "unverified_facts",
+        "key_id",
+        "trust_set_digest",
+        "trust_class",
+        "signature"
+      ],
+      "type": "object"
+    }
+  ]
+}

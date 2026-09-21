@@ -108,20 +108,27 @@ def validate_receipt_body(body):
     from .store import BlobRef
 
     try:
+        provider = isinstance(body["content"], dict) and body["content"].get("schema_version") == "deployment-provider-receipt-anchor-v1"
+        schema = receipt_content_schema()
+        if provider:
+            from ..deployment.provider_receipt_schema_exports import provider_receipt_anchor_v1_schema
+            from ..deployment.provider_receipt_contracts import validate_provider_channel_identity
+            schema = provider_receipt_anchor_v1_schema()
+            validate_provider_channel_identity(body["content"]["channel_identity"])
         if len(canonical_json(body)) > 8192 or not _valid_schema(
-            body["content"], receipt_content_schema()
+            body["content"], schema
         ):
             raise ValueError
         content = body["content"]
         request = EntityRef.from_dict(content["request_ref"])
         blobs = [
             BlobRef.from_dict(content[name])
-            for name in (
+            for name in (("receipt_blob_ref",) if provider else (
                 "receipt_blob_ref",
                 "trust_blob_ref",
                 "ingress_blob_ref",
                 "consumption_exchange_blob_ref",
-            )
+            ))
         ]
         uuid_string(content["import_command_id"])
         if (

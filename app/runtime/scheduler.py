@@ -526,6 +526,7 @@ def build_scheduler(
             "an exact NodeAttemptDispatcher is required",
         )
         _require(attempts.ledger is ledger, "attempt dispatcher must share the run ledger")
+        attempts.require_compiled_context(compiled)
         for node_id in sorted(attempts.node_ids):
             _require(
                 kinds.get(node_id) == "agent",
@@ -676,6 +677,7 @@ def build_scheduler(
                 visit_attempt = attempts.for_visit(
                     run_id=run_id, node_id=node_id, execution_id=execution_id,
                     loop_index=loop_index,
+                    compiled=compiled,
                 )
                 context = replace(context, attempt=visit_attempt)
             try:

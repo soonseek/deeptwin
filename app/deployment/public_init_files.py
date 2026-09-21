@@ -37,9 +37,14 @@ class _PublicInputFile(f.RetainedHandle):
             result._closed = False
             result._bytes = result._read_current()
             return result
-        except (OSError, c.DeploymentSourceError):
-            f.close_fd(fd)
-            raise c.DeploymentSourceError() from None
+        except BaseException as error:
+            try:
+                f.close_fd(fd)
+            except BaseException:  # noqa: BLE001, S110 - preserve the active primary
+                pass
+            if isinstance(error, (OSError, c.DeploymentSourceError)):
+                raise c.DeploymentSourceError() from None
+            raise
 
     def _read_current(self):
         self._directory.recheck_current()
@@ -121,12 +126,15 @@ class _ReleaseInput(f.RetainedHandle):
             result._closed = False
             result._bytes = result.read_current()
             return result
-        except (OSError, c.DeploymentSourceError):
-            if source is not None:
-                source.close()
-            for handle in handles:
-                handle.close()
-            raise c.DeploymentSourceError() from None
+        except BaseException as error:
+            for handle in ([source] if source is not None else []) + handles:
+                try:
+                    handle.close()
+                except BaseException:  # noqa: BLE001, S110 - attempt remaining closes
+                    pass
+            if isinstance(error, (OSError, c.DeploymentSourceError)):
+                raise c.DeploymentSourceError() from None
+            raise
 
     @property
     def identity(self):
@@ -147,9 +155,15 @@ class _ReleaseInput(f.RetainedHandle):
     def close(self):
         if not self._closed:
             self._closed = True
-            self._source.close()
-            for handle in self._ancestors:
-                handle.close()
+            failure = None
+            for handle in (self._source, *self._ancestors):
+                try:
+                    handle.close()
+                except BaseException as error:  # noqa: BLE001 - rethrow after all closes
+                    if failure is None:
+                        failure = error
+            if failure is not None:
+                raise failure
 
 
 class _RetainedTargetFile(f.RetainedHandle):
@@ -335,7 +349,13 @@ def _install_namespaces_impl(directory, *, names, uid, gid, retain):
                 if retain:
                     retained.append(_take_directory(directory, name, fd, uid, gid))
                     fd = -1
-            finally:
+            except BaseException:
+                try:
+                    f.close_fd(fd)
+                except BaseException:  # noqa: BLE001, S110 - preserve the active primary
+                    pass
+                raise
+            else:
                 f.close_fd(fd)
             os.fsync(directory.fd)
         # Child metadata is durable before the writer/control owns the volume root.
@@ -345,7 +365,10 @@ def _install_namespaces_impl(directory, *, names, uid, gid, retain):
         return tuple(retained)
     except BaseException:
         for handle in retained:
-            handle.close()
+            try:
+                handle.close()
+            except BaseException:  # noqa: BLE001, S110 - attempt remaining closes
+                pass
         raise
 
 

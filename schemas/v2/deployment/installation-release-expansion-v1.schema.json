@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:deeptwin:schemas:v2:deployment:installation-release-expansion-v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "installation-release-expansion-v1",
+      "type": "string"
+    },
+    "recipe_id": {
+      "const": "installation-release-source-recipe-v1",
+      "type": "string"
+    },
+    "original_expansion": {
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[0-9a-f]{64})$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        }
+      },
+      "required": [
+        "sha256",
+        "size_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "release_context": {
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[0-9a-f]{64})$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8192
+        }
+      },
+      "required": [
+        "sha256",
+        "size_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "release_trust": {
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[0-9a-f]{64})$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384
+        }
+      },
+      "required": [
+        "sha256",
+        "size_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "expanded_compose": {
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[0-9a-f]{64})$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        }
+      },
+      "required": [
+        "sha256",
+        "size_bytes"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "recipe_id",
+    "original_expansion",
+    "release_context",
+    "release_trust",
+    "expanded_compose"
+  ],
+  "additionalProperties": false
+}

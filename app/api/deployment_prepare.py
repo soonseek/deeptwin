@@ -16,12 +16,18 @@ from ..deployment.prepare_contracts import (
 from ..deployment.prepare_service import PersistentDeploymentPrepare
 from ..deployment.prepare_v2_contracts import parse_cancel_v2, parse_receipt_import
 from ..deployment.prepare_v3_contracts import parse_consume
+from ..deployment.provider_sources import (
+    PROVIDER_CONTEXT_STARTUP_KEY,
+    open_provider_source_context,
+)
 from ..deployment.receipt_sources import (
     open_consumption_exchange_source,
     open_public_trust_source,
     open_receipt_ingress_source,
 )
 from ..deployment.sources import open_exchange_source, open_topology_source
+from ..deployment.installation_release_contracts import STARTUP_KEY as RELEASE_CONTEXT_STARTUP_KEY
+from ..deployment.installation_release_sources import open_installation_release_sources
 from ..domain.refs import canonical_json, uuid_string
 from .first_party import ContributionServices
 from .wire import WireInputError, WireLimits, parse_json_object, parse_query
@@ -37,6 +43,8 @@ STARTUP_KEYS = (
     "DEEPTWIN_DEPLOYMENT_TRUST_SHA256",
     "DEEPTWIN_RECEIPT_INGRESS_SHA256",
     "DEEPTWIN_CONSUMPTION_EXCHANGE_SHA256",
+    PROVIDER_CONTEXT_STARTUP_KEY,
+    RELEASE_CONTEXT_STARTUP_KEY,
 )
 
 
@@ -122,6 +130,27 @@ def prepare_services(context, *, dependencies):
                 _own_source(stack, resources, consumption)
             except DeploymentSourceError:
                 pass
+        provider_context = None
+        try:
+            provider_context = open_provider_source_context(
+                profile=context.owner_authority.profile,
+                context_sha256=hex_digest(values.get(PROVIDER_CONTEXT_STARTUP_KEY)),
+                protected_roots=context.startup_inputs.protected_roots,
+            )
+            _own_source(stack, resources, provider_context)
+        except DeploymentSourceError:
+            pass
+        release_context = None
+        try:
+            release_context = open_installation_release_sources(
+                profile=context.owner_authority.profile,
+                context_sha256=hex_digest(values.get(RELEASE_CONTEXT_STARTUP_KEY)),
+                provider_source_context=provider_context,
+                protected_roots=context.startup_inputs.protected_roots,
+            )
+            _own_source(stack, resources, release_context)
+        except DeploymentSourceError:
+            pass
         service = PersistentDeploymentPrepare(
             context.domain_store,
             context.owner_authority,
@@ -131,10 +160,15 @@ def prepare_services(context, *, dependencies):
             public_trust_source=trust,
             receipt_ingress_source=ingress,
             consumption_exchange_source=consumption,
+            provider_source_context=provider_context,
         )
         result = ContributionServices(
             create_router(service=service, base_path=context.base_path),
-            {"deployment-prepare.service": service},
+            {
+                "deployment-prepare.service": service,
+                "deployment-provider.source-context": provider_context,
+                "installation-release.source-context": release_context,
+            },
             owned_resources=tuple(resources),
         )
         stack.pop_all()
@@ -302,4 +336,6 @@ def create_router(*, service, base_path):
         except DeploymentPrepareError as error:
             return deployment_error(error)
 
+    from .provider_deployment_prepare import create_router as provider_router
+    router.include_router(provider_router(service=service, base_path=base_path))
     return router

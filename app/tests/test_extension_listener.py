@@ -21,12 +21,14 @@ fence logic, never positive Linux authentication.
 
 import copy
 import dataclasses
+import json
 import os
 import pickle
 import socket
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 from uuid import uuid4
 
@@ -178,6 +180,199 @@ def connect(root, spec, *, requester="control-boot-" + "c" * 20):
     return listener._connect_extension_authenticated(
         root, spec, requester_boot_id=requester, deadline=deadline()
     )
+
+
+def test_read_and_read_duplex_exclude_competing_reader_without_consuming(
+    channel, monkeypatch
+):
+    """A competing reader is refused while the valid owner keeps its frame."""
+
+    root, spec = channel
+    side = seams(monkeypatch, root, spec)
+    worker = listener.bind_worker_listener(
+        root, spec, responder_boot_id="ext-boot-" + "w" * 24
+    )
+    box = {}
+    accept = accept_in_thread(worker, box, side)
+    client = connect(root, spec)
+    accept.join(5)
+    server = box["connection"]
+    entered = threading.Event()
+    received = {}
+    original_read = broker.FrameCodec.read
+
+    def observed_read(codec, sock, *, deadline):
+        if codec is server._codec:
+            entered.set()
+        return original_read(codec, sock, deadline=deadline)
+
+    monkeypatch.setattr(broker.FrameCodec, "read", observed_read)
+
+    def ordinary_reader():
+        try:
+            received["frame"] = server.read(deadline=deadline())
+        except BaseException as error:  # noqa: BLE001 - surfaced below
+            received["error"] = error
+
+    reader = threading.Thread(target=ordinary_reader, daemon=False)
+    reader.start()
+    assert entered.wait(1)
+    try:
+        with pytest.raises(broker.ProtocolViolation):
+            server.read_duplex(deadline=deadline())
+        assert not server.closed
+        client.write(
+            message_id=str(uuid4()),
+            correlation_id=None,
+            message_type="extension-request-v1",
+            payload=b"owned-by-first-reader",
+            deadline=deadline(),
+        )
+        reader.join(3)
+        assert not reader.is_alive()
+        assert "error" not in received
+        assert received["frame"].payload == b"owned-by-first-reader"
+    finally:
+        server.close()
+        client.close()
+        worker.close()
+
+
+def test_read_duplex_authenticates_partial_prefix_and_body(channel, monkeypatch):
+    """Partial socket delivery still authenticates through FrameCodec.decode."""
+
+    root, spec = channel
+    side = seams(monkeypatch, root, spec)
+    worker = listener.bind_worker_listener(
+        root, spec, responder_boot_id="ext-boot-" + "w" * 24
+    )
+    box = {}
+    accept = accept_in_thread(worker, box, side)
+    client = connect(root, spec)
+    accept.join(5)
+    server = box["connection"]
+    raw = client._codec.encode(
+        message_id=str(uuid4()),
+        correlation_id=None,
+        message_type="extension-request-v1",
+        payload=b"partial-authenticated-body",
+    )
+    wire = len(raw).to_bytes(4, "big") + raw
+    prefix_sent = threading.Event()
+    body_started = threading.Event()
+    release = threading.Event()
+
+    def send_partial():
+        client._socket.sendall(wire[:2])
+        prefix_sent.set()
+        assert release.wait(2)
+        client._socket.sendall(wire[2:9])
+        body_started.set()
+        client._socket.sendall(wire[9:])
+
+    sender = threading.Thread(target=send_partial, daemon=False)
+    sender.start()
+    assert prefix_sent.wait(1)
+    release.set()
+    side["worker_ident"] = threading.get_ident()
+    frame = server.read_duplex(deadline=deadline())
+    sender.join(2)
+    try:
+        assert body_started.is_set()
+        assert not sender.is_alive()
+        assert frame.payload == b"partial-authenticated-body"
+    finally:
+        server.close()
+        client.close()
+        worker.close()
+
+
+def test_read_duplex_discards_frame_when_post_read_fence_drifts(channel, monkeypatch):
+    """A valid frame cannot publish after the owner's final fence fails."""
+
+    root, spec = channel
+    side = seams(monkeypatch, root, spec)
+    worker = listener.bind_worker_listener(
+        root, spec, responder_boot_id="ext-boot-" + "w" * 24
+    )
+    box = {}
+    accept = accept_in_thread(worker, box, side)
+    client = connect(root, spec)
+    accept.join(5)
+    server = box["connection"]
+    calls = []
+
+    def drift_after_read():
+        calls.append(True)
+        return mountinfo(root.pair_root, read_only=len(calls) == 2)
+
+    monkeypatch.setattr(listener, "_read_mountinfo", drift_after_read)
+    client.write(
+        message_id=str(uuid4()),
+        correlation_id=None,
+        message_type="extension-request-v1",
+        payload=b"must-not-publish",
+        deadline=deadline(),
+    )
+    side["worker_ident"] = threading.get_ident()
+    try:
+        with pytest.raises(listener.ListenerIntegrityError):
+            server.read_duplex(deadline=deadline())
+        assert server.closed
+        assert len(calls) == 2
+    finally:
+        server.close()
+        client.close()
+        worker.close()
+
+
+@pytest.mark.parametrize("failure", ["bad_mac", "wrong_sequence", "oversize"])
+def test_read_duplex_rejects_invalid_authenticated_or_oversize_frame(
+    channel, monkeypatch, failure
+):
+    """Real decode rejects MAC/sequence; cap rejects before body allocation."""
+
+    root, spec = channel
+    side = seams(monkeypatch, root, spec)
+    worker = listener.bind_worker_listener(
+        root, spec, responder_boot_id="ext-boot-" + "w" * 24
+    )
+    box = {}
+    accept = accept_in_thread(worker, box, side)
+    client = connect(root, spec)
+    accept.join(5)
+    server = box["connection"]
+    if failure == "oversize":
+        wire = (spec.max_frame_bytes + 1).to_bytes(4, "big")
+    else:
+        if failure == "wrong_sequence":
+            client._codec.encode(
+                message_id=str(uuid4()),
+                correlation_id=None,
+                message_type="extension-request-v1",
+                payload=b"discarded-sequence-one",
+            )
+        raw = client._codec.encode(
+            message_id=str(uuid4()),
+            correlation_id=None,
+            message_type="extension-request-v1",
+            payload=b"authenticated-negative",
+        )
+        if failure == "bad_mac":
+            value = json.loads(raw)
+            value["mac"] = "0" * 64
+            raw = broker._canonical_json(value)
+        wire = len(raw).to_bytes(4, "big") + raw
+    client._socket.sendall(wire)
+    side["worker_ident"] = threading.get_ident()
+    try:
+        with pytest.raises(broker.BrokerError):
+            server.read_duplex(deadline=deadline())
+        assert server.closed
+    finally:
+        server.close()
+        client.close()
+        worker.close()
 
 
 def test_accept_and_connect_yield_owning_connections_with_every_fence(
@@ -485,6 +680,390 @@ def test_a_failed_handshake_unwinds_socket_fence_and_generation(channel, monkeyp
     assert isinstance(box.get("error"), broker.BrokerError)
     assert open_fds() == baseline
     ipc_root.initialize_pair_root(root, entropy=lambda size: b"b" * size)
+
+
+def test_accept_pre_codec_failure_preserves_primary_when_earlier_close_fails(
+    channel, monkeypatch
+):
+    """A pre-codec primary survives fence-close failure and releases all owners."""
+
+    root, spec = channel
+    side = seams(monkeypatch, root, spec)
+    baseline = open_fds()
+    worker = listener.bind_worker_listener(
+        root, spec, responder_boot_id="ext-boot-" + "w" * 24
+    )
+    primary = RuntimeError("pre-codec handshake primary")
+    captured = {}
+    original_retain = ipc_root._retain_populated_generation
+    original_fence_close = ipc_root.PopulatedGenerationFence.close
+
+    def capture_fence(*args, **kwargs):
+        fence = original_retain(*args, **kwargs)
+        captured["fence"] = fence
+        captured["generation"] = args[1]
+        return fence
+
+    def fail_handshake(connection, *_args, **_kwargs):
+        captured["connection"] = connection
+        raise primary
+
+    def fail_captured_fence_close(fence):
+        if fence is captured.get("fence"):
+            captured["fence_close_attempted"] = True
+            original_fence_close(fence)
+            raise OSError("injected earlier-resource cleanup failure")
+        return original_fence_close(fence)
+
+    monkeypatch.setattr(ipc_root, "_retain_populated_generation", capture_fence)
+    monkeypatch.setattr(broker, "_extension_server_handshake", fail_handshake)
+    monkeypatch.setattr(
+        ipc_root.PopulatedGenerationFence, "close", fail_captured_fence_close
+    )
+    box = {}
+    accept = accept_in_thread(worker, box, side)
+    raw = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        raw.connect(listener._anchored_socket_path(-1, root, spec.socket_name))
+        accept.join(5)
+        assert not accept.is_alive()
+        assert box.get("error") is primary
+        assert captured["fence_close_attempted"]
+        assert captured["connection"].fileno() == -1
+        assert captured["fence"].closed
+        assert captured["generation"].closed
+    finally:
+        raw.close()
+        worker.close()
+    assert open_fds() == baseline
+
+
+def test_accept_owner_construction_failure_attempts_every_acquired_resource(
+    channel, monkeypatch
+):
+    """Codec-close failure cannot mask the construction primary or skip owners."""
+
+    root, spec = channel
+    side = seams(monkeypatch, root, spec)
+    baseline = open_fds()
+    worker = listener.bind_worker_listener(
+        root, spec, responder_boot_id="ext-boot-" + "w" * 24
+    )
+    primary = RuntimeError("owner construction primary")
+    captured = {}
+    original_construct = listener._extension_connection
+    original_codec_close = broker.FrameCodec.close
+
+    def fail_worker_owner(**values):
+        if values["read_only"] is False:
+            captured.update(values)
+            raise primary
+        return original_construct(**values)
+
+    def fail_captured_codec_close(codec):
+        if codec is captured.get("codec"):
+            captured["codec_close_attempted"] = True
+            raise OSError("earlier cleanup failure")
+        return original_codec_close(codec)
+
+    monkeypatch.setattr(listener, "_extension_connection", fail_worker_owner)
+    monkeypatch.setattr(broker.FrameCodec, "close", fail_captured_codec_close)
+    box = {}
+    accept = accept_in_thread(worker, box, side)
+    client = connect(root, spec)
+    accept.join(5)
+    try:
+        assert not accept.is_alive()
+        assert box.get("error") is primary
+        assert captured["codec_close_attempted"]
+        assert captured["connection"].fileno() == -1
+        assert captured["fence"].closed
+        assert captured["generation"].closed
+    finally:
+        client.close()
+        worker.close()
+    assert open_fds() == baseline
+
+
+def test_generation_rotation_waits_for_listener_and_both_connection_owners(
+    channel, monkeypatch
+):
+    """Every retained holder blocks replacement until all owners release."""
+
+    root, spec = channel
+    side = seams(monkeypatch, root, spec)
+    worker = listener.bind_worker_listener(
+        root, spec, responder_boot_id="ext-boot-" + "w" * 24
+    )
+    box = {}
+    accept = accept_in_thread(worker, box, side)
+    client = connect(root, spec)
+    accept.join(5)
+    server = box["connection"]
+    try:
+        with pytest.raises(ipc_root.IpcRootBusy):
+            ipc_root.initialize_pair_root(root, entropy=lambda size: b"b" * size)
+        client.close()
+        with pytest.raises(ipc_root.IpcRootBusy):
+            ipc_root.initialize_pair_root(root, entropy=lambda size: b"b" * size)
+        server.close()
+        with pytest.raises(ipc_root.IpcRootBusy):
+            ipc_root.initialize_pair_root(root, entropy=lambda size: b"b" * size)
+    finally:
+        client.close()
+        server.close()
+        worker.close()
+    replacement = ipc_root.initialize_pair_root(
+        root, entropy=lambda size: b"b" * size
+    )
+    assert replacement.generation_id != box["connection"].record.generation_id
+    with pytest.raises(broker.TransportClosed):
+        client.write(
+            message_id=str(uuid4()),
+            correlation_id=None,
+            message_type="extension-request-v1",
+            payload=b"stale",
+            deadline=deadline(),
+        )
+
+
+def test_close_interrupts_ordinary_read_and_thread_really_exits(channel, monkeypatch):
+    """Shutdown precedes codec close, waking an ordinary read holding its lock."""
+
+    root, spec = channel
+    side = seams(monkeypatch, root, spec)
+    worker = listener.bind_worker_listener(
+        root, spec, responder_boot_id="ext-boot-" + "w" * 24
+    )
+    box = {}
+    accept = accept_in_thread(worker, box, side)
+    client = connect(root, spec)
+    accept.join(5)
+    server = box["connection"]
+    entered = threading.Event()
+    errors = []
+    original_read = broker.FrameCodec.read
+
+    def observed_read(codec, sock, *, deadline):
+        if codec is server._codec:
+            entered.set()
+        return original_read(codec, sock, deadline=deadline)
+
+    monkeypatch.setattr(broker.FrameCodec, "read", observed_read)
+
+    def read_blocked():
+        try:
+            server.read(deadline=broker.Deadline.after_ms(3000))
+        except BaseException as error:  # noqa: BLE001 - close must wake it
+            errors.append(error)
+
+    reader = threading.Thread(target=read_blocked, daemon=False)
+    reader.start()
+    assert entered.wait(1)
+    server.close()
+    reader.join(2)
+    try:
+        assert not reader.is_alive()
+        assert len(errors) == 1
+        assert isinstance(errors[0], broker.BrokerError)
+        assert server.closed
+    finally:
+        client.close()
+        worker.close()
+
+
+def test_close_interrupts_a_real_backpressured_write(channel, monkeypatch):
+    """A full real socket buffer cannot make owner close wait on codec forever."""
+
+    root, spec = channel
+    side = seams(monkeypatch, root, spec)
+    worker = listener.bind_worker_listener(
+        root, spec, responder_boot_id="ext-boot-" + "w" * 24
+    )
+    box = {}
+    accept = accept_in_thread(worker, box, side)
+    client = connect(root, spec)
+    accept.join(5)
+    server = box["connection"]
+    client._socket.setblocking(False)
+    try:
+        while True:
+            client._socket.send(b"x" * 16_384)
+    except BlockingIOError:
+        pass
+    finally:
+        client._socket.setblocking(True)
+    entered = threading.Event()
+    errors = []
+    original_send = broker._send_exact
+
+    def observed_send(sock, raw, deadline):
+        if sock is client._socket:
+            entered.set()
+        return original_send(sock, raw, deadline)
+
+    monkeypatch.setattr(broker, "_send_exact", observed_send)
+
+    def write_blocked():
+        try:
+            client.write(
+                message_id=str(uuid4()),
+                correlation_id=None,
+                message_type="extension-request-v1",
+                payload=b"backpressured",
+                deadline=broker.Deadline.after_ms(3000),
+            )
+        except BaseException as error:  # noqa: BLE001 - close must wake it
+            errors.append(error)
+
+    writer = threading.Thread(target=write_blocked, daemon=False)
+    writer.start()
+    assert entered.wait(1)
+    client.close()
+    writer.join(2)
+    try:
+        assert not writer.is_alive()
+        assert len(errors) == 1
+        assert isinstance(errors[0], broker.BrokerError)
+        assert client.closed
+    finally:
+        server.close()
+        worker.close()
+
+
+def test_shutdown_failure_still_attempts_every_detached_close(channel, monkeypatch):
+    """Unexpected shutdown failure is first, while all four owners are attempted."""
+
+    root, spec = channel
+    side = seams(monkeypatch, root, spec)
+    worker = listener.bind_worker_listener(
+        root, spec, responder_boot_id="ext-boot-" + "w" * 24
+    )
+    box = {}
+    accept = accept_in_thread(worker, box, side)
+    client = connect(root, spec)
+    accept.join(5)
+    server = box["connection"]
+    codec, fence, generation = server._codec, server._fence, server._generation
+    shutdown_error = OSError(5, "injected shutdown failure")
+
+    class FailedShutdownSocket:
+        def __init__(self, owned):
+            self.owned = owned
+            self.close_attempted = False
+
+        def shutdown(self, _how):
+            raise shutdown_error
+
+        def close(self):
+            self.close_attempted = True
+            self.owned.close()
+
+    wrapped = FailedShutdownSocket(server._socket)
+    server._socket = wrapped
+    try:
+        with pytest.raises(OSError) as caught:
+            server.close()
+        assert caught.value is shutdown_error
+        assert wrapped.close_attempted
+        assert codec.closed and fence.closed and generation.closed
+        assert server.closed
+    finally:
+        client.close()
+        worker.close()
+
+
+def test_failed_shutdown_waits_for_codec_locked_read_original_deadline(
+    channel, monkeypatch
+):
+    """Failed shutdown waits for ordinary codec-owned I/O, then closes all."""
+
+    root, spec = channel
+    side = seams(monkeypatch, root, spec)
+    worker = listener.bind_worker_listener(
+        root, spec, responder_boot_id="ext-boot-" + "w" * 24
+    )
+    box = {}
+    accept = accept_in_thread(worker, box, side)
+    client = connect(root, spec)
+    accept.join(5)
+    server = box["connection"]
+    raw_socket = server._socket
+    codec, fence, generation = server._codec, server._fence, server._generation
+    shutdown_error = OSError(5, "injected shutdown failure during blocked read")
+    original_shutdown = socket.socket.shutdown
+    read_entered = threading.Event()
+    shutdown_attempted = threading.Event()
+    close_done = threading.Event()
+    read_errors = []
+    close_errors = []
+    read_finished = []
+    close_finished = []
+    original_recv = socket.socket.recv
+
+    def observed_recv(sock, size, flags=0):
+        if sock is raw_socket:
+            read_entered.set()
+        return original_recv(sock, size, flags)
+
+    def failed_shutdown(sock, how):
+        if sock is raw_socket:
+            shutdown_attempted.set()
+            raise shutdown_error
+        return original_shutdown(sock, how)
+
+    monkeypatch.setattr(socket.socket, "recv", observed_recv)
+    monkeypatch.setattr(socket.socket, "shutdown", failed_shutdown)
+    original_deadline = broker.Deadline.after_ms(300)
+
+    def blocked_read():
+        try:
+            server.read(deadline=original_deadline)
+        except BaseException as error:  # noqa: BLE001 - exact bounded exit below
+            read_errors.append(error)
+        finally:
+            read_finished.append(time.monotonic())
+
+    def close_owner():
+        try:
+            server.close()
+        except BaseException as error:  # noqa: BLE001 - exact primary below
+            close_errors.append(error)
+        finally:
+            close_finished.append(time.monotonic())
+            close_done.set()
+
+    reader = threading.Thread(target=blocked_read, daemon=False)
+    reader.start()
+    assert read_entered.wait(1)
+    codec_lock_available = codec._lock.acquire(blocking=False)
+    if codec_lock_available:
+        codec._lock.release()
+    assert not codec_lock_available
+    closer = threading.Thread(target=close_owner, daemon=False)
+    closer.start()
+    assert shutdown_attempted.wait(1)
+    assert not close_done.is_set()
+    try:
+        reader.join(2)
+        closer.join(2)
+        assert not reader.is_alive() and not closer.is_alive()
+        assert close_errors == [shutdown_error]
+        assert len(read_errors) == 1
+        assert isinstance(read_errors[0], broker.BrokerError)
+        assert read_finished[0] >= original_deadline.end_monotonic - 0.05
+        assert close_finished[0] >= original_deadline.end_monotonic - 0.05
+        assert close_finished[0] <= original_deadline.end_monotonic + 1.0
+        assert codec.closed and fence.closed and generation.closed
+        assert raw_socket.fileno() == -1
+        assert server.closed
+        assert all(
+            getattr(server, name) is None
+            for name in ("_fence", "_codec", "_socket", "_generation")
+        )
+    finally:
+        client.close()
+        worker.close()
 
 
 def test_only_the_extension_profile_is_accepted_before_any_socket(channel, monkeypatch):

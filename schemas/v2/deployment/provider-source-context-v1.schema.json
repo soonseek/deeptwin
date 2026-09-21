@@ -1,0 +1,495 @@
+{
+  "$id": "urn:deeptwin:schemas:v2:deployment:provider-source-context-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "context_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "pattern": "^(?:(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$",
+      "type": "string"
+    },
+    "documents": {
+      "items": false,
+      "maxItems": 16,
+      "minItems": 16,
+      "prefixItems": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "original-prepare-recipe.json",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})$",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 4096,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "original-prepare-instance.json",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})$",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 4096,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "original-topology.json",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})$",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 65536,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "original-outgoing-exchange.json",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})$",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 8192,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "original-receipt-recipe.json",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})$",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 4096,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "original-receipt-instance.json",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})$",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 4096,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "original-trust-set.json",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})$",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 16384,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "original-receipt-ingress.json",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})$",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 8192,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "original-consumption-exchange.json",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})$",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 8192,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "geometry.json",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})$",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 65536,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "provider-recipe.json",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})$",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 8192,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "provider-instance.json",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})$",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 8192,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "provider-trust-set.json",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})$",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 16384,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "outgoing-exchange.json",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})$",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 8192,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "receipt-ingress.json",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})$",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 8192,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "consumption-exchange.json",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})$",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 8192,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        }
+      ],
+      "type": "array"
+    },
+    "epoch": {
+      "const": 1,
+      "type": "integer"
+    },
+    "geometry_sha256": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "instance_id": {
+      "maxLength": 32,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{32})$",
+      "type": "string"
+    },
+    "layout_id": {
+      "const": "provider-source-bundle-v1",
+      "type": "string"
+    },
+    "origin_profile_digest": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "deployment-provider-source-context-v1",
+      "type": "string"
+    },
+    "topology_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "pattern": "^(?:(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$",
+      "type": "string"
+    },
+    "topology_revision": {
+      "const": 1,
+      "type": "integer"
+    },
+    "worker_profile": {
+      "const": "claude-text-transform-v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "context_id",
+    "epoch",
+    "instance_id",
+    "origin_profile_digest",
+    "topology_id",
+    "topology_revision",
+    "geometry_sha256",
+    "worker_profile",
+    "layout_id",
+    "documents"
+  ],
+  "type": "object"
+}

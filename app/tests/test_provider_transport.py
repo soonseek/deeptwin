@@ -12,10 +12,14 @@ import http.server
 import json
 import threading
 from typing import ClassVar
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
-from app.workers.credential_vault import CredentialVault
+from app.workers.credential_vault import CredentialVault, CredentialVaultError
+from app.tests.test_credential_root import initialized
+from app.tests.test_credential_custody import metadata
 from app.workers.provider_gateway import (
     CredentialedProviderTransport,
     GatewayError,
@@ -25,6 +29,30 @@ from app.workers.provider_gateway import (
 INTENT = "00000000-0000-4000-8000-00000000bb01"
 SECRET = b"sk-live-gateway-secret-000"
 PROVIDER = "claude"
+
+
+class SyntheticCustody:
+    """HTTP fixture only: never accepted by the production exact-vault type gate."""
+    def __init__(self):
+        self.entries = {}
+
+    def store(self, _intent, provider, secret):
+        handle = str(uuid4())
+        self.entries[handle] = dict(provider=provider, secret=secret, retired=False)
+        return SimpleNamespace(handle=handle)
+
+    def metadata(self, handle):
+        if handle not in self.entries:
+            raise CredentialVaultError("unknown_record")
+        return {"provider": self.entries[handle]["provider"]}
+
+    def resolve_for_gateway(self, handle):
+        if self.entries[handle]["retired"]:
+            raise CredentialVaultError("provider_binding_unavailable")
+        return self.entries[handle]["secret"]
+
+    def retire(self, handle):
+        self.entries[handle]["retired"] = True
 
 
 class FakeProvider(http.server.BaseHTTPRequestHandler):
@@ -67,11 +95,16 @@ def provider_server():
     yield server
     server.shutdown()
     thread.join(3)
+    server.server_close()
+    assert not thread.is_alive()
 
 
 @pytest.fixture
-def subject(tmp_path, provider_server):
-    vault = CredentialVault(str(tmp_path / "vault"))
+def subject(tmp_path, provider_server, monkeypatch):
+    from app.workers import provider_gateway
+    # Patch only this test module's consumer type gate. No production activation seam.
+    monkeypatch.setattr(provider_gateway, "CredentialVault", SyntheticCustody)
+    vault = SyntheticCustody()
     record = vault.store(INTENT, PROVIDER, SECRET)
     binding = ProviderBinding(
         provider=PROVIDER,
@@ -211,7 +244,6 @@ def test_nothing_ever_leaks_the_secret(subject):
 
 
 def test_binding_validation_is_fail_closed(tmp_path):
-    CredentialVault(str(tmp_path / "vault"))
     with pytest.raises(GatewayError):
         ProviderBinding(
             provider=PROVIDER,
@@ -242,6 +274,28 @@ def test_binding_validation_is_fail_closed(tmp_path):
         )
     with pytest.raises(GatewayError):
         CredentialedProviderTransport(object(), None)
+
+
+def test_production_constructor_rejects_synthetic_resolver(provider_server):
+    binding = ProviderBinding(PROVIDER, "http", "127.0.0.1", provider_server.server_address[1],
+        ("POST",), ("/v1/messages",), ("content-type",), "x-api-key", 65536, 65536, 5)
+    with pytest.raises(GatewayError):
+        CredentialedProviderTransport(SyntheticCustody(), binding)
+
+
+def test_actual_encrypted_unbound_backend_sends_zero_requests(tmp_path, provider_server):
+    binding = ProviderBinding(PROVIDER, "http", "127.0.0.1", provider_server.server_address[1],
+        ("POST",), ("/v1/messages",), ("content-type",), "x-api-key", 65536, 65536, 5)
+    with CredentialVault(**initialized(tmp_path)) as vault:
+        record = vault.store_at(metadata=metadata(), secret=SECRET)
+        transport = CredentialedProviderTransport(vault, binding)
+        with pytest.raises(GatewayError):
+            send(transport, record["record_id"])
+        reference = {k: record[k] for k in ("record_id", "record_version", "ciphertext_sha256")}
+        vault.retire(command_id=str(uuid4()), record=reference, reason="owner_delete")
+        with pytest.raises(GatewayError):
+            send(transport, record["record_id"])
+    assert FakeProvider.seen == []
 
 
 def test_a_header_unsafe_secret_fails_sanitized_with_zero_network_effect(

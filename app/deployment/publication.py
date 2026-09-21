@@ -247,9 +247,16 @@ def _existing_for_policy(directory, filename, payload, *, policy):
             or f.signature(f.stat_fd(fd)) != before
         ):
             raise c.DeploymentSourceError()
-        return f.identity(f.stat_fd(fd))
-    finally:
+        result = f.identity(f.stat_fd(fd))
+    except BaseException:
+        try:
+            f.close_fd(fd)
+        except BaseException:  # noqa: BLE001, S110 - preserve the active primary
+            pass
+        raise
+    else:
         f.close_fd(fd)
+        return result
 
 
 def _existing(directory, filename, payload, cap):
@@ -266,6 +273,7 @@ def _stage_payload(directory, payload, *, policy):
         raise c.DeploymentSourceError()
     name = f".stage-{uuid4()}.tmp"
     fd = -1
+    result = None
     try:
         fd = os.open(
             name,
@@ -290,9 +298,16 @@ def _stage_payload(directory, payload, *, policy):
             raise c.DeploymentSourceError()
         result = _StagedFile(directory, name, fd, observed)
         fd = -1
-        return result
-    finally:
-        f.close_fd(fd)
+    except BaseException:
+        try:
+            if result is not None:
+                result.close()
+            else:
+                f.close_fd(fd)
+        except BaseException:  # noqa: BLE001, S110 - preserve the active primary
+            pass
+        raise
+    return result
 
 
 def _commit_stage(directory, stage, filename):

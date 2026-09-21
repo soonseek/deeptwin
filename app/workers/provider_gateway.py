@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import http.client
 import re
+import socket
 from dataclasses import dataclass, field
 
 from .credential_vault import CredentialVault, CredentialVaultError
@@ -33,6 +34,17 @@ _FORBIDDEN_HEADERS = frozenset({
 
 class GatewayError(RuntimeError):
     """Sanitized gateway failure; never carries secrets or provider bytes."""
+    def __init__(self, message, *, failure_class="internal_failure", status=None,
+                 body=b"", phase=None, cancel_observed=False, media_type=None):
+        super().__init__(message)
+        allowed = {"permission_denied", "deadline_exceeded", "resource_exhausted",
+            "unsupported_capability", "integrity_failed", "dependency_unavailable",
+            "cancelled", "internal_failure"}
+        if failure_class not in allowed:
+            raise ValueError("invalid gateway failure class")
+        self.failure_class, self.status, self.body = failure_class, status, body
+        self.phase, self.cancel_observed = phase, cancel_observed
+        self.media_type = media_type
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,7 +174,7 @@ class CredentialedProviderTransport:
         binding = self._binding
         projected = self._validate(method, path, headers, body)
         try:
-            record_provider = self._vault._record(handle)["provider"]
+            record_provider = self._vault.metadata(handle)["provider"]
         except CredentialVaultError as exc:
             raise GatewayError("credential handle is not usable") from exc
         if record_provider != binding.provider:
@@ -208,6 +220,185 @@ class CredentialedProviderTransport:
         if len(payload) > binding.max_response_bytes:
             raise GatewayError("provider response exceeds the bound size")
         return GatewayResponse(status=status, body=payload)
+
+    def exchange(self, *, lease):
+        """Perform one lease-bound request; raw credential bytes stay in this scope."""
+        from urllib.parse import quote
+        from .provider_send_messages import GatewayExchangeLease, ProviderSendObservation, ProviderSendError
+
+        if type(lease) is not GatewayExchangeLease:
+            raise GatewayError("an exact exchange lease is required",
+                               failure_class="integrity_failed")
+        binding = self._binding
+        if lease.cancel_event.is_set():
+            raise GatewayError("provider exchange cancelled", failure_class="cancelled",
+                               cancel_observed=True, phase="not_sent")
+        if lease.endpoint == "messages":
+            method, path = "POST", "/v1/messages"
+            headers = {"anthropic-version": "2023-06-01", "content-type": "application/json"}
+        elif lease.endpoint == "models":
+            method = "GET"
+            path = "/v1/models?limit=100" + ("&after_id=" + quote(lease.after_id, safe="")
+                                               if lease.after_id is not None else "")
+            headers = {"anthropic-version": "2023-06-01", "content-type": "application/json"}
+        else:
+            raise GatewayError("provider endpoint is not bound",
+                               failure_class="unsupported_capability")
+        # Query construction has its own exact check; the historical path validator has no query surface.
+        validate_path = path.split("?", 1)[0]
+        try:
+            projected = self._validate(method, validate_path, headers, lease.body)
+        except GatewayError:
+            raise GatewayError("provider request projection is unsupported",
+                               failure_class="unsupported_capability") from None
+        connection_type = http.client.HTTPSConnection if binding.scheme == "https" else http.client.HTTPConnection
+        connection = connection_type(binding.host, binding.port,
+                                     timeout=max(0.001, lease.deadline_monotonic - __import__("time").monotonic()))
+        try:
+            lease._issuer.register_connection(lease, connection)
+        except ProviderSendError:
+            raise GatewayError("provider exchange state changed",
+                               failure_class="integrity_failed") from None
+        phase = "not_sent"
+        status, media, collected = None, None, bytearray()
+        try:
+            with self._vault.delivery_for_exchange(lease) as secret:
+                try:
+                    auth_value = secret.decode("utf-8")
+                except UnicodeDecodeError:
+                    raise GatewayError("credential is not header-safe",
+                                       failure_class="integrity_failed") from None
+                if any(ord(character) < 32 or ord(character) == 127 for character in auth_value):
+                    raise GatewayError("credential is not header-safe",
+                                       failure_class="integrity_failed")
+                projected[binding.auth_header] = auth_value
+                remaining = lease.deadline_monotonic - __import__("time").monotonic()
+                if lease.cancel_event.is_set() or remaining <= 0:
+                    failure = "cancelled" if lease.cancel_event.is_set() else "deadline_exceeded"
+                    raise GatewayError("provider exchange stopped", failure_class=failure,
+                        cancel_observed=lease.cancel_event.is_set(), phase="not_sent")
+                connection.timeout = max(0.001, remaining)
+                connection.putrequest(method, path, skip_host=True, skip_accept_encoding=True)
+                host = binding.host if binding.port == {"http": 80, "https": 443}[binding.scheme] \
+                    else f"{binding.host}:{binding.port}"
+                connection.putheader("host", host)
+                connection.putheader("content-length", str(len(lease.body)))
+                for name, value in projected.items():
+                    connection.putheader(name, value)
+                if lease.cancel_event.is_set() \
+                        or __import__("time").monotonic() >= lease.deadline_monotonic:
+                    failure = "cancelled" if lease.cancel_event.is_set() else "deadline_exceeded"
+                    raise GatewayError("provider exchange stopped", failure_class=failure,
+                        cancel_observed=lease.cancel_event.is_set(), phase="not_sent")
+                remaining = lease.deadline_monotonic - __import__("time").monotonic()
+                connection.timeout = max(0.001, remaining)
+                if connection.sock is not None:
+                    connection.sock.settimeout(connection.timeout)
+                try:
+                    lease._issuer.mark_write(lease)
+                except ProviderSendError:
+                    raise GatewayError("provider exchange state changed",
+                                       failure_class="integrity_failed") from None
+                phase = "may_have_sent"
+                try:
+                    connection.endheaders()
+                    if lease.body:
+                        connection.send(lease.body)
+                except (OSError, ValueError, socket.timeout, http.client.HTTPException):
+                    raise GatewayError("provider transport failed",
+                        failure_class="dependency_unavailable", phase=phase,
+                        cancel_observed=lease.cancel_event.is_set()) from None
+            # The response object may detach this socket from HTTPConnection as
+            # soon as headers declare Connection: close.  Retain the exact owned
+            # socket before getresponse so cancellation can shutdown the read.
+            lease._issuer.bind_connection_socket(lease, connection, connection.sock)
+            owned_socket = connection.sock
+            if lease.cancel_event.is_set() or __import__("time").monotonic() >= lease.deadline_monotonic:
+                failure = "cancelled" if lease.cancel_event.is_set() else "deadline_exceeded"
+                raise GatewayError("provider exchange stopped", failure_class=failure,
+                    cancel_observed=lease.cancel_event.is_set(), phase=phase)
+            response = connection.getresponse()
+            status = response.status
+            media = response.getheader("content-type")
+            content_encoding = response.getheader("content-encoding")
+            while len(collected) <= binding.max_response_bytes:
+                if lease.cancel_event.is_set():
+                    raise GatewayError("provider exchange cancelled", failure_class="cancelled",
+                        status=status, body=bytes(collected), phase=phase,
+                        cancel_observed=True, media_type=media)
+                remaining = lease.deadline_monotonic - __import__("time").monotonic()
+                if remaining <= 0:
+                    raise GatewayError("provider transport deadline elapsed",
+                        failure_class="deadline_exceeded", status=status,
+                        body=bytes(collected), phase=phase,
+                        cancel_observed=lease.cancel_event.is_set(), media_type=media)
+                connection.timeout = remaining
+                if owned_socket is not None and owned_socket.fileno() >= 0:
+                    owned_socket.settimeout(remaining)
+                block = response.read1(min(16_384, binding.max_response_bytes + 1 - len(collected)))
+                if not block:
+                    break
+                collected.extend(block)
+            payload = bytes(collected)
+            if lease.cancel_event.is_set():
+                raise GatewayError("provider exchange cancelled", failure_class="cancelled",
+                    status=status, body=payload, phase=phase, cancel_observed=True,
+                    media_type=media)
+        except GatewayError:
+            raise
+        except CredentialVaultError as exc:
+            category = {
+                "cancelled": "cancelled",
+                "deadline_exceeded": "deadline_exceeded",
+                "capacity_exhausted": "resource_exhausted",
+                "provider_binding_unavailable": "permission_denied",
+                "unknown_record": "permission_denied",
+                "busy": "dependency_unavailable",
+                "closed": "dependency_unavailable",
+                "storage_failure": "dependency_unavailable",
+                "maintenance_required": "integrity_failed",
+                "invalid_metadata": "integrity_failed",
+                "record_identity_mismatch": "integrity_failed",
+                "authentication_failed": "integrity_failed",
+                "invalid_envelope": "integrity_failed",
+                "invalid_encoding": "integrity_failed",
+                "invalid_secret": "integrity_failed",
+            }.get(exc.code, "internal_failure")
+            raise GatewayError("provider custody rejected", failure_class=category,
+                               phase=phase, cancel_observed=(lease.cancel_event.is_set()
+                                   or category == "cancelled")) from None
+        except ProviderSendError:
+            raise GatewayError("provider exchange integrity failed",
+                               failure_class="integrity_failed", phase=phase,
+                               cancel_observed=lease.cancel_event.is_set()) from None
+        except socket.timeout:
+            raise GatewayError("provider transport deadline elapsed",
+                failure_class="deadline_exceeded", status=status, body=bytes(collected),
+                phase=phase, cancel_observed=lease.cancel_event.is_set(),
+                media_type=media) from None
+        except (OSError, ValueError, http.client.HTTPException):
+            raise GatewayError("provider transport failed", failure_class="dependency_unavailable",
+                status=status, body=bytes(collected), phase=phase,
+                cancel_observed=lease.cancel_event.is_set(), media_type=media) from None
+        finally:
+            connection.close()
+            lease._issuer.clear_connection(lease, connection)
+        if len(payload) > binding.max_response_bytes:
+            return ProviderSendObservation(lease.exchange_id, lease.prepare_sha256, status,
+                payload[:binding.max_response_bytes], phase, lease.cancel_event.is_set(), media,
+                "resource_exhausted")
+        if not 200 <= status < 300:
+            return ProviderSendObservation(lease.exchange_id, lease.prepare_sha256, status, payload,
+                                           "terminal_observed", lease.cancel_event.is_set(), media,
+                                           None)
+        expected_media = "text/event-stream" if lease.endpoint == "messages" else "application/json"
+        if (media is None or media.lower() not in {expected_media, expected_media + "; charset=utf-8"}
+                or content_encoding is not None):
+            return ProviderSendObservation(lease.exchange_id, lease.prepare_sha256, status, payload,
+                "terminal_observed", lease.cancel_event.is_set(), media,
+                "unsupported_capability")
+        return ProviderSendObservation(lease.exchange_id, lease.prepare_sha256, status, payload,
+                                       "terminal_observed", lease.cancel_event.is_set(), media, None)
 
 
 __all__ = [

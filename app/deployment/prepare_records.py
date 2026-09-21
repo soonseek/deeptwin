@@ -80,6 +80,15 @@ def install(domain, db, profile, *, candidate_registry):
         # forward-only, in the same writer, each shape verified before the next
         storage._rebuild_v2_as_v3(db)
         journal = verify(domain, db, profile)
+    if storage._layout(db) is storage._V3:
+        storage._rebuild_v3_as_v4(db)
+        journal = verify(domain, db, profile)
+    if storage._layout(db) is storage._V4:
+        storage._rebuild_v4_as_v5(db)
+        journal = verify(domain, db, profile)
+    if storage._layout(db) is storage._V5:
+        storage._rebuild_v5_as_v6(db)
+        journal = verify(domain, db, profile)
     require(db.execute("PRAGMA foreign_key_check").fetchone() is None, "unavailable")
     return journal
 
@@ -112,15 +121,15 @@ def verify(domain, db, profile):
             "unavailable",
         )
     else:
-        # journal v3 §4: heads ↔ installations, revision 1, same anchor digest
+        # The mandatory composed verifier below checks each exact stage/current
+        # digest and revision. This first inventory check permits no stray head.
         require(
             {
-                (r["extension_id"], r["request_id"], r["installation_anchor_digest"])
+                (r["extension_id"], r["request_id"])
                 for r in rows["installation_heads"]
-                if r["revision"] == 1
             }
             == {
-                (r["extension_id"], r["request_id"], r["anchor_digest"])
+                (r["extension_id"], r["request_id"])
                 for r in rows["installations"]
             }
             and len(rows["installation_heads"]) == len(rows["installations"]),
@@ -156,7 +165,7 @@ def verify(domain, db, profile):
         entities = {
             tuple(row)
             for row in db.execute(
-                "SELECT vault_id,kind,id,version,sha256 FROM domain_records WHERE kind=? LIMIT 17",
+                "SELECT vault_id,kind,id,version,sha256 FROM domain_records WHERE kind=? LIMIT 18",
                 (kind,),
             )
         }
@@ -164,7 +173,7 @@ def verify(domain, db, profile):
             entities
             == {
                 (r["vault_id"], r["kind"], r[key], r["version"], r["anchor_digest"])
-                for r in rows.get(table, ())
+                for r in (*rows.get(table, ()),*(rows.get('installation_verifications', ()) if kind == 'extension_installation' else ()))
             },
             "unavailable",
         )
@@ -181,7 +190,10 @@ def verify(domain, db, profile):
     )
     if not anchors:
         require(not any(rows.values()), "unavailable")
-        return {"control": None, "requests": {}, "rows": rows, "receipt_sources": None}
+        journal = {"control": None, "requests": {}, "rows": rows, "receipt_sources": None}
+        from ..extensions.provider_installation_records import verify_installation_extensions
+        verify_installation_extensions(domain, db, domain._read_roots(db), profile, journal)
+        return journal
     roots = domain._read_roots(db)
     _assert_event_schema(db, roots.genesis.id)
     control = rows["control"][0]
@@ -193,10 +205,22 @@ def verify(domain, db, profile):
         "unavailable",
     )
     result = {}
-    source_binding = _load_receipt_sources(domain, db, roots, profile, control, rows)
+    source_binding = _load_receipt_sources(domain, db, roots, profile, control,
+        {**rows, "receipts": [r for r in rows.get("receipts", ()) if r.get("provider_context_id") is None]})
+    from . import provider_prepare_records as provider
+    from . import provider_receipt_records as provider_receipts
+    provider_context = provider.load_context(domain, db, roots, profile, control, rows)
+    provider_binding = provider_receipts.load_sources(roots, rows, provider_context)
+    provider_rows = {r["request_id"]: r for r in rows.get("provider_requests", ())}
     commands = {r["command_id"]: r for r in rows["commands"]}
     for row in rows["requests"]:
-        item = load(domain, db, roots, profile, control, row)
+        ref = EntityRef("deployment_request", row["request_id"], 1, row["anchor_digest"])
+        anchor = bounded_body(db, roots.genesis.id, ref, 8192).body["content"]
+        is_provider = anchor["schema_version"] == "deployment-provider-request-anchor-v2"
+        require(is_provider == (row["request_id"] in provider_rows), "unavailable")
+        item = (provider.load(domain, db, roots, profile, control, row,
+                              context=provider_context, provider_row=provider_rows[row["request_id"]])
+                if is_provider else load(domain, db, roots, profile, control, row))
         item["history"] = sorted(
             (r for r in rows["lifecycle"] if r["request_id"] == row["request_id"]),
             key=lambda r: r["revision"],
@@ -216,8 +240,8 @@ def verify(domain, db, profile):
             if r["request_id"] == row["request_id"]
         ]
         item["receipt"] = (
-            _load_receipt(
-                domain, db, roots, profile, item, source_binding, receipt_rows[0]
+            (provider_receipts.load_receipt if is_provider else _load_receipt)(
+                domain, db, roots, profile, item, provider_binding if is_provider else source_binding, receipt_rows[0]
             )
             if receipt_rows
             else None
@@ -260,7 +284,7 @@ def verify(domain, db, profile):
             "unavailable",
         )
         item["installation"] = (
-            _load_installation(
+            (provider_receipts.load_installation if is_provider else _load_installation)(
                 domain,
                 db,
                 roots,
@@ -275,7 +299,11 @@ def verify(domain, db, profile):
         )
         if rejected:
             out = item["consumed_outbox"]
-            payload = lifecycle.consumed_payload(item)
+            if is_provider:
+                from .provider_receipt_lifecycle import consumed_payload
+                payload = consumed_payload(item)
+            else:
+                payload = lifecycle.consumed_payload(item)
             require(
                 out["payload_sha256"] == sha256(payload).hexdigest()
                 and out["payload_size"] == len(payload),
@@ -290,12 +318,17 @@ def verify(domain, db, profile):
                 )
         lifecycle.verify(db, roots, profile, item, commands)
         result[row["request_id"]] = item
-    return {
+    journal = {
         "control": control,
         "requests": result,
         "rows": rows,
         "receipt_sources": source_binding,
+        "provider_receipt_sources": provider_binding,
     }
+    from ..extensions.provider_installation_records import verify_installation_extensions
+    verify_installation_extensions(domain, db, roots, profile, journal)
+    provider.verify_inventories(domain, db, roots, profile, journal)
+    return journal
 
 
 def receipt_bindings(trust_raw, ingress_raw, consumption_raw, profile, control):
@@ -339,19 +372,22 @@ def receipt_bindings(trust_raw, ingress_raw, consumption_raw, profile, control):
 def _anchor_dimensions(db, kind):
     dimensions = list(
         db.execute(
-            "SELECT typeof(vault_id),length(CAST(vault_id AS BLOB)),typeof(id),length(CAST(id AS BLOB)),typeof(version),typeof(sha256),length(CAST(sha256 AS BLOB)),typeof(body),length(body) FROM domain_records WHERE kind=? LIMIT 17",
+            "SELECT typeof(vault_id),length(CAST(vault_id AS BLOB)),typeof(id),length(CAST(id AS BLOB)),typeof(version),typeof(sha256),length(CAST(sha256 AS BLOB)),typeof(body),length(body),version FROM domain_records WHERE kind=? LIMIT 18",
             (kind,),
         )
     )
     require(
-        len(dimensions) <= 16
+        len(dimensions) <= (17 if kind == 'extension_installation' else 16)
+        and (kind != 'extension_installation' or sum(row[9] == 2 for row in dimensions) <= 1)
+        and (kind != 'extension_installation' or sum(row[9] == 1 for row in dimensions) <= 16)
         and all(
             row[0] == row[2] == row[5] == "text"
             and row[1] == row[3] == 36
             and row[4] == "integer"
             and row[6] == 64
             and row[7] == "blob"
-            and 0 < row[8] <= 8192
+            and row[9] in ((1,2) if kind == 'extension_installation' else (1,))
+            and 0 < row[8] <= (65536 if kind == 'extension_installation' and row[9] == 2 else 8192)
             for row in dimensions
         ),
         "unavailable",
@@ -583,14 +619,7 @@ def _load_installation(domain, db, roots, profile, item, consumption, row, head_
         and record.body["parent_refs"] == [item["ref"].as_dict(), item["receipt"]["ref"].as_dict()],
         "unavailable",
     )
-    heads = [h for h in head_rows if h["request_id"] == item["ref"].id]
-    require(
-        len(heads) == 1
-        and heads[0]["extension_id"] == row["extension_id"]
-        and heads[0]["revision"] == 1
-        and heads[0]["installation_anchor_digest"] == row["anchor_digest"],
-        "unavailable",
-    )
+    historical_head = stage_head(row)
     event_row = db.execute(
         "SELECT * FROM api_event_envelopes WHERE event_id=? LIMIT 2", (row["event_id"],)
     ).fetchone()
@@ -627,10 +656,17 @@ def _load_installation(domain, db, roots, profile, item, consumption, row, head_
         "record": record,
         "anchor": anchor,
         "row": row,
-        "head": heads[0],
+        "head": historical_head,
         "evidence": parsed,
         "evidence_blob": evidence,
     }
+
+
+def stage_head(row):
+    """Exact original revision-one head, never a read of the mutable current head."""
+    values = {"extension_id":row["extension_id"],"request_id":row["request_id"],
+        "revision":1,"installation_anchor_digest":row["anchor_digest"]}
+    return {**values,"hash":storage.digest('installation_heads',values)}
 
 
 def expected_stage_identity(domain, db, profile, item):

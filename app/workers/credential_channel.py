@@ -9,36 +9,128 @@ vault implementation. The service side lives in
 from __future__ import annotations
 
 import base64
-import json
 from uuid import uuid4
 
 from . import broker
+from .credential_contracts import CredentialVaultError, b64u, canonical, strict_json, unb64u, uuid_value
 
 REQUEST_TYPE = "credential_op"
 RESULT_TYPE = "credential_result"
 MAX_OP_PAYLOAD_BYTES = 96 * 1024 + 4_096
+_CHUNK_BYTES = 16_384
+_FRAGMENT_KEYS = {"schema", "transfer_id", "total_bytes", "index", "count", "chunk_b64u"}
 
 
 class GatewayServiceError(RuntimeError):
     """Sanitized gateway-channel failure; never carries secret bytes."""
+    def __init__(self, message="credential operation rejected", *, code="credential_operation_rejected"):
+        self.code = code
+        super().__init__(message)
 
 
 def encode_op(value: dict) -> bytes:
-    return json.dumps(
-        value, ensure_ascii=True, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
+    try:
+        payload = canonical(value)
+        if len(payload) > MAX_OP_PAYLOAD_BYTES:
+            raise ValueError
+        return payload
+    except (ValueError, UnicodeError, TypeError, RecursionError):
+        raise GatewayServiceError("gateway payload is out of bounds") from None
 
 
 def decode_op(payload: bytes) -> dict:
     if type(payload) is not bytes or not 1 <= len(payload) <= MAX_OP_PAYLOAD_BYTES:
         raise GatewayServiceError("gateway payload is out of bounds")
     try:
-        value = json.loads(payload.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError) as exc:
-        raise GatewayServiceError("gateway payload is not strict JSON") from exc
+        value = strict_json(payload, MAX_OP_PAYLOAD_BYTES)
+    except CredentialVaultError:
+        raise GatewayServiceError("gateway payload is not strict JSON") from None
     if type(value) is not dict:
         raise GatewayServiceError("gateway payload is not an object")
     return value
+
+
+def _write_logical(sock, codec, *, payload, message_id, message_type, correlation_id, deadline):
+    """Bounded transport-only fragments; no digest, persistence or new semantic intent."""
+    if type(payload) is not bytes or not 1 <= len(payload) <= MAX_OP_PAYLOAD_BYTES:
+        raise GatewayServiceError("gateway payload is out of bounds")
+    if len(payload) <= _CHUNK_BYTES:
+        codec.write(sock, message_id=message_id, correlation_id=correlation_id,
+            message_type=message_type, payload=payload, deadline=deadline)
+        return
+    count = (len(payload) + _CHUNK_BYTES - 1) // _CHUNK_BYTES
+    seen = {message_id}
+    for index in range(count):
+        identity = message_id
+        if index:
+            for _ in range(8):
+                identity = str(uuid4())
+                if identity not in seen:
+                    break
+            else:
+                raise GatewayServiceError("fragment identity exhausted")
+            seen.add(identity)
+        fragment = dict(schema="credential-fragment-v1", transfer_id=message_id,
+            total_bytes=len(payload), index=index, count=count,
+            chunk_b64u=b64u(payload[index * _CHUNK_BYTES:(index + 1) * _CHUNK_BYTES]))
+        codec.write(sock, message_id=identity,
+            correlation_id=(message_id if index and correlation_id is None else correlation_id),
+            message_type=message_type, payload=encode_op(fragment), deadline=deadline)
+
+
+def _fragment(value):
+    if type(value) is not dict or set(value) != _FRAGMENT_KEYS or value["schema"] != "credential-fragment-v1":
+        raise GatewayServiceError("invalid credential fragment")
+    uuid_value(value["transfer_id"])
+    total, count, index = value["total_bytes"], value["count"], value["index"]
+    if (type(total) is not int or not _CHUNK_BYTES < total <= MAX_OP_PAYLOAD_BYTES
+            or type(count) is not int or count != (total + _CHUNK_BYTES - 1) // _CHUNK_BYTES
+            or type(index) is not int or not 0 <= index < count):
+        raise GatewayServiceError("invalid credential fragment")
+    length = _CHUNK_BYTES if index < count - 1 else total - index * _CHUNK_BYTES
+    return unb64u(value["chunk_b64u"], length, length)
+
+
+def _read_logical(sock, codec, *, message_type, correlation_id, deadline):
+    """Return (first message ID, original bytes), never a forged broker envelope."""
+    try:
+        first = codec.read(sock, deadline=deadline)
+        if first.envelope.message_type != message_type or first.envelope.correlation_id != correlation_id:
+            raise GatewayServiceError("gateway logical message is not bound")
+        if len(first.payload) > 24_576:
+            raise GatewayServiceError("gateway fragment is out of bounds")
+        value = decode_op(first.payload)
+        identity = first.envelope.message_id
+        if value.get("schema") != "credential-fragment-v1":
+            if len(first.payload) > _CHUNK_BYTES:
+                raise GatewayServiceError("gateway ordinary message is out of bounds")
+            return identity, first.payload
+        data = bytearray(_fragment(value))
+        if value["index"] != 0 or value["transfer_id"] != identity:
+            raise GatewayServiceError("gateway fragment is not bound")
+        seen = {identity}
+        for index in range(1, value["count"]):
+            frame = codec.read(sock, deadline=deadline)
+            if (frame.envelope.message_type != message_type
+                    or frame.envelope.correlation_id != (identity if correlation_id is None else correlation_id)
+                    or frame.envelope.message_id in seen or len(frame.payload) > 24_576):
+                raise GatewayServiceError("gateway fragment is not bound")
+            seen.add(frame.envelope.message_id)
+            part = decode_op(frame.payload)
+            chunk = _fragment(part)
+            if any(part[name] != value[name] for name in ("transfer_id", "total_bytes", "count")) or part["index"] != index:
+                raise GatewayServiceError("gateway fragment is not bound")
+            data.extend(chunk)
+        if len(data) != value["total_bytes"]:
+            raise GatewayServiceError("gateway logical message is out of bounds")
+        deadline.require()
+        return identity, bytes(data)
+    except CredentialVaultError:
+        codec.close()
+        raise GatewayServiceError("invalid credential fragment") from None
+    except BaseException:
+        codec.close()
+        raise
 
 
 class CredentialGatewayClient:
@@ -59,21 +151,18 @@ class CredentialGatewayClient:
         sock, codec = self._transport_factory()
         try:
             message_id = str(uuid4())
-            codec.write(
-                sock,
+            _write_logical(
+                sock, codec,
                 message_id=message_id,
                 correlation_id=None,
                 message_type=REQUEST_TYPE,
                 payload=encode_op(request),
                 deadline=deadline,
             )
-            frame = codec.read(sock, deadline=deadline)
-            if (
-                frame.envelope.message_type != RESULT_TYPE
-                or frame.envelope.correlation_id != message_id
-            ):
-                raise GatewayServiceError("gateway response frame is not bound")
-            response = decode_op(frame.payload)
+            _, payload = _read_logical(sock, codec, message_type=RESULT_TYPE,
+                correlation_id=message_id, deadline=deadline)
+            response = decode_op(payload)
+            deadline.require()
         except broker.BrokerError as exc:
             raise GatewayServiceError("gateway channel failed") from exc
         finally:
@@ -83,11 +172,28 @@ class CredentialGatewayClient:
             except OSError:
                 pass
         if response.get("ok") is not True:
-            raise GatewayServiceError("credential operation rejected")
+            codes = {"unsupported_operation", "busy", "conflict", "capacity_exhausted", "nonce_exhausted", "maintenance_required", "invalid_metadata", "invalid_encoding", "invalid_secret", "storage_failure"}
+            code = response.get("code")
+            if type(code) is not str or code not in codes:
+                code = "credential_operation_rejected"
+            raise GatewayServiceError("credential operation rejected", code=code)
+        if set(response) != {"ok", "result"}:
+            raise GatewayServiceError("gateway result is malformed")
         result = response.get("result")
         if type(result) is not dict:
             raise GatewayServiceError("gateway result is malformed")
         return result
+
+    def store_at(self, *, metadata: dict, secret: bytes) -> dict:
+        if type(secret) is not bytes:
+            raise GatewayServiceError("secret bytes are required")
+        return self._call(dict(schema="credential-op-v2", op="store_at", metadata=metadata, secret_b64u=b64u(secret)))
+
+    def query_record(self, *, metadata: dict) -> dict:
+        return self._call(dict(schema="credential-op-v2", op="query_record", metadata=metadata))
+
+    def retire(self, *, command_id: str, record: dict, reason: str) -> dict:
+        return self._call(dict(schema="credential-op-v2", op="retire", command_id=command_id, record=record, reason=reason))
 
     def submit(
         self,
@@ -111,7 +217,7 @@ class CredentialGatewayClient:
         return self._call({"op": "delete", "handle": handle})
 
     def snapshot(self) -> list:
-        result = self._call({"op": "snapshot"})
+        result = self._call({"schema": "credential-op-v2", "op": "snapshot"})
         entries = result.get("credentials")
         if type(entries) is not list:
             raise GatewayServiceError("gateway snapshot is malformed")

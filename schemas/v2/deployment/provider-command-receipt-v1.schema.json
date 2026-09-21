@@ -1,0 +1,232 @@
+{
+  "$id": "urn:deeptwin:schemas:v2:deployment:provider-command-receipt-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cancellation_publication_state": {
+          "type": "null"
+        },
+        "command_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "event_cursor": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "type": "string"
+        },
+        "kind": {
+          "const": "extension_stage",
+          "type": "string"
+        },
+        "links": {
+          "additionalProperties": false,
+          "properties": {
+            "cancel": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^(?:/(?:[0-9a-f]{32}/)?api/v1/deployment/provider-requests/[0-9a-f-]{36}/cancel)(?![\\s\\S])",
+              "type": "string"
+            },
+            "events": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^(?:/(?:[0-9a-f]{32}/)?api/v1/events)(?![\\s\\S])",
+              "type": "string"
+            },
+            "self": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^(?:/(?:[0-9a-f]{32}/)?api/v1/deployment/provider-requests/[0-9a-f-]{36})(?![\\s\\S])",
+              "type": "string"
+            }
+          },
+          "required": [
+            "self",
+            "cancel",
+            "events"
+          ],
+          "type": "object"
+        },
+        "preserved_inventory_sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        },
+        "publication_state": {
+          "enum": [
+            "pending"
+          ],
+          "type": "string"
+        },
+        "request_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "revision": {
+          "const": 1,
+          "type": "integer"
+        },
+        "source_context_sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        },
+        "state": {
+          "const": "prepared",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "request_digest",
+        "kind",
+        "state",
+        "revision",
+        "publication_state",
+        "cancellation_publication_state",
+        "source_context_sha256",
+        "preserved_inventory_sha256",
+        "links",
+        "command_id",
+        "event_cursor"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cancellation_publication_state": {
+          "enum": [
+            "pending"
+          ],
+          "type": "string"
+        },
+        "command_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "event_cursor": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "type": "string"
+        },
+        "kind": {
+          "const": "extension_stage",
+          "type": "string"
+        },
+        "links": {
+          "additionalProperties": false,
+          "properties": {
+            "cancel": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^(?:/(?:[0-9a-f]{32}/)?api/v1/deployment/provider-requests/[0-9a-f-]{36}/cancel)(?![\\s\\S])",
+              "type": "string"
+            },
+            "events": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^(?:/(?:[0-9a-f]{32}/)?api/v1/events)(?![\\s\\S])",
+              "type": "string"
+            },
+            "self": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^(?:/(?:[0-9a-f]{32}/)?api/v1/deployment/provider-requests/[0-9a-f-]{36})(?![\\s\\S])",
+              "type": "string"
+            }
+          },
+          "required": [
+            "self",
+            "cancel",
+            "events"
+          ],
+          "type": "object"
+        },
+        "preserved_inventory_sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        },
+        "publication_state": {
+          "enum": [
+            "published",
+            "suppressed"
+          ],
+          "type": "string"
+        },
+        "request_digest": {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "revision": {
+          "const": 2,
+          "type": "integer"
+        },
+        "source_context_sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        },
+        "state": {
+          "const": "cancelled",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "request_digest",
+        "kind",
+        "state",
+        "revision",
+        "publication_state",
+        "cancellation_publication_state",
+        "source_context_sha256",
+        "preserved_inventory_sha256",
+        "links",
+        "command_id",
+        "event_cursor"
+      ],
+      "type": "object"
+    }
+  ]
+}

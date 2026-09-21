@@ -385,6 +385,252 @@ CAPS_V3 = {**CAPS_V2, "installations": 16, "installation_heads": 16}
 NULLABLE_V3 = {**NULLABLE_V2}
 
 
+DDL_V4 = (
+    """CREATE TABLE deployment_prepare_migrations (
+ version INTEGER PRIMARY KEY CHECK(version IN (1,2,3,4)),
+ checksum TEXT NOT NULL CHECK(length(checksum)=64)
+);""",
+    DDL_V3[1],
+    DDL_V3[2],
+    DDL_V3[3],
+    DDL_V3[4],
+    """CREATE TABLE deployment_prepare_commands (
+ command_id TEXT PRIMARY KEY CHECK(length(command_id)=36),
+ namespace TEXT NOT NULL CHECK(namespace IN ('deployment-prepare-v1','deployment-cancel-v1','deployment-cancel-v2','deployment-receipt-import-v1','deployment-consume-v1','deployment-prepare-provider-v1','deployment-cancel-provider-v1')),
+ request_id TEXT NOT NULL REFERENCES deployment_prepare_requests(request_id),
+ actor_ref TEXT NOT NULL CHECK(length(actor_ref) BETWEEN 1 AND 1024),
+ input_json TEXT NOT NULL CHECK(length(input_json) BETWEEN 2 AND 4096),
+ input_digest TEXT NOT NULL CHECK(length(input_digest)=64),
+ http_status INTEGER NOT NULL CHECK(http_status IN (200,201)),
+ receipt_json TEXT NOT NULL CHECK(length(receipt_json) BETWEEN 2 AND 8192),
+ lifecycle_revision INTEGER NOT NULL CHECK(lifecycle_revision BETWEEN 1 AND 3),
+ hash TEXT NOT NULL CHECK(length(hash)=64), UNIQUE(namespace,request_id),
+ FOREIGN KEY(request_id,lifecycle_revision) REFERENCES deployment_prepare_lifecycle(request_id,revision),
+ CHECK((namespace='deployment-prepare-v1' AND http_status=201 AND lifecycle_revision=1)
+  OR (namespace='deployment-cancel-v1' AND http_status=200 AND lifecycle_revision=2)
+  OR (namespace='deployment-cancel-v2' AND http_status=200 AND lifecycle_revision=3)
+  OR (namespace='deployment-receipt-import-v1' AND http_status=200 AND lifecycle_revision=2)
+  OR (namespace='deployment-consume-v1' AND http_status=200 AND lifecycle_revision=3)
+  OR (namespace='deployment-prepare-provider-v1' AND http_status=201 AND lifecycle_revision=1)
+  OR (namespace='deployment-cancel-provider-v1' AND http_status=200 AND lifecycle_revision=2))
+);""",
+    DDL_V3[6],
+    DDL_V3[7],
+    DDL_V3[8],
+    DDL_V3[9],
+    DDL_V3[10],
+    DDL_V3[11],
+    DDL_V3[12],
+    """CREATE UNIQUE INDEX deployment_prepare_requests_vault_request
+ ON deployment_prepare_requests(vault_id,request_id);""",
+    """CREATE TABLE deployment_prepare_provider_contexts (
+ context_id TEXT PRIMARY KEY CHECK(length(context_id)=36),
+ vault_id TEXT NOT NULL REFERENCES domain_vault(vault_id),
+ topology_id TEXT NOT NULL CHECK(length(topology_id)=36),
+ epoch INTEGER NOT NULL CHECK(epoch=1),
+ worker_profile TEXT NOT NULL CHECK(worker_profile='claude-text-transform-v1'),
+ purpose TEXT NOT NULL CHECK(purpose='operational'),
+ context_sha256 TEXT NOT NULL CHECK(length(context_sha256)=64),
+ context_size INTEGER NOT NULL CHECK(context_size BETWEEN 1 AND 16384),
+ hash TEXT NOT NULL CHECK(length(hash)=64),
+ UNIQUE(vault_id,context_id),
+ UNIQUE(vault_id,context_sha256),
+ UNIQUE(vault_id,worker_profile,epoch),
+ FOREIGN KEY(vault_id,topology_id)
+  REFERENCES deployment_prepare_control(vault_id,topology_id),
+ FOREIGN KEY(vault_id,purpose,context_sha256)
+  REFERENCES domain_blobs(vault_id,purpose,sha256)
+);""",
+    """CREATE TABLE deployment_prepare_provider_context_documents (
+ context_id TEXT NOT NULL,
+ vault_id TEXT NOT NULL REFERENCES domain_vault(vault_id),
+ ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 1 AND 18),
+ name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 64),
+ purpose TEXT NOT NULL CHECK(purpose='operational'),
+ sha256 TEXT NOT NULL CHECK(length(sha256)=64),
+ size INTEGER NOT NULL CHECK(size BETWEEN 1 AND 65536),
+ hash TEXT NOT NULL CHECK(length(hash)=64),
+ PRIMARY KEY(context_id,ordinal),
+ UNIQUE(context_id,name),
+ FOREIGN KEY(vault_id,context_id)
+  REFERENCES deployment_prepare_provider_contexts(vault_id,context_id),
+ FOREIGN KEY(vault_id,purpose,sha256)
+  REFERENCES domain_blobs(vault_id,purpose,sha256),
+ CHECK((ordinal=1 AND name='original-prepare-recipe.json' AND size<=4096)
+  OR (ordinal=2 AND name='original-prepare-instance.json' AND size<=4096)
+  OR (ordinal=3 AND name='original-topology.json' AND size<=65536)
+  OR (ordinal=4 AND name='original-outgoing-exchange.json' AND size<=8192)
+  OR (ordinal=5 AND name='original-receipt-recipe.json' AND size<=4096)
+  OR (ordinal=6 AND name='original-receipt-instance.json' AND size<=4096)
+  OR (ordinal=7 AND name='original-trust-set.json' AND size<=16384)
+  OR (ordinal=8 AND name='original-receipt-ingress.json' AND size<=8192)
+  OR (ordinal=9 AND name='original-consumption-exchange.json' AND size<=8192)
+  OR (ordinal=10 AND name='geometry.json' AND size<=65536)
+  OR (ordinal=11 AND name='provider-recipe.json' AND size<=8192)
+  OR (ordinal=12 AND name='provider-instance.json' AND size<=8192)
+  OR (ordinal=13 AND name='provider-trust-set.json' AND size<=16384)
+  OR (ordinal=14 AND name='outgoing-exchange.json' AND size<=8192)
+  OR (ordinal=15 AND name='receipt-ingress.json' AND size<=8192)
+  OR (ordinal=16 AND name='consumption-exchange.json' AND size<=8192)
+  OR (ordinal=17 AND name='source-context.json' AND size<=16384)
+  OR (ordinal=18 AND name='source-pins.json' AND size<=8192))
+);""",
+    """CREATE TABLE deployment_prepare_provider_requests (
+ request_id TEXT PRIMARY KEY CHECK(length(request_id)=36),
+ vault_id TEXT NOT NULL REFERENCES domain_vault(vault_id),
+ context_id TEXT NOT NULL CHECK(length(context_id)=36),
+ purpose TEXT NOT NULL CHECK(purpose='operational'),
+ inventory_sha256 TEXT NOT NULL CHECK(length(inventory_sha256)=64),
+ inventory_size INTEGER NOT NULL CHECK(inventory_size BETWEEN 1 AND 16384),
+ at_event_sequence INTEGER NOT NULL CHECK(at_event_sequence BETWEEN 0 AND 1099511627776),
+ hash TEXT NOT NULL CHECK(length(hash)=64),
+ FOREIGN KEY(vault_id,request_id)
+  REFERENCES deployment_prepare_requests(vault_id,request_id),
+ FOREIGN KEY(vault_id,context_id)
+  REFERENCES deployment_prepare_provider_contexts(vault_id,context_id),
+ FOREIGN KEY(vault_id,purpose,inventory_sha256)
+  REFERENCES domain_blobs(vault_id,purpose,sha256)
+);""",
+)
+CHECKSUM_V4 = sha256(canonical_json(list(DDL_V4))).hexdigest()
+TABLES_V4 = (*TABLES_V3, "provider_contexts", "provider_context_documents", "provider_requests")
+CAPS_V4 = {**CAPS_V3, "provider_contexts": 1, "provider_context_documents": 18, "provider_requests": 16}
+NULLABLE_V4 = {**NULLABLE_V3}
+
+DDL_V5 = (
+    """CREATE TABLE deployment_prepare_migrations (
+ version INTEGER PRIMARY KEY CHECK(version IN (1,2,3,4,5)),
+ checksum TEXT NOT NULL CHECK(length(checksum)=64)
+);""",
+    DDL_V4[1],
+    DDL_V4[2],
+    DDL_V4[3],
+    DDL_V4[4],
+    """CREATE TABLE deployment_prepare_commands (
+ command_id TEXT PRIMARY KEY CHECK(length(command_id)=36),
+ namespace TEXT NOT NULL CHECK(namespace IN ('deployment-prepare-v1','deployment-cancel-v1','deployment-cancel-v2','deployment-receipt-import-v1','deployment-consume-v1','deployment-prepare-provider-v1','deployment-cancel-provider-v1','deployment-receipt-import-provider-v1','deployment-consume-provider-v1','deployment-cancel-provider-v2')),
+ request_id TEXT NOT NULL REFERENCES deployment_prepare_requests(request_id),
+ actor_ref TEXT NOT NULL CHECK(length(actor_ref) BETWEEN 1 AND 1024),
+ input_json TEXT NOT NULL CHECK(length(input_json) BETWEEN 2 AND 4096),
+ input_digest TEXT NOT NULL CHECK(length(input_digest)=64),
+ http_status INTEGER NOT NULL CHECK(http_status IN (200,201)),
+ receipt_json TEXT NOT NULL CHECK(length(receipt_json) BETWEEN 2 AND 8192),
+ lifecycle_revision INTEGER NOT NULL CHECK(lifecycle_revision BETWEEN 1 AND 3),
+ hash TEXT NOT NULL CHECK(length(hash)=64), UNIQUE(namespace,request_id),
+ FOREIGN KEY(request_id,lifecycle_revision) REFERENCES deployment_prepare_lifecycle(request_id,revision),
+ CHECK((namespace='deployment-prepare-v1' AND http_status=201 AND lifecycle_revision=1)
+  OR (namespace='deployment-cancel-v1' AND http_status=200 AND lifecycle_revision=2)
+  OR (namespace='deployment-cancel-v2' AND http_status=200 AND lifecycle_revision=3)
+  OR (namespace='deployment-receipt-import-v1' AND http_status=200 AND lifecycle_revision=2)
+  OR (namespace='deployment-consume-v1' AND http_status=200 AND lifecycle_revision=3)
+  OR (namespace='deployment-prepare-provider-v1' AND http_status=201 AND lifecycle_revision=1)
+  OR (namespace='deployment-cancel-provider-v1' AND http_status=200 AND lifecycle_revision=2)
+  OR (namespace='deployment-receipt-import-provider-v1' AND http_status=200 AND lifecycle_revision=2)
+  OR (namespace='deployment-consume-provider-v1' AND http_status=200 AND lifecycle_revision=3)
+  OR (namespace='deployment-cancel-provider-v2' AND http_status=200 AND lifecycle_revision=3))
+);""",
+    DDL_V4[6],
+    DDL_V4[7],
+    """CREATE TABLE deployment_prepare_receipts (
+ request_id TEXT PRIMARY KEY REFERENCES deployment_prepare_requests(request_id),
+ vault_id TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind='deployment_receipt'),
+ version INTEGER NOT NULL CHECK(version=1), anchor_digest TEXT NOT NULL CHECK(length(anchor_digest)=64),
+ receipt_sha256 TEXT NOT NULL UNIQUE CHECK(length(receipt_sha256)=64),
+ receipt_size INTEGER NOT NULL CHECK(receipt_size BETWEEN 1 AND 16384),
+ outcome TEXT NOT NULL CHECK(outcome IN ('succeeded','failed','unknown')),
+ source_singleton INTEGER CHECK(source_singleton IS NULL OR source_singleton=1) REFERENCES deployment_prepare_receipt_sources(singleton),
+ import_command_id TEXT NOT NULL UNIQUE REFERENCES deployment_prepare_commands(command_id),
+ lifecycle_revision INTEGER NOT NULL CHECK(lifecycle_revision=2), hash TEXT NOT NULL CHECK(length(hash)=64),
+ provider_context_id TEXT CHECK(provider_context_id IS NULL OR length(provider_context_id)=36),
+ UNIQUE(request_id,receipt_sha256),
+ CHECK((source_singleton IS NOT NULL AND source_singleton=1 AND provider_context_id IS NULL)
+  OR (source_singleton IS NULL AND provider_context_id IS NOT NULL)),
+ FOREIGN KEY(vault_id,request_id,provider_context_id)
+  REFERENCES deployment_prepare_provider_requests(vault_id,request_id,context_id),
+ FOREIGN KEY(vault_id,provider_context_id)
+  REFERENCES deployment_prepare_provider_receipt_sources(vault_id,context_id),
+ FOREIGN KEY(request_id,lifecycle_revision) REFERENCES deployment_prepare_lifecycle(request_id,revision),
+ FOREIGN KEY(vault_id,kind,request_id,version,anchor_digest) REFERENCES domain_records(vault_id,kind,id,version,sha256)
+);""",
+    DDL_V4[9],
+    """CREATE TABLE deployment_prepare_consumed_outbox (
+ consumption_id TEXT PRIMARY KEY REFERENCES deployment_prepare_consumptions(consumption_id),
+ payload_sha256 TEXT NOT NULL CHECK(length(payload_sha256)=64),
+ payload_size INTEGER NOT NULL CHECK(payload_size BETWEEN 1 AND 8192),
+ state TEXT NOT NULL CHECK(state IN ('pending','published')),
+ published_ms INTEGER CHECK(published_ms BETWEEN 0 AND 253402300799999),
+ revision INTEGER NOT NULL CHECK(revision BETWEEN 1 AND 2), hash TEXT NOT NULL CHECK(length(hash)=64),
+ CHECK((state='pending' AND revision=1 AND published_ms IS NULL)
+  OR (state='published' AND revision=2 AND published_ms IS NOT NULL))
+);""",
+    DDL_V4[11],
+    DDL_V4[12],
+    DDL_V4[13],
+    DDL_V4[14],
+    DDL_V4[15],
+    DDL_V4[16],
+    """CREATE UNIQUE INDEX deployment_prepare_provider_requests_vault_request_context
+ ON deployment_prepare_provider_requests(vault_id,request_id,context_id);""",
+    """CREATE TABLE deployment_prepare_provider_receipt_sources (
+ context_id TEXT PRIMARY KEY CHECK(length(context_id)=36),
+ vault_id TEXT NOT NULL REFERENCES domain_vault(vault_id),
+ identity_json TEXT NOT NULL CHECK(length(identity_json) BETWEEN 2 AND 2048),
+ hash TEXT NOT NULL CHECK(length(hash)=64),
+ UNIQUE(vault_id,context_id),
+ FOREIGN KEY(vault_id,context_id)
+  REFERENCES deployment_prepare_provider_contexts(vault_id,context_id)
+);""",
+)
+CHECKSUM_V5 = sha256(canonical_json(list(DDL_V5))).hexdigest()
+TABLES_V5 = (*TABLES_V4, "provider_receipt_sources")
+CAPS_V5 = {**CAPS_V4, "provider_receipt_sources": 1}
+NULLABLE_V5 = {**NULLABLE_V4, "receipts": {"source_singleton", "provider_context_id"}}
+
+
+DDL_V6 = (
+    """CREATE TABLE deployment_prepare_migrations (
+ version INTEGER PRIMARY KEY CHECK(version IN (1,2,3,4,5,6)),
+ checksum TEXT NOT NULL CHECK(length(checksum)=64)
+);""",
+    *DDL_V5[1:12],
+    """CREATE TABLE deployment_prepare_installation_heads (
+ extension_id TEXT PRIMARY KEY REFERENCES deployment_prepare_installations(extension_id),
+ request_id TEXT NOT NULL UNIQUE REFERENCES deployment_prepare_installations(request_id),
+ revision INTEGER NOT NULL CHECK(revision IN (1,2)),
+ installation_anchor_digest TEXT NOT NULL CHECK(length(installation_anchor_digest)=64),
+ hash TEXT NOT NULL CHECK(length(hash)=64),
+ FOREIGN KEY(extension_id,request_id) REFERENCES deployment_prepare_installations(extension_id,request_id)
+);""",
+    *DDL_V5[13:],
+    """CREATE TABLE deployment_prepare_installation_verifications (
+ request_id TEXT NOT NULL PRIMARY KEY CHECK(length(request_id)=36) REFERENCES deployment_prepare_provider_requests(request_id),
+ extension_id TEXT NOT NULL UNIQUE CHECK(length(extension_id) BETWEEN 1 AND 128) REFERENCES deployment_prepare_installations(extension_id),
+ vault_id TEXT NOT NULL CHECK(length(vault_id)=36),
+ kind TEXT NOT NULL CHECK(kind='extension_installation'),
+ installation_id TEXT NOT NULL UNIQUE CHECK(length(installation_id)=36),
+ version INTEGER NOT NULL CHECK(version=2),
+ anchor_digest TEXT NOT NULL CHECK(length(anchor_digest)=64),
+ command_id TEXT NOT NULL UNIQUE CHECK(length(command_id)=36),
+ actor_ref TEXT NOT NULL CHECK(length(actor_ref) BETWEEN 1 AND 1024),
+ command_json TEXT NOT NULL CHECK(length(command_json) BETWEEN 1 AND 32768),
+ input_digest TEXT NOT NULL CHECK(length(input_digest)=64),
+ reply_json TEXT NOT NULL CHECK(length(reply_json) BETWEEN 1 AND 8192),
+ http_status INTEGER NOT NULL CHECK(http_status=200),
+ event_id TEXT NOT NULL UNIQUE CHECK(length(event_id)=36) REFERENCES api_event_envelopes(event_id),
+ verified_ms INTEGER NOT NULL CHECK(verified_ms BETWEEN 0 AND 253402300799999),
+ previous_head_hash TEXT NOT NULL CHECK(length(previous_head_hash)=64),
+ hash TEXT NOT NULL CHECK(length(hash)=64),
+ FOREIGN KEY(vault_id,kind,installation_id,version,anchor_digest) REFERENCES domain_records(vault_id,kind,id,version,sha256),
+ FOREIGN KEY(extension_id,request_id) REFERENCES deployment_prepare_installations(extension_id,request_id)
+);""",
+)
+CHECKSUM_V6 = sha256(canonical_json(list(DDL_V6))).hexdigest()
+TABLES_V6 = (*TABLES_V5, "installation_verifications")
+CAPS_V6 = {**CAPS_V5, "installation_verifications": 1}
+NULLABLE_V6 = {**NULLABLE_V5}
+
+
+
 def fail():
     raise DeploymentPrepareError("unavailable")
 
@@ -421,6 +667,9 @@ def _expected(ddl=DDL, tables=TABLES):
 SHAPE, COLUMNS = _expected(DDL, TABLES)
 SHAPE_V2, COLUMNS_V2 = _expected(DDL_V2, TABLES_V2)
 SHAPE_V3, COLUMNS_V3 = _expected(DDL_V3, TABLES_V3)
+SHAPE_V4, COLUMNS_V4 = _expected(DDL_V4, TABLES_V4)
+SHAPE_V5, COLUMNS_V5 = _expected(DDL_V5, TABLES_V5)
+SHAPE_V6, COLUMNS_V6 = _expected(DDL_V6, TABLES_V6)
 
 
 @dataclass(frozen=True)
@@ -469,6 +718,18 @@ _V3 = _freeze(
 )
 
 
+_V4 = _freeze(
+    DDL_V4, TABLES_V4, SHAPE_V4, COLUMNS_V4, CAPS_V4, NULLABLE_V4,
+    ((1, CHECKSUM), (2, CHECKSUM_V2), (3, CHECKSUM_V3), (4, CHECKSUM_V4)),
+)
+
+
+_V5 = _freeze(DDL_V5, TABLES_V5, SHAPE_V5, COLUMNS_V5, CAPS_V5, NULLABLE_V5,
+              (*_V4.migrations, (5, CHECKSUM_V5)))
+_V6 = _freeze(DDL_V6, TABLES_V6, SHAPE_V6, COLUMNS_V6, CAPS_V6, NULLABLE_V6,
+              (*_V5.migrations, (6, CHECKSUM_V6)))
+
+
 def _private_sizes(db, layout):
     caps = {
         "input_json": 4096,
@@ -476,6 +737,8 @@ def _private_sizes(db, layout):
         "exchange_identity_json": 4096,
         "identity_json": 8192,
         "checksum": 64,
+        "command_json": 32768,
+        "reply_json": 8192,
     }
     for table, columns in {
         "migrations": {"version": int, "checksum": str},
@@ -511,7 +774,7 @@ def _private_sizes(db, layout):
                     or (
                         expected is str
                         and kind == "text"
-                        and size <= caps.get(name, 1024)
+                        and size <= (2048 if table == "provider_receipt_sources" and name == "identity_json" else caps.get(name, 1024))
                     )
                 ):
                     fail()
@@ -525,6 +788,12 @@ def _layout(db):
         layout = _V2
     elif observed == _V3.shape:
         layout = _V3
+    elif observed == _V4.shape:
+        layout = _V4
+    elif observed == _V5.shape:
+        layout = _V5
+    elif observed == _V6.shape:
+        layout = _V6
     else:
         fail()
     _private_sizes(db, layout)
@@ -654,18 +923,26 @@ def validate_receipt_identity(value):
 
 
 def digest(table, values):
-    if type(table) is not str or table not in TABLES_V3:
+    if type(table) is not str or table not in TABLES_V6:
         fail()
+    row = {k: v for k, v in dict(values).items() if k != "hash"}
+    provider_receipt = table == "receipts" and row.get("provider_context_id") is not None
+    if table == "receipts" and not provider_receipt:
+        row.pop("provider_context_id", None)
     return sha256(
         canonical_json(
             {
-                "namespace": "deployment-prepare-storage-v1"
+                "namespace": "deployment-prepare-storage-v6"
+                if table == "installation_verifications" or table == "installation_heads" and row.get("revision") == 2
+                else "deployment-prepare-storage-v5" if provider_receipt or table == "provider_receipt_sources" else "deployment-prepare-storage-v1"
                 if table in TABLES
                 else "deployment-prepare-storage-v2"
                 if table in TABLES_V2
-                else "deployment-prepare-storage-v3",
+                else "deployment-prepare-storage-v3"
+                if table in TABLES_V3
+                else "deployment-prepare-storage-v4",
                 "table": table,
-                "row": {k: v for k, v in dict(values).items() if k != "hash"},
+                "row": row,
             }
         )
     ).hexdigest()
@@ -690,6 +967,8 @@ def _row(layout, table, row):
             "consumption_id",
             "import_command_id",
             "installation_id",
+            "context_id",
+            "provider_context_id",
         }:
             uuid_string(value)
         if key in {
@@ -709,6 +988,10 @@ def _row(layout, table, row):
             "trust_sha256",
             "ingress_sha256",
             "consumption_exchange_sha256",
+            "context_sha256",
+            "inventory_sha256",
+            "sha256",
+            "previous_head_hash",
         }:
             _hex(value)
         if key == "instance_id":
@@ -729,10 +1012,18 @@ def _row(layout, table, row):
             body = _json(value, 4096 if key == "input_json" else 8192)
             if type(body) is not dict:
                 fail()
+        if key in {"command_json", "reply_json"}:
+            body = _json(value, 32768 if key == "command_json" else 8192)
+            if type(body) is not dict:
+                fail()
         if key == "exchange_identity_json":
             validate_identity(value)
         if key == "identity_json":
-            validate_receipt_identity(_json(value, 8192))
+            if table == "provider_receipt_sources":
+                from .provider_receipt_contracts import validate_provider_channel_identity
+                validate_provider_channel_identity(_json(value, 2048))
+            else:
+                validate_receipt_identity(_json(value, 8192))
     if row["hash"] != digest(table, row):
         fail()
 
@@ -783,6 +1074,10 @@ def validate_current_row(db, table, row):
 
 def insert(db, table, values):
     layout = _layout(db)
+    if (table == "receipts" and layout in (_V5, _V6) and type(values) is dict
+            and set(values) == set(COLUMNS_V4["receipts"]) - {"hash"}
+            and type(values.get("source_singleton")) is int and values["source_singleton"] == 1):
+        values = {**values, "provider_context_id": None}
     if (
         type(table) is not str
         or table not in layout.tables
@@ -855,6 +1150,23 @@ def advance(db, table, old, changes):
     )
     if result.rowcount != 1:
         fail()
+    return row
+
+
+def _advance_installation_head(db,old,verified_digest):
+    """The sole installation-head transition: exact original revision one to two."""
+    layout = _layout(db)
+    if layout is not _V6: fail()
+    _validate_row(layout,'installation_heads',old)
+    _hex(verified_digest)
+    if old['revision'] != 1 or old['installation_anchor_digest'] == verified_digest: fail()
+    row = {**old,'revision':2,'installation_anchor_digest':verified_digest}
+    row['hash'] = digest('installation_heads',row)
+    _validate_row(layout,'installation_heads',row)
+    changed = db.execute('UPDATE deployment_prepare_installation_heads SET revision=2,installation_anchor_digest=?,hash=? '
+        'WHERE extension_id=? AND request_id=? AND revision=1 AND installation_anchor_digest=? AND hash=?',
+        (verified_digest,row['hash'],old['extension_id'],old['request_id'],old['installation_anchor_digest'],old['hash']))
+    if changed.rowcount != 1: fail()
     return row
 
 
@@ -1106,3 +1418,175 @@ def _rebuild_v2_as_v3(db):
             )
         ] != before:
             fail()
+
+
+def _rebuild_v4_as_v5(db):
+    """Writer-bound four-parent rebuild; old cells and immediate rowids survive."""
+    if not db.in_transaction or _layout(db) is not _V4 or db.execute("PRAGMA foreign_keys").fetchone()[0] != 1:
+        fail()
+    verify(db)
+    allowed_commands = {("deployment_prepare_lifecycle", "command_id"), ("deployment_prepare_receipts", "import_command_id"), ("deployment_prepare_consumptions", "command_id"), ("deployment_prepare_installations", "command_id")}
+    incoming, receipt_incoming = set(), []
+    for row in db.execute("SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name"):
+        table = row[0]
+        quoted = '"' + table.replace('"', '""') + '"'
+        groups = {}
+        for fk in db.execute("PRAGMA foreign_key_list(" + quoted + ")"):
+            groups.setdefault(fk[0], []).append(tuple(fk))
+        for edges in groups.values():
+            edges.sort(key=lambda r: r[1])
+            target = edges[0][2].lower()
+            if target in {"deployment_prepare_migrations", "deployment_prepare_consumed_outbox"}:
+                fail()
+            if target == "deployment_prepare_commands":
+                edge = (table, edges[0][3])
+                if len(edges) != 1 or edges[0][1] != 0 or edges[0][4] != "command_id" or tuple(edges[0][5:]) != ("NO ACTION", "NO ACTION", "NONE") or edge not in allowed_commands or edge in incoming:
+                    fail()
+                incoming.add(edge)
+            if target == "deployment_prepare_receipts":
+                if table != "deployment_prepare_consumptions" or [(r[1], r[3], r[4], *r[5:]) for r in edges] != [(0, "request_id", "request_id", "NO ACTION", "NO ACTION", "NONE"), (1, "receipt_sha256", "receipt_sha256", "NO ACTION", "NO ACTION", "NONE")]:
+                    fail()
+                receipt_incoming.append(table)
+    if incoming != allowed_commands or receipt_incoming != ["deployment_prepare_consumptions"]:
+        fail()
+    def snapshot(table, columns, cap):
+        return [dict(r) for r in db.execute("SELECT rowid AS _saved_rowid," + ",".join(columns) + " FROM deployment_prepare_" + table + " ORDER BY rowid LIMIT ?", (cap + 1,))]
+    columns = {"migrations": ("version", "checksum"), **{t: tuple(c) for t, c in COLUMNS_V4.items()}}
+    before = {t: snapshot(t, columns[t], 4 if t == "migrations" else CAPS_V4[t]) for t in columns}
+    db.execute("PRAGMA defer_foreign_keys=ON")
+    if db.execute("PRAGMA defer_foreign_keys").fetchone()[0] != 1:
+        fail()
+    for table in ("consumed_outbox", "receipts", "commands", "migrations"):
+        rows = sorted(before[table], key=lambda r: -r["lifecycle_revision"]) if table == "commands" else list(reversed(before[table]))
+        for row in rows:
+            db.execute("DELETE FROM deployment_prepare_" + table + " WHERE rowid=?", (row["_saved_rowid"],))
+    for table in ("consumed_outbox", "receipts", "commands", "migrations"):
+        db.execute("DROP TABLE deployment_prepare_" + table)
+    for index in (0, 5, 8, 10, 17, 18):
+        db.execute(DDL_V5[index])
+    for table in ("migrations", "commands", "receipts", "consumed_outbox"):
+        for old in before[table]:
+            row = {**old, **({"provider_context_id": None} if table == "receipts" else {})}
+            names = ["rowid" if k == "_saved_rowid" else k for k in row]
+            db.execute("INSERT INTO deployment_prepare_" + table + " (" + ",".join(names) + ") VALUES (" + ",".join("?" for _ in row) + ")", tuple(row.values()))
+    db.execute("INSERT INTO deployment_prepare_migrations VALUES(5,?)", (CHECKSUM_V5,))
+    for table, old in before.items():
+        restored = snapshot(table, columns[table], 5 if table == "migrations" else CAPS_V4[table])
+        if table == "migrations":
+            restored = restored[:4]
+        if restored != old:
+            fail()
+    if db.execute("SELECT 1 FROM deployment_prepare_receipts WHERE provider_context_id IS NOT NULL OR source_singleton<>1").fetchone() is not None:
+        fail()
+    verify(db)
+
+
+def _rebuild_v5_as_v6(db):
+    """Rebuild only unreferenced parents, preserving every immediate-v5 rowid/cell."""
+    if not db.in_transaction or _layout(db) is not _V5 or db.execute("PRAGMA foreign_keys").fetchone()[0] != 1:
+        fail()
+    verify(db)
+    for row in db.execute("SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name"):
+        quoted = '"' + row[0].replace('"', '""') + '"'
+        for edge in db.execute("PRAGMA foreign_key_list(" + quoted + ")"):
+            if edge[2].lower() in ("deployment_prepare_migrations", "deployment_prepare_installation_heads"):
+                fail()
+    columns = {"migrations": ("version", "checksum"), **{table:tuple(fields) for table,fields in COLUMNS_V5.items()}}
+    def snapshot(table,cap):
+        return [dict(row) for row in db.execute("SELECT rowid AS _saved_rowid," + ",".join(columns[table])
+            + " FROM deployment_prepare_" + table + " ORDER BY rowid LIMIT ?", (cap+1,))]
+    before = {table:snapshot(table,5 if table == "migrations" else CAPS_V5[table]) for table in columns}
+    db.execute("PRAGMA defer_foreign_keys=ON")
+    if db.execute("PRAGMA defer_foreign_keys").fetchone()[0] != 1:
+        fail()
+    for table in ("installation_heads", "migrations"):
+        for row in reversed(before[table]):
+            db.execute("DELETE FROM deployment_prepare_" + table + " WHERE rowid=?", (row["_saved_rowid"],))
+        db.execute("DROP TABLE deployment_prepare_" + table)
+    for index in (0,12,len(DDL_V6)-1):
+        db.execute(DDL_V6[index])
+    for table in ("migrations", "installation_heads"):
+        for row in before[table]:
+            names = ["rowid" if key == "_saved_rowid" else key for key in row]
+            db.execute("INSERT INTO deployment_prepare_" + table + " (" + ",".join(names)
+                + ") VALUES (" + ",".join("?" for _ in names) + ")", tuple(row.values()))
+    db.execute("INSERT INTO deployment_prepare_migrations VALUES(6,?)", (CHECKSUM_V6,))
+    for table,rows in before.items():
+        restored = snapshot(table,6 if table == "migrations" else CAPS_V5[table])
+        if table == "migrations": restored = restored[:5]
+        if restored != rows: fail()
+    if db.execute("SELECT 1 FROM deployment_prepare_installation_verifications LIMIT 1").fetchone() is not None:
+        fail()
+    verify(db)
+
+
+def _rebuild_v3_as_v4(db):
+    """Rebuild only the two changed parents, retaining immediate-v3 rowids."""
+    if (not db.in_transaction or _layout(db) is not _V3
+            or db.execute("PRAGMA foreign_keys").fetchone()[0] != 1):
+        fail()
+    verify(db)
+    allowed = {
+        ("deployment_prepare_lifecycle", "command_id"),
+        ("deployment_prepare_receipts", "import_command_id"),
+        ("deployment_prepare_consumptions", "command_id"),
+        ("deployment_prepare_installations", "command_id"),
+    }
+    incoming = set()
+    # shape() governs our namespace, but an unrelated table can reference us.
+    # Reject it before any DELETE, including empty tables and unusual actions.
+    tables = [row[0] for row in db.execute(
+        "SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name"
+    )]
+    for table in tables:
+        quoted = '"' + table.replace('"', '""') + '"'
+        for fk in db.execute("PRAGMA foreign_key_list(" + quoted + ")"):
+            target = fk[2].lower()
+            if target == "deployment_prepare_migrations":
+                fail()
+            if target == "deployment_prepare_commands":
+                edge = (table, fk[3])
+                if (edge not in allowed or fk[1] != 0 or fk[4] != "command_id"
+                        or tuple(fk[5:]) != ("NO ACTION", "NO ACTION", "NONE")
+                        or edge in incoming):
+                    fail()
+                incoming.add(edge)
+    if incoming != allowed:
+        fail()
+
+    def snapshot(table, cap):
+        return [dict(row) for row in db.execute(
+            "SELECT rowid AS _saved_rowid,* FROM deployment_prepare_" + table
+            + " ORDER BY rowid LIMIT ?", (cap + 1,),
+        )]
+
+    before = {table: snapshot(table, cap) for table, cap in
+              {"migrations": 3, **CAPS_V3}.items()}
+    db.execute("PRAGMA defer_foreign_keys=ON")
+    if db.execute("PRAGMA defer_foreign_keys").fetchone()[0] != 1:
+        fail()
+    for row in sorted(before["commands"],
+                      key=lambda r: (-r["lifecycle_revision"], r["command_id"])):
+        db.execute("DELETE FROM deployment_prepare_commands WHERE command_id=?",
+                   (row["command_id"],))
+    for row in reversed(before["migrations"]):
+        db.execute("DELETE FROM deployment_prepare_migrations WHERE version=?",
+                   (row["version"],))
+    db.execute("DROP TABLE deployment_prepare_commands")
+    db.execute("DROP TABLE deployment_prepare_migrations")
+    for index in (0, 5, 13, 14, 15, 16):
+        db.execute(DDL_V4[index])
+    for table in ("migrations", "commands"):
+        for row in before[table]:
+            columns = ["rowid" if key == "_saved_rowid" else key for key in row]
+            db.execute("INSERT INTO deployment_prepare_" + table + " ("
+                       + ",".join(columns) + ") VALUES ("
+                       + ",".join("?" for _ in row) + ")", tuple(row.values()))
+    db.execute("INSERT INTO deployment_prepare_migrations VALUES(4,?)", (CHECKSUM_V4,))
+    for table, old in before.items():
+        restored = snapshot(table, 4 if table == "migrations" else CAPS_V3[table])
+        if table == "migrations":
+            restored = restored[:3]
+        if restored != old:
+            fail()
+    verify(db)

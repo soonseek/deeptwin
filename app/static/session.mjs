@@ -133,9 +133,48 @@ export function createSupportedSession({ fetch, basePath = '/' } = {}) {
     return payload;
   }
 
+  async function uploadSource(path, input = {}) {
+    const target = requirePath(path);
+    const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+    const validId = value => typeof value === 'string' && new RegExp(`^${uuid}$`).test(value)
+      && value !== '00000000-0000-0000-0000-000000000000';
+    const route = new RegExp(`^/api/v1/works/(${uuid})/sources$`).exec(target.slice(prefix.length));
+    if (!route || !validId(route[1]) || typeof input !== 'object' || input === null
+        || Object.keys(input).some(key => !['metadata', 'bytes', 'signal'].includes(key))) fail('invalid source upload');
+    const { metadata: m, bytes, signal } = input;
+    const fields = ['schema_version', 'command_id', 'expected_revision', 'name', 'declared_media_type', 'size', 'sha256'];
+    if (!m || Object.keys(m).length !== fields.length || fields.some(key => !Object.hasOwn(m, key))
+        || m.schema_version !== 'owner-source-upload-v1' || !validId(m.command_id)
+        || !Number.isSafeInteger(m.expected_revision) || m.expected_revision < 1
+        || typeof m.name !== 'string' || !m.name || new TextEncoder().encode(m.name).length > 255
+        || ['.', '..'].includes(m.name) || /[\/\\\p{Cc}\p{Cf}\p{Cs}]/u.test(m.name)
+        || typeof m.declared_media_type !== 'string' || m.declared_media_type.length > 127
+        || !/^[a-z0-9][a-z0-9!#$&^_.+\-]*\/[a-z0-9][a-z0-9!#$&^_.+\-]*$/.test(m.declared_media_type)
+        || !Number.isSafeInteger(m.size) || m.size < 0 || m.size > 10485760
+        || typeof m.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(m.sha256)
+        || !(bytes instanceof Uint8Array) || bytes.byteLength !== m.size
+        || (signal !== undefined && !(signal instanceof AbortSignal))) fail('invalid source metadata or bytes');
+    const encoded = new TextEncoder().encode(JSON.stringify(m));
+    if (encoded.length > 1536) fail('source metadata is too large');
+    const header = btoa(String.fromCharCode(...encoded)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
+    if (header.length > 2048) fail('source metadata is too large');
+    if (token === null) fail('브라우저 세션이 아직 없습니다.', 'unauthenticated');
+    const response = await send(target, { method: 'POST', credentials: 'same-origin', signal,
+      headers: { [CSRF_HEADER]: token, 'Content-Type': 'application/octet-stream', 'X-DeepTwin-Source-Metadata': header },
+      body: bytes });
+    const payload = await readJson(response);
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) token = null;
+      throw refusal(payload, response.status);
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) fail('서버 응답을 읽지 못했습니다.', 'unavailable', response.status);
+    return payload;
+  }
+
   return Object.freeze({
     establish,
     request,
+    uploadSource,
     snapshot() {
       return Object.freeze({ established: token !== null, basePath });
     },

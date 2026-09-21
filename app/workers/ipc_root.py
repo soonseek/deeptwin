@@ -184,12 +184,23 @@ class GenerationLease:
         if self._closed:
             return
         self._closed = True
+        endpoint_fd, lock_fd, pair_fd = self._endpoint_fd, self._lock_fd, self._pair_fd
+        self._endpoint_fd = self._lock_fd = self._pair_fd = -1
+        first_error = None
         try:
-            fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
         except OSError:
             pass
-        for descriptor in (self._endpoint_fd, self._lock_fd, self._pair_fd):
-            _close_fd(descriptor)
+        except BaseException as error:
+            first_error = error
+        for descriptor in (endpoint_fd, lock_fd, pair_fd):
+            try:
+                _close_fd(descriptor)
+            except BaseException as error:
+                if first_error is None:
+                    first_error = error
+        if first_error is not None:
+            raise first_error
 
     def __enter__(self) -> Self:
         if self._closed:
@@ -245,18 +256,22 @@ def _open_absolute_directory(path: Path, *, searchable_only: bool) -> int:
         descriptor = os.open(os.sep, flags)
         for component in path.parts[1:]:
             child = os.open(component, flags, dir_fd=descriptor)
-            _close_fd(descriptor)
+            previous = descriptor
             descriptor = child
+            _close_fd(previous)
         info = os.fstat(descriptor)
         if not stat.S_ISDIR(info.st_mode):
             raise IpcRootIntegrityError()
         return descriptor
-    except IpcRootError:
-        _close_fd(descriptor)
+    except BaseException as error:
+        owned, descriptor = descriptor, -1
+        try:
+            _close_fd(owned)
+        except BaseException:  # noqa: BLE001, S110 - preserve the acquisition primary
+            pass
+        if isinstance(error, OSError):
+            raise IpcRootIntegrityError() from None
         raise
-    except OSError:
-        _close_fd(descriptor)
-        raise IpcRootIntegrityError() from None
 
 
 def _validate_directory(
@@ -308,12 +323,15 @@ def _open_regular_at(
         ):
             raise IpcRootIntegrityError()
         return descriptor
-    except IpcRootError:
-        _close_fd(descriptor)
+    except BaseException as error:
+        owned, descriptor = descriptor, -1
+        try:
+            _close_fd(owned)
+        except BaseException:  # noqa: BLE001, S110 - preserve the acquisition primary
+            pass
+        if isinstance(error, OSError):
+            raise IpcRootIntegrityError() from None
         raise
-    except OSError:
-        _close_fd(descriptor)
-        raise IpcRootIntegrityError() from None
 
 
 def _read_exact_secret(descriptor: int) -> bytes:
@@ -496,7 +514,13 @@ def _validate_layout(
             gid=spec.pair_gid,
             mode=ENDPOINT_MODE,
         )
-    finally:
+    except BaseException:
+        try:
+            _close_fd(endpoint_fd)
+        except BaseException:  # noqa: BLE001, S110 - preserve endpoint validation
+            pass
+        raise
+    else:
         _close_fd(endpoint_fd)
     lock_fd = _open_regular_at(
         pair_fd,
@@ -686,6 +710,7 @@ def acquire_generation(spec: PairRootSpec) -> GenerationLease:
     pair_fd = _open_absolute_directory(spec.pair_root, searchable_only=True)
     lock_fd = -1
     endpoint_fd = -1
+    secret_fd = -1
     try:
         pair_identity, endpoint_identity = _validate_layout(
             spec,
@@ -723,10 +748,9 @@ def acquire_generation(spec: PairRootSpec) -> GenerationLease:
             writable=False,
             exact_size=broker.AUTH_SECRET_BYTES,
         )
-        try:
-            secret_bytes = _read_exact_secret(secret_fd)
-        finally:
-            _close_fd(secret_fd)
+        secret_bytes = _read_exact_secret(secret_fd)
+        owned, secret_fd = secret_fd, -1
+        _close_fd(owned)
         endpoint_fd = os.open(
             ENDPOINT_NAME,
             _directory_flags(searchable_only=True),
@@ -753,14 +777,17 @@ def acquire_generation(spec: PairRootSpec) -> GenerationLease:
         )
         pair_fd = lock_fd = endpoint_fd = -1
         return lease
-    except IpcRootError:
+    except BaseException as error:
+        owned = (secret_fd, endpoint_fd, lock_fd, pair_fd)
+        secret_fd = endpoint_fd = lock_fd = pair_fd = -1
+        for descriptor in owned:
+            try:
+                _close_fd(descriptor)
+            except BaseException:  # noqa: BLE001, S110 - attempt all; preserve primary
+                pass
+        if isinstance(error, OSError):
+            raise IpcRootIntegrityError() from None
         raise
-    except OSError:
-        raise IpcRootIntegrityError() from None
-    finally:
-        _close_fd(endpoint_fd)
-        _close_fd(lock_fd)
-        _close_fd(pair_fd)
 
 
 def _metadata_stat(info: os.stat_result) -> tuple:
@@ -842,9 +869,16 @@ class MetadataGenerationLease:
                 except FileNotFoundError:
                     continue
                 raise IpcRootIntegrityError()
-        except OSError:
-            raise IpcRootIntegrityError() from None
-        finally:
+        except BaseException as error:
+            owned, current_fd = current_fd, -1
+            try:
+                _close_fd(owned)
+            except BaseException:  # noqa: BLE001, S110 - preserve recheck primary
+                pass
+            if isinstance(error, OSError):
+                raise IpcRootIntegrityError() from None
+            raise
+        else:
             _close_fd(current_fd)
 
     @property
@@ -855,17 +889,23 @@ class MetadataGenerationLease:
         if self._closed:
             return
         self._closed = True
+        first_error = None
         try:
             fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
         except OSError:
             pass
-        for descriptor in (
-            self._secret_fd,
-            self._endpoint_fd,
-            self._lock_fd,
-            self._pair_fd,
-        ):
-            _close_fd(descriptor)
+        except BaseException as error:  # noqa: BLE001 - defer until all closes attempted
+            first_error = error
+        for name in ("_secret_fd", "_endpoint_fd", "_lock_fd", "_pair_fd"):
+            descriptor = getattr(self, name)
+            setattr(self, name, -1)
+            try:
+                _close_fd(descriptor)
+            except BaseException as error:  # noqa: BLE001 - attempt remaining closes
+                if first_error is None:
+                    first_error = error
+        if first_error is not None:
+            raise first_error
 
     def __enter__(self) -> Self:
         try:
@@ -894,6 +934,7 @@ def acquire_generation_metadata(spec: PairRootSpec) -> MetadataGenerationLease:
         raise IpcRootIntegrityError()
     pair_fd = endpoint_fd = lock_fd = secret_fd = -1
     lease = None
+    transferred = False
     try:
         pair_fd = _open_absolute_directory(spec.pair_root, searchable_only=True)
         pair_identity, endpoint_identity = _validate_layout(
@@ -935,17 +976,26 @@ def acquire_generation_metadata(spec: PairRootSpec) -> MetadataGenerationLease:
         lease._secret_stat = secret_stat
         lease._closed = False
         pair_fd = endpoint_fd = lock_fd = secret_fd = -1
+        transferred = True
         lease.recheck_current()
         return lease
-    except (IpcRootError, OSError) as error:
-        if lease is not None:
-            lease.close()
-        if isinstance(error, IpcRootError):
-            raise
-        raise IpcRootIntegrityError() from None
-    finally:
-        for descriptor in (secret_fd, endpoint_fd, lock_fd, pair_fd):
-            _close_fd(descriptor)
+    except BaseException as error:
+        if transferred:
+            try:
+                lease.close()
+            except BaseException:  # noqa: BLE001, S110 - preserve initial recheck primary
+                pass
+        else:
+            owned = (secret_fd, endpoint_fd, lock_fd, pair_fd)
+            secret_fd = endpoint_fd = lock_fd = pair_fd = -1
+            for descriptor in owned:
+                try:
+                    _close_fd(descriptor)
+                except BaseException:  # noqa: BLE001, S110 - attempt all; preserve primary
+                    pass
+        if isinstance(error, OSError):
+            raise IpcRootIntegrityError() from None
+        raise
 
 
 class PopulatedGenerationFence:
@@ -1023,12 +1073,17 @@ class PopulatedGenerationFence:
             del reread
             if not same:
                 raise IpcRootIntegrityError()
-        except IpcRootError:
+        except BaseException as error:
+            owned, current_fd = current_fd, -1
+            try:
+                _close_fd(owned)
+            except BaseException:  # noqa: BLE001, S110 - preserve recheck primary
+                pass
+            if isinstance(error, OSError):
+                raise IpcRootIntegrityError() from None
             raise
-        except OSError:
-            raise IpcRootIntegrityError() from None
-        finally:
-            _close_fd(current_fd)
+        owned, current_fd = current_fd, -1
+        _close_fd(owned)
 
     @property
     def closed(self) -> bool:
@@ -1103,10 +1158,15 @@ def _retain_populated_generation(
         return fence
     except BaseException as error:
         # every acquisition path unwinds, whatever interrupted it
-        if fence is not None:
-            fence.close()
+        owned_fence, fence = fence, None
+        owned_fd, secret_fd = secret_fd, -1
+        try:
+            if owned_fence is not None:
+                owned_fence.close()
+            else:
+                _close_fd(owned_fd)
+        except BaseException:  # noqa: BLE001, S110 - preserve acquisition primary
+            pass
         if isinstance(error, IpcRootError) or not isinstance(error, OSError):
             raise
         raise IpcRootIntegrityError() from None
-    finally:
-        _close_fd(secret_fd)

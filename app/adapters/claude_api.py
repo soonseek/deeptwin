@@ -333,25 +333,13 @@ def _sha256_json(value: Any) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise _ProtocolViolation("duplicate_json_key")
-        result[key] = value
-    return result
-
-
 def _strict_json(raw: bytes | str, *, detail_code: str) -> Any:
-    def reject_constant(_value: str) -> None:
-        raise _ProtocolViolation("nonfinite_json_constant")
+    from .claude_protocol import ProtocolError, decode_json
 
     try:
-        return json.loads(raw, object_pairs_hook=_strict_object, parse_constant=reject_constant)
-    except _ProtocolViolation:
-        raise
-    except (json.JSONDecodeError, UnicodeDecodeError, TypeError, RecursionError) as exc:
-        raise _ProtocolViolation(detail_code) from exc
+        return decode_json(raw, detail_code=detail_code)
+    except ProtocolError as exc:
+        raise _ProtocolViolation(exc.detail_code) from exc
 
 
 def _secret_canaries(secret: str) -> tuple[tuple[str, int], ...]:
@@ -1977,86 +1965,44 @@ class ClaudeAPIAdapter:
         cancelled: Callable[[], bool],
         deadline_started_ms: int,
     ) -> Iterator[tuple[str, Any]]:
-        buffer = bytearray()
-        fields: list[bytes] = []
-        total = 0
-        event_bytes = 0
-        event_count = 0
+        from .claude_protocol import ProtocolError, SSEDecoder
+
+        decoder = SSEDecoder(
+            max_total_bytes=self._limits.max_total_stream_bytes,
+            max_event_bytes=self._limits.max_event_bytes,
+            max_events=self._limits.max_events,
+            allow_comments=False,
+        )
         iterator = iter(chunks)
-        while True:
-            self._stream_control(cancelled=cancelled, deadline_started_ms=deadline_started_ms)
-            try:
-                chunk = next(iterator)
-            except StopIteration:
-                break
-            self._stream_control(cancelled=cancelled, deadline_started_ms=deadline_started_ms)
-            total += len(chunk)
-            if total > self._limits.max_total_stream_bytes:
-                raise _ProtocolViolation("stream_limit")
-            buffer.extend(chunk)
+        try:
             while True:
                 self._stream_control(cancelled=cancelled, deadline_started_ms=deadline_started_ms)
-                newline = buffer.find(b"\n")
-                if newline < 0:
-                    if event_bytes + len(buffer) > self._limits.max_event_bytes:
-                        raise _ProtocolViolation("event_limit")
+                try:
+                    chunk = next(iterator)
+                except StopIteration:
                     break
-                line = bytes(buffer[:newline])
-                del buffer[: newline + 1]
-                if line.endswith(b"\r"):
-                    line = line[:-1]
-                event_bytes += newline + 1
-                if event_bytes > self._limits.max_event_bytes:
-                    raise _ProtocolViolation("event_limit")
-                if line:
-                    fields.append(line)
-                    continue
-                if not fields:
-                    event_bytes = 0
-                    continue
-                event_count += 1
-                if event_count > self._limits.max_events:
-                    raise _ProtocolViolation("event_count_limit")
-                yield self._parse_sse_fields(fields)
-                fields = []
-                event_bytes = 0
-        if buffer or fields:
-            raise _ProtocolViolation("incomplete_sse")
+                self._stream_control(cancelled=cancelled, deadline_started_ms=deadline_started_ms)
+                steps = iter(decoder.feed(chunk))
+                while True:
+                    self._stream_control(cancelled=cancelled, deadline_started_ms=deadline_started_ms)
+                    try:
+                        step = next(steps)
+                    except StopIteration:
+                        break
+                    if step is not None:
+                        yield step
+            yield from decoder.finish()
+        except ProtocolError as exc:
+            raise _ProtocolViolation(exc.detail_code) from exc
 
     @staticmethod
     def _parse_sse_fields(lines: list[bytes]) -> tuple[str, Any]:
-        event_name: str | None = None
-        data_lines: list[bytes] = []
-        for line in lines:
-            if line.startswith(b":"):
-                continue
-            if b":" in line:
-                field, value = line.split(b":", 1)
-                if value.startswith(b" "):
-                    value = value[1:]
-            else:
-                field, value = line, b""
-            if field == b"event":
-                if event_name is not None:
-                    raise _ProtocolViolation("duplicate_event_field")
-                try:
-                    event_name = value.decode("utf-8", errors="strict")
-                except UnicodeDecodeError as exc:
-                    raise _ProtocolViolation("invalid_utf8") from exc
-            elif field == b"data":
-                data_lines.append(value)
-            else:
-                raise _ProtocolViolation("unknown_sse_field")
-        if event_name is None or not _SAFE_ID.fullmatch(event_name):
-            raise _ProtocolViolation("invalid_event_name")
-        raw_data = b"\n".join(data_lines)
+        from .claude_protocol import ProtocolError, parse_sse_fields
+
         try:
-            raw_data.decode("utf-8", errors="strict")
-        except UnicodeDecodeError as exc:
-            raise _ProtocolViolation("invalid_utf8") from exc
-        if event_name == "ping" and not raw_data:
-            return event_name, {"type": "ping"}
-        return event_name, _strict_json(raw_data, detail_code="invalid_event_json")
+            return parse_sse_fields(lines)
+        except ProtocolError as exc:
+            raise _ProtocolViolation(exc.detail_code) from exc
 
     @staticmethod
     def _success_terminal(call_id: str, reason: str | None) -> ProviderTerminal:

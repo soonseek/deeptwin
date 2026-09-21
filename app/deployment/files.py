@@ -78,12 +78,18 @@ def open_directory(path, *, search=False):
         fd = os.open("/", flags)
         for part in path.parts[1:]:
             child = os.open(part, flags, dir_fd=fd)
-            close_fd(fd)
+            previous = fd
             fd = child
+            close_fd(previous)
         return fd
-    except (OSError, AttributeError):
-        close_fd(fd)
-        raise DeploymentSourceUnavailable() from None
+    except BaseException as error:
+        try:
+            close_fd(fd)
+        except BaseException:  # noqa: BLE001, S110 - preserve the active primary
+            pass
+        if isinstance(error, (OSError, AttributeError)):
+            raise DeploymentSourceUnavailable() from None
+        raise
 
 
 def members(fd, maximum):
@@ -123,9 +129,14 @@ def open_regular(fd, name, *, uid, gid, mode, cap, empty=False):
         info = stat_fd(child)
         validate_regular(info, uid=uid, gid=gid, mode=mode, cap=cap, empty=empty)
         return child
-    except (OSError, DeploymentSourceError):
-        close_fd(child)
-        raise DeploymentSourceError() from None
+    except BaseException as error:
+        try:
+            close_fd(child)
+        except BaseException:  # noqa: BLE001, S110 - preserve the active primary
+            pass
+        if isinstance(error, (OSError, DeploymentSourceError)):
+            raise DeploymentSourceError() from None
+        raise
 
 
 def validate_regular(info, *, uid, gid, mode, cap, empty=False):
@@ -195,9 +206,14 @@ class Directory(RetainedHandle):
             result._closed = False
             result.recheck_current()
             return result
-        except (OSError, DeploymentSourceError):
-            close_fd(fd)
-            raise DeploymentSourceError() from None
+        except BaseException as error:
+            try:
+                close_fd(fd)
+            except BaseException:  # noqa: BLE001, S110 - preserve the active primary
+                pass
+            if isinstance(error, (OSError, DeploymentSourceError)):
+                raise DeploymentSourceError() from None
+            raise
 
     def recheck_current(self):
         if self._closed:
@@ -212,11 +228,17 @@ class Directory(RetainedHandle):
                     != self.identity
                 ):
                     raise DeploymentSourceError()
-            return self.identity
-        except OSError:
-            raise DeploymentSourceUnavailable() from None
-        finally:
+        except BaseException as error:
+            try:
+                close_fd(current)
+            except BaseException:  # noqa: BLE001, S110 - preserve the active primary
+                pass
+            if isinstance(error, OSError):
+                raise DeploymentSourceUnavailable() from None
+            raise
+        else:
             close_fd(current)
+        return self.identity
 
     def close(self):
         if not self._closed:
@@ -240,10 +262,15 @@ class SourceFile(RetainedHandle):
             result._signature, result._closed = signature(stat_fd(fd)), False
             result.read_current()
             return result
-        except (OSError, DeploymentSourceError):
-            root.close()
-            close_fd(fd)
-            raise DeploymentSourceError() from None
+        except BaseException as error:
+            for close in (root.close, lambda: close_fd(fd)):
+                try:
+                    close()
+                except BaseException:  # noqa: BLE001, S110 - attempt remaining closes
+                    pass
+            if isinstance(error, (OSError, DeploymentSourceError)):
+                raise DeploymentSourceError() from None
+            raise
 
     def read_current(self):
         if self._closed:
@@ -270,8 +297,15 @@ class SourceFile(RetainedHandle):
     def close(self):
         if not self._closed:
             self._closed = True
-            close_fd(self.fd)
-            self.root.close()
+            failure = None
+            for close in (lambda: close_fd(self.fd), self.root.close):
+                try:
+                    close()
+                except BaseException as error:  # noqa: BLE001 - rethrow after all closes
+                    if failure is None:
+                        failure = error
+            if failure is not None:
+                raise failure
 
 
 @dataclass(frozen=True, slots=True)

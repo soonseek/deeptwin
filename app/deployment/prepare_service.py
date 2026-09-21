@@ -87,6 +87,7 @@ class PersistentDeploymentPrepare:
         public_trust_source=None,
         receipt_ingress_source=None,
         consumption_exchange_source=None,
+        provider_source_context=None,
     ):
         require(
             type(domain_store) is DomainStore
@@ -120,6 +121,9 @@ class PersistentDeploymentPrepare:
             consumption_exchange_source,
         )
         self._profile = owner_authority.profile
+        from .provider_sources import ProviderSourceContext
+        require(provider_source_context is None or type(provider_source_context) is ProviderSourceContext, "unavailable")
+        self._provider_context = provider_source_context
         self._lock, self._highest, self._unavailable = RLock(), 0, False
         try:
             with _writer(), self._domain._connection(write=True) as db:
@@ -178,6 +182,40 @@ class PersistentDeploymentPrepare:
             self._unavailable = True
             raise DeploymentPrepareError("unavailable") from None
 
+    def _provider_conformance_subject(self, db, installation_ref):
+        """Private read-only delegate; caller already owns the global DomainStore writer."""
+        self._domain._assert_write_transaction(db)
+        from ..extensions.provider_conformance_resolver import resolve_subject
+
+        return resolve_subject(self, db, installation_ref)
+
+    def _installation_stage_view(self, db, stage_ref):
+        """Project verified historical staging once, inside the caller's actual writer."""
+        self._domain._assert_write_transaction(db)
+        from ..extensions.provider_installation_contracts import VerifiedStageView
+
+        require(type(stage_ref) is EntityRef and stage_ref.kind == "extension_installation"
+                and stage_ref.version == 1, "invalid_input")
+        journal = self._journal(db)
+        matches = [item for item in journal["requests"].values()
+                   if item.get("installation") is not None and item["installation"]["ref"] == stage_ref]
+        require(len(matches) == 1 and matches[0].get("provider_row") is not None, "conflict")
+        item = matches[0]
+        bundle, candidate_ref = records.candidate(self._domain, db, item["anchor"]["candidate_ref"]["id"])
+        require(candidate_ref.as_dict() == item["anchor"]["candidate_ref"], "conflict")
+        lineage = [raw for kind, raw in bundle.documents if kind == "provenance"]
+        require(len(lineage) == 1, "conflict")
+        current = item.get("installation_current", item["installation"])
+        view = object.__new__(VerifiedStageView)
+        for name, value in {
+            "stage_ref": stage_ref, "stage_record_bytes": item["installation"]["record"].body_bytes,
+            "candidate_bytes": bundle.content_bytes, "lineage_bytes": lineage[0],
+            "current_head_bytes": canonical_json(current["head"]),
+            "provider_files": item["context"]["files"],
+        }.items():
+            object.__setattr__(view, name, value)
+        return view
+
     def _actor_ref(self, db, actor):
         row = db.execute(
             "SELECT actor_ref FROM owner_auth_accounts WHERE owner_id=? LIMIT 2",
@@ -192,6 +230,10 @@ class PersistentDeploymentPrepare:
             "cancel": {"deployment-cancel-v1", "deployment-cancel-v2"},
             "receipt_import": {"deployment-receipt-import-v1"},
             "consume": {"deployment-consume-v1"},
+            "prepare_provider": {"deployment-prepare-provider-v1"},
+            "cancel_provider": {"deployment-cancel-provider-v1", "deployment-cancel-provider-v2"},
+            "import_provider_receipt": {"deployment-receipt-import-provider-v1"},
+            "consume_provider_receipt": {"deployment-consume-provider-v1"},
         }
         require(operation in namespaces, "unavailable")
         command = next(
@@ -245,6 +287,31 @@ class PersistentDeploymentPrepare:
             self._floor(db, journal["control"], now)
         return None, now
 
+    @closed
+    def prepare_provider(self, authenticated_request, payload):
+        from .provider_prepare_service import prepare_provider
+        return prepare_provider(self, authenticated_request, payload)
+
+    @closed
+    def cancel_provider(self, authenticated_request, request_id, payload):
+        from .provider_prepare_service import cancel_provider
+        return cancel_provider(self, authenticated_request, request_id, payload)
+
+    @closed
+    def read_provider(self, authenticated_request, request_id):
+        from .provider_prepare_service import read_provider
+        return read_provider(self, authenticated_request, request_id)
+
+    @closed
+    def import_provider_receipt(self, authenticated_request, request_id, payload):
+        from .provider_receipt_service import import_provider_receipt
+        return import_provider_receipt(self, authenticated_request, request_id, payload)
+
+    @closed
+    def consume_provider_receipt(self, authenticated_request, request_id, payload):
+        from .provider_receipt_service import consume_provider_receipt
+        return consume_provider_receipt(self, authenticated_request, request_id, payload)
+
     def _current_exchange(self, control=None):
         require(self._exchange is not None, "dependency_unavailable")
         try:
@@ -264,6 +331,7 @@ class PersistentDeploymentPrepare:
 
     def _acquire(self, slot_id, control):
         require(self._topology is not None, "dependency_unavailable")
+        lease = None
         try:
             require(self._topology._profile == self._profile, "dependency_unavailable")
             self._topology.recheck_current()
@@ -277,13 +345,19 @@ class PersistentDeploymentPrepare:
                 control is not None
                 and sources.digest(lease.topology_bytes) != control["topology_sha256"]
             ):
-                lease.close()
                 raise DeploymentPrepareError("dependency_unavailable")
             return lease
-        except sources.DeploymentSourceBusy:
-            raise DeploymentPrepareError("capacity") from None
-        except sources.DeploymentSourceError:
-            raise DeploymentPrepareError("dependency_unavailable") from None
+        except BaseException as error:
+            if lease is not None:
+                try:
+                    lease.close()
+                except BaseException:  # noqa: BLE001, S110 - preserve validation primary
+                    pass
+            if isinstance(error, sources.DeploymentSourceBusy):
+                raise DeploymentPrepareError("capacity") from None
+            if isinstance(error, sources.DeploymentSourceError):
+                raise DeploymentPrepareError("dependency_unavailable") from None
+            raise
 
     def _business(self, db, journal, payload):
         bundle, candidate_ref = records.candidate(
@@ -487,6 +561,7 @@ class PersistentDeploymentPrepare:
             self._authenticate(authenticated_request, db, read=True)
             journal = self._journal(db)
             require(request_id in journal["requests"], "not_found")
+            require(journal["requests"][request_id]["anchor"]["schema_version"] == "deployment-request-anchor-v1", "not_found")
             return lifecycle.read_body(journal["requests"][request_id])
 
     @closed
@@ -505,6 +580,7 @@ class PersistentDeploymentPrepare:
                 return replay
             require(request_id in journal["requests"], "not_found")
             item = journal["requests"][request_id]
+            require(item["anchor"]["schema_version"] == "deployment-request-anchor-v1", "not_found")
             require(
                 item["request"]["request_digest"] == value["request_digest"]
                 and item["head"]["revision"] == value["expected_revision"]
@@ -625,6 +701,7 @@ class PersistentDeploymentPrepare:
     def _import_head(self, db, journal, value):
         require(value["request_id"] in journal["requests"], "not_found")
         item = journal["requests"][value["request_id"]]
+        require(item["anchor"]["schema_version"] == "deployment-request-anchor-v1", "not_found")
         require(
             item["row"]["request_digest"] == value["request_digest"]
             and item["head"]["revision"] == value["expected_revision"]
@@ -993,6 +1070,7 @@ class PersistentDeploymentPrepare:
     def _consume_head(self, db, journal, value):
         require(value["request_id"] in journal["requests"], "not_found")
         item = journal["requests"][value["request_id"]]
+        require(item["anchor"]["schema_version"] == "deployment-request-anchor-v1", "not_found")
         receipt = item.get("receipt")
         require(
             item["row"]["request_digest"] == value["request_digest"]
@@ -1016,6 +1094,7 @@ class PersistentDeploymentPrepare:
 
     def _reconcile(self):
         started = time.monotonic()
+        self._provider_reconcile_deadline = started + 1
         try:
             with _writer(), self._domain._connection(write=True) as db:
                 self._owner._check(db)
@@ -1047,10 +1126,26 @@ class PersistentDeploymentPrepare:
                         )
                     )
                 ]
-            for identity, role in (cancellations + consumptions + preparations)[:16]:
+            provider_ids = {identity for identity, item in journal["requests"].items()
+                            if item["anchor"]["schema_version"] == "deployment-provider-request-anchor-v2"}
+            work = cancellations + consumptions + preparations
+            if provider_ids:
+                work = sorted(work, key=lambda pair: (
+                    0 if pair[1] == "cancel" and pair[0] in provider_ids else
+                    1 if pair[1] in {"cancel", "consumed"} and pair[0] not in provider_ids else
+                    2 if pair[1] == "consumed" else 3, pair[0]))
+            for identity, role in work[:16]:
                 if time.monotonic() - started >= 1:
                     break
-                self._reconcile_item(identity, role)
+                if identity in provider_ids:
+                    if role == "consumed":
+                        from .provider_receipt_service import reconcile_consumed
+                        reconcile_consumed(self, identity)
+                    else:
+                        from .provider_prepare_service import reconcile_item
+                        reconcile_item(self, identity, role)
+                else:
+                    self._reconcile_item(identity, role)
         except (
             DeploymentPrepareError,
             OwnerAuthError,

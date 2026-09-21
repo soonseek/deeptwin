@@ -724,16 +724,20 @@ def test_actual_receipt_session_transport_and_generic_failure_do_not_import(
 )
 def test_actual_five_source_ownership_survives_failures(tmp_path, monkeypatch, fault):
     from dataclasses import replace
+    import os
 
     from app.api import deployment_prepare, first_party_catalog, session_routes
     from app.api.first_party import ContributionServices
     from app.api.router_composition import RouteCompositionError
 
+    caller_fds = len(os.listdir('/dev/fd')) - 1
     profile, _, arguments = configured(tmp_path)
     physical, values = http_sources(tmp_path, monkeypatch, profile)
     opened, closed, contexts, errors = [], [], [], []
+    fault_reached = []
     failure = RuntimeError("original synthetic factory failure")
-    entry = first_party_catalog.INSTALLED[-1]
+    (entry,) = tuple(entry for entry in first_party_catalog.INSTALLED
+                     if entry.descriptor_name == "deployment-prepare-v1.json")
 
     def factory(context, *, dependencies):
         contexts.append(context)
@@ -756,17 +760,25 @@ def test_actual_five_source_ownership_survives_failures(tmp_path, monkeypatch, f
             service._ingress,
             service._consumption,
         ) == tuple(opened)
+        assert set(result.exports) == {
+            "deployment-prepare.service", "deployment-provider.source-context",
+            "installation-release.source-context"}
+        assert result.exports["deployment-provider.source-context"] is None
+        assert result.exports["installation-release.source-context"] is None
         if fault == "exports":
+            fault_reached.append(fault)
             return ContributionServices(result.router, {}, result.owned_resources)
         return result
 
     monkeypatch.setattr(
         first_party_catalog,
         "INSTALLED",
-        (*first_party_catalog.INSTALLED[:-1], replace(entry, factory=factory)),
+        tuple(replace(current, factory=factory) if current is entry else current
+              for current in first_party_catalog.INSTALLED),
     )
 
     def fail(*args, **kwargs):
+        fault_reached.append(fault)
         raise failure
 
     if fault == "later":
@@ -815,7 +827,7 @@ def test_actual_five_source_ownership_survives_failures(tmp_path, monkeypatch, f
             if (fault == "ingress" and _index == 3) or (
                 fault == "consumption" and _index == 4
             ):
-                raise failure
+                fail()
             source = _original(**kwargs)
             close = source.close
 
@@ -864,10 +876,15 @@ def test_actual_five_source_ownership_survives_failures(tmp_path, monkeypatch, f
         )
         assert closed == list(reversed(opened))
         assert all(source._closed for source in opened)
+        assert fault_reached == ([] if fault == "shutdown" else [fault])
+        assert errors == ([failure] if fault in {
+            "ingress", "consumption", "service", "router", "return", "local-cleanup"
+        } else [])
         if fault == "local-cleanup":
             assert errors == [failure], (
                 "Secondary close failure replaced original construction error"
             )
+    assert len(os.listdir('/dev/fd')) - 1 == caller_fds
 
 
 def test_exact_import_replay_uses_no_clock_live_sources_or_flush(tmp_path, monkeypatch):
@@ -1120,10 +1137,13 @@ def test_actual_v1_cold_http_upgrade_preserves_historical_reply_bytes(
             ] == [
                 (1, "68a6ed89486cb48536873e4b107e2e7e1dd4061e5ce65773b0bebe46303cc2ec"),
                 (2, "d35202bc3d2b3f7be9a0a0d86ba32171c4055334f11531c40497d9b54165693f"),
-                # the cold HTTP upgrade continues forward-only to v3 (journal v3 §3)
+                # The cold HTTP upgrade continues forward-only to current v6.
                 (3, "ff0931661b7958805f3113bad954110ca702ba3c0205e6dadc73651508a51457"),
+                (4, "f89a9a8ba7f98da44e4a48f63c0363d2bfa7fafe038bd19bfdc178396c4be7d2"),
+                (5, "9f3b9426d465524036c8c3ca48db3ba3360e284149b5cee8611aba0d6b4907d2"),
+                (6, "8065412b2560175517eee1b56ce12f04912cb2f74fe76a7446f17b2f33924c72"),
             ]
-            assert storage.shape(db) == storage.SHAPE_V3
+            assert storage.shape(db) == storage.SHAPE_V6
             with pytest.raises(DeploymentPrepareError):
                 storage.install(db)
         for value, reply, cancel_value, cancel_reply in old.cases:

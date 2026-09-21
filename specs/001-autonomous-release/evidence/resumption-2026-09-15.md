@@ -1398,3 +1398,15 @@ names; SHOULD: an N-family unknown outcome, runtime.md's row) folded in RED-firs
 **147**; Ruff clean. Details and hashes in `tool-effect-vocabulary-t047-t087.md`. Full regression: **6351 passed,
 2 skipped** (Linux-only), 369 subtests, 17m04s.
 
+## T087 — the ToolDefinition-backed effect gate, and the merged tree's reconciliation (2026-09-19 → 2026-09-22)
+
+The gate: RED retained (no shared scope helper, the authority refusing a six-tuple, no effect class at build), GREEN
+after the trusted definition, the compile-time requirement, `tool_effects` and the transport's build rules; independent
+review ACCEPT WITH CHANGES (SHOULD: the id grammar wider than the worker's, the gate id validated by length, conflicting
+definitions admitted, no scheduler test over the gated graph, stale text) folded in RED-first. Then the tree this loop
+resumed on carried a parallel orchestration's uncommitted tasks 27–50 (never run as one suite): full run 1 **9,104 passed /
+95 failed / 82 errors**; six causes classified alone and fixed at their source (`merged-tree-reconciliation-2026-09-22.md`);
+full run 2 **9,201 passed / 0 failed / 82 errors** (the errors' hidden cause revealed: an in-process module reload);
+full run 3 **9,280 passed / 3 failed / 0 errors** (1h22m) — the three pass alone and are timing/order-dependent under
+load, recorded as such. Checkpoint committed.
+

@@ -625,30 +625,33 @@ def _open_root(spec: ChannelSpec) -> int:
         raise EndpointViolation()
     flags |= os.O_NOFOLLOW
     current_fd = -1
-    info: os.stat_result | None = None
-    open_failed = False
     try:
         current_fd = os.open(os.sep, flags)
         for component in spec.pair_root.parts[1:]:
             next_fd = os.open(component, flags, dir_fd=current_fd)
-            _close_fd(current_fd)
+            previous = current_fd
             current_fd = next_fd
+            _close_fd(previous)
         info = os.fstat(current_fd)
-    except OSError:
-        open_failed = True
-        if current_fd >= 0:
-            _close_fd(current_fd)
-    if open_failed or info is None:
-        raise EndpointViolation()
-    if (
-        not stat.S_ISDIR(info.st_mode)
-        or info.st_uid != spec.root_uid
-        or info.st_gid != spec.root_gid
-        or stat.S_IMODE(info.st_mode) != spec.root_mode
-    ):
-        _close_fd(current_fd)
-        raise EndpointViolation()
-    return current_fd
+        if (
+            not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != spec.root_uid
+            or info.st_gid != spec.root_gid
+            or stat.S_IMODE(info.st_mode) != spec.root_mode
+        ):
+            raise EndpointViolation()
+        result, current_fd = current_fd, -1
+        return result
+    except BaseException as error:
+        owned, current_fd = current_fd, -1
+        try:
+            _close_fd(owned)
+        except BaseException:  # noqa: BLE001, S110 - preserve root acquisition primary
+            pass
+        if not isinstance(error, OSError):
+            raise
+    # Keep private OS details out of both exception cause and context.
+    raise EndpointViolation()
 
 
 def _validate_endpoint_at(root_fd: int, spec: ChannelSpec) -> EndpointIdentity:
@@ -777,14 +780,24 @@ def connect_verified(
             raise EndpointViolation()
         credentials = _verify_peer(sock, spec, local_service)
         sock.settimeout(None)
-        return sock, after, credentials
-    except BrokerError:
-        _close_socket(sock)
-        raise
-    except (OSError, TimeoutError):
-        _close_socket(sock)
-    finally:
-        _close_fd(root_fd)
+        # Keep the socket locally owned until transient-root cleanup succeeds.
+        owned_root, root_fd = root_fd, -1
+        _close_fd(owned_root)
+        result, sock = (sock, after, credentials), None
+        return result
+    except BaseException as error:
+        owned_socket, sock = sock, None
+        owned_root, root_fd = root_fd, -1
+        try:
+            _close_socket(owned_socket)
+        except BaseException:  # noqa: BLE001, S110 - preserve connect primary
+            pass
+        try:
+            _close_fd(owned_root)
+        except BaseException:  # noqa: BLE001, S110 - attempt both; preserve primary
+            pass
+        if not isinstance(error, (OSError, TimeoutError)):
+            raise
     raise TransportClosed()
 
 

@@ -170,6 +170,7 @@ def test_shared_runtime_migrations_preserve_an_independent_budget_component(tmp_
         ).fetchall() == [
             ("budgets", 1, "a" * 64),
             ("ledger", 1, module.RUNTIME_MIGRATION_SHA256),
+            ("ledger", 2, module.LEDGER_V2_SHA256),
         ]
 
 

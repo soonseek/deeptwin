@@ -1,0 +1,103 @@
+{
+  "$id": "urn:deeptwin:schemas:v2:extensions:provider-installation-input-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "command_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "pattern": "^(?:(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$",
+      "type": "string"
+    },
+    "objects": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "enum": [
+              "release_review",
+              "provenance",
+              "image_sbom",
+              "component_license_review",
+              "image_scan",
+              "component_scan",
+              "source_report",
+              "dependency_report",
+              "filesystem_report",
+              "cohort_manifest",
+              "invocation",
+              "license_text",
+              "origin_evidence"
+            ]
+          },
+          "sha256": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^(?:[0-9a-f]{64})$",
+            "type": "string"
+          },
+          "size_bytes": {
+            "maximum": 8388608,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "role",
+          "sha256",
+          "size_bytes"
+        ],
+        "type": "object"
+      },
+      "maxItems": 128,
+      "minItems": 12,
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "provider-installation-command-v1",
+      "type": "string"
+    },
+    "staged_installation_ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "kind": {
+          "const": "extension_installation",
+          "type": "string"
+        },
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "version": {
+          "const": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "version",
+        "sha256"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "command_id",
+    "staged_installation_ref",
+    "objects"
+  ],
+  "type": "object"
+}

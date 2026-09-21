@@ -13,6 +13,7 @@ Linux authentication, a real image or a container.
 """
 
 import time
+from dataclasses import replace
 from types import SimpleNamespace
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
@@ -36,7 +37,9 @@ from app.tests.test_extension_probe import (  # noqa: F401 - fixture re-exports
 from app.tests.test_runtime_budget_dispatch import budget_row, opened
 from app.tests.test_runtime_result_settlement import dispatched
 from app.tests.test_scheduler_attempt_dispatch import (
-    build,
+    build as _build,
+)
+from app.tests.test_scheduler_attempt_dispatch import (
     handlers,
     writer_attempt_id,
 )
@@ -48,6 +51,26 @@ from app.workers import listener
 # the transport states a bound of at least the reply frame's ceiling (4 KiB); the
 # shared subject's 1 000-byte policy cap cannot admit an attempt reserved from it
 OUTPUT_CAP = xm.MAX_REPLY_BYTES + xt.MAX_INPUT_BYTES
+
+
+def compiled_context(subject, tool=None):
+    """Controlled authority assembly, never a persisted qualification claim."""
+    from app.tests.test_graph_contract import (
+        authority_with,
+        compile_value,
+        trusted_tool,
+    )
+    from app.tests.test_graph_execution import linear_graph
+
+    selected = TEXT_PROFILE if tool is None else tool
+    subject.compiled = compile_value(linear_graph(), compilation_authority=authority_with([
+        trusted_tool(tool_id=selected["tool_id"], version=selected["version"]),
+    ]))
+    return {"compiled": subject.compiled, "node_id": "writer", "binding_id": "source-read"}
+
+
+def build(subject, run, attempts, registry):
+    return _build(subject, run, attempts, registry, compiled=getattr(subject, "compiled", None))
 
 
 def started(path):
@@ -239,7 +262,7 @@ def test_build_refuses_artifact_inputs_for_operations_that_take_none(tmp_path):
                                                slot_number=SLOT, operation=operation, artifact_inputs=(item,))
     built = xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE,
                                                slot_number=SLOT, operation="invoke_tool", artifact_inputs=(item,),
-                                               tool=TEXT_PROFILE)
+                                               tool=TEXT_PROFILE, ledger=subject.ledger, **compiled_context(subject))
     assert built.operation == "invoke_tool"
     # invoke_tool names its tool at build; a query never does
     with pytest.raises(ValueError):
@@ -247,7 +270,7 @@ def test_build_refuses_artifact_inputs_for_operations_that_take_none(tmp_path):
                                            operation="invoke_tool", artifact_inputs=(item,))
     with pytest.raises(ValueError):
         xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
-                                           operation="status", tool=TEXT_PROFILE)
+                                           operation="status", tool=TEXT_PROFILE, ledger=subject.ledger, **compiled_context(subject))
     with pytest.raises(TypeError):
         xt.ExtensionArtifactInput(media_type="text/plain", declared_size=5, sha256="d" * 64, role="document_source",
                                   payload=BytesSource(b"hello"))  # bytes, not a source
@@ -279,7 +302,7 @@ def test_declared_inputs_stream_after_the_request_and_a_typed_result_settles(tmp
                                         payload=payload),)
     transport_ = xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE,
                                                     slot_number=SLOT, operation="invoke_tool",
-                                                    artifact_inputs=inputs, tool=TEXT_PROFILE)
+                                                    artifact_inputs=inputs, tool=TEXT_PROFILE, ledger=subject.ledger, **compiled_context(subject))
     with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
         build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
     assert seen["inputs"] == [("document_source", payload)]
@@ -328,7 +351,7 @@ def test_a_stream_failure_on_control_is_a_typed_unknown_outcome(tmp_path, staged
     object.__setattr__(item, "payload", b"HELLO")
     transport_ = xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE,
                                                     slot_number=SLOT, operation="invoke_tool",
-                                                    artifact_inputs=(item,), tool=TEXT_PROFILE)
+                                                    artifact_inputs=(item,), tool=TEXT_PROFILE, ledger=subject.ledger, **compiled_context(subject))
     raised = []
     original = xt.ExtensionAttemptTransport.__call__
 
@@ -341,7 +364,7 @@ def test_a_stream_failure_on_control_is_a_typed_unknown_outcome(tmp_path, staged
 
     monkeypatch.setattr(xt.ExtensionAttemptTransport, "__call__", observed)
     with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
-        build(subject, run, bound(subject, transport_), handlers(subject, [])).run()
+        build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
     assert [type(item) for item in raised] == [xt.ExtensionTransportError]
     assert raised[0].code == "transport_stream" and raised[0].dispatch_effect == "outcome_unknown"
     assert subject.ledger.get_attempt(writer_attempt_id(run))["terminal_outcome"] == "outcome_unknown"
@@ -365,7 +388,7 @@ def test_the_real_tool_runs_end_to_end_and_its_result_is_the_sealed_node_result(
                                         sha256=sha256(text).hexdigest(), role="document_source", payload=text),)
     transport_ = xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE,
                                                     slot_number=SLOT, operation="invoke_tool",
-                                                    artifact_inputs=inputs, tool=TEXT_PROFILE)
+                                                    artifact_inputs=inputs, tool=TEXT_PROFILE, ledger=subject.ledger, **compiled_context(subject))
     outcome = build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
     writer_execution = sch.execution_identity(run.run_id, "writer", 0)
     content = subject.domain.get(dict(outcome.result_refs)[writer_execution]).body["content"]
@@ -402,7 +425,7 @@ def test_the_worker_cannot_inflate_the_usage_of_invoke_tool(tmp_path, staged, mo
                                         role="document_source", payload=text),)
     transport_ = xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE,
                                                     slot_number=SLOT, operation="invoke_tool",
-                                                    artifact_inputs=inputs, tool=TEXT_PROFILE)
+                                                    artifact_inputs=inputs, tool=TEXT_PROFILE, ledger=subject.ledger, **compiled_context(subject))
     with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
         build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
     assert subject.ledger.get_attempt(writer_attempt_id(run))["terminal_outcome"] == "outcome_unknown"
@@ -434,7 +457,8 @@ def text_input(text, *, role="document_source", media_type="text/plain"):
 def tool_transport(subject, inputs, tool=None):
     return xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE,
                                               slot_number=SLOT, operation="invoke_tool",
-                                              artifact_inputs=inputs, tool=TEXT_PROFILE if tool is None else tool)
+                                              artifact_inputs=inputs, tool=TEXT_PROFILE if tool is None else tool,
+                                              ledger=subject.ledger, **compiled_context(subject, tool))
 
 
 def test_build_mirrors_the_tools_input_contract_so_a_refusal_is_never_lost_as_unknown(tmp_path):
@@ -564,7 +588,7 @@ def test_a_tools_output_artifacts_are_admitted_imported_and_sealed_into_the_node
     expected = b"a\nb\n"
     transport_ = xt.ExtensionAttemptTransport.build(
         domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
-        artifact_inputs=(text_input(raw),), tool=TEXT_NORMALIZE)
+        artifact_inputs=(text_input(raw),), tool=TEXT_NORMALIZE, ledger=subject.ledger, **compiled_context(subject, TEXT_NORMALIZE))
     assert xt.TOOL_OUTPUT_CONTRACTS[("text_normalize", "1.0.0")] == (("normalized_text", "text/plain"),)
     assert xt.TOOL_OUTPUT_CONTRACTS[("text_profile", "1.0.0")] == ()
     outcome = build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
@@ -622,7 +646,7 @@ def test_a_binding_that_contradicts_the_received_artifact_is_never_sealed(tmp_pa
     subject, run = started(tmp_path / "ledger")
     transport_ = xt.ExtensionAttemptTransport.build(
         domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
-        artifact_inputs=(text_input(b"a\r\n"),), tool=TEXT_NORMALIZE)
+        artifact_inputs=(text_input(b"a\r\n"),), tool=TEXT_NORMALIZE, ledger=subject.ledger, **compiled_context(subject, TEXT_NORMALIZE))
     with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
         build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
     assert raised[0].code == "transport_mismatch"
@@ -647,7 +671,7 @@ def test_a_text_normalize_result_that_contradicts_the_received_output_is_never_s
     subject, run = started(tmp_path / "ledger")
     transport_ = xt.ExtensionAttemptTransport.build(
         domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
-        artifact_inputs=(text_input(b"a\r\n"),), tool=TEXT_NORMALIZE)
+        artifact_inputs=(text_input(b"a\r\n"),), tool=TEXT_NORMALIZE, ledger=subject.ledger, **compiled_context(subject, TEXT_NORMALIZE))
     with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
         build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
     assert raised[0].code == "transport_mismatch"
@@ -666,7 +690,7 @@ def test_the_output_contracts_have_unique_roles_and_a_stated_output_bound():
 def test_a_tool_call_intent_is_recorded_before_the_send_and_settled_after_the_reply(tmp_path, staged, monkeypatch):
     # T087 ToolCall: control records the write-ahead intent in the ledger before the request
     # frame leaves (the worker sees it already recorded), and settles it with the sealed
-    # result after the reply; the effect class is the mirror's
+    # result after the reply; the effect class comes from the compiled definition
     seen = {}
     original = ep._Router.execute
 
@@ -680,7 +704,7 @@ def test_a_tool_call_intent_is_recorded_before_the_send_and_settled_after_the_re
     subject, run = started(tmp_path / "ledger")
     transport_ = xt.ExtensionAttemptTransport.build(
         domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
-        artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, ledger=subject.ledger)
+        artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, ledger=subject.ledger, **compiled_context(subject))
     outcome = build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
     assert seen["intents"] == [("intent", "text_profile", "read")]
     attempt_id = writer_attempt_id(run)
@@ -705,7 +729,7 @@ def test_a_tool_call_settles_failed_or_unknown_by_what_control_observed(tmp_path
     subject, run = started(tmp_path / "ledger")
     transport_ = xt.ExtensionAttemptTransport.build(
         domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
-        artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, ledger=subject.ledger)
+        artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, ledger=subject.ledger, **compiled_context(subject))
     with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
         build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
     calls = subject.ledger.tool_calls_for_attempt(writer_attempt_id(run))
@@ -719,7 +743,7 @@ def test_a_tool_call_settles_failed_or_unknown_by_what_control_observed(tmp_path
         "reason_code": "provider_terminal", "usage": {**ep._ZERO_USAGE, "tool_calls": 1}, "output": None})
     transport2 = xt.ExtensionAttemptTransport.build(
         domain_store=subject2.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
-        artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, ledger=subject2.ledger)
+        artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, ledger=subject2.ledger, **compiled_context(subject2))
     with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
         build(subject2, run2, bound(subject2, transport2, tool_calls=1), handlers(subject2, [])).run()
     assert [call["state"] for call in subject2.ledger.tool_calls_for_attempt(writer_attempt_id(run2))] == ["failed"]
@@ -735,7 +759,7 @@ def test_a_tool_call_never_stays_intent_on_a_terminal_attempt_in_process(tmp_pat
     monkeypatch.setattr(xt.ExtensionAttemptTransport, "_result", lambda *args, **kwargs: (_ for _ in ()).throw(TypeError("PRIVATE")))
     transport_ = xt.ExtensionAttemptTransport.build(
         domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
-        artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, ledger=subject.ledger)
+        artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, ledger=subject.ledger, **compiled_context(subject))
     with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
         build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
     assert [call["state"] for call in subject.ledger.tool_calls_for_attempt(writer_attempt_id(run))] == ["unknown"]
@@ -748,15 +772,15 @@ def test_a_tool_call_never_stays_intent_on_a_terminal_attempt_in_process(tmp_pat
         xt.ExtensionTransportError("transport_unavailable", dispatch_effect="definitely_not_sent")))
     transport2 = xt.ExtensionAttemptTransport.build(
         domain_store=subject2.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
-        artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, ledger=subject2.ledger)
+        artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, ledger=subject2.ledger, **compiled_context(subject2))
     with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
         build(subject2, run2, bound(subject2, transport2, tool_calls=1), handlers(subject2, [])).run()
     assert [call["state"] for call in subject2.ledger.tool_calls_for_attempt(writer_attempt_id(run2))] == ["failed"]
 
 
-def test_the_effect_gate_requires_an_approval_for_an_external_effect_and_refuses_one_for_a_read(tmp_path, monkeypatch):
-    # T087 effect gate (ports contract: the ToolDefinition's effect class is authoritative;
-    # external effects need an explicit approval): the mirror's effect class decides at build
+def test_external_effects_are_unavailable_and_a_read_refuses_an_effect_approval(tmp_path, monkeypatch):
+    # V1 approvals and the historical ledger grammar remain, but cannot enable
+    # an external invocation at this transport.
     subject, _run = started(tmp_path / "ledger")
     approval = EntityRef("action_approval", str(uuid4()), 1, "a" * 64)
     with pytest.raises(ValueError):  # a read effect carries no approval requirement
@@ -766,10 +790,10 @@ def test_the_effect_gate_requires_an_approval_for_an_external_effect_and_refuses
     from types import MappingProxyType
 
     monkeypatch.setattr(xt, "TOOL_EFFECTS", MappingProxyType({**xt.TOOL_EFFECTS, ("text_profile", "1.0.0"): "external_irreversible"}))
-    with pytest.raises(ValueError):  # an external effect requires one
+    with pytest.raises(ValueError):  # a disagreeing mirror cannot change the compiled effect
         xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
                                            operation="invoke_tool", artifact_inputs=(text_input(b"hello"),),
-                                           tool=TEXT_PROFILE)
+                                           tool=TEXT_PROFILE, ledger=subject.ledger, **compiled_context(subject))
     with pytest.raises(TypeError):  # of the exact kind
         xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
                                            operation="invoke_tool", artifact_inputs=(text_input(b"hello"),),
@@ -778,9 +802,8 @@ def test_the_effect_gate_requires_an_approval_for_an_external_effect_and_refuses
         xt.ExtensionAttemptTransport.build(domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
                                            operation="invoke_tool", artifact_inputs=(text_input(b"hello"),),
                                            tool=TEXT_PROFILE, effect_approval_ref=approval, ledger=subject.ledger)
-    # (the built, verified transport is exercised over the real socket in the verification test)
-    # the intent an external call records persists the approval that admitted it (the ledger
-    # refuses an external intent without one), so the gate leaves a trace
+    # Historical ledger records still require their approval reference. This is
+    # a record constraint, not permission to invoke an external tool.
     from app.runtime.ledger import ToolCallSpec, tool_call_identity
 
     attempt_id = str(uuid4())
@@ -868,6 +891,146 @@ def window(permit, *, runtime_ms=5_000, budget_ms=5_000):
                                   anchor_monotonic=time.monotonic())
 
 
+class _TrackedConnection:
+    """Observe lifetime and request writes while retaining the real connection."""
+
+    def __init__(self, connection, *, close_error=None, write_error=None):
+        self.connection = connection
+        # the real connection detaches its socket on close; keep the object it owned so
+        # its own closed state (fileno -1) stays observable afterwards
+        self.socket = connection._socket
+        self.close_error = close_error
+        self.write_error = write_error
+        self.close_calls = 0
+        self.execute_frames = 0
+
+    def __getattr__(self, name):
+        return getattr(self.connection, name)
+
+    def write(self, **kwargs):
+        if self.write_error is not None:
+            raise self.write_error
+        result = self.connection.write(**kwargs)
+        if kwargs["message_type"] == xt.REQUEST_TYPE:
+            self.execute_frames += 1
+        return result
+
+    def close(self):
+        self.close_calls += 1
+        self.connection.close()
+        if self.close_error is not None:
+            raise self.close_error
+
+
+def capture_real_connections(monkeypatch, **tracking_options):
+    captured = []
+    connect = listener._connect_extension_authenticated
+
+    def tracked(*args, **kwargs):
+        connection = _TrackedConnection(connect(*args, **kwargs), **tracking_options)
+        captured.append(connection)
+        return connection
+
+    monkeypatch.setattr(listener, "_connect_extension_authenticated", tracked)
+    return captured
+
+
+def close_leaked_connections(captured):
+    """Keep a deliberately RED lifetime regression from holding its worker thread."""
+
+    for tracked in captured:
+        if not tracked.connection.closed:
+            tracked.connection.close()
+
+
+def test_an_intent_exception_closes_the_actual_connection_without_sending(tmp_path, staged, monkeypatch):
+    captured = capture_real_connections(monkeypatch)
+    subject, permit, request = permit_and_request(tmp_path)
+    issued = subject.ledger.consume_dispatch_permit_window(permit, budget_book=subject.book)
+    transport_ = xt.ExtensionAttemptTransport.build(
+        domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
+        operation="invoke_tool", artifact_inputs=(text_input(b"hello"),),
+        tool=TEXT_PROFILE, ledger=subject.ledger, **compiled_context(subject))
+
+    request = replace(request, tool_binding=transport_.compiled_tool_binding)
+
+    def fail_intent(_ledger, _command_id, _spec):
+        raise OSError("PRIVATE INTENT FAILURE")
+
+    monkeypatch.setattr(type(subject.ledger), "record_tool_call", fail_intent)
+    try:
+        with pytest.raises(xt.ExtensionTransportError) as failure:
+            transport_(permit, request, issued)
+        assert failure.value.code == "transport_invalid"
+        assert failure.value.dispatch_effect == "definitely_not_sent"
+        assert str(failure.value) == "transport_invalid"
+        assert len(captured) == 1
+        assert captured[0].close_calls == 1
+        assert captured[0].connection.closed
+        assert captured[0].socket.fileno() == -1
+        assert captured[0].execute_frames == 0
+        assert subject.ledger.tool_calls_for_attempt(request.attempt_id) == []
+    finally:
+        close_leaked_connections(captured)
+
+
+def test_an_intent_base_exception_survives_a_cleanup_oserror_and_closes_the_actual_connection(
+        tmp_path, staged, monkeypatch):
+    class IntentBoundaryAbort(BaseException):
+        pass
+
+    captured = capture_real_connections(monkeypatch, close_error=OSError("CLOSE FAILURE"))
+    subject, permit, request = permit_and_request(tmp_path)
+    issued = subject.ledger.consume_dispatch_permit_window(permit, budget_book=subject.book)
+    transport_ = xt.ExtensionAttemptTransport.build(
+        domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
+        operation="invoke_tool", artifact_inputs=(text_input(b"hello"),),
+        tool=TEXT_PROFILE, ledger=subject.ledger, **compiled_context(subject))
+
+    request = replace(request, tool_binding=transport_.compiled_tool_binding)
+
+    def abort_intent(_ledger, _command_id, _spec):
+        raise IntentBoundaryAbort("ORIGINAL INTENT ABORT")
+
+    monkeypatch.setattr(type(subject.ledger), "record_tool_call", abort_intent)
+    try:
+        with pytest.raises(IntentBoundaryAbort, match="ORIGINAL INTENT ABORT"):
+            transport_(permit, request, issued)
+        assert len(captured) == 1
+        assert captured[0].close_calls == 1
+        assert captured[0].connection.closed
+        assert captured[0].socket.fileno() == -1
+        assert captured[0].execute_frames == 0
+        assert subject.ledger.tool_calls_for_attempt(request.attempt_id) == []
+    finally:
+        close_leaked_connections(captured)
+
+
+def test_an_exchange_failure_closes_the_actual_connection_once(tmp_path, staged, monkeypatch):
+    captured = capture_real_connections(
+        monkeypatch, write_error=OSError("WRITE FAILURE"), close_error=OSError("CLOSE FAILURE"))
+    subject, permit, request = permit_and_request(tmp_path)
+    with pytest.raises(xt.ExtensionTransportError) as failure:
+        transport(subject)(permit, request, window(permit))
+    assert failure.value.dispatch_effect == "may_have_started"
+    assert len(captured) == 1
+    assert captured[0].close_calls == 1
+    assert captured[0].connection.closed
+    assert captured[0].socket.fileno() == -1
+
+
+def test_a_success_closes_the_actual_connection_once(tmp_path, staged, monkeypatch):
+    captured = capture_real_connections(monkeypatch, close_error=OSError("CLOSE FAILURE"))
+    subject, permit, request = permit_and_request(tmp_path)
+    result = transport(subject)(permit, request, window(permit))
+    assert result.outcome == "succeeded"
+    assert len(captured) == 1
+    assert captured[0].close_calls == 1
+    assert captured[0].connection.closed
+    assert captured[0].socket.fileno() == -1
+    assert captured[0].execute_frames == 1
+
+
 def test_an_exhausted_window_never_connects(tmp_path, slot, monkeypatch):  # noqa: F811
     root, spec, _side, _tree = slot
     monkeypatch.setattr(xt, "extension_channel", lambda *, instance_id, slot_number: (root, spec))
@@ -924,11 +1087,11 @@ def test_the_transport_states_the_output_bytes_an_attempt_can_produce(tmp_path):
     assert tool_transport(subject, (text_input(b"hello"),)).output_bytes_bound == xm.MAX_REPLY_BYTES
     normalize = xt.ExtensionAttemptTransport.build(
         domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
-        artifact_inputs=(text_input(b"a\r\nb"),), tool=TEXT_NORMALIZE)
+        artifact_inputs=(text_input(b"a\r\nb"),), tool=TEXT_NORMALIZE, ledger=subject.ledger, **compiled_context(subject, TEXT_NORMALIZE))
     assert normalize.output_bytes_bound == xm.MAX_REPLY_BYTES + 3 * 4
     at_ceiling = xt.ExtensionAttemptTransport.build(
         domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
-        artifact_inputs=(text_input(b"x" * xt.MAX_INPUT_BYTES),), tool=TEXT_NORMALIZE)
+        artifact_inputs=(text_input(b"x" * xt.MAX_INPUT_BYTES),), tool=TEXT_NORMALIZE, ledger=subject.ledger, **compiled_context(subject, TEXT_NORMALIZE))
     assert at_ceiling.output_bytes_bound == xm.MAX_REPLY_BYTES + xt.MAX_INPUT_BYTES
     assert xm.MAX_REPLY_BYTES == 4_096  # the reply frame's ceiling (extension_execute_messages)
 
@@ -942,7 +1105,7 @@ def test_an_attempt_reserved_from_the_bound_never_overruns_even_when_the_text_gr
     raw = "\u0344" * 3
     transport_ = xt.ExtensionAttemptTransport.build(
         domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
-        artifact_inputs=(text_input(raw.encode()),), tool=TEXT_NORMALIZE)
+        artifact_inputs=(text_input(raw.encode()),), tool=TEXT_NORMALIZE, ledger=subject.ledger, **compiled_context(subject, TEXT_NORMALIZE))
     outcome = build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
     writer_execution = sch.execution_identity(run.run_id, "writer", 0)
     content = subject.domain.get(dict(outcome.result_refs)[writer_execution]).body["content"]
@@ -1000,7 +1163,7 @@ def test_a_worker_returning_more_than_the_tools_stated_bound_is_never_admitted(t
     subject, run = started(tmp_path / "ledger")
     transport_ = xt.ExtensionAttemptTransport.build(
         domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
-        artifact_inputs=(text_input(b"hello"),), tool=TEXT_NORMALIZE)
+        artifact_inputs=(text_input(b"hello"),), tool=TEXT_NORMALIZE, ledger=subject.ledger, **compiled_context(subject, TEXT_NORMALIZE))
     assert transport_.output_bytes_bound == xm.MAX_REPLY_BYTES + 15
     with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
         build(subject, run, bound(subject, transport_, tool_calls=1), handlers(subject, [])).run()
@@ -1084,96 +1247,142 @@ def real_clock_dispatcher(subject, transport_):
     )
 
 
-def test_an_external_effects_approval_is_verified_against_the_recorded_decision_before_the_send(tmp_path_factory, staged, monkeypatch):
-    # T087: the approval the gate requires is not a claim — before any byte leaves, control
-    # reads the owner's recorded decision for this run, node and tool scope and requires it
-    # to be an approval and the exact record the caller named; a refusal is a vouched
-    # non-send (the worker is never contacted, no ToolCall intent exists)
-    from types import MappingProxyType
-
+def test_legacy_external_decisions_remain_evidence_but_cannot_enable_a_send(tmp_path, monkeypatch):
+    from app.runtime.gates import LOCAL
     from app.services.run_approvals import PersistentRunApprovals
     from app.tests.test_extension_candidates_persistent import owner
+    from app.tests.test_graph_contract import (
+        authority_with,
+        compile_value,
+        gated_tool_graph,
+        trusted_tool,
+    )
 
-    box = staged[3]
-    monkeypatch.setattr(xt, "TOOL_EFFECTS", MappingProxyType({**xt.TOOL_EFFECTS, ("text_profile", "1.0.0"): "external_irreversible"}))
     scope = xt.tool_approval_scope("text_profile", "1.0.0")
-    # review closure: the scope is delimiter-proof and fixed-length (uuid5 over the canonical
-    # pair), so every tool id and version the execute grammar admits can be approved
-    assert scope.startswith("tool:") and len(scope) == 5 + 36
-    assert xt.tool_approval_scope("text_profile", "1.0.0") == scope
+    assert scope.startswith("tool-") and len(scope) == 5 + 36 and scope == scope.lower()
     assert xt.tool_approval_scope("x", "1.0.0+build.5") != xt.tool_approval_scope("x", "1.0.0")
     assert xt.tool_approval_scope("a:b", "1") != xt.tool_approval_scope("a", "b:1")
-    from app.runtime.gates import LOCAL
-
     assert LOCAL.fullmatch(xt.tool_approval_scope("t" * 64, "v" * 64)) is not None
-    # the slot's pair root is the test directory itself (its group is the pair group, inherited
-    # by children on macOS): the owner's session root lives in a sibling directory
-    with owner(tmp_path_factory.mktemp("owner")) as (app, _client, request, _profile, _arguments):
+    compiled = compile_value(gated_tool_graph(scope), compilation_authority=authority_with([
+        trusted_tool("external_irreversible")]))
+    # Controlled mirror alteration is rejection evidence, never real external support.
+    monkeypatch.setattr(xt, "TOOL_EFFECTS", {**xt.TOOL_EFFECTS,
+                                           ("text_profile", "1.0.0"): "external_irreversible"})
+    connects = []
+    monkeypatch.setattr(listener, "_connect_extension_authenticated", lambda *a, **kw: connects.append(1))
+    with owner(tmp_path) as (app, _client, request, _profile, _arguments):
         approvals = PersistentRunApprovals(app.state.domain_store, app.state.owner_authority)
+        subject, run = app_subject(app)
 
-        def decide(run_id, node_id, decision, approval_scope=scope):
-            subject.ledger.request_gate_approval(run_id, node_id, approval_scope)
+        def decide(run_id, node_id, decision):
+            subject.ledger.request_gate_approval(run_id, node_id, scope)
             receipt = approvals.record(request, {
                 "schema_version": "run-approval-command-v1", "command_id": str(uuid4()), "run_id": run_id,
-                "node_id": node_id, "approval_scope": approval_scope, "decision": decision})
+                "node_id": node_id, "approval_scope": scope, "decision": decision})
             return EntityRef.from_dict(receipt["approval_ref"])
 
-        def transport_for(ref, **overrides):
-            return xt.ExtensionAttemptTransport.build(
-                domain_store=app.state.domain_store, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
-                artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, effect_approval_ref=ref,
-                ledger=subject.ledger, **{"approvals": approvals, **overrides})
-
-        subject, run = app_subject(app)
-        # build: an approval needs the authority that can read it, over the same store
-        with pytest.raises(ValueError):
-            transport_for(EntityRef("action_approval", str(uuid4()), 1, "a" * 64), approvals=None)
-        with pytest.raises(TypeError):
-            transport_for(EntityRef("action_approval", str(uuid4()), 1, "a" * 64), approvals=object())
-        # a rejection, another node's approval, and a forged reference are each refused before the send
         rejected = decide(run.run_id, "writer", "rejected")
-        with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
-            build(subject, run, real_clock_dispatcher(subject, transport_for(rejected)), handlers(subject, [])).run()
-        assert box.get("served") is None, box
+        elsewhere = decide(run.run_id, "publish", "approved")
+        genuine = decide(run.run_id, "tool-gate", "approved")
+        _other_subject, other_run = app_subject(app)
+        other = decide(other_run.run_id, "tool-gate", "approved")
+        assert approvals.lookup(run.run_id, "writer", scope).decision == "rejected"
+        assert approvals.lookup(run.run_id, "tool-gate", scope).approval_ref == genuine
+        assert approvals.lookup(other_run.run_id, "tool-gate", scope).approval_ref == other
+        for approved in (rejected, elsewhere, genuine, other,
+                         EntityRef("action_approval", genuine.id, 2, genuine.sha256),
+                         EntityRef("action_approval", genuine.id, 1, "b" * 64)):
+            with pytest.raises(ValueError, match="external effects unavailable"):
+                xt.ExtensionAttemptTransport.build(
+                    domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
+                    operation="invoke_tool", artifact_inputs=(text_input(b"hello"),),
+                    compiled=compiled, node_id="writer", binding_id="source-read", ledger=subject.ledger,
+                    approvals=approvals, effect_approval_ref=approved, approval_gate_node_id="tool-gate")
         assert subject.ledger.tool_calls_for_attempt(writer_attempt_id(run)) == []
-        # review closure (stated, not fixed here): the dispatcher records every transport
-        # refusal after the send intent as an unknown outcome, even a vouched non-send —
-        # honouring `definitely_not_sent` after the intent is a separate slice
-        stored = subject.ledger.get_attempt(writer_attempt_id(run))
-        assert stored["terminal_outcome"] == "outcome_unknown" and stored["send_finality"] == "may_have_started"
-        # an approval of the same node in another run, and a later version of the genuine id
-        _subject5, run5 = app_subject(app)
-        other_run = decide(run5.run_id, "writer", "approved")
-        subject6, run6 = app_subject(app)
-        with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
-            build(subject6, run6, real_clock_dispatcher(subject6, transport_for(other_run)), handlers(subject6, [])).run()
-        assert box.get("served") is None, box
-        subject7, run7 = app_subject(app)
-        genuine7 = decide(run7.run_id, "writer", "approved")
-        later_version = EntityRef("action_approval", genuine7.id, 2, genuine7.sha256)
-        with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
-            build(subject7, run7, real_clock_dispatcher(subject7, transport_for(later_version)), handlers(subject7, [])).run()
-        assert box.get("served") is None, box
-        subject2, run2 = app_subject(app)
-        elsewhere = decide(run2.run_id, "publish", "approved")
-        with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
-            build(subject2, run2, real_clock_dispatcher(subject2, transport_for(elsewhere)), handlers(subject2, [])).run()
-        assert box.get("served") is None, box
-        subject3, run3 = app_subject(app)
-        genuine = decide(run3.run_id, "writer", "approved")
-        forged = EntityRef("action_approval", genuine.id, 1, "b" * 64)
-        with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
-            build(subject3, run3, real_clock_dispatcher(subject3, transport_for(forged)), handlers(subject3, [])).run()
-        assert box.get("served") is None, box
-        assert subject3.ledger.tool_calls_for_attempt(writer_attempt_id(run3)) == []
-        # the owner's recorded approval for this run, node and tool: the call runs and its
-        # intent carries the verified reference
-        subject4, run4 = app_subject(app)
-        approved = decide(run4.run_id, "writer", "approved")
-        outcome = build(subject4, run4, real_clock_dispatcher(subject4, transport_for(approved)), handlers(subject4, [])).run()
-        assert dict(outcome.result_refs)
-        calls = subject4.ledger.tool_calls_for_attempt(writer_attempt_id(run4))
-        assert len(calls) == 1 and calls[0]["state"] == "succeeded"
-        assert calls[0]["approval_ref"] == approved.as_dict()
-        assert calls[0]["effect_class"] == "external_irreversible"
-        assert box.get("served") == 1, box
+        assert subject.book.status(subject.budget_session_id)["active_reservations"] == 0
+        assert connects == []
+
+
+def test_the_effect_class_comes_from_the_definition_and_a_disagreeing_mirror_is_refused(tmp_path, monkeypatch):
+    # T087 ToolDefinition-backed gate: the compiled binding's effect class (the compilation
+    # authority's definition) is authoritative at build; the worker's mirrored claim must agree
+    from types import MappingProxyType
+
+    subject, _run = started(tmp_path / "ledger")
+    built = xt.ExtensionAttemptTransport.build(
+        domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+        artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, effect_class="read", ledger=subject.ledger, **compiled_context(subject))
+    assert built.effect_class == "read"
+    with pytest.raises(ValueError, match="disagrees"):
+        xt.ExtensionAttemptTransport.build(
+            domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+            artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, effect_class="external_irreversible", ledger=subject.ledger, **compiled_context(subject))
+    with pytest.raises(ValueError):
+        xt.ExtensionAttemptTransport.build(
+            domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+            artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, effect_class="irreversible")
+    with pytest.raises(ValueError):  # a query names no effect class
+        xt.ExtensionAttemptTransport.build(
+            domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="status", effect_class="read")
+    monkeypatch.setattr(xt, "TOOL_EFFECTS", MappingProxyType({**xt.TOOL_EFFECTS, ("text_profile", "1.0.0"): "external_irreversible"}))
+    with pytest.raises(ValueError, match="disagrees"):
+        xt.ExtensionAttemptTransport.build(
+            domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+            artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, effect_class="read", ledger=subject.ledger, **compiled_context(subject))
+
+
+def test_a_manual_or_matching_legacy_gate_cannot_enable_external_invocation(tmp_path, monkeypatch):
+    from app.services.run_approvals import PersistentRunApprovals
+    from app.tests.test_extension_candidates_persistent import owner
+    from app.tests.test_graph_contract import (
+        authority_with,
+        compile_value,
+        gated_tool_graph,
+        trusted_tool,
+    )
+
+    scope = xt.tool_approval_scope("text_profile", "1.0.0")
+    compiled = compile_value(gated_tool_graph(scope), compilation_authority=authority_with([
+        trusted_tool("external_irreversible")]))
+    monkeypatch.setattr(xt, "TOOL_EFFECTS", {**xt.TOOL_EFFECTS,
+                                           ("text_profile", "1.0.0"): "external_irreversible"})
+    connects = []
+    monkeypatch.setattr(listener, "_connect_extension_authenticated", lambda *a, **kw: connects.append(1))
+    with owner(tmp_path) as (app, _client, request, _profile, _arguments):
+        approvals = PersistentRunApprovals(app.state.domain_store, app.state.owner_authority)
+        subject, run = app_subject(app)
+        for gate in ("manual-gate", "tool-gate"):
+            subject.ledger.request_gate_approval(run.run_id, gate, scope)
+            receipt = approvals.record(request, {
+                "schema_version": "run-approval-command-v1", "command_id": str(uuid4()), "run_id": run.run_id,
+                "node_id": gate, "approval_scope": scope, "decision": "approved"})
+            approved = EntityRef.from_dict(receipt["approval_ref"])
+            assert approvals.lookup(run.run_id, gate, scope).approval_ref == approved
+            for named_gate in (None, gate, "disconnected", 7):
+                with pytest.raises((ValueError, TypeError)):
+                    xt.ExtensionAttemptTransport.build(
+                        domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT,
+                        operation="invoke_tool", artifact_inputs=(text_input(b"hello"),),
+                        compiled=compiled, node_id="writer", binding_id="source-read", ledger=subject.ledger,
+                        approvals=approvals, effect_approval_ref=approved, approval_gate_node_id=named_gate)
+        assert subject.ledger.tool_calls_for_attempt(writer_attempt_id(run)) == []
+        assert subject.book.status(subject.budget_session_id)["active_reservations"] == 0
+        assert connects == []
+
+
+def test_the_approval_gate_is_a_node_id_at_build(tmp_path):
+    subject, _run = started(tmp_path / "ledger")
+    approval = EntityRef("action_approval", str(uuid4()), 1, "a" * 64)
+    # the gate id's shape is checked before the approvals authority: a bad id is a
+    # TypeError even where the (absent) authority would be refused next
+    for bad in ("A B", "g" * 65, "", "gate/x", 7):
+        with pytest.raises(TypeError):
+            xt.ExtensionAttemptTransport.build(
+                domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+                artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, effect_approval_ref=approval,
+                approvals=None, approval_gate_node_id=bad)
+    with pytest.raises(ValueError):  # a well-formed gate, then the missing authority is the refusal
+        xt.ExtensionAttemptTransport.build(
+            domain_store=subject.domain, instance_id=INSTANCE, slot_number=SLOT, operation="invoke_tool",
+            artifact_inputs=(text_input(b"hello"),), tool=TEXT_PROFILE, effect_approval_ref=approval,
+            approvals=None, approval_gate_node_id="tool-gate")

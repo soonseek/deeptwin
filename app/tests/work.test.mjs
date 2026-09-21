@@ -85,7 +85,7 @@ function booted(replies, { storage = fakeStorage(), pathname = BASE } = {}) {
   const navigated = [];
   const location = { pathname, assign: url => navigated.push(url) };
   let counter = 0;
-  const crypto = { randomUUID: () => `00000000-0000-4000-8000-00000000c0${String(++counter).padStart(2, '0')}` };
+  const crypto = { subtle: globalThis.crypto.subtle, randomUUID: () => `00000000-0000-4000-8000-00000000c0${String(++counter).padStart(2, '0')}` };
   const promise = boot({
     document, location, crypto, storage,
     fetch: async (path, options) => { fetched.push([path, options]); const reply = replies.shift(); if (reply instanceof Error) throw reply; return reply; },
@@ -132,8 +132,8 @@ test('a new work is asked for, kept as a browser draft, and saved on the instanc
   assert.match(notice, /제작자/);
   // item 5: materials and the microphone are not on this factory yet — said, not faked
   const materials = field(document, 'materials');
-  assert.match(materials.textContent, /자료 추가/);
-  assert.equal(materials.find(el => el.tagName === 'BUTTON')?.disabled, true);
+  assert.match(form.textContent, /자료 추가/);
+  assert.equal(form.find(el => el.tagName === 'BUTTON' && el.textContent === '자료 추가')?.disabled, false);
   assert.match(materials.textContent, /아직/);
   assert.equal(field(document, 'observe-link').find(el => el.tagName === 'A').getAttribute('href'), './observe.html');
   // an empty submit sends nothing
@@ -224,7 +224,7 @@ test('a draft survives a failed save and a lost connection, and a pending comman
   assert.equal(area.value, '초안');
   const pending = JSON.parse(storage.getItem(storageKey(BASE)));
   assert.equal(pending.draft_text, '초안');
-  assert.equal(pending.pending_command_id, '00000000-0000-4000-8000-00000000c001');
+  assert.equal(pending.pending_command.payload.command_id, '00000000-0000-4000-8000-00000000c001');
   await form.dispatch('submit');
   assert.equal(JSON.parse(fetched[2][1].body).command_id, '00000000-0000-4000-8000-00000000c001');  // the same command
   assert.equal(field(document, 'save-status').dataset.state, 'saved');
@@ -299,7 +299,7 @@ test('a lost send is settled with its own text before an edited draft is saved a
   area.value = 'A';
   await area.dispatch('input');
   await form.dispatch('submit');
-  assert.equal(JSON.parse(storage.getItem(storageKey(BASE))).pending_text, 'A');
+  assert.equal(JSON.parse(storage.getItem(storageKey(BASE))).pending_command.payload.text, 'A');
   area.value = 'B';
   await area.dispatch('input');
   await form.dispatch('submit');
@@ -328,16 +328,17 @@ test('a conflict before any work exists never offers a reopen of nothing', async
   assert.equal(area.value, 'A');
 });
 
-test('a stored work the instance no longer has is forgotten but the unsaved draft is kept', async () => {
+test('legacy pending state without an exact original revision keeps an unresolved draft', async () => {
   // review MUST: the draft was the only copy of the sentence
   const storage = fakeStorage({ [storageKey(BASE)]: JSON.stringify({ work_id: WORK, revision: 1,
     draft_text: '소유자의 미저장 문장', pending_command_id: '00000000-0000-4000-8000-00000000c0aa', pending_text: 'x' }) });
   const { promise, document } = booted([SESSION(), jsonResponse(404, { code: 'not_found' })], { storage });
   const result = await promise;
-  assert.equal(result.mode, 'new');
+  assert.equal(result.mode, 'open');
   assert.equal(textarea(document).value, '소유자의 미저장 문장');
-  assert.deepEqual(JSON.parse(storage.getItem(storageKey(BASE))), { draft_text: '소유자의 미저장 문장' });
-  assert.match(field(document, 'save-status').textContent, /이 브라우저/);
+  assert.match(field(document, 'save-status').textContent, /원래 수정본/);
+  await field(document, 'work-form').dispatch('submit');
+  assert.equal(textarea(document).value, '소유자의 미저장 문장');
 });
 
 test('a revision that meets a vanished work forgets the work, keeps the draft, and the next save creates', async () => {
@@ -445,12 +446,12 @@ test('a save in flight ignores a second submit, and the notices claim only what 
 });
 
 
-test('a pending send the boot observes as sealed is settled there, never blamed on another screen', async () => {
-  // re-review MUST: the answer to revise(A) was lost, the reload sees rev 2 = A
+test('an exactly reconstructible legacy pending send resolves its command receipt before latest revision', async () => {
+  // Matching text is not command evidence: query its exact receipt before reading latest.
   const PENDING = '00000000-0000-4000-8000-00000000c0aa';
   const storage = fakeStorage({ [storageKey(BASE)]: JSON.stringify({ work_id: WORK, revision: 1, base_revision: 1,
     draft_text: 'A', pending_command_id: PENDING, pending_text: 'A' }) });
-  const { promise, document } = booted([SESSION(), jsonResponse(200, revision(2, 'A'))], { storage });
+  const { promise, document } = booted([SESSION(), jsonResponse(200, revision(2, 'A')), jsonResponse(200, revision(2, 'A'))], { storage });
   await promise;
   assert.deepEqual(JSON.parse(storage.getItem(storageKey(BASE))), { work_id: WORK, revision: 2 });
   assert.equal(field(document, 'save-status').dataset.state, 'saved');
@@ -458,13 +459,13 @@ test('a pending send the boot observes as sealed is settled there, never blamed 
   // the owner had already edited to B before the reload: B is a draft on rev 2, not a conflict
   const edited = fakeStorage({ [storageKey(BASE)]: JSON.stringify({ work_id: WORK, revision: 1, base_revision: 1,
     draft_text: 'B', pending_command_id: PENDING, pending_text: 'A' }) });
-  const second = booted([SESSION(), jsonResponse(200, revision(2, 'A')), jsonResponse(201, revision(3, 'B'))], { storage: edited });
+  const second = booted([SESSION(), jsonResponse(200, revision(2, 'A')), jsonResponse(200, revision(2, 'A')), jsonResponse(201, revision(3, 'B'))], { storage: edited });
   await second.promise;
   assert.equal(field(second.document, 'save-status').dataset.state, 'draft');
   assert.equal(textarea(second.document).value, 'B');
   assert.deepEqual(JSON.parse(edited.getItem(storageKey(BASE))), { work_id: WORK, revision: 2, base_revision: 2, draft_text: 'B' });
   await field(second.document, 'work-form').dispatch('submit');
-  const body = JSON.parse(second.fetched[2][1].body);
+  const body = JSON.parse(second.fetched[3][1].body);
   assert.equal(body.expected_revision, 2);
   assert.equal(body.command_id, '00000000-0000-4000-8000-00000000c001');  // a fresh command, the pending one is spent
   assert.equal(field(second.document, 'save-status').dataset.state, 'saved');
@@ -520,4 +521,171 @@ test('an unchanged text on a saved work is not sealed again', async () => {
   await field(document, 'work-form').dispatch('submit');
   assert.equal(fetched.length, 2);
   assert.equal(field(document, 'save-status').dataset.state, 'saved');
+});
+
+const pendingDescriptor = (operation, payload, workId = null) => ({ schema_version: 'owner-pending-command-v2', operation,
+  work_id: workId, payload });
+
+test('file-first selection creates honest empty v2 then uploads exact bytes under returned revision', async () => {
+  const sourceRef = { kind: 'source', id: WORK, version: 1, sha256: 'b'.repeat(64) };
+  const subject = booted([SESSION(), jsonResponse(201, { ...revision(1, ''), source_refs: [] }),
+    jsonResponse(201, { ...revision(2, ''), source_refs: [sourceRef] }),
+    jsonResponse(200, { source_ref: sourceRef, source: { name: '원본.txt' }, artifact: { name: '원본.txt', size: 3 } })]);
+  await subject.promise;
+  const picker = field(subject.document, 'materials').find(el => el.getAttribute('type') === 'file');
+  assert.ok(picker, 'file selection is available without a model');
+  picker.files = [new File(['abc'], '원본.txt', { type: 'text/plain' })];
+  await picker.dispatch('change');
+  await field(subject.document, 'work-form').dispatch('submit');
+  const create = JSON.parse(subject.fetched[1][1].body);
+  assert.deepEqual(create, { schema_version: 'work-create-command-v2', command_id: '00000000-0000-4000-8000-00000000c001', text: '', input_origin: 'owner_material' });
+  const uploaded = subject.fetched[2][1];
+  assert.deepEqual([...uploaded.body], [97, 98, 99]);
+  assert.equal(JSON.parse(Buffer.from(uploaded.headers['X-DeepTwin-Source-Metadata'], 'base64url')).expected_revision, 1);
+  assert.match(field(subject.document, 'materials').textContent, /원본 보관됨/);
+  assert.match(field(subject.document, 'materials').textContent, /내용 읽기는 아직 지원되지 않습니다/);
+  assert.equal(JSON.parse(subject.storage.getItem(storageKey(BASE))).pending_command, undefined);
+});
+
+test('refresh recovers exact lost empty create v2 and preserves newer unsaved draft', async () => {
+  const payload = { schema_version: 'work-create-command-v2', command_id: WORK, text: '', input_origin: 'owner_material' };
+  const storage = fakeStorage({ [storageKey(BASE)]: JSON.stringify({ draft_text: '새 문장', pending_command: pendingDescriptor('create', payload) }) });
+  const subject = booted([SESSION(), jsonResponse(200, { ...revision(1, ''), source_refs: [] }),
+    jsonResponse(200, { ...revision(1, ''), source_refs: [] })], { storage });
+  await subject.promise;
+  assert.equal(subject.fetched[1][0], `${BASE}api/v1/works/commands/${WORK}`);
+  assert.equal(subject.fetched.some(([, options]) => options.method === 'POST'), false);
+  assert.equal(textarea(subject.document).value, '새 문장');
+  const state = JSON.parse(storage.getItem(storageKey(BASE)));
+  assert.equal(state.work_id, WORK);
+  assert.equal(state.pending_command, undefined);
+  assert.equal(state.draft_text, '새 문장');
+});
+
+test('receipt404 retains original v2 descriptor and exact retry never rebuilds from newer draft', async () => {
+  const payload = { schema_version: 'work-create-command-v2', command_id: WORK, text: '', input_origin: 'owner_material' };
+  const descriptor = pendingDescriptor('create', payload);
+  const storage = fakeStorage({ [storageKey(BASE)]: JSON.stringify({ draft_text: '', pending_command: descriptor }) });
+  const subject = booted([SESSION(), jsonResponse(404, { code: 'not_found' }), jsonResponse(201, { ...revision(1, ''), source_refs: [] })], { storage });
+  await subject.promise;
+  assert.deepEqual(JSON.parse(storage.getItem(storageKey(BASE))).pending_command, descriptor);
+  assert.match(field(subject.document, 'save-status').textContent, /저장 상태 확인 중/);
+  await field(subject.document, 'work-form').dispatch('submit');
+  assert.deepEqual(JSON.parse(subject.fetched[2][1].body), payload);
+});
+
+test('lost upload receipt on refresh preserves newer text and exact upload metadata after404', async () => {
+  const payload = { schema_version: 'owner-source-upload-v1', command_id: WORK, expected_revision: 1,
+    name: 'same.txt', declared_media_type: 'text/plain', size: 3,
+    sha256: 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad' };
+  const descriptor = pendingDescriptor('upload', payload, WORK);
+  const storage = fakeStorage({ [storageKey(BASE)]: JSON.stringify({ work_id: WORK, revision: 1, base_revision: 1,
+    draft_text: 'newer draft', pending_command: descriptor }) });
+  const subject = booted([SESSION(), jsonResponse(404, { code: 'not_found' }), jsonResponse(200, revision(1, '')),
+    jsonResponse(404, { code: 'not_found' })], { storage });
+  await subject.promise;
+  assert.equal(textarea(subject.document).value, 'newer draft');
+  await field(subject.document, 'work-form').dispatch('submit');
+  assert.deepEqual(JSON.parse(storage.getItem(storageKey(BASE))).pending_command, descriptor);
+  assert.equal(subject.fetched.filter(([, options]) => options.method === 'POST').length, 0);
+  assert.match(field(subject.document, 'save-status').textContent, /같은 이름과 내용/);
+});
+
+for (const unrelated of [null,
+  { name: 'other.txt', type: 'text/plain', text: 'abc' },
+  { name: 'same.txt', type: 'text/plain', text: 'xyz' },
+  { name: 'same.txt', type: 'application/octet-stream', text: 'abc' },
+]) {
+  test(`committed upload receipt consumes verified reselected original, not ${unrelated ? JSON.stringify(unrelated) : 'a new upload'}`, async () => {
+    const payload = { schema_version: 'owner-source-upload-v1', command_id: WORK, expected_revision: 1,
+      name: 'same.txt', declared_media_type: 'text/plain', size: 3,
+      sha256: 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad' };
+    const descriptor = pendingDescriptor('upload', payload, WORK);
+    const sourceRef = { kind: 'source', id: WORK, version: 1, sha256: 'b'.repeat(64) };
+    const otherRef = { kind: 'source', id: '00000000-0000-4000-8000-0000000000a2', version: 1, sha256: 'c'.repeat(64) };
+    const storage = fakeStorage({ [storageKey(BASE)]: JSON.stringify({ work_id: WORK, revision: 1,
+      pending_command: descriptor }) });
+    const subject = booted([SESSION(), jsonResponse(404, { code: 'not_found' }), jsonResponse(200, revision(1, '')),
+      jsonResponse(200, { ...revision(2, ''), source_refs: [sourceRef] }),
+      jsonResponse(200, { source_ref: sourceRef, artifact: { name: 'same.txt', size: 3 } }),
+      ...(unrelated ? [jsonResponse(201, { ...revision(3, ''), source_refs: [sourceRef, otherRef] }),
+        jsonResponse(200, { source_ref: otherRef, artifact: { name: unrelated.name, size: 3 } })] : []),
+    ], { storage });
+    await subject.promise;
+    assert.deepEqual(JSON.parse(storage.getItem(storageKey(BASE))).pending_command, descriptor);
+    const picker = field(subject.document, 'materials').find(el => el.getAttribute('type') === 'file');
+    // Put the unrelated file first: matching only name/size (or consuming all queued
+    // selections) must not swallow a different original when the receipt arrives.
+    picker.files = [...(unrelated ? [new File([unrelated.text], unrelated.name, { type: unrelated.type })] : []),
+      new File(['abc'], 'same.txt', { type: 'text/plain' })];
+    await picker.dispatch('change');
+    await field(subject.document, 'work-form').dispatch('submit');
+    const uploads = subject.fetched.filter(([path, options]) => path.endsWith('/sources') && options.method === 'POST');
+    assert.equal(uploads.length, unrelated ? 1 : 0, 'resolving the original receipt must not mint another upload for that file');
+    if (unrelated) {
+      const metadata = JSON.parse(Buffer.from(uploads[0][1].headers['X-DeepTwin-Source-Metadata'], 'base64url'));
+      assert.equal(metadata.name, unrelated.name);
+      assert.equal(metadata.declared_media_type, unrelated.type);
+      assert.equal(metadata.expected_revision, 2);
+      assert.equal(new TextDecoder().decode(uploads[0][1].body), unrelated.text);
+    }
+    const state = JSON.parse(storage.getItem(storageKey(BASE)));
+    assert.equal(state.pending_command, undefined);
+    assert.equal(state.revision, unrelated ? 3 : 2);
+    assert.equal(field(subject.document, 'save-status').dataset.state, 'saved');
+  });
+}
+
+test('revise-v2 replay retains its original expectation even after the saved revision advances', async () => {
+  const payload = { schema_version: 'work-revise-command-v2', command_id: WORK, expected_revision: 1, text: 'own edit' };
+  const descriptor = pendingDescriptor('revise', payload, WORK);
+  const storage = fakeStorage({ [storageKey(BASE)]: JSON.stringify({ work_id: WORK, revision: 1, base_revision: 1,
+    draft_text: 'own edit', pending_command: descriptor }) });
+  const subject = booted([SESSION(), jsonResponse(404, { code: 'not_found' }), jsonResponse(200, revision(5, 'later edit')),
+    jsonResponse(409, { code: 'conflict' })], { storage });
+  await subject.promise;
+  assert.deepEqual(JSON.parse(storage.getItem(storageKey(BASE))).pending_command, descriptor);
+  await field(subject.document, 'work-form').dispatch('submit');
+  assert.deepEqual(JSON.parse(subject.fetched[3][1].body), payload);
+  assert.equal(textarea(subject.document).value, 'own edit');
+  assert.equal(field(subject.document, 'save-status').dataset.state, 'conflict');
+});
+
+test('late upload response keeps text edited while receiving as an unsaved draft', async () => {
+  let release, announced;
+  const gate = new Promise(resolve => { release = resolve; });
+  const receiving = new Promise(resolve => { announced = resolve; });
+  const subject = booted([SESSION(), jsonResponse(201, { ...revision(1, ''), source_refs: [] }),
+    { ok: true, status: 201, async json() { announced(); await gate; return { ...revision(2, ''), source_refs: [] }; } }]);
+  await subject.promise;
+  const picker = field(subject.document, 'materials').find(el => el.getAttribute('type') === 'file');
+  picker.files = [new File(['abc'], 'original.txt', { type: 'text/plain' })];
+  await picker.dispatch('change');
+  const pending = field(subject.document, 'work-form').dispatch('submit');
+  await receiving;
+  textarea(subject.document).value = 'typed during upload';
+  await textarea(subject.document).dispatch('input');
+  release(); await pending;
+  assert.equal(textarea(subject.document).value, 'typed during upload');
+  const state = JSON.parse(subject.storage.getItem(storageKey(BASE)));
+  assert.equal(state.draft_text, 'typed during upload');
+  assert.equal(state.base_revision, 2);
+  assert.equal(state.pending_command, undefined);
+  assert.equal(field(subject.document, 'save-status').dataset.state, 'draft');
+});
+
+test('resolving an older pending receipt never calls its text the current saved revision', async () => {
+  const payload = { schema_version: 'work-revise-command-v2', command_id: WORK, expected_revision: 1, text: 'own edit' };
+  const storage = fakeStorage({ [storageKey(BASE)]: JSON.stringify({ work_id: WORK, revision: 1, base_revision: 1,
+    draft_text: 'own edit', pending_command: pendingDescriptor('revise', payload, WORK) }) });
+  const subject = booted([SESSION(), jsonResponse(404, { code: 'not_found' }), jsonResponse(200, revision(5, 'later edit')),
+    jsonResponse(201, revision(2, 'own edit')), jsonResponse(200, revision(5, 'later edit'))], { storage });
+  await subject.promise;
+  await field(subject.document, 'work-form').dispatch('submit');
+  assert.equal(field(subject.document, 'save-status').dataset.state, 'conflict');
+  assert.equal(textarea(subject.document).value, 'own edit');
+  const state = JSON.parse(storage.getItem(storageKey(BASE)));
+  assert.equal(state.revision, 5);
+  assert.equal(state.base_revision, 2);
+  assert.equal(state.draft_text, 'own edit');
 });

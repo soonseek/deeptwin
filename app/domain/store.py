@@ -282,6 +282,7 @@ def _directory(path):
     """Open every existing component without following symlinks; retain a directory fd."""
     absolute = Path(os.path.abspath(path))
     descriptor = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    primary = None
     try:
         for name in absolute.parts[1:]:
             try:
@@ -291,11 +292,21 @@ def _directory(path):
                 if not isinstance(exc, FileNotFoundError):
                     raise UnsafePath("Unsafe directory component") from exc
                 raise
-            os.close(descriptor)
+            parent = descriptor
             descriptor = child
+            os.close(parent)
         yield descriptor
+    except BaseException as exc:
+        primary = exc
+        raise
     finally:
-        os.close(descriptor)
+        owned = descriptor
+        descriptor = None
+        try:
+            os.close(owned)
+        except BaseException:
+            if primary is None:
+                raise
 
 
 @contextmanager
@@ -414,6 +425,7 @@ class DomainStore:
                 self.path.as_uri() + "?mode=rw", timeout=5,
                 isolation_level=None, uri=True,
             )
+            primary = None
             try:
                 def verify_open_path():
                     try:
@@ -474,12 +486,22 @@ class DomainStore:
                 yield db
                 verify_open_path()
                 db.commit()
-            except BaseException:
-                db.rollback()
+            except BaseException as exc:
+                primary = exc
+                try:
+                    db.rollback()
+                except BaseException:
+                    pass
                 raise
             finally:
                 self._active_write_connections.discard(db)
-                db.close()
+                connection = db
+                db = None
+                try:
+                    connection.close()
+                except BaseException:
+                    if primary is None:
+                        raise
 
     def sqlite_settings(self):
         """Actual per-connection settings; not a universal hardware durability guarantee."""

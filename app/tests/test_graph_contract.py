@@ -207,6 +207,7 @@ def authority(*, artifact_schema_refs=()):
             EntityRef.from_dict(ref("tool_definition", 4)),
             EntityRef.from_dict(ref("grant", 6)),
             ("read-source",),
+            "text_profile", "1.0.0", "read",
         )],
         grant_refs=[EntityRef.from_dict(ref("grant", 6))],
         approval_scopes=["release-output"],
@@ -240,6 +241,35 @@ def test_valid_graph_roundtrips_to_a_deterministic_compiled_plan():
     assert graph.as_dict() == GraphVersion.from_untrusted(graph.as_dict()).as_dict()
     assert compiled.execution_graph.as_dict() == graph.as_dict()
     assert compiled.authority_digest == authority().digest
+
+
+def test_compiled_binding_projects_exact_definition_grant_and_gate_and_rejects_tampering():
+    from app.runtime.graph import resolve_compiled_tool_binding
+
+    compiled = compile_value()
+    binding = resolve_compiled_tool_binding(compiled, "writer", "source-read")
+    assert (binding.node_id, binding.binding_id, binding.tool_id, binding.version,
+            binding.effect_class, binding.approval_gate_node_id) == (
+                "writer", "source-read", "text_profile", "1.0.0", "read", None)
+    assert binding.definition_ref == EntityRef.from_dict(ref("tool_definition", 4))
+    assert binding.grant_ref == EntityRef.from_dict(ref("grant", 6))
+    assert binding.graph_digest == compiled.graph_digest
+    assert binding.authority_digest == compiled.authority_digest
+    with pytest.raises(FrozenInstanceError):
+        binding.tool_id = "text_normalize"
+    for changed in (
+        replace(compiled, graph_digest="a" * 64),
+        replace(compiled, authority_digest="b" * 64),
+        replace(compiled, tool_effects=()),
+        replace(compiled, tool_bindings=(replace(binding, grant_ref=EntityRef.from_dict(ref("grant", 9))),)),
+    ):
+        with pytest.raises(GraphContractError):
+            resolve_compiled_tool_binding(changed, "writer", "source-read")
+    scope = trusted_tool("external_irreversible")
+    external = authority_with([scope])
+    gate_scope = external.tool_definitions[0].approval_scope
+    gated = compile_value(gated_tool_graph(gate_scope), compilation_authority=external)
+    assert resolve_compiled_tool_binding(gated, "writer", "source-read").approval_gate_node_id == "tool-gate"
 
 
 def test_graph_and_nested_values_are_immutable_and_detached_from_input():
@@ -885,3 +915,104 @@ def test_multiformat_and_schema_bound_artifacts_survive_compile():
         "image/png",
         "text/csv",
     )
+
+
+def trusted_tool(effect_class="read", *, tool_id="text_profile", version="1.0.0", number=4, grant=6,
+                 capabilities=("read-source",)):
+    return (EntityRef.from_dict(ref("tool_definition", number)), EntityRef.from_dict(ref("grant", grant)),
+            tuple(capabilities), tool_id, version, effect_class)
+
+
+def authority_with(tool_definitions, *, approval_scopes=("release-output",)):
+    return CompilationAuthority.from_trusted(
+        model_choices=[(EntityRef.from_dict(ref("model_choice", 3)), ("text",))],
+        tool_definitions=list(tool_definitions),
+        grant_refs=[EntityRef.from_dict(ref("grant", 6))],
+        approval_scopes=list(approval_scopes),
+        observation_contract_refs=[EntityRef.from_dict(ref("observation_contract", 7))],
+        budget_policy_refs=[EntityRef.from_dict(ref("budget_policy", 8))],
+        artifact_schema_refs=[],
+    )
+
+
+def test_trusted_tool_definitions_carry_the_tools_identity_and_effect_class():
+    # T087 ToolDefinition-backed gate: the compilation authority's trusted tool definition
+    # names the tool (id, version) and its effect class in the ports contract's vocabulary;
+    # the effect class is authoritative for every binding — never the worker's claim
+    from app.extensions import port_contracts
+    from app.runtime.gates import tool_approval_scope
+
+    definition = authority_with([trusted_tool()]).tool_definitions[0]
+    assert (definition.tool_id, definition.version, definition.effect_class) == ("text_profile", "1.0.0", "read")
+    assert definition.as_dict()["effect_class"] == "read"
+    for bad in [
+        trusted_tool("irreversible"), trusted_tool("READ"), trusted_tool(tool_id=""), trusted_tool(tool_id="a b"),
+        trusted_tool(version=""), trusted_tool(version="1.0.0/x"), trusted_tool(tool_id="t" * 65),
+    ]:
+        with pytest.raises(GraphContractError):
+            authority_with([bad])
+    with pytest.raises(GraphContractError):  # the earlier three-field tuple is not a definition
+        authority_with([trusted_tool()[:3]])
+    for name in sorted(port_contracts.EFFECT_CLASSES):
+        assert authority_with([trusted_tool(name)]).tool_definitions[0].effect_class == name
+    # an external-family definition's approval scope is trusted by derivation, never listed by hand
+    external = authority_with([trusted_tool("external_irreversible")])
+    assert tool_approval_scope("text_profile", "1.0.0") in external.approval_scopes
+    assert tool_approval_scope("text_profile", "1.0.0") not in authority_with([trusted_tool()]).approval_scopes
+
+
+def gated_tool_graph(scope):
+    """graph_value() with the tool-calling writer gated by a human gate before it: the gate
+    supplies the tool's approval scope the writer requires."""
+    value = graph_value()
+    writer = next(item for item in value["nodes"] if item["node_id"] == "writer")
+    writer["required_approval_scopes"] = [scope]
+    value["nodes"].insert(1, node("tool-gate", "human_gate", "사람이 외부 도구 호출을 승인한다",
+                                  inputs=[input_slot("candidate", "text-document")],
+                                  outputs=[output_slot("approved", "text-document")],
+                                  config={"approval_scopes": [scope]}))
+    value["edges"] = [edge for edge in value["edges"] if edge["edge_id"] != "e1"] + [
+        artifact_edge("e1a", "intake", "draft", "tool-gate", "candidate", "text-document"),
+        artifact_edge("e1b", "tool-gate", "approved", "writer", "source", "text-document"),
+        approval_edge("e6", "tool-gate", "writer", scope),
+    ]
+    return value
+
+
+def test_a_binding_to_an_external_family_tool_requires_the_tools_approval_scope_on_its_node():
+    from app.runtime.gates import tool_approval_scope
+
+    scope = tool_approval_scope("text_profile", "1.0.0")
+    external = authority_with([trusted_tool("external_irreversible")])
+    with pytest.raises(GraphContractError, match="approval scope"):
+        # the writer binds the tool but requires no approval for it
+        compile_graph(parse(), external)
+    compiled = compile_graph(parse(gated_tool_graph(scope)), external)
+    assert compiled.tool_effects == (
+        ("writer", "source-read", "text_profile", "1.0.0", "external_irreversible", "tool-gate"),
+    )
+    # a read tool needs no gate; the fact still names the binding
+    read = compile_graph(parse(), authority_with([trusted_tool()]))
+    assert read.tool_effects == (("writer", "source-read", "text_profile", "1.0.0", "read", None),)
+    # the gate must be a human gate that supplies exactly that scope: a scope the writer
+    # requires without a gate path is already refused by the structure
+    dangling = gated_tool_graph(scope)
+    dangling["edges"] = [edge for edge in dangling["edges"] if edge["edge_id"] != "e6"]
+    with pytest.raises(GraphContractError):
+        compile_graph(parse(dangling), external)
+
+
+def test_trusted_tool_identities_follow_the_workers_grammar_and_agree_on_one_effect_class():
+    # review closures: a definition the graph vouches for must be one the transport can
+    # name (the worker's execute identifier grammar), and two definitions of one tool may
+    # not disagree on its effect class — the gate's answer never depends on which one a
+    # graph happened to bind
+    for admitted in ("text_profile", "a-b.c_d", "x"):
+        assert authority_with([trusted_tool(tool_id=admitted)]).tool_definitions[0].tool_id == admitted
+    for refused in ("Text_Profile", "a:b", "0abc", "a--b", "a_", "t" * 65):
+        with pytest.raises(GraphContractError):
+            authority_with([trusted_tool(tool_id=refused)])
+    with pytest.raises(GraphContractError, match="disagree"):
+        authority_with([trusted_tool("read", number=4), trusted_tool("external_irreversible", number=5)])
+    both = authority_with([trusted_tool("read", number=4), trusted_tool("read", number=5)])
+    assert len(both.tool_definitions) == 2

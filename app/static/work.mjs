@@ -13,8 +13,8 @@
 // instance no longer has is forgotten, never the draft. Without a session
 // nothing that could send a command is mounted. Every dependency (document,
 // location, fetch, crypto, storage) is injected; the page passes the
-// platform's own. Materials and the microphone are not on this factory yet
-// and the page says so instead of pretending.
+// platform's own. Originals are stored through the canonical source boundary;
+// contents are not read, and microphone/model work is not part of this slice.
 
 import { basePathFrom, createSupportedSession } from './session.mjs';
 
@@ -52,13 +52,14 @@ const OFFLINE_TEXT = '서버에 연결하지 못했습니다. 입력은 이 브�
 const BOOT_FAILED_TEXT = '이 화면을 준비하지 못했습니다. 세션을 확인하지 못했습니다.';
 // item 4: the notices, short, with the detail beneath — each claims only what this screen holds
 const NOTICES = Object.freeze([
-  '저장한 설명은 이 인스턴스의 저장소에만 남습니다. 저장 전 입력은 이 브라우저에만 임시 보관됩니다.',
-  '외부 모델로의 전송은 제공자를 연결한 뒤 실행을 명시적으로 시작하는 시점에만 일어납니다. 이 화면은 어떤 제공자에도 연결하지 않으며 아무것도 전송하지 않습니다.',
+  '저장한 설명·원본은 이 인스턴스에, 미저장 설명은 이 브라우저에만 남습니다.',
+  '외부 모델 전송은 연결 후 실행을 명시적으로 시작할 때만 이뤄집니다.',
   '제작자에게 자동으로 보내는 것은 없습니다.',
 ]);
 const NOTICE_DETAIL = '저장한 설명은 이 인스턴스의 저장소에 수정본 단위로 남고, 이전 수정본은 덮어쓰지 않습니다. '
   + '아직 저장하지 않은 입력은 이 브라우저에만 임시 보관되며 다른 기기나 인스턴스에 있지 않습니다. '
-  + '외부 모델·도구로 무엇이 전송되는지는 실행을 시작하기 전에 대상과 범위를 표시합니다.';
+  + '외부 모델·도구로 무엇이 전송되는지는 실행을 시작하기 전에 대상과 범위를 표시합니다. '
+  + '이 화면은 어떤 제공자에도 연결하지 않으며 아무것도 전송하지 않습니다.';
 
 function fail(message) {
   throw new Error(message);
@@ -70,8 +71,8 @@ function sessionFailureText(error) {
   return ['unavailable', '서버에 연결하지 못했습니다. 잠시 후 다시 열어 주세요.'];
 }
 
-function textProblem(text) {
-  if (!text) return '설명을 입력해 주세요.';
+function textProblem(text, empty = false) {
+  if (!text && !empty) return '설명을 입력하거나 자료를 추가해 주세요.';
   if ([...text].length > MAX_TEXT_CHARS) return `설명은 ${MAX_TEXT_CHARS.toLocaleString('en-US')}자 이하여야 합니다.`;
   if (utf8.encode(text).length > MAX_TEXT_BYTES) return `설명은 UTF-8 ${MAX_TEXT_BYTES.toLocaleString('en-US')}바이트 이하여야 합니다.`;
   return null;
@@ -79,6 +80,38 @@ function textProblem(text) {
 
 const isCount = value => Number.isInteger(value) && value >= 1;
 const isUuid = value => typeof value === 'string' && UUID.test(value);
+
+function pendingDescriptor(value) {
+  if (!value || typeof value !== 'object' || Object.keys(value).sort().join() !== 'operation,payload,schema_version,work_id'
+      || value.schema_version !== 'owner-pending-command-v2' || !['create', 'revise', 'upload'].includes(value.operation)
+      || (value.operation === 'create' ? value.work_id !== null : !isUuid(value.work_id))) return null;
+  const p = value.payload;
+  if (!p || !isUuid(p.command_id)) return null;
+  let fields;
+  if (value.operation === 'create') {
+    if (!['work-create-command-v1', 'work-create-command-v2'].includes(p.schema_version)) return null;
+    fields = ['schema_version', 'command_id', 'text'];
+    if (p.schema_version.endsWith('v2')) {
+      fields.push('input_origin');
+      if (!['owner_text', 'owner_material'].includes(p.input_origin)) return null;
+    }
+  } else if (value.operation === 'revise') {
+    if (!['work-revise-command-v1', 'work-revise-command-v2'].includes(p.schema_version) || !isCount(p.expected_revision)) return null;
+    fields = ['schema_version', 'command_id', 'text', 'expected_revision'];
+  } else {
+    fields = ['schema_version', 'command_id', 'expected_revision', 'name', 'declared_media_type', 'size', 'sha256'];
+    if (p.schema_version !== 'owner-source-upload-v1' || !isCount(p.expected_revision)
+        || typeof p.name !== 'string' || !p.name || utf8.encode(p.name).length > 255
+        || /[\/\\\p{Cc}\p{Cf}\p{Cs}]/u.test(p.name) || ['.', '..'].includes(p.name)
+        || typeof p.declared_media_type !== 'string' || p.declared_media_type.length > 127
+        || !/^[a-z0-9][a-z0-9!#$&^_.+\-]*\/[a-z0-9][a-z0-9!#$&^_.+\-]*$/.test(p.declared_media_type)
+        || !Number.isSafeInteger(p.size) || p.size < 0 || p.size > 10485760 || !/^[0-9a-f]{64}$/.test(p.sha256)) return null;
+  }
+  if (Object.keys(p).sort().join() !== fields.sort().join()) return null;
+  if (value.operation !== 'upload' && (typeof p.text !== 'string' || textProblem(p.text,
+      p.schema_version === 'work-revise-command-v2' || p.input_origin === 'owner_material'))) return null;
+  return Object.freeze({ ...value, payload: Object.freeze({ ...p }) });
+}
 
 // what the browser store may hold, field by field; anything else is dropped (a tampered or
 // corrupt store never steers a request); a work is kept only with its known revision
@@ -90,11 +123,20 @@ function validState(value) {
     state.revision = value.revision;
     if (isCount(value.base_revision)) state.base_revision = value.base_revision;
   }
-  if (typeof value.draft_text === 'string') state.draft_text = value.draft_text;
-  if (isUuid(value.pending_command_id) && typeof value.pending_text === 'string') {
-    state.pending_command_id = value.pending_command_id;
-    state.pending_text = value.pending_text;
+  if (typeof value.draft_text === 'string' && utf8.encode(value.draft_text).length <= 131072) state.draft_text = value.draft_text;
+  const pending = pendingDescriptor(value.pending_command);
+  if (pending) state.pending_command = pending;
+  else if (isUuid(value.pending_command_id) && typeof value.pending_text === 'string') {
+    const operation = state.work_id ? 'revise' : 'create';
+    if (!state.work_id || isCount(value.base_revision)) {
+      state.pending_command = pendingDescriptor({ schema_version: 'owner-pending-command-v2', operation,
+        work_id: state.work_id ?? null, payload: { schema_version: operation === 'create' ? CREATE_SCHEMA : REVISE_SCHEMA,
+          command_id: value.pending_command_id, text: value.pending_text,
+          ...(state.work_id ? { expected_revision: value.base_revision } : {}) } });
+    }
+    if (!state.pending_command) state.unresolved_legacy = true;
   }
+  if (value.unresolved_legacy === true) state.unresolved_legacy = true;
   return state;
 }
 
@@ -102,7 +144,8 @@ function draftStore(storage, key) {
   // a per-browser convenience: every read and write is guarded, a blocked store is a no-op
   function read() {
     try {
-      return validState(JSON.parse(storage?.getItem?.(key) ?? 'null'));
+      const raw = storage?.getItem?.(key) ?? 'null';
+      return raw.length <= 200000 ? validState(JSON.parse(raw)) : {};
     } catch {
       return {};
     }
@@ -167,21 +210,102 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   // the form: the prompt, the explanation, the save
   const form = roots.form;
   form.replaceChildren();
-  const label = element('label', {}, PROMPT);
-  const area = element('textarea', { name: 'text', rows: '8', placeholder: '맡길 일을 문장으로 설명해 주세요.',
+  const label = element('label', { for: 'work-description' }, PROMPT);
+  const area = element('textarea', { id: 'work-description', name: 'text', rows: '6', placeholder: '맡길 일을 문장으로 설명하거나 자료를 추가해 주세요.',
     autocapitalize: 'off', spellcheck: 'false' });
   area.dataset.field = 'text';
-  label.append(area);
   const submit = element('button', { type: 'submit' }, '이 인스턴스에 저장');
-  form.append(label, submit);
-  // item 5: materials and the microphone — not on this factory yet, said plainly
   const addMaterials = element('button', { type: 'button' }, '자료 추가');
-  addMaterials.disabled = true;
-  roots.materials.replaceChildren(addMaterials,
-    element('p', {}, '이 인스턴스에는 아직 자료·파일 입력과 마이크 입력이 없습니다. 지금은 설명만 저장됩니다.'));
+  const toolbar = element('div', { class: 'original-toolbar' });
+  toolbar.append(label, addMaterials);
+  form.append(toolbar, area, submit);
+  const picker = element('input', { type: 'file', multiple: '', 'aria-label': '원본 자료 선택' });
+  picker.hidden = true;
+  addMaterials.addEventListener('click', () => picker.click());
+  const materialList = element('ul', { class: 'original-list', 'aria-label': '원본 자료 목록' });
+  const materialStatus = element('p', { role: 'status', 'aria-live': 'polite' });
+  roots.materials.replaceChildren(picker, element('p', {}, '파일당 10 MiB · 업무당 20개, 합계 50 MiB. 설명 없이 자료만 저장할 수 있습니다.'),
+    element('p', {}, '내용 읽기는 아직 지원되지 않습니다. 원본 저장은 파일 형식 검증이나 내용 이해가 아닙니다.'),
+    materialStatus, materialList);
   roots.link.replaceChildren(element('a', { href: './observe.html' }, '기록된 실행 관제 화면'));
 
   let state = store.read();
+  const selections = [];
+  const originals = new Map();
+  let savedSources = [];
+  let activeUpload = null;
+
+  function renderMaterials() {
+    const rows = [];
+    for (const ref of savedSources) {
+      const original = originals.get(ref.id);
+      const row = element('li');
+      row.append(element('span', { class: 'original-name' }, original?.name ?? '저장된 원본'),
+        element('span', { class: 'original-state' }, '원본 보관됨'),
+        element('a', { href: `${works}/${state.work_id}/sources/${ref.id}/content`, download: '' }, '다운로드'));
+      rows.push(row);
+    }
+    for (const selection of selections.filter(item => item.status !== 'stored')) {
+      const row = element('li');
+      row.append(element('span', { class: 'original-name' }, selection.file.name),
+        element('span', { class: 'original-state' }, { queued: '저장 대기', sending: '받는 중', checking: '저장 상태 확인 중',
+          cancelled: '전송 취소됨 · 원본은 이 화면에 유지됨', failed: '저장하지 못함 · 다시 시도할 수 있음' }[selection.status]));
+      const retry = element('button', { type: 'button' }, selection.status === 'checking' ? '저장 상태 확인' : '다시 시도');
+      retry.addEventListener('click', async () => {
+        if (busy) return;
+        selection.status = 'queued';
+        await saveAll();
+      });
+      const cancel = element('button', { type: 'button' }, selection.status === 'sending' ? '전송 중지' : '취소');
+      cancel.addEventListener('click', () => {
+        if (activeUpload?.selection === selection) {
+          activeUpload.controller.abort();
+          selection.status = 'checking';
+          materialStatus.textContent = '저장 상태 확인 중 · 전송 중지는 저장 취소를 뜻하지 않습니다.';
+        } else if (selection.status !== 'checking') selection.status = 'cancelled';
+        renderMaterials();
+      });
+      if (['failed', 'cancelled', 'checking'].includes(selection.status)) row.append(retry);
+      row.append(cancel);
+      rows.push(row);
+    }
+    materialList.replaceChildren(...rows);
+  }
+
+  async function loadMaterials(saved) {
+    savedSources = saved.source_refs ?? [];
+    renderMaterials();
+    for (const ref of savedSources) {
+      if (!originals.has(ref.id)) {
+        try {
+          const result = await session.request(`${works}/${saved.work_id}/sources/${ref.id}`);
+          originals.set(ref.id, result.artifact);
+        } catch {
+          materialStatus.textContent = '저장된 원본의 이름을 확인하지 못했습니다. 다시 열어 주세요.';
+        }
+      }
+    }
+    renderMaterials();
+  }
+
+  picker.addEventListener('change', () => {
+    for (const file of Array.from(picker.files ?? [])) {
+      const queued = selections.filter(item => !['stored', 'cancelled'].includes(item.status));
+      const total = [...originals.values()].reduce((sum, item) => sum + item.size, 0)
+        + queued.reduce((sum, item) => sum + item.file.size, 0);
+      if (file.size > 10485760 || savedSources.length + queued.length >= 20 || total + file.size > 52428800) {
+        materialStatus.textContent = '자료 한도를 넘었습니다. 파일당 10 MiB, 업무당 20개·50 MiB 이내로 선택해 주세요.';
+        continue;
+      }
+      if (!file.name || utf8.encode(file.name).length > 255 || /[\/\\\p{Cc}\p{Cf}\p{Cs}]/u.test(file.name) || ['.', '..'].includes(file.name)) {
+        materialStatus.textContent = '파일 이름을 확인해 주세요. 경로 문자나 제어 문자는 사용할 수 없습니다.';
+        continue;
+      }
+      selections.push({ file, status: 'queued', metadata: null });
+    }
+    picker.value = '';
+    renderMaterials();
+  });
 
   function keep(changes) {
     state = { ...state, ...changes };
@@ -191,7 +315,7 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
 
   function forgetWork() {
     keep({ work_id: undefined, revision: undefined, base_revision: undefined,
-      pending_command_id: undefined, pending_text: undefined });
+      pending_command: undefined });
   }
 
   function savedText() {
@@ -254,14 +378,15 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   let savedValue = null;  // the text of the revision last read or saved, in memory only
 
   async function reopenSaved() {
-    if (busy) return;
+    if (busy || state.pending_command) return;
     busy = true;
     try {
       const saved = await readSaved();
       area.value = saved.text;
       savedValue = saved.text;
       keep({ revision: saved.revision, base_revision: undefined, draft_text: undefined,
-        pending_command_id: undefined, pending_text: undefined });
+        unresolved_legacy: undefined });
+      await loadMaterials(saved);
       saveStatus(savedText(), 'saved');
     } catch (error) {
       const [code, text] = failureText(error);
@@ -274,13 +399,14 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   // the owner keeps the draft and takes the latest revision as its base: the next save
   // seals it on top (the other screen's revision stays, immutable)
   async function rebaseDraft() {
-    if (busy) return;
+    if (busy || state.pending_command) return;
     busy = true;
     try {
       const saved = await readSaved();
       savedValue = saved.text;
       keep({ revision: saved.revision, base_revision: saved.revision, draft_text: area.value,
-        pending_command_id: undefined, pending_text: undefined });
+        unresolved_legacy: undefined });
+      await loadMaterials(saved);
       draftStatus();
     } catch (error) {
       const [code, text] = failureText(error);
@@ -291,16 +417,24 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   }
 
   let mode = 'new';
+  area.value = state.draft_text ?? '';
+  if (state.pending_command) {
+    try {
+      const pending = state.pending_command;
+      const receipt = revisionShape(await session.request(`${works}/commands/${pending.payload.command_id}`), pending.work_id ?? undefined);
+      await acceptSaved(receipt, pending);
+    } catch {
+      // A missing receipt is not rollback. Preserve the exact command even while
+      // a cancelled request's publication is still in progress on the instance.
+      saveStatus('저장 상태 확인 중 · 같은 명령으로 다시 확인하거나 원본을 다시 선택해 주세요.', 'checking');
+    }
+  }
   if (state.work_id) {
     try {
       const saved = await readSaved();
       savedValue = saved.text;
       keep({ revision: saved.revision });
-      if (state.pending_command_id !== undefined && state.pending_text === saved.text) {
-        // the send whose answer was lost is what the instance holds: settled here, and a
-        // draft edited since is an edit on that revision — never another screen's doing
-        keep({ pending_command_id: undefined, pending_text: undefined, base_revision: saved.revision });
-      }
+      await loadMaterials(saved);
       if (typeof state.draft_text === 'string' && state.draft_text !== saved.text) {
         area.value = state.draft_text;
         if (state.base_revision === undefined) keep({ base_revision: saved.revision });
@@ -313,7 +447,7 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
       }
       mode = 'open';
     } catch (error) {
-      if (error?.code === 'not_found') {
+      if (error?.code === 'not_found' && !state.pending_command && !state.unresolved_legacy) {
         // the instance no longer has the work: forgotten — never the draft, the only copy
         forgetWork();
         area.value = typeof state.draft_text === 'string' ? state.draft_text : '';
@@ -332,6 +466,8 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   } else {
     saveStatus('아직 저장된 업무가 없습니다.', 'new');
   }
+  if (state.pending_command) saveStatus('저장 상태 확인 중 · 같은 명령을 유지합니다. 원본 전송 재시도에는 같은 파일이 필요합니다.', 'checking');
+  if (state.unresolved_legacy) saveStatus('이전 저장 명령의 원래 수정본을 확인할 수 없습니다. 초안을 유지했습니다. 저장본을 확인한 뒤 기준을 선택해 주세요.', 'conflict', { reopen: true });
   form.hidden = false;
 
   area.addEventListener('input', () => {
@@ -339,22 +475,102 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
     draftStatus();
   });
 
-  // one send of one command with its own text; the answer becomes the work's state
-  async function send(commandId, text) {
-    const saved = state.work_id
-      ? revisionShape(await command(`${works}/${state.work_id}/revisions`, {
-        schema_version: REVISE_SCHEMA, command_id: commandId, expected_revision: state.base_revision ?? state.revision, text }), state.work_id)
-      : revisionShape(await command(works, { schema_version: CREATE_SCHEMA, command_id: commandId, text }));
-    keep({ work_id: saved.work_id, revision: saved.revision, base_revision: undefined,
-      pending_command_id: undefined, pending_text: undefined });
+  async function acceptSaved(saved, pending) {
+    if (pending?.operation === 'upload') {
+      const selection = selections.find(item => item.metadata?.command_id === pending.payload.command_id)
+        ?? (await pendingFile(pending.payload))?.selection;
+      // A reselected File has no command metadata yet. Verify its full identity
+      // before consuming it, including when receipt lookup wins the retry race.
+      if (selection) {
+        selection.metadata = pending.payload;
+        selection.status = 'stored';
+      }
+    }
+    const base = state.base_revision;
+    keep({ work_id: saved.work_id, revision: Math.max(saved.revision, state.revision ?? 0),
+      base_revision: base === undefined || base === pending?.payload.expected_revision || pending?.operation === 'create' ? saved.revision : base,
+      pending_command: undefined });
     savedValue = saved.text;
+    if (saved.revision < state.revision) {
+      const latest = await readSaved();
+      savedValue = latest.text;
+      keep({ revision: latest.revision });
+      await loadMaterials(latest);
+    } else await loadMaterials(saved);
     return saved;
+  }
+
+  function remember(operation, payload, workId = state.work_id ?? null) {
+    const descriptor = pendingDescriptor({ schema_version: 'owner-pending-command-v2', operation, work_id: workId, payload });
+    if (!descriptor) throw Object.assign(new Error('invalid pending command'), { code: 'invalid_input' });
+    keep({ pending_command: descriptor, draft_text: area.value });
+    return descriptor;
+  }
+
+  async function fileMetadata(selection, expected, commandId) {
+    const bytes = new Uint8Array(await selection.file.arrayBuffer());
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+    const declared = selection.file.type;
+    return { bytes, metadata: { schema_version: 'owner-source-upload-v1', command_id: commandId,
+      expected_revision: expected, name: selection.file.name, size: bytes.length,
+      sha256: Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join(''),
+      declared_media_type: typeof declared === 'string' && declared.length <= 127
+        && /^[a-z0-9][a-z0-9!#$&^_.+\-]*\/[a-z0-9][a-z0-9!#$&^_.+\-]*$/.test(declared) ? declared : 'application/octet-stream' } };
+  }
+
+  async function pendingFile(payload) {
+    for (const selection of selections.filter(item => item.status !== 'stored')) {
+      if (selection.metadata && selection.metadata.command_id !== payload.command_id) continue;
+      if (selection.file.name !== payload.name || selection.file.size !== payload.size) continue;
+      const result = await fileMetadata(selection, payload.expected_revision, payload.command_id);
+      if (Object.keys(payload).every(key => payload[key] === result.metadata[key])) {
+        return { selection, ...result };
+      }
+    }
+    return null;
+  }
+
+  async function sendPending() {
+    const pending = state.pending_command;
+    const p = pending.payload;
+    if (pending.operation !== 'upload') {
+      const path = pending.operation === 'create' ? works : `${works}/${pending.work_id}/revisions`;
+      return acceptSaved(revisionShape(await command(path, p), pending.work_id ?? undefined), pending);
+    }
+    try {
+      const receipt = revisionShape(await session.request(`${works}/commands/${p.command_id}`), pending.work_id);
+      return acceptSaved(receipt, pending);
+    } catch (error) {
+      if (error?.code !== 'not_found') throw error;
+    }
+    const candidate = await pendingFile(p);
+    if (!candidate) throw Object.assign(new Error('same original required'), { code: 'reselect' });
+    return sendUpload(pending, candidate.selection, candidate.bytes);
+  }
+
+  async function sendUpload(pending, selection, bytes) {
+    selection.metadata = pending.payload;
+    selection.status = 'sending';
+    const controller = new AbortController();
+    activeUpload = { controller, selection };
+    renderMaterials();
+    try {
+      const saved = revisionShape(await session.uploadSource(`${works}/${pending.work_id}/sources`,
+        { metadata: pending.payload, bytes, signal: controller.signal }), pending.work_id);
+      return await acceptSaved(saved, pending);
+    } catch (error) {
+      selection.status = ['conflict', 'invalid_input', 'too_large'].includes(error?.code) ? 'failed' : 'checking';
+      throw error;
+    } finally {
+      activeUpload = null;
+      renderMaterials();
+    }
   }
 
   // after a send: text typed meanwhile stays a browser draft on the revision just saved
   function settled() {
     if (area.value === savedValue) {
-      keep({ draft_text: undefined });
+      keep({ draft_text: undefined, base_revision: undefined });
       saveStatus(savedText(), 'saved');
     } else {
       keep({ draft_text: area.value, base_revision: state.revision });
@@ -366,23 +582,28 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
     const [code, text] = failureText(error);
     if (code === 'conflict' || code === 'invalid_input' || code === 'too_large') {
       // a refused or conflicting command is spent: the server holds it to its content and target
-      keep({ pending_command_id: undefined, pending_text: undefined });
+      keep({ pending_command: undefined });
     }
-    if (code === 'not_found') forgetWork();
+    if (error?.code === 'reselect') {
+      saveStatus('저장 상태 확인 중 · 같은 이름과 내용의 원본을 다시 선택해 주세요. 파일 바이트는 브라우저에 저장하지 않습니다.', 'checking');
+      return;
+    }
+    if (code === 'not_found' && state.pending_command?.operation !== 'upload') forgetWork();
     if (code === 'conflict' && !state.work_id) saveStatus(CREATE_CONFLICT_TEXT, code);
-    else saveStatus(text, code, { reopen: code === 'conflict' });
+    else saveStatus(state.pending_command ? `저장 상태 확인 중 · ${text}` : text, code, { reopen: code === 'conflict' });
   }
 
-  form.addEventListener('submit', async event => {
-    event.preventDefault();
+  async function saveAll() {
     if (busy) return;
+    if (state.unresolved_legacy) return;
     const text = area.value;
-    const problem = textProblem(text);
+    const queued = selections.filter(item => item.status === 'queued');
+    const problem = textProblem(text, queued.length > 0 || savedSources.length > 0 || !!state.pending_command);
     if (problem) {
       saveStatus(problem, 'invalid_input');
       return;
     }
-    if (state.work_id && state.pending_command_id === undefined && text === savedValue) {
+    if (state.work_id && !state.pending_command && text === savedValue && !queued.length) {
       // nothing to seal: the instance already holds this sentence
       keep({ draft_text: undefined, base_revision: undefined });
       saveStatus(savedText(), 'saved');
@@ -393,23 +614,40 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
       saveStatus('이 인스턴스에 저장하는 중…', 'sending');
       // a send whose answer was lost is settled first, with the text it was minted for: the
       // server replays it or seals it; only then is a newer draft saved as the next revision
-      if (state.pending_command_id !== undefined) {
-        const pendingText = state.pending_text;
-        await send(state.pending_command_id, pendingText);
-        if (pendingText === text) {
-          settled();
+      if (state.pending_command) {
+        await sendPending();
+        if (state.base_revision !== undefined && state.base_revision < state.revision) {
+          baseConflictStatus();
           return;
         }
       }
-      const commandId = crypto.randomUUID();
-      keep({ draft_text: text, pending_command_id: commandId, pending_text: text });
-      await send(commandId, text);
+      if (!state.work_id || text !== savedValue) {
+        const material = queued.length > 0 || savedSources.length > 0;
+        const schema = state.work_id ? (material ? 'work-revise-command-v2' : REVISE_SCHEMA)
+          : (material ? 'work-create-command-v2' : CREATE_SCHEMA);
+        const payload = { schema_version: schema, command_id: crypto.randomUUID(), text,
+          ...(state.work_id ? { expected_revision: state.base_revision ?? state.revision }
+            : material ? { input_origin: 'owner_material' } : {}) };
+        remember(state.work_id ? 'revise' : 'create', payload);
+        await sendPending();
+      }
+      for (const selection of queued) {
+        if (selection.status !== 'queued') continue;
+        const result = await fileMetadata(selection, state.base_revision ?? state.revision, crypto.randomUUID());
+        const pending = remember('upload', result.metadata);
+        await sendUpload(pending, selection, result.bytes);
+      }
       settled();
     } catch (error) {
       sendFailed(error);
     } finally {
       busy = false;
     }
+  }
+
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    await saveAll();
   });
 
   return Object.freeze({ mode, basePath, session });

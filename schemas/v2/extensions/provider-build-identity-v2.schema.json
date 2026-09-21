@@ -1,0 +1,260 @@
+{
+  "$comment": "Structural only; these values grant no authentication, qualification, installation, binding, measurement, trust, or execution authority.",
+  "$id": "urn:deeptwin:schemas:v2:extensions:provider-build-identity-v2",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "entrypoint": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        },
+        "size_bytes": {
+          "maximum": 16777216,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sha256",
+        "size_bytes"
+      ],
+      "type": "object"
+    },
+    "extension_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^(?:[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?)(?![\\s\\S])",
+      "type": "string"
+    },
+    "extension_version": {
+      "maxLength": 32,
+      "minLength": 1,
+      "pattern": "^(?:(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*))(?![\\s\\S])",
+      "type": "string"
+    },
+    "inputs": {
+      "additionalProperties": false,
+      "properties": {
+        "build_recipe": {
+          "additionalProperties": false,
+          "properties": {
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 1073741824,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        "dependency_input_set": {
+          "additionalProperties": false,
+          "properties": {
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 1073741824,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        "schema_version": {
+          "const": "extension-build-inputs-v1",
+          "type": "string"
+        },
+        "source_bundle": {
+          "additionalProperties": false,
+          "properties": {
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 1073741824,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_version",
+        "source_bundle",
+        "build_recipe",
+        "dependency_input_set"
+      ],
+      "type": "object"
+    },
+    "platform": {
+      "enum": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "type": "string"
+    },
+    "port_contract_version": {
+      "const": "provider-port-v1"
+    },
+    "port_schemas": {
+      "items": false,
+      "maxItems": 4,
+      "minItems": 4,
+      "prefixItems": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "role": {
+              "const": "config",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 262144,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "role",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "role": {
+              "const": "request",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 262144,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "role",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "role": {
+              "const": "result",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 262144,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "role",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "role": {
+              "const": "error",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+              "type": "string"
+            },
+            "size_bytes": {
+              "maximum": 262144,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "role",
+            "sha256",
+            "size_bytes"
+          ],
+          "type": "object"
+        }
+      ],
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "extension-build-identity-v2"
+    },
+    "worker_profile": {
+      "const": "claude-text-transform-v1"
+    }
+  },
+  "required": [
+    "schema_version",
+    "extension_id",
+    "extension_version",
+    "platform",
+    "port_contract_version",
+    "inputs",
+    "entrypoint",
+    "port_schemas",
+    "worker_profile"
+  ],
+  "type": "object"
+}

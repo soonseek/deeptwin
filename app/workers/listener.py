@@ -11,13 +11,17 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import hmac
+import errno
 import json
 import os
 import re
 import secrets
+import select
 import socket
 import stat
+import struct
 import sys
+import threading
 from dataclasses import dataclass
 from typing import Self
 
@@ -654,13 +658,18 @@ def _read_file_at(directory_fd: int, name: str, expected: FileIdentity) -> bytes
         after = os.fstat(descriptor)
         if FileIdentity.from_stat(after) != expected or before.st_size != after.st_size:
             raise ListenerIntegrityError()
-        return raw
-    except ListenerError:
+    except BaseException as error:
+        owned, descriptor = descriptor, -1
+        try:
+            _close_fd(owned)
+        except BaseException:  # noqa: BLE001, S110 - preserve readiness primary
+            pass
+        if isinstance(error, OSError):
+            raise ListenerIntegrityError() from None
         raise
-    except OSError:
-        raise ListenerIntegrityError() from None
-    finally:
-        _close_fd(descriptor)
+    owned, descriptor = descriptor, -1
+    _close_fd(owned)
+    return raw
 
 
 def _current_endpoint_identity(
@@ -728,9 +737,14 @@ def verify_listener(
         result = VerifiedListener(generation=generation, record=record)
         generation = None  # type: ignore[assignment]
         return result
-    finally:
-        if generation is not None:
-            generation.close()
+    except BaseException:
+        owned, generation = generation, None
+        if owned is not None:
+            try:
+                owned.close()
+            except BaseException:  # noqa: BLE001, S110 - preserve verification primary
+                pass
+        raise
 
 
 def _open_endpoint_for_owner(
@@ -1248,6 +1262,7 @@ class ExtensionConnection:
         "_fence",
         "_generation",
         "_read_only",
+        "_reader_lock",
         "_root",
         "_socket",
         "_spec",
@@ -1274,7 +1289,10 @@ class ExtensionConnection:
                 raise ListenerIntegrityError()
             _extension_mount_fence(self._root, read_only=self._read_only)
         except BaseException as error:
-            self.close()
+            try:
+                self.close()
+            except BaseException:  # noqa: BLE001, S110 - preserve operation primary
+                pass
             if isinstance(error, ListenerError):
                 raise
             if isinstance(error, (ipc_root.IpcRootError, OSError)):
@@ -1285,6 +1303,7 @@ class ExtensionConnection:
               payload: bytes, deadline: broker.Deadline) -> None:
         if self._closed:
             raise broker.TransportClosed()
+        operation_deadline = self._bounded_deadline(deadline)
         try:
             self._codec.write(
                 self._socket,
@@ -1292,33 +1311,133 @@ class ExtensionConnection:
                 correlation_id=correlation_id,
                 message_type=message_type,
                 payload=payload,
-                deadline=deadline,
+                deadline=operation_deadline,
             )
         except BaseException:
-            self.close()
+            try:
+                self.close()
+            except BaseException:  # noqa: BLE001, S110 - preserve operation primary
+                pass
             raise
 
     def read(self, *, deadline: broker.Deadline) -> broker.ReceivedFrame:
         if self._closed:
             raise broker.TransportClosed(dispatch_effect="outcome_unknown")
+        operation_deadline = self._bounded_deadline(deadline)
+        if not self._reader_lock.acquire(blocking=False):
+            raise broker.ProtocolViolation(dispatch_effect="outcome_unknown")
         try:
-            return self._codec.read(self._socket, deadline=deadline)
+            return self._codec.read(self._socket, deadline=operation_deadline)
         except BaseException:
-            self.close()
+            try:
+                self.close()
+            except BaseException:  # noqa: BLE001, S110 - preserve operation primary
+                pass
             raise
+        finally:
+            self._reader_lock.release()
+
+    def _bounded_deadline(self, deadline: broker.Deadline) -> broker.Deadline:
+        if type(deadline) is not broker.Deadline:
+            raise broker.ChannelConfigurationError()
+        return broker.Deadline(
+            min(deadline.end_monotonic, self.deadline.end_monotonic)
+        )
+
+    def read_duplex(self, *, deadline: broker.Deadline) -> broker.ReceivedFrame:
+        """Read one authenticated frame without holding the codec across I/O.
+
+        The owner-local reader latch is shared with ``read``.  Refusing a
+        competing reader does not consume bytes and does not close the valid
+        reader's owner.  Prefix/body acquisition remains under the retained
+        owner deadline and authentication/sequence advancement stays in the
+        existing ``FrameCodec.decode`` implementation.
+        """
+
+        if self._closed:
+            raise broker.TransportClosed(dispatch_effect="outcome_unknown")
+        operation_deadline = self._bounded_deadline(deadline)
+        if not self._reader_lock.acquire(blocking=False):
+            raise broker.ProtocolViolation(dispatch_effect="outcome_unknown")
+
+        def read_exact(size: int) -> bytes:
+            value = bytearray()
+            while len(value) < size:
+                remaining = operation_deadline.require(
+                    dispatch_effect="outcome_unknown"
+                )
+                try:
+                    readable, _, _ = select.select(
+                        [self._socket], [], [], remaining
+                    )
+                except (OSError, ValueError):
+                    raise broker.TransportUncertain(
+                        dispatch_effect="outcome_unknown"
+                    ) from None
+                if not readable:
+                    raise broker.DeadlineExceeded(
+                        dispatch_effect="outcome_unknown"
+                    )
+                try:
+                    block = self._socket.recv(size - len(value))
+                except (OSError, TimeoutError):
+                    raise broker.TransportUncertain(
+                        dispatch_effect="outcome_unknown"
+                    ) from None
+                if not block:
+                    raise broker.TransportClosed(
+                        dispatch_effect="outcome_unknown"
+                    )
+                value.extend(block)
+            return bytes(value)
+
+        try:
+            self.recheck()
+            prefix = read_exact(4)
+            (size,) = struct.unpack(">I", prefix)
+            if not 1 <= size <= self._spec.max_frame_bytes:
+                raise broker.ProtocolViolation(dispatch_effect="outcome_unknown")
+            frame = self._codec.decode(read_exact(size))
+            self.recheck()
+            operation_deadline.require(dispatch_effect="outcome_unknown")
+            return frame
+        except BaseException:
+            try:
+                self.close()
+            except BaseException:  # noqa: BLE001, S110 - preserve operation primary
+                pass
+            raise
+        finally:
+            self._reader_lock.release()
 
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
+        # The closed latch detaches the finite set before any fallible close.
+        fence, codec, connection, generation = (
+            self._fence,
+            self._codec,
+            self._socket,
+            self._generation,
+        )
+        self._fence = self._codec = self._socket = self._generation = None
+        first_error = None
         try:
-            self._fence.close()
-        finally:
+            connection.shutdown(socket.SHUT_RDWR)
+        except OSError as error:
+            if error.errno not in {errno.ENOTCONN, errno.EBADF}:
+                first_error = error
+        except BaseException as error:
+            first_error = error
+        for owned in (fence, codec, connection, generation):
             try:
-                self._codec.close()
-                self._socket.close()
-            finally:
-                self._generation.close()
+                owned.close()
+            except BaseException as error:
+                if first_error is None:
+                    first_error = error
+        if first_error is not None:
+            raise first_error
 
     def __enter__(self) -> Self:
         if self._closed:
@@ -1375,6 +1494,7 @@ def _extension_connection(
     result._root = root
     result._spec = spec
     result._read_only = read_only
+    result._reader_lock = threading.Lock()
     return result
 
 
@@ -1410,6 +1530,7 @@ def _accept_extension_authenticated(
     root, spec = worker.root_spec, worker.spec
     generation = ipc_root.acquire_generation(root)
     fence = None
+    codec = None
     connection: socket.socket | None = None
     try:
         if (
@@ -1443,15 +1564,17 @@ def _accept_extension_authenticated(
             fence=fence, record=record, root=root, spec=spec, read_only=False, peer=None,
             deadline=window,
         )
-        connection = generation = fence = None  # type: ignore[assignment]
+        connection = generation = fence = codec = None  # type: ignore[assignment]
         return result
     except BaseException as error:
-        if connection is not None:
-            connection.close()
-        if fence is not None:
-            fence.close()
-        if generation is not None:
-            generation.close()
+        owned = (connection, codec, fence, generation)
+        connection = codec = fence = generation = None
+        for resource in owned:
+            if resource is not None:
+                try:
+                    resource.close()
+                except BaseException:  # noqa: BLE001, S110 - preserve primary
+                    pass
         if isinstance(error, ipc_root.IpcRootError):
             raise ListenerIntegrityError() from None
         raise
@@ -1475,6 +1598,7 @@ def _connect_extension_authenticated(
     _validate_pair_channel(root, spec)
     verified = verify_listener(root, spec)
     fence = None
+    codec = None
     connection: socket.socket | None = None
     try:
         fence = ipc_root._retain_populated_generation(root, verified.generation)
@@ -1504,15 +1628,18 @@ def _connect_extension_authenticated(
             generation=verified.generation, fence=fence, record=verified.record,
             root=root, spec=spec, read_only=True, peer=peer, deadline=deadline,
         )
-        connection = fence = None  # type: ignore[assignment]
+        connection = fence = codec = None  # type: ignore[assignment]
         verified._closed = True  # the generation now belongs to the connection
         return result
     except BaseException as error:
-        if connection is not None:
-            connection.close()
-        if fence is not None:
-            fence.close()
-        verified.close()
+        owned = (connection, fence, codec, verified)
+        connection = fence = codec = verified = None
+        for resource in owned:
+            if resource is not None:
+                try:
+                    resource.close()
+                except BaseException:  # noqa: BLE001, S110 - attempt all; preserve primary
+                    pass
         if isinstance(error, ipc_root.IpcRootError):
             raise ListenerIntegrityError() from None
         raise

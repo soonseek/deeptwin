@@ -1,0 +1,123 @@
+{
+  "$id": "urn:deeptwin:schemas:v2:deployment:provider-source-recipe-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "bundle_bytes_max": {
+      "const": 524288,
+      "type": "integer"
+    },
+    "bundle_file_limit": {
+      "const": 18,
+      "type": "integer"
+    },
+    "cancellation_bytes_max": {
+      "const": 8192,
+      "type": "integer"
+    },
+    "channel_bootstrap_policy": {
+      "const": "owned-channel-layout-v1",
+      "type": "string"
+    },
+    "consumption_bytes_max": {
+      "const": 8192,
+      "type": "integer"
+    },
+    "initializer_id": {
+      "const": "deeptwin-provider-source-init-v1",
+      "type": "string"
+    },
+    "layout_id": {
+      "const": "provider-source-bundle-v1",
+      "type": "string"
+    },
+    "original_prepare_recipe": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "const": "deploy/security/deployment-prepare-recipe-v1.json",
+          "type": "string"
+        },
+        "sha256": {
+          "const": "03490ee7c676a0c78915fdef3ec48c52d6b88838ad71bce001ad2fe72f5e67b7",
+          "type": "string"
+        },
+        "size_bytes": {
+          "const": 606,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "size_bytes"
+      ],
+      "type": "object"
+    },
+    "original_receipt_recipe": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "const": "deploy/security/deployment-receipt-recipe-v1.json",
+          "type": "string"
+        },
+        "sha256": {
+          "const": "3417fbc488ab745019b909564282cc9ff971c99fa2d5ba592e4faeb2f742e173",
+          "type": "string"
+        },
+        "size_bytes": {
+          "const": 487,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "size_bytes"
+      ],
+      "type": "object"
+    },
+    "receipt_bytes_max": {
+      "const": 16384,
+      "type": "integer"
+    },
+    "recipe_id": {
+      "const": "private-provider-source-channels-v1",
+      "type": "string"
+    },
+    "renderer_id": {
+      "const": "deeptwin-provider-source-expand-v1",
+      "type": "string"
+    },
+    "request_bytes_max": {
+      "const": 65536,
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "deployment-provider-source-recipe-v1",
+      "type": "string"
+    },
+    "worker_profile": {
+      "const": "claude-text-transform-v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "bundle_bytes_max",
+    "bundle_file_limit",
+    "cancellation_bytes_max",
+    "channel_bootstrap_policy",
+    "consumption_bytes_max",
+    "initializer_id",
+    "layout_id",
+    "original_prepare_recipe",
+    "original_receipt_recipe",
+    "receipt_bytes_max",
+    "recipe_id",
+    "renderer_id",
+    "request_bytes_max",
+    "schema_version",
+    "worker_profile"
+  ],
+  "type": "object"
+}

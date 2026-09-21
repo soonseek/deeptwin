@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from ..domain.permissions import Grant, Principal
 from ..domain.refs import MAX_INTEGER, EntityRef, uuid_string
 from .budgets import BudgetBook, BudgetDispatchRequest, BudgetExceeded, BudgetUsage
+from .graph import CompiledToolBinding, CompiledToolTransport
 from .ledger import (
     REMOTE_TERMINALS,
     RESULT_REASONS,
@@ -179,6 +180,7 @@ class AttemptDispatchRequest:
     envelope_ref: EntityRef
     profile_ref: EntityRef
     deadline_at_ms: int
+    tool_binding: CompiledToolBinding | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,6 +284,14 @@ class NodeAttemptDispatcher:
                 raise TypeError("Bindings must be exact AttemptBinding values")
         if not callable(transport) or isinstance(transport, str):
             raise TypeError("Transport must be callable")
+        if isinstance(transport, CompiledToolTransport):
+            transport.require_dispatch_ledger(ledger)
+            selected = transport.compiled_tool_binding
+            if selected is not None:
+                if set(bindings) != {selected.node_id}:
+                    raise ValueError("compiled transport binds exactly its calling node")
+                if bindings[selected.node_id].tool_calls != 1:
+                    raise ValueError("compiled invocation requires one tracked tool call")
         # a code-owned transport may state the most output bytes an attempt can
         # produce; every binding reserves at least that, or the ledger would settle
         # the attempt as an accounting overrun that blocks the whole budget session
@@ -314,13 +324,30 @@ class NodeAttemptDispatcher:
     def node_ids(self):
         return frozenset(self._bindings)
 
-    def for_visit(self, *, run_id, node_id, execution_id, loop_index):
+    def require_compiled_context(self, compiled):
+        if isinstance(self._transport, CompiledToolTransport):
+            for node_id in self._bindings:
+                self._transport.require_compiled_context(compiled, node_id, self._ledger)
+
+    def for_visit(self, *, run_id, node_id, execution_id, loop_index, compiled=None):
+        self.require_compiled_context(compiled)
         binding = self._bindings[node_id]
         uuid_string(run_id)
         uuid_string(execution_id)
         _count("loop index", loop_index)
 
+        def require_execution():
+            if (isinstance(self._transport, CompiledToolTransport)
+                    and self._transport.compiled_tool_binding is not None):
+                execution = self._ledger.get_execution(execution_id)["spec"]
+                if execution["run_id"] != run_id or execution["node_id"] != node_id:
+                    raise ValueError("compiled visit disagrees with ledger execution")
+
+        require_execution()
+
         def run():
+            self.require_compiled_context(compiled)
+            require_execution()
             return self._dispatch(run_id, node_id, execution_id, loop_index, binding)
 
         return VisitAttempt(run)
@@ -334,6 +361,8 @@ class NodeAttemptDispatcher:
                 attempt_id=attempt_identity(run_id, node_id, loop_index, attempt_index),
                 envelope_ref=binding.envelope_ref, profile_ref=binding.profile_ref,
                 deadline_at_ms=binding.deadline_at_ms,
+                tool_binding=(self._transport.compiled_tool_binding
+                              if isinstance(self._transport, CompiledToolTransport) else None),
             )
             outcome = self._dispatch_attempt(request, attempt_index + 1, binding,
                                              budget_session_id)

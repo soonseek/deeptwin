@@ -32,7 +32,7 @@ from ..domain.refs import DomainContractError, EntityRef, canonical_json, uuid_s
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore
 from ..extensions.port_contracts import OPERATION_CONTRACTS
-from ..services.run_approvals import PersistentRunApprovals, RunApprovalError
+from ..services.run_approvals import PersistentRunApprovals
 from ..workers import broker, ipc_root, listener
 from ..workers.artifact_stream import (
     ArtifactStreamError,
@@ -61,11 +61,14 @@ from ..workers.extension_execute_messages import (
 )
 from .artifact_cas import store_received_artifact
 from .budgets import BudgetUsage
-from .gates import LOCAL
+from .gates import local_identifier, tool_approval_scope
+from .graph import CompiledToolTransport, resolve_compiled_tool_binding
 from .ledger import (
     TOOL_APPROVAL_EFFECTS,
+    TOOL_EFFECT_CLASSES,
     ConsumedDispatchWindow,
     DispatchPermit,
+    LedgerError,
     RuntimeLedger,
     ToolCallSpec,
     tool_call_identity,
@@ -78,6 +81,7 @@ __all__ = [
     "ExtensionAttemptTransport",
     "ExtensionTransportError",
     "sealed_artifact_identity",
+    "tool_approval_scope",
 ]
 
 OUTPUT_SCHEMA = "extension-execute-output-v1"
@@ -120,23 +124,8 @@ def sealed_artifact_identity(send_command_id) -> str:
     return str(uuid5(NAMESPACE_URL, f"deeptwin:artifact:execute:{send_command_id}"))
 
 
-def tool_approval_scope(tool_id, version) -> str:
-    """The gate scope an owner's approval of one tool call names — `tool:` and the
-    uuid5 of the canonical (tool id, version) pair: delimiter-proof and fixed-length,
-    so every id and version the execute grammar admits fits the gate scope grammar.
-    The approvals service records the owner's decision against (run, node, scope)
-    once the ledger holds a gate request for it; the transport verifies the named
-    approval is that decision. Open: no production path asks the ledger for this
-    gate under the tool-calling node yet (the scheduler asks only under `human_gate`
-    nodes, under their own ids), so a passing verification today needs the request
-    made explicitly; one decision admits every execution of the node — retries and
-    loop iterations alike — and no expiry is recorded, so none is checked."""
-
-    pair = canonical_json({"tool_id": tool_id, "version": version}).decode()
-    scope = "tool:" + str(uuid5(NAMESPACE_URL, f"deeptwin:tool-approval-scope:{pair}"))
-    if LOCAL.fullmatch(scope) is None:  # closed by construction; the grammar is pinned by test
-        raise ValueError("the tool and version cannot be named as an approval scope")
-    return scope
+# V1 run/node/scope decisions remain historical gate evidence. They cannot
+# authorize an exact prepared action/input/use; external effects are unavailable.
 
 
 def _unsent(deadline, code_if_open="transport_unavailable"):
@@ -238,11 +227,21 @@ class ExtensionArtifactInput:
 _PLACEHOLDER = "00000000-0000-4000-8000-000000000000"
 
 
-class ExtensionAttemptTransport:
+class ExtensionAttemptTransport(CompiledToolTransport):
     """Built only by `build`; one bound operation over one extension slot."""
 
-    __slots__ = ("_approvals", "_artifact_inputs", "_attempt_ms", "_domain", "_effect_approval_ref",
-                 "_instance_id", "_ledger", "_operation", "_slot_number", "_tool")
+    __slots__ = (
+        "_artifact_inputs",
+        "_attempt_ms",
+        "_compiled",
+        "_compiled_binding",
+        "_domain",
+        "_instance_id",
+        "_ledger",
+        "_operation",
+        "_slot_number",
+        "_tool",
+    )
 
     def __init__(self) -> None:
         raise TypeError("Use ExtensionAttemptTransport.build")
@@ -250,7 +249,8 @@ class ExtensionAttemptTransport:
     @classmethod
     def build(cls, *, domain_store, instance_id, slot_number, operation="status",
               attempt_ms=ATTEMPT_MS, artifact_inputs=(), tool=None, ledger=None,
-              effect_approval_ref=None, approvals=None):
+              effect_approval_ref=None, approvals=None, effect_class=None, approval_gate_node_id=None,
+              compiled=None, node_id=None, binding_id=None):
         if type(domain_store) is not DomainStore:
             raise TypeError("Exact DomainStore required")
         if type(instance_id) is not str or not instance_id:
@@ -272,18 +272,45 @@ class ExtensionAttemptTransport:
                 raise ValueError("this operation takes no request artifacts")
             if sum(item.declared_size for item in artifact_inputs) > MAX_INPUT_BYTES:
                 raise ValueError("artifact inputs exceed the input byte ceiling")
-        if (operation == "invoke_tool") != (tool is not None):
-            raise ValueError("invoke_tool names its tool; a query names none")
         if ledger is not None and type(ledger) is not RuntimeLedger:
             raise TypeError("ledger must be the exact RuntimeLedger")
         if effect_approval_ref is not None and (type(effect_approval_ref) is not EntityRef
                                                 or effect_approval_ref.kind != "action_approval"):
             raise TypeError("an effect approval is an exact action_approval reference")
+        if approval_gate_node_id is not None:
+            try:
+                local_identifier(approval_gate_node_id, "approval gate node id")
+            except ValueError:
+                raise TypeError("the approval gate is a node id") from None
         if approvals is not None and (type(approvals) is not PersistentRunApprovals
                                       or approvals._domain is not domain_store):
             raise TypeError("approvals must be the exact PersistentRunApprovals over this store")
         if (effect_approval_ref is not None) != (approvals is not None):
             raise ValueError("an approval is verified through the authority that recorded it, and only then")
+        if effect_class is not None and (type(effect_class) is not str or effect_class not in TOOL_EFFECT_CLASSES):
+            raise ValueError("the effect class is outside the ports contract")
+        if effect_class is not None and operation != "invoke_tool":
+            raise ValueError("a query names no effect class")
+        if approval_gate_node_id is not None and effect_approval_ref is None:
+            raise ValueError("an approval gate names the approval it supplies")
+        compiled_binding = None
+        if operation == "invoke_tool":
+            compiled_binding = resolve_compiled_tool_binding(compiled, node_id, binding_id)
+            if type(ledger) is not RuntimeLedger or ledger._domain is not domain_store:
+                raise TypeError("invocation requires the exact ledger and its DomainStore")
+            selected = {"tool_id": compiled_binding.tool_id, "version": compiled_binding.version}
+            if tool is not None and tool != selected:
+                raise ValueError("explicit tool disagrees with compiled binding")
+            if effect_class is not None and effect_class != compiled_binding.effect_class:
+                raise ValueError("explicit effect disagrees with compiled binding")
+            if (approval_gate_node_id is not None
+                    and approval_gate_node_id != compiled_binding.approval_gate_node_id):
+                raise ValueError("explicit approval gate disagrees with compiled binding")
+            tool, effect_class = selected, compiled_binding.effect_class
+            if effect_class in APPROVAL_EFFECTS:
+                raise ValueError("external effects unavailable: exact prepared action approval required")
+        elif any(value is not None for value in (tool, compiled, node_id, binding_id)):
+            raise ValueError("a query carries no compiled tool binding or tool selection")
         if tool is not None:
             key = (tool.get("tool_id"), tool.get("version")) if type(tool) is dict else None
             if key not in TOOL_INPUT_CONTRACTS:
@@ -292,11 +319,11 @@ class ExtensionAttemptTransport:
                              if type(item) is ExtensionArtifactInput)
             if declared != TOOL_INPUT_CONTRACTS[key]:
                 raise ValueError("the declared inputs are not the tool's input contract")
-            # the effect gate, from the mirror's effect class
-            if (TOOL_EFFECTS[key] in APPROVAL_EFFECTS) != (effect_approval_ref is not None):
-                raise ValueError("an external effect requires an explicit approval; a read carries none")
+            # The installed mirror must agree with the compiler-resolved definition.
+            if TOOL_EFFECTS[key] != effect_class:
+                raise ValueError("the worker's claimed effect disagrees with the tool's definition")
             if effect_approval_ref is not None:
-                tool_approval_scope(key[0], key[1])  # the scope must be nameable at build
+                raise ValueError("a supported read invocation carries no effect approval")
         elif effect_approval_ref is not None:
             raise ValueError("a query carries no effect approval")
         if tool is not None:
@@ -320,9 +347,33 @@ class ExtensionAttemptTransport:
         transport._artifact_inputs = artifact_inputs
         transport._tool = tool
         transport._ledger = ledger
-        transport._effect_approval_ref = effect_approval_ref
-        transport._approvals = approvals
+        transport._compiled = compiled
+        transport._compiled_binding = compiled_binding
         return transport
+
+    @property
+    def compiled_tool_binding(self):
+        return self._compiled_binding
+
+    def require_dispatch_ledger(self, ledger):
+        if self._operation == "invoke_tool" and (
+                type(ledger) is not RuntimeLedger or ledger is not self._ledger
+                or ledger._domain is not self._domain):
+            raise ValueError("compiled invocation must share the exact dispatcher ledger/store")
+
+    def require_compiled_context(self, compiled, node_id, ledger):
+        self.require_dispatch_ledger(ledger)
+        if self._operation != "invoke_tool":
+            return
+        binding = self._compiled_binding
+        if (binding is None or node_id != binding.node_id
+                or resolve_compiled_tool_binding(compiled, node_id, binding.binding_id) != binding):
+            raise ValueError("compiled tool binding disagrees with dispatch context")
+
+    @property
+    def effect_class(self):
+        """The compiler-resolved definition's effect, never a caller/worker fallback."""
+        return None if self._compiled_binding is None else self._compiled_binding.effect_class
 
     @property
     def operation(self) -> str:
@@ -352,6 +403,23 @@ class ExtensionAttemptTransport:
             raise TypeError("Exact DispatchPermit required")
         if type(request) is not AttemptDispatchRequest:
             raise TypeError("Exact AttemptDispatchRequest required")
+        if self._operation == "invoke_tool":
+            try:
+                self._ledger.assert_consumed_dispatch_window(window, permit=permit)
+                self.require_compiled_context(self._compiled, request.node_id, self._ledger)
+                execution = self._ledger.get_execution(request.execution_id)["spec"]
+                attempt = self._ledger.get_attempt(request.attempt_id)["spec"]
+                if (request.tool_binding != self._compiled_binding
+                        or execution["run_id"] != request.run_id
+                        or execution["node_id"] != request.node_id
+                        or attempt["execution_id"] != request.execution_id
+                        or self.effect_class in APPROVAL_EFFECTS
+                        or self._tool.tool_id != self._compiled_binding.tool_id
+                        or self._tool.version != self._compiled_binding.version
+                        or TOOL_EFFECTS[(self._tool.tool_id, self._tool.version)] != self.effect_class):
+                    raise ValueError("invocation binding mismatch")
+            except (TypeError, ValueError, KeyError, LedgerError):
+                raise ExtensionTransportError("transport_mismatch", dispatch_effect="definitely_not_sent") from None
         if type(window) is not ConsumedDispatchWindow or window.permit is not permit:
             raise TypeError("The consumed window of this exact permit is required")
         if (permit.attempt_id != request.attempt_id
@@ -370,8 +438,6 @@ class ExtensionAttemptTransport:
         if remaining_ms <= 0:
             raise ExtensionTransportError("transport_deadline",
                                           dispatch_effect="definitely_not_sent")
-        # the approval an external effect names is verified before any byte leaves
-        self._verify_effect_approval(request)
         try:
             root, spec = extension_channel(
                 instance_id=self._instance_id, slot_number=self._slot_number
@@ -404,72 +470,50 @@ class ExtensionAttemptTransport:
         except (broker.BrokerError, listener.ListenerError, ipc_root.IpcRootError,
                 OSError):
             raise _unsent(deadline) from None  # nothing was written yet
-        # the ToolCall's write-ahead intent, recorded before the request frame leaves
-        tool_call_id = self._record_tool_call_intent(permit, request, declarations)
+        tool_call_id = None
         try:
+            # the ToolCall's write-ahead intent, recorded before the request frame leaves
+            tool_call_id = self._record_tool_call_intent(permit, request, declarations)
             try:
                 reply, received = self._exchange(connection, permit, request, payload, challenge, deadline)
-            finally:
-                try:
-                    connection.close()
-                except OSError:
-                    pass  # a close fault cannot unmake a reply already in hand
-            result = self._result(permit, request, reply, received)
-        except ExtensionTransportError as error:
-            # a vouched non-send: the call definitely never ran; anything else (a refused
-            # reply, a broken exchange): the call's effect is unknown
+                result = self._result(permit, request, reply, received)
+            except ExtensionTransportError as error:
+                # a vouched non-send: the call definitely never ran; anything else (a refused
+                # reply, a broken exchange): the call's effect is unknown
+                self._settle_tool_call(permit, tool_call_id,
+                                       "failed" if error.dispatch_effect == "definitely_not_sent" else "unknown",
+                                       None)
+                raise
+            except Exception:
+                # any other fault out of the exchange leaves the dispatcher an unknown outcome:
+                # the call must not stay an intent on a terminal attempt until the next startup
+                self._settle_tool_call(permit, tool_call_id, "unknown", None)
+                raise
+            # `_result` admits only succeeded|failed for a tool call (anything else is a
+            # mismatch above), so the remaining arms are closed by construction
             self._settle_tool_call(permit, tool_call_id,
-                                   "failed" if error.dispatch_effect == "definitely_not_sent" else "unknown",
-                                   None)
-            raise
-        except Exception:
-            # any other fault out of the exchange leaves the dispatcher an unknown outcome:
-            # the call must not stay an intent on a terminal attempt until the next startup
-            self._settle_tool_call(permit, tool_call_id, "unknown", None)
-            raise
-        # `_result` admits only succeeded|failed for a tool call (anything else is a
-        # mismatch above), so the remaining arms are closed by construction
-        self._settle_tool_call(permit, tool_call_id,
-                               "succeeded" if result.outcome == "succeeded" else "failed",
-                               result.result_ref)
-        return result
-
-    def _verify_effect_approval(self, request):
-        """The named approval must be the owner's recorded decision for this run, this
-        node and this tool's scope (existence, authorship and binding are the approvals
-        service's checks), an approval rather than a rejection, and the exact record
-        named (version and digest) — any other is refused before a byte leaves. The
-        refusal is raised as `definitely_not_sent`; the dispatcher journals that vouched
-        effect as the attempt's transport observation and still records the attempt as
-        an unknown outcome (a committed send intent is possibly sent in the ledger's
-        trust model; a free retry after it stays open). No expiry is recorded on a decision
-        or a gate request, so none is checked (runtime.md names stale approvals: open)."""
-
-        if self._effect_approval_ref is None:
-            return
-        try:
-            found = self._approvals.lookup(request.run_id, request.node_id,
-                                           tool_approval_scope(self._tool.tool_id, self._tool.version))
-        except RunApprovalError:
-            raise ExtensionTransportError("transport_unavailable",
-                                          dispatch_effect="definitely_not_sent") from None
-        if found is None or found.decision != "approved" or found.approval_ref != self._effect_approval_ref:
-            raise ExtensionTransportError("transport_invalid", dispatch_effect="definitely_not_sent")
+                                   "succeeded" if result.outcome == "succeeded" else "failed",
+                                   result.result_ref)
+            return result
+        finally:
+            try:
+                connection.close()
+            except OSError:
+                pass  # a close fault cannot unmake the original result or failure
 
     def _record_tool_call_intent(self, permit, request, declarations):
         """The ToolCall's write-ahead intent, recorded in the ledger before the request
-        frame leaves (a failure here is `definitely_not_sent`); nothing when no ledger is
-        bound or the operation is not a tool call."""
+        frame leaves (a failure here is `definitely_not_sent`); queries have no call."""
 
-        if self._ledger is None or self._operation != "invoke_tool":
+        if self._operation != "invoke_tool":
             return None
         try:
             spec = ToolCallSpec(
                 tool_call_id=tool_call_identity(request.attempt_id), attempt_id=request.attempt_id,
                 tool_id=self._tool.tool_id, version=self._tool.version,
-                effect_class=TOOL_EFFECTS[(self._tool.tool_id, self._tool.version)],
+                effect_class=self.effect_class,
                 artifact_inputs=tuple(item.as_dict() for item in declarations),
-                approval_ref=self._effect_approval_ref,
+                approval_ref=None,
             )
             self._ledger.record_tool_call(str(uuid5(NAMESPACE_URL, f"deeptwin:command:tool-call:{permit.command_id}")), spec)
         except Exception:  # noqa: BLE001 - the ledger's detail stays private
