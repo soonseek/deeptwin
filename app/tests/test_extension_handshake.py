@@ -129,6 +129,14 @@ def test_the_public_handshake_still_requires_its_expected_requester_id():
                 verify_peer=False,
             )
     finally:
+        # the server's refusal closes its end; the client thread is blocked in its own
+        # recv, which a close from this thread does not wake on macOS — a shutdown does,
+        # so the join never depends on the client's whole 5 s deadline elapsing first
+        for end in (client, server):
+            try:
+                end.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
         client.close()
         server.close()
         if thread is not None:

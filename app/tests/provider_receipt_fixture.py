@@ -5,6 +5,7 @@ The actual guard, publisher FD/name/bytes/fsync, journal and owner remain real.
 Synthetic lineage and boot material are not native packaging/qualification proof.
 """
 
+import gc
 import os
 import sys
 from base64 import urlsafe_b64encode
@@ -684,3 +685,6 @@ def provider_receipt_context(
         sessions.close()
         if primary is None:
             assert len(tree.live) == baseline, tree.paths
+        # the tree and its observer closure form a cycle: collect it here, in this test's
+        # own teardown, never as a gen-2 pause inside a later test's IPC
+        gc.collect()

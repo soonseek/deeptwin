@@ -613,9 +613,13 @@ def test_original_monotonic_deadline_is_rechecked_after_late_finalization_delays
         after_capture = [False]
         delayed = [False]
         actual_run = service_module.run_fixed_suite
+        worker_box = {}
 
         def run(*args, **kwargs):
             capture = actual_run(*args, **kwargs)
+            # the worker's last fence follows the capture by milliseconds: the clock is
+            # advanced only once the worker has finished, never under its final send
+            assert worker_box["worker"].finished.wait(6)
             after_capture[0] = True
             return capture
 
@@ -652,6 +656,7 @@ def test_original_monotonic_deadline_is_rechecked_after_late_finalization_delays
 
             monkeypatch.setattr(service_module, "require_current_subject", require)
         with _provider_conformance_worker(staged.actual, monkeypatch) as (_, worker):
+            worker_box["worker"] = worker
             reply = service.execute(staged.actual.request, payload)
         assert worker.completion_count == 6
         assert reply["state"] == "incomplete"

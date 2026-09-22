@@ -46,6 +46,10 @@ def reader_module():
 
 class ReaderTree:
     def __init__(self, tmp_path, monkeypatch, **options):
+        # `opens` is a per-open ledger read by two modules only; recording it in every
+        # tree made the 64-execute capacity test retain ~17 M entries (a 3 GB heap whose
+        # cyclic collection paused a later test's IPC for 13–30 s): opt in to record.
+        self.record_opens = bool(options.pop("record_opens", False))
         self.base, self.metadata, self.mount_lines = tmp_path, {}, []
         _, self.bundle, self.old = case(**options)
         self.profile = OriginProfile.from_dict(
@@ -102,7 +106,8 @@ class ReaderTree:
             actual = Path(path) if Path(path).is_absolute() else parent / path
             self.paths[fd] = actual
             self.live.add(fd)
-            self.opens.append((actual, flags))
+            if self.record_opens:
+                self.opens.append((actual, flags))
             self.peak = max(self.peak, len(self.live) + self.active_scans)
             return fd
 
@@ -201,7 +206,7 @@ class ReaderTree:
 
 @pytest.fixture
 def reader_tree(tmp_path, monkeypatch):
-    result = ReaderTree(tmp_path, monkeypatch)
+    result = ReaderTree(tmp_path, monkeypatch, record_opens=True)  # its modules read `opens`
     yield result
     for fd in tuple(result.live):
         result.raw_close(fd)

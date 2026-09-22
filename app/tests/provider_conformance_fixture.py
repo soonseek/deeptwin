@@ -107,6 +107,9 @@ def restart_without_provider(subject, monkeypatch):
         yield reopened
 
 
+WORKER_BUDGET_MS = 30_000  # the listener's connection window (app/workers/listener.py)
+
+
 @contextmanager
 def _retained_provider_conformance_worker(subject, monkeypatch, *, serve_count=6,
                                            allow_error=False):
@@ -263,8 +266,11 @@ def _provider_conformance_worker(actual, monkeypatch, *, serve_count=6, allow_st
                 side["worker"] = threading.get_ident()
                 try:
                     for _ in range(serve_count):
+                        # the product's own connection window (listener: 30 s), never a
+                        # budget so short that — under a frozen clock — it becomes a 5 s
+                        # per-socket-operation timeout the loaded suite exceeds
                         state.completion_count += service.serve_one(
-                            broker.Deadline.after_ms(5000))
+                            broker.Deadline.after_ms(WORKER_BUDGET_MS))
                 except BaseException as error:
                     box["error"] = error
                 finally:
@@ -275,7 +281,7 @@ def _provider_conformance_worker(actual, monkeypatch, *, serve_count=6, allow_st
             yield identity, state
             if allow_stopped:
                 service.listener.close()
-            thread.join(6)
+            thread.join(WORKER_BUDGET_MS / 1000 + 1)
             assert not thread.is_alive(), box
             if allow_stopped:
                 assert state.completion_count < serve_count

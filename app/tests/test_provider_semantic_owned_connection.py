@@ -1051,7 +1051,12 @@ def test_owned_control_prepublication_failure_wakes_waiter_without_success(
         assert client_owner.closed
         if failure == "post_frame_fence":
             assert drift["samples"] >= 1
-    assert "error" not in box, box.get("error")
+    # the client tears down right after the control result; the server's final frame
+    # that follows it by milliseconds may then meet a closed peer — a transport
+    # outcome on the server, never a fault of the failure under test
+    assert box.get("error") is None or isinstance(
+        box["error"], broker.TransportUncertain | broker.TransportClosed
+    ), box.get("error")
 
 
 @pytest.mark.parametrize(

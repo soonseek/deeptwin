@@ -1,5 +1,6 @@
 """Real authenticated framed dialogues over test-owned sockets and image files."""
 
+import contextlib
 import json
 import pytest
 from app.tests.test_extension_listener import channel, seams, INSTANCE
@@ -360,7 +361,7 @@ def test_payload_accounting_counts_both_directions_and_every_stream_frame_once(
 
 
 def test_whole_dialogue_budget_exhaustion_closes_without_false_final(slot, monkeypatch):
-    from app.workers import provider_service as ps, provider_messages as wire
+    from app.workers import broker, provider_messages as wire, provider_service as ps
 
     root, spec, side, _ = slot
     with opened() as service:
@@ -372,7 +373,11 @@ def test_whole_dialogue_budget_exhaustion_closes_without_false_final(slot, monke
             # Lower the ceiling only as a test seam; the next payload must still
             # include earlier traffic, rather than reset at the response phase.
             monkeypatch.setattr(wire, "MAX_DIALOGUE", 1)
-            client.response(status="unavailable")
+            # the server may charge the projection acknowledgement under the lowered
+            # ceiling and close before this response leaves: the client's write then
+            # fails uncertainly — the fact under test is the server's own closure
+            with contextlib.suppress(broker.TransportUncertain, broker.TransportClosed):
+                client.response(status="unavailable")
             thread.join(5)
             assert not thread.is_alive() and isinstance(
                 box.get("error"), ps.ProviderServiceError
