@@ -1,4 +1,5 @@
-"""Durable design-arc persistence: approvals and environment heads (T036).
+"""Durable design-arc persistence: approvals, environment heads and the
+run-facing environment entity (T036).
 
 Discharges the environments module's documented storage-CAS seam on the
 DomainStore's immutable identity, exactly as growth_store does for the
@@ -10,6 +11,10 @@ preparing from the same head produce the same (kind, id, version) with
 different content and the second transaction fails instead of silently
 forking. Resume rebuilds the framework-issued state through the strict
 restore path — a resumed state still refuses every consumed approval.
+Beside that chain, `persist_environment_record` seals the `environment` entity
+the runtime names: one record per prepared version, over the preparation its
+own head record holds. Those three are the module's only writers, and only
+that one writes a kind other than `decision_record`.
 """
 
 from __future__ import annotations
@@ -18,7 +23,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from ..domain.refs import DomainContractError, EntityRef
 from ..domain.schemas import ImmutableRecord
-from ..domain.store import DomainStore, StorageError
+from ..domain.store import DomainStore, ImmutableConflict, StorageError
 from .design_persistence import decode_design_refs, encode_design_refs
 from .environments import (
     design_approval_evidence_subject,
@@ -30,8 +35,10 @@ from .environments import (
 from .owner_decisions import OwnerDecisionError, PersistentOwnerDecisions
 
 RECORD_KIND = "decision_record"
+_ENTITY_KIND = "environment"  # the runtime's own kind (runs/run_consents input kinds)
 _APPROVAL_KIND = "design_approval_record"
 _HEAD_KIND = "environment_head"
+_ENTITY_SCHEMA = "environment-record-v1"
 
 
 class DesignStoreError(ValueError):
@@ -49,12 +56,13 @@ def _put(
     access_policy_ref,
     retention_policy_ref,
     created_at_utc,
+    kind=RECORD_KIND,
 ) -> EntityRef:
     if type(domain_store) is not DomainStore:
         raise DesignStoreError("an exact domain store is required")
     try:
         record = ImmutableRecord.create(
-            kind=RECORD_KIND,
+            kind=kind,
             id=record_id,
             version=version,
             created_at_utc=created_at_utc,
@@ -69,12 +77,16 @@ def _put(
         raise DesignStoreError("the design record is invalid") from exc
     try:
         return domain_store.put(record)
-    except StorageError as exc:
-        # An ImmutableConflict here IS the CAS refusal: another writer
-        # already wrote this identity with different content.
+    except ImmutableConflict as exc:
+        # This IS the CAS refusal: another writer already wrote this identity
+        # with different content.
         raise DesignStoreError(
             "this record was already written with different content"
         ) from exc
+    except StorageError as exc:
+        # anything else — an unresolvable or altered parent, an integrity failure —
+        # is not a lost race and must not be reported as one
+        raise DesignStoreError("the design record could not be stored") from exc
 
 
 def persist_design_approval(domain_store, approval, *, decisions, **headers) -> EntityRef:
@@ -172,6 +184,73 @@ def persist_environment_head(
     )
 
 
+def persist_environment_record(domain_store, version, *, head_ref, **headers) -> EntityRef:
+    """Seal one prepared version as the `environment` entity a run names.
+
+    The design arc's own record is the chained head (its record version IS the
+    head value); this is the entity the runtime resolves — one record per
+    prepared version, cut from the exact head record and carrying only the
+    preparation that head holds, so persisting the same preparation twice under
+    the same headers is the same record and never a second act, and a second
+    writer's different design at the same identity loses the compare-and-swap.
+    Prepared is never active: only a `prepared` version is ever sealed.
+
+    Recorded open: there is no activation or currency here — every prepared
+    version stays nameable at its own record version, and nothing yet says
+    which one is current (`environments`: no activation path). The environment's
+    own design and a run's `graph_ref` are also not yet bound to each other:
+    `design_ref` is a design-space content hash, not a store reference, and no
+    consumer reads this content today.
+    """
+
+    if not is_issued_environment_version(version):
+        raise DesignStoreError("a prepared environment version is required")
+    if version.status != "prepared":
+        raise DesignStoreError("only a prepared version is sealed as an environment")
+    record_id = str(uuid5(
+        NAMESPACE_URL, f"deeptwin:environment:{version.environment_id}",
+    ))
+    if (type(head_ref) is not EntityRef or head_ref.kind != RECORD_KIND
+            or head_ref.id != record_id or head_ref.version != version.version):
+        raise DesignStoreError("an environment record is cut from its own head record")
+    # the head is the record of what was prepared: this entity may not claim any other
+    # preparation at that identity (two writers may prepare different designs from one head)
+    if type(domain_store) is not DomainStore:
+        raise DesignStoreError("an exact domain store is required")
+    try:
+        head = domain_store.get(head_ref)
+    except StorageError as exc:
+        raise DesignStoreError("the head record could not be read") from exc
+    head_content = head.body.get("content")
+    try:
+        prepared = decode_design_refs(head_content["design"])["version"]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DesignStoreError("the head record is not an environment head") from exc
+    if (type(head_content) is not dict or head_content.get("design_kind") != _HEAD_KIND
+            or prepared != version.as_dict()):
+        raise DesignStoreError("the head record holds another preparation")
+    return _put(
+        domain_store,
+        record_id=record_id,
+        version=version.version,
+        parents=(head_ref,),
+        content={
+            "schema_version": _ENTITY_SCHEMA,
+            # the design the owner approved may not live in this vault (the arc's own
+            # encoder: an identity, never a reference the store would try to resolve)
+            **encode_design_refs({
+                "environment_id": version.environment_id,
+                "version": version.version,
+                "design_ref": version.design_ref.as_dict(),
+                "approval_sha": version.approval_sha,
+                "status": version.status,
+            }),
+        },
+        kind=_ENTITY_KIND,
+        **headers,
+    )
+
+
 def resume_environment_state(domain_store, ref):
     """Rebuild the issued environment state stored at one exact record ref."""
 
@@ -198,5 +277,6 @@ __all__ = [
     "DesignStoreError",
     "persist_design_approval",
     "persist_environment_head",
+    "persist_environment_record",
     "resume_environment_state",
 ]

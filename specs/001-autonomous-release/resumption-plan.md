@@ -2476,8 +2476,8 @@ the stage C closures (`owned-shared-gateway-task51.md`): the fixed profile, the 
 the owned send dialogue with linearized control. The consent line's first link landed (`run-consent-record-t048.md`:
 `POST /api/v1/run-consents` seals the owner's `run_consent` over the exact records a run names, accepted by the run
 route), and the run route verifies that its consent names exactly its inputs and spends it on one run
-(`run-consent-verification-t048.md`). Next: the design line's `environment` record; then run creation from the intake
-page; the semantic artifact admission and current binding that connect the owned gateway to the runtime (Task 51's own
+(`run-consent-verification-t048.md`). The design line's `environment` record landed (`environment-record-t048.md`), so all five
+records a run names have producers. Next: run creation from the intake page; the semantic artifact admission and current binding that connect the owned gateway to the runtime (Task 51's own
 "next" in its plan) follow. The parallel orchestration's provider suites' order/timing failures were chased at cause
 (`provider-suite-flakes-2026-09-22.md`: a 3 GB test-fixture heap collected mid-IPC and a 5 s fixture worker budget;
 test-side fixes only) — the full regression is wholly green (9,350 / 0 / 2). Still open from that chase: the

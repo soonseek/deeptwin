@@ -21,8 +21,11 @@ inputs, and one consent starts one run (`runs.py`: `_consented`). Deliberately
 deferred (recorded open): an expiry and a revocation path (the "current consent"
 runtime.md verifies before dispatch — so `resume`/`recover` and the replay of
 a sealed command do not re-verify), the run `mode` (the run route fixes
-`live`), and the environment ⇄ graph coherence (no production environment
-writer exists yet).
+`live`), and the environment ⇄ graph coherence: the environment record now has
+its producer (`design_store.persist_environment_record`), but its stored design
+is a design-space content hash rather than a store reference, so no consumer can
+yet bind it to a run's `graph_ref` — a consent may still name an environment
+prepared for another design.
 """
 
 from __future__ import annotations

@@ -1453,3 +1453,14 @@ IPC, and the fixture worker's 5 s budget becoming a 5 s per-socket timeout under
 expectations wrong about transport outcomes and one macOS socket-close join. Fixed in the fixtures and tests only; no
 product change. Full regression: **9,350 passed, 0 failed, 2 skipped**, 369 subtests, 1h19m, longest garbage-collection
 pause 0.25 s. Details and hashes in `provider-suite-flakes-2026-09-22.md`.
+
+## T048 — the `environment` entity a run names (2026-09-23)
+
+RED retained (the producer absent; then a record claiming a design its own head never prepared), GREEN after
+`persist_environment_record`. Independent review ACCEPT WITH CHANGES (MUST: the head reference was checked only by kind,
+id and version; the consent module's deferred note; no currency exists) folded in RED-first. Environment records **6**,
+design/consent/run neighbours **69**; Ruff clean. Full regression: **9,356 passed, 0 failed, 2 skipped**, 369 subtests,
+1h25m. An earlier run of the same bytes failed two load-sensitive cases in
+`test_provider_prepare_reconciliation.py`, reproduced under CPU load and recorded for a dedicated slice (the obvious
+one-minute fixture deadline was not the cause and that change was reverted). Details and hashes in
+`environment-record-t048.md`.
