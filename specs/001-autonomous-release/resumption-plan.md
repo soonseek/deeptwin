@@ -2475,9 +2475,11 @@ prerequisite, the plan's own tail) landed under this loop's review cycle in thre
 the stage C closures (`owned-shared-gateway-task51.md`): the fixed profile, the generic owner, the shared ingress and
 the owned send dialogue with linearized control. The consent line's first link landed (`run-consent-record-t048.md`:
 `POST /api/v1/run-consents` seals the owner's `run_consent` over the exact records a run names, accepted by the run
-route). Next: the run route verifies that its consent names exactly its inputs; then the design line's `environment`
-record; then run creation from the intake page; the semantic artifact admission and current binding that connect the
-owned gateway to the runtime (Task 51's own "next" in its plan) follow.
+route), and the run route verifies that its consent names exactly its inputs and spends it on one run
+(`run-consent-verification-t048.md`). Next: the design line's `environment` record; then run creation from the intake
+page; the semantic artifact admission and current binding that connect the owned gateway to the runtime (Task 51's own
+"next" in its plan) follow. The parallel orchestration's provider suites keep failing one or two order/timing-dependent
+cases per full run (each passing alone): a chase-at-cause slice is due.
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;

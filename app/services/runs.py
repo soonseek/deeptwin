@@ -3,7 +3,9 @@ browser path: resumption-plan Continuation, US3/T048 route layer).
 
 A run names its inputs by reference: a stored `graph` record (the functional
 graph a design produced) and the run's `work_revision`, `environment`,
-`run_consent` and `budget_policy` records. The service seals the run manifest
+`run_consent` and `budget_policy` records. The run starts only under the
+owner's consent that names exactly those inputs, and one consent starts one
+run (`_consented`). The service seals the run manifest
 (kind `run_manifest`, keyed by the owner command: the inputs, the compiled
 digests, the budget session, the start time and the `run.started` event
 sequence) and emits `run.started` into the browser's event stream in the same
@@ -486,8 +488,38 @@ class PersistentRuns:
         return {"command_id": _uuid(payload["command_id"]),
                 **{name: _ref(payload[name], kind) for name, kind in _INPUT_KINDS.items()}}
 
+    def _consented(self, db, roots, command: dict) -> None:
+        """The run starts only under the owner's consent that names exactly its inputs
+        (experience §6.3: the server verifies each effect, version and scope itself; a
+        `run_consent` row without the writer's discipline is no consent at all)."""
+        # lazy: run_consents imports this module's readers at import time
+        from .run_consents import INPUTS, RunConsentError, resolve_consent
+
+        try:
+            consent = resolve_consent(self._domain, db, roots, command["consent_ref"])
+        except RunConsentError:
+            raise RunServiceError("access_denied") from None
+        if any(consent[name] != command[name].as_dict() for name, _ in INPUTS):
+            raise RunServiceError("access_denied")
+        # a consent authorizes one specific execution (data-model §3): a manifest another
+        # command sealed under this consent has spent it — a state conflict, never a second run
+        needle = command["consent_ref"].id.encode()
+        rows = db.execute(
+            "SELECT id, sha256 FROM domain_records WHERE vault_id=? AND kind='run_manifest' AND version=1 "
+            "AND instr(body, ?) > 0",
+            (roots.genesis.id, needle),
+        ).fetchall()
+        for row in rows:
+            record = self._record(db, roots, EntityRef("run_manifest", row["id"], 1, row["sha256"]))
+            content = record.body["content"]
+            if (content.get("schema_version") == MANIFEST_SCHEMA
+                    and content["inputs"]["consent_ref"] == command["consent_ref"].as_dict()
+                    and content["command_id"] != command["command_id"]):
+                raise RunServiceError("conflict")
+
     def _seal(self, db, roots, actor_ref, command: dict) -> tuple[RunManifest, BudgetPolicy]:
         records = {name: self._record(db, roots, command[name]) for name in _INPUT_KINDS}
+        self._consented(db, roots, command)
         graph = self._graph(records["graph_ref"])
         compiled = self._compile(graph)
         policy = self._policy(records["budget_policy_ref"])

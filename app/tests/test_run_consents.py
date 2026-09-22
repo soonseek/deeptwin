@@ -268,3 +268,76 @@ def test_the_wire_and_the_command_are_pinned_at_their_edges(tmp_path):
         assert client.post(path, content=at_bound, headers=json_headers).status_code == 400
         # no refusal emitted an event; only the one sealed consent did
         assert len(events(subject, "approval.decided")) == 1
+
+
+# --- the run route verifies its consent (experience §6.3: the server verifies each effect,
+# version and scope independently; runtime.md: verify the consent before dispatch) ----------
+
+def run_command(subject, graph_ref, consent_ref, **changes):
+    body = {
+        "command_id": str(uuid4()),
+        "graph_ref": graph_ref.as_dict(),
+        "work_revision_ref": subject.refs.work.as_dict(),
+        "environment_ref": subject.refs.environment.as_dict(),
+        "consent_ref": consent_ref,
+        "budget_policy_ref": subject.refs.budget.as_dict(),
+    }
+    return {**body, **changes}
+
+
+def test_a_run_starts_only_under_a_consent_that_names_exactly_its_inputs(tmp_path):
+    executor = Executor()
+    with owner_app(tmp_path, executor) as subject:
+        path = consent_path(subject)
+        graph_ref = graph_record(subject, linear_graph())
+        other_graph = graph_record(subject, linear_graph())
+        consent = post(subject, consent_command(subject, graph_ref), path).json()
+        # a consent over another graph is not this run's consent
+        refused = post(subject, run_command(subject, other_graph, consent["ref"]))
+        assert refused.status_code == 403 and refused.json()["code"] == "access_denied"
+        # nor one over another work revision, environment or budget policy
+        roots = subject.domain.roots()
+        other_work = immutable(subject.domain, roots, "work_revision").ref
+        refused = post(subject, run_command(subject, graph_ref, consent["ref"], work_revision_ref=other_work.as_dict()))
+        assert refused.status_code == 403 and refused.json()["code"] == "access_denied"
+        # a `run_consent` row without the writer's discipline (a fixture, a foreign author) is no consent
+        fixture = immutable(subject.domain, roots, "run_consent").ref
+        refused = post(subject, run_command(subject, graph_ref, fixture.as_dict()))
+        assert refused.status_code == 403 and refused.json()["code"] == "access_denied"
+        assert events(subject, "run.started") == [] and executor.calls == []
+        # nor one over another environment or budget policy, nor another version of the graph
+        other_environment = immutable(subject.domain, roots, "environment").ref
+        refused = post(subject, run_command(subject, graph_ref, consent["ref"], environment_ref=other_environment.as_dict()))
+        assert refused.status_code == 403
+        other_budget = immutable(subject.domain, roots, "budget_policy").ref  # refused before its parse
+        refused = post(subject, run_command(subject, graph_ref, consent["ref"], budget_policy_ref=other_budget.as_dict()))
+        assert refused.status_code == 403
+        assert events(subject, "run.started") == [] and executor.calls == []
+        # the consent that names exactly these inputs starts the run, and its replay is the same run
+        body = run_command(subject, graph_ref, consent["ref"])
+        started = post(subject, body)
+        assert started.status_code == 201, started.text
+        assert started.json()["phase"] == "completed"
+        assert post(subject, body).json()["run_id"] == started.json()["run_id"]
+        assert len(events(subject, "run.started")) == 1
+        # once sealed, the consent is a replay input: the same command under another consent
+        # is a conflict, not a fresh verification
+        other_consent = post(subject, consent_command(subject, graph_ref), path).json()
+        assert post(subject, {**body, "consent_ref": other_consent["ref"]}).status_code == 409
+        # the sealed manifest names the consent the run was started under
+        from app.domain.refs import EntityRef
+        from app.services.runs import manifest_identity
+
+        with subject.domain._connection() as db:
+            roots = subject.domain._read_roots(db)
+            row = db.execute("SELECT sha256 FROM domain_records WHERE vault_id=? AND kind='run_manifest' AND id=?",
+                             (roots.genesis.id, manifest_identity(body["command_id"]))).fetchone()
+            manifest = subject.domain._load(db, EntityRef("run_manifest", manifest_identity(body["command_id"]), 1, row["sha256"]), roots)[0]
+        assert manifest.body["content"]["inputs"]["consent_ref"] == consent["ref"]
+        # a consent authorizes one specific execution: a second run under the spent consent is refused
+        again = post(subject, run_command(subject, graph_ref, consent["ref"]))
+        assert again.status_code == 409 and again.json()["code"] == "conflict"
+        assert len(events(subject, "run.started")) == 1
+        # a fresh consent over the same inputs starts a fresh run
+        fresh = post(subject, run_command(subject, graph_ref, other_consent["ref"]))
+        assert fresh.status_code == 201 and fresh.json()["run_id"] != started.json()["run_id"]

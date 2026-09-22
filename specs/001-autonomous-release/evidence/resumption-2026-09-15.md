@@ -1434,3 +1434,12 @@ the run cannot read, the deferred expiry/mode/environment-coherence recorded, th
 Consents **7**, neighbours **197**; Ruff: no finding introduced. Full regression: **9,348 passed, 1 failed, 2 skipped**
 (Linux-only), 369 subtests, 1h23m — the failure the recorded timing-sensitive conformance final-wall case, passing
 alone. Details and hashes in `run-consent-record-t048.md`.
+
+## T048 — the run route verifies its consent, one consent per run (2026-09-22)
+
+RED retained (a run started under a consent over another graph; a second run under a spent consent), GREEN after
+`_consented` in the run service (the whole read discipline, the four exact references, the single-use rule).
+Independent review ACCEPT WITH CHANGES (MUST: the stale deferred list; SHOULD: single-use, the pins) folded in
+RED-first. Consents **8**, runs + works **58**, neighbours **192**; Ruff clean. Full regression: **9,348 passed,
+2 failed, 2 skipped**, 369 subtests, 1h23m — both failures the parallel orchestration's provider suites, order/timing-
+dependent, passing alone 3× each. Details and hashes in `run-consent-verification-t048.md`.

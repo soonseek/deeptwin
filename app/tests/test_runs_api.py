@@ -82,7 +82,6 @@ def owner_app(tmp_path, executor):
         refs = SimpleNamespace(
             work=immutable(domain, roots, "work_revision").ref,
             environment=immutable(domain, roots, "environment").ref,
-            consent=immutable(domain, roots, "run_consent").ref,
             budget=immutable(domain, roots, "budget_policy", content=policy.domain_content()).ref,
         )
         if executor is not None:
@@ -98,13 +97,24 @@ def graph_record(subject, raw):
     }).ref
 
 
+def consent_for(subject, graph_ref, *, work_ref=None):
+    """The owner's consent sealed through its own route over exactly the inputs a run
+    command names (the run route starts nothing under any other consent)."""
+    sealed = subject.client.post(subject.profile.base_path + "api/v1/run-consents", headers=headers(subject.profile, subject.csrf), json={
+        "schema_version": "run-consent-command-v1", "command_id": str(uuid4()),
+        "graph_ref": graph_ref.as_dict(), "work_revision_ref": work_ref or subject.refs.work.as_dict(),
+        "environment_ref": subject.refs.environment.as_dict(), "budget_policy_ref": subject.refs.budget.as_dict()})
+    assert sealed.status_code == 201, sealed.text
+    return sealed.json()["ref"]
+
+
 def command(subject, graph_ref, **changes):
     body = {
         "command_id": str(uuid4()),
         "graph_ref": graph_ref.as_dict(),
         "work_revision_ref": subject.refs.work.as_dict(),
         "environment_ref": subject.refs.environment.as_dict(),
-        "consent_ref": subject.refs.consent.as_dict(),
+        "consent_ref": consent_for(subject, graph_ref),
         "budget_policy_ref": subject.refs.budget.as_dict(),
     }
     return {**body, **changes}
@@ -478,7 +488,8 @@ def cancel(subject, run_path, command_id=None):
 def test_the_owner_cancels_a_waiting_run_and_nothing_resumes_it(tmp_path):
     executor = Executor()
     with owner_app(tmp_path, executor) as subject:
-        created = post(subject, command(subject, graph_record(subject, graph_value())))
+        create = command(subject, graph_record(subject, graph_value()))
+        created = post(subject, create)
         receipt = created.json()
         assert receipt["phase"] == "awaiting_human"
         assert receipt["cancellation"] == {"requested": False, "attempts": []}
@@ -514,8 +525,7 @@ def test_the_owner_cancels_a_waiting_run_and_nothing_resumes_it(tmp_path):
                                       headers=headers(subject.profile))
         assert snapshot.status_code == 200, snapshot.text
         # a replay of the create command reports the cancelled run without executing
-        replay = post(subject, command(subject, graph_record(subject, graph_value()),
-                                       command_id=receipt["command_id"]) | {"graph_ref": receipt["graph_ref"]})
+        replay = post(subject, create)
         assert replay.status_code == 201 and replay.json()["phase"] == "cancelled"
         assert executor.calls == ["intake", "writer"]
 

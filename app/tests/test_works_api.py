@@ -173,7 +173,7 @@ def test_a_run_can_name_a_work_revision_the_route_sealed(tmp_path):
     # the point of sealing the intake as a work_revision record: the run creation route
     # (runs-v1) resolves it as the run's own input
     from app.tests.test_graph_execution import linear_graph
-    from app.tests.test_runs_api import Executor, graph_record, immutable
+    from app.tests.test_runs_api import Executor, consent_for, graph_record, immutable
     from app.tests.test_runs_api import owner_app as run_app
 
     executor = Executor()
@@ -186,7 +186,8 @@ def test_a_run_can_name_a_work_revision_the_route_sealed(tmp_path):
         executor.result = immutable(subject.domain, subject.domain.roots(), "artifact").ref
         started = subject.client.post(subject.path, headers=headers(subject.profile, subject.csrf), json={
             "command_id": str(uuid4()), "graph_ref": graph_ref.as_dict(), "work_revision_ref": work_ref,
-            "environment_ref": subject.refs.environment.as_dict(), "consent_ref": subject.refs.consent.as_dict(),
+            "environment_ref": subject.refs.environment.as_dict(),
+            "consent_ref": consent_for(subject, graph_ref, work_ref=work_ref),
             "budget_policy_ref": subject.refs.budget.as_dict()})
         assert started.status_code == 201, started.text
 

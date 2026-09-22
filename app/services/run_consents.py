@@ -16,11 +16,13 @@ event it names — re-checked on every read. The consent implies no external
 write, no billing change and no promotion; the run route still verifies every
 input itself.
 
-Deliberately deferred (recorded open): an expiry and a revocation path (the
-"current consent" runtime.md verifies before dispatch), the run `mode` (the run
-route fixes `live`), the environment ⇄ graph coherence (no production
-environment writer exists yet), and the run route's verification that a
-consent names exactly the run's inputs — the next slice.
+The run route starts a run only under a consent that names exactly its
+inputs, and one consent starts one run (`runs.py`: `_consented`). Deliberately
+deferred (recorded open): an expiry and a revocation path (the "current consent"
+runtime.md verifies before dispatch — so `resume`/`recover` and the replay of
+a sealed command do not re-verify), the run `mode` (the run route fixes
+`live`), and the environment ⇄ graph coherence (no production environment
+writer exists yet).
 """
 
 from __future__ import annotations
@@ -48,7 +50,8 @@ from .run_approvals import (
 )
 from .runs import PersistentRuns, RunServiceError
 
-__all__ = ["COMMAND_SCHEMA", "RECORD_SCHEMA", "PersistentRunConsents", "RunConsentError", "consent_identity"]
+__all__ = ["COMMAND_SCHEMA", "RECORD_SCHEMA", "PersistentRunConsents", "RunConsentError", "consent_identity",
+           "resolve_consent"]
 
 COMMAND_SCHEMA = "run-consent-command-v1"
 RECORD_SCHEMA = "run-consent-v1"
@@ -132,6 +135,34 @@ def _parse_content(content) -> dict:
     return {**parsed, "decided_at_utc": content["decided_at_utc"], "event_sequence": content["event_sequence"]}
 
 
+def resolve_consent(domain, db, roots, ref: EntityRef) -> dict:
+    """The projection behind one exact `run_consent` reference — only a record with the
+    writer's whole discipline: the owner's human actor, the identity derived from its
+    command, the exact content grammar and the `approval.decided` event it names. Any
+    other row is `unavailable` as consent evidence (the run route reads that as no consent)."""
+    if type(ref) is not EntityRef or ref.kind != "run_consent" or ref.version != 1:
+        raise RunConsentError("unavailable")
+    try:
+        body = domain._load(db, ref, roots)[0].body
+    except Exception:  # noqa: BLE001 - an unresolvable consent is no consent evidence
+        raise RunConsentError("unavailable") from None
+    if _stored_owner_actor_ref(db) != body["actor_ref"]:
+        raise RunConsentError("unavailable")
+    content = _parse_content(body["content"])
+    if consent_identity(content["command_id"]) != ref.id:
+        raise RunConsentError("unavailable")
+    event_sequence = content.pop("event_sequence")
+    event = db.execute(
+        "SELECT event_type, envelope FROM api_event_envelopes WHERE vault_id=? AND sequence=?",
+        (roots.genesis.id, event_sequence),
+    ).fetchone()
+    if (event is None or event["event_type"] != "approval.decided"
+            or json.loads(event["envelope"]).get("correlation_id") != content["command_id"]):
+        # the named event is the decided event of this very command
+        raise RunConsentError("unavailable")
+    return {"consent_id": ref.id, "ref": ref.as_dict(), **content}
+
+
 class PersistentRunConsents:
     """Writes and reads run consents over the exact bound store."""
 
@@ -141,27 +172,7 @@ class PersistentRunConsents:
     # --- reads -------------------------------------------------------------
 
     def _load(self, db, roots, ref: EntityRef) -> dict:
-        """The projection behind one exact `run_consent` reference — only a record with the
-        writer's whole discipline: the owner's human actor, the identity derived from its
-        command, the exact content grammar and the `approval.decided` event it names."""
-        if ref.kind != "run_consent" or ref.version != 1:
-            raise RunConsentError("unavailable")
-        body = self._domain._load(db, ref, roots)[0].body
-        if _stored_owner_actor_ref(db) != body["actor_ref"]:
-            raise RunConsentError("unavailable")
-        content = _parse_content(body["content"])
-        if consent_identity(content["command_id"]) != ref.id:
-            raise RunConsentError("unavailable")
-        event_sequence = content.pop("event_sequence")
-        event = db.execute(
-            "SELECT event_type, envelope FROM api_event_envelopes WHERE vault_id=? AND sequence=?",
-            (roots.genesis.id, event_sequence),
-        ).fetchone()
-        if (event is None or event["event_type"] != "approval.decided"
-                or json.loads(event["envelope"]).get("correlation_id") != content["command_id"]):
-            # the named event is the decided event of this very command
-            raise RunConsentError("unavailable")
-        return {"consent_id": ref.id, "ref": ref.as_dict(), **content}
+        return resolve_consent(self._domain, db, roots, ref)
 
     def _existing(self, db, roots, consent_id: str) -> dict | None:
         row = db.execute(
