@@ -1443,3 +1443,13 @@ Independent review ACCEPT WITH CHANGES (MUST: the stale deferred list; SHOULD: s
 RED-first. Consents **8**, runs + works **58**, neighbours **192**; Ruff clean. Full regression: **9,348 passed,
 2 failed, 2 skipped**, 369 subtests, 1h23m — both failures the parallel orchestration's provider suites, order/timing-
 dependent, passing alone 3× each. Details and hashes in `run-consent-verification-t048.md`.
+
+## The provider suites' order/timing failures chased at cause (2026-09-22)
+
+Not a product slice: after three full runs each failing one to three of the parallel orchestration's provider cases
+(every one passing alone), an investigation with reproductions found two cross-cutting causes — a 3 GB heap from the
+reader tree's unbounded per-open ledger, freed only by a 13–30 s cyclic collection that landed inside a later test's
+IPC, and the fixture worker's 5 s budget becoming a 5 s per-socket timeout under a frozen clock — plus three test
+expectations wrong about transport outcomes and one macOS socket-close join. Fixed in the fixtures and tests only; no
+product change. Full regression: **9,350 passed, 0 failed, 2 skipped**, 369 subtests, 1h19m, longest garbage-collection
+pause 0.25 s. Details and hashes in `provider-suite-flakes-2026-09-22.md`.

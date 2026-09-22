@@ -2478,8 +2478,11 @@ the owned send dialogue with linearized control. The consent line's first link l
 route), and the run route verifies that its consent names exactly its inputs and spends it on one run
 (`run-consent-verification-t048.md`). Next: the design line's `environment` record; then run creation from the intake
 page; the semantic artifact admission and current binding that connect the owned gateway to the runtime (Task 51's own
-"next" in its plan) follow. The parallel orchestration's provider suites keep failing one or two order/timing-dependent
-cases per full run (each passing alone): a chase-at-cause slice is due.
+"next" in its plan) follow. The parallel orchestration's provider suites' order/timing failures were chased at cause
+(`provider-suite-flakes-2026-09-22.md`: a 3 GB test-fixture heap collected mid-IPC and a 5 s fixture worker budget;
+test-side fixes only) — the full regression is wholly green (9,350 / 0 / 2). Still open from that chase: the
+receipt-sources 240-entries case (not reproduced; an observation plugin now logs any recurrence's suppressed cause) and
+the capacity test's 15-minute O(n²) journal re-verification (a product performance note).
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;
