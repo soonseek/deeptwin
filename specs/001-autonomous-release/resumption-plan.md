@@ -2473,9 +2473,11 @@ runtime.md does not yet state — open); the tool boundary's effect vocabulary i
 one green full run (`merged-tree-reconciliation-2026-09-22.md`) and checkpointed. Task 51 (the owned shared gateway
 prerequisite, the plan's own tail) landed under this loop's review cycle in three reviewed stages plus a re-review of
 the stage C closures (`owned-shared-gateway-task51.md`): the fixed profile, the generic owner, the shared ingress and
-the owned send dialogue with linearized control. Next: run creation from the intake once the consent/design line
-records a run consent and an environment; the semantic artifact admission and current binding that connect the owned
-gateway to the runtime (Task 51's own "next" in its plan) follow it.
+the owned send dialogue with linearized control. The consent line's first link landed (`run-consent-record-t048.md`:
+`POST /api/v1/run-consents` seals the owner's `run_consent` over the exact records a run names, accepted by the run
+route). Next: the run route verifies that its consent names exactly its inputs; then the design line's `environment`
+record; then run creation from the intake page; the semantic artifact admission and current binding that connect the
+owned gateway to the runtime (Task 51's own "next" in its plan) follow.
 
 Redraft order (each independently reviewed before the next): (a) journal-v3 contract document;
 (b) worker-probe prerequisite task; (c) pure record/head/consumption-v2 codecs, absent-only;

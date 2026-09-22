@@ -10,6 +10,7 @@ from .first_party import InstalledContribution, core_services
 from .provider_conformance import conformance_services
 from .provider_installation import installation_services
 from .run_approvals import approval_services
+from .run_consents import consent_services
 from .runs import run_services
 from .works import work_services
 
@@ -44,6 +45,14 @@ INSTALLED = (
         ("browser_session",),
         ("work.command", "work.read"),
         provides=("works.service",),
+    ),
+    InstalledContribution(
+        "run-consents-v1.json",
+        "app.api.run_consents:create_router",
+        consent_services,
+        ("browser_session",),
+        ("work.command", "work.read"),
+        provides=("run-consents.service",),
     ),
     InstalledContribution(
         "runs-v1.json",

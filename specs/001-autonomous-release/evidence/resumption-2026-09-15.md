@@ -1424,3 +1424,13 @@ finding folded RED-first (fourteen closure tests RED first in stage C alone). Ow
 **9,341 passed, 1 failed, 2 skipped** (Linux-only), 369 subtests, 1h22m — the failure a pre-existing 1-in-16 flake of a
 design-store pin (a no-op tamper), fixed at cause and looped 12× green. Details and hashes in
 `owned-shared-gateway-task51.md`.
+
+## T048 — the owner's run consent record and route (2026-09-22)
+
+RED retained (the service module absent; the route 404 on the supported factory), GREEN after the service, the
+adapter, the descriptor, the catalog entry and the boundary wiring. Independent review ACCEPT WITH CHANGES (MUST: a
+read or replay trusted any stored `run_consent` row → the precedent's whole discipline on every read; SHOULD: inputs
+the run cannot read, the deferred expiry/mode/environment-coherence recorded, the edges pinned) folded in RED-first.
+Consents **7**, neighbours **197**; Ruff: no finding introduced. Full regression: **9,348 passed, 1 failed, 2 skipped**
+(Linux-only), 369 subtests, 1h23m — the failure the recorded timing-sensitive conformance final-wall case, passing
+alone. Details and hashes in `run-consent-record-t048.md`.

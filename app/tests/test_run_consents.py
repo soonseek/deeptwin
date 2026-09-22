@@ -1,0 +1,270 @@
+"""The run consent: the first missing link of run creation from the intake
+(resumption-plan Continuation; T048 "run creation from the intake"; data-model
+§3 "`RunConsent` authorizes a specific execution or bounded policy … distinct
+grants"; experience §6.3 `업무 시작` fixes the input/environment version and this
+run's allowed usage and model path, and never implies more).
+
+`POST /api/v1/run-consents` (`run-consent-command-v1`) seals one immutable
+`run_consent` record per command over the exact stored records the run will
+name — the graph, the work revision, the environment and the budget policy —
+authored by the owner's human actor with its `approval.decided` public event in
+the same transaction. Exact replay returns the same consent; any other body
+under the same command conflicts; an unresolvable input is not found; a
+reference of the wrong kind is invalid. `GET|HEAD …/{consent_id}` reads it.
+`POST /api/v1/runs` then accepts the sealed consent as its `consent_ref`. No
+model, tool or paid call; the fake executor only.
+"""
+
+from uuid import uuid4
+
+from app.services.run_consents import consent_identity
+from app.tests.test_graph_execution import linear_graph
+from app.tests.test_runs_api import Executor, events, graph_record, owner_app, post
+from app.tests.test_server_api_v1 import immutable
+from app.tests.test_web_owner_integration import headers
+
+SCHEMA = "run-consent-command-v1"
+REF_FIELDS = ("graph_ref", "work_revision_ref", "environment_ref", "budget_policy_ref")
+
+
+def object_ref(ref):
+    """The public event's reference shape for a stored record reference."""
+    return {"kind": ref["kind"], "id": ref["id"], "version": ref["version"], "content_hash": ref["sha256"]}
+
+
+def consent_path(subject):
+    return subject.profile.base_path + "api/v1/run-consents"
+
+
+def consent_command(subject, graph, **changes):
+    body = {
+        "schema_version": SCHEMA,
+        "command_id": str(uuid4()),
+        "graph_ref": graph.as_dict(),
+        "work_revision_ref": subject.refs.work.as_dict(),
+        "environment_ref": subject.refs.environment.as_dict(),
+        "budget_policy_ref": subject.refs.budget.as_dict(),
+    }
+    return {**body, **changes}
+
+
+def test_an_owner_records_one_consent_per_command_over_the_exact_inputs(tmp_path):
+    with owner_app(tmp_path, Executor()) as subject:
+        graph_ref = graph_record(subject, linear_graph())
+        body = consent_command(subject, graph_ref)
+        created = post(subject, body, consent_path(subject))
+        assert created.status_code == 201, created.text
+        consent = created.json()
+        assert set(consent) == {"consent_id", "ref", "command_id", "decided_at_utc", *REF_FIELDS}
+        assert consent["consent_id"] == consent_identity(body["command_id"])
+        assert consent["ref"]["kind"] == "run_consent" and consent["ref"]["id"] == consent["consent_id"]
+        assert consent["ref"]["version"] == 1
+        for name in REF_FIELDS:
+            assert consent[name] == body[name]
+        # the consent is its own public fact: decided over the sealed record and the four
+        # exact inputs it names
+        def decided():
+            return [item for item in events(subject, "approval.decided")
+                    if object_ref(consent["ref"]) in item["object_refs"]]
+
+        assert len(decided()) == 1 and decided()[0]["public_metadata"]["decision"] == "approved"
+        assert decided()[0]["object_refs"] == [object_ref(consent["ref"]), *(object_ref(body[name]) for name in REF_FIELDS)]
+        # exact replay: the same consent, nothing new sealed
+        again = post(subject, body, consent_path(subject))
+        assert again.status_code == 201 and again.json() == consent
+        assert len(decided()) == 1
+        # the same command over any other input conflicts
+        other_graph = graph_record(subject, linear_graph())
+        conflict = post(subject, {**body, "graph_ref": other_graph.as_dict()}, consent_path(subject))
+        assert conflict.status_code == 409 and conflict.json()["code"] == "conflict"
+        # read back, GET and HEAD alike
+        current = subject.client.get(consent_path(subject) + "/" + consent["consent_id"],
+                                     headers=headers(subject.profile))
+        head = subject.client.head(consent_path(subject) + "/" + consent["consent_id"],
+                                   headers=headers(subject.profile))
+        assert current.status_code == head.status_code == 200 and head.content == b""
+        assert current.json() == consent
+        assert current.headers["cache-control"] == "no-store"
+        missing = subject.client.get(consent_path(subject) + "/" + str(uuid4()), headers=headers(subject.profile))
+        assert missing.status_code == 404 and missing.json()["code"] == "not_found"
+
+
+def test_a_consent_names_only_stored_records_of_the_right_kinds(tmp_path):
+    with owner_app(tmp_path, Executor()) as subject:
+        graph_ref = graph_record(subject, linear_graph())
+        # an unresolvable input: the exact record (kind, id, version, digest) is not there
+        absent = graph_ref.as_dict() | {"sha256": "0" * 64}
+        refused = post(subject, consent_command(subject, graph_ref, graph_ref=absent), consent_path(subject))
+        assert refused.status_code == 404 and refused.json()["code"] == "not_found"
+        # a stored record of another kind in a slot: invalid, never consented to
+        refused = post(subject, consent_command(subject, graph_ref, environment_ref=subject.refs.work.as_dict()),
+                       consent_path(subject))
+        assert refused.status_code == 400 and refused.json()["code"] == "invalid_input"
+        # a design record that is not a functional graph
+        design = immutable(subject.domain, subject.domain.roots(), "graph", content={"design_kind": "other"}).ref
+        refused = post(subject, consent_command(subject, graph_ref, graph_ref=design.as_dict()), consent_path(subject))
+        assert refused.status_code == 400 and refused.json()["code"] == "invalid_input"
+        assert events(subject, "approval.decided") == []
+
+
+def test_the_wire_admits_only_the_exact_command(tmp_path):
+    with owner_app(tmp_path, Executor()) as subject:
+        graph_ref = graph_record(subject, linear_graph())
+        good = consent_command(subject, graph_ref)
+        path = consent_path(subject)
+        for bad in (
+            {**good, "schema_version": "run-consent-command-v0"},
+            {**good, "command_id": "not-a-uuid"},
+            {**good, "graph_ref": {**good["graph_ref"], "extra": 1}},
+            {**good, "graph_ref": {**good["graph_ref"], "version": "1"}},
+            {key: value for key, value in good.items() if key != "budget_policy_ref"},
+            {**good, "consent_ref": good["graph_ref"]},
+        ):
+            refused = post(subject, bad, path)
+            assert refused.status_code == 400 and refused.json()["code"] == "invalid_input", bad
+        oversized = subject.client.post(path, content=b"{" + b" " * 5000 + b"}",
+                                        headers={**headers(subject.profile, subject.csrf), "content-type": "application/json"})
+        assert oversized.status_code == 413
+        with_query = subject.client.post(path + "?x=1", json=good, headers=headers(subject.profile, subject.csrf))
+        assert with_query.status_code == 400
+        body_on_read = subject.client.request("GET", path + "/" + str(uuid4()), content=b"{}", headers=headers(subject.profile))
+        assert body_on_read.status_code == 400
+        # no session: a well-formed command is refused as unauthenticated (the wire preflight
+        # runs first, as on every route: a malformed anonymous body is a wire refusal)
+        cookies = dict(subject.client.cookies)
+        subject.client.cookies.clear()
+        anonymous = post(subject, good, path)
+        assert anonymous.status_code == 401 and anonymous.json()["code"] == "unauthenticated"
+        for name, value in cookies.items():
+            subject.client.cookies.set(name, value)
+        assert events(subject, "approval.decided") == []
+
+
+def test_a_sealed_consent_starts_the_run_it_names(tmp_path):
+    executor = Executor()
+    with owner_app(tmp_path, executor) as subject:
+        graph_ref = graph_record(subject, linear_graph())
+        consent = post(subject, consent_command(subject, graph_ref), consent_path(subject)).json()
+        started = post(subject, {
+            "command_id": str(uuid4()),
+            "graph_ref": graph_ref.as_dict(),
+            "work_revision_ref": subject.refs.work.as_dict(),
+            "environment_ref": subject.refs.environment.as_dict(),
+            "consent_ref": consent["ref"],
+            "budget_policy_ref": subject.refs.budget.as_dict(),
+        })
+        assert started.status_code == 201, started.text
+        assert started.json()["phase"] == "completed"
+        assert executor.calls == ["intake", "writer", "publish"]
+
+
+# --- review closures ----------------------------------------------------------------------
+
+def stored_consent(subject, command_id, *, content_changes=None, actor=None):
+    """A `run_consent` row written outside the service: by the vault's root actor, with any
+    content — never consent evidence unless it carries the writer's whole discipline."""
+    from app.domain.schemas import ImmutableRecord
+    from app.services.run_consents import consent_identity
+
+    domain = subject.domain
+    roots = domain.roots()
+    graph_ref = graph_record(subject, linear_graph())
+    content = {
+        "schema_version": "run-consent-v1", "command_id": command_id,
+        "graph_ref": graph_ref.as_dict(), "work_revision_ref": subject.refs.work.as_dict(),
+        "environment_ref": subject.refs.environment.as_dict(),
+        "budget_policy_ref": subject.refs.budget.as_dict(),
+        "decided_at_utc": "2026-09-22T00:00:00.000000Z", "event_sequence": 999,
+    }
+    content.update(content_changes or {})
+    record = ImmutableRecord.create(
+        kind="run_consent", id=consent_identity(command_id), version=1,
+        created_at_utc="2026-09-22T00:00:00.000000Z", actor_ref=actor or roots.actor, parent_refs=(),
+        purpose="operational", access_policy_ref=roots.access_policy,
+        retention_policy_ref=roots.retention_policy, content=content,
+    )
+    domain.put(record)
+    return record, graph_ref
+
+
+def test_a_stored_row_without_the_writers_discipline_is_never_a_consent(tmp_path):
+    with owner_app(tmp_path, Executor()) as subject:
+        path = consent_path(subject)
+        # written by the vault's root actor, under another command, with no decided event
+        command_id = str(uuid4())
+        forged, graph_ref = stored_consent(subject, command_id, content_changes={"command_id": str(uuid4())})
+        current = subject.client.get(path + "/" + forged.ref.id, headers=headers(subject.profile))
+        assert current.status_code == 503 and current.json()["code"] == "unavailable"
+        # the replay branch never repairs it: the command it derives from is refused, not served
+        replay = post(subject, consent_command(subject, graph_ref, command_id=command_id), path)
+        assert replay.status_code == 503 and replay.json()["code"] == "unavailable"
+        assert events(subject, "approval.decided") == []
+        # a row with the right command but no bound decided event, or the wrong stamp, is the same
+        for changes in ({}, {"decided_at_utc": "yesterday"}, {"event_sequence": 0}):
+            command_id = str(uuid4())
+            forged, _ = stored_consent(subject, command_id, content_changes=changes)
+            current = subject.client.get(path + "/" + forged.ref.id, headers=headers(subject.profile))
+            assert current.status_code == 503, changes
+
+
+def test_a_consent_names_only_inputs_the_run_can_read(tmp_path):
+    with owner_app(tmp_path, Executor()) as subject:
+        path = consent_path(subject)
+        roots = subject.domain.roots()
+        # a functional graph record without its design: the executor could not read it
+        headless = immutable(subject.domain, roots, "graph", content={"design_kind": "functional_graph"}).ref
+        refused = post(subject, consent_command(subject, headless), path)
+        assert refused.status_code == 400 and refused.json()["code"] == "invalid_input"
+        # a budget policy record that is not a policy binding: it fixes no usage
+        graph_ref = graph_record(subject, linear_graph())
+        loose = immutable(subject.domain, roots, "budget_policy").ref
+        refused = post(subject, consent_command(subject, graph_ref, budget_policy_ref=loose.as_dict()), path)
+        assert refused.status_code == 400 and refused.json()["code"] == "invalid_input"
+        assert events(subject, "approval.decided") == []
+
+
+def test_the_wire_and_the_command_are_pinned_at_their_edges(tmp_path):
+    with owner_app(tmp_path, Executor()) as subject:
+        path = consent_path(subject)
+        graph_ref = graph_record(subject, linear_graph())
+        good = consent_command(subject, graph_ref)
+        # a POST without the CSRF token is access denied
+        no_csrf = subject.client.post(path, json=good, headers=headers(subject.profile))
+        assert no_csrf.status_code == 403
+        # every absent input is not found, not only the graph
+        for name in ("work_revision_ref", "environment_ref", "budget_policy_ref"):
+            absent = {**good[name], "sha256": "0" * 64}
+            refused = post(subject, {**good, name: absent}, path)
+            assert refused.status_code == 404 and refused.json()["code"] == "not_found", name
+        sealed = post(subject, good, path)
+        assert sealed.status_code == 201
+        # the same command over another non-graph input conflicts, and conflict beats not found
+        other_work = immutable(subject.domain, subject.domain.roots(), "work_revision").ref
+        conflict = post(subject, {**good, "work_revision_ref": other_work.as_dict()}, path)
+        assert conflict.status_code == 409
+        conflict = post(subject, {**good, "environment_ref": {**good["environment_ref"], "sha256": "0" * 64}}, path)
+        assert conflict.status_code == 409
+        # methods and shapes off the two routes are refused at the wire
+        client, own = subject.client, headers(subject.profile, subject.csrf)
+        assert client.put(path, json=good, headers=own).status_code == 400
+        assert client.get(path, headers=headers(subject.profile)).status_code == 400
+        item = path + "/" + sealed.json()["consent_id"]
+        assert client.post(item, json=good, headers=own).status_code == 400
+        assert client.delete(item, headers=own).status_code == 400
+        assert client.get(item + "/extra", headers=headers(subject.profile)).status_code == 400
+        # the exact 4 096-byte bound
+        padded = dict(good, command_id=str(uuid4()))
+        import json as json_module
+
+        raw = json_module.dumps(padded, separators=(",", ":")).encode()
+        filler = 4096 - len(raw) - len(b',"":""')
+        at_bound = raw[:-1] + b',"":"' + b"x" * filler + b'"}'
+        assert len(at_bound) == 4096
+        over = raw[:-1] + b',"":"' + b"x" * (filler + 1) + b'"}'
+        assert len(over) == 4097
+        json_headers = {**own, "content-type": "application/json"}
+        assert client.post(path, content=over, headers=json_headers).status_code == 413
+        # at the bound the wire admits the bytes; the extra member is the command's refusal
+        assert client.post(path, content=at_bound, headers=json_headers).status_code == 400
+        # no refusal emitted an event; only the one sealed consent did
+        assert len(events(subject, "approval.decided")) == 1

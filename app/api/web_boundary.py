@@ -10,6 +10,7 @@ from ..services.owner_auth import OwnerAuthError, validate_credentials
 from ..services.owner_material_intake import OwnerMaterialIntake
 from ..services.owner_material_upload_lock import UploadLock
 from ..services.run_approvals import RunApprovalError
+from ..services.run_consents import RunConsentError
 from ..services.runs import RunServiceError
 from ..services.works import WorkServiceError
 from . import owner_material_upload as material_upload
@@ -28,6 +29,8 @@ from .provider_conformance import preflight as provider_conformance_preflight
 from . import provider_installation as installation
 from .run_approvals import ApprovalRouteError, approval_error, is_approval_path
 from .run_approvals import preflight as approval_preflight
+from .run_consents import ConsentRouteError, consent_error, is_consent_path
+from .run_consents import preflight as consent_preflight
 from .runs import RunRouteError, is_run_path, run_error
 from .runs import preflight as run_preflight
 from .wire import (
@@ -122,6 +125,7 @@ class WebBoundary:
             installation_route = path == installation.PATH or path.startswith(installation.PATH+'/')
             approval_route = is_approval_path(path)
             run_route = is_run_path(path)
+            consent_route = is_consent_path(path)
             work_route = is_work_path(path)
             session_route = path == "/session" or path.startswith("/session/")
             establishment = path in {"/session/bootstrap", "/session/login"} and method == "POST"
@@ -161,9 +165,9 @@ class WebBoundary:
                 await run_in_threadpool(intake.admit, authenticated, work_id, meta)
                 state["source_metadata"] = meta
                 state["source_bytes"] = await material_upload.receive_original(receive, meta)
-            elif method not in {"GET", "HEAD"} or candidate_route or deployment_route or provider_route or conformance_route or approval_route or run_route or work_route:
+            elif method not in {"GET", "HEAD"} or candidate_route or deployment_route or provider_route or conformance_route or approval_route or run_route or consent_route or work_route:
                 limit = 1048576 if path == CANDIDATE_PATH and method == "POST" else 8192 if session_route else 131072
-                if deployment_route or provider_route or conformance_route or approval_route or run_route:
+                if deployment_route or provider_route or conformance_route or approval_route or run_route or consent_route:
                     limit = 4096
                 if candidate_route and method in {"GET", "HEAD"}:
                     limit = 0
@@ -173,7 +177,7 @@ class WebBoundary:
                     limit = 0
                 if approval_route and method in {"GET", "HEAD"}:
                     limit = 0
-                if run_route and method in {"GET", "HEAD"}:
+                if (run_route or consent_route) and method in {"GET", "HEAD"}:
                     limit = 0
                 if work_route:
                     limit = WORK_BODY_BYTES if method == "POST" else 0
@@ -191,6 +195,8 @@ class WebBoundary:
                         raise ApprovalRouteError("invalid_input" if limit == 0 else "too_large")
                     if run_route:
                         raise RunRouteError("invalid_input" if limit == 0 else "too_large")
+                    if consent_route:
+                        raise ConsentRouteError("invalid_input" if limit == 0 else "too_large")
                     if work_route:
                         raise WorkRouteError("invalid_input" if limit == 0 else "too_large")
                     response = JSONResponse({"code": "invalid_input"}, status_code=413)
@@ -211,6 +217,8 @@ class WebBoundary:
                             raise ApprovalRouteError("invalid_input" if limit == 0 else "too_large")
                         if run_route:
                             raise RunRouteError("invalid_input" if limit == 0 else "too_large")
+                        if consent_route:
+                            raise ConsentRouteError("invalid_input" if limit == 0 else "too_large")
                         if work_route:
                             raise WorkRouteError("invalid_input" if limit == 0 else "too_large")
                         response = JSONResponse({"code": "invalid_input"}, status_code=413)
@@ -258,6 +266,10 @@ class WebBoundary:
                 if method in {"GET", "HEAD"} and fields.get("content-length", "0") != "0":
                     raise RunRouteError()
                 state["run_payload"] = run_preflight({**scope, "path": path}, body, fields.get("content-type", ""))
+            elif consent_route:
+                if method in {"GET", "HEAD"} and fields.get("content-length", "0") != "0":
+                    raise ConsentRouteError()
+                state["consent_payload"] = consent_preflight({**scope, "path": path}, body, fields.get("content-type", ""))
             elif work_route and not source_upload:
                 if method in {"GET", "HEAD"} and fields.get("content-length", "0") != "0":
                     raise WorkRouteError()
@@ -294,9 +306,11 @@ class WebBoundary:
                     consumed = True
                     return {"type": "http.request", "body": body, "more_body": False}
                 return await receive()
-            await self.app(routed, replay if method not in {"GET", "HEAD"} or candidate_route or deployment_route or provider_route or conformance_route or approval_route or run_route or work_route else receive, safe_send)
+            await self.app(routed, replay if method not in {"GET", "HEAD"} or candidate_route or deployment_route or provider_route or conformance_route or approval_route or run_route or consent_route or work_route else receive, safe_send)
         except (RunRouteError, RunServiceError) as error:
             await run_error(error)(scope, receive, safe_send)
+        except (ConsentRouteError, RunConsentError) as error:
+            await consent_error(error)(scope, receive, safe_send)
         except (WorkRouteError, WorkServiceError) as error:
             await work_error(error)(scope, receive, safe_send)
         except (ApprovalRouteError, RunApprovalError) as error:
