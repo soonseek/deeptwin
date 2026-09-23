@@ -99,7 +99,8 @@ function booted(replies, { pathname = `${BASE}observe.html` } = {}) {
 }
 
 test('the mount ids are the page\'s and the boot refuses a document without them', async () => {
-  assert.deepEqual(MOUNT_IDS, { session: 'session-status', source: 'run-source', panel: 'run-panel' });
+  assert.deepEqual(MOUNT_IDS, { session: 'session-status', source: 'run-source', panel: 'run-panel',
+    artifacts: 'run-artifacts' });
   const document = fakeDocument({ session: 'session-status' });
   await assert.rejects(boot({ document, location: { pathname: '/' }, fetch: async () => {}, crypto: { randomUUID: () => RUN_A } }), /mount/);
   await assert.rejects(boot({ document: fakeDocument(), location: { pathname: '/' }, fetch: 'no', crypto: { randomUUID: () => RUN_A } }));
@@ -114,6 +115,7 @@ test('without a session the page says so and mounts nothing that could send a co
   assert.equal(mounted.established, false);
   assert.equal(mounted.list, null);
   assert.equal(mounted.panel, null);
+  assert.equal(mounted.artifacts, null);
   const status = document.elements.get('session-status');
   assert.match(status.textContent, /세션/);
   assert.equal(status.dataset.state, 'unauthenticated');
@@ -160,6 +162,7 @@ test('with a session the list is read once and a choice reaches the panel on the
     jsonResponse(200, { state: 'authenticated', csrf_token: 'tok-1' }),
     jsonResponse(200, snapshot([{ id: RUN_A, phase: 'created', revision: 1 }])),
     jsonResponse(200, receipt()),
+    jsonResponse(200, { run_id: RUN_A, artifacts: [] }),
   ]);
   const mounted = await promise;
   assert.equal(mounted.established, true);
@@ -179,6 +182,10 @@ test('with a session the list is read once and a choice reaches the panel on the
   assert.equal(panel.dataset.runId, RUN_A);
   assert.equal(panel.dataset.phase, 'completed');
   assert.equal(typeof mounted.panel.read, 'function');
+  // the same choice shows the run's artifacts on their own surface
+  assert.equal(fetched[3][0], `/${HEX}/api/v1/runs/${RUN_A}/artifacts`);
+  assert.equal(mounted.artifacts.runId, RUN_A);
+  assert.match(document.elements.get('run-artifacts').textContent, /산출물 파일이 없습니다/);
   // the command id source is the platform's, never a constant of the module
   const commandId = mounted.commandId();
   assert.equal(commandId, '77777777-7777-4777-8777-777777777777');

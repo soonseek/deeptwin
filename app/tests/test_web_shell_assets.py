@@ -38,6 +38,7 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "session.mjs": "application/javascript",
         "run-panel.mjs": "application/javascript",
         "run-list.mjs": "application/javascript",
+        "artifacts.mjs": "application/javascript",
         "observe.mjs": "application/javascript",
         "observe.html": "text/html",
         "start.mjs": "application/javascript",

@@ -47,7 +47,7 @@ from .works import preflight as work_preflight
 SECURITY_HEADERS = {
     "cache-control": "no-store", "x-content-type-options": "nosniff",
     "referrer-policy": "no-referrer", "x-frame-options": "DENY",
-    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'",
 }
 STATUS = {"invalid_input": 400, "credentials": 401, "capacity": 429, "unavailable": 503,
           "setup_incomplete": 409, "setup_unavailable": 409, "unauthenticated": 401,
@@ -96,7 +96,7 @@ class WebBoundary:
                 raise OwnerAuthError("invalid_input")
             fields = parse_singleton_headers(raw_headers, names=("host", "origin", "sec-fetch-site", "cookie",
                 "x-deeptwin-csrf", "content-length", "content-type", "last-event-id",
-                "x-deeptwin-source-metadata", "content-encoding"), required=("host",))
+                "x-deeptwin-source-metadata", "content-encoding", "range"), required=("host",))
             if any(name.lower() == b"forwarded" or name.lower().startswith(b"x-forwarded-")
                    or name.lower() in {b"x-original-url", b"x-rewrite-url"} for name, _ in raw_headers):
                 raise OwnerAuthError("access_denied")

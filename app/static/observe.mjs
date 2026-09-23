@@ -8,11 +8,14 @@
 // Every dependency (document, location, fetch, crypto) is injected so the
 // boot is testable under node; the page passes the platform's own.
 
+import { createArtifactViewer } from './artifacts.mjs';
 import { createRunList } from './run-list.mjs';
 import { createRunPanel } from './run-panel.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
 
-export const MOUNT_IDS = Object.freeze({ session: 'session-status', source: 'run-source', panel: 'run-panel' });
+export const MOUNT_IDS = Object.freeze({
+  session: 'session-status', source: 'run-source', panel: 'run-panel', artifacts: 'run-artifacts',
+});
 
 // the codes GET {base}session can actually answer (app/api/web_boundary.py,
 // owner_auth.authenticate_request): a session that stands, none (a fresh
@@ -57,21 +60,23 @@ export async function boot({ document, location, fetch, crypto } = {}) {
     const [code, text] = sessionFailureText(error);
     roots.session.dataset.state = code;
     roots.session.textContent = text;
-    return Object.freeze({ established: false, basePath, session, list: null, panel: null, commandId });
+    return Object.freeze({ established: false, basePath, session, list: null, panel: null, artifacts: null, commandId });
   }
   roots.session.dataset.state = 'authenticated';
   roots.session.textContent = SESSION_MESSAGES.authenticated;
   const panel = createRunPanel({ root: roots.panel, document, basePath, request: session.request, commandId });
+  const artifacts = createArtifactViewer({ root: roots.artifacts, document, basePath, request: session.request });
   const list = createRunList({
     root: roots.source, document, basePath, request: session.request,
-    onSelect: runId => panel.read(runId).catch(() => {}),  // the refusal is on the panel
+    // each refusal is shown on its own surface
+    onSelect: runId => Promise.all([panel.read(runId).catch(() => {}), artifacts.show(runId).catch(() => {})]),
   });
   try {
     await list.refresh();
   } catch {
     // the list's own status names the failure; the session stands
   }
-  return Object.freeze({ established: true, basePath, session, list, panel, commandId });
+  return Object.freeze({ established: true, basePath, session, list, panel, artifacts, commandId });
 }
 
 // the page's entry: a boot that fails before or beside the session exchange

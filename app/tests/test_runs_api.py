@@ -299,9 +299,11 @@ def test_the_composition_carries_the_run_routes(tmp_path):
     with owner_app(tmp_path, Executor()) as subject:
         composition = subject.app.state.route_composition
         assert "runs-v1" in composition.contribution_ids
-        for route_id in ("runs.create", "runs.read", "runs.resume", "runs.cancel", "runs.recover"):
+        for route_id in ("runs.create", "runs.read", "runs.resume", "runs.cancel", "runs.recover",
+                         "runs.artifacts", "runs.artifact", "runs.artifact_content",
+                         "runs.artifact_preview"):
             assert route_id in composition.route_ids
-        assert composition.route_count == 39
+        assert composition.route_count == 43
 
 
 def test_a_router_run_with_an_untaken_branch_completes(tmp_path):

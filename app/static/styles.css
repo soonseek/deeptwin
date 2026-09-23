@@ -276,3 +276,12 @@ footer p { margin: 6px 0; }
   .original-name { flex-basis: 100%; }
   .original-list li { align-items: flex-start; }
 }
+
+/* T045: the run artifact viewer */
+.run-artifacts .artifact-list { list-style: none; padding: 0; }
+.run-artifacts .artifact-list li { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; padding: 0.25rem 0; }
+.run-artifacts .artifact-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 32rem; overflow: auto; }
+.run-artifacts .artifact-table { border-collapse: collapse; }
+.run-artifacts .artifact-table td { border: 1px solid currentColor; padding: 0.125rem 0.375rem; }
+.run-artifacts .artifact-image { max-width: 100%; height: auto; }
+.run-artifacts .artifact-coverage, .run-artifacts .artifact-fidelity { font-size: 0.875rem; }
