@@ -49,3 +49,26 @@ arc's own production path, run creation from the intake page, and T049's browser
   new command version.
 - **UI.** No screen offers revocation yet: the consent itself is not yet created from a screen
   (run creation from the intake page is still open).
+
+## Expiry (same day)
+
+- **`run-consent-command-v2`** adds `expires_at_utc` (the stamp format), which the owner
+  chooses. It must lie ahead of the server's clock and within 366 days. That ceiling is a wire
+  bound, not a product policy.
+- The record is `run-consent-v2` and carries the expiry. v1 commands and records are unchanged
+  and never expire. The projection states `expires_at_utc` (`null` for v1). A replay under the
+  same command with another expiry conflicts.
+- **`consent_current`** is the single check behind run start, `resume`, `recover` and the
+  create replay. It refuses when the consent is revoked or its expiry has passed
+  (`403 access_denied`), and it re-verifies the whole record discipline. Cancel stays
+  available. An expired consent still reads back with its expiry.
+- **Observed:** `test_run_consents.py` **12 passed**, with `test_runs_api.py` 39 in total. The
+  expiry test covers:
+  - refusal of a past expiry, an expiry beyond the bound, a malformed expiry, and an expiry on a
+    v1 command
+  - replay conflict on a changed expiry
+  - a run started within the window
+  - once the clock is advanced past the expiry: resume, recover and replay refuse without any
+    new dispatch, the consent still reads, and cancel works
+
+The "Still open: expiry" item above is closed by this section.

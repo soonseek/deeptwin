@@ -493,17 +493,11 @@ class PersistentRuns:
         (experience §6.3: the server verifies each effect, version and scope itself; a
         `run_consent` row without the writer's discipline is no consent at all)."""
         # lazy: run_consents imports this module's readers at import time
-        from .run_consents import (
-            INPUTS,
-            RunConsentError,
-            consent_revoked,
-            resolve_consent,
-        )
+        from .run_consents import INPUTS, RunConsentError, consent_current
 
         try:
-            consent = resolve_consent(self._domain, db, roots, command["consent_ref"])
-            if consent_revoked(self._domain, db, roots, command["consent_ref"]):
-                raise RunConsentError("access_denied")  # the owner withdrew it
+            # only a current consent: not revoked by the owner, not past its expiry
+            consent = consent_current(self._domain, db, roots, command["consent_ref"])
         except RunConsentError:
             raise RunServiceError("access_denied") from None
         if any(consent[name] != command[name].as_dict() for name, _ in INPUTS):
@@ -526,12 +520,11 @@ class PersistentRuns:
 
     def _current_consent(self, db, roots, manifest) -> None:
         """Before any further dispatch of an existing run (resume, recover): its
-        consent must still be current — a revoked or unreadable revocation refuses."""
-        from .run_consents import RunConsentError, consent_revoked
+        consent must still be current — revoked, expired or unreadable refuses."""
+        from .run_consents import RunConsentError, consent_current
 
         try:
-            if consent_revoked(self._domain, db, roots, manifest.inputs["consent_ref"]):
-                raise RunServiceError("access_denied")
+            consent_current(self._domain, db, roots, manifest.inputs["consent_ref"])
         except RunConsentError:
             raise RunServiceError("access_denied") from None
 

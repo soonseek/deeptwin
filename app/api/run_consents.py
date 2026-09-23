@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 from ..domain.refs import uuid_string
 from ..services.run_consents import (
     COMMAND_SCHEMA,
+    COMMAND_SCHEMA_V2,
     REVOCATION_COMMAND_SCHEMA,
     PersistentRunConsents,
     RunConsentError,
@@ -82,13 +83,15 @@ def preflight(scope, body, content_type):
         if path == PATH:
             if method != "POST" or content_type.split(";", 1)[0] != "application/json":
                 raise ConsentRouteError()
+            versioned = b'"run-consent-command-v2"' in body
             value = parse_json_object(
-                body, required=_FIELDS,
-                field_types={"schema_version": str, "command_id": str, **{name: dict for name in _FIELDS[2:]}},
+                body, required=(*_FIELDS, "expires_at_utc") if versioned else _FIELDS,
+                field_types={"schema_version": str, "command_id": str, **{name: dict for name in _FIELDS[2:]},
+                             **({"expires_at_utc": str} if versioned else {})},
                 limits=WireLimits(max_bytes=MAX_BODY_BYTES, max_depth=3, max_items=32, max_members=8,
                                   max_string_bytes=256),
             )
-            if value["schema_version"] != COMMAND_SCHEMA:
+            if value["schema_version"] != (COMMAND_SCHEMA_V2 if versioned else COMMAND_SCHEMA):
                 raise ConsentRouteError()
             uuid_string(value["command_id"])
             for name in _FIELDS[2:]:

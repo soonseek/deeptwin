@@ -22,8 +22,10 @@ revoke a consent (`revoke`): one sealed `decision_record` per consent, authored 
 the owner with `approval.decided(revoked)` in the same transaction; a revoked
 consent starts no run, and `resume`/`recover` of a run under it refuse (the
 "current consent" runtime.md verifies before dispatch). Cancel stays available.
-A revocation is not undone. Deliberately deferred (recorded open): an expiry (the
-command carries no expiry field yet
+A revocation is not undone. A `run-consent-command-v2` consent also carries the
+owner's `expires_at_utc`; past it, the consent is no longer current, exactly as if
+revoked (v1 consents have no expiry). The 366-day ceiling is a wire bound, not a
+product policy. Deliberately deferred (recorded open): nothing yet (the
 runtime.md verifies before dispatch), the run `mode` (the run route fixes
 `live`), and the environment ⇄ graph coherence: the environment record now has
 its producer (`design_store.persist_environment_record`), but its stored design
@@ -57,11 +59,24 @@ from .run_approvals import (
 )
 from .runs import PersistentRuns, RunServiceError
 
-__all__ = ["COMMAND_SCHEMA", "RECORD_SCHEMA", "REVOCATION_COMMAND_SCHEMA", "PersistentRunConsents",
-           "RunConsentError", "consent_identity", "consent_revoked", "resolve_consent"]
+__all__ = [
+    "COMMAND_SCHEMA",
+    "COMMAND_SCHEMA_V2",
+    "RECORD_SCHEMA",
+    "REVOCATION_COMMAND_SCHEMA",
+    "PersistentRunConsents",
+    "RunConsentError",
+    "consent_current",
+    "consent_identity",
+    "consent_revoked",
+    "resolve_consent",
+]
 
 COMMAND_SCHEMA = "run-consent-command-v1"
+COMMAND_SCHEMA_V2 = "run-consent-command-v2"
 RECORD_SCHEMA = "run-consent-v1"
+RECORD_SCHEMA_V2 = "run-consent-v2"
+MAX_CONSENT_SECONDS = 366 * 24 * 3600
 REVOCATION_COMMAND_SCHEMA = "run-consent-revocation-command-v1"
 REVOCATION_SCHEMA = "run-consent-revocation-v1"
 _REVOCATION_KEYS = frozenset({"schema_version", "command_id", "consent_ref", "revoked_at_utc", "event_sequence"})
@@ -107,13 +122,27 @@ def _stamp() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
 
 
+def _parse_stamp(value) -> datetime:
+    if type(value) is not str or _STAMP.fullmatch(value) is None:
+        raise ValueError("not a stamp")
+    return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)
+
+
 def _command(payload) -> dict:
-    if (type(payload) is not dict
-            or set(payload) != {"schema_version", "command_id", *(name for name, _ in INPUTS)}
-            or payload["schema_version"] != COMMAND_SCHEMA):
+    keys = {"schema_version", "command_id", *(name for name, _ in INPUTS)}
+    if type(payload) is not dict or payload.get("schema_version") not in (COMMAND_SCHEMA, COMMAND_SCHEMA_V2):
+        raise RunConsentError("invalid_input")
+    versioned = payload["schema_version"] == COMMAND_SCHEMA_V2
+    if set(payload) != (keys | {"expires_at_utc"} if versioned else keys):
         raise RunConsentError("invalid_input")
     try:
-        command = {"command_id": uuid_string(payload["command_id"])}
+        command = {"command_id": uuid_string(payload["command_id"]), "expires_at_utc": None}
+        if versioned:
+            expires = _parse_stamp(payload["expires_at_utc"])
+            remaining = (expires - datetime.now(UTC)).total_seconds()
+            if not 0 < remaining <= MAX_CONSENT_SECONDS:
+                raise RunConsentError("invalid_input")
+            command["expires_at_utc"] = payload["expires_at_utc"]
         for name, kind in INPUTS:
             ref = EntityRef.from_dict(payload[name])
             if ref.kind != kind:
@@ -128,8 +157,10 @@ def _parse_content(content) -> dict:
     """Re-validate stored content with the writer's grammar."""
 
     try:
-        if (type(content) is not dict or set(content) != _CONTENT_KEYS
-                or content["schema_version"] != RECORD_SCHEMA
+        versioned = type(content) is dict and content.get("schema_version") == RECORD_SCHEMA_V2
+        expected = _CONTENT_KEYS | {"expires_at_utc"} if versioned else _CONTENT_KEYS
+        if (type(content) is not dict or set(content) != expected
+                or content["schema_version"] not in (RECORD_SCHEMA, RECORD_SCHEMA_V2)
                 or type(content["decided_at_utc"]) is not str
                 or _STAMP.fullmatch(content["decided_at_utc"]) is None
                 or type(content["event_sequence"]) is not int or content["event_sequence"] < 1):
@@ -140,9 +171,13 @@ def _parse_content(content) -> dict:
             if ref.kind != kind:
                 raise RunConsentError("unavailable")
             parsed[name] = ref.as_dict()
+        expires = content["expires_at_utc"] if versioned else None
+        if versioned:
+            _parse_stamp(expires)
     except (RunConsentError, DomainContractError, TypeError, ValueError):
         raise RunConsentError("unavailable") from None
-    return {**parsed, "decided_at_utc": content["decided_at_utc"], "event_sequence": content["event_sequence"]}
+    return {**parsed, "decided_at_utc": content["decided_at_utc"], "expires_at_utc": expires,
+            "event_sequence": content["event_sequence"]}
 
 
 def resolve_consent(domain, db, roots, ref: EntityRef) -> dict:
@@ -224,6 +259,19 @@ def consent_revoked(domain, db, roots, consent_ref: EntityRef) -> bool:
     return _revocation(domain, db, roots, consent_ref) is not None
 
 
+def consent_current(domain, db, roots, consent_ref: EntityRef, *, now=None) -> dict:
+    """The consent projection when it is still current; `access_denied` when the owner
+    revoked it or it expired, `unavailable` when it is no consent evidence at all."""
+
+    projection = resolve_consent(domain, db, roots, consent_ref)
+    if _revocation(domain, db, roots, consent_ref) is not None:
+        raise RunConsentError("access_denied")
+    expires = projection["expires_at_utc"]
+    if expires is not None and (now or datetime.now(UTC)) >= _parse_stamp(expires):
+        raise RunConsentError("access_denied")
+    return projection
+
+
 class PersistentRunConsents:
     """Writes and reads run consents over the exact bound store."""
 
@@ -296,6 +344,7 @@ class PersistentRunConsents:
             existing = self._existing(db, roots, consent_id)
             if existing is not None:
                 if (existing["command_id"] != command["command_id"]
+                        or existing["expires_at_utc"] != command["expires_at_utc"]
                         or any(existing[name] != command[name].as_dict() for name, _ in INPUTS)):
                     raise RunConsentError("conflict")
                 return existing
@@ -309,9 +358,11 @@ class PersistentRunConsents:
                 actor_ref=actor_ref, parent_refs=(), purpose="operational",
                 access_policy_ref=roots.access_policy, retention_policy_ref=roots.retention_policy,
                 content={
-                    "schema_version": RECORD_SCHEMA, "command_id": command["command_id"],
+                    "schema_version": RECORD_SCHEMA if command["expires_at_utc"] is None else RECORD_SCHEMA_V2,
+                    "command_id": command["command_id"],
                     **{name: command[name].as_dict() for name, _ in INPUTS},
                     "decided_at_utc": stamp, "event_sequence": event_sequence,
+                    **({} if command["expires_at_utc"] is None else {"expires_at_utc": command["expires_at_utc"]}),
                 },
             )
             self._domain._put_in_transaction(db, record)

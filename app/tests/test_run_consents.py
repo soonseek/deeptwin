@@ -55,7 +55,9 @@ def test_an_owner_records_one_consent_per_command_over_the_exact_inputs(tmp_path
         created = post(subject, body, consent_path(subject))
         assert created.status_code == 201, created.text
         consent = created.json()
-        assert set(consent) == {"consent_id", "ref", "command_id", "decided_at_utc", "revocation", *REF_FIELDS}
+        assert set(consent) == {"consent_id", "ref", "command_id", "decided_at_utc", "expires_at_utc", "revocation",
+                                *REF_FIELDS}
+        assert consent["expires_at_utc"] is None
         assert consent["revocation"] is None
         assert consent["consent_id"] == consent_identity(body["command_id"])
         assert consent["ref"]["kind"] == "run_consent" and consent["ref"]["id"] == consent["consent_id"]
@@ -422,3 +424,61 @@ def test_the_revocation_wire_is_exact(tmp_path):
         assert subject.client.get(path, headers=headers(subject.profile)).status_code in {400, 405}
         subject.client.cookies.clear()
         assert revoke(subject, consent["consent_id"]).status_code in {401, 403}
+
+
+# --- expiry: a v2 consent carries the owner's expiry and is not current past it ------------
+
+def _stamp_in(seconds):
+    from datetime import UTC, datetime, timedelta
+
+    return (datetime.now(UTC) + timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _advance_clock(monkeypatch, seconds):
+    from datetime import UTC, datetime, timedelta
+
+    import app.services.run_consents as module
+
+    class Later(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.now(tz or UTC) + timedelta(seconds=seconds)
+
+    monkeypatch.setattr(module, "datetime", Later)
+
+
+def test_an_expired_consent_is_no_longer_current(tmp_path, monkeypatch):
+    from app.tests.test_runs_api import graph_value
+
+    executor = Executor()
+    with owner_app(tmp_path, executor) as subject:
+        path = consent_path(subject)
+        graph_ref = graph_record(subject, graph_value())
+        # the expiry must lie ahead, within the wire's 366-day bound, and is part of the replay
+        for expires in (_stamp_in(-60), _stamp_in(367 * 24 * 3600), "tomorrow"):
+            refused = post(subject, consent_command(subject, graph_ref, schema_version="run-consent-command-v2",
+                                                    expires_at_utc=expires), path)
+            assert refused.status_code == 400, expires
+        assert post(subject, consent_command(subject, graph_ref, expires_at_utc=_stamp_in(3600)), path).status_code == 400
+        body = consent_command(subject, graph_ref, schema_version="run-consent-command-v2", expires_at_utc=_stamp_in(3600))
+        created = post(subject, body, path)
+        assert created.status_code == 201, created.text
+        consent = created.json()
+        assert consent["expires_at_utc"] == body["expires_at_utc"]
+        assert post(subject, {**body, "expires_at_utc": _stamp_in(7200)}, path).status_code == 409
+        # within its window it starts the run
+        run = run_command(subject, graph_ref, consent["ref"])
+        receipt = post(subject, run).json()
+        assert receipt["phase"] == "awaiting_human"
+        run_path = receipt["links"]["self"]
+        # past it, nothing further dispatches under it; cancel stays available
+        _advance_clock(monkeypatch, 7200)
+        for action in ("resume", "recover"):
+            refused = post(subject, {"command_id": str(uuid4())}, f"{run_path}/{action}")
+            assert refused.status_code == 403, action
+        assert post(subject, run).status_code == 403
+        assert executor.calls == ["intake", "writer"]
+        # the expired consent still reads back, with its expiry; it is only no longer current
+        read = subject.client.get(path + "/" + consent["consent_id"], headers=headers(subject.profile))
+        assert read.status_code == 200 and read.json()["expires_at_utc"] == body["expires_at_utc"]
+        assert post(subject, {"command_id": str(uuid4())}, run_path + "/cancel").status_code == 200
