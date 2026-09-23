@@ -179,8 +179,22 @@ def read_mountinfo():
             os.close(descriptor)
 
 
+def within(path, root):
+    """``path.is_relative_to(root)`` for pure paths, by their cached parts.
+
+    ``PurePath.is_relative_to`` walks ``parents``, building a path per ancestor;
+    the boundary checks below call it per mount pair on every source guard, which
+    alone exceeded the reconcile pass's one-second budget on a slower host.
+    """
+    prefix = root.parts
+    if not prefix:
+        return not path.is_absolute()
+    parts = path.parts
+    return len(parts) >= len(prefix) and parts[: len(prefix)] == prefix
+
+
 def containing(mounts, path):
-    matches = [m for m in mounts if path.is_relative_to(m.mountpoint)]
+    matches = [m for m in mounts if within(path, m.mountpoint)]
     if not matches:
         raise DeploymentSourceError()
     return max(matches, key=lambda m: len(m.mountpoint.parts))
@@ -203,7 +217,7 @@ def verify_boundaries(mounts, required, protected):
         if mount.mountpoint != path or mount.read_only is not read_only:
             raise DeploymentSourceError()
         if any(
-            m.mountpoint != path and m.mountpoint.is_relative_to(path) for m in mounts
+            m.mountpoint != path and within(m.mountpoint, path) for m in mounts
         ):
             raise DeploymentSourceError()
     for path in dict.fromkeys((*required, *protected)):
@@ -215,10 +229,10 @@ def verify_boundaries(mounts, required, protected):
             if other == path:
                 continue
             if (
-                other.is_relative_to(path)
-                or path.is_relative_to(other)
+                within(other, path)
+                or within(path, other)
                 or mount.device == other_mount.device
-                and (root.is_relative_to(other_root) or other_root.is_relative_to(root))
+                and (within(root, other_root) or within(other_root, root))
             ):
                 raise DeploymentSourceError()
     return tuple(sorted(observations.items(), key=lambda item: str(item[0])))

@@ -1,6 +1,7 @@
 """Transaction-local provider context, CAS, anchor and frozen inventory joins."""
 
 from base64 import urlsafe_b64decode
+from functools import cache
 from hashlib import sha256
 
 from ..domain.refs import EntityRef, canonical_json, parse_canonical
@@ -25,7 +26,9 @@ from .provider_source_contracts import (
 )
 
 
+@cache
 def _provider_schema_bytes():
+    # Immutable bytes of the code-owned generator; one deep copy per process.
     schemas = generate_port_schemas()
     return tuple(
         canonical_schema_bytes(schemas[("provider-port-v1", role)])

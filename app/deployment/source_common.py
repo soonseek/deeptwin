@@ -67,12 +67,12 @@ def _source_mount_observations(observed, required, protected_paths):
         left_path, left_mount, left_backing = left
         right_path, right_mount, right_backing = right
         return (
-            left_path.is_relative_to(right_path)
-            or right_path.is_relative_to(left_path)
+            m.within(left_path, right_path)
+            or m.within(right_path, left_path)
             or left_mount.device == right_mount.device
             and (
-                left_backing.is_relative_to(right_backing)
-                or right_backing.is_relative_to(left_backing)
+                m.within(left_backing, right_backing)
+                or m.within(right_backing, left_backing)
             )
         )
 
@@ -95,7 +95,7 @@ def _source_mount_observations(observed, required, protected_paths):
             )
             for item in observed
             if item.mountpoint != optional_root
-            and item.mountpoint.is_relative_to(optional_root)
+            and m.within(item.mountpoint, optional_root)
         )
     for index, (owner, candidate) in enumerate(optional_observations):
         if any(aliases(candidate, retained) for retained in protected_observations):

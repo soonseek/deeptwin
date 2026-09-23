@@ -18,6 +18,44 @@ from app.tests.test_provider_prepare_service import borrowed_service
 from app.tests.test_provider_publication import final_path
 
 
+class _SampledClock:
+    """One sampled monotonic value; every other ``time`` attribute stays real."""
+
+    def __init__(self):
+        self.sampled = time.monotonic()
+
+    def monotonic(self):
+        return self.sampled
+
+    def __getattr__(self, name):
+        return getattr(time, name)
+
+
+@pytest.fixture(autouse=True)
+def cooperative_clock(request, monkeypatch):
+    # These cases test publication history, not throughput: the reconcile pass's
+    # one-second cooperative budget is wall-clock, and a loaded host (or a slower
+    # one) exhausts it before the stage, so the case would test nothing. The same
+    # isolation the accepted amendment gave the legacy-history case, applied to
+    # the module, except the one real-clock case below.
+    if request.node.name == REAL_BUDGET_CASE:
+        return
+    from app.deployment import (
+        prepare_service,
+        provider_prepare_service,
+        provider_receipt_service,
+    )
+
+    clock = _SampledClock()
+    for module in (prepare_service, provider_prepare_service, provider_receipt_service):
+        monkeypatch.setattr(module, "time", clock)
+
+
+# The one case left on the real clock: an unloaded host publishes within the
+# budget. It is a host observation, not a portable throughput proof.
+REAL_BUDGET_CASE = "test_prepare_publishes_exact_retained_bytes_and_cancel_publishes_marker[2]"
+
+
 @pytest.mark.parametrize("capacity", [2, 16])
 def test_prepare_publishes_exact_retained_bytes_and_cancel_publishes_marker(
     tmp_path, monkeypatch, capacity
