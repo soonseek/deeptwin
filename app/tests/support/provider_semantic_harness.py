@@ -181,6 +181,7 @@ def owned_semantic_service(root, spec, side, *, deadline_ms=3_000):
     evidence.
     """
 
+    service = ProviderPortService()  # constructed before any connection, as a worker starts
     worker = listener.bind_worker_listener(
         root, spec, responder_boot_id="owned-worker"
     )
@@ -193,9 +194,7 @@ def owned_semantic_service(root, spec, side, *, deadline_ms=3_000):
                 worker, deadline=broker.Deadline.after_ms(deadline_ms)
             )
             box["owner"] = owned
-            ProviderPortService().serve_connection(
-                owned, deadline=owned.deadline
-            )
+            service.serve_connection(owned, deadline=owned.deadline)
         except BaseException as error:  # noqa: BLE001 - returned to test owner
             box["error"] = error
 

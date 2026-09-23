@@ -1516,11 +1516,14 @@ class ExtensionConnection:
         return self._closed
 
     def recheck(self) -> None:
-        if self._closed:
+        # snapshot: a concurrent close() clears the lease, which must read as closed
+        # (a closed-set integrity error), never as an attribute fault
+        generation, fence = self._generation, self._fence
+        if self._closed or generation is None or fence is None:
             raise ListenerIntegrityError()
         try:
-            self._fence.recheck_current()
-            record, _readiness, _socket = _verify_record(self._generation, self._root, self._spec)
+            fence.recheck_current()
+            record, _readiness, _socket = _verify_record(generation, self._root, self._spec)
             if record != self.record:
                 raise ListenerIntegrityError()
             _extension_mount_fence(self._root, read_only=self._read_only)
@@ -1616,6 +1619,8 @@ class ExtensionConnection:
                     )
                 try:
                     block = self._socket.recv(size - len(value))
+                except ConnectionResetError:
+                    block = b""  # the peer's close (ECONNRESET on Linux, EOF on macOS)
                 except (OSError, TimeoutError):
                     raise broker.TransportUncertain(
                         dispatch_effect="outcome_unknown"

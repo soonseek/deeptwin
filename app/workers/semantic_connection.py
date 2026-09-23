@@ -124,6 +124,8 @@ class _RawSemanticConnection:
                     )
                 try:
                     block = self._socket.recv(size - len(value))
+                except ConnectionResetError:
+                    block = b""  # the peer's close (ECONNRESET on Linux, EOF on macOS)
                 except (OSError, TimeoutError):
                     raise broker.TransportUncertain(
                         dispatch_effect="outcome_unknown"

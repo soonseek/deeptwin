@@ -839,6 +839,10 @@ def _read_exact(sock: socket.socket, size: int, deadline: Deadline) -> bytes:
             block = sock.recv(size - len(chunks))
         except DeadlineExceeded:
             raise
+        except ConnectionResetError:
+            # the peer closed with our bytes unread: Linux reports ECONNRESET where
+            # macOS reports EOF; both are the peer's close, the outcome still unknown
+            block = b""
         except (OSError, TimeoutError):
             read_failed = True
         if read_failed:

@@ -142,7 +142,9 @@ def test_provider_every_drift_poisons_and_releases(
     elif mutation == "credentials":
         monkeypatch.setattr(pm, "_credentials", lambda: (22001, 22002, 22001, 22001))
     elif mutation == "owner":
-        monkeypatch.setattr(pm, "_expected_owner", lambda: (0, 0))
+        # an owner that truly differs from the tree's actual owner, also when run as root
+        actual = provider_tree["worker"].stat()
+        monkeypatch.setattr(pm, "_expected_owner", lambda: (actual.st_uid + 1, actual.st_gid + 1))
     elif mutation == "mount":
         monkeypatch.setattr(pm, "_read_mountinfo", lambda: ())
     with pytest.raises(pm.ProviderMetadataError):

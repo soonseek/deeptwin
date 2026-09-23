@@ -13,6 +13,7 @@ from .artifact_stream import (ArtifactDescriptor, BytesSink, BytesSource, Stream
 from .artifact_stream_transport import ConnectionStreamTransport
 from .credential_channel import decode_op, encode_op
 from ..extensions.provider_semantic_contracts import (ProviderSemanticError,
+                                                       prewarm_port_validators,
                                                        validate_canonical_port_shape)
 from .provider_port_messages import ProviderObservation, ProviderProposal, request_digest, validate_request
 from .provider_semantic_codec import CatalogTraversal, advance_catalog, encode_text_body, normalize_text, parse_model_page
@@ -148,6 +149,11 @@ class _WorkerServiceStreamTransport:
 
 
 class ProviderPortService:
+    def __init__(self):
+        # the canonical validators are built at service construction (worker start),
+        # never inside the first dialogue's deadline
+        prewarm_port_validators()
+
     @staticmethod
     def _descriptors(values, request_id):
         if type(values) is not list or len(values) > 4:

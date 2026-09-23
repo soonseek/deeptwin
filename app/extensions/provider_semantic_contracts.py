@@ -198,6 +198,15 @@ def _port_validator(shape: str):
         format_checker=FormatChecker())
 
 
+def prewarm_port_validators() -> None:
+    """Build the three canonical validators once, outside any request deadline.
+
+    The first build generates and meta-validates all 44 port schemas, which takes
+    seconds; paid inside a dialogue it consumes that dialogue's whole deadline."""
+    for shape in ("config", "request", "result"):
+        _port_validator(shape)
+
+
 def validate_canonical_port_shape(shape: str, value: object) -> dict:
     _require(type(value) is dict)
     errors = list(_port_validator(shape).iter_errors(value))

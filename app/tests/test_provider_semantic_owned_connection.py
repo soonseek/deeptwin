@@ -81,6 +81,7 @@ def test_owned_capabilities_preserves_whole_connection(channel, monkeypatch):
         return root, spec
 
     monkeypatch.setattr(port_client, "extension_channel", resolve_slot)
+    service = ProviderPortService()  # built before any connection, as a worker starts
     worker = listener.bind_worker_listener(
         root, spec, responder_boot_id="owned-worker"
     )
@@ -93,7 +94,7 @@ def test_owned_capabilities_preserves_whole_connection(channel, monkeypatch):
                 worker, deadline=broker.Deadline.after_ms(3000)
             )
             box["owner"] = owned
-            ProviderPortService().serve_connection(owned, deadline=owned.deadline)
+            service.serve_connection(owned, deadline=owned.deadline)
         except BaseException as error:  # noqa: BLE001 - surfaced in test thread
             box["error"] = error
 
