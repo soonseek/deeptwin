@@ -108,11 +108,16 @@ def is_run_path(path: str) -> bool:
     parts = path[len(PATH) + 1:].split("/")
     return (len(parts) == 1 or (len(parts) == 2 and parts[1] in {"resume", "cancel", "recover"})
             or _artifact_parts(parts) is not None or _draft_parts(parts) is not None
-            or _is_file_upload(parts))
+            or _is_file_upload(parts) or _is_difference(parts))
 
 
 def _is_file_upload(parts) -> bool:
     return len(parts) == 4 and parts[1] == "artifacts" and parts[3] == "alternative-files"
+
+
+def _is_difference(parts) -> bool:
+    return (len(parts) == 6 and parts[1] == "artifacts" and parts[3] == "alternatives"
+            and parts[5] == "difference")
 
 
 def _draft_parts(parts):
@@ -184,6 +189,15 @@ def preflight(scope, body, content_type):
             return {"schema_version": COMMAND_SCHEMA, **value}
         parts = path[len(PATH) + 1:].split("/")
         run_id = uuid_string(parts[0])
+        if _is_difference(parts):
+            uuid_string(parts[2])
+            uuid_string(parts[4])
+            # observing carries no content: the alternative is named by its path (a browser
+            # command may send the empty JSON object)
+            if method not in {"GET", "HEAD", "POST"} or body not in (b"", b"{}") \
+                    or (method != "POST" and body):
+                raise RunRouteError()
+            return None
         if _is_file_upload(parts):
             uuid_string(parts[2])
             if method != "POST" or content_type.split(";", 1)[0] != "application/json":
@@ -288,6 +302,18 @@ def create_router(*, runs, base_path, artifacts=None, drafts=None):
             return JSONResponse(value, status_code=status)
         except (RunRouteError, RunServiceError, RunArtifactError, DraftError) as error:
             return artifact_error(error)
+
+    @router.api_route(PATH + "/{run_id}/artifacts/{artifact_id}/alternatives/{alternative_id}/difference",
+                      methods=["GET", "HEAD"])
+    async def difference_read(request: Request, run_id: str, artifact_id: str, alternative_id: str):
+        return await draft_call(drafts.read_difference if drafts else None,
+                                request.state.authenticated_request, run_id, artifact_id, alternative_id)
+
+    @router.post(PATH + "/{run_id}/artifacts/{artifact_id}/alternatives/{alternative_id}/difference")
+    async def difference_observe(request: Request, run_id: str, artifact_id: str, alternative_id: str):
+        return await draft_call(drafts.observe_difference if drafts else None,
+                                request.state.authenticated_request, run_id, artifact_id, alternative_id,
+                                status=201)
 
     @router.post(PATH + "/{run_id}/artifacts/{artifact_id}/alternative-files")
     async def alternative_file(request: Request, run_id: str, artifact_id: str):

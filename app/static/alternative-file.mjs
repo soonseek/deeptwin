@@ -110,7 +110,7 @@ const FIELDS = Object.freeze({
   time_range: [['start', '시작 (초)'], ['end', '끝 (초)']],
 });
 
-export function createAlternativeFileForm({ root, document, request, basePath = '/', crypto } = {}) {
+export function createAlternativeFileForm({ root, document, request, basePath = '/', crypto, onFrozen } = {}) {
   if (typeof root?.replaceChildren !== 'function') fail('a root is required');
   if (typeof request !== 'function') fail('a request adapter is required');
   if (typeof crypto?.randomUUID !== 'function') fail('a crypto with randomUUID is required');
@@ -199,6 +199,9 @@ export function createAlternativeFileForm({ root, document, request, basePath = 
       const scope = frozen.coverage === 'whole' ? '원본 전체에 대한 내 버전으로 기록했습니다.'
         : `지정한 ${frozen.selectors.length}곳을 내 근거로 기록했습니다. 나머지는 검토하지 않은 영역입니다.`;
       say(`${scope} 정렬은 미정으로 남았습니다.`, 'frozen');
+      if (typeof onFrozen === 'function') {
+        Promise.resolve(onFrozen(target.runId, target.artifactId, frozen.alternative_ref.id)).catch(() => {});
+      }
       return frozen;
     } catch (error) {
       const code = Object.hasOwn(ERROR_MESSAGES, error?.code) ? error.code : 'unavailable';

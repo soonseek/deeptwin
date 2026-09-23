@@ -69,7 +69,7 @@ export function isEditable(mediaType) {
   return EDITABLE_MEDIA.includes(mediaType);
 }
 
-export function createAlternativeEditor({ root, document, request, basePath = '/', crypto, schedule } = {}) {
+export function createAlternativeEditor({ root, document, request, basePath = '/', crypto, schedule, onFrozen } = {}) {
   if (typeof root?.replaceChildren !== 'function') fail('a root is required');
   if (typeof request !== 'function') fail('a request adapter is required');
   if (typeof crypto?.randomUUID !== 'function') fail('a crypto with randomUUID is required');
@@ -303,6 +303,9 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
       result.replaceChildren(element('p', `${MESSAGES.frozen} (수정본 ${draft.revision})`),
         element('p', scope), element('p', '영향 범위는 따로 조사합니다.'));
       say(MESSAGES.frozen, 'frozen');
+      if (typeof onFrozen === 'function') {
+        Promise.resolve(onFrozen(target.runId, target.artifactId, frozen.alternative_ref.id)).catch(() => {});
+      }
       return frozen;
     } catch (error) {
       if (error?.code === 'invalid_input') say(MESSAGES.unchanged, 'invalid_input'); else refusal(error);

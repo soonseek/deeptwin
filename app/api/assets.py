@@ -33,6 +33,7 @@ MODULES = MappingProxyType({
     "artifacts.mjs": JAVASCRIPT,
     "alternatives.mjs": JAVASCRIPT,
     "alternative-file.mjs": JAVASCRIPT,
+    "inquiry.mjs": JAVASCRIPT,
     "work-export.mjs": JAVASCRIPT,
     "observe.mjs": JAVASCRIPT,
     "observe.html": "text/html",

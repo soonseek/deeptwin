@@ -486,6 +486,135 @@ class PersistentAlternativeDrafts:
                 "identical": observed.identical, "observations": list(observed.observations),
                 "uncertainties": list(observed.uncertainties)}
 
+    # --- the episode after a freeze: what differs, and what is not yet known --------
+
+    def _episode_status(self):
+        from .diagnosis import HYPOTHESIS_FAMILIES
+
+        return {
+            "hypotheses": {"state": "not_generated", "families": sorted(HYPOTHESIS_FAMILIES),
+                           "reason": "경쟁 설명(시스템 결손·전문가 판단·예외·대안 오류·일반화 불가)을 만드는 "
+                                     "생성기가 이 서버에 연결되어 있지 않다. 어느 설명도 확인되지 않았다."},
+            "inquiry": {"state": "not_opened",
+                        "reason": "확인된 판단 가설과 서로 갈리는 설명이 있을 때만 질문·반대 예측을 먼저 "
+                                  "고정한다. 지금은 그 전제가 없어 질문하지 않는다."},
+            "change_candidates": {"state": "none",
+                                  "reason": "실제 증거로 뒷받침된 설명이 없어 변경 후보를 만들지 않았다."},
+        }
+
+    def _alternative_record(self, db, roots, alternative_id):
+        row = db.execute("SELECT sha256 FROM domain_records WHERE vault_id=? AND kind='own_alternative' "
+                         "AND id=? AND version=1", (roots.genesis.id, alternative_id)).fetchone()
+        if row is None:
+            return None
+        return self._domain._load(db, EntityRef("own_alternative", alternative_id, 1, row["sha256"]), roots)[0]
+
+    def _alternative_bytes(self, db, roots, ref):
+        record = self._domain._load(db, ref, roots)[0]
+        content = record.body["content"]
+        bound = content.get("alternative_draft") or content.get("alternative_file")
+        if bound is None:
+            raise DraftError("unavailable")
+        blob = BlobRef.from_dict(content["blob"])
+        return blob, bound["sha256"]
+
+    def _difference_id(self, alternative_id):
+        return str(uuid5(NAMESPACE_URL, f"deeptwin:difference:{alternative_id}"))
+
+    def _difference_view(self, record, alternative_id):
+        content = record.body["content"]
+        return {"difference_ref": record.ref.as_dict(), "alternative_id": alternative_id,
+                "observations": content["observations"], "uncertainties": content["uncertainties"],
+                "evidence_scope": content["evidence_scope"], "unreviewed_scope": content["unreviewed_scope"],
+                "impact_scope": "pending_investigation", **self._episode_status()}
+
+    @_closed
+    def read_difference(self, request, run_id, artifact_id, alternative_id, *, base_path) -> dict:
+        if request is None:
+            raise DraftError("unauthenticated")
+        self._owner.authenticate_bound(request.session)
+        run_id, artifact_id, alternative_id = _uuid(run_id), _uuid(artifact_id), _uuid(alternative_id)
+        with self._domain._connection() as db:
+            roots = self._domain._read_roots(db)
+            alternative = self._alternative_record(db, roots, alternative_id)
+            if alternative is None or (alternative.body["content"]["run_id"],
+                                       alternative.body["content"]["original_artifact_id"]) != (run_id, artifact_id):
+                raise DraftError("not_found")
+            difference_id = self._difference_id(alternative_id)
+            row = db.execute("SELECT sha256 FROM domain_records WHERE vault_id=? AND kind='difference' "
+                             "AND id=? AND version=1", (roots.genesis.id, difference_id)).fetchone()
+            if row is None:
+                raise DraftError("not_found")
+            record = self._domain._load(db, EntityRef("difference", difference_id, 1, row["sha256"]), roots)[0]
+        return self._difference_view(record, alternative_id)
+
+    @_closed
+    def observe_difference(self, request, run_id, artifact_id, alternative_id, *, base_path) -> dict:
+        """Observe and seal what differs between the original and one frozen alternative."""
+
+        from .diagnosis import DiagnosisError, record_difference
+        from .difference_observer import DifferenceObservationError, observe_differences
+
+        _authenticate_owner(self._owner, request)
+        run_id, artifact_id, alternative_id = _uuid(run_id), _uuid(artifact_id), _uuid(alternative_id)
+        _run, items = self._artifacts._catalog(run_id, base_path=base_path)
+        item = self._artifacts._find(items, artifact_id)
+        original = self._artifacts._bytes(item)
+        if original is None:
+            raise DraftError("unavailable")
+        with self._domain._connection() as db:
+            roots = self._domain._read_roots(db)
+            stored = self._alternative_record(db, roots, alternative_id)
+            if stored is None:
+                raise DraftError("not_found")
+            content = stored.body["content"]
+            if (content["run_id"], content["original_artifact_id"]) != (run_id, artifact_id):
+                raise DraftError("not_found")
+            alternative_ref = EntityRef.from_dict(content["alternative_artifact_ref"])
+            blob, digest = self._alternative_bytes(db, roots, alternative_ref)
+        data = self._domain.read_blob(blob, purpose=blob.purpose)
+        if sha256(data).hexdigest() != digest:
+            raise DraftError("unavailable")
+        # the accepted alternative is re-issued from the store's own record, never from the wire
+        boundary = _Original.from_untrusted({
+            "boundary_id": content["original_boundary_id"],
+            "work_revision_ref": content["boundary_work_revision_ref"],
+            "environment_ref": content["boundary_environment_ref"],
+            "input_refs": [], "output_refs": [content["original_artifact_ref"]], "handoff_refs": [],
+            "tool_refs": [], "model_binding_refs": [], "observation_gaps": content["observation_gaps"],
+        })
+        accepted = accept_own_alternative(boundary, {
+            "author_id": content["author_id"], "created_at": content["created_at"],
+            "submission_kind": "user_artifact", "original_artifact": content["original_artifact_ref"],
+            "alternative_artifact": content["alternative_artifact_ref"], "coverage": content["coverage"],
+            "selectors": content["selectors"], "optional_explanation": None, "synthetic": False,
+        })
+        if accepted.as_dict() != {key: content[key] for key in accepted.as_dict()}:
+            raise DraftError("unavailable")  # the stored alternative no longer reads back exactly
+        try:
+            observed = observe_differences(original, data, media_type=item["media_type"])
+            difference = record_difference(accepted, list(observed.observations),
+                                           uncertainties=list(observed.uncertainties))
+        except (DifferenceObservationError, DiagnosisError):
+            raise DraftError("invalid_input") from None
+        difference_id = self._difference_id(alternative_id)
+        with _writer(), self._domain._connection(write=True) as db:
+            actor = _authenticate_owner(self._owner, request, db)
+            roots = self._domain._read_roots(db)
+            actor_ref = _owner_actor_ref(db, actor)
+            row = db.execute("SELECT sha256 FROM domain_records WHERE vault_id=? AND kind='difference' "
+                             "AND id=? AND version=1", (roots.genesis.id, difference_id)).fetchone()
+            if row is not None:
+                record = self._domain._load(db, EntityRef("difference", difference_id, 1, row["sha256"]), roots)[0]
+            else:
+                record = ImmutableRecord.create(
+                    kind="difference", id=difference_id, version=1, created_at_utc=_stamp(),
+                    actor_ref=actor_ref, parent_refs=(stored.ref,), purpose="operational",
+                    access_policy_ref=roots.access_policy, retention_policy_ref=roots.retention_policy,
+                    content={**difference.as_dict(), "own_alternative_ref": stored.ref.as_dict()})
+                self._domain._put_in_transaction(db, record)
+        return self._difference_view(record, alternative_id)
+
     # --- the explicit freeze --------------------------------------------------------
 
     def _frozen_ids(self, db, roots, draft_ids):

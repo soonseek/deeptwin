@@ -11,12 +11,14 @@
 import { createAlternativeFileForm } from './alternative-file.mjs';
 import { createAlternativeEditor } from './alternatives.mjs';
 import { createArtifactViewer } from './artifacts.mjs';
+import { createInquiryPanel } from './inquiry.mjs';
 import { createRunList } from './run-list.mjs';
 import { createRunPanel } from './run-panel.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
 
 export const ALTERNATIVE_MOUNT_ID = 'run-alternative';
 export const ALTERNATIVE_FILE_MOUNT_ID = 'run-alternative-file';
+export const INQUIRY_MOUNT_ID = 'run-inquiry';
 export const MOUNT_IDS = Object.freeze({
   session: 'session-status', source: 'run-source', panel: 'run-panel', artifacts: 'run-artifacts',
 });
@@ -69,14 +71,20 @@ export async function boot({ document, location, fetch, crypto } = {}) {
   roots.session.dataset.state = 'authenticated';
   roots.session.textContent = SESSION_MESSAGES.authenticated;
   const panel = createRunPanel({ root: roots.panel, document, basePath, request: session.request, commandId });
-  // the owner's in-place editor mounts only where the page offers its surface (T052)
+  // the owner's in-place editor, the alternative-file form and the observed difference
+  // mount only where the page offers their surfaces (T052/T053/T060)
+  const inquiryRoot = document.getElementById(INQUIRY_MOUNT_ID);
+  const inquiry = inquiryRoot !== null && typeof inquiryRoot?.replaceChildren === 'function'
+    ? createInquiryPanel({ root: inquiryRoot, document, basePath, request: session.request })
+    : null;
+  const onFrozen = inquiry === null ? undefined : (runId, artifactId, alternativeId) => inquiry.show(runId, artifactId, alternativeId);
   const alternativeRoot = document.getElementById(ALTERNATIVE_MOUNT_ID);
   const editor = alternativeRoot !== null && typeof alternativeRoot?.replaceChildren === 'function'
-    ? createAlternativeEditor({ root: alternativeRoot, document, basePath, request: session.request, crypto })
+    ? createAlternativeEditor({ root: alternativeRoot, document, basePath, request: session.request, crypto, onFrozen })
     : null;
   const fileRoot = document.getElementById(ALTERNATIVE_FILE_MOUNT_ID);
   const fileForm = fileRoot !== null && typeof fileRoot?.replaceChildren === 'function'
-    ? createAlternativeFileForm({ root: fileRoot, document, basePath, request: session.request, crypto })
+    ? createAlternativeFileForm({ root: fileRoot, document, basePath, request: session.request, crypto, onFrozen })
     : null;
   const artifacts = createArtifactViewer({ root: roots.artifacts, document, basePath, request: session.request,
     onEdit: editor === null ? undefined : (runId, item) => editor.open(runId, item),

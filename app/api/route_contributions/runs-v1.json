@@ -145,6 +145,25 @@
       "path": "/api/v1/runs/{run_id}/artifacts/{artifact_id}/drafts/{draft_id}/differences",
       "auth_policy": "browser_session",
       "required_scope": "work.read"
+    },
+    {
+      "route_id": "runs.alternative_difference",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "path": "/api/v1/runs/{run_id}/artifacts/{artifact_id}/alternatives/{alternative_id}/difference",
+      "auth_policy": "browser_session",
+      "required_scope": "work.read"
+    },
+    {
+      "route_id": "runs.alternative_difference_observe",
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/v1/runs/{run_id}/artifacts/{artifact_id}/alternatives/{alternative_id}/difference",
+      "auth_policy": "browser_session",
+      "required_scope": "work.command"
     }
   ]
 }

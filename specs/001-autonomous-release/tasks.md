@@ -556,6 +556,10 @@ eligible lens questions frozen before new evidence → typed candidate or justif
 - [x] T058 [US5] Implement active conditional knowledge registry, authority/scope/time/conflict/revalidation and prompt-derived compilation in app/runtime/memory.py and app/services/knowledge.py; ordinary authorized workflow changes remain possible (FR-021/032).
 - [x] T059 [US5] Run cross-purpose retrieval/prompt/derived-input adversarial tests including hidden heldout and sensitive personal-profile rejection in app/tests/test_growth_firewall.py (G-05, OPS-AC09).
 - [ ] T060 [US5] Connect observation/competing evidence/new questions/change candidates and audit details in app/static/inquiry.mjs, app/api/routes.py and app/tests/browser-inquiry.test.mjs; no forced philosophy quiz or fabricated human answer (UX-AC05/07).
+  2026-09-23 slice: the observed difference is sealed per frozen alternative and shown with
+  hypotheses `not_generated`, inquiry `not_opened`, no change candidate and no input control
+  (real-browser case); real hypothesis/inquiry/candidate display waits on a connected generator —
+  evidence/inquiry-observation-t060-2026-09-23.md.
 
 ## Phase 8: US6 — Previous queues, product plateau and human promotion (P1)
 

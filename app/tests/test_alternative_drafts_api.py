@@ -14,6 +14,7 @@ from app.domain.refs import EntityRef
 from app.services.run_artifacts import artifact_identity
 from app.tests.test_run_artifacts_api import get, started
 from app.tests.test_runs_api import Executor, owner_app, post
+from app.tests.test_web_owner_integration import headers
 
 SAVE = "alternative-draft-save-v1"
 FREEZE = "alternative-freeze-v1"
@@ -232,3 +233,33 @@ def test_the_framework_observes_what_the_draft_changed(tmp_path):
         assert [item["locator"]["operation"] for item in value["observations"]] == ["replace"]
         assert value["observations"][0]["locator"]["alignment"] == "proposed"
         assert get(subject, drafts_path(run_id, artifact_id) + f"/{uuid4()}/differences").status_code == 404
+
+
+def test_a_frozen_alternative_yields_an_observed_difference_and_no_invented_explanation(tmp_path):
+    executor = Executor()
+    with owner_app(tmp_path, executor) as subject:
+        run_id, ref = started(subject, executor, [("report", "text/plain", TEXT)])
+        artifact_id = artifact_identity(ref, 0)
+        draft = save(subject, run_id, artifact_id, format="text",
+                     text="첫 줄\n고친 둘째 줄\n셋째 줄\n").json()
+        frozen = freeze(subject, run_id, artifact_id, draft["draft_id"], 1).json()
+        alternative_id = frozen["alternative_ref"]["id"]
+        path = subject.path + f"/{run_id}/artifacts/{artifact_id}/alternatives/{alternative_id}/difference"
+        assert subject.client.get(path, headers=headers(subject.profile)).status_code == 404  # not observed yet
+        observed = post(subject, {}, path)
+        assert observed.status_code == 201, observed.text
+        value = observed.json()
+        assert [item["kind"] for item in value["observations"]] == ["text_change"]
+        assert value["impact_scope"] == "pending_investigation"
+        assert value["hypotheses"]["state"] == "not_generated"
+        assert "expert_judgment" in value["hypotheses"]["families"]
+        assert value["inquiry"]["state"] == "not_opened"
+        assert value["change_candidates"]["state"] == "none"
+        record = subject.domain.get(EntityRef.from_dict(value["difference_ref"]))
+        assert record.body["content"]["schema_version"] == "difference-v1"
+        assert record.body["content"]["own_alternative_ref"] == frozen["alternative_ref"]
+        again = post(subject, {}, path)
+        assert again.json()["difference_ref"] == value["difference_ref"]  # one difference per alternative
+        assert subject.client.get(path, headers=headers(subject.profile)).json() == value
+        other = subject.path + f"/{run_id}/artifacts/{artifact_id}/alternatives/{uuid4()}/difference"
+        assert post(subject, {}, other).status_code == 404
