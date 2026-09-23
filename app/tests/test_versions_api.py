@@ -172,8 +172,8 @@ def test_paired_rounds_read_back_exactly_with_honest_validity(tmp_path):
 
 
 def test_a_round_that_does_not_read_back_is_listed_unreadable(tmp_path):
-    from app.services.growth_store import resume_comparison_round_record
     from app.domain.refs import EntityRef
+    from app.services.growth_store import resume_comparison_round_record
 
     with owner_app(tmp_path) as subject:
         domain = subject.domain

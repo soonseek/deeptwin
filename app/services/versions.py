@@ -25,8 +25,8 @@ from .growth_store import (
     RECORD_KIND,
     GrowthStoreError,
     persist_promotion_state,
-    resume_loop,
     resume_comparison_round_record,
+    resume_loop,
     resume_promotion_state,
     resume_validation_report,
 )
