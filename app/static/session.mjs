@@ -192,5 +192,15 @@ export function createSupportedSession({ fetch, basePath = '/' } = {}) {
     snapshot() {
       return Object.freeze({ established: token !== null, basePath });
     },
+    // the account panel's session commands (password change, revoke-others) carry the same
+    // CSRF value; a password change rotates the session, and its answer's value is adopted
+    csrfToken() {
+      if (token === null) fail('브라우저 세션이 아직 없습니다.', 'unauthenticated');
+      return token;
+    },
+    adopt(next) {
+      if (typeof next !== 'string' || next.length < 16 || next.length > 256) fail('the rotated CSRF value is malformed', 'unavailable');
+      token = next;
+    },
   });
 }

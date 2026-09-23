@@ -72,6 +72,32 @@ def create_session_router(authority):
         value = authority.session_view(request.state.authenticated_request, token_b64u=token)
         return Response() if request.method == "HEAD" else JSONResponse(value)
 
+    @router.post("/session/password")
+    async def password(request: Request):
+        value = request.state.owner_payload
+        try:
+            token = authority.token_from_cookie(request.state.owner_cookie)
+            exchange = await run_in_threadpool(
+                authority.change_password, request.state.authenticated_request,
+                current_password=value["current_password"], new_password=value["new_password"],
+                source_key=request.state.owner_source, token_b64u=token)
+            response = JSONResponse({"state": "authenticated", "csrf_token": exchange.csrf_token})
+            cookie(response, exchange.token_b64u)  # the session rotates with the password
+            return response
+        except OwnerAuthError as error:
+            return auth_error(error)
+        finally:
+            value.clear()
+
+    @router.post("/session/revoke-others")
+    async def revoke_others(request: Request):
+        try:
+            token = authority.token_from_cookie(request.state.owner_cookie)
+            return JSONResponse(await run_in_threadpool(
+                authority.revoke_others, request.state.authenticated_request, token_b64u=token))
+        except OwnerAuthError as error:
+            return auth_error(error)
+
     @router.post("/session/logout")
     async def logout(request: Request):
         try:

@@ -398,7 +398,7 @@ understanding; failure/restart preserves input. Fixture and live proofs remain s
   distinguish microphone capture in the current browser from transcription in the instance-owned
   worker rather than claiming both happen on “이 컴퓨터” (UX-AC09, API §2).
 - [ ] T025 [US1] Implement web first-owner/auth/deployment-authority foundations in
-  (2026-09-18: the instance's first screen landed — `app/static/start.html`/`start.mjs` at the supported `/`, the setup form on an ownerless instance and the login form otherwise, decided by the public setup state on `/health`; evidence/first-screen-setup-login-t025.md. Password change, the offline bootstrap page's vectors, the intake screen's §5.1.4 guidance and the browser case stay open.)
+  (2026-09-18: the instance's first screen landed — `app/static/start.html`/`start.mjs` at the supported `/`, the setup form on an ownerless instance and the login form otherwise, decided by the public setup state on `/health`; evidence/first-screen-setup-login-t025.md. The offline bootstrap page's vectors, the intake screen's §5.1.4 guidance and the browser case stay open (2026-09-23: password change and revoke-others landed — `POST session/password` rotates the session and ends every session on the old password, `POST session/revoke-others`, account panel on the records page; evidence/password-change-t025-2026-09-23.md).)
   app/operations/setup.py, app/services/deployment_control.py,
   app/operations/deployment_control.py, app/services/service_clients.py,
   app/services/service_client_auth.py, app/api/service_clients.py, app/api/session.py,

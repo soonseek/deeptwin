@@ -338,6 +338,103 @@ class PersistentOwnerAuthority:
             if remaining > 0:
                 time.sleep(remaining)
 
+    @_closed_errors
+    def change_password(self, request, *, current_password, new_password, source_key, token_b64u):
+        """Replace the owner's password; every session on the old one ends, this browser rotates.
+
+        The new authenticator is the next revision; the account's auth epoch advances in the
+        same writer, so every existing session — this one included — stops authenticating,
+        and this browser receives a fresh session on the new authenticator. A lost response
+        leaves the new password in force: the owner logs in with it (api.md: rotation after
+        password change). The current password is re-verified; nothing else changes here.
+        """
+
+        validate_credentials("owner", current_password)
+        validate_credentials("owner", new_password, choosing=True)
+        if current_password == new_password:
+            raise OwnerAuthError("invalid_input")
+        if type(request) is not AuthenticatedRequest or request.csrf_verified is not True:
+            raise OwnerAuthError("unauthenticated")
+        actor = self.authenticate_bound(request.session)
+        with self._domain._connection() as db:
+            self._check(db)
+            account = db.execute("SELECT * FROM owner_auth_accounts WHERE owner_id=?", (actor.id,)).fetchone()
+            authenticator = None if account is None else db.execute(
+                "SELECT * FROM owner_auth_authenticators WHERE owner_id=? ORDER BY revision DESC LIMIT 1",
+                (actor.id,)).fetchone()
+        if account is None or authenticator is None:
+            raise OwnerAuthError("unauthenticated")
+        account, authenticator = dict(account), dict(authenticator)
+        reservation = self._admit(source_key, account["owner_id"])
+        try:
+            def verify_then_hash():
+                # one lane reservation covers one native operation: verification and the new
+                # hash run as that single operation, the hash only after a correct password
+                if not self._verify_password(authenticator["encoded_hash"], current_password):
+                    return None
+                return self._hash(new_password)
+
+            encoded = reservation.run(verify_then_hash)
+            if encoded is None:
+                raise OwnerAuthError("credentials")
+            with _writer(), self._domain._connection(write=True) as db:
+                _, _, current = self._check(db)
+                now = self._now(db, write=True)
+                self.authenticate_bound(request.session, db=db)
+                row = self._session_by_token(db, token_b64u, now)
+                latest = db.execute("SELECT * FROM owner_auth_authenticators WHERE owner_id=? "
+                                    "ORDER BY revision DESC LIMIT 1", (account["owner_id"],)).fetchone()
+                if (current is None or dict(current) != account or latest is None
+                        or dict(latest) != authenticator or row["session_id"] != request.session.session_id):
+                    raise OwnerAuthError("conflict")  # another change or login moved the state first
+                successor = storage.insert(db, "authenticators", {
+                    "owner_id": account["owner_id"], "revision": authenticator["revision"] + 1,
+                    "previous_revision": authenticator["revision"], "kind": "password", "profile": PROFILE,
+                    "encoded_hash": encoded, "created_at": now, "revoked_at": None})
+                storage.update(db, "accounts", current, {"auth_epoch": account["auth_epoch"] + 1,
+                                                         "updated_at": max(now, account["updated_at"])},
+                               identity="owner_id")
+                refreshed = db.execute("SELECT * FROM owner_auth_accounts WHERE owner_id=?",
+                                       (account["owner_id"],)).fetchone()
+                self._event(db, refreshed, "session.revoked", now)
+                token, fresh = self._new_session(db, refreshed, successor, now)
+                self._event(db, refreshed, "session.created", now)
+                storage.audit(db, "login", fresh["session_id"], now)
+            with self._identity_lock:
+                self._identities.clear()  # every earlier session identity is void
+            return BootstrapExchange(self._publish(fresh), self._root.derive_csrf(token), token)
+        except AdmissionRejected:
+            raise OwnerAuthError("capacity") from None
+        finally:
+            reservation.close()
+            current_password = new_password = None
+
+    @_closed_errors
+    def revoke_others(self, request, *, token_b64u):
+        """End every other session of the owner; this browser's session stays."""
+
+        if type(request) is not AuthenticatedRequest or request.csrf_verified is not True:
+            raise OwnerAuthError("unauthenticated")
+        with _writer(), self._domain._connection(write=True) as db:
+            self._check(db)
+            now = self._now(db, write=True)
+            actor = self.authenticate_bound(request.session, db=db)
+            row = self._session_by_token(db, token_b64u, now)
+            if row["session_id"] != request.session.session_id:
+                raise OwnerAuthError("unauthenticated")
+            others = [dict(item) for item in db.execute(
+                "SELECT * FROM owner_auth_sessions WHERE owner_id=? AND session_id<>? AND revoked_at IS NULL",
+                (actor.id, row["session_id"]))]
+            for other in others:
+                storage.update(db, "sessions", other, {"revoked_at": now}, identity="session_id")
+            if others:
+                account = db.execute("SELECT * FROM owner_auth_accounts WHERE owner_id=?", (actor.id,)).fetchone()
+                self._event(db, account, "session.revoked", now)
+        with self._identity_lock:
+            for other in others:
+                self._identities.pop(other["session_id"], None)
+        return {"state": "revoked_others", "revoked": len(others)}
+
     def token_from_cookie(self, cookie_header):
         if type(cookie_header) is not str or len(cookie_header) > 8192:
             raise OwnerAuthError("unauthenticated")

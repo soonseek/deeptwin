@@ -8,6 +8,7 @@
 // claimed where no backup worker is connected, and nothing is deleted
 // automatically. All server text reaches the DOM through textContent only.
 
+import { createAccountPanel } from './account.mjs';
 import { recordsRoutes } from './records.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
 
@@ -16,6 +17,7 @@ export const MOUNT_IDS = Object.freeze({
   backup: 'records-backup', retention: 'records-retention',
 });
 export const PAGE_SIZE = '50';
+export const ACCOUNT_MOUNT_ID = 'records-account';
 
 export const STATUS_LABELS = Object.freeze({
   succeeded: '성공', failed: '실패', cancelled: '취소', pending: '대기', unknown: '결과 미상',
@@ -135,9 +137,12 @@ export async function boot({ document, location, fetch } = {}) {
   }
   roots.session.dataset.state = 'authenticated';
   roots.session.textContent = '브라우저 세션이 연결되어 있습니다.';
+  const accountRoot = document.getElementById(ACCOUNT_MOUNT_ID);
+  const account = accountRoot !== null && typeof accountRoot?.replaceChildren === 'function'
+    ? createAccountPanel({ root: accountRoot, document, fetch, basePath, session }) : null;
   const log = createEventLog({ root: roots.logs, document, request: session.request, basePath });
   await log.load().catch(() => {});
-  return Object.freeze({ established: true, basePath, sections, log });
+  return Object.freeze({ established: true, basePath, sections, log, account });
 }
 
 if (typeof globalThis.document === 'object' && globalThis.document !== null

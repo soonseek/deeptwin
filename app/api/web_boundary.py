@@ -138,6 +138,8 @@ class WebBoundary:
             session_route = path == "/session" or path.startswith("/session/")
             establishment = path in {"/session/bootstrap", "/session/login"} and method == "POST"
             logout = path == "/session/logout" and method == "POST"
+            password_change = path == "/session/password" and method == "POST"
+            revoke_others = path == "/session/revoke-others" and method == "POST"
             if method not in {"GET", "HEAD"} and (fields.get("origin") != profile.http_origin
                                                    or fields.get("sec-fetch-site") != "same-origin"):
                 raise OwnerAuthError("access_denied")
@@ -238,6 +240,17 @@ class WebBoundary:
                     body += chunk
                     if not message.get("more_body", False):
                         break
+            if password_change:
+                if fields.get("content-type", "").split(";", 1)[0] != "application/json":
+                    raise OwnerAuthError("invalid_input")
+                data = parse_json_object(body, required=("current_password", "new_password"),
+                                         field_types={"current_password": str, "new_password": str},
+                                         limits=WireLimits(max_bytes=8192, max_string_bytes=1024))
+                validate_credentials("owner", data["current_password"])
+                validate_credentials("owner", data["new_password"], choosing=True)
+                state["owner_payload"] = data
+            if revoke_others and body not in (b"", b"{}"):
+                raise OwnerAuthError("invalid_input")
             if establishment or logout:
                 if fields.get("content-type", "").split(";", 1)[0] != "application/json":
                     raise OwnerAuthError("invalid_input")
