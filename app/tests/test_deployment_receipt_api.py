@@ -16,6 +16,7 @@ from app.tests.deployment_receipt_import_fixture import (
     http_signed_case,
 )
 from app.tests.deployment_receipt_session_fixture import OwnedReceiptSession
+from app.tests.support.inode_pins import pinned_fds
 from app.tests.test_deployment_prepare_api import prepare_payload
 from app.tests.test_deployment_prepare_contracts import matching_bundle
 from app.tests.test_web_owner_integration import bootstrap_client, configured, headers
@@ -723,14 +724,14 @@ def test_actual_receipt_session_transport_and_generic_failure_do_not_import(
     ],
 )
 def test_actual_five_source_ownership_survives_failures(tmp_path, monkeypatch, fault):
-    from dataclasses import replace
     import os
+    from dataclasses import replace
 
     from app.api import deployment_prepare, first_party_catalog, session_routes
     from app.api.first_party import ContributionServices
     from app.api.router_composition import RouteCompositionError
 
-    caller_fds = len(os.listdir('/dev/fd')) - 1
+    caller_fds = len(os.listdir('/dev/fd')) - 1 - len(pinned_fds())
     profile, _, arguments = configured(tmp_path)
     physical, values = http_sources(tmp_path, monkeypatch, profile)
     opened, closed, contexts, errors = [], [], [], []
@@ -884,7 +885,7 @@ def test_actual_five_source_ownership_survives_failures(tmp_path, monkeypatch, f
             assert errors == [failure], (
                 "Secondary close failure replaced original construction error"
             )
-    assert len(os.listdir('/dev/fd')) - 1 == caller_fds
+    assert len(os.listdir('/dev/fd')) - 1 - len(pinned_fds()) == caller_fds
 
 
 def test_exact_import_replay_uses_no_clock_live_sources_or_flush(tmp_path, monkeypatch):

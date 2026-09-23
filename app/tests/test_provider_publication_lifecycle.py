@@ -9,6 +9,7 @@ import pytest
 from app.deployment import contracts as c
 from app.deployment import files as f
 from app.deployment import publication as p
+from app.tests.support.inode_pins import pinned_fds
 from app.tests.test_provider_publication import (
     digest_of,
     final_path,
@@ -464,7 +465,7 @@ def test_borrowed_context_self_cleanup_remains_authoritative_on_its_guard_interr
 def test_measured_persistent_and_transient_fd_peaks(
     pub_tree, monkeypatch, protected_count
 ):
-    caller_baseline = len(os.listdir("/dev/fd")) - 1
+    caller_baseline = len(os.listdir("/dev/fd")) - 1 - len(pinned_fds())
     roots = tuple(Path(f"/protected/p{number}") for number in range(protected_count))
     for path in roots:
         pub_tree.directory(path, 20102, 20102)

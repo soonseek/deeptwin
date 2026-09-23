@@ -20,12 +20,13 @@ import stat
 
 import pytest
 
+from app.tests.support.inode_pins import pinned_fds
 from app.workers import ipc_root
 from deploy.tests.test_ipc_root_initializer import layout as layout  # noqa: PLC0414
 
 
 def open_fds():
-    return {int(name) for name in os.listdir("/dev/fd")}
+    return {int(name) for name in os.listdir("/dev/fd")} - pinned_fds()
 
 
 def retain(spec, generation):

@@ -35,6 +35,7 @@ from uuid import uuid4
 import pytest
 
 from app.deployment import mounts as m
+from app.tests.support.inode_pins import pinned_fds
 from app.workers import broker, ipc_root, listener
 from app.workers.extension_channel import extension_channel
 from deploy.tests.test_ipc_root_initializer import _pair_gid
@@ -43,7 +44,8 @@ INSTANCE = "0123456789abcdef0123456789abcdef"
 
 
 def open_fds():
-    return {int(name) for name in os.listdir("/dev/fd")}
+    # inode pins (support/inode_pins.py) are test plumbing, not descriptors under test
+    return {int(name) for name in os.listdir("/dev/fd")} - pinned_fds()
 
 
 def mountinfo(pair_root: Path, *, read_only: bool, extra=()):

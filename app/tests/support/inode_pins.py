@@ -69,6 +69,12 @@ def pin_deletions(monkeypatch) -> None:
     monkeypatch.setattr(os, "replace", moving(replace))
 
 
+def pinned_fds() -> frozenset[int]:
+    """The descriptors held only to keep inode numbers allocated (excluded from fd budgets)."""
+
+    return frozenset(PINNED)
+
+
 def close_pins() -> None:
     while PINNED:
         try:
