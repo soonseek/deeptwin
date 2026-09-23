@@ -522,6 +522,89 @@ def run_validation(candidate, ledger, value):
     return report, seen_ledger
 
 
+def restore_validation_report(candidate, value, rounds) -> ValidationReport:
+    """Rebuild one persisted report over its exact candidate and recorded rounds.
+
+    Trust is the store's hash-linked records, never the payload: the stored
+    report is revalidated strictly, every gate is parsed again from the recorded
+    rounds its evidence names (so the pass/fail rules hold as at issue time),
+    and the recomputed status, datasets and scope must equal what was stored.
+    No dataset is exposed again: the ledger consumption already happened.
+    """
+
+    from .comparisons import comparison_result_ref, is_recorded_round
+
+    if (
+        type(candidate) is not FrozenCandidate
+        or getattr(candidate, "_issuer_token", None) is not _ISSUE_TOKEN
+    ):
+        raise GrowthValidationError("a frozen candidate bundle is required")
+    if type(value) is not dict or set(value) != {
+        "schema_version", "candidate_bundle_ref", "mode", "status",
+        "dataset_ids", "ledger_revision", "gates", "approved_scope_ref",
+    }:
+        raise GrowthValidationError("the stored report shape is invalid")
+    if value["schema_version"] != VALIDATION_REPORT_SCHEMA_VERSION:
+        raise GrowthValidationError("the stored report version is unsupported")
+    if value["candidate_bundle_ref"] != candidate.bundle_ref.as_dict():
+        raise GrowthValidationError("the stored report names another bundle")
+    mode = value["mode"]
+    if mode not in MODES:
+        raise GrowthValidationError("unknown validation mode")
+    datasets = value["dataset_ids"]
+    if (type(datasets) is not list or len(datasets) > 64
+            or any(type(item) is not str for item in datasets)
+            or len(set(datasets)) != len(datasets)):
+        raise GrowthValidationError("dataset ids are out of bounds")
+    if (mode == "sealed_offline") != bool(datasets):
+        raise GrowthValidationError("only a sealed offline report consumed datasets")
+    revision = value["ledger_revision"]
+    if type(revision) is not int or not 1 <= revision <= 1_000_000:
+        raise GrowthValidationError("the ledger revision is out of bounds")
+    scope = value["approved_scope_ref"]
+    if (mode == "limited_application") != (scope is not None):
+        raise GrowthValidationError("only limited application carries an approved scope")
+    approved_scope = None if scope is None else _ref(scope, "decision_record", "approved scope")
+    if type(rounds) not in (list, tuple) or any(not is_recorded_round(item) for item in rounds):
+        raise GrowthValidationError("recorded comparison rounds are required")
+    by_ref = {comparison_result_ref(item).as_dict()["sha256"]: item for item in rounds}
+    gates_value = value["gates"]
+    if type(gates_value) is not dict or set(gates_value) != set(GATES):
+        raise GrowthValidationError("expected the exact §8 gate set")
+    gates = []
+    for name in GATES:
+        stored = gates_value[name]
+        if type(stored) is not dict or set(stored) != {"status", "evidence_refs", "reasons"}:
+            raise GrowthValidationError(f"the stored {name} gate is invalid")
+        cited = stored["evidence_refs"]
+        if type(cited) is not list or any(type(item) is not dict for item in cited):
+            raise GrowthValidationError(f"the stored {name} gate evidence is invalid")
+        try:
+            evidence = [by_ref[item["sha256"]] for item in cited]
+        except KeyError:
+            raise GrowthValidationError(f"a round the {name} gate cites is not available") from None
+        outcome = _parse_gate(name, {"status": stored["status"], "evidence": evidence,
+                                     "reasons": stored["reasons"]}, candidate)
+        if [item.as_dict() for item in outcome.evidence] != cited:
+            raise GrowthValidationError(f"the {name} gate evidence does not read back exactly")
+        gates.append((name, outcome))
+    statuses = {outcome.status for _name, outcome in gates}
+    status = "failed" if "fail" in statuses else "invalid" if "invalid" in statuses else "passed"
+    if status != value["status"]:
+        raise GrowthValidationError("the stored report status does not follow from its gates")
+    return _issue(
+        ValidationReport,
+        candidate_bundle=candidate.bundle_ref,
+        mode=mode,
+        status=status,
+        datasets=tuple(datasets),
+        ledger_revision=revision,
+        gates=tuple(gates),
+        approved_scope=approved_scope,
+        _issuer_token=_ISSUE_TOKEN,
+    )
+
+
 def is_validation_report(value: object) -> bool:
     """True only for a report issued by run_validation."""
 

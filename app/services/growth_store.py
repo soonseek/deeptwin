@@ -44,6 +44,9 @@ _LOOP_KIND = "growth_loop_state"
 _LEDGER_KIND = "growth_dataset_ledger"
 _REPORT_KIND = "growth_validation_report"
 _PROMOTION_KIND = "growth_promotion_state"
+_PLAN_KIND = "growth_comparison_plan"
+_ROUND_KIND = "growth_comparison_round"
+_CANDIDATE_KIND = "growth_frozen_candidate"
 _UUID_RE = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z"
 )
@@ -283,6 +286,159 @@ def resume_dataset_ledger(domain_store, ref):
         raise GrowthStoreError("the stored ledger is invalid") from exc
 
 
+# --- the durable US6 chain: plan → rounds → frozen candidate → report --------------
+# Each value is stored once, at an identity derived from its own content-derived ref,
+# with its exact issue input; resume re-issues it through the same framework function
+# and refuses anything that does not read back byte-for-byte (trust is the store's
+# hash-linked record, never the payload).
+
+
+def _once(domain_store, record_id, content, **headers) -> EntityRef:
+    try:
+        return _put(domain_store, record_id=record_id, revision=1, parents=(), content=content,
+                    **headers)
+    except GrowthStoreError:
+        existing = _existing(domain_store, record_id)
+        if existing is not None and existing.body["content"] == content:
+            return existing.ref  # the same value persisted again: idempotent
+        raise
+
+
+def _existing(domain_store, record_id):
+    with domain_store._connection() as db:
+        roots = domain_store._read_roots(db)
+        row = db.execute(
+            "SELECT sha256 FROM domain_records WHERE vault_id=? AND kind=? AND id=? AND version=1",
+            (roots.genesis.id, RECORD_KIND, record_id)).fetchone()
+    if row is None:
+        return None
+    return domain_store.get(EntityRef(RECORD_KIND, record_id, 1, row["sha256"]))
+
+
+def _plan_input(plan_dict) -> dict:
+    value = {key.removesuffix("_ref"): item for key, item in plan_dict.items() if key != "schema_version"}
+    return value
+
+
+def persist_comparison_plan(domain_store, plan, **headers) -> EntityRef:
+    from .comparisons import is_frozen_plan
+
+    if not is_frozen_plan(plan):
+        raise GrowthStoreError("a frozen comparison plan is required")
+    record_id = str(uuid5(NAMESPACE_URL, f"deeptwin:growth-plan:{plan.plan_ref.id}"))
+    return _once(domain_store, record_id, {
+        "growth_kind": _PLAN_KIND, "plan": encode_design_refs(plan.as_dict())}, **headers)
+
+
+def resume_comparison_plan(domain_store, ref):
+    from .comparisons import freeze_comparison_plan
+
+    content = _load(domain_store, ref, _PLAN_KIND)
+    try:
+        stored = decode_design_refs(content["plan"])
+        plan = freeze_comparison_plan(_plan_input(stored))
+    except (KeyError, ValueError) as exc:
+        raise GrowthStoreError("the stored comparison plan is invalid") from exc
+    if plan.as_dict() != stored:
+        raise GrowthStoreError("the stored comparison plan does not read back exactly")
+    return plan
+
+
+def _round_record_id(result_ref: EntityRef) -> str:
+    return str(uuid5(NAMESPACE_URL, f"deeptwin:growth-round:{result_ref.id}"))
+
+
+def persist_comparison_round(domain_store, plan, value, *, plan_record_ref, **headers) -> EntityRef:
+    """Persist one recorded round with its exact input; the plan must be the stored one."""
+
+    from .comparisons import comparison_result_ref, record_comparison_round
+
+    if resume_comparison_plan(domain_store, plan_record_ref).as_dict() != plan.as_dict():
+        raise GrowthStoreError("the round's plan is not the stored plan")
+    try:
+        result = record_comparison_round(plan, value)
+    except ValueError as exc:
+        raise GrowthStoreError("the comparison round is invalid") from exc
+    result_ref = comparison_result_ref(result)
+    return _once(domain_store, _round_record_id(result_ref), {
+        "growth_kind": _ROUND_KIND, "plan_record": plan_record_ref.as_dict()["id"],
+        "plan_record_sha256": plan_record_ref.sha256, "round": encode_design_refs(value),
+        "result": encode_design_refs(result.as_dict())}, **headers)
+
+
+def resume_comparison_round(domain_store, result_ref: EntityRef):
+    """The recorded round whose content-derived ref is `result_ref`, re-issued."""
+
+    from .comparisons import comparison_result_ref, record_comparison_round
+
+    stored = _existing(domain_store, _round_record_id(result_ref))
+    if stored is None:
+        raise GrowthStoreError("that comparison round was never persisted")
+    content = stored.body["content"]
+    if content.get("growth_kind") != _ROUND_KIND:
+        raise GrowthStoreError("the record is not a comparison round")
+    plan = resume_comparison_plan(domain_store, EntityRef(
+        RECORD_KIND, content["plan_record"], 1, content["plan_record_sha256"]))
+    try:
+        result = record_comparison_round(plan, decode_design_refs(content["round"]))
+    except ValueError as exc:
+        raise GrowthStoreError("the stored comparison round is invalid") from exc
+    if (result.as_dict() != decode_design_refs(content["result"])
+            or comparison_result_ref(result) != result_ref):
+        raise GrowthStoreError("the stored comparison round does not read back exactly")
+    return result
+
+
+def persist_frozen_candidate(domain_store, candidate, **headers) -> EntityRef:
+    from .validation import is_frozen_candidate
+
+    if not is_frozen_candidate(candidate):
+        raise GrowthStoreError("a frozen candidate bundle is required")
+    record_id = str(uuid5(NAMESPACE_URL, f"deeptwin:growth-candidate:{candidate.bundle_ref.id}"))
+    return _once(domain_store, record_id, {
+        "growth_kind": _CANDIDATE_KIND, "bundle": encode_design_refs(candidate.as_dict())}, **headers)
+
+
+def resume_frozen_candidate(domain_store, bundle_ref: EntityRef):
+    """The frozen candidate whose content-derived bundle ref is `bundle_ref`, re-issued."""
+
+    from .validation import freeze_candidate
+
+    stored = _existing(domain_store, str(uuid5(
+        NAMESPACE_URL, f"deeptwin:growth-candidate:{bundle_ref.id}")))
+    if stored is None or stored.body["content"].get("growth_kind") != _CANDIDATE_KIND:
+        raise GrowthStoreError("that candidate bundle was never persisted")
+    bundle = decode_design_refs(stored.body["content"]["bundle"])
+    try:
+        candidate = freeze_candidate({key.removesuffix("_ref"): item for key, item in bundle.items()
+                                      if key != "schema_version"})
+    except ValueError as exc:
+        raise GrowthStoreError("the stored candidate bundle is invalid") from exc
+    if candidate.as_dict() != bundle or candidate.bundle_ref != bundle_ref:
+        raise GrowthStoreError("the stored candidate bundle does not read back exactly")
+    return candidate
+
+
+def resume_validation_report(domain_store, ref):
+    """Rebuild one persisted report over its stored candidate and recorded rounds."""
+
+    from .validation import restore_validation_report
+
+    content = _load(domain_store, ref, _REPORT_KIND)
+    try:
+        stored = decode_design_refs(content["report"])
+        candidate = resume_frozen_candidate(domain_store, EntityRef.from_dict(stored["candidate_bundle_ref"]))
+        cited = {item["sha256"]: item for gate in stored["gates"].values() for item in gate["evidence_refs"]}
+        rounds = [resume_comparison_round(domain_store, EntityRef.from_dict(item)) for item in cited.values()]
+        return candidate, restore_validation_report(candidate, stored, rounds)
+    except (KeyError, TypeError) as exc:
+        raise GrowthStoreError("the stored validation report is invalid") from exc
+    except ValueError as exc:
+        if isinstance(exc, GrowthStoreError):
+            raise
+        raise GrowthStoreError("the stored validation report is invalid") from exc
+
+
 def _load(domain_store, ref, growth_kind):
     if type(domain_store) is not DomainStore or type(ref) is not EntityRef:
         raise GrowthStoreError("an exact domain store and record ref are required")
@@ -300,11 +456,18 @@ __all__ = [
     "RECORD_KIND",
     "GrowthStoreError",
     "advance_and_persist_loop",
+    "persist_comparison_plan",
+    "persist_comparison_round",
     "persist_dataset_ledger",
+    "persist_frozen_candidate",
     "persist_loop_state",
     "persist_promotion_state",
     "persist_validation_report",
+    "resume_comparison_plan",
+    "resume_comparison_round",
     "resume_dataset_ledger",
+    "resume_frozen_candidate",
     "resume_loop",
     "resume_promotion_state",
+    "resume_validation_report",
 ]
