@@ -27,3 +27,6 @@ test-results/
 .idea/
 
 tmp-fixture-*/
+
+# screenshots written by the owner-material browser test run
+.superpowers/
