@@ -1,7 +1,7 @@
 # T016 authenticated server API v1 — offline implementation evidence
 
 Verified 2026-09-08 in the authoritative worktree
-`/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure`. This is the completed server-delivery
+`<repo>`. This is the completed server-delivery
 slice of T016, not a claim that the whole feature or a release is complete. No provider,
 tool, login, Keychain, external network, paid API, or user vault was accessed.
 
@@ -142,9 +142,9 @@ OS-alias normalization above closed that real integration defect. The exact brow
 
 ```text
 env CONTROL_PYTHON=/private/tmp/deeptwin-t003-build.EIO0ZY/runtime-venv/bin/python \
-CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs \
+CONTROL_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs \
 PYTHONDONTWRITEBYTECODE=1 \
-/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node \
+<node-runtime>/dependencies/node/bin/node \
   --test --test-concurrency=2 \
   app/tests/browser-codex-connection.test.mjs app/tests/browser-first-use.test.mjs \
   app/tests/browser-model-selection.test.mjs app/tests/browser-speech-input.test.mjs \
@@ -159,9 +159,9 @@ then passed 1/1 in 3892.899334 ms:
 
 ```text
 env CONTROL_PYTHON=/private/tmp/deeptwin-t003-build.EIO0ZY/runtime-venv/bin/python \
-CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs \
+CONTROL_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs \
 PYTHONDONTWRITEBYTECODE=1 \
-/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node \
+<node-runtime>/dependencies/node/bin/node \
   --test --test-name-pattern='work-specific model versions restore' \
   app/tests/browser-model-selection.test.mjs
 ```

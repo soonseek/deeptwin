@@ -89,11 +89,11 @@ Codex API는 명시적으로 선택한 별도 과금 경로다. 현재 구독 �
 
 | 로컬 근거 | 확인한 범위 | 확대하면 안 되는 결론 |
 | --- | --- | --- |
-| [providers.py](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/app/providers.py:63) | 실행 파일 발견과 unknown 상태 | 설치됨 = 로그인/실행 가능 |
-| [CodexConnection](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/app/codex_connection.py:151) | account/read에서 chatgpt/API 분리, 비밀을 반환하지 않는 UI 상태 | 인증 확인 = 자율 실행 완성 |
-| [모델 조회](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/app/codex_connection.py:209), [선택 검증](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/app/model_catalog.py:198) | 명시 조회 목록, 계정 binding과 현재 SQL 목록 검증 | 공개 모델 이름·오래된 선택 = 가용 모델 |
-| [격리 프로필](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/app/codex_understanding.py:339), [thread/turn](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/app/codex_understanding.py:453) | `0.144.4` 고정, environmentless, 빈 dynamicTools, exact model 확인 | 일반 DeepTwin tool host 구현 완료 |
-| [OfflineRunner](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/app/critic_trial.py:108) | 통제된 fixture 실행과 감사 수명주기 | 실구독·전체 환경·의미적 성능 qualification 완료 |
+| [providers.py](<repo>/app/providers.py:63) | 실행 파일 발견과 unknown 상태 | 설치됨 = 로그인/실행 가능 |
+| [CodexConnection](<repo>/app/codex_connection.py:151) | account/read에서 chatgpt/API 분리, 비밀을 반환하지 않는 UI 상태 | 인증 확인 = 자율 실행 완성 |
+| [모델 조회](<repo>/app/codex_connection.py:209), [선택 검증](<repo>/app/model_catalog.py:198) | 명시 조회 목록, 계정 binding과 현재 SQL 목록 검증 | 공개 모델 이름·오래된 선택 = 가용 모델 |
+| [격리 프로필](<repo>/app/codex_understanding.py:339), [thread/turn](<repo>/app/codex_understanding.py:453) | `0.144.4` 고정, environmentless, 빈 dynamicTools, exact model 확인 | 일반 DeepTwin tool host 구현 완료 |
+| [OfflineRunner](<repo>/app/critic_trial.py:108) | 통제된 fixture 실행과 감사 수명주기 | 실구독·전체 환경·의미적 성능 qualification 완료 |
 
 기존 텍스트 critic의 도구 금지 조건을 전역으로 완화하지 않는다. 새 tool host는 별도 profile과 평가가 필요하다. 최신 문서 옵션을 검증 없이 `0.144.4`에 추가하지 않는다. 현 Claude unavailable 문구/카탈로그가 구독 승인 대기를 표현하는 것은 **기존 구현 상태**다. 이제 API-only 모델로 변경할 구현 항목이지 새 요구의 차단 사유가 아니다.
 
@@ -146,7 +146,7 @@ P15의 업무 성공은 schema-valid 응답이나 연결 성공으로 대체할 
 
 Claude Code print/Agent SDK는 기술적으로 프로그램 실행·MCP 도구를 제공하지만 SDK overview는 사전 승인 없는 제3자 구독 로그인/한도 제공을 제한한다. 2026-06-15 SDK 과금 변경 유예를 제품별 승인으로 볼 수는 없다. **사용자의 API-only 변경으로 승인 확보와 구독 transport 구현은 현재 범위에서 제외됐다.** [SDK overview](https://code.claude.com/docs/en/agent-sdk/overview), [Login — Developers](https://support.claude.com/en/articles/13189465-log-in-to-your-claude-account), [SDK plan update, 표시일 2026-06-16](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)
 
-CLI `--bare`/SDK settings·MCP 격리 조합은 새 Claude API 어댑터의 선행 조건이 아니다. 이를 위해 인증 파일을 복사하거나 승인을 요청하지 않는다. [초기 공급자 조사](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/docs/ui/2026-09-07-provider-integration-findings.md)는 역사적 상태로 읽는다.
+CLI `--bare`/SDK settings·MCP 격리 조합은 새 Claude API 어댑터의 선행 조건이 아니다. 이를 위해 인증 파일을 복사하거나 승인을 요청하지 않는다. [초기 공급자 조사](<repo>/docs/ui/2026-09-07-provider-integration-findings.md)는 역사적 상태로 읽는다.
 
 ### 현재 인계 항목
 

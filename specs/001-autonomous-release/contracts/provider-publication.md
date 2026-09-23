@@ -297,7 +297,7 @@ stays unchanged and read-only.
 Freeze six hashes/full source manifest after self-review. Run once on frozen bytes with tracing
 disabled and no cache provider:
 
-    /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest
+    <workspace>/.venv/bin/python -B -m pytest
       app/tests/test_provider_publication.py app/tests/test_provider_publication_lifecycle.py
       app/tests/test_deployment_publication.py app/tests/test_deployment_source_lifecycle.py
       app/tests/test_provider_sources.py app/tests/test_provider_source_startup.py

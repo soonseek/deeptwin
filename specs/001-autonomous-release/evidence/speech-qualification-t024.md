@@ -30,20 +30,20 @@ The first Python command reported 5 failures (the duplicate-manifest parametriza
 the separate executable-mode canary reported 1 failure, and the browser command reported 3 failures:
 
 ```text
-/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest \
+<workspace>/.venv/bin/python -m pytest \
   app/tests/test_speech.py::test_duplicate_manifest_keys_fail_closed \
   app/tests/test_speech.py::test_symlinked_runtime_ancestor_fails_closed \
   app/tests/test_speech.py::test_duplicate_native_reply_key_fails_honestly_and_stops_child \
   app/tests/test_speech_sessions.py::test_duplicate_key_in_completed_reply_is_not_replayed -q
 # 5 failed
 
-/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest \
+<workspace>/.venv/bin/python -m pytest \
   app/tests/test_speech.py::test_non_executable_worker_is_not_reported_ready -q
 # 1 failed
 
-CONTROL_PYTHON=/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python \
-CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs \
-/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node \
+CONTROL_PYTHON=<workspace>/.venv/bin/python \
+CONTROL_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs \
+<node-runtime>/dependencies/node/bin/node \
   --test --test-name-pattern='non-local speech identity|non-local engine identity|failure cleanup' \
   app/tests/browser-speech-input.test.mjs
 # 0 passed, 3 failed
@@ -66,13 +66,13 @@ cryptographically excluded, and the runtime manifest is not itself a production 
 Baseline before the new tests:
 
 ```text
-/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest \
+<workspace>/.venv/bin/python -m pytest \
   app/tests/test_speech.py app/tests/test_speech_sessions.py app/tests/test_speech_api.py -q
 # 66 passed, 1 pre-existing Starlette/AnyIO deprecation warning, 2.74s
 
-CONTROL_PYTHON=/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python \
-CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs \
-/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node \
+CONTROL_PYTHON=<workspace>/.venv/bin/python \
+CONTROL_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs \
+<node-runtime>/dependencies/node/bin/node \
   --test app/tests/browser-speech-input.test.mjs
 # 13 passed, 0 failed, 80.594s
 ```
@@ -80,30 +80,30 @@ CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primar
 Green runs after the fix:
 
 ```text
-/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest \
+<workspace>/.venv/bin/python -m pytest \
   app/tests/test_speech.py app/tests/test_speech_sessions.py app/tests/test_speech_api.py -q
 # 72 passed, 1 pre-existing Starlette/AnyIO deprecation warning, 1.92s
 
-CONTROL_PYTHON=/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python \
-CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs \
-/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node \
+CONTROL_PYTHON=<workspace>/.venv/bin/python \
+CONTROL_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs \
+<node-runtime>/dependencies/node/bin/node \
   --test --test-name-pattern='non-local speech identity|non-local engine identity|failure cleanup' \
   app/tests/browser-speech-input.test.mjs
 # 3 passed, 0 failed, 12.192s
 
-CONTROL_PYTHON=/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python \
-CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs \
-/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node \
+CONTROL_PYTHON=<workspace>/.venv/bin/python \
+CONTROL_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs \
+<node-runtime>/dependencies/node/bin/node \
   --test --test-name-pattern='native keyboard controls' app/tests/browser-speech-input.test.mjs
 # 1 passed, 0 failed, 2.806s
 
-/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest \
+<workspace>/.venv/bin/python -m pytest \
   app/tests/test_speech.py app/tests/test_speech_sessions.py app/tests/test_speech_api.py -q
 # final: 72 passed, 1 pre-existing Starlette/AnyIO deprecation warning, 1.78s
 
-CONTROL_PYTHON=/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python \
-CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs \
-/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node \
+CONTROL_PYTHON=<workspace>/.venv/bin/python \
+CONTROL_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs \
+<node-runtime>/dependencies/node/bin/node \
   --test app/tests/browser-speech-input.test.mjs
 # final after the last production edit: 17 passed, 0 failed, 82.907s
 ```
@@ -128,7 +128,7 @@ converted it locally with `/usr/bin/afconvert` to mono PCM16LE 16 kHz, and calle
 against the existing app-specific runtime. It did not invoke an HTTP/provider path.
 
 ```text
-/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python - <<'PY'
+<workspace>/.venv/bin/python - <<'PY'
 # tempfile.TemporaryDirectory; /usr/bin/say; /usr/bin/afconvert;
 # Speech(Store(temp_vault), runtime_dir=existing_development_runtime).transcribe(pcm)
 PY

@@ -12,7 +12,7 @@
 
 ## 경계와 파일
 
-[B 전체 계획](2026-09-07-deeptwin-critic-evaluation.md)의 승인·사용자 UX·보안·C 진입 경계를 그대로 따른다. 후속 사용자 “진행해”는 이 문서의 Task 1–3 오프라인 구현을 승인한 것이며 실제 모델·비용·B4 설치/서비스를 승인한 것은 아니다. 초기 Python 예제 네 블록은 검토를 통과한 실제 구현·테스트 링크와 아래 실행 기록으로 대체했다. 작업 기준은 `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure`다. 명령은 구현 에이전트용이며 커밋·설치·실계정 호출은 없다.
+[B 전체 계획](2026-09-07-deeptwin-critic-evaluation.md)의 승인·사용자 UX·보안·C 진입 경계를 그대로 따른다. 후속 사용자 “진행해”는 이 문서의 Task 1–3 오프라인 구현을 승인한 것이며 실제 모델·비용·B4 설치/서비스를 승인한 것은 아니다. 초기 Python 예제 네 블록은 검토를 통과한 실제 구현·테스트 링크와 아래 실행 기록으로 대체했다. 작업 기준은 `<repo>`다. 명령은 구현 에이전트용이며 커밋·설치·실계정 호출은 없다.
 
 진행 기록: Task 1과 Task 2의 구현은 각각 별도 명세·품질 검토를 통과했다. 집중 검사는 각각 140개·107개, 관련 회귀는 315개, 전체 Python 앱 회귀는 729개와 기존 경고 1건이다. Task 3의 결과 분류·문서 동기화와 전체 회귀 기록을 반영했다. 최종 문서 명세 검토와 전체 품질 검토도 통과했으며, 실행 증거는 마지막 기록에 구분했다.
 
@@ -35,7 +35,7 @@
 
 - [x] **Step 2 — 실패를 확인한다.**
 
-Run: `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_critic_audit.py -q`
+Run: `<workspace>/.venv/bin/python -m pytest app/tests/test_critic_audit.py -q`
 
 Expected: 새 모듈 부재로 실패. 실제 초기 RED는 collection 오류 대신 모듈 부재 assertion으로 확인했다. 의존성 설치나 사용자 DB 변경으로 해결하지 않았다.
 
@@ -49,7 +49,7 @@ Expected: 새 모듈 부재로 실패. 실제 초기 RED는 collection 오류 �
 
 - [x] **Step 4 — 같은 명령으로 PASS를 확인하고 diff를 검토한다.**
 
-Run: `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_critic_audit.py -q`
+Run: `<workspace>/.venv/bin/python -m pytest app/tests/test_critic_audit.py -q`
 
 Expected: 모든 새 journal 검사 PASS. 새 패키지·사용자 DB·계정 접근 없음. 별도 명세 검토 후 코드 품질 검토를 받으며 아직 커밋하지 않는다.
 
@@ -65,7 +65,7 @@ B1의 `PreparedInput`, `parse_response`, `ResponseContractError`가 선행한다
 
 - [x] **Step 2 — 실패를 확인한다.**
 
-Run: `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_critic_trial.py -q`
+Run: `<workspace>/.venv/bin/python -m pytest app/tests/test_critic_trial.py -q`
 
 Expected: 새 `critic_trial` module/API 부재로 실패. 실제로는 모듈 부재 assertion, 동결 API 30개와 실행기 56개의 부재 RED를 확인했다. 이는 구현 부재 확인이며 의미 행동의 실패 86건을 뜻하지 않는다. B1 계약 부품을 선행 완료한 상태에서 진행했다.
 
@@ -83,7 +83,7 @@ reserve·journal·thread 시작·조회 장애는 로컬 결과 적용을 막고
 
 - [x] **Step 4 — 집중 시험과 회귀를 실행한다.**
 
-Run: `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_critic_audit.py app/tests/test_critic_trial.py app/tests/test_model_catalog.py app/tests/test_model_selection.py app/tests/test_codex_critic.py -q`
+Run: `<workspace>/.venv/bin/python -m pytest app/tests/test_critic_audit.py app/tests/test_critic_trial.py app/tests/test_model_catalog.py app/tests/test_model_selection.py app/tests/test_codex_critic.py -q`
 
 Expected: 새 오프라인 경계와 기존 선택·전송 회귀 PASS. 실제 provider 실행 없음. 실패 시 기대값을 약하게 바꾸거나 안전 프로필을 완화하지 않는다.
 
@@ -105,7 +105,7 @@ UTF-8 인코딩 가능한 완료 원문은 SHA-256과 byte 수를 남긴다. 64,
 
 - [x] **Step 2 — 전체 회귀와 diff 검사를 수행한다.**
 
-Run: `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests -q`
+Run: `<workspace>/.venv/bin/python -m pytest app/tests -q`
 
 Expected: 기존 검사와 새 B 검사 PASS. 최종 개수·경고는 실제 출력에서 기록한다. 아직 실행하지 않은 수치를 예상 완료값으로 넣지 않는다.
 

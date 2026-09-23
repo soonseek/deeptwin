@@ -94,7 +94,7 @@ Freeze three exact beforecopies, four final hashes and full app/deploy/schemas m
 the actual diff and all failure/transfer paths. Run one final frozen covering command:
 
     LANGCHAIN_TRACING_V2=false LANGSMITH_TRACING=false
-    /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest
+    <workspace>/.venv/bin/python -B -m pytest
       app/tests/test_provider_stage_connection_lifecycle.py
       app/tests/test_extension_listener.py app/tests/test_stage_observer.py
       app/tests/test_provider_worker.py app/tests/test_ipc_populated_fence.py

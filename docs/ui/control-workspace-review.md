@@ -25,7 +25,7 @@
 검사 파일: `control-prototype/tests/browser-review.test.mjs`. 실행 명령:
 
 ```sh
-CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs node --test control-prototype/tests/browser-review.test.mjs
+CONTROL_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs node --test control-prototype/tests/browser-review.test.mjs
 ```
 
 최종 실행 대상은 브라우저 셸 보정 커밋 `4954450`입니다. 브라우저 셸 `5140862`, 그래프 우선 배치·범례 수정 `468d534`, 밝은 테마 범례 대비·390px CSV 스크롤·PDF 파생 미리보기 크기 제한을 포함합니다. 마지막 보정은 보기별 실행 그래프 열림·닫힘 보존과 파일만 있는 자기 버전의 정직한 표시입니다. 본 기록과 추가 회귀 검사 파일은 이 구현 커밋 위에서 별도로 검토합니다.

@@ -21,7 +21,7 @@ The user confirmed the integrated UI specification §11, then authorized this UI
 
 Source: [UI specification](../specs/2026-09-06-deeptwin-ui-structure-design.md) §10.1, §10.3–10.7 and §11; [review cases](../../ui/initial-ui-review-cases.md). Later direct user corrections outrank earlier generic UI proposals. Do not reuse the old user work description, failed manual POC, old prototype's fixed role/text data, or user alternatives as fixtures. Preserve the existing dirty UI plans and historical failed observations.
 
-The working directory for every command below is `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure`. `node` means the available `/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node` when PATH lacks it. Commands are for the implementing agent; the user is not asked to operate a CLI. Read `frontend-design` before UI implementation, `pdf` before creating/rendering fixture PDFs, and the relevant testing/review skills during execution. Do not install or connect a provider to make a demonstration look real.
+The working directory for every command below is `<repo>`. `node` means the available `<node-runtime>/dependencies/node/bin/node` when PATH lacks it. Commands are for the implementing agent; the user is not asked to operate a CLI. Read `frontend-design` before UI implementation, `pdf` before creating/rendering fixture PDFs, and the relevant testing/review skills during execution. Do not install or connect a provider to make a demonstration look real.
 
 ## Boundaries and reversible prototype decisions
 
@@ -478,7 +478,7 @@ test('real DOM preserves exact input, relationships and simulation boundary',asy
 });
 ```
 
-- [x] Run `CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs node --test control-prototype/tests/browser.test.mjs`. Expected: FAIL because the new entry/UI does not yet exist, not because dependencies or fixture references are wrong.
+- [x] Run `CONTROL_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs node --test control-prototype/tests/browser.test.mjs`. Expected: FAIL because the new entry/UI does not yet exist, not because dependencies or fixture references are wrong.
 - [x] Add `control-prototype/index.html`:
 
 ```html
@@ -586,7 +586,7 @@ article[data-artifact]{background:light-dark(#fff,#f4f6f3);color:#21343b;border:
 @media(max-width:1150px){.candidates{grid-template-columns:1fr}.candidate .graph{min-width:760px}.workbench{grid-template-columns:1fr}.pair{grid-template-columns:1fr}.rail{width:auto}main{padding:16px}}@media(max-width:700px){.shell{display:block}.rail{position:static;height:auto;padding:13px;display:flex;flex-direction:row;flex-wrap:wrap;gap:3px}.rail h1,.rail p{width:100%;margin:2px 0}.utilities{margin:0;display:flex;flex-wrap:wrap}.heading{display:block}main{padding:10px}.panel,.candidate{padding:12px}.focus-bar{position:static}dl{grid-template-columns:1fr}dd{margin-bottom:9px}.graph{min-width:760px}.ribbon{font-size:11px}}
 ```
 
-- [x] Run `CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs node --test control-prototype/tests/browser.test.mjs`. Expected: PASS. Automated DOM composition, Enter activation of an actual selection, graph focus and modal return were checked. Physical Korean IME and OS-level BFCache navigation remain unverified and are not inferred from these tests.
+- [x] Run `CONTROL_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs node --test control-prototype/tests/browser.test.mjs`. Expected: PASS. Automated DOM composition, Enter activation of an actual selection, graph focus and modal return were checked. Physical Korean IME and OS-level BFCache navigation remain unverified and are not inferred from these tests.
 - [x] Commit: `git add -- control-prototype/app.mjs control-prototype/index.html control-prototype/styles.css control-prototype/tests/browser.test.mjs` then `git commit -m "feat: add interactive control-workspace browser shell"`.
 
 ## Task 7: Failure-path verification and actual screen review
@@ -669,7 +669,7 @@ test('scoped selection, files, blocked storage and legible connected screens',as
 });
 ```
 
-- [x] Run `CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs node --test control-prototype/tests/browser-review.test.mjs`. Expected: PASS and the named screenshots. This is actual UI behavior against synthetic data, not actual runtime or engine verification.
+- [x] Run `CONTROL_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs node --test control-prototype/tests/browser-review.test.mjs`. Expected: PASS and the named screenshots. This is actual UI behavior against synthetic data, not actual runtime or engine verification.
 - [x] At 1440px and 1024px verify that candidate graphs are stacked at readable widths with a shared inspection focus, not forced into three cropped miniatures. Pair graphs also stack at these widths. A future wider-screen layout may use columns only if each full graph retains legible labels; that change needs the same screenshots and state checks.
 - [x] Inspect each generated screenshot with the image-viewing tool. Check full node labels, directed links, readable graphs without shrinking text, current run/attempt and comparison versions, typed image/PDF page appearance, and modal content. At small widths the graph's own horizontal scroll is permitted; body overflow, unreadable reduced graphs and inaccessible selected nodes fail. Capture a focused screenshot of each graph if a full-page capture makes labels unreadable; screenshots must not substitute for actual navigation tests.
 - [x] Write `control-prototype/README.md` with this exact initial content:

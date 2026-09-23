@@ -47,7 +47,7 @@ were not modified.
 Fresh-environment installation used:
 
 ```sh
-/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m venv \
+<workspace>/.venv/bin/python -m venv \
   /private/tmp/deeptwin-t003-final.gvofXR/direct-langgraph-venv
 
 /private/tmp/deeptwin-t003-final.gvofXR/direct-langgraph-venv/bin/python \

@@ -1563,7 +1563,7 @@ shape, old factories/exact types, SlotMetadataLease and IPC logic stay in source
 - [x] Run one final covering command on frozen source:
 
   ```sh
-  /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest -q -p no:cacheprovider app/tests/test_deployment_namespace_scanner.py app/tests/test_deployment_receipt_sources.py app/tests/test_deployment_source_files.py app/tests/test_deployment_sources.py app/tests/test_deployment_publication.py app/tests/test_deployment_prepare_publication.py app/tests/test_deployment_prepare_api.py --tb=short
+  <workspace>/.venv/bin/python -B -m pytest -q -p no:cacheprovider app/tests/test_deployment_namespace_scanner.py app/tests/test_deployment_receipt_sources.py app/tests/test_deployment_source_files.py app/tests/test_deployment_sources.py app/tests/test_deployment_publication.py app/tests/test_deployment_prepare_publication.py app/tests/test_deployment_prepare_api.py --tb=short
   ```
 
   Run Ruff/format on new/changed files and git diff --check; compare original B/S/R/pure outputs/
@@ -1659,7 +1659,7 @@ safe current FD/name/hash checks receive it; unsafe/missing/drifted/J-mismatched
 - [x] Run one final covering command on frozen code, then scoped Ruff/format/diffcheck:
 
   ```sh
-  /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest -q -p no:cacheprovider app/tests/test_deployment_receipt_sources.py app/tests/test_deployment_receipt_file_leases.py app/tests/test_deployment_namespace_scanner.py app/tests/test_deployment_receipt_contracts.py app/tests/test_deployment_sources.py --tb=short
+  <workspace>/.venv/bin/python -B -m pytest -q -p no:cacheprovider app/tests/test_deployment_receipt_sources.py app/tests/test_deployment_receipt_file_leases.py app/tests/test_deployment_namespace_scanner.py app/tests/test_deployment_receipt_contracts.py app/tests/test_deployment_sources.py --tb=short
   ```
 
   Report exact changedfiles/RED/GREEN/commands/output/source hashes and unsupported-host limits in
@@ -1750,7 +1750,7 @@ old20102wrapper. Policies are fixed build-owned objects; no source-check/proof c
 - [x] Run one final frozen covering then scoped Ruff/format/diffcheck and predecessor byte checks:
 
   ```sh
-  /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest -q -p no:cacheprovider app/tests/test_deployment_consumed_codec.py app/tests/test_deployment_consumed_publication.py app/tests/test_deployment_consumed_inspection.py app/tests/test_deployment_receipt_sources.py app/tests/test_deployment_receipt_file_leases.py app/tests/test_deployment_publication.py app/tests/test_deployment_prepare_publication.py --tb=short
+  <workspace>/.venv/bin/python -B -m pytest -q -p no:cacheprovider app/tests/test_deployment_consumed_codec.py app/tests/test_deployment_consumed_publication.py app/tests/test_deployment_consumed_inspection.py app/tests/test_deployment_receipt_sources.py app/tests/test_deployment_receipt_file_leases.py app/tests/test_deployment_publication.py app/tests/test_deployment_prepare_publication.py --tb=short
   ```
 
   Full evidence/frozen hashes in `.superpowers/sdd/resumption-plan/task-16-report.md`, independent
@@ -1845,7 +1845,7 @@ These are test helpers, never parameters or callbacks into the production initia
   verification:
 
   ```sh
-  /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest -q -p no:cacheprovider app/tests/test_deployment_receipt_public_init.py app/tests/test_deployment_prepare_init.py app/tests/test_deployment_receipt_source_render.py app/tests/test_deployment_source_render.py app/tests/test_deployment_consumed_inspection.py deploy/tests/test_ipc_root_initializer.py --tb=short
+  <workspace>/.venv/bin/python -B -m pytest -q -p no:cacheprovider app/tests/test_deployment_receipt_public_init.py app/tests/test_deployment_prepare_init.py app/tests/test_deployment_receipt_source_render.py app/tests/test_deployment_source_render.py app/tests/test_deployment_consumed_inspection.py deploy/tests/test_ipc_root_initializer.py --tb=short
   ```
 
   Report full RED/GREEN/commands/output/frozen source/effect limits in
@@ -3267,7 +3267,7 @@ No new generic authority abstraction or changes to existing tool parsers.
   and export mutation tests must derive expected values independently of the new parser.
 - [x] Export the new schema, verify exact byte parity and unchanged old v1 files. Run:
   ```text
-  /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest
+  <workspace>/.venv/bin/python -B -m pytest
     app/tests/test_provider_lineage.py app/tests/test_provider_identity.py
     app/tests/test_extension_lineage_contracts.py app/tests/test_extension_candidates.py
     app/tests/test_extension_port_schemas.py -q -p no:cacheprovider
@@ -3376,7 +3376,7 @@ task; candidate Compose remains unqualified/unrunnable until that producer and i
 - [x] Run only the new three test files plus unchanged test_deployment_source_render.py,
   test_deployment_source_contracts.py and test_deployment_receipt_source_render.py using:
   ```text
-  /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest
+  <workspace>/.venv/bin/python -B -m pytest
     app/tests/test_provider_geometry.py app/tests/test_provider_source_contracts.py
     app/tests/test_provider_source_render.py app/tests/test_deployment_source_render.py
     app/tests/test_deployment_source_contracts.py app/tests/test_deployment_receipt_source_render.py
@@ -3453,7 +3453,7 @@ payload read/approval/repair. Old ordinary error classes/codes and data/policy b
   Self-review owned diff; ordinary precharacterizations and old input/initializer oracles must
   remain unchanged. Freeze eight hashes and full manifest before one exact narrow covering run:
   ~~~text
-  /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest
+  <workspace>/.venv/bin/python -B -m pytest
     app/tests/test_provider_source_init.py app/tests/test_deployment_source_lifecycle.py
     app/tests/test_deployment_prepare_init.py app/tests/test_deployment_receipt_public_init.py
     app/tests/test_deployment_source_files.py app/tests/test_provider_source_render.py
@@ -3516,7 +3516,7 @@ complete before/after metadata snapshots. Static bytes/directory identities neve
   actualreal-readerstartupsuccess, oldfivesourcesunchanged, construction/activation/shutdowncleanup.
   Freeze sevenhashes/fullmanifest afterselfreview; run one boundedcover with tracingdisabled:
   ~~~text
-  /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest
+  <workspace>/.venv/bin/python -B -m pytest
     app/tests/test_provider_sources.py app/tests/test_provider_source_startup.py
     app/tests/test_deployment_sources.py app/tests/test_deployment_receipt_sources.py
     app/tests/test_deployment_source_files.py app/tests/test_deployment_source_lifecycle.py
@@ -3608,7 +3608,7 @@ Sources/candidates are inert data here, not caller-issued authority.
   ~~~
 - [x] Self-review; freeze ten hashes/full manifest, run one narrow cover with tracing disabled:
   ~~~text
-  /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest
+  <workspace>/.venv/bin/python -B -m pytest
     app/tests/test_provider_prepare_contracts.py app/tests/test_provider_lineage.py
     app/tests/test_provider_source_contracts.py app/tests/test_deployment_prepare_contracts.py
     app/tests/test_deployment_source_contracts.py -q -p no:cacheprovider
@@ -3680,7 +3680,7 @@ own three new directories and at most one active attempt; no source/admission fl
   all acquisitions/close failures/borrowed survival, true temporaryFD peak and no import-time effects.
 - [x] Freeze sixhashes/fullmanifest and run contract's exact sixfamilycover once with tracing off:
   ~~~text
-  /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest
+  <workspace>/.venv/bin/python -B -m pytest
     app/tests/test_provider_publication.py app/tests/test_provider_publication_lifecycle.py
     app/tests/test_deployment_publication.py app/tests/test_deployment_source_lifecycle.py
     app/tests/test_provider_sources.py app/tests/test_provider_source_startup.py
@@ -3990,7 +3990,7 @@ supply the actual mutation/authority assertions for each, not open-ended test in
 failures from product RED. Record synthetic/native/real-release limits and all owned process
 sessions. When final bytes are ready, notify controller BEFORE any final72 launch. Controller
 owns its scheduling; do not duplicate that expensive baseline. Use actual commands:
-`LANGCHAIN_TRACING_V2=false LANGSMITH_TRACING=false /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest -q -p no:cacheprovider ...`.
+`LANGCHAIN_TRACING_V2=false LANGSMITH_TRACING=false <workspace>/.venv/bin/python -B -m pytest -q -p no:cacheprovider ...`.
 No test removal, broad skip, retry-to-green or silent scope expansion. If a concrete interface
 or ownership conflict appears, send NEEDS_CONTEXT with exact evidence before changing it.
 
@@ -4026,7 +4026,7 @@ do not stop after source-only or parser-only milestones:
 72 ordered module arguments; prior RED remains retained, no new GREEN yet):
 
 ```sh
-LANGCHAIN_TRACING_V2=false LANGSMITH_TRACING=false /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest -q -p no:cacheprovider \
+LANGCHAIN_TRACING_V2=false LANGSMITH_TRACING=false <workspace>/.venv/bin/python -B -m pytest -q -p no:cacheprovider \
   app/tests/test_provider_client.py \
   app/tests/test_provider_conformance_vectors.py \
   app/tests/test_provider_conformance_contracts.py \
@@ -4350,7 +4350,7 @@ domain/schema variants, preserved protocol, actual runtime/window/ledger consume
 new modules. Reconcile additional demonstrated impact explicitly rather than widening silently.
 
 ```sh
-LANGCHAIN_TRACING_V2=false LANGSMITH_TRACING=false /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest -v -p no:cacheprovider app/tests/test_provider_transport.py app/tests/test_credential_vault.py app/tests/test_credential_custody.py app/tests/test_credential_gateway_service.py app/tests/test_credential_root.py app/tests/test_credential_routes.py app/tests/test_credential_import_boundary.py app/tests/test_credential_ingress.py app/tests/test_domain_contracts.py app/tests/test_domain_storage.py app/tests/test_domain_schema_exports.py app/tests/test_domain_permissions.py app/tests/test_extension_port_schemas.py app/tests/test_extension_port_schema_generation.py app/tests/test_provider_protocol.py app/tests/test_claude_api.py app/tests/test_provider_messages.py app/tests/test_provider_worker.py app/tests/test_provider_service.py app/tests/test_provider_client.py app/tests/test_dispatch_subject_context.py app/tests/test_runtime_budgets.py app/tests/test_runtime_budget_dispatch.py app/tests/test_runtime_ledger.py app/tests/test_runtime_ledger_migration.py app/tests/test_scheduler_attempt_dispatch.py app/tests/test_worker_response_capture.py app/tests/test_extension_attempt_transport.py app/tests/test_provider_semantic_contracts.py app/tests/test_provider_semantic_records.py app/tests/test_provider_semantic_worker.py app/tests/test_provider_send_gateway.py app/tests/test_provider_attempt_transport.py app/tests/test_provider_semantic_vertical.py app/tests/test_provider_semantic_codec.py > .superpowers/sdd/resumption-plan/task-47-final35.log 2>&1
+LANGCHAIN_TRACING_V2=false LANGSMITH_TRACING=false <workspace>/.venv/bin/python -B -m pytest -v -p no:cacheprovider app/tests/test_provider_transport.py app/tests/test_credential_vault.py app/tests/test_credential_custody.py app/tests/test_credential_gateway_service.py app/tests/test_credential_root.py app/tests/test_credential_routes.py app/tests/test_credential_import_boundary.py app/tests/test_credential_ingress.py app/tests/test_domain_contracts.py app/tests/test_domain_storage.py app/tests/test_domain_schema_exports.py app/tests/test_domain_permissions.py app/tests/test_extension_port_schemas.py app/tests/test_extension_port_schema_generation.py app/tests/test_provider_protocol.py app/tests/test_claude_api.py app/tests/test_provider_messages.py app/tests/test_provider_worker.py app/tests/test_provider_service.py app/tests/test_provider_client.py app/tests/test_dispatch_subject_context.py app/tests/test_runtime_budgets.py app/tests/test_runtime_budget_dispatch.py app/tests/test_runtime_ledger.py app/tests/test_runtime_ledger_migration.py app/tests/test_scheduler_attempt_dispatch.py app/tests/test_worker_response_capture.py app/tests/test_extension_attempt_transport.py app/tests/test_provider_semantic_contracts.py app/tests/test_provider_semantic_records.py app/tests/test_provider_semantic_worker.py app/tests/test_provider_send_gateway.py app/tests/test_provider_attempt_transport.py app/tests/test_provider_semantic_vertical.py app/tests/test_provider_semantic_codec.py > .superpowers/sdd/resumption-plan/task-47-final35.log 2>&1
 ```
 
 This is scoped offline semantic behavior acceptance only. Actual native C/binding/current

@@ -43,17 +43,17 @@ the old prototype suite green or attribute them to new runtime code.
 
 ## Environment and preflight
 
-- Worktree: `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure`.
+- Worktree: `<repo>`.
 - Git HEAD: `f9ea189de00db436d41d01260401a86a951d8925`; dirty and untracked
   pre-existing changes were retained, including the current application,
   control prototype, tests and review output. No checkout/reset/cleanup was run.
 - macOS 26.5.1, build 25F80, arm64.
 - Node v24.19.0:
-  `/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node`.
+  `<node-runtime>/dependencies/node/bin/node`.
 - Python 3.12.13, explicitly selected existing environment:
-  `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python`.
+  `<workspace>/.venv/bin/python`.
 - Existing Playwright 1.62.1:
-  `/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs`.
+  `<node-runtime>/dependencies/node/node_modules/playwright/index.mjs`.
 - Installed Google Chrome 152.0.7977.77, verified by an isolated headless
   `chromium.launch({ channel: 'chrome', headless: true })` and `browser.version()`.
   No package/browser installation was required.
@@ -82,13 +82,13 @@ The first command returned `/tmp/deeptwin-t002-browser.djzgWy`. Executed from
 that directory, using its unchanged test files:
 
 ```sh
-env CONTROL_PYTHON=/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs CONTROL_REVIEW_OUTPUT_DIR=/tmp/deeptwin-t002-browser.djzgWy/control-prototype/review-output PYTHONDONTWRITEBYTECODE=1 /usr/bin/time -p /Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --test --test-concurrency=2 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=/tmp/deeptwin-t002-browser.djzgWy/baseline.tap app/tests/*.test.mjs control-prototype/tests/*.test.mjs
+env CONTROL_PYTHON=<workspace>/.venv/bin/python CONTROL_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs CONTROL_REVIEW_OUTPUT_DIR=/tmp/deeptwin-t002-browser.djzgWy/control-prototype/review-output PYTHONDONTWRITEBYTECODE=1 /usr/bin/time -p <node-runtime>/dependencies/node/bin/node --test --test-concurrency=2 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=/tmp/deeptwin-t002-browser.djzgWy/baseline.tap app/tests/*.test.mjs control-prototype/tests/*.test.mjs
 ```
 
 The failing-case recheck, from the same snapshot:
 
 ```sh
-env CONTROL_PYTHON=/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs CONTROL_REVIEW_OUTPUT_DIR=/tmp/deeptwin-t002-browser.djzgWy/control-prototype/recheck-output PYTHONDONTWRITEBYTECODE=1 /usr/bin/time -p /Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --test --test-concurrency=1 --test-name-pattern='narrow graph selection, details state and dialog focus survive repaint|graph scroll and expanded state survive repaint while the selected node stays visible' --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=/tmp/deeptwin-t002-browser.djzgWy/recheck.tap control-prototype/tests/browser-review.test.mjs control-prototype/tests/browser.test.mjs
+env CONTROL_PYTHON=<workspace>/.venv/bin/python CONTROL_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs CONTROL_REVIEW_OUTPUT_DIR=/tmp/deeptwin-t002-browser.djzgWy/control-prototype/recheck-output PYTHONDONTWRITEBYTECODE=1 /usr/bin/time -p <node-runtime>/dependencies/node/bin/node --test --test-concurrency=1 --test-name-pattern='narrow graph selection, details state and dialog focus survive repaint|graph scroll and expanded state survive repaint while the selected node stays visible' --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=/tmp/deeptwin-t002-browser.djzgWy/recheck.tap control-prototype/tests/browser-review.test.mjs control-prototype/tests/browser.test.mjs
 ```
 
 ### Preservation and evidence hashes

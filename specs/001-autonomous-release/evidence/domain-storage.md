@@ -1,7 +1,7 @@
 # T007/T008 additive storage and legacy-CAS migration evidence
 
 2026-09-08 · authoritative worktree:
-`/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure`.
+`<repo>`.
 
 Status: the bounded storage scope named by T008 is implemented. The existing SQLite store
 remains the sole logical-state owner; legacy identifiers, revisions, events, metadata text and

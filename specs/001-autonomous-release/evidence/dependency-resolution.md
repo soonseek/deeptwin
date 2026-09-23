@@ -18,7 +18,7 @@ Skills used: research for primary-source evidence; ecosystem-primer and langchai
 
 ## 2. Existing baseline and proposed exact roots
 
-Read-only metadata inspection used `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -I`: CPython **3.12.13**, stdlib SQLite runtime **3.53.1**, pip **26.2.1**. The host target is **macOS 26.5.1 (25F80), arm64**; supporting older macOS is not established by this research. No project `.venv` was created in the worktree. Existing requirements remain unchanged:
+Read-only metadata inspection used `<workspace>/.venv/bin/python -I`: CPython **3.12.13**, stdlib SQLite runtime **3.53.1**, pip **26.2.1**. The host target is **macOS 26.5.1 (25F80), arm64**; supporting older macOS is not established by this research. No project `.venv` was created in the worktree. Existing requirements remain unchanged:
 
 - Runtime direct: FastAPI 0.141.1, Uvicorn 0.52.4, python-docx 1.2.0, Pydantic 2.13.5.
 - Development: pytest 9.1.1 and httpx 0.28.1.
@@ -48,7 +48,7 @@ Primary version/license/platform evidence is each exact [PyPI JSON release endpo
 All download commands used this prefix (no target-environment install):
 
 ```sh
-/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -I -m pip --isolated download --index-url https://pypi.org/simple --only-binary=:all: --no-cache-dir --dest /private/tmp/deeptwin-t003-wheels.58ytEM
+<workspace>/.venv/bin/python -I -m pip --isolated download --index-url https://pypi.org/simple --only-binary=:all: --no-cache-dir --dest /private/tmp/deeptwin-t003-wheels.58ytEM
 ```
 
 Append the exact `attempts[].roots` values from the report: A and B used normal dependency resolution; C additionally used `--no-deps`. The existing native arm64 Python selected platform tags; this was not a cross-platform resolver run.
@@ -118,7 +118,7 @@ This is the **single JSON fenced block** in this file. Its canonical local repor
   "status": "partial_not_release_lock",
   "evidence_path": "specs/001-autonomous-release/evidence/dependency-resolution.md#machine-readable-resolution-report",
   "download_directory": "/private/tmp/deeptwin-t003-wheels.58ytEM",
-  "python_executable": "/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python",
+  "python_executable": "<workspace>/.venv/bin/python",
   "python_version": "3.12.13",
   "python_sqlite_runtime": "3.53.1",
   "platform": "macOS 26.5.1 (25F80) arm64",

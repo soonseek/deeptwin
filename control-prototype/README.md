@@ -13,7 +13,7 @@
 현재 환경의 Node 경로:
 
 ```text
-/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node
+<node-runtime>/dependencies/node/bin/node
 ```
 
 ## UI에서 검증하는 기능과 미연결 기능
@@ -43,7 +43,7 @@ node --test control-prototype/tests/fixtures.test.mjs control-prototype/tests/st
 브라우저 검사에는 이미 설치된 Chrome과 번들 Playwright를 사용합니다. `CONTROL_PLAYWRIGHT_MODULE`을 지정하지 않으면 명시적으로 실패하며 검사를 건너뛰지 않습니다.
 
 ```sh
-CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs node --test control-prototype/tests/browser.test.mjs control-prototype/tests/browser-review.test.mjs
+CONTROL_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs node --test control-prototype/tests/browser.test.mjs control-prototype/tests/browser-review.test.mjs
 ```
 
 브라우저 회귀 검사는 독립된 브라우저 컨텍스트에 합성 자료만 입력합니다. 실제 원본 다운로드, 네 비교 회차의 8개 수행·60개 시도·100개 수신 연결, 부분 초안, 첨부 수명과 저장 실패를 검사합니다. 화면 행렬은 3개 작업 영역 × 3개 보기 × 3개 폭(1440/1024/390) × 2개 테마입니다. 본문 넘침·이미지·브라우저 오류·외부 요청과 지정된 텍스트의 명암 대비를 검사합니다. 캡처는 `control-prototype/review-output/`에 생성하며 실제 시각 확인 전에는 화면 품질 합격으로 기록하지 않습니다.

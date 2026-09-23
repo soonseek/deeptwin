@@ -6,7 +6,7 @@
 > 복구 계약을 이 기록으로 통과시킬 수 없다.
 
 2026-09-07 · authoritative worktree:
-`/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure`.
+`<repo>`.
 
 Status: T015 is complete after isolated contracts and real HTTP/browser integration. The
 latest focused run has 52 Python tests and the complete existing browser set has 63 tests.

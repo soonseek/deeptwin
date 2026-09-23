@@ -1,7 +1,7 @@
 # T016 root command transaction — offline implementation evidence
 
 Verified 2026-09-08 in the authoritative worktree
-`/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure`. The implementation and a
+`<repo>`. The implementation and a
 fresh independent adversarial review are complete for this root-transaction slice. The
 authenticated HTTP delivery is recorded separately in `evidence/server-api-v1.md`. No provider,
 tool, network, credential store, paid API or user vault was accessed.

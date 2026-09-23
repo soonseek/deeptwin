@@ -94,28 +94,28 @@ order without importing or changing `BudgetBook`.
 The authoritative RED used the project environment:
 
 ```text
-/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_runtime_ledger.py -q
+<workspace>/.venv/bin/python -m pytest app/tests/test_runtime_ledger.py -q
 23 failed during import because app.runtime.ledger did not exist
 ```
 
 The final focused GREEN after implementation and adversarial review fixes is:
 
 ```text
-/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_runtime_ledger.py -q
+<workspace>/.venv/bin/python -m pytest app/tests/test_runtime_ledger.py -q
 35 passed in 11.84s
 ```
 
 The final shared-migration/component regression is:
 
 ```text
-/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_runtime_ledger.py app/tests/test_runtime_budgets.py -q
+<workspace>/.venv/bin/python -m pytest app/tests/test_runtime_ledger.py app/tests/test_runtime_budgets.py -q
 91 passed in 12.66s
 ```
 
 The latest application regression excluding the independently in-flight Claude adapter test is:
 
 ```text
-/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests -q --ignore=app/tests/test_claude_api.py
+<workspace>/.venv/bin/python -m pytest app/tests -q --ignore=app/tests/test_claude_api.py
 1740 passed, 1 warning in 25.39s
 ```
 

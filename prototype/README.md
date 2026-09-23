@@ -16,7 +16,7 @@ node prototype/server.mjs
 
 [로컬 시제품](http://127.0.0.1:4173)을 엽니다. 서버는 `127.0.0.1`에만 바인딩하며 포트를 바꾸려면 `PORT=4174 node prototype/server.mjs`를 사용합니다. 정수 1–65535만 허용합니다. 종료는 실행한 터미널에서 Ctrl+C입니다.
 
-이 기기의 Node 경로는 `/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node`입니다. 이 절대 경로로 위의 `node`를 대체할 수 있습니다.
+이 기기의 Node 경로는 `<node-runtime>/dependencies/node/bin/node`입니다. 이 절대 경로로 위의 `node`를 대체할 수 있습니다.
 
 ```sh
 node --test prototype/tests/prototype.test.mjs
@@ -25,7 +25,7 @@ node --test prototype/tests/prototype.test.mjs
 기본 검사는 브라우저 의존성 없이 실행됩니다. 설치된 Chrome에서 실제 DOM 회귀 검사 세 개를 함께 실행하려면 번들 Playwright 경로를 지정합니다. 다섯 입력칸의 선행 줄바꿈 0·1·3개 보존과 후속 편집·새로고침을 확인하는 15개 사례도 포함합니다. 이 값이 없으면 세 브라우저 검사는 건너뛰며, 패키지나 브라우저를 설치하지 않습니다.
 
 ```sh
-PROTOTYPE_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs node --test prototype/tests/prototype.test.mjs
+PROTOTYPE_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs node --test prototype/tests/prototype.test.mjs
 ```
 
 서버는 명시된 HTML/CSS/브라우저 모듈만 제공합니다. 서버 소스·테스트·README·저장소 파일은 제공하지 않습니다. GET 외 요청, 경로 순회, 숨김 파일 접근은 거절합니다. CSP가 외부 연결과 인라인 스크립트를 막으며 요청 내용은 기록하지 않습니다.

@@ -24,7 +24,7 @@
 
 통합 설계서를 자체 검토와 두 독립 검토로 확인한 뒤, “이 설계서를 확인한 뒤 첫 번째 ‘렌즈 정의·조합 규칙’ 작업 계획으로 넘어가도 될까요?”라는 질문에 사용자가 “응”이라고 답했다. 이는 작성된 핵심 계약 기준선의 검토 완료와 계획 작성으로의 이행이다. [DG-L01 작업 계획](../plans/2026-09-07-deeptwin-lens-definition-contract.md)의 작성·실행과 운영 코드 구현은 서로 구별한다.
 
-이 문서는 [통합 제품 설계 기준선](2026-09-06-deeptwin-integrated-product-design.md)의 하위 설계다. 원문 PDF는 `/Users/soonseekyang/Downloads/DeepTwin_OpenSource_Reference_Paper_KO.pdf`이며, 관련 근거는 4.2–4.4절, 4.8절, 6.4절이다. 논문의 서술·예시, 사용자 확정 요구, 이 문서의 신규 제안을 구분한다.
+이 문서는 [통합 제품 설계 기준선](2026-09-06-deeptwin-integrated-product-design.md)의 하위 설계다. 원문 PDF는 `<owner-provided reference PDF, not in the repository>`이며, 관련 근거는 4.2–4.4절, 4.8절, 6.4절이다. 논문의 서술·예시, 사용자 확정 요구, 이 문서의 신규 제안을 구분한다.
 
 ## 2. 이번 기능의 경계
 

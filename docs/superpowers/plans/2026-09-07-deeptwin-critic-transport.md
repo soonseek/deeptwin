@@ -14,7 +14,7 @@
 
 2026-09-07 첫 사용자 “응”은 DG-V01 초안과 V01-Q01 Task를 기준으로 **첫 시험의 엔진 연결·구현 계획을 작성**하자는 제안에 대한 동의였다. 계획을 제시한 뒤 사용자는 작업별 하위 에이전트와 별도 검토를 사용하는 방식으로 **A 호출부 분리를 구현**하자는 제안에도 “응”이라고 답했다. 이에 A의 Task 1–4와 오프라인 검사를 실행한다. B/C 구현·제품 모델 호출·모델/반복 수/판정 모델/비용 승인으로 확대하지 않는다. 체크박스는 실제 수행·검토 결과에 따라 갱신한다.
 
-- 작업 위치: `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure`의 기존 `codex/ui-structure` worktree. 다른 worktree나 기존 변경을 덮어쓰지 않는다.
+- 작업 위치: `<repo>`의 기존 `codex/ui-structure` worktree. 다른 worktree나 기존 변경을 덮어쓰지 않는다.
 - 문서의 shell 명령은 구현 에이전트용이다. 프레임워크 사용자가 CLI를 조작하는 UX를 만들지 않는다.
 - 이 계획의 실행 범위도 커밋·스테이징·푸시·패키지 설치·서비스 재시작·실계정/비밀/사용자 DB 접근을 포함하지 않는다. 해당 단계에는 파일 diff 검토만 한다.
 - 제품 모델 호출 없이 합성 입력·가짜 RPC·임시 디렉터리로 검사한다. 기존 테스트의 임시 파일 fixture 외에 사용자 파일을 초기화하거나 삭제하지 않는다.
@@ -113,7 +113,7 @@ def test_profiles_are_frozen_distinct_and_content_identified():
 - [x] **Step 2 — 실패를 확인한다.**
 
 Run from the worktree:
-`/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_generation_profiles.py -q`
+`<workspace>/.venv/bin/python -m pytest app/tests/test_generation_profiles.py -q`
 
 Expected: 새 `app.generation_profiles` 모듈이 없어 collection 실패. 기존 이름의 파일이 이미 있다면 덮어쓰지 말고 현재 내용과 계획을 대조한다.
 
@@ -279,7 +279,7 @@ def test_understanding_wrapper_keeps_its_profile_and_return_contract(isolated_rp
 
 - [x] **Step 2 — 실패를 확인한다.**
 
-Run: `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_codex_generation_profiles.py -q`
+Run: `<workspace>/.venv/bin/python -m pytest app/tests/test_codex_generation_profiles.py -q`
 
 Expected: 기존 `CodexUnderstandingModel`에 `instruction_profile`이 없어 실패. 제어 대역만 쓰며 실제 제공자를 시작하지 않는다. `_safe_config`, `_native_tool_isolation_supported`, 완료 검사는 실제 함수를 그대로 통과해야 한다.
 
@@ -343,7 +343,7 @@ class CodexUnderstandingModel(_CodexIsolatedModel):
 
 - [x] **Step 4 — 새 검사와 기존 전송·감사 회귀를 실행한다.**
 
-Run: `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_generation_profiles.py app/tests/test_codex_generation_profiles.py app/tests/test_codex_understanding.py app/tests/test_codex_environmentless.py app/tests/test_codex_completion_safety.py app/tests/test_runtime_profile_audit.py app/tests/test_generation_process_environment.py -q`
+Run: `<workspace>/.venv/bin/python -m pytest app/tests/test_generation_profiles.py app/tests/test_codex_generation_profiles.py app/tests/test_codex_understanding.py app/tests/test_codex_environmentless.py app/tests/test_codex_completion_safety.py app/tests/test_runtime_profile_audit.py app/tests/test_generation_process_environment.py -q`
 
 Expected: 전부 PASS. 기존 테스트가 호스트의 환경 설정 때문에 실패하면 실패 원인과 변경 전 결과를 구별한다. 테스트를 통과시키려고 실제 HOME/CODEX_HOME·계정·버전 gate·기존 설정 파일을 변경하지 않는다.
 
@@ -499,7 +499,7 @@ def test_pre_cancelled_critic_does_not_transfer_input(isolated_rpc, purpose):
 
 - [x] **Step 2 — 실패를 확인한다.**
 
-Run: `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_codex_critic.py -q`
+Run: `<workspace>/.venv/bin/python -m pytest app/tests/test_codex_critic.py -q`
 
 Expected: `app.codex_critic`이 없어 collection 실패. 이 검사의 `summary` 응답은 프로토콜 대역이며 크리틱 결과 스키마나 정답이 아니다. 유도 문구 테스트도 지시 채널 분리만 검사하며 모델의 주입 저항성을 증명하지 않는다.
 
@@ -534,7 +534,7 @@ class CodexCriticTransport(_CodexIsolatedModel):
 
 - [x] **Step 4 — 새 단계별 회귀를 실행해 PASS를 확인한다.**
 
-Run: `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_generation_profiles.py app/tests/test_codex_generation_profiles.py app/tests/test_codex_critic.py -q`
+Run: `<workspace>/.venv/bin/python -m pytest app/tests/test_generation_profiles.py app/tests/test_codex_generation_profiles.py app/tests/test_codex_critic.py -q`
 
 - [x] **Step 5 — 파일 내용과 범위 diff를 검토한다.**
 
@@ -546,7 +546,7 @@ Run: `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/test
 
 - [x] **Step 1 — 전체 관련 오프라인 회귀를 실행한다.**
 
-Run: `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_generation_profiles.py app/tests/test_codex_generation_profiles.py app/tests/test_codex_critic.py app/tests/test_codex_understanding.py app/tests/test_codex_environmentless.py app/tests/test_codex_completion_safety.py app/tests/test_generation_process_environment.py app/tests/test_runtime_profile_audit.py app/tests/test_understanding_readiness.py app/tests/test_model_selection.py app/tests/test_model_catalog.py app/tests/test_codex_rpc.py -q`
+Run: `<workspace>/.venv/bin/python -m pytest app/tests/test_generation_profiles.py app/tests/test_codex_generation_profiles.py app/tests/test_codex_critic.py app/tests/test_codex_understanding.py app/tests/test_codex_environmentless.py app/tests/test_codex_completion_safety.py app/tests/test_generation_process_environment.py app/tests/test_runtime_profile_audit.py app/tests/test_understanding_readiness.py app/tests/test_model_selection.py app/tests/test_model_catalog.py app/tests/test_codex_rpc.py -q`
 
 Expected: 전부 PASS. 이전에 있던 실패와 새 회귀를 구별해 결과를 남긴다. 수치를 예상 결과로 만들어 적지 않는다.
 

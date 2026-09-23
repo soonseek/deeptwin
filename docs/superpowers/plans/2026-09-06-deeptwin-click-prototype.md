@@ -11,7 +11,7 @@
 
 **Architecture:** Native browser modules divide fictional data, validated session state, reusable views, scene rendering, and event handling. A Node HTTP server exposes an explicit static-file allowlist on loopback. Browser inputs stay in memory and, when available, this tab's `sessionStorage`; there are no AI, authentication, external-tool, sending, deployment, or learning integrations.
 
-**Tech Stack:** HTML, CSS, native ES modules, Node built-in HTTP and test modules. No package installation. Use `/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node` on this machine. The README's `node` commands are portable equivalents.
+**Tech Stack:** HTML, CSS, native ES modules, Node built-in HTTP and test modules. No package installation. Use `<node-runtime>/dependencies/node/bin/node` on this machine. The README's `node` commands are portable equivalents.
 
 **Authoring status:** The code packet below records the pre-implementation plan committed in `aa1a27d`. Implementation is now in `prototype/`, first committed as `49bd17e`; review-driven changes are recorded at the end rather than retroactively rewriting the original packet. Checkboxes report actual execution. User usability acceptance, engine effects, provider connections, and production storage remain unvalidated.
 
@@ -19,7 +19,7 @@
 
 **State contract:** Every alternative and conversation draft is keyed by example job/run, role, input version, artifact version, and exact UTF-16 range. Each role remembers its own selection. Text entry is explicitly a design-test draft, not a submitted alternative, request, evidence, or approval. An empty draft means no user alternative exists. Scene/mode switches and detail close do not generate synthetic events. A successful `sessionStorage.setItem` is the only basis for a tab-storage success message. Storage errors remain visible; the current in-memory text remains editable. Session storage normally lasts through reload until the tab closes; browser restore/duplicate behavior is browser-dependent and is not represented as durable or private storage. Reset removes only the namespaced key, and clears in-memory state only after that removal succeeds.
 
-**Scope and evidence:** Reference [UI specification](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md) §§1–9 and [review cases](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/docs/ui/initial-ui-review-cases.md). Initial design, critic review, and after-alternative exploration remain separate entries. General UI uses work language; only an explicitly labeled audit example exposes lens provenance, with `렌즈 출처: 엔진 미연결`. The fixture library is fictional and newly authored here. No user workflow, previous POC, historical philosopher engine, model score, generated PDF, real execution, or personalized result is claimed.
+**Scope and evidence:** Reference [UI specification](<repo>/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md) §§1–9 and [review cases](<repo>/docs/ui/initial-ui-review-cases.md). Initial design, critic review, and after-alternative exploration remain separate entries. General UI uses work language; only an explicitly labeled audit example exposes lens provenance, with `렌즈 출처: 엔진 미연결`. The fixture library is fictional and newly authored here. No user workflow, previous POC, historical philosopher engine, model score, generated PDF, real execution, or personalized result is claimed.
 
 ## Task 1: Implement and verify the complete local prototype
 
@@ -27,16 +27,16 @@ This is one cohesive task because state continuity is the acceptance boundary ac
 
 **Create these exact files:**
 
-- `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/prototype/tests/prototype.test.mjs` — pure state/render and live loopback-server tests.
-- `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/prototype/data.mjs` — fictional source, complete role artifacts, three structures, iteration/evidence/log examples.
-- `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/prototype/state.mjs` — target keys, transitions, validation, tab storage, scoped reset.
-- `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/prototype/views.mjs` — escaped HTML helpers, artifact reader, comparison/editor, contextual modes, detail content.
-- `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/prototype/scenes.mjs` — eight meaningful scene panels and the common shell.
-- `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/prototype/app.mjs` — DOM events, selection capture, focus and dialog handling.
-- `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/prototype/styles.css` — responsive and accessible visual system.
-- `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/prototype/index.html` — static application entry point.
-- `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/prototype/server.mjs` — restricted loopback HTTP server.
-- `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/prototype/README.md` — operation, actual boundaries, and browser acceptance.
+- `<repo>/prototype/tests/prototype.test.mjs` — pure state/render and live loopback-server tests.
+- `<repo>/prototype/data.mjs` — fictional source, complete role artifacts, three structures, iteration/evidence/log examples.
+- `<repo>/prototype/state.mjs` — target keys, transitions, validation, tab storage, scoped reset.
+- `<repo>/prototype/views.mjs` — escaped HTML helpers, artifact reader, comparison/editor, contextual modes, detail content.
+- `<repo>/prototype/scenes.mjs` — eight meaningful scene panels and the common shell.
+- `<repo>/prototype/app.mjs` — DOM events, selection capture, focus and dialog handling.
+- `<repo>/prototype/styles.css` — responsive and accessible visual system.
+- `<repo>/prototype/index.html` — static application entry point.
+- `<repo>/prototype/server.mjs` — restricted loopback HTTP server.
+- `<repo>/prototype/README.md` — operation, actual boundaries, and browser acceptance.
 
 Do not stage or overwrite the existing dirty `docs/superpowers/plans/2026-09-06-deeptwin-ui-structure.md`. Use `apply_patch` for implementation edits. Do not install dependencies, create authentication, publish, or update historical review records as if actual connection/engine tests passed.
 
@@ -259,10 +259,10 @@ test('server exposes only allowlisted GET assets with security headers', async (
 });
 ```
 
-- [x] **Step 2: Run the tests and observe the expected failure.** Run from `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure`:
+- [x] **Step 2: Run the tests and observe the expected failure.** Run from `<repo>`:
 
 ```sh
-/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --test prototype/tests/prototype.test.mjs
+<node-runtime>/dependencies/node/bin/node --test prototype/tests/prototype.test.mjs
 ```
 
 Expected: exit nonzero with `ERR_MODULE_NOT_FOUND` for `prototype/data.mjs`; record the actual output. If implementation files already exist, inspect them and use the tests to identify the missing behavior instead of overwriting work blindly.
@@ -1231,7 +1231,7 @@ node prototype/server.mjs
 
 [로컬 시제품](http://127.0.0.1:4173)을 엽니다. 서버는 `127.0.0.1`에만 바인딩하며 포트를 바꾸려면 `PORT=4174 node prototype/server.mjs`를 사용합니다. 정수 1–65535만 허용합니다. 종료는 실행한 터미널에서 Ctrl+C입니다.
 
-이 기기의 Node 경로는 `/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node`입니다. 이 절대 경로로 위의 `node`를 대체할 수 있습니다.
+이 기기의 Node 경로는 `<node-runtime>/dependencies/node/bin/node`입니다. 이 절대 경로로 위의 `node`를 대체할 수 있습니다.
 
 ```sh
 node --test prototype/tests/prototype.test.mjs
@@ -1274,7 +1274,7 @@ node --test prototype/tests/prototype.test.mjs
 - [x] **Step 8: Start the server and inspect the actual browser.** Run:
 
 ```sh
-/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node prototype/server.mjs
+<node-runtime>/dependencies/node/bin/node prototype/server.mjs
 ```
 
 Use the running terminal session; open `http://127.0.0.1:4173` in the Codex browser panel. Use the README's exact browser procedure. For independent automated acceptance, root can use bundled Playwright with installed Chrome (`channel: 'chrome'`). Do not install browser/dependency packages. Check 1440px and 390px, actual DOM range selection, Korean input continuity, modal Escape/focus, role/span draft isolation, same-tab reload, blocked/quota storage, and all 24 scene/mode combinations. Save screenshots and actual results in the root worker's designated observation record; do not rewrite historical UI/engine verification fields. If visual or behavior findings require code changes, correct them and repeat only affected checks.

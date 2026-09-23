@@ -7,7 +7,7 @@ authentication, full per-feature content schemas or complete runtime authority.
 
 ## Test-first evidence
 
-Interpreter initially `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python`.
+Interpreter initially `<workspace>/.venv/bin/python`.
 Commands used `-m pytest app/tests/test_domain_contracts.py`, then added
 `app/tests/test_domain_events.py` and `app/tests/test_domain_schema_exports.py`.
 

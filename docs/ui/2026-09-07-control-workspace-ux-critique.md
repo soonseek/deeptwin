@@ -13,7 +13,7 @@
 - 설치된 `frontend-design`의 정보 구조·절제·사용자 관점 문구·스크린샷 자기 비평 기준을 사용했다. 미설치 `Impeccable`을 실행한 것으로 기록하지 않는다.
 - 주 에이전트는 사용자 탭과 분리된 Chrome headless context에서 실제 노드·산출물·모드·작업 영역·합성 사례·감사 탐색을 수행했다. 1440×1000과 1024×768 화면 캡처 10개를 생성해 모두 직접 확인했다. 사용자 입력을 수정하거나 모델·도구·학습 기능을 실행하지 않았다.
 - 두 별도 검토자가 실행/자기 버전과 설계/탐구/평가 영역을 나누어 독립 비평했다. 이후 주 에이전트가 중복 지적과 관찰 근거를 대조했다. 이것은 오류 독립성의 통계적 보증이나 실제 초보 사용자 실험이 아니다.
-- 판정 근거는 [기존 수용·거부 기준](/Users/soonseekyang/Documents/Deeptwin/docs/acceptance-cases.md), [제품 의도](/Users/soonseekyang/Documents/Deeptwin/docs/product-intent.md), [UI 명세 §10–11](../superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md#10-환경-맥락-유지형-작업대--채택된-연결-구조)와 실제 화면이다. 이번에 논문 원본 PDF를 새로 독해하거나 엔진 효과를 검증한 것은 아니다.
+- 판정 근거는 [기존 수용·거부 기준](<workspace>/docs/acceptance-cases.md), [제품 의도](<workspace>/docs/product-intent.md), [UI 명세 §10–11](../superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md#10-환경-맥락-유지형-작업대--채택된-연결-구조)와 실제 화면이다. 이번에 논문 원본 PDF를 새로 독해하거나 엔진 효과를 검증한 것은 아니다.
 - 앞선 79개 시험과 시각 검사 결과는 취소하지 않는다. 연결·보관·실패 처리·가독성의 해당 검사 범위에서 유효하지만, 사용자 이해도 합격의 근거는 아니다.
 - 아래 위치는 해당 화면의 문서 위쪽부터 잰 CSS 픽셀이다. 사용자가 반드시 그만큼 스크롤한다는 행동 측정이나 소요 시간 측정이 아니다. 개선 사례의 최종 위치는 모든 이미지 해독 완료 후 재측정했다.
 
@@ -35,7 +35,7 @@
 
 **개선:** 넓은 화면은 읽을 수 있는 그래프와 선택 산출물의 작업면을 함께 유지하고, 좁은 화면은 현재 대상과 그래프로의 복귀를 유지하는 상세 작업면으로 연결한다. 필요한 경우 실제 관찰 기록에 근거한 상태·출력·검토 필요를 요약한다. 작은 그래프에 전부 압축하거나, 기록에 없는 실시간 상태·성공을 만들지 않는다.
 
-근거: [첫 화면](../../control-prototype/review-output/ux-2026-09-07/01-run-first.png), [노드 선택 직후](../../control-prototype/review-output/ux-2026-09-07/02-node-selected.png), [1024px 화면](../../control-prototype/review-output/ux-2026-09-07/08-run-1024.png), [작업면 배치](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/control-prototype/workspace.mjs:138), [노드 표시](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/control-prototype/primitives.mjs:108).
+근거: [첫 화면](../../control-prototype/review-output/ux-2026-09-07/01-run-first.png), [노드 선택 직후](../../control-prototype/review-output/ux-2026-09-07/02-node-selected.png), [1024px 화면](../../control-prototype/review-output/ux-2026-09-07/08-run-1024.png), [작업면 배치](<repo>/control-prototype/workspace.mjs:138), [노드 표시](<repo>/control-prototype/primitives.mjs:108).
 
 ### UX-02 · 높음 — 원본과 ‘나의 버전’의 소유 구분이 늦고, 현재 파일 선택이 표시되지 않는다
 
@@ -45,7 +45,7 @@
 
 **개선:** ‘선택한 원본’과 ‘같은 조건에서 내가 만든 버전’을 분명히 구획하고, 현재 파일을 목록·작업면 양쪽에 일관되게 표시한다. 부분 선택 시 해당 원문/영역과 대안 작성·첨부를 가까이 두고, 개선 영역에서도 이 쌍을 확인할 수 있게 한다. 입력 파일이면 누가 만들어 어느 수행에 전달한 것인지 밝힌다. 원본 전체·실제 형식 접근은 유지한다. 코칭 코멘트나 이유를 필수로 요구하지 않는다.
 
-근거: [실제 산출물 작업면](../../control-prototype/review-output/ux-2026-09-07/03-selected-output.png), [현재 입력 화면](../../control-prototype/review-output/ux-2026-09-07/06-growth-fresh.png), [파일 선택 버튼](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/control-prototype/workspace.mjs:93), [원본/대안 구성](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/control-prototype/workspace.mjs:121). AC-028–031, §10.4.
+근거: [실제 산출물 작업면](../../control-prototype/review-output/ux-2026-09-07/03-selected-output.png), [현재 입력 화면](../../control-prototype/review-output/ux-2026-09-07/06-growth-fresh.png), [파일 선택 버튼](<repo>/control-prototype/workspace.mjs:93), [원본/대안 구성](<repo>/control-prototype/workspace.mjs:121). AC-028–031, §10.4.
 
 ### UX-03 · 높음 — 설계 비교가 세 후보를 기억하며 왕복하는 작업이 된다
 
@@ -55,7 +55,7 @@
 
 **개선:** 현재 비교 질문과 후보별 핵심 구조 차이를 유지한 채, 같은 초점의 그래프를 즉시 대조할 수 있게 한다. 고정 기준안·대조안 전환이나 초점별 비교면은 후속 설계 후보이며 이번에 배치를 확정하지 않는다. 짧은 비교 요약은 그래프의 관련 노드·연결을 가리켜야 한다. 세 그래프를 읽을 수 없게 축소하거나 텍스트 카드로 구조 비교를 대체하지 않는다. 선택본의 중복 전체 표시는 줄인다.
 
-근거: [설계 첫 화면](../../control-prototype/review-output/ux-2026-09-07/05-design-first.png), [후보와 선택본 출력](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/control-prototype/workspace.mjs:75). AC-014, §10.7.
+근거: [설계 첫 화면](../../control-prototype/review-output/ux-2026-09-07/05-design-first.png), [후보와 선택본 출력](<repo>/control-prototype/workspace.mjs:75). AC-014, §10.7.
 
 ### UX-04 · 높음 — 개선 탐구와 평가에서 중요한 판단 근거가 전체 자료 뒤에 묻힌다
 
@@ -65,7 +65,7 @@
 
 **개선:** 관찰 차이와 대응 부분을 먼저 제시하고 전체 원본은 즉시 열 수 있게 한다. 경쟁 설명은 짧은 주장·미확정 상태·판별에 필요한 증거를 우선 보여 주고 지지/반대 근거를 펼친다. 이전 큐 비교에서는 업무·회차·후보 변경·국소/후속 결과 요약을 먼저 두고 정확한 그래프·파일로 연결한다. 실패/악화·최종 근거 부족을 종합 점수로 가리지 않으며, 사람이 승인할 정확한 버전과 실제 적용은 계속 구별한다. 이 제안은 새로운 필수 승인 단계나 전용 제출 버튼을 추가하는 것이 아니다.
 
-근거: [개선 첫 화면](../../control-prototype/review-output/ux-2026-09-07/07-growth-fixed-first.png), [경쟁 설명과 회차](../../control-prototype/review-output/ux-2026-09-07/09-round-choice.png), [부분 밖 영향](../../control-prototype/review-output/ux-2026-09-07/10-impact-table.png), [전체 파일 기본 펼침](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/control-prototype/workspace.mjs:97), [개선 영역 순서](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/control-prototype/workspace.mjs:182). AC-005·010·025–031, §10.5–10.6.
+근거: [개선 첫 화면](../../control-prototype/review-output/ux-2026-09-07/07-growth-fixed-first.png), [경쟁 설명과 회차](../../control-prototype/review-output/ux-2026-09-07/09-round-choice.png), [부분 밖 영향](../../control-prototype/review-output/ux-2026-09-07/10-impact-table.png), [전체 파일 기본 펼침](<repo>/control-prototype/workspace.mjs:97), [개선 영역 순서](<repo>/control-prototype/workspace.mjs:182). AC-005·010·025–031, §10.5–10.6.
 
 ### UX-05 · 중간 — 세 보기의 차이가 작업 방식보다 정보 추가·접힘 차이로 보인다
 
@@ -75,7 +75,7 @@
 
 **개선:** 작업공간은 산출물 다루기, 그래프는 연결·상태 살피기, 대화는 현재 대상에 대한 대화라는 중심을 갖도록 한다. 같은 대상·버전·작성 상태를 공유하되 모든 내용을 매번 전부 반복하지 않는다. 세 모드를 삭제하거나 대화를 필수 개선 입력으로 바꾸지 않는다.
 
-근거: [대화 보기](../../control-prototype/review-output/ux-2026-09-07/04-conversation.png), [본문과 대화 구성](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/control-prototype/workspace.mjs:207). AC-017–018.
+근거: [대화 보기](../../control-prototype/review-output/ux-2026-09-07/04-conversation.png), [본문과 대화 구성](<repo>/control-prototype/workspace.mjs:207). AC-017–018.
 
 ### UX-06 · 중간 — 정확성 고지와 내부 식별자가 업무 언어를 압도한다
 
@@ -85,7 +85,7 @@
 
 **개선:** 업무명·역할·파일명·읽을 수 있는 개정 이름을 먼저 보이고 정확한 ID는 보조 상세로 유지한다. 재시도와 새 수행의 의미는 필요한 자리에서 설명한다. 한국어 비개발자의 검토에 맞는 독립 합성 자료를 사용한다. 전역 시제품 표지와 실제 위험/미지원 고지는 남기되 중복을 정리한다. 원본/파생 구별, 첨부 소멸, 실제 미연결 상태를 감추는 방식은 허용하지 않는다.
 
-근거: [선택 결과 화면](../../control-prototype/review-output/ux-2026-09-07/03-selected-output.png), [수신자 표시](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/control-prototype/workspace.mjs:111), [원본 범위 제어](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/control-prototype/primitives.mjs:122). AC-014·036.
+근거: [선택 결과 화면](../../control-prototype/review-output/ux-2026-09-07/03-selected-output.png), [수신자 표시](<repo>/control-prototype/workspace.mjs:111), [원본 범위 제어](<repo>/control-prototype/primitives.mjs:122). AC-014·036.
 
 ### UX-07 · 중간 — 내부 탐구 감사가 현재 판단과 연결된 설명보다 전체 로그처럼 읽힌다
 
@@ -95,7 +95,7 @@
 
 **개선:** 현재 대상과 연결된 탐구 경로·질문·확인/반증·후보 반영 여부를 먼저 설명하고 전체 원기록을 이어 제공한다. 일반 화면에서 철학 이름을 전면 노출하지 않는 요구는 유지한다. 내부 정의·조합·탈락 기록을 지우거나, 현재 없는 실제 실험 증거를 꾸며서는 안 된다.
 
-근거: [감사 구현](/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/control-prototype/workspace.mjs:257). AC-013–016·024, §10.5·10.7.
+근거: [감사 구현](<repo>/control-prototype/workspace.mjs:257). AC-013–016·024, §10.5·10.7.
 
 ## 추천 수정 순서 — 아직 구현 승인/착수 아님
 

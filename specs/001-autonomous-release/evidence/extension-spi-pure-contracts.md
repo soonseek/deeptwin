@@ -124,7 +124,7 @@ out-of-tree execution or dependency architecture.
 Focused command after deterministic schema export:
 
 ```text
-/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest -q \
+<workspace>/.venv/bin/python -m pytest -q \
   app/tests/test_extension_spi.py \
   app/tests/test_extension_sdk.py \
   app/tests/test_service_clients.py \
@@ -137,7 +137,7 @@ Focused command after deterministic schema export:
   app/tests/test_public_events.py
 
 1082 passed; final full-regression evidence is recorded separately
-/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m compileall -q \
+<workspace>/.venv/bin/python -m compileall -q \
   app sdk/python/deeptwin_ext examples/extensions/pure_text_tool
 git diff --check
 ```

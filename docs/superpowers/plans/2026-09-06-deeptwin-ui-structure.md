@@ -20,7 +20,7 @@
 
 ### 이번 실행의 작업 위치
 
-사용자는 단계별 새 작성자와 명세/품질 검토 방식에 “네 추천대로”, 별도 작업 폴더 생성에 “응”이라고 답했다. 작성 위치는 `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure`, 브랜치는 `codex/ui-structure`, 시작 커밋은 `03e6bfa`다. 아래 새 설계 문서 두 개와 이 계획의 경로는 이 작업 폴더 아래의 같은 상대 경로로 적용한다. 원 작업 폴더의 기존 자료는 읽기 전용 근거로 참조하며, `docs/brainstorming-progress.md`만 현재 위치를 알리는 진행 기록으로 갱신한다.
+사용자는 단계별 새 작성자와 명세/품질 검토 방식에 “네 추천대로”, 별도 작업 폴더 생성에 “응”이라고 답했다. 작성 위치는 `<repo>`, 브랜치는 `codex/ui-structure`, 시작 커밋은 `03e6bfa`다. 아래 새 설계 문서 두 개와 이 계획의 경로는 이 작업 폴더 아래의 같은 상대 경로로 적용한다. 원 작업 폴더의 기존 자료는 읽기 전용 근거로 참조하며, `docs/brainstorming-progress.md`만 현재 위치를 알리는 진행 기록으로 갱신한다.
 
 원 작업 폴더의 미추적 `.gitignore` 및 자료를 함께 커밋하지 않기 위해 작업 폴더 제외 규칙은 로컬 `.git/info/exclude`에만 추가하고 제외 적용을 확인했다. 시작 작업 폴더에는 기준선·계획 문서만 있고 실행할 앱/테스트가 없다. 깨끗한 Git 상태와 공백 검사로 문서 기준 상태를 확인했으며 패키지 설치나 제품 시험 통과를 주장하지 않는다. 변경은 설계 문서 두 개만 명시해 단계별 로컬 커밋하고, 진행 기록과 계획의 작업 체크는 별도로 보존한다. 푸시하지 않는다.
 
@@ -32,10 +32,10 @@
 
 ## 읽을 근거
 
-- `/Users/soonseekyang/Documents/Deeptwin/docs/superpowers/specs/2026-09-06-deeptwin-integrated-product-design.md`: 특히 2–6절, 7절 초기 화면, 8절 수용 기준, 9절 미결.
-- `/Users/soonseekyang/Documents/Deeptwin/docs/product-intent.md`: INT-002–033과 최신 정정. 직접 요구의 의미가 충돌하면 이 근거를 확인한다.
-- `/Users/soonseekyang/Documents/Deeptwin/docs/acceptance-cases.md`: AC-001–034. 문서상 요구이며 실행된 테스트가 아니다.
-- `/Users/soonseekyang/Documents/Deeptwin/docs/reference-review-2026-09-06.md`: 이전 실패 가이드·사용자 목업·영상의 이미 확인된 관계. 자료를 다시 다운로드하거나 영상을 봤다고 새로 주장하지 않는다.
+- `<workspace>/docs/superpowers/specs/2026-09-06-deeptwin-integrated-product-design.md`: 특히 2–6절, 7절 초기 화면, 8절 수용 기준, 9절 미결.
+- `<workspace>/docs/product-intent.md`: INT-002–033과 최신 정정. 직접 요구의 의미가 충돌하면 이 근거를 확인한다.
+- `<workspace>/docs/acceptance-cases.md`: AC-001–034. 문서상 요구이며 실행된 테스트가 아니다.
+- `<workspace>/docs/reference-review-2026-09-06.md`: 이전 실패 가이드·사용자 목업·영상의 이미 확인된 관계. 자료를 다시 다운로드하거나 영상을 봤다고 새로 주장하지 않는다.
 
 Spec Kit 헌장은 현재 템플릿이다. 템플릿의 CLI 예시나 기본 문구를 제품 규칙으로 적용하지 않는다. 이 UI 설계 계획과 경쟁하는 Spec Kit 작업 목록을 지금 생성하지 않는다. 기능별 명세로 이행할 때 승인된 화면·사례를 참조하고, 해당 구현 작업의 진행 기준을 하나로 유지한다.
 
@@ -43,10 +43,10 @@ Spec Kit 헌장은 현재 템플릿이다. 템플릿의 CLI 예시나 기본 문
 
 | 작업 | 정확한 파일 | 책임 |
 | --- | --- | --- |
-| Create | `/Users/soonseekyang/Documents/Deeptwin/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md` | 화면 구조·공통 맥락·흐름·상태·구체 UX 선택의 단일 설계 문서 |
-| Create | `/Users/soonseekyang/Documents/Deeptwin/docs/ui/initial-ui-review-cases.md` | 기존 AC에 연결된 UI 설계 검토 사례와 미실시/검토 결과. 성능 데이터셋이 아님 |
-| Modify | `/Users/soonseekyang/Documents/Deeptwin/docs/brainstorming-progress.md` | 현재 계획 실행 상태와 사용자 검토의 실제 범위 |
-| Modify | `/Users/soonseekyang/Documents/Deeptwin/docs/superpowers/plans/2026-09-06-deeptwin-ui-structure.md` | 이 계획의 체크박스·실행 근거만 갱신 |
+| Create | `<workspace>/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md` | 화면 구조·공통 맥락·흐름·상태·구체 UX 선택의 단일 설계 문서 |
+| Create | `<workspace>/docs/ui/initial-ui-review-cases.md` | 기존 AC에 연결된 UI 설계 검토 사례와 미실시/검토 결과. 성능 데이터셋이 아님 |
+| Modify | `<workspace>/docs/brainstorming-progress.md` | 현재 계획 실행 상태와 사용자 검토의 실제 범위 |
+| Modify | `<workspace>/docs/superpowers/plans/2026-09-06-deeptwin-ui-structure.md` | 이 계획의 체크박스·실행 근거만 갱신 |
 
 상위 기준선·사용자 의도·AC 원문·MANUAL-001 원본은 이 계획을 통과시키기 위해 수정하지 않는다. 새 설계에서 충돌을 발견하면 근거와 변경 제안을 표시하고 해당 의미를 사용자에게 확인한다. 문서는 `apply_patch`로 작성한다.
 
@@ -67,7 +67,7 @@ Spec Kit 헌장은 현재 템플릿이다. 템플릿의 CLI 예시나 기본 문
 ## Task 1: 공통 맥락과 선택 대상 계약
 
 **Files:**
-- Create: `/Users/soonseekyang/Documents/Deeptwin/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md`
+- Create: `<workspace>/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md`
 
 - [x] **Step 1: 문서의 지위를 명시한다.** 제목은 `DeepTwin 초기 UI 정보 구조·화면 흐름 설계`, 상태는 `검토 제안, 화면/엔진 미구현`으로 쓴다. 기준선 경로와 INT/AC 근거를 붙인다. 이 문서의 확인을 엔진 효과 검증으로 볼 수 없다고 명시한다.
 - [x] **Step 2: `## 1. 공통 맥락과 선택 대상`을 작성한다.** 위 공통 대상 표를 출발점으로, 각 대상의 화면상 식별 정보와 모드 전환에서 유지할 정보를 정리한다. 현재 운영·원 실행·실험 후보를 구별하고, 아직 업무/대안/실험이 없는 상태를 임의 데이터로 채우지 않는다.
@@ -75,7 +75,7 @@ Spec Kit 헌장은 현재 템플릿이다. 템플릿의 CLI 예시나 기본 문
 - [x] **Step 4: 문서 구조와 의미를 확인한다.** 아래 명령은 표식 존재 검사일 뿐 기능 시험이 아니다. 출력에서 공통 맥락 절과 세 모드가 확인돼야 한다. 본문을 읽어 ‘같은 맥락’이 ‘모든 에이전트에게 진단 자료를 공개’로 쓰이지 않았는지 대조한다.
 
 ```sh
-rg -n '^## 1\.|작업공간|대화|그래프|진단 자료' /Users/soonseekyang/Documents/Deeptwin/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md
+rg -n '^## 1\.|작업공간|대화|그래프|진단 자료' <workspace>/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md
 ```
 
 Expected: `## 1.`과 세 모드의 관계가 출력됨. 산출물·대안·운영 접근의 구분은 사람이 문맥을 읽어 검토하며 검색 성공을 합격으로 보고하지 않음.
@@ -83,7 +83,7 @@ Expected: `## 1.`과 세 모드의 관계가 출력됨. 산출물·대안·운�
 ## Task 2: 공통 화면 골격과 세 모드의 역할
 
 **Files:**
-- Modify: `/Users/soonseekyang/Documents/Deeptwin/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md`
+- Modify: `<workspace>/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md`
 
 - [x] **Step 1: `## 2. 공통 화면 골격 대안`을 추가한다.** 두 안 모두 작업공간·대화·그래프를 제공한다. 비교 대상은 ‘세 모드 중 하나 선택’이 아니라 공유 맥락의 배치다. A는 공통 환경/업무 탐색과 선택 대상 표시를 유지하고 중앙 내용을 전환하는 구조, B는 모드별 화면 면적을 넓히되 공통 대상/버전 표시와 복귀 경로를 고정하는 구조로 제시한다. A는 탐색 연속성, B는 넓은 산출물/그래프 작업에 이점이 있다는 설계 추론을 명시하고, 공간 과밀/전환 시 맥락 약화의 위험도 비교한다.
 - [x] **Step 2: 두 안의 텍스트 와이어프레임을 작성한다.** 각 안에 환경·업무 탐색, 현재 대상·버전, 세 모드 전환, 주 작업 내용, 필요한 근거/상태 접근 위치를 표시한다. ‘원 산출물 본문 영역’ 등 영역 이름을 사용하고 허구의 기획안·사용자 대안·성공 점수로 채우지 않는다. 레이아웃은 검토 제안으로 표시하며 픽셀·색·프레임워크를 정하지 않는다.
@@ -93,7 +93,7 @@ Expected: `## 1.`과 세 모드의 관계가 출력됨. 산출물·대안·운�
 ## Task 3: 전체 여정과 부분 반복의 화면 흐름
 
 **Files:**
-- Modify: `/Users/soonseekyang/Documents/Deeptwin/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md`
+- Modify: `<workspace>/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md`
 
 - [x] **Step 1: `## 4. 전체 여정과 반복 흐름`을 추가한다.** 업무 설명/자료 → 업무 이해와 출처 → 구조 후보 비교/수정 → 승인된 설계와 구성 상태 → 업무 실행/산출물로 이어지는 이동도를 작성한다. 이는 화면 책임의 연결이지 고정 메뉴 수·모든 사용자 클릭 순서가 아님을 명시한다.
 - [x] **Step 2: 산출물 중심 반복을 연결한다.** 역할 입력/원 산출물 전체 ↔ 실제 사용자 전체/부분 대안 ↔ 관찰 차이/가설 ↔ 필요한 질문/새 증거 ↔ 변경 후보/실험 결과 ↔ 같은 또는 다른 산출물의 새 대안이라는 이동을 작성한다. 원 대안이 없으면 비교 근거 없음으로 표시하며 생성하지 않는다. 렌즈 질문의 거절/보류가 무관한 업무 전체를 막지 않는 관계를 포함한다.
@@ -104,7 +104,7 @@ Expected: `## 1.`과 세 모드의 관계가 출력됨. 산출물·대안·운�
 ## Task 4: 실패·보류·권한과 미확정 UX 선택
 
 **Files:**
-- Modify: `/Users/soonseekyang/Documents/Deeptwin/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md`
+- Modify: `<workspace>/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md`
 
 - [x] **Step 1: `## 5. 상태와 승인 효력`을 추가한다.** 아래 상태군별로 사용자가 알아야 하는 정보, 가능한 다음 선택, 연결할 근거, 허용하지 않을 오해를 표로 작성한다. 객체마다 다른 상태를 하나의 공통 상태기계로 합치지 않는다.
 
@@ -126,7 +126,7 @@ Expected: `## 1.`과 세 모드의 관계가 출력됨. 산출물·대안·운�
 ## Task 5: 수용 기준에 연결한 UI 검토 사례
 
 **Files:**
-- Create: `/Users/soonseekyang/Documents/Deeptwin/docs/ui/initial-ui-review-cases.md`
+- Create: `<workspace>/docs/ui/initial-ui-review-cases.md`
 
 - [x] **Step 1: 아래 사례를 검토 파일에 작성한다.** 제목은 `초기 UI 설계 검토 사례`로 하고 모든 사례의 시작 상태를 `미검토 — 화면 설계 작성 후 확인`으로 둔다. 각 행에 설계의 절/대상 위치, 관찰한 설계 내용, 결과/한계를 기록할 열을 둔다. 사용자 대안·실행 로그·학습 점수는 생성하지 않는다.
 
@@ -149,7 +149,7 @@ Expected: `## 1.`과 세 모드의 관계가 출력됨. 산출물·대안·운�
 - [x] **Step 3: 의미 검토를 수행한다.** 같은 모드·승인·대안·실험 용어가 두 문서에서 같은 대상을 가리키는지 읽는다. UI-01–12를 모두 찾을 수 있는지 아래 명령으로 확인하되 의미 검토를 검색 결과로 대체하지 않는다.
 
 ```sh
-rg -n '^\| UI-(0[1-9]|1[0-2]) ' /Users/soonseekyang/Documents/Deeptwin/docs/ui/initial-ui-review-cases.md
+rg -n '^\| UI-(0[1-9]|1[0-2]) ' <workspace>/docs/ui/initial-ui-review-cases.md
 ```
 
 Expected: UI-01부터 UI-12까지 12개 사례가 각각 한 번 출력됨. 실제 기능 시험 결과는 없음.
@@ -157,18 +157,18 @@ Expected: UI-01부터 UI-12까지 12개 사례가 각각 한 번 출력됨. 실�
 ## Task 6: 통합 검토와 사용자에게 보여줄 결과
 
 **Files:**
-- Modify: `/Users/soonseekyang/Documents/Deeptwin/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md`
-- Modify: `/Users/soonseekyang/Documents/Deeptwin/docs/ui/initial-ui-review-cases.md`
-- Modify: `/Users/soonseekyang/Documents/Deeptwin/docs/brainstorming-progress.md`
-- Modify: `/Users/soonseekyang/Documents/Deeptwin/docs/superpowers/plans/2026-09-06-deeptwin-ui-structure.md`
+- Modify: `<workspace>/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md`
+- Modify: `<workspace>/docs/ui/initial-ui-review-cases.md`
+- Modify: `<workspace>/docs/brainstorming-progress.md`
+- Modify: `<workspace>/docs/superpowers/plans/2026-09-06-deeptwin-ui-structure.md`
 
 - [x] **Step 1: 메인 에이전트가 설계 전체를 직접 검토한다.** 기준선 2–6절과 UI-01–12를 읽고 책임·근거·권한·원본/후보·상태 용어를 대조한다. 빈 항목이나 의미가 다른 동일 용어를 고치고, 필요한 새 제품 결정은 추천안과 근거가 있는 미확정 선택으로 명시한다. 검토를 서브에이전트 결과만으로 대신하지 않는다.
 - [x] **Step 2: `## 7. 검토할 화면 구조와 남은 결정`을 작성한다.** 추천 골격과 대안, 세 모드의 연속성, 대안↔탐구↔실험↔승격 이동도, 실패/보류 상태의 위치를 한 묶음으로 제시한다. 정상 경로만 보여주거나 한 줄씩 동의를 반복 요구하지 않는다. 문서에서 상세 선택의 상태를 사용자가 확인할 수 있게 한다.
 - [x] **Step 3: 작성 파일과 범위를 검사한다.** `git status --short`로 UI·제품 코드·계정 관련 파일이 바뀌지 않았는지 확인한다. 아래 두 문서를 읽어 문서에 표현된 설계와 실제로 구현된 기능을 구별하고, 상대 링크가 실제 파일을 가리키는지 확인한다. 설계 산출물만 완성된 상태라면 제품 완료로 보고하지 않는다.
 
 ```sh
-git -C /Users/soonseekyang/Documents/Deeptwin status --short
-rg -n '^## ' /Users/soonseekyang/Documents/Deeptwin/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md
+git -C <workspace> status --short
+rg -n '^## ' <workspace>/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md
 ```
 
 Expected: 설계 문서에는 1–7절이 있고 이 계획이 지정한 문서 변경만 발생함. 기존 미추적 설치 파일을 이 작업의 변경으로 오인하거나 삭제하지 않음.
@@ -176,10 +176,10 @@ Expected: 설계 문서에는 1–7절이 있고 이 계획이 지정한 문서 
 - [x] **Step 4: 작업 기록과 로컬 버전을 남긴다.** 체크박스는 실제 끝낸 단계만 표시하고 UI 검토 결과·미확정·사용자 미검토 상태를 진행 기록에 연결한다. 문서 두 개만 로컬 커밋하며 원래 있던 미추적 파일을 함께 추가하지 않는다. 문서 커밋과 외부 푸시는 구별한다.
 
 ```sh
-git -C /Users/soonseekyang/Documents/Deeptwin add -- docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md docs/ui/initial-ui-review-cases.md
-git -C /Users/soonseekyang/Documents/Deeptwin diff --cached --check
-git -C /Users/soonseekyang/Documents/Deeptwin diff --cached --name-only
-git -C /Users/soonseekyang/Documents/Deeptwin commit -m "docs: propose DeepTwin UI structure and review cases" -- docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md docs/ui/initial-ui-review-cases.md
+git -C <workspace> add -- docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md docs/ui/initial-ui-review-cases.md
+git -C <workspace> diff --cached --check
+git -C <workspace> diff --cached --name-only
+git -C <workspace> commit -m "docs: propose DeepTwin UI structure and review cases" -- docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md docs/ui/initial-ui-review-cases.md
 ```
 
 Expected: 스테이징 범위를 확인한 뒤 정확히 두 설계 문서만 커밋됨. 관련 없는 스테이징 변경이 있으면 먼저 범위를 분리하고 강제 초기화하지 않음. 푸시는 수행하지 않음.

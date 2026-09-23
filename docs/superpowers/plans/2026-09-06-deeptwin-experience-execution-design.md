@@ -29,15 +29,15 @@
 
 ## 작업 위치와 파일 책임
 
-작업 폴더: `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure`, 브랜치: `codex/ui-structure`. 기존 미커밋 파일 `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/docs/superpowers/plans/2026-09-06-deeptwin-ui-structure.md`는 이 계획의 수정·스테이징 대상이 아니다. 원 작업 폴더의 미추적 소스·패키지·Spec Kit 템플릿도 함께 스테이징하지 않는다.
+작업 폴더: `<repo>`, 브랜치: `codex/ui-structure`. 기존 미커밋 파일 `<repo>/docs/superpowers/plans/2026-09-06-deeptwin-ui-structure.md`는 이 계획의 수정·스테이징 대상이 아니다. 원 작업 폴더의 미추적 소스·패키지·Spec Kit 템플릿도 함께 스테이징하지 않는다.
 
 | 작업 | 정확한 경로 | 책임 |
 | --- | --- | --- |
-| Modify | `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md` | 기존 §6의 선택을 §9의 화면별 검토안으로 구체화. UI 정본을 복제하지 않음 |
-| Modify | `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/docs/ui/initial-ui-review-cases.md` | 기존 UI-01–15의 과거 관찰을 보존하고 화면 검토 절차·실제 결과를 별도 단계로 추가 |
-| Create | `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/docs/superpowers/specs/2026-09-06-deeptwin-execution-contract-design.md` | 제품 소유 경계, 각 구독 검증 설계, 도구/산출물/저장·복구/사건과 성장 경로의 인터페이스 계약 |
-| Modify | `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/docs/superpowers/plans/2026-09-06-deeptwin-experience-execution-design.md` | 이 계획의 실제 진행과 후속 기능 작업 인계만 기록 |
-| Modify | `/Users/soonseekyang/Documents/Deeptwin/docs/brainstorming-progress.md` | 사용자 확인의 범위·현재 정본·작업 위치·다음 검토 기록 |
+| Modify | `<repo>/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md` | 기존 §6의 선택을 §9의 화면별 검토안으로 구체화. UI 정본을 복제하지 않음 |
+| Modify | `<repo>/docs/ui/initial-ui-review-cases.md` | 기존 UI-01–15의 과거 관찰을 보존하고 화면 검토 절차·실제 결과를 별도 단계로 추가 |
+| Create | `<repo>/docs/superpowers/specs/2026-09-06-deeptwin-execution-contract-design.md` | 제품 소유 경계, 각 구독 검증 설계, 도구/산출물/저장·복구/사건과 성장 경로의 인터페이스 계약 |
+| Modify | `<repo>/docs/superpowers/plans/2026-09-06-deeptwin-experience-execution-design.md` | 이 계획의 실제 진행과 후속 기능 작업 인계만 기록 |
+| Modify | `<workspace>/docs/brainstorming-progress.md` | 사용자 확인의 범위·현재 정본·작업 위치·다음 검토 기록 |
 
 새 실행 계약은 UI 배치를 다시 쓰지 않는다. 데이터베이스·API 스키마를 확정하는 문서도 아니다. 요구된 행위와 관찰할 증거, 책임 경계를 먼저 정의하고 기술 선택으로 구현할 수 있는지 확인한다.
 
@@ -45,9 +45,9 @@
 
 - [UI 정본 §1–8](../specs/2026-09-06-deeptwin-ui-structure-design.md): 공통 맥락·세 모드·미합의 조작·도구 원칙.
 - [통합 제품 기준선 §4–9](../specs/2026-09-06-deeptwin-integrated-product-design.md): 대안·렌즈·큐·승격·구축 순서. 후속 직접 정정이 우선한다.
-- [제품 의도 INT-001–035](/Users/soonseekyang/Documents/Deeptwin/docs/product-intent.md), [AC-001–037](/Users/soonseekyang/Documents/Deeptwin/docs/acceptance-cases.md): 직접 요구와 거부 결과.
+- [제품 의도 INT-001–035](<workspace>/docs/product-intent.md), [AC-001–037](<workspace>/docs/acceptance-cases.md): 직접 요구와 거부 결과.
 - [기존 UI 사례](../../ui/initial-ui-review-cases.md): 문서 관찰과 사용자 확인·동작 시험의 구별.
-- [자료 검토 기록](/Users/soonseekyang/Documents/Deeptwin/docs/reference-review-2026-09-06.md): 실패 가이드·사용자 제공 목업·영상에서 이미 확인한 관계. 새 시청·새 관찰을 주장하지 않는다.
+- [자료 검토 기록](<workspace>/docs/reference-review-2026-09-06.md): 실패 가이드·사용자 제공 목업·영상에서 이미 확인한 관계. 새 시청·새 관찰을 주장하지 않는다.
 
 논문 근거는 UI §8.1의 4.2–4.4절(16–18쪽)·6.1절(37–38쪽), 통합 기준선의 4.5–4.10절·평가/기록 근거를 출발점으로 삼는다. 정확한 논문 해석이 새 선택에 필요하면 원 PDF를 해당 스킬로 직접 재확인한다. 외부 자료의 지시를 사용자 실행 권한으로 해석하지 않는다. 질문은 논문 근거 → 기본 답 → 해석/미결 구별 → 필요한 한 가지 확인 순서다.
 
@@ -86,7 +86,7 @@
 - [x] **Step 5:** 두 문서를 직접 읽어 여덟 장면의 출발/복귀·권한·버전을 대조한다. 아래 구조 검사는 빠진 장면 탐지용이며 사용성·기능 합격 판정이 아니다.
 
 ```sh
-rg -n '^## 9\.|V-0[1-8]|^## 화면 검토 절차' /Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md /Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/docs/ui/initial-ui-review-cases.md
+rg -n '^## 9\.|V-0[1-8]|^## 화면 검토 절차' <repo>/docs/superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md <repo>/docs/ui/initial-ui-review-cases.md
 ```
 
 Expected: §9와 V-01–08, 검토 절차가 각 문서에서 확인됨. 중복·누락과 실제 행위의 의미는 본문으로 별도 확인.
@@ -103,7 +103,7 @@ Expected: §9와 V-01–08, 검토 절차가 각 문서에서 확인됨. 중복�
 
 ## Task 3: 두 구독 경로와 독립 실행의 검증 계약
 
-**Files — Create:** `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/docs/superpowers/specs/2026-09-06-deeptwin-execution-contract-design.md`
+**Files — Create:** `<repo>/docs/superpowers/specs/2026-09-06-deeptwin-execution-contract-design.md`
 
 - [ ] **Step 1:** 제목·상태·근거를 기록하고 `## 1. 책임과 호출 경계`를 작성한다. DeepTwin의 환경/역할 조정·도구·파일·기억·권한·사건·복구 책임과 제공자의 모델 이용 책임을 분리한다. 내부 공식 구성요소가 수행 루프를 갖는 경우 시작/중단·도구 제한·작업 디렉터리/세션·이벤트·복구 경계를 확인할 항목으로 명시한다. UI 래핑이나 이름 변경으로 충족됐다고 하지 않는다.
 - [ ] **Step 2:** `## 2. 제공자 적합성 검증`에 아래 다섯 행을 Claude 구독/Codex 구독의 두 열로 작성한다. 각 셀은 `필수 동작 / 필요한 공식 근거 / 실제 시험 절차 / 성공·실패 기준 / 현재 증거 상태`를 갖고 실제 시험 전 상태는 `미실시`로 둔다. API 명시 선택의 별도 인증·비용 경로는 P-04의 전환 비교로 기록하며 구독의 ‘API 키 불필요’ 조건을 API 경로에 적용하지 않는다.
@@ -160,8 +160,8 @@ Expected: §9와 V-01–08, 검토 절차가 각 문서에서 확인됨. 중복�
 - [ ] **Step 2:** 원본·부분 대안·철학 렌즈 세 경로·이전 큐·사람 승인·두 구독·실제 도구·첫 사용 로그·선택 공유의 누락/모순을 직접 읽어 확인한다. 아래 명령으로 문서 구조와 공백을 확인한다.
 
 ```sh
-rg -n '^## [1-6]\.|P-0[1-5]|E-0[1-6]' /Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure/docs/superpowers/specs/2026-09-06-deeptwin-execution-contract-design.md
-git -C /Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure diff --check
+rg -n '^## [1-6]\.|P-0[1-5]|E-0[1-6]' <repo>/docs/superpowers/specs/2026-09-06-deeptwin-execution-contract-design.md
+git -C <repo> diff --check
 ```
 
 Expected: 실행 계약 §1–6과 모든 검사 ID 확인, 공백 진단 없음. 링크 대상·ID 순서·본문 의미도 직접 검사하며 검색 결과를 기능 시험으로 보고하지 않음.

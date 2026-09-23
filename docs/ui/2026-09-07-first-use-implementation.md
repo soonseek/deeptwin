@@ -76,7 +76,7 @@ TDD의 실패 우선 절차로 저장·동시성 결함을 확인했다.
 ## 실행 상태
 
 개발 화면은 `http://127.0.0.1:4193/`.
-사용자용 로컬 보관함은 `/Users/soonseekyang/Library/Application Support/DeepTwin/first-use-dev`.
+사용자용 로컬 보관함은 `<local-application-support>/DeepTwin/first-use-dev`.
 기존 4183 상세 시제품의 저장 상태와 분리했다. 사용자는 CLI를 실행할 필요가 없다.
 이 서버는 개발 프로세스이며 지원되는 웹 배포·서비스 기동 경로의 구현은 아니다.
 

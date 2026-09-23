@@ -56,7 +56,7 @@ were not changed by T018.
 The T018 tests were written before the launcher/helper. Initial command and result:
 
 ```text
-PYTHONDONTWRITEBYTECODE=1 /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest packaging/macos/tests/test_native_boundary_t018.py -q
+PYTHONDONTWRITEBYTECODE=1 <workspace>/.venv/bin/python -m pytest packaging/macos/tests/test_native_boundary_t018.py -q
 4 failed in 0.17s
 ```
 
@@ -64,7 +64,7 @@ All four failures were the expected missing `packaging/macos/launcher.py` bounda
 implementation and adding standalone/static-policy regressions, the pre-audit focused result was:
 
 ```text
-PYTHONDONTWRITEBYTECODE=1 /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest packaging/macos/tests/test_native_boundary_t018.py -q
+PYTHONDONTWRITEBYTECODE=1 <workspace>/.venv/bin/python -m pytest packaging/macos/tests/test_native_boundary_t018.py -q
 7 passed in 2.60s
 ```
 
@@ -72,7 +72,7 @@ The fresh independent-audit requirements were then encoded before remediation. T
 failure-first run was:
 
 ```text
-PYTHONDONTWRITEBYTECODE=1 /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest packaging/macos/tests/test_native_boundary_t018.py -q
+PYTHONDONTWRITEBYTECODE=1 <workspace>/.venv/bin/python -m pytest packaging/macos/tests/test_native_boundary_t018.py -q
 15 failed, 2 passed in 0.77s
 ```
 
@@ -81,14 +81,14 @@ writes/stderr draining, unvalidated receipts, symlink/TOCTOU canaries and early 
 After the audit patch, the focused result was:
 
 ```text
-PYTHONDONTWRITEBYTECODE=1 /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest packaging/macos/tests/test_native_boundary_t018.py -q
+PYTHONDONTWRITEBYTECODE=1 <workspace>/.venv/bin/python -m pytest packaging/macos/tests/test_native_boundary_t018.py -q
 32 passed in 28.29s
 ```
 
 Final combined T017/T018 regression, run with `-s` to retain the N0 build-root observation:
 
 ```text
-PYTHONDONTWRITEBYTECODE=1 /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest packaging/macos/tests/test_native_boundary.py packaging/macos/tests/test_native_boundary_t018.py -q -s
+PYTHONDONTWRITEBYTECODE=1 <workspace>/.venv/bin/python -m pytest packaging/macos/tests/test_native_boundary.py packaging/macos/tests/test_native_boundary_t018.py -q -s
 40 passed in 31.79s
 ```
 
@@ -103,13 +103,13 @@ The standalone CLI was invoked with explicit existing local paths (line wrapping
 for readability):
 
 ```text
-PYTHONDONTWRITEBYTECODE=1 /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python \
+PYTHONDONTWRITEBYTECODE=1 <workspace>/.venv/bin/python \
   packaging/macos/launcher.py browser-canary \
-  --node /Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node \
+  --node <node-runtime>/dependencies/node/bin/node \
   --node-sha256 27db838bb204ef7c21df2931f5656e4c8fb32e6e947f363a402b49714d32b5b1 \
-  --playwright-module /Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs \
+  --playwright-module <node-runtime>/dependencies/node/node_modules/playwright/index.mjs \
   --playwright-module-sha256 a0f5715ea22354f922791a9c53dc012d5d5c067ff9cc4cd35ffb7cd272071a9f \
-  --browser '/Users/soonseekyang/Library/Caches/ms-playwright/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing' \
+  --browser '<playwright-browser-cache>/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing' \
   --browser-sha256 b1b9e2dd063115031f08eadc10ed381ca0fa05b2284baff8f721d87f5f0f61b7 \
   --helper-sha256 876bbfbdaf688895d183892c7f031b44defdfa48d020829a04dc30521167a197 \
   --n0-report /private/tmp/deeptwin-t018-audit.kddcxr/n0-open-report.json \

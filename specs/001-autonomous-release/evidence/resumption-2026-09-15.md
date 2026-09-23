@@ -158,7 +158,7 @@ After task-scoped review fixes, before the final integrated finding below, the p
 tracing disabled:
 
 ```text
-env LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest app/tests deploy/tests -q -p no:cacheprovider
+env LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false <workspace>/.venv/bin/python -B -m pytest app/tests deploy/tests -q -p no:cacheprovider
 ```
 
 **3527 passed, 2 skipped, 369 subtests passed**, one existing upstream Starlette/AnyIO
@@ -317,7 +317,7 @@ confirmed both findings ADDRESSED and no new breakage. No duplicate reviewer sui
 
 Parent final command:
 
-`env LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest app/tests deploy/tests -q -p no:cacheprovider`
+`env LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false <workspace>/.venv/bin/python -B -m pytest app/tests deploy/tests -q -p no:cacheprovider`
 
 Final frozen-source result: **3859passed,2skipped,369subtests passed,1unchangedwarning**,259.89s,
 exit0. Pre-fix full3843passed274.26s remains historical, not substituted for this run.
@@ -350,7 +350,7 @@ Final fix covering292passed46.98s; scoped independent rereview: both findings AD
 Critical/Important. Earlier failures/review dispositions remain in scratch evidence.
 
 Parent final frozen command:
-`env LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest app/tests deploy/tests -q -p no:cacheprovider -rs`
+`env LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false <workspace>/.venv/bin/python -B -m pytest app/tests deploy/tests -q -p no:cacheprovider -rs`
 
 **4126 passed,1 skipped,369 subtests passed,1 unchanged warning**,317.38s,exit0.
 The only skip is deploy/tests/test_worker_boundary.py:313 Linux SO_PEERCRED. Hashchecked missing
@@ -385,7 +385,7 @@ finalscoped227passed2.02s/no warning or skip. Independent fix1 review: Important
 no newCritical/Important. These low-level DAC fixtures are not actual Linux capability qualification.
 
 Parent final frozen command:
-`env LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest app/tests deploy/tests -q -p no:cacheprovider -rs`
+`env LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false <workspace>/.venv/bin/python -B -m pytest app/tests deploy/tests -q -p no:cacheprovider -rs`
 
 **4304passed,1skipped,369subtests passed,1unchangedwarning**,291.53s,exit0. The only skip remains
 deploy/tests/test_worker_boundary.py:313 LinuxSO_PEERCRED; warning remains upstreamStarlette/AnyIO.
@@ -526,7 +526,7 @@ process tree was preserved without signaling. No operator key or production sign
 Frozen11file hashes recorded in task-12-frozen.sha256 and independently checked. Writer's final
 five-file covering310passed2.24s precedes whitespace-only cleanup; affected crypto74passed1.71s
 after cleanup. Parent ran the whole app/deploy Python suite on the exact frozen bytes:
-`LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python
+`LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false <workspace>/.venv/bin/python
 -B -m pytest app/tests deploy/tests -q -p no:cacheprovider -rs`.
 Result4823passed,1LinuxSO_PEERCREDskip,369subtests,1inheritedStarlette/AnyIOwarning,458.32s,exit0.
 
@@ -594,7 +594,7 @@ independently rereviewed as addressed, no new breakage. Fivefiles changed; final
 All eightfix1hashes verified; originalfixbefore/currentmanifests and reports retained separately.
 
 Latest frozen wholePython command (afterTask12fix,Task13,Task14fix):
-`LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false DEEPTWIN_RECEIPT_TEST_NODE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest app/tests deploy/tests -q -p no:cacheprovider -rs`
+`LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false DEEPTWIN_RECEIPT_TEST_NODE=<node-runtime>/dependencies/node/bin/node <workspace>/.venv/bin/python -B -m pytest app/tests deploy/tests -q -p no:cacheprovider -rs`
 Terminal result:5004passed,1skipped,1warning,369subtestspassed,419.26s(6:59),exit0.
 Skip:deploy/tests/test_worker_boundary.py:313 LinuxSO_PEERCRED-only release qualification.
 Warning:Starlette TestClient anyio.abc.BlockingPortal deprecation, unchanged. No Linux/provider/
@@ -752,7 +752,7 @@ HTTP/source resource ownership is explicitly Task21, not silently counted here; 
 operator/image/power-loss qualification remains outside local evidence.
 
 Fresh parent complete regression command:
-`LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false DD_TRACE_ENABLED=false DEEPTWIN_RECEIPT_TEST_NODE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest app/tests deploy/tests -q -p no:cacheprovider -rs`
+`LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false DD_TRACE_ENABLED=false DEEPTWIN_RECEIPT_TEST_NODE=<node-runtime>/dependencies/node/bin/node <workspace>/.venv/bin/python -B -m pytest app/tests deploy/tests -q -p no:cacheprovider -rs`
 Session55879 terminalexit0: **5456passed,1skipped,1warning,369subtests passed,613.50s**.
 The skip is deploy/tests/test_worker_boundary.py:313 (Linux SO_PEERCRED release path); warning
 is Starlette's deprecated AnyIO BlockingPortal alias. No code/test edits during run. Parent fresh
@@ -778,7 +778,7 @@ Parent's actual browser regression82481 exited0: **32passed,0failed/cancelled/sk
 122476.796875ms Node /122528ms outer. No outer deadline or signals were used. Exact command:
 
 ```sh
-LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false DD_TRACE_ENABLED=false PYTHONDONTWRITEBYTECODE=1 CONTROL_PYTHON=/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs /Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node -e 'const {spawn}=require("node:child_process");const start=Date.now();let timedOut=false;let force;const child=spawn(process.execPath,["--test","--test-concurrency=1","--test-timeout=180000","app/tests/browser-first-use.test.mjs","app/tests/browser-first-use-integration-t023.test.mjs","app/tests/browser-understanding.test.mjs"],{stdio:"inherit",detached:true,env:process.env});const signalOwned=signal=>{if(child.exitCode===null&&child.signalCode===null&&Number.isInteger(child.pid)){try{process.kill(-child.pid,signal)}catch(error){if(error.code!=="ESRCH")throw error}}};const deadline=setTimeout(()=>{timedOut=true;process.stderr.write("Owned browser suite exceeded 600s outer deadline\n");signalOwned("SIGTERM");force=setTimeout(()=>signalOwned("SIGKILL"),5000)},600000);child.once("error",error=>{clearTimeout(deadline);clearTimeout(force);process.stderr.write(String(error)+"\n");process.exitCode=1});child.once("exit",(code,signal)=>{clearTimeout(deadline);clearTimeout(force);process.stdout.write(JSON.stringify({outerElapsedMs:Date.now()-start,code,signal,timedOut})+"\n");process.exitCode=timedOut?124:(code??1)});'
+LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false DD_TRACE_ENABLED=false PYTHONDONTWRITEBYTECODE=1 CONTROL_PYTHON=<workspace>/.venv/bin/python CONTROL_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs <node-runtime>/dependencies/node/bin/node -e 'const {spawn}=require("node:child_process");const start=Date.now();let timedOut=false;let force;const child=spawn(process.execPath,["--test","--test-concurrency=1","--test-timeout=180000","app/tests/browser-first-use.test.mjs","app/tests/browser-first-use-integration-t023.test.mjs","app/tests/browser-understanding.test.mjs"],{stdio:"inherit",detached:true,env:process.env});const signalOwned=signal=>{if(child.exitCode===null&&child.signalCode===null&&Number.isInteger(child.pid)){try{process.kill(-child.pid,signal)}catch(error){if(error.code!=="ESRCH")throw error}}};const deadline=setTimeout(()=>{timedOut=true;process.stderr.write("Owned browser suite exceeded 600s outer deadline\n");signalOwned("SIGTERM");force=setTimeout(()=>signalOwned("SIGKILL"),5000)},600000);child.once("error",error=>{clearTimeout(deadline);clearTimeout(force);process.stderr.write(String(error)+"\n");process.exitCode=1});child.once("exit",(code,signal)=>{clearTimeout(deadline);clearTimeout(force);process.stdout.write(JSON.stringify({outerElapsedMs:Date.now()-start,code,signal,timedOut})+"\n");process.exitCode=timedOut?124:(code??1)});'
 ```
 
 This uses controlled local preview/provider fixtures, not the full supported web-owner→graph→

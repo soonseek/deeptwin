@@ -1,7 +1,7 @@
 # T013/T014 finite runtime budgets and atomic dispatch — offline evidence
 
 Verified 2026-09-08 in the authoritative worktree
-`/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure`. T013 and T014 are complete
+`<repo>`. T013 and T014 are complete
 for the bounded runtime budget/dispatch boundary. No provider, network, credential, Keychain,
 paid API or user vault was used.
 

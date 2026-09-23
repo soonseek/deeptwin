@@ -871,7 +871,7 @@ module is a dependency failure, not a protocol RED. No isolated migration/route 
 final acceptance includes real POST→CAS/journal→actual publisher→GET→replay/cancel/restart.
 
 Focused future runner (one frozen run, not executed for this draft):
-/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest with -q -p no:cacheprovider,
+<workspace>/.venv/bin/python -B -m pytest with -q -p no:cacheprovider,
 all six new test modules above. Narrow existing coverage:19 byte-unchanged plus the seven narrowly
 adapted tests enumerated in section2, exact26 paths:
 

@@ -10,7 +10,7 @@
 
 ---
 
-이 문서는 [B 상위 계획](2026-09-07-deeptwin-critic-evaluation.md)의 B1이다. 계획 제시 후 사용자의 별도 “진행해”에 따라 아래 세 작업의 코드를 구현하고 오프라인 검사를 실행했다. 코드 블록은 구현의 출발 계획이며 검토 중 추가한 회귀와 실제 결과는 마지막 구현 기록을 따른다. 모든 명령은 `/Users/soonseekyang/Documents/Deeptwin/.worktrees/ui-structure`에서 실행한다. 커밋·스테이징·모델 호출·서비스·UI/API/Store 변경은 포함하지 않았다. 커밋·브랜치 통합/정리 단계는 사용자 범위에 맞춰 diff 검토와 기존 worktree 보존으로 대체한다.
+이 문서는 [B 상위 계획](2026-09-07-deeptwin-critic-evaluation.md)의 B1이다. 계획 제시 후 사용자의 별도 “진행해”에 따라 아래 세 작업의 코드를 구현하고 오프라인 검사를 실행했다. 코드 블록은 구현의 출발 계획이며 검토 중 추가한 회귀와 실제 결과는 마지막 구현 기록을 따른다. 모든 명령은 `<repo>`에서 실행한다. 커밋·스테이징·모델 호출·서비스·UI/API/Store 변경은 포함하지 않았다. 커밋·브랜치 통합/정리 단계는 사용자 범위에 맞춰 diff 검토와 기존 worktree 보존으로 대체한다.
 
 근거는 [Q01 Task](../../../evals/deeptwin/tasks/v01-q01/Task.md), [World Skill](../../../.agents/skills/deeptwin-eval-world/SKILL.md), [렌즈 정의](../../lenses/definition-candidates.md)의 L-P050-01/L-P033-02, [조합 계약](../../lenses/composition-contract.md), 기존 `app/generation_profiles.py`와 `app/codex_critic.py`다. Task는 Draft이며 이 부품을 구현해도 Harbor package·의미 verifier·실모델 시험이 완료되지 않는다.
 
@@ -122,7 +122,7 @@ def test_authored_counterexamples_preserve_exact_claim_conditions():
 
 - [x] **Step 2: 실패를 확인한다.**
 
-Run: `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_critic_contract.py -q`
+Run: `<workspace>/.venv/bin/python -m pytest app/tests/test_critic_contract.py -q`
 
 Expected: collection fails because `evals.deeptwin.q01_materials` does not exist. 프로젝트에 설정된 Python 환경을 사용한다. 패키지가 없다면 설치하지 말고 이 작업의 환경 결손으로 보고한다.
 
@@ -375,7 +375,7 @@ def q01_counterexample(kind, candidate_id="c71"):
 
 - [x] **Step 5: 초기 테스트와 fixture 내용 diff를 확인한다.**
 
-Run: `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_critic_contract.py -q`
+Run: `<workspace>/.venv/bin/python -m pytest app/tests/test_critic_contract.py -q`
 
 Expected: 4 passed. `git diff --check`는 whitespace 오류가 없어야 한다. 후보 ID는 개별 호출에 하나만 제공한다. 개발자가 helper의 분기를 읽었다면 이 자료는 교정용이며 봉인 평가가 아니다.
 
@@ -517,7 +517,7 @@ def test_hashes_bind_visible_versions_and_lens_content():
 
 - [x] **Step 2: 실패를 확인한다.**
 
-Run: `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_critic_contract.py -q`
+Run: `<workspace>/.venv/bin/python -m pytest app/tests/test_critic_contract.py -q`
 
 Expected: collection fails because `app.critic_contract` does not exist.
 
@@ -1055,7 +1055,7 @@ def parse_response(prepared: PreparedInput, raw: str) -> dict:
 
 - [x] **Step 4: 네 계약과 자료 테스트를 실행한다.**
 
-Run: `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_critic_contract.py -q`
+Run: `<workspace>/.venv/bin/python -m pytest app/tests/test_critic_contract.py -q`
 
 Expected: all pass. `parse_response`는 다른 타당성 결과를 합의로 받지 않는다. candidate_response의 `reason/evidence`는 전달된 반례의 대응 판단이며 다른 독립 결함은 앞선 review의 별도 finding으로 실행기에 보존한다. rejected 반례에 대한 별도 `not_applicable` enum은 추가하지 않고 `unresolved`와 기각 이유를 남긴다.
 
@@ -1290,13 +1290,13 @@ def test_bad_candidate_function_is_preserved_for_review_instead_of_prejudged():
 
 - [x] **Step 2: 경계 검사를 실행하고 결과를 읽는다.**
 
-Run: `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_critic_contract.py -q`
+Run: `<workspace>/.venv/bin/python -m pytest app/tests/test_critic_contract.py -q`
 
 Expected: all pass. 이 추가 단계는 이미 명시된 계약을 겨냥하는 회귀 검사이므로 새 production 동작은 추가하지 않는다. 실패하면 실패 대상 계약과 위 구현을 대조하고 오류가 난 최소 함수를 고친 뒤 해당 케이스와 이 파일만 재실행한다. semantic verifier를 흉내 내는 문자열 정답 검사는 추가하지 않는다.
 
 - [x] **Step 3: 기존 A 전송 계약의 오프라인 회귀를 확인한다.**
 
-Run: `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest app/tests/test_critic_contract.py app/tests/test_codex_critic.py app/tests/test_generation_profiles.py -q`
+Run: `<workspace>/.venv/bin/python -m pytest app/tests/test_critic_contract.py app/tests/test_codex_critic.py app/tests/test_generation_profiles.py -q`
 
 Expected: all pass; 실제 provider·Codex 연결 없음. B1 계약 코드는 기존 `CodexCriticTransport.generate`를 호출하거나 변경하지 않으며, A 회귀 검사는 제어된 RPC 대역으로 실행한다.
 

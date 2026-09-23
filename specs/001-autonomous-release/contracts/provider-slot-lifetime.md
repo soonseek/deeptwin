@@ -128,7 +128,7 @@ Freeze three exact beforecopies, four final hashes and the full app/deploy/schem
 verify all out-of-scope files unchanged. After self-review run once on frozen bytes:
 
     LANGCHAIN_TRACING_V2=false LANGSMITH_TRACING=false
-    /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -B -m pytest
+    <workspace>/.venv/bin/python -B -m pytest
       app/tests/test_provider_slot_lifecycle.py app/tests/test_ipc_metadata_lease.py
       app/tests/test_deployment_sources.py app/tests/test_deployment_prepare.py
       app/tests/test_deployment_prepare_publication.py app/tests/test_ipc_populated_fence.py

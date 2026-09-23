@@ -33,7 +33,7 @@ they demonstrate failures in the claimed rejection/recovery behavior, not an ext
 attacker's ability to modify the protected directory. No CRITICAL/HIGH authorization bypass
 was demonstrated within the documented internal-repository threat boundary.
 
-The diagnostics used `/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python`,
+The diagnostics used `<workspace>/.venv/bin/python`,
 `TemporaryDirectory(prefix='deeptwin-storage-review-')`, and `Path(...).resolve()`.
 The FIFO diagnostic connected a temporary writer to release its blocked reader and joined
 the thread before fixture cleanup; it did not leave a blocked background worker.
@@ -77,7 +77,7 @@ ceilings, not an end-to-end deadline or unlimited-history claim.
 During concurrent root test-first edits, this reviewer ran:
 
 ```sh
-/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m pytest -q app/tests/test_domain_storage.py
+<workspace>/.venv/bin/python -m pytest -q app/tests/test_domain_storage.py
 ```
 
 That point-in-time run observed **50 passed, 2 failed**; the two failures were the newly added

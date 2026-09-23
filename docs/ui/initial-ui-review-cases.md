@@ -111,8 +111,8 @@
 
 - Node 테스트 집계 32개 통과, 실패/건너뜀 0개: 기본 상태·렌더·서버 검사 14개, 실제 Chrome DOM 회귀 3개, 그 안의 줄바꿈 하위 사례 15개를 포함한 집계다. 전체 장면/모드 렌더, 원문/부분 범위·역할별 초안 격리, 보조 화면 복귀·저장 복원, 오류·초기화, 문자열 이스케이프, 실제 루프백 서버의 허용 파일/요청 경계, 정확한 탐구 진입과 선택 취소/유효 키보드 조작, 다섯 편집 필드의 선행 줄바꿈 0/1/3개를 이동·후속 입력·새로고침 뒤에도 보존하는지 검사했다. 브라우저 검사 환경변수를 생략한 기본 명령에서는 브라우저 3개를 건너뛰므로 같은 결과로 보고하지 않는다.
 - 루트의 별도 Chrome 브라우저 검사 22개 그룹 통과: 1440px와 390px 각각 8장면 × 3모드(총 48조합), 선택 설계에 맞는 그래프, 실제 DOM의 문구/문단 경계 선택과 강조, 선택 해제/원문 밖 선택 거절, 범위별 초안 재열기, 정확한 자기 버전 탐구 진입, 모달 닫기/초점, 연결·기록 화면의 원 문맥 복귀, 새로고침·저장 오류·취소/초기화·명시 교체, 고정 예시/작성 내용 분리, 회차·최종 승인 대상·선택 기록 미리보기. 검사 중 스크립트 오류·외부 요청 없음, 가로 넘침 없음.
-- 발견·수정한 회귀: 보조 화면에서 다른 모드/역할을 본 뒤 출발 장면만 복귀하던 문제를 원 모드·역할·범위까지 복원하도록 수정했다. 시작 시 기존 보관본을 읽지 못한 경우 자동 보관이 그 값을 덮어쓰지 않도록 막고, 사용자의 명시 교체 확인을 추가했다. 명세 검토에서 발견한 자기 버전의 잘못된 탐구 경로와 취소된 원문 선택의 재적용도 수정했다. 해당 실패를 재현하는 테스트가 실패한 뒤 수정 후 통과한 것을 확인했다. [검증 결과 요약](/Users/soonseekyang/.codex/visualizations/2026/09/06/01a07448-d2e4-7b43-8ccc-0b0f129f29b9/deeptwin-prototype/verification-result.json).
-- 검증 재료: [단위·서버 테스트](../../prototype/tests/prototype.test.mjs), [브라우저 검사 스크립트](/Users/soonseekyang/.codex/visualizations/2026/09/06/01a07448-d2e4-7b43-8ccc-0b0f129f29b9/deeptwin-prototype/browser-acceptance.mjs), [설계 비교 캡처](/Users/soonseekyang/.codex/visualizations/2026/09/06/01a07448-d2e4-7b43-8ccc-0b0f129f29b9/deeptwin-prototype/01-design.png), [부분 자기 버전 캡처](/Users/soonseekyang/.codex/visualizations/2026/09/06/01a07448-d2e4-7b43-8ccc-0b0f129f29b9/deeptwin-prototype/02-own-version.png). 캡처의 입력은 검사용 합성 문구이며 사용자 피드백이 아니다.
+- 발견·수정한 회귀: 보조 화면에서 다른 모드/역할을 본 뒤 출발 장면만 복귀하던 문제를 원 모드·역할·범위까지 복원하도록 수정했다. 시작 시 기존 보관본을 읽지 못한 경우 자동 보관이 그 값을 덮어쓰지 않도록 막고, 사용자의 명시 교체 확인을 추가했다. 명세 검토에서 발견한 자기 버전의 잘못된 탐구 경로와 취소된 원문 선택의 재적용도 수정했다. 해당 실패를 재현하는 테스트가 실패한 뒤 수정 후 통과한 것을 확인했다. [검증 결과 요약](<local-visualization-cache>/2026/09/06/01a07448-d2e4-7b43-8ccc-0b0f129f29b9/deeptwin-prototype/verification-result.json).
+- 검증 재료: [단위·서버 테스트](../../prototype/tests/prototype.test.mjs), [브라우저 검사 스크립트](<local-visualization-cache>/2026/09/06/01a07448-d2e4-7b43-8ccc-0b0f129f29b9/deeptwin-prototype/browser-acceptance.mjs), [설계 비교 캡처](<local-visualization-cache>/2026/09/06/01a07448-d2e4-7b43-8ccc-0b0f129f29b9/deeptwin-prototype/01-design.png), [부분 자기 버전 캡처](<local-visualization-cache>/2026/09/06/01a07448-d2e4-7b43-8ccc-0b0f129f29b9/deeptwin-prototype/02-own-version.png). 캡처의 입력은 검사용 합성 문구이며 사용자 피드백이 아니다.
 - 관찰 한계: DOM 범위와 합성 조합 이벤트/편집 노드 유지 검사는 실제 사용자의 마우스·모바일 기기·한국어 IME·보조기기 전반의 사용성 인증이 아니다. 390px는 브라우저 화면폭 검사다. 본인 구독·브라우저 도구·PDF 생성·후속 소비·실제 기록 추출·학습/운영 승격은 아직 시험하지 않았다.
 
 [실행 안내](../../prototype/README.md)와 [로컬 화면](http://127.0.0.1:4173/)을 준비하고 Codex에 열었다. 단순히 화면을 열어둔 사실을 사용자가 실제 검토·채택한 것으로 기록하지 않는다. 최초 서버 종료를 확인한 뒤 루트의 PTY에서 재시작해 HTTP 200을 확인했다. 사용자에게 남긴 화면은 V04·안내문 작성 역할의 빈 자기 버전이다.
@@ -149,7 +149,7 @@
 형식 검사 기록(2026-09-06): 지정 `rg` 패턴으로 §9·V-01–V-08·화면 검토 절차를 찾고, 장면 정의 8행/6열과 단계별 기록 8행/6열의 ID 순서·중복을 확인했다. 기존 UI-01–UI-15의 15행/7열은 기준 커밋과 동일하다. 문서별 중복을 제외한 로컬 링크 대상·앵커 44개를 검사했으며 경로 없는 `#v-01` 형식은 같은 문서의 명시 HTML id에 연결했다. `git diff --check`에서 공백 오류는 없었다. 이 결과는 문서 구조·참조에 한정되며 사용성·기능 시험이나 사용자 세부 선택의 근거가 아니다.
 
 [design]: ../superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md
-[ac]: /Users/soonseekyang/Documents/Deeptwin/docs/acceptance-cases.md
+[ac]: <workspace>/docs/acceptance-cases.md
 [d1]: ../superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md#1-공통-맥락과-선택-대상
 [d3]: ../superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md#3-세-모드의-책임과-연결
 [d4]: ../superpowers/specs/2026-09-06-deeptwin-ui-structure-design.md#4-전체-여정과-반복-흐름

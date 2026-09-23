@@ -84,7 +84,7 @@ including pagination and nullable capability information.
 Focused catalog/selection/provider/API command:
 
 ```text
-PYTHONPATH=. /Users/soonseekyang/Documents/Deeptwin/.venv/bin/pytest -q \
+PYTHONPATH=. <workspace>/.venv/bin/pytest -q \
   app/tests/test_model_catalog_selection_v2.py app/tests/test_model_catalog.py \
   app/tests/test_model_selection.py app/tests/test_providers.py \
   app/tests/test_model_selection_api.py
@@ -95,7 +95,7 @@ Result: **65 passed**, 1 existing Starlette/AnyIO deprecation warning, no failur
 Bounded Claude/Codex adapter, connection, understanding, and critic integration command:
 
 ```text
-PYTHONPATH=. /Users/soonseekyang/Documents/Deeptwin/.venv/bin/pytest -q \
+PYTHONPATH=. <workspace>/.venv/bin/pytest -q \
   app/tests/test_claude_api.py app/tests/test_codex_api.py \
   app/tests/test_codex_api_mode.py app/tests/test_codex_connection.py \
   app/tests/test_understanding.py app/tests/test_codex_understanding.py \
@@ -108,7 +108,7 @@ Result: **512 passed, 1 skipped**, 1 existing deprecation warning, no failure.
 Final broad Python command while a separate T023 API test was deliberately red/incomplete:
 
 ```text
-PYTHONPATH=. /Users/soonseekyang/Documents/Deeptwin/.venv/bin/pytest -q app/tests \
+PYTHONPATH=. <workspace>/.venv/bin/pytest -q app/tests \
   --ignore=app/tests/test_conversation_api.py
 ```
 
@@ -120,10 +120,10 @@ skipped. Neither concurrent red phase is presented as a T022 failure or silently
 Full six-file Chromium command:
 
 ```text
-env CONTROL_PYTHON=/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python \
-CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs \
+env CONTROL_PYTHON=<workspace>/.venv/bin/python \
+CONTROL_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs \
 PYTHONDONTWRITEBYTECODE=1 \
-/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node \
+<node-runtime>/dependencies/node/bin/node \
   --test --test-concurrency=2 \
   app/tests/browser-codex-connection.test.mjs app/tests/browser-first-use.test.mjs \
   app/tests/browser-model-selection.test.mjs app/tests/browser-speech-input.test.mjs \
@@ -136,10 +136,10 @@ After the final storage-row/head hardening, the directly related browser file wa
 T022 hashes:
 
 ```text
-env CONTROL_PYTHON=/Users/soonseekyang/Documents/Deeptwin/.venv/bin/python \
-CONTROL_PLAYWRIGHT_MODULE=/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs \
+env CONTROL_PYTHON=<workspace>/.venv/bin/python \
+CONTROL_PLAYWRIGHT_MODULE=<node-runtime>/dependencies/node/node_modules/playwright/index.mjs \
 PYTHONDONTWRITEBYTECODE=1 \
-/Users/soonseekyang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node \
+<node-runtime>/dependencies/node/bin/node \
   --test --test-concurrency=1 app/tests/browser-model-selection.test.mjs
 ```
 
@@ -155,10 +155,10 @@ changed to obtain that result.
 Compile and lint commands:
 
 ```text
-PYTHONPATH=. /Users/soonseekyang/Documents/Deeptwin/.venv/bin/python -m compileall -q \
+PYTHONPATH=. <workspace>/.venv/bin/python -m compileall -q \
   app/model_catalog.py app/model_selection.py app/providers.py \
   app/tests/test_model_catalog_selection_v2.py
-/Users/soonseekyang/Documents/Deeptwin/.venv/bin/ruff check \
+<workspace>/.venv/bin/ruff check \
   app/model_catalog.py app/model_selection.py app/providers.py \
   app/tests/test_model_catalog_selection_v2.py app/tests/test_model_catalog.py \
   app/tests/test_model_selection.py app/tests/test_providers.py \
