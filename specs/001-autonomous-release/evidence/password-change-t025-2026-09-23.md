@@ -52,3 +52,39 @@ fields, bounded like login; and an empty body or the empty object.
 ## Still open in T025
 
 The offline bootstrap page's vectors, the intake screen's §5.1.4 guidance, and the browser case.
+
+## Browser case (same day)
+
+`app/tests/browser-owner-lifecycle-t025.test.mjs` runs in real Chromium against the real supported
+server (`app/tests/fixtures/owner_lifecycle_server.py`). **1 passed.**
+
+1. The offline `deploy/bootstrap/index.html` is opened from `file://`. It makes no network request
+   at all, and it generates the one-time capability and the non-secret block. The block does not
+   contain the capability.
+2. The server starts from that block alone and verifies it is the exact canonical block. The raw
+   capability never reaches the server process.
+3. The owner types the capability into the first screen, chooses a password, and lands on the
+   work screen. A second browser logs in.
+4. On the records page, "다른 세션 모두 끝내기" ends the second browser's session, which then gets
+   401.
+5. The password change succeeds, and the form fields are left empty.
+6. The next command in this browser succeeds with the adopted CSRF value, and reports no other
+   session.
+7. The old password gets 401; the new one gets 200.
+
+This case found a real defect: sessions voided by the epoch were still counted as "other sessions".
+Fixes:
+
+- A password change now also marks every earlier session revoked.
+- Revoke-others counts only sessions that still authenticate: same epoch, not expired.
+
+## Still open in T025 (re-checked 2026-09-23)
+
+The offline bootstrap vectors and the §5.1.4 intake guidance were already implemented:
+`test_bootstrap_delivery.py` has 14 passing tests and `bootstrap-helper.test.mjs` has 8, and
+`work.mjs` carries the notices. The browser case is now done.
+
+What remains is the deployment-authority recovery port: `app/services/deployment_control.py`,
+`app/operations/deployment_control.py`, the typed `credential_client.py`, and their tests
+(`test_deployment_control.py`, `test_owner_sessions.py`, `test_session_security.py`). That covers
+the request-bound signed-receipt recovery with a strictly higher epoch and atomic revocation.

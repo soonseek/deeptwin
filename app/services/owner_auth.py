@@ -391,6 +391,12 @@ class PersistentOwnerAuthority:
                     "owner_id": account["owner_id"], "revision": authenticator["revision"] + 1,
                     "previous_revision": authenticator["revision"], "kind": "password", "profile": PROFILE,
                     "encoded_hash": encoded, "created_at": now, "revoked_at": None})
+                # every earlier session is also marked revoked (the epoch alone already voids it),
+                # so no later count or view ever mistakes one for a live session
+                for earlier in [dict(item) for item in db.execute(
+                        "SELECT * FROM owner_auth_sessions WHERE owner_id=? AND revoked_at IS NULL",
+                        (account["owner_id"],))]:
+                    storage.update(db, "sessions", earlier, {"revoked_at": now}, identity="session_id")
                 storage.update(db, "accounts", current, {"auth_epoch": account["auth_epoch"] + 1,
                                                          "updated_at": max(now, account["updated_at"])},
                                identity="owner_id")
@@ -422,13 +428,15 @@ class PersistentOwnerAuthority:
             row = self._session_by_token(db, token_b64u, now)
             if row["session_id"] != request.session.session_id:
                 raise OwnerAuthError("unauthenticated")
+            account = db.execute("SELECT * FROM owner_auth_accounts WHERE owner_id=?", (actor.id,)).fetchone()
+            # only sessions that still authenticate are "other sessions" to end
             others = [dict(item) for item in db.execute(
-                "SELECT * FROM owner_auth_sessions WHERE owner_id=? AND session_id<>? AND revoked_at IS NULL",
-                (actor.id, row["session_id"]))]
+                "SELECT * FROM owner_auth_sessions WHERE owner_id=? AND session_id<>? AND revoked_at IS NULL "
+                "AND auth_epoch=? AND idle_expires>? AND absolute_expires>?",
+                (actor.id, row["session_id"], account["auth_epoch"], now, now))]
             for other in others:
                 storage.update(db, "sessions", other, {"revoked_at": now}, identity="session_id")
             if others:
-                account = db.execute("SELECT * FROM owner_auth_accounts WHERE owner_id=?", (actor.id,)).fetchone()
                 self._event(db, account, "session.revoked", now)
         with self._identity_lock:
             for other in others:
