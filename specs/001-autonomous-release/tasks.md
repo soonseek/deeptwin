@@ -618,7 +618,9 @@ preview, missing evidence and no network send; backup/restore without original d
   classification, consistent snapshot, restore proof before `ready`, external receipt, exact key
   modes, staged `restored_review` restore) landed with 12 real-age tests; open until the separate
   networkless worker service boundary (T081) and GUI/migration gates (T072/T073) exist —
-  evidence/backup-age-t070-2026-09-23.md.
+  evidence/backup-age-t070-2026-09-23.md. Same day: the content-addressed originals are now
+  archived and verified on restore (the database-only archive could not back up any vault with an
+  original; 14 tests).
 - [x] T071 [US7] Implement snapshot preview/redaction/pseudonyms/rights/missing-evidence manifest and safe archive validation in app/operations/export.py and app/tests/test_export.py; no self-referential archive hash (FR-028/029).
 - [ ] T072 [US7] Integrate the T025 `DeploymentControlPort` into verified web-release update/recovery
   guidance, backup-before-migration and safe state in app/operations/updates.py,
