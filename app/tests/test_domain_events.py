@@ -79,3 +79,12 @@ def test_schema_and_metadata_views_cannot_mutate_global_rules():
     view = event_metadata("artifact.sealed", payload)
     payload["byte_count"] = -1
     assert view == {"byte_count": 2}
+
+
+def test_tool_requested_uses_the_ports_effect_vocabulary():
+    # one effect vocabulary across the tool boundary, the ledger and the public event (T047/T087)
+    from app.domain.events import TOOL_EFFECT_CLASSES
+    from app.extensions.port_contracts import EFFECT_CLASSES
+
+    assert set(TOOL_EFFECT_CLASSES) == set(EFFECT_CLASSES)
+    assert list(TOOL_EFFECT_CLASSES) == sorted(TOOL_EFFECT_CLASSES)

@@ -97,7 +97,14 @@ _register("attempt.reserved attempt.dispatched", attempt_no=COUNT)
 _register("attempt.response_captured", artifact_count=COUNT,
           classification=Field("enum", ("pending_validation", "quarantined")))
 _register("attempt.terminal tool.terminal", outcome=OUTCOME, duration_ms=COUNT)
-_register("tool.requested", effect_class=Field("enum", ("read", "local_write", "external_write")))
+# the ports contract's closed effect vocabulary (extension-ports.md `effect-class`), the one set the
+# tool boundary, the ledger's ToolCall and the extension transport share; pinned equal to
+# app.extensions.port_contracts.EFFECT_CLASSES by the domain events tests (no import cycle here)
+TOOL_EFFECT_CLASSES = (
+    "external_irreversible", "external_reversible", "instance_critical_secret",
+    "instance_critical_storage", "none", "read", "write_reversible",
+)
+_register("tool.requested", effect_class=Field("enum", TOOL_EFFECT_CLASSES))
 _register("artifact.sealed", byte_count=COUNT)
 _register("artifact.missing", reason_code=GAP_REASON)
 _register("handoff.delivered handoff.acknowledged", artifact_count=COUNT, supplied_count=COUNT,

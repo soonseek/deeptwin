@@ -1901,9 +1901,13 @@
       "properties": {
         "effect_class": {
           "enum": [
+            "external_irreversible",
+            "external_reversible",
+            "instance_critical_secret",
+            "instance_critical_storage",
+            "none",
             "read",
-            "local_write",
-            "external_write"
+            "write_reversible"
           ],
           "type": "string"
         }
