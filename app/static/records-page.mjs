@@ -43,7 +43,7 @@ function fail(message) {
 
 export function eventRow(event) {
   if (typeof event !== 'object' || event === null || typeof event.event_type !== 'string'
-      || typeof event.recorded_at_utc !== 'string' || !Number.isInteger(event.sequence)) {
+      || typeof event.observed_at_utc !== 'string' || !Number.isInteger(event.sequence)) {
     fail('an event is malformed');
   }
   const refs = Array.isArray(event.object_refs) ? event.object_refs.length : 0;
@@ -51,7 +51,7 @@ export function eventRow(event) {
   const error = typeof event.error_code === 'string' ? ` · 오류 ${event.error_code}` : '';
   return {
     sequence: event.sequence,
-    text: `${event.recorded_at_utc} · ${event.event_type} · ${status}${error} · 관련 기록 ${refs}개`,
+    text: `${event.observed_at_utc} · ${event.event_type} · ${status}${error} · 관련 기록 ${refs}개`,
   };
 }
 

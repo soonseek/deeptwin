@@ -632,6 +632,10 @@ preview, missing evidence and no network send; backup/restore without original d
   manifest/bundle records and receipt, owner download; work-page panel `work-export.mjs`. Logs/
   backup/retention screens remain — evidence/work-export-t073-2026-09-23.md.
 - [ ] T074 [US7] Run setup/source/candidate/lens/failed-run/alternative/round/approval export, secret canaries, PDF redaction and interrupted restore cases in app/tests/browser-records.test.mjs and specs/001-autonomous-release/evidence/us7.md (SC-009).
+  2026-09-23 partial: work export (actual preview, bound consent, raw only by choice, secret
+  canaries absent, stale preview refused) and the records page in real Chromium; fixed the log
+  reading `recorded_at_utc` where the projection carries `observed_at_utc` —
+  evidence/browser-records-t074-2026-09-23.md. Other categories, PDF redaction and restore remain.
 
 ## Phase 10: Integrated qualification and release evidence
 

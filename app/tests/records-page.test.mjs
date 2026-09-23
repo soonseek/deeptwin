@@ -47,7 +47,7 @@ class FakeElement {
 }
 
 function event(sequence, overrides = {}) {
-  return { sequence, event_type: 'work.created', recorded_at_utc: '2026-09-23T00:00:00.000000Z',
+  return { sequence, event_type: 'work.created', observed_at_utc: '2026-09-23T00:00:00.000000Z',
     status: 'succeeded', error_code: null, object_refs: [{}], ...overrides };
 }
 
