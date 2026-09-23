@@ -100,6 +100,18 @@ def channel(tmp_path, monkeypatch):
             "_anchored_socket_path",
             lambda _fd, _pair, name: str(alias_root / "endpoint" / name),
         )
+    else:
+        # Test code addresses the socket by path with no descriptor (-1); only
+        # that test-only form maps to the direct path. The product's real
+        # descriptors keep the /proc/self/fd anchoring.
+        anchored = listener._anchored_socket_path
+
+        def linux_anchored(fd, pair, name):
+            if fd == -1:
+                return str(root.endpoint_path / name)
+            return anchored(fd, pair, name)
+
+        monkeypatch.setattr(listener, "_anchored_socket_path", linux_anchored)
     try:
         yield root, spec
     finally:

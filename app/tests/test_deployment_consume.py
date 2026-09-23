@@ -12,6 +12,7 @@ leaves no authority; a mismatch is 409; an unobservable service is 503.
 """
 
 import sqlite3
+import sys
 import tempfile
 from copy import deepcopy
 from pathlib import Path
@@ -159,7 +160,8 @@ class StagedWorker:
             fixture.metadata[(info.st_dev, info.st_ino)] = (uid, gid)
 
         monkeypatch.setattr(os, "chown", chown)
-        self.alias_root = Path(tempfile.mkdtemp(prefix="dt-consume-", dir="/private/tmp"))
+        self.alias_root = Path(tempfile.mkdtemp(
+            prefix="dt-consume-", dir="/private/tmp" if sys.platform == "darwin" else None))
         (self.alias_root / "endpoint").symlink_to(mapped / "endpoint", target_is_directory=True)
         monkeypatch.setattr(
             listener, "_anchored_socket_path",

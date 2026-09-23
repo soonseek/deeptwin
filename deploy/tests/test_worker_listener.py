@@ -185,7 +185,6 @@ def test_restart_rotates_generation_and_listener_reclaims_only_stale_pair(
         root, spec, responder_boot_id="browser-boot-a"
     )
     first_generation = first.record.generation_id
-    first_socket_inode = first.record.socket.inode
 
     # Model an abrupt responder exit: kernel descriptors/locks close, while the
     # pathname socket and authenticated readiness record remain on the volume.
@@ -193,6 +192,8 @@ def test_restart_rotates_generation_and_listener_reclaims_only_stale_pair(
     os.close(first._listener_lock_fd)
     os.close(first._endpoint_fd)
     first._generation.close()
+    for pin in first._pins:  # the crash releases the inode pins with every descriptor
+        os.close(pin)
     first._closed = True
 
     rotated = ipc_root.initialize_pair_root(root, entropy=lambda size: b"b" * size)
@@ -202,7 +203,10 @@ def test_restart_rotates_generation_and_listener_reclaims_only_stale_pair(
     )
     try:
         assert second.record.generation_id == rotated.generation_id
-        assert second.record.socket.inode != first_socket_inode
+        # Not `inode != first_socket_inode`: once the crash released it, ext4 may
+        # hand the freed inode number to the new bind. The new generation's
+        # authenticated record is the reclaim proof.
+        assert second.record.generation_id != first_generation
         with listener.verify_listener(root, spec) as verified:
             assert verified.record == second.record
     finally:
@@ -234,7 +238,7 @@ def test_restart_reconciles_exact_socket_only_crash_residue_under_listener_lock(
                     dir_fd=endpoint_fd,
                     follow_symlinks=False,
                 )
-            orphan_identity = _file_identity(root.socket_path(spec.socket_name))
+            assert _file_identity(root.socket_path(spec.socket_name))
         finally:
             orphan.close()
             os.close(endpoint_fd)
@@ -245,7 +249,9 @@ def test_restart_reconciles_exact_socket_only_crash_residue_under_listener_lock(
         responder_boot_id="browser-boot-restarted",
     )
     try:
-        assert worker.record.socket.inode != orphan_identity[1]
+        # The orphan was removed and a new socket bound; its inode number may be
+        # the orphan's reused one (ext4), so the verified record is the proof.
+        assert worker.record.responder_boot_id == "browser-boot-restarted"
         with listener.verify_listener(root, spec) as verified:
             assert verified.record == worker.record
     finally:
@@ -333,6 +339,8 @@ def test_readiness_only_crash_residue_remains_fail_closed_and_preserved(
     os.close(first._listener_lock_fd)
     os.close(first._endpoint_fd)
     first._generation.close()
+    for pin in first._pins:  # the crash releases the inode pins with every descriptor
+        os.close(pin)
     first._closed = True
     readiness_identity = _file_identity(root.listener_path)
 

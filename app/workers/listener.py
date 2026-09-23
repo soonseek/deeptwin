@@ -471,6 +471,7 @@ class WorkerListener:
         "_endpoint_fd",
         "_generation",
         "_listener_lock_fd",
+        "_pins",
         "_readiness_identity",
         "_socket",
         "_socket_identity",
@@ -491,6 +492,7 @@ class WorkerListener:
         listener_lock_fd: int,
         readiness_identity: FileIdentity,
         socket_identity: SocketIdentity,
+        pins: tuple[int, ...] = (),
     ) -> None:
         self.root_spec = root_spec
         self.spec = spec
@@ -501,6 +503,7 @@ class WorkerListener:
         self._listener_lock_fd = listener_lock_fd
         self._readiness_identity = readiness_identity
         self._socket_identity = socket_identity
+        self._pins = pins
         self._closed = False
 
     @property
@@ -621,6 +624,8 @@ class WorkerListener:
             except OSError:
                 violation = True
         finally:
+            for pin in self._pins:
+                _close_fd(pin)
             try:
                 fcntl.flock(self._listener_lock_fd, fcntl.LOCK_UN)
             except OSError:
@@ -1124,6 +1129,36 @@ def _publish_record(
                 pass
 
 
+def _pin_inodes(endpoint_fd: int, named: tuple) -> tuple[int, ...]:
+    """Hold each published name's inode for the listener's lifetime.
+
+    A (device, inode, uid, gid, mode) identity alone cannot tell a replacement
+    from the original once the original is freed: ext4 hands a freed inode
+    number straight to the next file, so an unlink-and-recreate with the same
+    owner and mode compared equal and `close` removed the replacement. A held
+    O_PATH descriptor keeps each inode allocated, so no replacement can reuse
+    its number while the listener lives. Without O_PATH (not Linux) nothing is
+    pinned and the identity check stands alone, as before.
+    """
+
+    flag = getattr(os, "O_PATH", None)
+    if flag is None:
+        return ()
+    pins: list[int] = []
+    try:
+        for name, identity in named:
+            pin = os.open(name, flag | os.O_CLOEXEC | os.O_NOFOLLOW, dir_fd=endpoint_fd)
+            pins.append(pin)
+            info = os.fstat(pin)
+            if (info.st_dev, info.st_ino) != (identity.device, identity.inode):
+                raise ListenerIntegrityError()
+        result, pins = tuple(pins), []
+        return result
+    finally:
+        for pin in pins:
+            _close_fd(pin)
+
+
 def _unlink_exact(
     endpoint_fd: int,
     name: str,
@@ -1238,6 +1273,7 @@ def bind_worker_listener(
     listening: socket.socket | None = None
     socket_identity: SocketIdentity | None = None
     readiness_identity: FileIdentity | None = None
+    pins: tuple[int, ...] = ()
     try:
         endpoint_fd = _open_endpoint_for_owner(generation, root)
         listener_lock_fd = _open_listener_lock(endpoint_fd, root)
@@ -1283,6 +1319,10 @@ def bind_worker_listener(
             hmac_sha256=_record_mac(generation.secret, unsigned),
         )
         readiness_identity = _publish_record(endpoint_fd, root, record)
+        pins = _pin_inodes(
+            endpoint_fd,
+            ((ipc_root.LISTENER_NAME, readiness_identity), (spec.socket_name, socket_identity)),
+        )
         result = WorkerListener(
             root_spec=root,
             spec=spec,
@@ -1293,7 +1333,9 @@ def bind_worker_listener(
             listener_lock_fd=listener_lock_fd,
             readiness_identity=readiness_identity,
             socket_identity=socket_identity,
+            pins=pins,
         )
+        pins = ()
         listening = None
         generation = None  # type: ignore[assignment]
         readiness_identity = None
@@ -1305,6 +1347,8 @@ def bind_worker_listener(
     except (OSError, broker.BrokerError):
         raise ListenerIntegrityError() from None
     finally:
+        for pin in pins:
+            _close_fd(pin)
         if listening is not None:
             listening.close()
         if readiness_identity is not None:

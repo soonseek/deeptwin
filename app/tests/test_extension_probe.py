@@ -539,8 +539,9 @@ def test_descriptor_budget_is_enumerated_and_within_sixty_four(slot, monkeypatch
     # descriptor (1) and the read's transient descriptors (7 directories +
     # 6 leaves = 13; the source's own bound is 32). The sample is process
     # wide, so it also counts the requester living in this same process:
-    # its connected socket (1), its verified generation (3) and fence (1)
-    worker_retained = 13 + 3 + 3
+    # its connected socket (1), its verified generation (3) and fence (1).
+    # Where O_PATH exists the listener also pins its readiness and socket inodes (2)
+    worker_retained = 13 + 3 + 3 + (2 if hasattr(os, "O_PATH") else 0)
     worker_connection = 1 + 3 + 1
     read_transient = 7 + 6
     requester_in_process = 1 + 3 + 1
