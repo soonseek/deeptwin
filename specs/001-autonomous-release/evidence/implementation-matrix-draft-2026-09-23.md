@@ -231,3 +231,22 @@ The blockers are those tasks.md states, including the 2026-09-23 notes where pre
 | T083 | Two fresh hosts (macOS Portainer CE, Linux Compose). |
 | T084 | **Pending copyright-owner license approval**. No LICENSE/NOTICE added. The publishable-tree scrub and the Compose gaps it found (backup service without backup-key volume/init, ipc-root-init boot-secret regeneration) remain open. |
 | T085 | Final regression, quickstart acceptance and release report. |
+
+## Later the same day: slices landed after this draft was written
+
+These change no row's status: every claiming task named below is still open. They narrow the
+open-work notes of the rows they touch. Each slice's evidence file holds its observed runs.
+
+| Task | Slice | Rows touched | Evidence |
+| --- | --- | --- | --- |
+| T066 | Persisted paired rounds are re-issued exactly and shown paired (baseline/candidate runs, validity and reasons, a score only on valid rounds, unreadable rounds listed). Plus a real-browser wiring check of the versions page | FR-022, FR-023, FR-026, UX-AC06 | versions-t066-2026-09-23.md |
+| T043 | Pinned HTTPS transport behind the egress broker: literal-address sockets, SNI and certificate bound to the hostname, no proxy or redirect following, streamed byte limit | FR-014 | egress-transport-t043-2026-09-23.md |
+| T048 | Run-consent revocation and expiry (v2). One current-consent check before start, resume, recover and replay | FR-013, FR-019, UX-AC04 | run-consent-revocation-t048-2026-09-23.md |
+| T074 | Records in real Chromium: export preview, bound consent, raw only by choice, secret canaries absent, stale preview refused, the records log. **Fixed** the log's event time field, so the log now renders against the real server | FR-027, FR-028, SC-009 | browser-records-t074-2026-09-23.md |
+| T084 | Workstation paths scrubbed from 40 documents; the pinned lens source awaits re-review | FR-001, FR-032 | publishable-scrub-t084-2026-09-23.md |
+| T070 | **Fixed**: the backup now carries and verifies the content-addressed originals. The database-only archive could not back up any vault that held an original | FR-029, FR-030 | backup-age-t070-2026-09-23.md |
+| T073 | Explicit deletion of stored originals: server preview, consent bound to its digest, tombstones, `retention.deleted`, readers answer `deleted`, backups carry only live originals. Work-screen panel and a real-browser case | FR-027, FR-029, FR-030 | source-deletion-t073-2026-09-23.md |
+
+**Hash note.** The T084 scrub changed the bytes of four plan/UI files and two provider
+documents whose earlier hashes are pinned in historical review-input manifests. The final T075
+refresh must use the current bytes and cite that scrub as the supersession.
