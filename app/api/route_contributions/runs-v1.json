@@ -135,6 +135,16 @@
       "path": "/api/v1/runs/{run_id}/artifacts/{artifact_id}/alternative-files",
       "auth_policy": "browser_session",
       "required_scope": "work.command"
+    },
+    {
+      "route_id": "runs.artifact_draft_differences",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "path": "/api/v1/runs/{run_id}/artifacts/{artifact_id}/drafts/{draft_id}/differences",
+      "auth_policy": "browser_session",
+      "required_scope": "work.read"
     }
   ]
 }

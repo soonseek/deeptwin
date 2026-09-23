@@ -17,6 +17,10 @@ export const SAVE_SCHEMA = 'alternative-draft-save-v1';
 export const FREEZE_SCHEMA = 'alternative-freeze-v1';
 export const EDITABLE_MEDIA = Object.freeze(['text/plain', 'text/markdown', 'application/json', 'text/csv']);
 export const AUTOSAVE_MS = 800;
+// the three views of one alternative: the original as recorded, the owner's version,
+// and what the framework observes between them
+export const VIEWS = Object.freeze(['original', 'mine', 'differences']);
+export const VIEW_LABELS = Object.freeze({ original: '원본', mine: '내 버전', differences: '차이' });
 
 export const MESSAGES = Object.freeze({
   loading: '내 버전을 준비하는 중…',
@@ -57,7 +61,8 @@ export function draftRoutes(basePath = '/') {
   const list = (runId, artifactId) =>
     `${runs}/${requireUuid(runId, 'run id')}/artifacts/${requireUuid(artifactId, 'artifact id')}/drafts`;
   const one = (runId, artifactId, draftId) => `${list(runId, artifactId)}/${requireUuid(draftId, 'draft id')}`;
-  return Object.freeze({ list, one, freeze: (runId, artifactId, draftId) => `${one(runId, artifactId, draftId)}/freeze` });
+  return Object.freeze({ list, one, freeze: (runId, artifactId, draftId) => `${one(runId, artifactId, draftId)}/freeze`,
+    differences: (runId, artifactId, draftId) => `${one(runId, artifactId, draftId)}/differences` });
 }
 
 export function isEditable(mediaType) {
@@ -74,6 +79,8 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
   let target = null;   // { runId, artifactId, format }
   let draft = null;    // { draftId, revision } of the last revision the server accepted
   let content = null;  // the owner's current text or rows
+  let originalContent = null;
+  let view = 'mine';
   let pending = null;
   let saving = null;
   let dirty = false;
@@ -87,10 +94,18 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
   }
 
   const status = element('p', '', { role: 'status', 'aria-live': 'polite' });
+  const tabs = element('div', undefined, { role: 'group', 'aria-label': '보기 전환' });
+  const tabButtons = {};
+  for (const name of VIEWS) {
+    tabButtons[name] = element('button', VIEW_LABELS[name], { type: 'button', 'aria-pressed': name === view ? 'true' : 'false' });
+    tabButtons[name].addEventListener('click', () => show(name).catch(() => {}));
+    tabs.append(tabButtons[name]);
+  }
+  tabs.hidden = true;
   const surface = element('div', undefined, { class: 'alternative-surface' });
   const actions = element('div', undefined, { class: 'alternative-actions' });
   const result = element('section', undefined, { class: 'alternative-freeze', 'aria-label': '고정 결과' });
-  root.replaceChildren(element('h2', '내 버전'), element('p', MESSAGES.noReason), status, surface, actions, result);
+  root.replaceChildren(element('h2', '내 버전'), element('p', MESSAGES.noReason), status, tabs, surface, actions, result);
 
   function say(text, state) {
     status.textContent = text;
@@ -146,7 +161,50 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
     surface.replaceChildren(table, addRow);
   }
 
+  function renderReadOnly(value) {
+    if (target.format === 'text') {
+      surface.replaceChildren(element('pre', value, { class: 'alternative-original', 'aria-label': '원본 텍스트' }));
+      return;
+    }
+    const table = element('table', undefined, { class: 'alternative-table', 'aria-label': '원본 표' });
+    for (const row of value) {
+      const tr = element('tr');
+      for (const cell of row) tr.append(element('td', cell));
+      table.append(tr);
+    }
+    surface.replaceChildren(table);
+  }
+
+  async function show(next) {
+    if (!VIEWS.includes(next)) fail('unknown view');
+    if (target === null) fail('no artifact is open');
+    view = next;
+    for (const name of VIEWS) tabButtons[name].setAttribute('aria-pressed', name === view ? 'true' : 'false');
+    actions.hidden = view !== 'mine';
+    if (view === 'original') { renderReadOnly(originalContent); return null; }
+    if (view === 'mine') { if (target.format === 'text') renderText(); else renderTable(); return null; }
+    // the differences are observed on a saved revision: an unsaved edit is saved first
+    if (pending !== null) { cancel(pending); pending = null; }
+    if (dirty) await save();
+    if (draft === null) {
+      surface.replaceChildren(element('p', '아직 저장된 내 버전이 없어 차이가 없습니다.'));
+      return null;
+    }
+    const observed = await request(routes.differences(target.runId, target.artifactId, draft.draftId), {});
+    const list = element('ul', undefined, { class: 'alternative-differences', 'aria-label': '관측된 차이' });
+    for (const item of observed.observations ?? []) list.append(element('li', String(item.description)));
+    const notes = (observed.uncertainties ?? []).map(text => element('p', String(text), { class: 'alternative-uncertainty' }));
+    surface.replaceChildren(element('p', observed.identical ? '원본과 같습니다.'
+      : `수정본 ${observed.revision}에서 관측한 차이 ${observed.observations.length}개 (위치는 제안된 정렬입니다)`),
+    list, ...notes);
+    return observed;
+  }
+
   function render() {
+    tabs.hidden = false;
+    view = 'mine';
+    for (const name of VIEWS) tabButtons[name].setAttribute('aria-pressed', name === view ? 'true' : 'false');
+    actions.hidden = false;
     if (target.format === 'text') renderText(); else renderTable();
     const reviewed = element('input', undefined, { type: 'checkbox', id: 'alternative-reviewed-whole' });
     reviewed.checked = false;
@@ -170,6 +228,8 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
       const format = listing?.original?.format;
       if (format !== 'text' && format !== 'table') fail('the draft listing is malformed', 'unavailable');
       target = { runId, artifactId: artifact.artifactId, format };
+      originalContent = format === 'text' ? String(listing.original.text)
+        : listing.original.rows.map(row => row.map(String));
       const drafts = Array.isArray(listing.drafts) ? listing.drafts : [];
       const latest = drafts.at(-1);
       if (latest) {
@@ -250,6 +310,6 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
     }
   }
 
-  return Object.freeze({ open, save, freeze,
+  return Object.freeze({ open, save, freeze, show, get view() { return view; },
     get draft() { return draft; }, get dirty() { return dirty; }, get content() { return content; } });
 }

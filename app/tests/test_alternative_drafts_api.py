@@ -216,3 +216,19 @@ def test_selectors_must_fit_the_original_format_and_bounds(tmp_path):
         assert upload(subject, run_id, png, PNG, whole=True).status_code == 400  # the same bytes
         assert upload(subject, run_id, png, b"", whole=True).status_code == 400
         assert upload(subject, run_id, png, mine, whole=True, name="../x").status_code == 400
+
+
+def test_the_framework_observes_what_the_draft_changed(tmp_path):
+    executor = Executor()
+    with owner_app(tmp_path, executor) as subject:
+        run_id, ref = started(subject, executor, [("report", "text/plain", TEXT)])
+        artifact_id = artifact_identity(ref, 0)
+        draft = save(subject, run_id, artifact_id, format="text",
+                     text="첫 줄\n고친 둘째 줄\n셋째 줄\n").json()
+        observed = get(subject, drafts_path(run_id, artifact_id) + f"/{draft['draft_id']}/differences")
+        assert observed.status_code == 200, observed.text
+        value = observed.json()
+        assert value["format"] == "text" and value["identical"] is False
+        assert [item["locator"]["operation"] for item in value["observations"]] == ["replace"]
+        assert value["observations"][0]["locator"]["alignment"] == "proposed"
+        assert get(subject, drafts_path(run_id, artifact_id) + f"/{uuid4()}/differences").status_code == 404

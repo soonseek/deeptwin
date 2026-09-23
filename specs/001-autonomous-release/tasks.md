@@ -539,7 +539,11 @@ whole/partial selectors bind exact original, unreviewed area and impact remain s
   2026-09-23: `alternative-files` route (runs-v1) with format-bound page/image region, JSON
   pointer and time selectors stored `unresolved`, whole-only where no selector exists; form in
   `alternative-file.mjs` — evidence/own-version-editor-t052-2026-09-23.md.
-- [ ] T054 [US4] Test three-view switch/refresh/conflict/stale-range recovery in app/tests/browser-alternatives.test.mjs and record synthetic-vs-real evidence in specs/001-autonomous-release/evidence/us4.md (SC-006).
+- [x] T054 [US4] Test three-view switch/refresh/conflict/stale-range recovery in app/tests/browser-alternatives.test.mjs and record synthetic-vs-real evidence in specs/001-autonomous-release/evidence/us4.md (SC-006).
+  2026-09-23: real-browser cases against the supported server (three views incl. observed
+  differences, autosave, refresh resume, explicit partial freeze, stale-tab conflict → new draft or
+  reload, keyboard table edit); evidence labeled synthetic test-actor only, actual-user evidence
+  absent — evidence/us4.md.
 
 ## Phase 7: US5 — Difference investigation and grounded change (P1)
 

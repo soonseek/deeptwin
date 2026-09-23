@@ -124,7 +124,7 @@ def _draft_parts(parts):
         return (parts[2], None, None)
     if len(parts) == 5:
         return (parts[2], parts[4], None)
-    return (parts[2], parts[4], "freeze") if parts[5] == "freeze" else None
+    return (parts[2], parts[4], parts[5]) if parts[5] in {"freeze", "differences"} else None
 
 
 def is_draft_save(path: str, method: str) -> bool:
@@ -204,7 +204,7 @@ def preflight(scope, body, content_type):
             uuid_string(drafts[0])
             if drafts[1] is not None:
                 uuid_string(drafts[1])
-            if drafts[2] is None and method in {"GET", "HEAD"}:
+            if drafts[2] in {None, "differences"} and method in {"GET", "HEAD"}:
                 if body:
                     raise RunRouteError()
                 return None
@@ -309,6 +309,12 @@ def create_router(*, runs, base_path, artifacts=None, drafts=None):
                       methods=["GET", "HEAD"])
     async def draft_read(request: Request, run_id: str, artifact_id: str, draft_id: str):
         return await draft_call(drafts.read if drafts else None,
+                                request.state.authenticated_request, run_id, artifact_id, draft_id)
+
+    @router.api_route(PATH + "/{run_id}/artifacts/{artifact_id}/drafts/{draft_id}/differences",
+                      methods=["GET", "HEAD"])
+    async def draft_differences(request: Request, run_id: str, artifact_id: str, draft_id: str):
+        return await draft_call(drafts.differences if drafts else None,
                                 request.state.authenticated_request, run_id, artifact_id, draft_id)
 
     @router.post(PATH + "/{run_id}/artifacts/{artifact_id}/drafts/{draft_id}/freeze")

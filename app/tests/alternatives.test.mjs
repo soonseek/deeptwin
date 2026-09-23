@@ -160,3 +160,24 @@ test('a saved draft resumes, and an unchanged copy is refused plainly', async ()
   await assert.rejects(editor.freeze(false));
   assert.match(root.textContent, new RegExp(MESSAGES.unchanged));
 });
+
+test('three views: the original stays read-only, differences are observed on a saved revision', async () => {
+  const observed = { revision: 1, identical: false, observations: [{ description: '원본 1–1행이 대안 1–1행으로 바뀌었다.' }],
+    uncertainties: [] };
+  const { root, asked, editor } = editorWith([textListing, saved(1), observed]);
+  await editor.open(RUN, { artifactId: ART, mediaType: 'text/plain' });
+  const tab = name => root.findAll(el => el.tagName === 'BUTTON' && el.textContent === name)[0];
+  const area = root.findAll(el => el.tagName === 'TEXTAREA')[0];
+  area.value = '바꾼 줄\n'; await area.dispatch('input');
+  await tab('원본').dispatch('click');
+  assert.equal(editor.view, 'original');
+  assert.equal(tab('원본').getAttribute('aria-pressed'), 'true');
+  assert.equal(root.findAll(el => el.tagName === 'PRE')[0].textContent, '첫 줄\n');
+  assert.equal(root.findAll(el => el.tagName === 'TEXTAREA').length, 0);
+  await tab('차이').dispatch('click');
+  assert.equal(asked[1][1].method, 'POST');  // the unsaved edit was saved first
+  assert.equal(asked[2][0], `/api/v1/runs/${RUN}/artifacts/${ART}/drafts/${DRAFT}/differences`);
+  assert.match(root.textContent, /관측한 차이 1개/);
+  await tab('내 버전').dispatch('click');
+  assert.equal(root.findAll(el => el.tagName === 'TEXTAREA')[0].value, '바꾼 줄\n');  // the owner text survives
+});

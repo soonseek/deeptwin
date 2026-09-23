@@ -459,6 +459,33 @@ class PersistentAlternativeDrafts:
         value["frozen_revisions"] = frozen
         return value
 
+    @_closed
+    def differences(self, request, run_id, artifact_id, draft_id, *, base_path) -> dict:
+        """What the framework observes between the original and one draft revision (T055)."""
+
+        from .difference_observer import DifferenceObservationError, observe_differences
+
+        if request is None:
+            raise DraftError("unauthenticated")
+        self._owner.authenticate_bound(request.session)
+        run_id, artifact_id, draft_id = _uuid(run_id), _uuid(artifact_id), _uuid(draft_id)
+        item, _fmt, original = self._original(run_id, artifact_id, base_path)
+        with self._domain._connection() as db:
+            roots = self._domain._read_roots(db)
+            record = self._load(db, roots, draft_id)
+        if record is None:
+            raise DraftError("not_found")
+        bound = record.body["content"]["alternative_draft"]
+        if (bound["run_id"], bound["artifact_id"]) != (run_id, artifact_id):
+            raise DraftError("not_found")
+        try:
+            observed = observe_differences(original, self._bytes(record), media_type=item["media_type"])
+        except DifferenceObservationError:
+            raise DraftError("too_large") from None
+        return {"draft_id": draft_id, "revision": record.ref.version, "format": observed.format,
+                "identical": observed.identical, "observations": list(observed.observations),
+                "uncertainties": list(observed.uncertainties)}
+
     # --- the explicit freeze --------------------------------------------------------
 
     def _frozen_ids(self, db, roots, draft_ids):
