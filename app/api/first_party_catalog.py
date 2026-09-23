@@ -44,7 +44,7 @@ INSTALLED = (
         work_services,
         ("browser_session",),
         ("work.command", "work.read"),
-        provides=("works.service",),
+        provides=("works.service", "work-exports.service"),
     ),
     InstalledContribution(
         "run-consents-v1.json",

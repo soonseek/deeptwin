@@ -16,6 +16,11 @@ from starlette.concurrency import run_in_threadpool
 
 from ..domain.refs import uuid_string
 from ..services.owner_material_intake import OwnerMaterialIntake
+from ..services.work_exports import (
+    CONFIRM_SCHEMA,
+    PREVIEW_SCHEMA,
+    PersistentWorkExports,
+)
 from ..services.works import (
     CREATE_SCHEMA,
     CREATE_V2,
@@ -44,6 +49,10 @@ STATUS = {
 }
 _LIMITS = WireLimits(max_bytes=MAX_BODY_BYTES, max_depth=2, max_items=8, max_members=4,
                      max_string_bytes=MAX_TEXT_BYTES)
+
+
+_EXPORT_LIMITS = WireLimits(max_bytes=2_048, max_depth=3, max_items=16, max_members=6,
+                            max_string_bytes=128)
 
 
 class WorkRouteError(ValueError):
@@ -98,6 +107,31 @@ def preflight(scope, body, content_type):
                 raise WorkRouteError()
             return None
         work_id = uuid_string(parts[0])
+        if len(parts) in {3, 2} and parts[1] == "exports" and method == "POST":
+            # the export preview (…/exports/preview) and its explicit confirmation (…/exports)
+            if len(parts) == 3 and parts[2] != "preview":
+                raise WorkRouteError()
+            if content_type.split(";", 1)[0] != "application/json":
+                raise WorkRouteError()
+            confirm = len(parts) == 2
+            fields = ("schema_version", "request_id", "categories", "include_raw",
+                      *(("preview_sha", "confirmed") if confirm else ()))
+            value = parse_json_object(
+                body, required=fields,
+                field_types={name: kind for name, kind in (
+                    ("schema_version", str), ("request_id", str), ("categories", list),
+                    ("include_raw", bool), ("preview_sha", str), ("confirmed", bool))
+                    if name in fields},
+                limits=_EXPORT_LIMITS)
+            if value["schema_version"] != (CONFIRM_SCHEMA if confirm else PREVIEW_SCHEMA):
+                raise WorkRouteError()
+            uuid_string(value["request_id"])
+            return value
+        if len(parts) == 3 and parts[1] == "exports":
+            uuid_string(parts[2])
+            if method not in {"GET", "HEAD"} or body:
+                raise WorkRouteError()
+            return None
         if len(parts) == 2 and parts[1] == "revisions":
             if method != "POST" or content_type.split(";", 1)[0] != "application/json":
                 raise WorkRouteError()
@@ -130,12 +164,51 @@ def preflight(scope, body, content_type):
 
 def work_services(context):
     works = PersistentWorks(context.domain_store, context.owner_authority)
-    return ContributionServices(create_router(works=works), {"works.service": works})
+    exports = PersistentWorkExports(works)
+    return ContributionServices(create_router(works=works, exports=exports),
+                                {"works.service": works, "work-exports.service": exports})
 
 
-def create_router(*, works):
+def create_router(*, works, exports=None):
     router = APIRouter()
     intake = OwnerMaterialIntake(works)
+
+    @router.post(PATH + "/{work_id}/exports/preview")
+    async def export_preview(request: Request, work_id: str):
+        try:
+            if exports is None:
+                raise WorkServiceError("unavailable")
+            return JSONResponse(await run_in_threadpool(
+                exports.preview, request.state.authenticated_request, work_id,
+                request.state.work_payload))
+        except WorkServiceError as error:
+            return work_error(error)
+
+    @router.post(PATH + "/{work_id}/exports")
+    async def export_confirm(request: Request, work_id: str):
+        try:
+            if exports is None:
+                raise WorkServiceError("unavailable")
+            value = await run_in_threadpool(
+                exports.confirm, request.state.authenticated_request, work_id,
+                request.state.work_payload)
+            return JSONResponse(value, status_code=201)
+        except WorkServiceError as error:
+            return work_error(error)
+
+    @router.api_route(PATH + "/{work_id}/exports/{bundle_id}", methods=["GET", "HEAD"])
+    async def export_download(request: Request, work_id: str, bundle_id: str):
+        try:
+            if exports is None:
+                raise WorkServiceError("unavailable")
+            receipt, data = await run_in_threadpool(
+                exports.download, request.state.authenticated_request, work_id, bundle_id)
+            return Response(data, media_type="application/zip", headers={
+                "Content-Disposition": f'attachment; filename="deeptwin-export-{receipt["bundle_id"]}.zip"',
+                "Content-Length": str(len(data)),
+                "X-DeepTwin-Bundle-SHA256": receipt["bundle_sha256"]})
+        except WorkServiceError as error:
+            return work_error(error)
 
     @router.api_route(PATH + "/commands/{command_id}", methods=["GET", "HEAD"])
     async def receipt(request: Request, command_id: str):

@@ -17,9 +17,12 @@
 // contents are not read, and microphone/model work is not part of this slice.
 
 import { basePathFrom, createSupportedSession } from './session.mjs';
+import { createWorkExport } from './work-export.mjs';
 
 export const MOUNT_IDS = Object.freeze({ session: 'session-status', notice: 'intake-notice', form: 'work-form',
   save: 'save-status', materials: 'materials', link: 'observe-link' });
+// the export panel's mount is optional: a page without it still boots (T073)
+export const RECORDS_MOUNT_ID = 'work-records';
 export const MAX_TEXT_CHARS = 20_000;  // app/services/works.py MAX_TEXT_CHARS
 export const MAX_TEXT_BYTES = 65_536;  // app/services/works.py MAX_TEXT_BYTES (raw UTF-8)
 const CREATE_SCHEMA = 'work-create-command-v1';
@@ -230,6 +233,11 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   roots.link.replaceChildren(element('a', { href: './observe.html' }, '기록된 실행 관제 화면'));
 
   let state = store.read();
+  const recordsRoot = document.getElementById(RECORDS_MOUNT_ID);
+  const exporter = recordsRoot !== null && typeof recordsRoot?.replaceChildren === 'function'
+    ? createWorkExport({ root: recordsRoot, document, basePath, request: session.request, crypto,
+      workId: () => state.work_id ?? null })
+    : null;
   const selections = [];
   const originals = new Map();
   let savedSources = [];
@@ -650,7 +658,7 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
     await saveAll();
   });
 
-  return Object.freeze({ mode, basePath, session });
+  return Object.freeze({ mode, basePath, session, exporter });
 }
 
 // the page's entry: a boot that fails before the exchange still reaches the status line
