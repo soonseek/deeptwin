@@ -59,3 +59,21 @@ depends on thread scheduling. Typical assertions:
 
 They are recorded here as open, not as flakes to ignore. Also open: the Linux Chromium
 download-name case recorded earlier.
+
+## full6 (after the fixes)
+
+Run on a fresh worktree at `3f8b32e`:
+
+```
+1 failed, 9495 passed, 4 skipped, 369 subtests passed in 5554.61s
+```
+
+The owned-connection cases did not fail in full6. One case failed:
+`test_provider_semantic_vertical.py::…retains_api_reservation[USD-valid-None]`.
+
+- **Cause:** a test-owned barrier gave a whole semantic dialogue 2 s to reach ledger
+  acceptance. Repeated isolated runs of that test before the fix showed one failure in three.
+- **Fix:** the barriers (`accept_entered`, `accept_release`, the dispatch join) are now 10 s.
+  They are test synchronisation, not product deadlines. A dispatch that fails before acceptance
+  is now reported with its own error rather than as a timeout.
+- **Observed:** `test_provider_semantic_vertical.py` **83 passed**.

@@ -2067,7 +2067,7 @@ def test_authenticated_semantic_path_is_accepted_by_actual_dispatcher_and_retain
         def gated_accept(self, *args, **kwargs):
             if self is runtime.ledger:
                 accept_entered.set()
-                if not accept_release.wait(2):
+                if not accept_release.wait(10):
                     raise TimeoutError("test-owned acceptance barrier elapsed")
             return original_accept(self, *args, **kwargs)
         monkeypatch.setattr(RuntimeLedger, "accept_result_and_settle", gated_accept)
@@ -2080,7 +2080,11 @@ def test_authenticated_semantic_path_is_accepted_by_actual_dispatcher_and_retain
                 dispatch_failures.append(exc)
         dispatch_thread = threading.Thread(target=dispatch)
         dispatch_thread.start()
-        assert accept_entered.wait(2)
+        # test-owned barriers, not product deadlines: a whole semantic dialogue runs
+        # before acceptance, so a loaded full-suite run gets a generous bound, and a
+        # dispatch that failed before acceptance is reported as itself
+        assert accept_entered.wait(10) or not dispatch_thread.is_alive(), "dispatch never reached acceptance"
+        assert accept_entered.is_set(), dispatch_failures
         query_identity = {name: semantic_request[name] for name in ("installation_digest",
             "qualification_ref", "binding_revision_ref", "purpose_ref", "actor_ref", "grant_refs")}
         status_before = __import__("app.tests.support.provider_semantic_harness",
@@ -2092,7 +2096,7 @@ def test_authenticated_semantic_path_is_accepted_by_actual_dispatcher_and_retain
             created_at_utc=domain_time(now))
         assert preaccepted["output"] == {"observed_state": "running",
             "observed_at": port_time(now), "terminal_result_ref": None}
-        accept_release.set(); dispatch_thread.join(2)
+        accept_release.set(); dispatch_thread.join(10)
         assert not dispatch_thread.is_alive()
         if response_mode == "malformed":
             assert dispatched == [] and len(dispatch_failures) == 1
