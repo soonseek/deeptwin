@@ -1,6 +1,11 @@
 """Typed change-candidate compilation (US5, T057, FR-020/021).
 
-A change candidate exists only downstream of a concluded *supported* inquiry.
+A change candidate has exactly two admissions (growth.md §4). A concluded
+*supported* inquiry grounds any kind; and — because SPLI is not forced on
+every deficit — a `system` hypothesis *confirmed* over its competitors grounds
+a `restore` candidate directly (the system-repair path: restoration first),
+never `learn` or `protect`, whose grounds are an expert judgment difference.
+Each candidate records which admission grounded it.
 The compiler binds every patch field (condition/action/exception) to its own
 provenance, and each provenance reference must be evidence the inquiry actually
 observed after its freeze — real change grounds connected to the exact
@@ -8,7 +13,10 @@ modification. Two absorption shortcuts are blocked structurally: patch text may
 not contain verbatim spans of forbidden material (the alternative's own wording
 or philosophy sources; whitespace-normalized matching), and no reference into
 the unpromoted alternative/interpretation store may appear anywhere in a
-compiled candidate. Candidates are issued (init-disabled, tokened), never
+compiled candidate. The leak check is not optional: the caller must hand the
+compiler the forbidden source material (at least the alternative's own
+wording) on every compilation, so a call that forgot it fails instead of
+passing unchecked. Candidates are issued (init-disabled, tokened), never
 constructed.
 """
 
@@ -19,9 +27,11 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from ..domain.refs import DomainContractError, EntityRef
+from ..services.diagnosis import is_issued_hypothesis_set
 from ..services.inquiry import is_issued_inquiry
 
 CHANGE_KINDS = frozenset({"restore", "learn", "protect"})
+GROUNDS = frozenset({"supported_inquiry", "confirmed_system_hypothesis"})
 _FORBIDDEN_REF_KINDS = frozenset({
     "own_alternative", "difference", "hypothesis", "selector",
 })
@@ -89,6 +99,7 @@ class ChangeCandidate:
     compatibility: EntityRef
     rollback_bundle: EntityRef
     inquiry_ref: EntityRef
+    grounds: str
     _issuer_token: object = field(repr=False, compare=False)
 
     def as_dict(self) -> dict:
@@ -110,6 +121,7 @@ class ChangeCandidate:
             "compatibility_ref": self.compatibility.as_dict(),
             "rollback_bundle_ref": self.rollback_bundle.as_dict(),
             "inquiry_difference_ref": self.inquiry_ref.as_dict(),
+            "grounds": self.grounds,
         }
 
 
@@ -155,22 +167,18 @@ def _patch_field(
     return _issue(PatchField, text=text, evidence_refs=tuple(resolved))
 
 
-def compile_change_candidate(
-    inquiry,
-    value,
-    *,
-    forbidden_spans: list[str] | None = None,
-) -> ChangeCandidate:
-    """Compile one typed change candidate from a supported inquiry."""
-
-    if not is_issued_inquiry(inquiry):
-        # A look-alike Inquiry that never went through open/observe/conclude
-        # carries none of the freeze-ordering or evidence discipline.
-        raise ChangeCompilerError("a concluded inquiry is required")
-    if inquiry.outcome != "supported":
+def _forbidden(forbidden_spans) -> tuple[str, ...]:
+    if type(forbidden_spans) is not list or not 1 <= len(forbidden_spans) <= 256:
+        # the leak check is mandatory: at least the alternative's own wording
         raise ChangeCompilerError(
-            "only a supported inquiry outcome can ground a change candidate"
+            "forbidden source material is required for every compilation"
         )
+    return tuple(
+        _normalized(_text(item, "forbidden span", 4_096)) for item in forbidden_spans
+    )
+
+
+def _compile(value, *, observed, forbidden, grounds, difference_ref, kinds) -> ChangeCandidate:
     if type(value) is not dict or set(value) != {
         "kind", "condition", "action", "exception", "change_scope",
         "predicted_impact_scope", "parent_environment", "compatibility",
@@ -180,18 +188,10 @@ def compile_change_candidate(
     kind = value["kind"]
     if kind not in CHANGE_KINDS:
         raise ChangeCompilerError("change kind must be restore, learn or protect")
-    if forbidden_spans is None:
-        forbidden_spans = []
-    if type(forbidden_spans) is not list or len(forbidden_spans) > 256:
-        raise ChangeCompilerError("forbidden spans are out of bounds")
-    forbidden = tuple(
-        _normalized(_text(item, "forbidden span", 4_096))
-        for item in forbidden_spans
-    )
-    observed = {
-        (ref.kind, ref.id, ref.version, ref.sha256)
-        for _stamp, ref in inquiry.new_evidence
-    }
+    if kind not in kinds:
+        raise ChangeCompilerError(
+            "a confirmed system hypothesis grounds a restore candidate only"
+        )
     clauses = {
         label: _patch_field(value[label], label, observed, forbidden)
         for label in _PATCH_FIELDS
@@ -225,9 +225,58 @@ def compile_change_candidate(
         rollback_bundle=_ref(
             value["rollback_bundle"], "backup_manifest", "rollback bundle",
         ),
-        inquiry_ref=inquiry.difference_ref,
+        inquiry_ref=difference_ref,
+        grounds=grounds,
         _issuer_token=_ISSUE_TOKEN,
     )
+
+
+def compile_change_candidate(inquiry, value, *, forbidden_spans) -> ChangeCandidate:
+    """Compile one typed change candidate from a supported inquiry."""
+
+    if not is_issued_inquiry(inquiry):
+        # A look-alike Inquiry that never went through open/observe/conclude
+        # carries none of the freeze-ordering or evidence discipline.
+        raise ChangeCompilerError("a concluded inquiry is required")
+    if inquiry.outcome != "supported":
+        raise ChangeCompilerError(
+            "only a supported inquiry outcome can ground a change candidate"
+        )
+    forbidden = _forbidden(forbidden_spans)
+    observed = {
+        (ref.kind, ref.id, ref.version, ref.sha256)
+        for _stamp, ref in inquiry.new_evidence
+    }
+    return _compile(value, observed=observed, forbidden=forbidden,
+                    grounds="supported_inquiry", difference_ref=inquiry.difference_ref,
+                    kinds=CHANGE_KINDS)
+
+
+def compile_system_restore(hypotheses, hypothesis_id, value, *, forbidden_spans) -> ChangeCandidate:
+    """Compile a restore candidate on growth §4's system-repair path.
+
+    The named hypothesis must be a `system` hypothesis the framework-issued set
+    records as *confirmed* — which the set itself allows only after every
+    competitor was examined, over evidence outside the alternative and
+    difference — and every clause's provenance must be part of that
+    confirmation basis. No inquiry is required and none is implied.
+    """
+
+    if not is_issued_hypothesis_set(hypotheses):
+        raise ChangeCompilerError("a framework-issued hypothesis set is required")
+    target = next((item for item in hypotheses.hypotheses
+                   if item.hypothesis_id == hypothesis_id), None)
+    if target is None or target.family != "system" or target.status != "confirmed":
+        raise ChangeCompilerError(
+            "the system-repair path needs a confirmed system hypothesis"
+        )
+    forbidden = _forbidden(forbidden_spans)
+    observed = {
+        (ref.kind, ref.id, ref.version, ref.sha256) for ref in target.confirmation_basis
+    }
+    return _compile(value, observed=observed, forbidden=forbidden,
+                    grounds="confirmed_system_hypothesis",
+                    difference_ref=hypotheses.difference_ref, kinds={"restore"})
 
 
 def is_compiled_candidate(value: object) -> bool:
@@ -241,9 +290,11 @@ def is_compiled_candidate(value: object) -> bool:
 
 __all__ = [
     "CHANGE_KINDS",
+    "GROUNDS",
     "ChangeCandidate",
     "ChangeCompilerError",
     "PatchField",
     "compile_change_candidate",
+    "compile_system_restore",
     "is_compiled_candidate",
 ]
