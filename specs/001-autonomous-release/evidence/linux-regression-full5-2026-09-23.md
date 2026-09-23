@@ -77,3 +77,17 @@ The owned-connection cases did not fail in full6. One case failed:
   They are test synchronisation, not product deadlines. A dispatch that fails before acceptance
   is now reported with its own error rather than as a timeout.
 - **Observed:** `test_provider_semantic_vertical.py` **83 passed**.
+
+## Browser suite: the Linux download-name case closed
+
+- **Cause.** The download-name failure (`suggestedFilename() === 'download'`) was the runner's
+  locale. With no `LANG`, the process runs under POSIX/C, and Linux Chromium cannot name a
+  download with a non-ASCII original name, so it falls back to the generic "download". The
+  server's `Content-Disposition` (`filename*=UTF-8''…`) was correct throughout.
+- **Fix 1.** The test launches Chromium with a UTF-8 locale.
+- **Fix 2.** The work screen's download link now carries the original's name as its `download`
+  attribute. It used to be empty. Path separators and control characters are replaced.
+- **Observed.**
+  - `browser-owner-material-intake.test.mjs`: 3/3 passed in five consecutive runs.
+  - All browser tests (`app/tests/browser-*.test.mjs`): **89 passed, 0 failed**.
+  - All non-browser node tests: 164 passed.

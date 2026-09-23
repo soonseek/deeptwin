@@ -258,7 +258,10 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
       const row = element('li');
       row.append(element('span', { class: 'original-name' }, original?.name ?? '저장된 원본'),
         element('span', { class: 'original-state' }, '원본 보관됨'),
-        element('a', { href: `${works}/${state.work_id}/sources/${ref.id}/content`, download: '' }, '다운로드'));
+        // name the saved file after the original (an empty attribute lets some engines fall back to
+        // a generic name instead of the server's Content-Disposition); separators never pass
+        element('a', { href: `${works}/${state.work_id}/sources/${ref.id}/content`,
+          download: typeof original?.name === 'string' ? original.name.replace(/[\\/\u0000-\u001f]/g, '_') : '' }, '다운로드'));
       rows.push(row);
     }
     for (const selection of selections.filter(item => item.status !== 'stored')) {

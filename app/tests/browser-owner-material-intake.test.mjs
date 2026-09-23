@@ -22,7 +22,10 @@ async function open(t) {
     { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, LANGSMITH_TRACING: 'false', LANGCHAIN_TRACING_V2: 'false', DD_TRACE_ENABLED: 'false' } });
   const url = await waitForOwnedChildOutput(server, { pattern: /http:\/\/[0-9a-f]{32}\.localhost:\d+\/[0-9a-f]{32}\//, timeoutMs: 15000, label: 'Owner material fixture' });
   const { chromium } = await import(pathToFileURL(process.env.CONTROL_PLAYWRIGHT_MODULE).href);
-  browser = await chromium.launch({ channel: 'chrome', headless: true });
+  // a UTF-8 locale: under a POSIX/C locale Linux Chromium cannot name a download with a
+  // non-ASCII original name and falls back to the generic "download"
+  browser = await chromium.launch({ channel: 'chrome', headless: true,
+    env: { ...process.env, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' } });
   const context = await browser.newContext({ viewport: { width: 1024, height: 1000 }, acceptDownloads: true });
   const page = await context.newPage();
   page.setDefaultTimeout(7000);
