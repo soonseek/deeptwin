@@ -94,6 +94,13 @@ def gateway_pair(tmp_path, monkeypatch):
         alias.symlink_to(root.endpoint_path, target_is_directory=True)
         monkeypatch.setattr(listener, "_anchored_socket_path",
                             lambda _fd, _pair, name: str(alias / name))
+    else:
+        # the test-only fd-less form (-1) addresses the socket by path; real
+        # descriptors keep the product's /proc/self/fd anchoring
+        anchored = listener._anchored_socket_path
+        monkeypatch.setattr(listener, "_anchored_socket_path",
+                            lambda fd, pair, name: str(root.endpoint_path / name) if fd == -1
+                            else anchored(fd, pair, name))
     gateway_seams(monkeypatch, root, spec)
     try:
         yield root, spec

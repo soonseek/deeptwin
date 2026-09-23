@@ -1,5 +1,7 @@
 """Resolve one actual accepted staged-provider journal item into a closed subject."""
 
+import threading
+from contextlib import contextmanager
 from hashlib import sha256
 
 from ..deployment.prepare_contracts import DeploymentPrepareError
@@ -13,13 +15,47 @@ def _error(code="conflict"):
     raise ConformanceError(code)
 
 
+_MEMO = threading.local()
+
+
+@contextmanager
+def journal_once(prepare_service, db):
+    """Verify the deployment journal once for a read-only pass over history.
+
+    `verify_history` resolves every retained conformance run's subject inside
+    one transaction that writes nothing between them; each resolution used to
+    re-read and re-verify the whole deployment journal, so a pass over n runs
+    cost n full verifications (about half an hour at the 64-run lifetime
+    capacity on a slower host). Inside this scope, and only for this service and
+    this very transaction, the first verified journal is reused, and so is each
+    installation's resolved historical subject (retained runs of one
+    installation share it).
+    """
+
+    previous = getattr(_MEMO, "entry", None)
+    _MEMO.entry = [prepare_service, db, None, {}]
+    try:
+        yield
+    finally:
+        _MEMO.entry = previous
+
+
+def _journal(prepare_service, db):
+    entry = getattr(_MEMO, "entry", None)
+    if entry is None or entry[0] is not prepare_service or entry[1] is not db:
+        return prepare_service._journal(db)
+    if entry[2] is None:
+        entry[2] = prepare_service._journal(db)
+    return entry[2]
+
+
 def _select(prepare_service, db, installation_ref):
     if type(prepare_service) is not PersistentDeploymentPrepare:
         _error("unavailable")
     if (type(installation_ref) is not EntityRef
             or installation_ref.kind != "extension_installation" or installation_ref.version != 1):
         _error("invalid_input")
-    journal = prepare_service._journal(db)
+    journal = _journal(prepare_service, db)
     matches = [item for item in journal["requests"].values()
                if item.get("installation") is not None
                and item["installation"].get("ref") == installation_ref]
@@ -143,8 +179,15 @@ def require_current_subject(prepare_service, db, subject, source_context):
 def historical_subject(prepare_service, db, installation_ref):
     """Verified retained history only; deliberately performs no live source read."""
     prepare_service._domain._assert_write_transaction(db)
+    entry = getattr(_MEMO, "entry", None)
+    scoped = entry is not None and entry[0] is prepare_service and entry[1] is db
+    if scoped and type(installation_ref) is EntityRef and installation_ref in entry[3]:
+        return entry[3][installation_ref]
     _, item = _select(prepare_service, db, installation_ref)
-    return _subject_from_verified_item(prepare_service, db, item)
+    subject = _subject_from_verified_item(prepare_service, db, item)
+    if scoped:
+        entry[3][installation_ref] = subject
+    return subject
 
 
 def _verified_admission(prepare_service,db,item,expected):

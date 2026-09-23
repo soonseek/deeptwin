@@ -1464,9 +1464,14 @@ def test_authenticated_semantic_path_is_accepted_by_actual_dispatcher_and_retain
             monkeypatch.setattr(worker_client, "begin", corrupt_authenticated_session)
 
         owner = OwnerIdentity(str(uuid4()), 4321, 900, str(uuid4()))
+        # a generous dispatch window (the lease bounds it): the path before the send
+        # (worker proposal, gateway prepare, authority reload) outlasted a one-second
+        # lease on a slower host; the deadline faults below move the clock explicitly
         binding = AttemptBinding.create(envelope_ref=runtime.refs.envelope,
             profile_ref=runtime.refs.profile, budget_policy_ref=runtime.refs.budget,
-            deadline_at_ms=10_000, lease_duration_ms=1_000, model_calls=1, tool_calls=0,
+            deadline_at_ms=60_000,
+            lease_duration_ms=1_000 if fault_phase in {"deadline_after_worker", "deadline_after_reload"}
+            else 30_000, model_calls=1, tool_calls=0,
             node_visits=1, loop_rounds=0, output_bytes=524_288, candidates=0,
             api_microunits=50_000, principal=runtime.principal, grant=runtime.grant)
         dispatcher = NodeAttemptDispatcher.build(ledger=runtime.ledger, budget_book=runtime.book,

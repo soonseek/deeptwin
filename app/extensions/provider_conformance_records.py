@@ -15,7 +15,11 @@ from .provider_conformance_contracts import (
     parse_capture,
     parse_reply,
 )
-from .provider_conformance_resolver import historical_subject,historical_verified_admission
+from .provider_conformance_resolver import (
+    historical_subject,
+    historical_verified_admission,
+    journal_once,
+)
 from .provider_conformance_storage import verify_layout
 from .provider_conformance_vectors import SUITE_SHA256, SUITE_VERSION
 from ..workers.provider_client import compare_capture
@@ -341,7 +345,8 @@ def verify_history(prepare_service, db):
             raise
         except Exception:
             raise ConformanceError("unavailable") from None
-    histories = tuple(_load_one(prepare_service, db, row, owner_ref) for row in rows)
+    with journal_once(prepare_service, db):  # nothing below writes until every run is read
+        histories = tuple(_load_one(prepare_service, db, row, owner_ref) for row in rows)
     floor = db.execute("SELECT last_now_ms FROM provider_conformance_control").fetchone()[0]
     if any(item.row["admitted_ms"] > floor
             or item.row["finished_ms"] is not None and item.row["finished_ms"] > floor

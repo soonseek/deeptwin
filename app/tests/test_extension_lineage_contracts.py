@@ -648,11 +648,11 @@ def test_schema_and_runtime_agree_on_closed_order_and_boolean_shapes():
 
 
 def test_existing_68_schema_artifacts_remain_byte_identical():
+    # the schema tree as it stood immediately before Task 22 (16db0fa^), rebuilt
+    # from git history and tracked (the original lived in an unshipped private
+    # review directory, so the test could only pass on one machine)
     manifest = (
-        ROOT
-        / ".superpowers"
-        / "sdd"
-        / "resumption-plan"
+        ROOT / "specs" / "001-autonomous-release" / "evidence" / "manifests"
         / "task-22-schema-before.sha256"
     )
     entries = [
