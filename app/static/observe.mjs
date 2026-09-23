@@ -8,6 +8,7 @@
 // Every dependency (document, location, fetch, crypto) is injected so the
 // boot is testable under node; the page passes the platform's own.
 
+import { createAlternativeFileForm } from './alternative-file.mjs';
 import { createAlternativeEditor } from './alternatives.mjs';
 import { createArtifactViewer } from './artifacts.mjs';
 import { createRunList } from './run-list.mjs';
@@ -15,6 +16,7 @@ import { createRunPanel } from './run-panel.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
 
 export const ALTERNATIVE_MOUNT_ID = 'run-alternative';
+export const ALTERNATIVE_FILE_MOUNT_ID = 'run-alternative-file';
 export const MOUNT_IDS = Object.freeze({
   session: 'session-status', source: 'run-source', panel: 'run-panel', artifacts: 'run-artifacts',
 });
@@ -72,8 +74,13 @@ export async function boot({ document, location, fetch, crypto } = {}) {
   const editor = alternativeRoot !== null && typeof alternativeRoot?.replaceChildren === 'function'
     ? createAlternativeEditor({ root: alternativeRoot, document, basePath, request: session.request, crypto })
     : null;
+  const fileRoot = document.getElementById(ALTERNATIVE_FILE_MOUNT_ID);
+  const fileForm = fileRoot !== null && typeof fileRoot?.replaceChildren === 'function'
+    ? createAlternativeFileForm({ root: fileRoot, document, basePath, request: session.request, crypto })
+    : null;
   const artifacts = createArtifactViewer({ root: roots.artifacts, document, basePath, request: session.request,
-    onEdit: editor === null ? undefined : (runId, item) => editor.open(runId, item) });
+    onEdit: editor === null ? undefined : (runId, item) => editor.open(runId, item),
+    onAlternativeFile: fileForm === null ? undefined : (runId, item) => fileForm.open(runId, item) });
   const list = createRunList({
     root: roots.source, document, basePath, request: session.request,
     // each refusal is shown on its own surface

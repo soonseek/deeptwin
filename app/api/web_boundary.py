@@ -14,6 +14,7 @@ from ..services.run_consents import RunConsentError
 from ..services.runs import RunServiceError
 from ..services.works import WorkServiceError
 from . import owner_material_upload as material_upload
+from . import provider_installation as installation
 from .assets import PUBLIC_ASSET_PATHS
 from .deployment_prepare import PATH as DEPLOYMENT_PATH
 from .deployment_prepare import deployment_error
@@ -21,17 +22,24 @@ from .deployment_prepare import preflight as deployment_preflight
 from .extension_candidates import PATH as CANDIDATE_PATH
 from .extension_candidates import candidate_error
 from .extension_candidates import preflight as candidate_preflight
-from .provider_deployment_prepare import PATH as PROVIDER_DEPLOYMENT_PATH
-from .provider_deployment_prepare import preflight as provider_deployment_preflight
 from .provider_conformance import PATH as PROVIDER_CONFORMANCE_PATH
 from .provider_conformance import conformance_error
 from .provider_conformance import preflight as provider_conformance_preflight
-from . import provider_installation as installation
+from .provider_deployment_prepare import PATH as PROVIDER_DEPLOYMENT_PATH
+from .provider_deployment_prepare import preflight as provider_deployment_preflight
 from .run_approvals import ApprovalRouteError, approval_error, is_approval_path
 from .run_approvals import preflight as approval_preflight
 from .run_consents import ConsentRouteError, consent_error, is_consent_path
 from .run_consents import preflight as consent_preflight
-from .runs import DRAFT_BODY_BYTES, RunRouteError, is_draft_save, is_run_path, run_error
+from .runs import (
+    DRAFT_BODY_BYTES,
+    FILE_BODY_BYTES,
+    RunRouteError,
+    is_draft_save,
+    is_file_upload,
+    is_run_path,
+    run_error,
+)
 from .runs import preflight as run_preflight
 from .wire import (
     WireInputError,
@@ -181,6 +189,8 @@ class WebBoundary:
                     limit = 0
                 if run_route and is_draft_save(path, method):
                     limit = DRAFT_BODY_BYTES
+                if run_route and is_file_upload(path, method):
+                    limit = FILE_BODY_BYTES
                 if work_route:
                     limit = WORK_BODY_BYTES if method == "POST" else 0
                 length = fields.get("content-length", "0")

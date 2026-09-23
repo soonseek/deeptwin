@@ -535,7 +535,10 @@ whole/partial selectors bind exact original, unreviewed area and impact remain s
   2026-09-23: drafts as immutable revisions (stale save = conflict, never overwrite), explicit
   freeze through `accept_own_alternative` with changed-line/cell selectors (whole only when ticked),
   editor on the observe page — evidence/own-version-editor-t052-2026-09-23.md.
-- [ ] T053 [US4] Add PDF/image/structured/time selector and alternative-file flows to app/static/artifacts.mjs and app/api/routes.py; unsupported semantic alignment remains explicit (FR-015/016).
+- [x] T053 [US4] Add PDF/image/structured/time selector and alternative-file flows to app/static/artifacts.mjs and app/api/routes.py; unsupported semantic alignment remains explicit (FR-015/016).
+  2026-09-23: `alternative-files` route (runs-v1) with format-bound page/image region, JSON
+  pointer and time selectors stored `unresolved`, whole-only where no selector exists; form in
+  `alternative-file.mjs` — evidence/own-version-editor-t052-2026-09-23.md.
 - [ ] T054 [US4] Test three-view switch/refresh/conflict/stale-range recovery in app/tests/browser-alternatives.test.mjs and record synthetic-vs-real evidence in specs/001-autonomous-release/evidence/us4.md (SC-006).
 
 ## Phase 7: US5 — Difference investigation and grounded change (P1)

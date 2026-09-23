@@ -64,3 +64,38 @@ It is mounted on the observe page (`#run-alternative`), opened from the artifact
 - PDF, image, structured and time selectors are T053.
 - The three-view switch, refresh, conflict and stale-range browser cases are T054.
 - The actual-user versus synthetic evidence labeling is also T054.
+
+## T053 — PDF/image/structured/time selectors and alternative-file flows (same day)
+
+- **Server**: `POST …/runs/{run}/artifacts/{aid}/alternative-files` (`alternative-file-v1`). The
+  file travels base64-encoded, up to 4 MiB decoded; the boundary limit is raised to 5.6 MB for
+  this route only.
+- The file is sealed as an `alternative_file` artifact record plus its blob, and then goes through
+  `accept_own_alternative` in the same transaction, sharing `_seal_alternative` with the editor's
+  freeze.
+- Selectors must fit the original's format:
+
+  | Original format | Selector kinds accepted | Locator |
+  | --- | --- | --- |
+  | PDF | `page_region` | page 1..10 000 plus an integer basis-point region (0..10 000) |
+  | image | `image_region` | integer basis-point region (0..10 000) |
+  | JSON | `structured_path` | RFC 6901 pointer |
+  | JSON, text | `text_span` | line span |
+  | CSV | `table_range` | row and column range |
+  | audio or video | `time_range` | start_ms < end_ms ≤ 24 h |
+
+- Every selector is stored with alignment **`unresolved`**, and the response carries a note saying
+  so. The server computes no semantic alignment, so it never claims one.
+- A format with no formal selector is answered whole or not at all.
+- Refused: the same bytes, an empty file, a region that leaves the original, a float coordinate,
+  an invalid pointer, and a name containing path characters.
+- A replay of the same command is idempotent; different bytes under that command get `conflict`.
+- **GUI** (`app/static/alternative-file.mjs`): the viewer's "대안 파일 올리기" opens the form on
+  the observe page.
+  - Region fields are typed as percentages and converted to basis points, validated before
+    sending. Each region is added to a readable list.
+  - The page states that alignment stays "미정" (unresolved).
+  - Formats without selectors say whole only. "Reviewed the whole" is off by default.
+  - The file bytes are never read for rendering.
+- Observed: `test_alternative_drafts_api.py` **6 passed** (2 new), `alternative-file.test.mjs`
+  **3 passed**, and the affected suites 217 passed.

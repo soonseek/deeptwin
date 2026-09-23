@@ -40,6 +40,7 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "run-list.mjs": "application/javascript",
         "artifacts.mjs": "application/javascript",
         "alternatives.mjs": "application/javascript",
+        "alternative-file.mjs": "application/javascript",
         "work-export.mjs": "application/javascript",
         "records-page.mjs": "application/javascript",
         "records.html": "text/html",

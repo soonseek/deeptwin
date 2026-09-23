@@ -8,6 +8,7 @@ from starlette.concurrency import run_in_threadpool
 
 from ..domain.refs import uuid_string
 from ..services.alternative_drafts import (
+    FILE_SCHEMA,
     FREEZE_SCHEMA,
     SAVE_SCHEMA,
     DraftError,
@@ -48,6 +49,8 @@ _CREATE_FIELDS = (
 
 # a draft save carries the owner's edited copy: the text bound plus the command's members
 DRAFT_BODY_BYTES = 600_000
+# an alternative file travels base64-encoded in its command (4 MiB decoded)
+FILE_BODY_BYTES = 5_600_000 + 8_192
 
 
 class RunRouteError(ValueError):
@@ -104,7 +107,12 @@ def is_run_path(path: str) -> bool:
         return False
     parts = path[len(PATH) + 1:].split("/")
     return (len(parts) == 1 or (len(parts) == 2 and parts[1] in {"resume", "cancel", "recover"})
-            or _artifact_parts(parts) is not None or _draft_parts(parts) is not None)
+            or _artifact_parts(parts) is not None or _draft_parts(parts) is not None
+            or _is_file_upload(parts))
+
+
+def _is_file_upload(parts) -> bool:
+    return len(parts) == 4 and parts[1] == "artifacts" and parts[3] == "alternative-files"
 
 
 def _draft_parts(parts):
@@ -126,6 +134,11 @@ def is_draft_save(path: str, method: str) -> bool:
         return False
     drafts = _draft_parts(path[len(PATH) + 1:].split("/"))
     return drafts is not None and drafts[1] is None
+
+
+def is_file_upload(path: str, method: str) -> bool:
+    return (method == "POST" and path.startswith(PATH + "/")
+            and _is_file_upload(path[len(PATH) + 1:].split("/")))
 
 
 def _artifact_parts(parts):
@@ -171,6 +184,21 @@ def preflight(scope, body, content_type):
             return {"schema_version": COMMAND_SCHEMA, **value}
         parts = path[len(PATH) + 1:].split("/")
         run_id = uuid_string(parts[0])
+        if _is_file_upload(parts):
+            uuid_string(parts[2])
+            if method != "POST" or content_type.split(";", 1)[0] != "application/json":
+                raise RunRouteError()
+            value = parse_json_object(
+                body, required=("schema_version", "command_id", "media_type", "name", "content_b64",
+                                "selectors", "reviewed_whole"),
+                field_types={"schema_version": str, "command_id": str, "media_type": str, "name": str,
+                             "content_b64": str, "selectors": list, "reviewed_whole": bool},
+                limits=WireLimits(max_bytes=FILE_BODY_BYTES, max_depth=5, max_items=1024,
+                                  max_members=8, max_string_bytes=FILE_BODY_BYTES))
+            if value["schema_version"] != FILE_SCHEMA:
+                raise RunRouteError()
+            uuid_string(value["command_id"])
+            return value
         drafts = _draft_parts(parts)
         if drafts is not None:
             uuid_string(drafts[0])
@@ -260,6 +288,12 @@ def create_router(*, runs, base_path, artifacts=None, drafts=None):
             return JSONResponse(value, status_code=status)
         except (RunRouteError, RunServiceError, RunArtifactError, DraftError) as error:
             return artifact_error(error)
+
+    @router.post(PATH + "/{run_id}/artifacts/{artifact_id}/alternative-files")
+    async def alternative_file(request: Request, run_id: str, artifact_id: str):
+        return await draft_call(drafts.upload_file if drafts else None,
+                                request.state.authenticated_request, run_id, artifact_id,
+                                request.state.run_payload, status=201)
 
     @router.api_route(PATH + "/{run_id}/artifacts/{artifact_id}/drafts", methods=["GET", "HEAD"])
     async def draft_list(request: Request, run_id: str, artifact_id: str):
