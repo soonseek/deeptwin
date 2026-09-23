@@ -24,6 +24,7 @@ const CODE_BY_STATUS = Object.freeze({
   409: 'conflict', 413: 'too_large', 429: 'capacity', 503: 'unavailable',
 });
 const METHODS = Object.freeze(['GET', 'POST']);
+const QUERY_KEY = /^[a-z][a-z_]{0,31}$/;
 
 // the deployment base path is "/" (portable) or "/<32 hex>/" (local profile)
 const BASE_PATH = /^\/(?:[0-9a-f]{32}\/)?$/;
@@ -104,9 +105,22 @@ export function createSupportedSession({ fetch, basePath = '/' } = {}) {
     return path;
   }
 
-  async function request(path, { method = 'GET', body } = {}) {
-    const target = requirePath(path);
+  async function request(path, { method = 'GET', body, query } = {}) {
+    let target = requirePath(path);
     if (!METHODS.includes(method)) fail('method is not GET or POST');
+    if (query !== undefined) {
+      // a read may carry a few plain named parameters (an event cursor, a page size), encoded
+      // here: never a caller-built query string
+      if (method !== 'GET' || typeof query !== 'object' || query === null || Array.isArray(query)) {
+        fail('only a read carries query parameters');
+      }
+      const entries = Object.entries(query);
+      if (entries.length > 4 || entries.some(([key, value]) => !QUERY_KEY.test(key)
+          || typeof value !== 'string' || value.length < 1 || value.length > 512)) {
+        fail('query parameters are out of bounds');
+      }
+      if (entries.length) target += `?${new URLSearchParams(entries)}`;
+    }
     const headers = {};
     const options = { method, credentials: 'same-origin', headers };
     if (method === 'GET') {
