@@ -15,15 +15,34 @@ envelope; and an unknown external outcome holds the request, blocking every
 retry until a real reconciliation records the final outcome. Values are
 issued, never constructed; the registry is an immutable value, so
 single-writer transactions belong to the storage layer.
+
+An admitted envelope is also the only key to a tool's side channels.
+`open_in_scope` opens a file under one of the tool's declared filesystem scopes
+from an already-open scope directory, one component at a time with
+`O_NOFOLLOW` (no absolute, empty, `.` or `..` component, no symlink at any
+depth, no hardlinked or non-regular target), so a path swapped for a symlink
+mid-walk refuses instead of escaping; writes create exclusively.
+`admit_network` lets a request reach only an exact host the tool declared,
+and the fetch itself then goes through the egress broker's frozen policy
+(public addresses only, pinned resolution, revalidated redirects).
+`admit_tool_result` bounds a result by the tool's byte cap, refuses active
+renderable content (HTML, SVG, script) outright and sniffs every declared
+document format through the document adapter, so a tool can never hand a
+renderer something other than what it declared.
 """
 
 from __future__ import annotations
 
+import errno
+import os
 import re
+import stat
+import tempfile
 from dataclasses import dataclass, field
 
 from ..domain.refs import DomainContractError, EntityRef
 from ..extensions import port_contracts
+from .egress import EgressBrokerError, EgressPolicy, broker_fetch
 from .gateway import carries_host_path
 
 # the effect vocabulary is the ports contract's closed set (extension-ports.md `effect-class`;
@@ -372,7 +391,166 @@ def record_outcome(registry, request_id, outcome) -> ToolRegistry:
     )
 
 
+def _admitted(registry, envelope) -> ToolDefinition:
+    _require_registry(registry)
+    if (
+        type(envelope) is not DispatchEnvelope
+        or getattr(envelope, "_issuer_token", None) is not _ISSUE_TOKEN
+    ):
+        raise ToolBoundaryError("a framework-issued dispatch envelope is required")
+    entry = next((item for item in registry.dispatched if item[0] == envelope.request_id), None)
+    if entry is None or entry[4] is not envelope or entry[3] is not None:
+        # only a dispatch still in flight reaches its side channels
+        raise ToolBoundaryError("the envelope is not an in-flight dispatch of this registry")
+    return next(item for item in registry.definitions
+                if item.tool_id == envelope.tool_id and item.version == envelope.version)
+
+
+_MAX_COMPONENTS = 32
+_COMPONENT = re.compile(r"[^/\x00]{1,255}\Z")
+
+
+def _components(relative) -> list[str]:
+    if type(relative) is not str or not 1 <= len(relative.encode("utf-8")) <= 1_024:
+        raise ToolBoundaryError("the scoped path is out of bounds")
+    if relative.startswith("/") or carries_host_path(relative):
+        raise ToolBoundaryError("the scoped path is not relative to its scope")
+    parts = relative.split("/")
+    if len(parts) > _MAX_COMPONENTS or any(
+            part in {"", ".", ".."} or _COMPONENT.fullmatch(part) is None for part in parts):
+        raise ToolBoundaryError("the scoped path has an empty, dot or invalid component")
+    return parts
+
+
+def open_in_scope(registry, envelope, scope, scope_fd, relative, *, write=False, _between=None):
+    """A descriptor for one file beneath a declared scope, or a refusal.
+
+    `scope_fd` is the directory the worker opened for `scope`; nothing here
+    resolves a host path. `_between` is a test seam called between components.
+    """
+
+    tool = _admitted(registry, envelope)
+    if type(scope) is not str or scope not in tool.filesystem_scopes:
+        raise ToolBoundaryError("the tool declared no such filesystem scope")
+    if write and tool.effect_class not in _WRITING_EFFECTS:
+        raise ToolBoundaryError("a read-only tool cannot write in its scope")
+    parts = _components(relative)
+    try:
+        if not stat.S_ISDIR(os.fstat(scope_fd).st_mode):
+            raise ToolBoundaryError("the scope descriptor is not a directory")
+    except (OSError, TypeError):
+        raise ToolBoundaryError("the scope descriptor is not open") from None
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    current = scope_fd
+    opened = []
+    try:
+        for part in parts[:-1]:
+            if _between is not None:
+                _between(part)
+            current = os.open(part, directory_flags, dir_fd=current)
+            opened.append(current)
+        if _between is not None:
+            _between(parts[-1])
+        if write:
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
+            descriptor = os.open(parts[-1], flags, 0o600, dir_fd=current)
+        else:
+            flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+            descriptor = os.open(parts[-1], flags, dir_fd=current)
+    except OSError as error:
+        if error.errno in {errno.ELOOP, errno.ENOTDIR, errno.EMLINK}:
+            raise ToolBoundaryError("a symlink or non-directory lies on the scoped path") from None
+        if error.errno == errno.EEXIST:
+            raise ToolBoundaryError("a scoped write never replaces an existing file") from None
+        raise ToolBoundaryError("the scoped path cannot be opened") from None
+    finally:
+        for item in opened:
+            os.close(item)
+    info = os.fstat(descriptor)
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        os.close(descriptor)
+        # a hardlink could alias a file outside the scope; devices and fifos never read
+        raise ToolBoundaryError("the scoped target is not a single-link regular file")
+    if not write and info.st_size > tool.max_result_bytes:
+        os.close(descriptor)
+        raise ToolBoundaryError("the scoped file exceeds the tool's byte cap")
+    return descriptor
+
+
+def admit_network(registry, envelope, policy, method, url, *, resolver, transport, headers=None):
+    """A brokered fetch to an exact host the tool declared, or a refusal."""
+
+    from urllib.parse import urlsplit
+
+    tool = _admitted(registry, envelope)
+    if not tool.network_scopes:
+        raise ToolBoundaryError("the tool declared no network scope")
+    if type(policy) is not EgressPolicy:
+        raise ToolBoundaryError("a frozen egress policy is required")
+    try:
+        host = (urlsplit(url).hostname or "") if type(url) is str else ""
+    except ValueError:
+        host = ""
+    if host not in tool.network_scopes:
+        raise ToolBoundaryError("the host is outside the tool's declared network scope")
+    try:
+        return broker_fetch(policy, method, url, resolver=resolver, transport=transport,
+                            headers=headers)
+    except EgressBrokerError as error:
+        raise ToolBoundaryError(f"egress refused: {error}") from None
+
+
+# active content a renderer would execute: never admitted as a tool result
+ACTIVE_MEDIA = frozenset({
+    "text/html", "application/xhtml+xml", "image/svg+xml", "application/javascript",
+    "text/javascript", "application/x-shockwave-flash", "application/xml", "text/xml",
+})
+_SNIFFED = {
+    "application/pdf": "pdf", "image/png": "png", "text/csv": "csv",
+    "application/json": "json",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+}
+_PLAIN = frozenset({"text/plain", "text/markdown"})
+_WRITING_EFFECTS = frozenset(
+    name for name, family in port_contracts.EFFECT_FAMILIES.items() if family != "N"
+)
+
+
+def admit_tool_result(registry, envelope, media_type, data: bytes) -> str:
+    """Admit one result for rendering: bounded, declared, sniffed; else refuse."""
+
+    from ..adapters.documents import DocumentToolError, validate_format
+
+    tool = _admitted(registry, envelope)
+    if type(data) is not bytes or len(data) > tool.max_result_bytes:
+        raise ToolBoundaryError("the result exceeds the tool's byte cap")
+    if type(media_type) is not str or media_type.split(";")[0].strip().lower() in ACTIVE_MEDIA:
+        raise ToolBoundaryError("active renderable content is never admitted")
+    if media_type in _PLAIN:
+        try:
+            data.decode("utf-8")
+        except UnicodeDecodeError:
+            raise ToolBoundaryError("the text result is not UTF-8") from None
+        if b"\x00" in data:
+            raise ToolBoundaryError("the text result carries binary content")
+        return media_type
+    declared = _SNIFFED.get(media_type)
+    if declared is None:
+        raise ToolBoundaryError("the result media type is not renderable here")
+    with tempfile.TemporaryDirectory(prefix="tool-result-") as scratch:
+        path = os.path.join(scratch, "result")
+        with open(path, "xb") as handle:
+            handle.write(data)
+        try:
+            if validate_format(path, declared) is not True:
+                raise ToolBoundaryError("the result bytes are not the declared format")
+        except DocumentToolError:
+            raise ToolBoundaryError("the result bytes are not the declared format") from None
+    return media_type
+
+
 __all__ = [
+    "ACTIVE_MEDIA",
     "APPROVAL_EFFECTS",
     "EFFECT_CLASSES",
     "IDEMPOTENCY",
@@ -382,7 +560,10 @@ __all__ = [
     "ToolBoundaryError",
     "ToolDefinition",
     "ToolRegistry",
+    "admit_network",
+    "admit_tool_result",
     "dispatch_tool",
+    "open_in_scope",
     "open_tool_registry",
     "record_outcome",
     "register_tool",
