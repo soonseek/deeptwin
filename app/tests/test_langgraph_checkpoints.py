@@ -472,9 +472,17 @@ def test_unchanged_version_cannot_replace_state_and_old_writes_cannot_fork(tmp_p
     with pytest.raises(module.CheckpointError):
         put(saved, run, cp, parent=cfg["configurable"]["checkpoint_id"])
     latest = put(saved, run, parent=cfg["configurable"]["checkpoint_id"])
-    with pytest.raises(module.CheckpointError):
-        saved.put_writes(cfg, [("counters", {"first": 1})], identifier())
+    # LangGraph may deliver a task's pending writes after the checkpoint that
+    # superseded theirs (it drains only delta-channel writes first): the late row
+    # is history of the old checkpoint, never state or pending writes of the head
+    saved.put_writes(cfg, [("counters", {"first": 1})], identifier())
     assert saved.get_tuple(latest).checkpoint["channel_values"]["counters"] == {}
+    assert saved.get_tuple(latest).pending_writes == []
+    with pytest.raises(module.CheckpointError):  # and it cannot fork the history
+        put(saved, run, parent=cfg["configurable"]["checkpoint_id"])
+    reopened = saver(module, subject, run)  # the journal replays the late row
+    assert reopened.get_tuple(latest).checkpoint["channel_values"]["counters"] == {}
+    assert reopened.get_tuple(latest).pending_writes == []
 
 
 def test_cursor_limit_rejects_before_commit_and_history_restore_bound(tmp_path, monkeypatch):

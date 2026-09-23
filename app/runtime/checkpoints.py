@@ -302,8 +302,13 @@ class LedgerCheckpointSaver(BaseCheckpointSaver[int]):
             _fields(data, ("checkpoint_id", "task_id", "task_path", "writes"))
             cp_id = _uuid(data["checkpoint_id"])
             _require(cp_id in self._checkpoints, "Pending writes require a committed checkpoint")
-            _require(cp_id == next(reversed(self._checkpoints)),
-                     "Pending writes must target the current checkpoint")
+            # LangGraph drains only delta-channel put_writes before putting the next
+            # checkpoint; an ordinary task's pending writes (the input task's above
+            # all) are submitted to its executor and may land after the checkpoint
+            # that superseded theirs. Such a late row is journaled evidence of that
+            # superseded checkpoint only: it never changes the head's state or its
+            # pending writes, and `put` still refuses any parent but the head, so
+            # it cannot fork the history.
             _uuid(data["task_id"])
             _require(data["task_path"] == "" or data["task_path"] in
                      {"~__pregel_pull, " + node for node in self._nodes | {"__start__"}})

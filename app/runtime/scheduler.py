@@ -42,12 +42,31 @@ fan-in against an open set. Routers, joins and human gates inside a
 bounded loop are refused at build time rather than given visit-blind
 activations or approvals.
 
-Explicit limits of this slice: retries within a visit are not
-implemented (a failed visit fails the run and is resumed on restart); no
-attempt reservation, budget settlement or semantic result admission
-happens here. The outcome projection is restart-invariant: sealed
-activations are rebuilt from the durable activation markers and consumed
-approvals are re-read from the owner's records, never kept in memory.
+Join modes and dependency-scoped failure (T041): an `all_selected` join
+runs once every activated producer is terminal; `any_success` takes the
+first valid success, successes observed in the same step tie-breaking on the
+frozen branch-ID order; `collect` takes between its minimum and maximum
+successes (the maximum as soon as it is reached). The join's ledger
+execution record — its selected parents — is the single compare-and-swap:
+a restart, a late trigger or a concurrent writer that observed another order
+adopts the recorded selection, so the successor is scheduled once from one
+selection; the losers' results stay as evidence. A producer whose every
+consumer is a join tolerating failure (`any_success`, or
+`failure_handling: collect_failures`) and that is not attempt-bound fails
+as durable terminal evidence (`<node>.failed`) instead of ending the run; any other failure ends the run
+as before (`node_failed:<node>`) and a resume re-runs that visit. A join
+left with no admissible success fails as itself. Outside a bounded loop a
+node has exactly one visit, and every node defers until its activated
+producers completed: LangGraph triggers successors of a deferring (empty)
+write too.
+
+Explicit limits: a fatal failure stops the whole run at its step — an
+independent branch continues only on the resume, not concurrently with the
+failure. Retries within a visit are the owner's recovery through the
+attempt dispatcher (`retry_after_terminal`), never automatic. The outcome
+projection is restart-invariant: sealed activations and join selections are
+rebuilt from durable markers and consumed approvals re-read from the owner's
+records, never kept in memory.
 """
 
 from __future__ import annotations
@@ -175,6 +194,8 @@ class NodeContext:
     loop_index: int
     # the one-shot attempt capability of a bound agent node visit, else None
     attempt: object | None = None
+    # a join's selected producer node ids, in branch-ID order (empty elsewhere)
+    inputs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,6 +218,10 @@ class SchedulerOutcome:
     pending_node_ids: tuple[str, ...] = ()
     # (gate node, scope) pairs the owner has rejected; the run stops there
     rejected_human: tuple[tuple[str, str], ...] = ()
+    # (join node, selected producer node ids) as each join's ledger record fixed them
+    join_selections: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    # producers whose failure a tolerant join absorbed: terminal evidence, not a visit
+    failed_node_ids: tuple[str, ...] = ()
 
 
 def _detached_view(state: dict) -> dict:
@@ -215,6 +240,7 @@ class GraphScheduler:
         "_gates",
         "_graph",
         "_handlers",
+        "_join_sources",
         "_ledger",
         "_recursion_limit",
         "_routers",
@@ -410,6 +436,17 @@ class GraphScheduler:
             approvals=self._consumed_approvals(counters),
             pending_node_ids=pending,
             rejected_human=rejected,
+            join_selections=tuple(
+                (join, tuple(sorted(
+                    source for source in self._join_sources[join]
+                    if raw_counters.get(f"{join}.selected.{source}")
+                )))
+                for join in sorted(self._join_sources)
+                if raw_counters.get(join)
+            ),
+            failed_node_ids=tuple(sorted(
+                node for node in node_ids if raw_counters.get(f"{node}.failed")
+            )),
         )
 
 
@@ -612,7 +649,9 @@ def build_scheduler(
         raise SchedulerError("checkpoint journal binding failed") from None
     scheduler._saver = saver
 
-    def record_execution(node_id: str, state: dict) -> tuple[str, int, NodeContext]:
+    def record_execution(
+        node_id: str, state: dict, selected: tuple[str, ...] | None = None,
+    ) -> tuple[str, int, NodeContext]:
         counters = state.get("counters", {})
         loop_index = counters.get(node_id, 0)
         execution_id = execution_identity(run_id, node_id, loop_index)
@@ -620,6 +659,7 @@ def build_scheduler(
             execution_identity(run_id, source, counters[source] - 1)
             for source in predecessors.get(node_id, ())
             if counters.get(source, 0) > 0
+            and (selected is None or source in selected)
         )
         spec = ExecutionSpec(
             execution_id,
@@ -641,16 +681,130 @@ def build_scheduler(
         for target in set(branches.values()):
             branch_router[target] = node_id
 
+    join_configs = {
+        node.node_id: node.as_dict()["config"]
+        for node in compiled.execution_graph.nodes
+        if node.kind == "join"
+    }
+    scheduler._join_sources = {
+        node_id: tuple(predecessors[node_id]) for node_id in join_configs
+    }
+    tolerant_joins = {
+        node_id for node_id, config in join_configs.items()
+        if config["mode"] == "any_success" or config["failure_handling"] == "collect_failures"
+    }
+    consumers: dict[str, set[str]] = {}
+    for target, sources in predecessors.items():
+        for source in sources:
+            consumers.setdefault(source, set()).add(target)
+    # a producer's failure ends the run unless every consumer is a join that
+    # tolerates it (dependency-scoped failure: nothing else depends on it)
+    absorbed_by_join = {
+        node_id for node_id, targets in consumers.items()
+        if targets and targets <= tolerant_joins and kinds[node_id] in {"deterministic", "agent"}
+        and node_id not in loop_members
+        # an attempt-bound visit's failure may be an unknown remote outcome that
+        # only the owner's recovery can settle: it keeps ending the run
+        and (attempts is None or node_id not in attempts.node_ids)
+    }
+
+    def join_selection(node_id: str, state: dict) -> tuple[str, ...] | None:
+        """The join's selected producers, or None while the decision is open.
+
+        The ledger's execution record is the single compare-and-swap: once one
+        writer recorded the join's visit with its selected parents, every later
+        evaluation — a restart, a late trigger, a concurrent writer that saw a
+        different observation order — adopts that record instead of deciding
+        again, so the successor is scheduled from exactly one selection.
+        """
+
+        counters = state.get("counters", {})
+        config = join_configs[node_id]
+        sources = predecessors[node_id]
+        execution_id = execution_identity(run_id, node_id, counters.get(node_id, 0))
+        recorded = recorded_selection(node_id, execution_id, counters)
+        if recorded is not None:
+            return recorded
+        activated = [
+            source for source in sources
+            if (router := branch_router.get(source)) is None
+            or counters.get(f"{router}.activation.{source}")
+        ]
+        succeeded = sorted(s for s in activated if counters.get(s, 0) > 0)
+        failed = [s for s in activated if counters.get(f"{s}.failed")]
+        still_open = [s for s in activated if s not in succeeded and s not in failed]
+        mode = config["mode"]
+        if mode == "any_success":
+            # the first valid success wins; successes observed in the same step
+            # tie-break on the frozen branch-ID order
+            if succeeded:
+                return (succeeded[0],)
+            if still_open:
+                return None
+            raise _NodeFailure(node_id)  # every activated branch failed
+        if mode == "collect":
+            if len(succeeded) >= config["max_selected"]:
+                return tuple(succeeded[: config["max_selected"]])
+            if still_open:
+                return None
+            if len(succeeded) >= config["min_selected"]:
+                return tuple(succeeded)
+            raise _NodeFailure(node_id)  # fewer than the minimum ever succeeded
+        # all_selected: every activated producer terminal; a failure reaches here
+        # only under collect_failures (under block it failed the run itself)
+        if still_open:
+            return None
+        if not succeeded:
+            raise _NodeFailure(node_id)
+        return tuple(succeeded)
+
+    def recorded_selection(node_id, execution_id, counters):
+        try:
+            record = ledger.get_execution(execution_id)
+        except KeyError:
+            return None
+        except Exception:  # noqa: BLE001 - ledger detail stays private
+            raise _NodeFailure(node_id) from None
+        parents = set(record["spec"]["parent_execution_ids"])
+        return tuple(sorted(
+            source for source in predecessors[node_id]
+            if counters.get(source, 0) > 0
+            and execution_identity(run_id, source, counters[source] - 1) in parents
+        ))
+
     def producing_node(node_id: str):
         handler = handler_by_node[node_id]
         sources = predecessors.get(node_id, ())
+        absorbs = node_id in absorbed_by_join
+
+        def failed(loop_index: int):
+            if not absorbs:
+                raise _NodeFailure(node_id)
+            # every consumer is a join that tolerates this producer failing: the
+            # failure is terminal evidence for it, not the end of the run
+            return {"counters": {f"{node_id}.failed": loop_index + 1}}
 
         def node_fn(state: dict):
             counters = state.get("counters", {})
-            if len(sources) > 1:
-                # a fan-in runs once, after EVERY activated producer completed:
-                # a producer behind a router counts only when that router
-                # sealed it; an open activated producer defers this trigger
+            loop_index = counters.get(node_id, 0)
+            if execution_identity(run_id, node_id, loop_index) in state.get(
+                "results", {}
+            ):
+                return {}  # this visit is already durable: never re-run it
+            if counters.get(f"{node_id}.failed", 0) > loop_index:
+                return {}  # this visit's failure is already durable evidence
+            if loop_index and node_id not in loop_members:
+                return {}  # outside a loop a node has exactly one visit
+            selected = None
+            if node_id in join_configs:
+                selected = join_selection(node_id, state)
+                if selected is None:
+                    return {}  # an open decision defers this trigger
+            else:
+                # a node runs once, after EVERY activated producer completed: a
+                # producer behind a router counts only when that router sealed
+                # it; an open producer defers this trigger (a deferring node's
+                # empty write still triggers its successors, which defer too)
                 for source in sources:
                     router = branch_router.get(source)
                     if router is not None and not counters.get(
@@ -659,11 +813,6 @@ def build_scheduler(
                         continue
                     if counters.get(source, 0) == 0:
                         return {}
-            loop_index = counters.get(node_id, 0)
-            if execution_identity(run_id, node_id, loop_index) in state.get(
-                "results", {}
-            ):
-                return {}  # this visit is already durable: never re-run it
             if node_id in gates:
                 # defense in depth: the gate body runs only against recorded
                 # approvals for every scope, whatever resumed the graph
@@ -671,7 +820,11 @@ def build_scheduler(
                     found = approvals.lookup(run_id, node_id, scope)
                     if found is None or found.decision != "approved":
                         raise _NodeFailure(node_id)
-            execution_id, loop_index, context = record_execution(node_id, state)
+            execution_id, loop_index, context, selected = record_selected(
+                node_id, state, selected
+            )
+            if selected is not None:
+                context = replace(context, inputs=selected)
             visit_attempt = None
             if attempts is not None and node_id in attempts.node_ids:
                 visit_attempt = attempts.for_visit(
@@ -683,23 +836,43 @@ def build_scheduler(
             try:
                 result = handler(context, _detached_view(state))
             except Exception:  # noqa: BLE001 - handler detail is private
-                raise _NodeFailure(node_id) from None
+                return failed(loop_index)
             if type(result) is not EntityRef:
-                raise _NodeFailure(node_id)
+                return failed(loop_index)
             if visit_attempt is not None and (
                 visit_attempt.committed is None or visit_attempt.committed != result
             ):
                 # a bound node's result is the accepted attempt result, nothing else
-                raise _NodeFailure(node_id)
+                return failed(loop_index)
             if visit_attempt is not None:
                 # the saver binds the row that first carries this result to the attempt
                 bindings.set(execution_id, visit_attempt.accepted_attempt)
+            counters_update = {node_id: loop_index + 1}
+            for source in selected or ():
+                counters_update[f"{node_id}.selected.{source}"] = 1
             return {
                 "results": {execution_id: result},
-                "counters": {node_id: loop_index + 1},
+                "counters": counters_update,
             }
 
         return node_fn
+
+    def record_selected(node_id, state, selected):
+        """Record the visit; a join returns the selection its record holds."""
+
+        if selected is None:
+            return (*record_execution(node_id, state), None)
+        try:
+            return (*record_execution(node_id, state, selected), selected)
+        except _NodeFailure:
+            # a concurrent writer recorded this join first with another
+            # selection: its record is the decision, adopt it
+            counters = state.get("counters", {})
+            execution_id = execution_identity(run_id, node_id, counters.get(node_id, 0))
+            recorded = recorded_selection(node_id, execution_id, counters)
+            if recorded is None or recorded == selected:
+                raise
+            return (*record_execution(node_id, state, recorded), recorded)
 
     def router_node(node_id: str, branches: dict[str, str]):
         handler = handler_by_node[node_id]

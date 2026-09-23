@@ -265,7 +265,7 @@ def test_scheduler_runs_a_sequential_chain_with_ledger_reconciled_executions(tmp
     assert set(outcome.__dataclass_fields__) == {
         "run_id", "graph_digest", "completed_node_ids", "execution_ids",
         "result_refs", "counters", "activations", "awaiting_human", "approvals",
-        "pending_node_ids", "rejected_human",
+        "pending_node_ids", "rejected_human", "join_selections", "failed_node_ids",
     }
     assert outcome.pending_node_ids == () and outcome.rejected_human == ()
     assert outcome.counters == {"intake": 1, "writer": 1, "publish": 1}
@@ -899,3 +899,215 @@ def test_a_retry_inside_a_loop_visit_is_the_next_attempt_of_that_visit(tmp_path)
     assert stored["spec"]["attempt_no"] == 2
     assert stored["spec"]["execution_id"] == revise_1
     assert subject.ledger.get_attempt(first_visit)["terminal_outcome"] == "succeeded"
+
+
+# ---------------------------------------------------------------------------
+# T041: join modes and dependency-scoped failure over the real scheduler.
+# `any_success` takes the first valid success (frozen branch-ID tie-break),
+# `collect` takes min..max successes, a producer whose every consumer is a
+# tolerant join fails as terminal evidence instead of ending the run, and the
+# join's ledger execution record is the single compare-and-swap that fixes
+# its selection across restarts and concurrent writers.
+# ---------------------------------------------------------------------------
+
+
+def join_graph(mode_config, *, deep=("b3",)):
+    """b1, b2, b3 (each optionally one step deeper) → join → after."""
+
+    raw = unequal_depth_join_graph()
+    nodes = []
+    edges = []
+    for branch in ("b1", "b2", "b3"):
+        if branch in deep:
+            nodes.append(node(f"{branch}a", "deterministic", f"{branch} 첫 단계",
+                              outputs=[output_slot("out", "text-document")]))
+            nodes.append(node(branch, "deterministic", f"{branch} 둘째 단계",
+                              inputs=[input_slot("source", "text-document")],
+                              outputs=[output_slot("out", "text-document")]))
+            edges.append(artifact_edge(f"{branch}-in", f"{branch}a", "out", branch, "source",
+                                       "text-document"))
+        else:
+            nodes.append(node(branch, "deterministic", f"{branch} 단계",
+                              outputs=[output_slot("out", "text-document")]))
+        edges.append(artifact_edge(f"{branch}-join", branch, "out", "join", "items",
+                                   "text-document", multiplicity="many"))
+    nodes.append(node("join", "join", "후보를 합류한다",
+                      inputs=[input_slot("items", "text-document", multiplicity="many")],
+                      outputs=[output_slot("out", "text-document")], config=mode_config))
+    nodes.append(node("after", "deterministic", "합류 결과를 고정한다",
+                      inputs=[input_slot("source", "text-document")],
+                      outputs=[output_slot("result", "text-document")]))
+    edges.append(artifact_edge("j-after", "join", "out", "after", "source", "text-document"))
+    raw["nodes"] = nodes
+    raw["edges"] = edges
+    raw["entry_node_ids"] = sorted(
+        f"{b}a" if b in deep else b for b in ("b1", "b2", "b3")
+    )
+    raw["completion_criteria"] = [{
+        "criterion_id": "final", "node_id": "after", "output_slot": "result",
+        "artifact_contract_id": "text-document", "min_items": 1,
+    }]
+    return raw
+
+
+ANY = {"mode": "any_success", "failure_handling": "block", "tie_break": "branch_id_lexical"}
+
+
+def join_registry(subject, calls, *, failing=(), inputs=None):
+    def produce(context, view):
+        calls.append(context.node_id)
+        if context.node_id in failing:
+            raise RuntimeError("PRIVATE_BRANCH_CANARY")
+        if inputs is not None and context.inputs:
+            inputs.append((context.node_id, context.inputs))
+        return subject.refs.result
+
+    return {"core.deterministic": produce, "core.join": produce}
+
+
+def test_any_success_takes_the_first_success_and_schedules_the_successor_once(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    calls, inputs = [], []
+    outcome = build(subject, run, join_graph(ANY),
+                    join_registry(subject, calls, inputs=inputs)).run()
+    # b1 and b2 succeed in the first step; b3 needs two. The tie between b1 and
+    # b2 breaks on branch ID; the later b3 is evidence, not a second selection.
+    assert inputs == [("join", ("b1",))]
+    assert calls.count("join") == 1 and calls.count("after") == 1
+    assert calls.index("join") < calls.index("after")
+    assert outcome.join_selections == (("join", ("b1",)),)
+    join_id = sch.execution_identity(run.run_id, "join", 0)
+    record = subject.ledger.get_execution(join_id)
+    assert record["spec"]["parent_execution_ids"] == [sch.execution_identity(run.run_id, "b1", 0)]
+    assert outcome.counters["b3"] == 1  # the late branch still ran; its result stays
+    assert sch.execution_identity(run.run_id, "b3", 0) in dict(outcome.result_refs)
+
+
+def test_any_success_absorbs_failed_branches_as_evidence(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    calls, inputs = [], []
+    outcome = build(subject, run, join_graph(ANY),
+                    join_registry(subject, calls, failing=("b1", "b2"), inputs=inputs)).run()
+    assert inputs == [("join", ("b3",))]
+    assert outcome.failed_node_ids == ("b1", "b2")
+    assert "b1" not in outcome.counters and "b2" not in outcome.counters
+    assert calls.count("after") == 1
+    # the failures are durable evidence: a re-run replays nothing
+    before = list(calls)
+    assert build(subject, run, join_graph(ANY), join_registry(subject, calls)).run() == outcome
+    assert calls == before
+
+
+def test_any_success_with_every_branch_failed_fails_the_join(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    calls = []
+    with pytest.raises(sch.SchedulerError, match="node_failed:join"):
+        build(subject, run, join_graph(ANY),
+              join_registry(subject, calls, failing=("b1", "b2", "b3"))).run()
+    assert "after" not in calls
+
+
+def test_a_blocking_all_selected_join_still_fails_the_run_on_a_branch_failure(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    calls = []
+    blocking = {"mode": "all_selected", "failure_handling": "block"}
+    with pytest.raises(sch.SchedulerError, match="node_failed:b2"):
+        build(subject, run, join_graph(blocking),
+              join_registry(subject, calls, failing=("b2",))).run()
+    assert "join" not in calls
+
+
+def test_all_selected_collecting_failures_joins_the_successes_after_every_branch(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    calls, inputs = [], []
+    collecting = {"mode": "all_selected", "failure_handling": "collect_failures"}
+    outcome = build(subject, run, join_graph(collecting),
+                    join_registry(subject, calls, failing=("b2",), inputs=inputs)).run()
+    assert inputs == [("join", ("b1", "b3"))]
+    assert calls.index("b3") < calls.index("join")  # waited for the deep branch
+    assert outcome.failed_node_ids == ("b2",)
+
+
+@pytest.mark.parametrize(("bounds", "failing", "expected"), [
+    ((1, 2), (), ("b1", "b2")),          # the maximum is reached in the first step
+    ((2, 3), ("b1",), ("b2", "b3")),     # waits for the deep branch to reach two
+    ((3, 3), (), ("b1", "b2", "b3")),
+])
+def test_collect_takes_between_min_and_max_successes(tmp_path, bounds, failing, expected):
+    subject, run = ledger_run(tmp_path)
+    calls, inputs = [], []
+    config = {"mode": "collect", "min_selected": bounds[0], "max_selected": bounds[1],
+              "failure_handling": "collect_failures"}
+    outcome = build(subject, run, join_graph(config),
+                    join_registry(subject, calls, failing=failing, inputs=inputs)).run()
+    assert inputs == [("join", expected)]
+    assert outcome.join_selections == (("join", expected),)
+    assert calls.count("after") == 1
+
+
+def test_collect_below_its_minimum_fails_the_join(tmp_path):
+    subject, run = ledger_run(tmp_path)
+    config = {"mode": "collect", "min_selected": 2, "max_selected": 3,
+              "failure_handling": "collect_failures"}
+    with pytest.raises(sch.SchedulerError, match="node_failed:join"):
+        build(subject, run, join_graph(config),
+              join_registry(subject, [], failing=("b1", "b3"))).run()
+
+
+def test_the_ledger_record_fixes_the_winner_across_a_restart(tmp_path):
+    """A crash after the join's visit was recorded but before its checkpoint:
+    the resumed scheduler sees a different observation order (b3 done too) yet
+    adopts the recorded winner instead of deciding again."""
+
+    subject, run = ledger_run(tmp_path)
+    calls, inputs = [], []
+    state = {"crash": True}
+
+    def produce(context, view):
+        calls.append(context.node_id)
+        if context.node_id == "join" and state["crash"]:
+            state["crash"] = False
+            raise KeyboardInterrupt  # the process dies after the ledger record
+        if context.inputs:
+            inputs.append((context.node_id, context.inputs))
+        return subject.refs.result
+
+    handlers = {"core.deterministic": produce, "core.join": produce}
+    with pytest.raises(KeyboardInterrupt):
+        build(subject, run, join_graph(ANY, deep=("b1",)), handlers).run()
+    join_id = sch.execution_identity(run.run_id, "join", 0)
+    recorded = subject.ledger.get_execution(join_id)["spec"]["parent_execution_ids"]
+    assert recorded == [sch.execution_identity(run.run_id, "b2", 0)]  # b1 was deeper
+    reopen(subject, tmp_path)
+    outcome = build(subject, run, join_graph(ANY, deep=("b1",)), handlers).run()
+    assert inputs == [("join", ("b2",))]
+    assert outcome.join_selections == (("join", ("b2",)),)
+    assert calls.count("after") == 1
+
+
+def test_a_concurrent_writer_adopts_the_recorded_selection(tmp_path, monkeypatch):
+    """Two writers race on one join visit: the loser's create conflicts with
+    the winner's record and it adopts that record, never a second successor
+    from another selection."""
+
+    subject, run = ledger_run(tmp_path)
+    join_id = sch.execution_identity(run.run_id, "join", 0)
+    original = subject.ledger.create_execution
+    raced = {"done": False}
+
+    def racing(command_id, spec):
+        if spec.execution_id == join_id and not raced["done"]:
+            raced["done"] = True
+            # the other writer observed b2 first and recorded that selection
+            from dataclasses import replace
+            original(command_id, replace(
+                spec, parent_execution_ids=(sch.execution_identity(run.run_id, "b2", 0),)))
+        return original(command_id, spec)
+
+    monkeypatch.setattr(subject.ledger, "create_execution", racing)
+    calls, inputs = [], []
+    outcome = build(subject, run, join_graph(ANY),
+                    join_registry(subject, calls, inputs=inputs)).run()
+    assert inputs == [("join", ("b2",))]
+    assert outcome.join_selections == (("join", ("b2",)),)
+    assert calls.count("after") == 1

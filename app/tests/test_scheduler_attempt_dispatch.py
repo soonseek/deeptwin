@@ -156,6 +156,7 @@ def test_a_bound_agent_visit_dispatches_one_attempt_and_admits_the_accepted_resu
         "run_id", "graph_digest", "completed_node_ids", "execution_ids",
         "result_refs", "counters", "activations", "awaiting_human", "approvals",
         "pending_node_ids", "rejected_human",  # the runs route slice's identities
+        "join_selections", "failed_node_ids",  # T041: joins and absorbed failures
     }
     # exactly one attempt with visit-derived identities, terminal and accepted
     attempt_id = writer_attempt_id(run)
