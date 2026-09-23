@@ -809,3 +809,93 @@ def test_f3_a_forged_newer_approval_version_never_passes_a_gate(tmp_path):
         assert "owner-gate" not in calls and "publish" not in calls
     finally:
         subject.context.__exit__(None, None, None)
+
+
+# ---------------------------------------------------------------------------
+# Retry inside one visit over the real scheduler (T039): a loop's second
+# `revise` visit fails its first attempt; the retry is the next ATTEMPT of
+# that same visit — never a new visit, never a re-run of the earlier
+# iteration — and survives a process restart between the failure and the
+# owner's recovery.
+# ---------------------------------------------------------------------------
+
+
+def test_a_retry_inside_a_loop_visit_is_the_next_attempt_of_that_visit(tmp_path):
+    from app.runtime import node_attempts as na
+    from app.tests.test_scheduler_attempt_dispatch import (
+        binding,
+        failed_result,
+        restart,
+        started,
+        succeeded,
+    )
+
+    subject, run = started(tmp_path)
+    sent = []
+
+    def transport(permit, request, window):
+        sent.append(request.attempt_id)
+        failing = na.attempt_identity(run.run_id, "revise", 1, 0)
+        return failed_result(subject) if request.attempt_id == failing else succeeded(subject)
+
+    def dispatcher(*, retry):
+        return na.NodeAttemptDispatcher.build(
+            ledger=subject.ledger, budget_book=subject.book, owner=subject.owner,
+            bindings={"revise": binding(subject)}, transport=transport,
+            retry_after_terminal=retry,
+        )
+
+    visits = []
+
+    def produce(context, view):
+        visits.append((context.node_id, context.loop_index, context.execution_id))
+        assert context.attempt is None
+        return subject.refs.result
+
+    def dispatch(context, view):
+        visits.append((context.node_id, context.loop_index, context.execution_id))
+        return context.attempt.dispatch()
+
+    def control(context, view):
+        visits.append((context.node_id, context.loop_index, context.execution_id))
+        return {"loop_done": context.loop_index >= 2}
+
+    handlers = {"core.deterministic": produce, "core.agent": dispatch,
+                "core.bounded_loop": control}
+    compiled = compile_value(loop_graph())
+
+    def scheduler(*, retry=False):
+        return sch.build_scheduler(compiled, ledger=subject.ledger, run_id=run.run_id,
+                                   handlers=handlers, attempts=dispatcher(retry=retry))
+
+    with pytest.raises(sch.SchedulerError, match="node_failed:revise"):
+        scheduler().run()
+    first_visit = na.attempt_identity(run.run_id, "revise", 0, 0)
+    failed = na.attempt_identity(run.run_id, "revise", 1, 0)
+    assert sent == [first_visit, failed]
+    # a fresh process sees only durable state; a plain resume re-sends nothing
+    restart(subject, tmp_path)
+    with pytest.raises(sch.SchedulerError, match="node_failed:revise"):
+        scheduler().run()
+    assert sent == [first_visit, failed]
+    before = len(visits)
+    outcome = scheduler(retry=True).run()
+    retried = na.attempt_identity(run.run_id, "revise", 1, 1)
+    assert sent == [first_visit, failed, retried]
+    # the retry re-entered the SAME visit (same execution identity, loop index 1),
+    # iteration 0 never re-ran, and the loop then proceeded to its next visit
+    revise_1 = sch.execution_identity(run.run_id, "revise", 1)
+    assert visits[before:] == [
+        ("revise", 1, revise_1),
+        ("loop", 2, sch.execution_identity(run.run_id, "loop", 2)),
+        ("done", 0, sch.execution_identity(run.run_id, "done", 0)),
+    ]
+    assert outcome.counters == {"seed": 1, "loop": 3, "revise": 2, "done": 1}
+    assert dict(outcome.result_refs)[revise_1] == subject.refs.produced
+    # the past attempt stays failed; the visit's result is the retried attempt's
+    assert subject.ledger.get_attempt(failed)["terminal_outcome"] == "failed"
+    stored = subject.ledger.get_attempt(retried)
+    assert stored["terminal_outcome"] == "succeeded"
+    assert stored["spec"]["attempt_no"] == 2
+    assert stored["spec"]["execution_id"] == revise_1
+    assert subject.ledger.get_attempt(first_visit)["terminal_outcome"] == "succeeded"
