@@ -720,6 +720,13 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   browser guide and quickstart must not expose a native-app or end-user CLI journey. No user
   private PDFs/data/keys/history may leak and no automatic public push is allowed
   (FR-001/032).
+  2026-09-23: drafts landed in docs/release/ (browser user guide incl. account panel, operator
+  deployment/backup guide, architecture, contributing, extension authoring, API compatibility,
+  security, third-party notices from lock/manifest metadata with unknowns marked, surface
+  boundaries, source-license inventory, license recommendation). No LICENSE/NOTICE added: the
+  copyright owner's explicit license approval is required and pending; the publishable-tree scrub
+  and the Compose gaps it found (backup service without backup-key volume/init, ipc-root-init
+  boot-secret regeneration) remain open.
 - [ ] T085 Run full regression plus quickstart.md acceptance, reconcile every checkbox/result and produce specs/001-autonomous-release/evidence/release-report.md separating engineering/live/effect/human/signing readiness and checking final progress/ETA claims against actual task evidence; mark the goal complete only if the latest required delivery is genuinely achieved (FR-034, SC-010).
 
 ## Dependencies and parallel work
