@@ -16,7 +16,7 @@ import re
 import sqlite3
 import stat
 from threading import RLock
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from ..storage import Store
 from .refs import DomainContractError, EntityRef, canonical_json, parse_canonical, uuid_string
@@ -88,6 +88,26 @@ class PurposeMismatch(StorageError):
 
 class UnsafePath(StorageError):
     pass
+
+
+class ErasedBlob(StorageError):
+    """The owner deleted these bytes; the tombstone stands where they were."""
+
+
+# An explicit deletion leaves one immutable tombstone per content address, at an
+# identity derived from the address alone, so every reader can find it with one
+# lookup. The tombstone names the blob only through flat fields — never a blob
+# reference, which would re-link the record to the bytes it replaces.
+ERASURE_SCHEMA = "blob-erasure-v1"
+ERASURE_KIND = "decision_record"
+_ERASURE_FIELDS = frozenset({
+    "schema_version", "blob_purpose", "blob_sha256", "blob_size", "object_id", "former_kind",
+    "deleted_at", "deletion_request_id", "affected_refs", "reason_code", "preview_sha256",
+})
+
+
+def erasure_identity(vault_id, purpose, digest):
+    return str(uuid5(NAMESPACE_URL, f"deeptwin:blob-erasure:{vault_id}:{purpose}:{digest}"))
 
 
 @contextmanager
@@ -643,6 +663,8 @@ class DomainStore:
                 raise VerificationLimit("Reference verification bound exceeded")
             _, entities, blobs = self._load(db, ref, roots)
             for blob in blobs:
+                if blob not in seen_blobs and self._erasure(db, blob, roots) is not None:
+                    seen_blobs.add(blob)  # deleted by the owner: the tombstone stands in
                 if blob not in seen_blobs:
                     if (blob.size > MAX_GRAPH_BLOB_BYTES - verified_blob_bytes):
                         raise VerificationLimit("Reference blob byte verification bound exceeded")
@@ -932,6 +954,76 @@ class DomainStore:
         finally:
             os.close(descriptor)
 
+    def _erasure(self, db, blob, roots):
+        """The tombstone that replaced these bytes, or None. A row at the tombstone
+        identity that is not exactly this blob's tombstone is corruption, never a pass."""
+        record_id = erasure_identity(roots.genesis.id, blob.purpose, blob.sha256)
+        row = db.execute("SELECT sha256 FROM domain_records WHERE vault_id=? AND kind=? AND id=? "
+                         "AND version=1", (roots.genesis.id, ERASURE_KIND, record_id)).fetchone()
+        if row is None:
+            return None
+        record = self._load(db, EntityRef(ERASURE_KIND, record_id, 1, row[0]), roots)[0]
+        content = record.body["content"]
+        if (type(content) is not dict or set(content) != _ERASURE_FIELDS
+                or content["schema_version"] != ERASURE_SCHEMA or content["blob_purpose"] != blob.purpose
+                or content["blob_sha256"] != blob.sha256 or content["blob_size"] != blob.size):
+            raise CorruptRecord("Content tombstone does not match its address")
+        return record
+
+    def blob_erased(self, blob):
+        """True when the owner deleted these bytes (the tombstone is readable)."""
+        with self._connection() as db:
+            roots = self._read_roots(db)
+            return self._erasure(db, blob, roots) is not None
+
+    def _erase_in_transaction(self, db, blob, tombstone):
+        """Seal the tombstone for one registered blob inside the caller's writer. The
+        bytes are removed only after the commit (`remove_erased_bytes`), so a rollback
+        never leaves a hole; from the commit on, every read answers `ErasedBlob`."""
+        self._assert_write_transaction(db)
+        roots = self._read_roots(db)
+        if type(blob) is not BlobRef or blob.vault_id != roots.genesis.id:
+            raise DomainContractError("Expected this vault's exact BlobRef")
+        row = db.execute("SELECT size FROM domain_blobs WHERE vault_id=? AND purpose=? AND sha256=?",
+                         (blob.vault_id, blob.purpose, blob.sha256)).fetchone()
+        if row is None or row[0] != blob.size:
+            raise MissingBlob("Only a registered blob can be deleted")
+        if db.execute("SELECT 1 FROM domain_legacy_files WHERE vault_id=? AND blob_sha256=? LIMIT 1",
+                      (blob.vault_id, blob.sha256)).fetchone() is not None:
+            raise StorageError("Legacy-linked content cannot be deleted through this path")
+        if (type(tombstone) is not ImmutableRecord or tombstone.ref.kind != ERASURE_KIND
+                or tombstone.ref.id != erasure_identity(roots.genesis.id, blob.purpose, blob.sha256)
+                or tombstone.ref.version != 1):
+            raise DomainContractError("Expected the blob's exact tombstone identity")
+        content = tombstone.body["content"]
+        if (type(content) is not dict or set(content) != _ERASURE_FIELDS
+                or content["schema_version"] != ERASURE_SCHEMA or content["blob_purpose"] != blob.purpose
+                or content["blob_sha256"] != blob.sha256 or content["blob_size"] != blob.size):
+            raise DomainContractError("Tombstone content does not match the blob")
+        return self._put_in_transaction(db, tombstone)
+
+    def remove_erased_bytes(self, blob):
+        """Remove the file of a tombstoned blob; True once its absence is confirmed.
+        Idempotent. Never removes bytes without a committed tombstone."""
+        with _writer(), self._connection(write=True) as db:
+            roots = self._read_roots(db)
+            if self._erasure(db, blob, roots) is None:
+                raise StorageError("No committed tombstone for this content")
+            try:
+                with self._blob_directory(blob.purpose) as directory:
+                    try:
+                        os.unlink(blob.sha256, dir_fd=directory)
+                    except FileNotFoundError:
+                        pass
+                    os.fsync(directory)
+                    try:
+                        os.stat(blob.sha256, dir_fd=directory, follow_symlinks=False)
+                    except FileNotFoundError:
+                        return True
+                    return False
+            except FileNotFoundError:
+                return True  # the partition itself is absent: so are the bytes
+
     def _blob_bytes(self, db, blob, roots, *, purpose):
         if type(blob) is not BlobRef:
             raise DomainContractError("Expected exact BlobRef")
@@ -946,6 +1038,8 @@ class DomainStore:
             raise MissingBlob("Blob is not registered in this vault")
         if row[0] != blob.size:
             raise CorruptBlob("Registered blob size differs")
+        if self._erasure(db, blob, roots) is not None:
+            raise ErasedBlob("These bytes were deleted by the owner")
         try:
             with self._blob_directory(purpose) as directory:
                 return self._file_bytes(directory, blob)
@@ -969,6 +1063,7 @@ class DomainStore:
             row = db.execute("SELECT size FROM domain_blobs WHERE vault_id=? AND purpose=? AND sha256=?",
                              (blob.vault_id, purpose, blob.sha256)).fetchone()
             if row is not None:
+                # bytes the owner deleted are not silently brought back under old records
                 self._blob_bytes(db, blob, roots, purpose=purpose)
                 return blob
             with self._blob_directory(purpose, create=True) as directory:

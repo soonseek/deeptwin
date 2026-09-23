@@ -44,6 +44,16 @@
       "auth_policy": "browser_session", "required_scope": "work.read"
     },
     {
+      "route_id": "works.deletion_preview", "methods": ["POST"],
+      "path": "/api/v1/works/{work_id}/deletions/preview",
+      "auth_policy": "browser_session", "required_scope": "work.command"
+    },
+    {
+      "route_id": "works.deletion_confirm", "methods": ["POST"],
+      "path": "/api/v1/works/{work_id}/deletions",
+      "auth_policy": "browser_session", "required_scope": "work.command"
+    },
+    {
       "route_id": "works.create",
       "methods": [
         "POST"

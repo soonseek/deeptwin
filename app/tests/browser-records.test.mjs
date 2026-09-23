@@ -107,3 +107,37 @@ test('export: a work revised after its preview is refused as stale; records page
   assert.match(await page.locator('#records-retention').textContent(), /자동 삭제는 없습니다/);
   assert.deepEqual(errors, []);
 });
+
+test('an original is deleted only through its preview and consent; readers then say deleted', { timeout: 120000 }, async t => {
+  const { page, url, errors } = await open(t);
+  await page.goto(url + 'work.html');
+  const bytes = Buffer.from('%PDF-1.7\n지울 합성 원본\0');
+  await page.getByLabel('원본 자료 선택').setInputFiles({ name: '지울 원본.pdf', mimeType: 'application/pdf', buffer: bytes });
+  await page.getByRole('button', { name: '이 인스턴스에 저장', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('#save-status')?.textContent.includes('수정본 2'));
+  const panel = page.locator('#work-deletion');
+  await panel.getByLabel('지울 원본.pdf', { exact: false }).waitFor();
+  const href = await page.getByRole('link', { name: '다운로드' }).getAttribute('href');
+  const status = async () => page.evaluate(async target => (await fetch(target)).status, href);
+  assert.equal(await status(), 200);
+  // a preview removes nothing
+  await panel.getByLabel('지울 원본.pdf', { exact: false }).check();
+  await panel.getByRole('button', { name: '삭제 미리보기' }).click();
+  await panel.getByText('이 삭제 전에 만든 백업', { exact: true }).waitFor();
+  assert.match(await panel.textContent(), /이 원본을 가리키는 수정본 1개/);
+  assert.equal(await status(), 200);
+  // consent is separate and off by default
+  await panel.getByRole('button', { name: '선택한 원본 삭제' }).click();
+  await panel.getByText('미리보기 내용에 동의해야 삭제할 수 있습니다.').waitFor();
+  assert.equal(await status(), 200);
+  await panel.locator('#deletion-consent').check();
+  await panel.getByRole('button', { name: '선택한 원본 삭제' }).click();
+  await panel.getByText('원본 1개를 삭제했고 파일 제거를 확인했습니다', { exact: false }).waitFor();
+  assert.match(await panel.textContent(), /지울 원본\.pdf · .* · 삭제됨/);
+  assert.equal(await status(), 410);
+  // the records log shows the deletion as its own event
+  await page.goto(url + 'records.html');
+  await page.locator('#records-logs li').first().waitFor();
+  assert.match(await page.locator('#records-logs').textContent(), /retention\.deleted/);
+  assert.deepEqual(errors, []);
+});

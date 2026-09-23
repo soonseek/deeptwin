@@ -43,6 +43,7 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "alternative-file.mjs": "application/javascript",
         "inquiry.mjs": "application/javascript",
         "work-export.mjs": "application/javascript",
+        "source-deletion.mjs": "application/javascript",
         "records-page.mjs": "application/javascript",
         "account.mjs": "application/javascript",
         "records.html": "text/html",

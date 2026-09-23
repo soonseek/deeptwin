@@ -380,3 +380,39 @@ def test_a_missing_or_altered_original_refuses_the_backup(runtime, tmp_path):
                             key_mode="instance_backup_key", key_handle=handle)
     assert missing.state == "failed" and "missing" in missing.failure
     assert list(out.iterdir()) == []
+
+
+@needs_age
+def test_a_deleted_original_stays_deleted_through_backup_and_restore(runtime, tmp_path):
+    from app.domain.store import ERASURE_KIND, ERASURE_SCHEMA, ErasedBlob, _writer, erasure_identity
+
+    vault = tmp_path / "vault"
+    domain, source, blob = vault_with_original(vault)
+    roots = domain.roots()
+    tombstone = ImmutableRecord.create(
+        kind=ERASURE_KIND, id=erasure_identity(roots.genesis.id, blob.purpose, blob.sha256), version=1,
+        created_at_utc=STAMP, actor_ref=roots.actor, parent_refs=(), purpose="operational",
+        access_policy_ref=roots.access_policy, retention_policy_ref=roots.retention_policy,
+        content={"schema_version": ERASURE_SCHEMA, "blob_purpose": blob.purpose, "blob_sha256": blob.sha256,
+                 "blob_size": blob.size, "object_id": source.ref.id, "former_kind": "original",
+                 "deleted_at": STAMP, "deletion_request_id": str(uuid4()), "affected_refs": [source.ref.as_dict()],
+                 "reason_code": "user_requested", "preview_sha256": "0" * 64})
+    with _writer(), domain._connection(write=True) as db:
+        domain._erase_in_transaction(db, blob, tombstone)
+    assert domain.remove_erased_bytes(blob) is True
+    out = tmp_path / "out"
+    out.mkdir()
+    handle = instance_key(runtime, tmp_path)
+    outcome = create_backup(vault, out, runtime=runtime, server_release="1.0.0",
+                            key_mode="instance_backup_key", key_handle=handle)
+    assert outcome.state == "ready", outcome.failure
+    assert not any(blob.sha256 in item["path"] for item in outcome.manifest["item_refs"])
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    restored = restore_backup(outcome.ciphertext_path, outcome.receipt, staging, runtime=runtime,
+                              key_handle=handle, active_vault_dir=vault)
+    assert restored.state == "restored_review", restored.failure
+    again = DomainStore(Store(restored.vault_dir))
+    assert again.get(source.ref).ref == source.ref
+    with pytest.raises(ErasedBlob):
+        again.read_blob(blob, purpose="operational")

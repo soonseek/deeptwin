@@ -16,6 +16,9 @@ from starlette.concurrency import run_in_threadpool
 
 from ..domain.refs import uuid_string
 from ..services.owner_material_intake import OwnerMaterialIntake
+from ..services.source_deletions import CONFIRM_SCHEMA as DELETION_CONFIRM_SCHEMA
+from ..services.source_deletions import PREVIEW_SCHEMA as DELETION_PREVIEW_SCHEMA
+from ..services.source_deletions import SourceDeletions
 from ..services.work_exports import (
     CONFIRM_SCHEMA,
     PREVIEW_SCHEMA,
@@ -46,6 +49,7 @@ STATUS = {
     "too_large": 413,
     "unavailable": 503,
     "capacity": 429,
+    "deleted": 410,
 }
 _LIMITS = WireLimits(max_bytes=MAX_BODY_BYTES, max_depth=2, max_items=8, max_members=4,
                      max_string_bytes=MAX_TEXT_BYTES)
@@ -53,6 +57,10 @@ _LIMITS = WireLimits(max_bytes=MAX_BODY_BYTES, max_depth=2, max_items=8, max_mem
 
 _EXPORT_LIMITS = WireLimits(max_bytes=2_048, max_depth=3, max_items=16, max_members=6,
                             max_string_bytes=128)
+
+
+_DELETION_LIMITS = WireLimits(max_bytes=2_048, max_depth=3, max_items=24, max_members=8,
+                              max_string_bytes=128)
 
 
 class WorkRouteError(ValueError):
@@ -124,6 +132,23 @@ def preflight(scope, body, content_type):
                     if name in fields},
                 limits=_EXPORT_LIMITS)
             if value["schema_version"] != (CONFIRM_SCHEMA if confirm else PREVIEW_SCHEMA):
+                raise WorkRouteError()
+            uuid_string(value["request_id"])
+            return value
+        if len(parts) in {2, 3} and parts[1] == "deletions" and method == "POST":
+            # the deletion preview (…/deletions/preview) and the explicit deletion (…/deletions)
+            if (len(parts) == 3 and parts[2] != "preview") or content_type.split(";", 1)[0] != "application/json":
+                raise WorkRouteError()
+            confirm = len(parts) == 2
+            fields = ("schema_version", "request_id", "source_ids", "reason_code",
+                      *(("preview_sha256", "confirmed") if confirm else ()))
+            value = parse_json_object(
+                body, required=fields,
+                field_types={name: kind for name, kind in (
+                    ("schema_version", str), ("request_id", str), ("source_ids", list), ("reason_code", str),
+                    ("preview_sha256", str), ("confirmed", bool)) if name in fields},
+                limits=_DELETION_LIMITS)
+            if value["schema_version"] != (DELETION_CONFIRM_SCHEMA if confirm else DELETION_PREVIEW_SCHEMA):
                 raise WorkRouteError()
             uuid_string(value["request_id"])
             return value
@@ -207,6 +232,24 @@ def create_router(*, works, exports=None):
                 "Content-Disposition": f'attachment; filename="deeptwin-export-{receipt["bundle_id"]}.zip"',
                 "Content-Length": str(len(data)),
                 "X-DeepTwin-Bundle-SHA256": receipt["bundle_sha256"]})
+        except WorkServiceError as error:
+            return work_error(error)
+
+    deletions = SourceDeletions(works)
+
+    @router.post(PATH + "/{work_id}/deletions/preview")
+    async def deletion_preview(request: Request, work_id: str):
+        try:
+            return JSONResponse(await run_in_threadpool(
+                deletions.preview, request.state.authenticated_request, work_id, request.state.work_payload))
+        except WorkServiceError as error:
+            return work_error(error)
+
+    @router.post(PATH + "/{work_id}/deletions")
+    async def deletion_confirm(request: Request, work_id: str):
+        try:
+            return JSONResponse(await run_in_threadpool(
+                deletions.delete, request.state.authenticated_request, work_id, request.state.work_payload))
         except WorkServiceError as error:
             return work_error(error)
 

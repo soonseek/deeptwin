@@ -633,6 +633,11 @@ preview, missing evidence and no network send; backup/restore without original d
   exact bytes), explicit consent bound to that digest, stale-preview refusal, sealed consent/
   manifest/bundle records and receipt, owner download; work-page panel `work-export.mjs`. Logs/
   backup/retention screens remain — evidence/work-export-t073-2026-09-23.md.
+  2026-09-23 deletion: stored originals are deleted only through a server-computed preview and
+  consent bound to its digest; one tombstone per content address, bytes removed after commit,
+  readers answer `deleted`, records stay readable, backups carry only live originals; work-screen
+  panel and real-browser case — evidence/source-deletion-t073-2026-09-23.md. Deleting other
+  records, GUI backup/restore and backup cleanup remain.
 - [ ] T074 [US7] Run setup/source/candidate/lens/failed-run/alternative/round/approval export, secret canaries, PDF redaction and interrupted restore cases in app/tests/browser-records.test.mjs and specs/001-autonomous-release/evidence/us7.md (SC-009).
   2026-09-23 partial: work export (actual preview, bound consent, raw only by choice, secret
   canaries absent, stale preview refused) and the records page in real Chromium; fixed the log

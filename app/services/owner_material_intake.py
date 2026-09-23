@@ -132,7 +132,10 @@ class OwnerMaterialIntake:
             if original.get("schema_version") != ARTIFACT_SCHEMA:
                 raise WorkServiceError("unavailable")
             blob = BlobRef.from_dict(original["blob_ref"])
+            deleted = self.domain._erasure(db, blob, roots) is not None
+            if deleted and content:
+                raise WorkServiceError("deleted")  # the owner deleted these bytes; the tombstone stands
             data = self.domain._blob_bytes(db, blob, roots, purpose="operational") if content and not head else None
             self.owner.authenticate_bound(request.session)
             return {"source_ref": source.ref.as_dict(), "source": detail, "artifact_ref": artifact.ref.as_dict(),
-                    "artifact": original}, data
+                    "artifact": original, "original_state": "deleted" if deleted else "stored"}, data

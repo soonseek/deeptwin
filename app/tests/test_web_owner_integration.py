@@ -612,7 +612,7 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
     with TestClient(reopened, base_url=profile.http_origin) as client:
         assert client.get(profile.base_path + "health").status_code == 200
         composition = reopened.state.route_composition
-        assert composition.route_count == 60
+        assert composition.route_count == 62
         assert composition.contribution_ids == ("core-v1", "extension-candidates-v1", "run-approvals-v1",
             "works-v1", "run-consents-v1", "runs-v1", "versions-v1", "deployment-prepare-v1", "provider-conformance-v1", "provider-installation-v1")
         assert composition.route_ids == ("events.read", "events.stream", "events.type", "snapshot.read",
@@ -620,6 +620,7 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
             "runs.approvals.record", "runs.approvals.read",
             "works.receipt", "works.source_upload", "works.revision", "works.source", "works.source_content",
             "works.export_preview", "works.export_confirm", "works.export_download",
+            "works.deletion_preview", "works.deletion_confirm",
             "works.create", "works.read", "works.revise",
             "run_consents.record", "run_consents.read", "run_consents.revoke",
             "runs.create", "runs.read", "runs.resume", "runs.cancel", "runs.recover",
@@ -636,7 +637,7 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
             "deployment.provider-requests.consume", "extensions.provider-conformance.execute",
             "extensions.provider-conformance.read", "extensions.provider-installation.execute",
             "extensions.provider-installation.read")
-        assert len(set(composition.route_ids)) == 60
+        assert len(set(composition.route_ids)) == 62
 
 
 def test_live_session_root_pin_rejects_a_different_valid_pair(tmp_path):

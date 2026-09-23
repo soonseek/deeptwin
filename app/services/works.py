@@ -29,7 +29,7 @@ MAX_TEXT_CHARS = 20_000  # the intake store's own bound (app/storage.py `_text`)
 MAX_TEXT_BYTES = 65_536  # the domain record's canonical string bound (app/domain/refs.py), raw UTF-8
 CODES = frozenset({
     "invalid_input", "unauthenticated", "access_denied", "not_found", "conflict",
-    "too_large", "unavailable", "capacity",
+    "too_large", "unavailable", "capacity", "deleted",
 })
 
 

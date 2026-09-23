@@ -235,9 +235,7 @@ def _snapshot(source: Path, target: Path) -> tuple[dict, list[str], dict]:
             if vault is None:
                 raise BackupError("the snapshot holds no initialized vault")
             sequence = dst.execute("SELECT count(*) FROM domain_records").fetchone()[0]
-            blobs = [tuple(row) for row in dst.execute(
-                "SELECT purpose, sha256, size FROM domain_blobs WHERE vault_id=? ORDER BY purpose, sha256",
-                (vault[0],))]
+            blobs = _live_blobs(dst, vault[0])
             identity = {"vault_id": vault[0], "snapshot_sequence": sequence, "blobs": blobs,
                         "data_schema_version": [list(row) for row in dst.execute(
                             "SELECT version, sha256 FROM domain_migrations ORDER BY version")]}
@@ -249,6 +247,22 @@ def _snapshot(source: Path, target: Path) -> tuple[dict, list[str], dict]:
         src.close()
     categories = sorted([*excluded, *OUT_OF_SCOPE_CATEGORIES])
     return identity, categories, consistency
+
+
+def _live_blobs(db, vault_id) -> list[tuple]:
+    """Registered originals minus those the owner deleted (their tombstone stands in)."""
+
+    from ..domain.store import ERASURE_KIND, erasure_identity
+
+    live = []
+    for purpose, digest, size in db.execute(
+            "SELECT purpose, sha256, size FROM domain_blobs WHERE vault_id=? ORDER BY purpose, sha256",
+            (vault_id,)):
+        erased = db.execute("SELECT 1 FROM domain_records WHERE vault_id=? AND kind=? AND id=? AND version=1",
+                            (vault_id, ERASURE_KIND, erasure_identity(vault_id, purpose, digest))).fetchone()
+        if erased is None:
+            live.append((purpose, digest, size))
+    return live
 
 
 def _read_original(vault_dir: Path, purpose: str, digest: str, size: int) -> bytes:
@@ -400,8 +414,8 @@ def _verify_database(path: Path, manifest: dict, originals: dict) -> tuple[str, 
                 raise BackupError("an excluded category is present in the backup")
         vault = db.execute("SELECT vault_id FROM domain_vault").fetchone()
         rows = db.execute("SELECT kind, id, version, sha256 FROM domain_records").fetchall()
-        blobs = {_cas_name(purpose, digest): size for purpose, digest, size in db.execute(
-            "SELECT purpose, sha256, size FROM domain_blobs")}
+        blobs = ({_cas_name(purpose, digest): size for purpose, digest, size in _live_blobs(db, vault[0])}
+                 if vault is not None else {})
     except sqlite3.DatabaseError:
         raise BackupError("the restored data does not open") from None
     finally:

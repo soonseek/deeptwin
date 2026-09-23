@@ -17,12 +17,14 @@
 // contents are not read, and microphone/model work is not part of this slice.
 
 import { basePathFrom, createSupportedSession } from './session.mjs';
+import { createSourceDeletion } from './source-deletion.mjs';
 import { createWorkExport } from './work-export.mjs';
 
 export const MOUNT_IDS = Object.freeze({ session: 'session-status', notice: 'intake-notice', form: 'work-form',
   save: 'save-status', materials: 'materials', link: 'observe-link' });
 // the export panel's mount is optional: a page without it still boots (T073)
 export const RECORDS_MOUNT_ID = 'work-records';
+export const DELETION_MOUNT_ID = 'work-deletion';
 export const MAX_TEXT_CHARS = 20_000;  // app/services/works.py MAX_TEXT_CHARS
 export const MAX_TEXT_BYTES = 65_536;  // app/services/works.py MAX_TEXT_BYTES (raw UTF-8)
 const CREATE_SCHEMA = 'work-create-command-v1';
@@ -239,6 +241,11 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
     ? createWorkExport({ root: recordsRoot, document, basePath, request: session.request, crypto,
       workId: () => state.work_id ?? null })
     : null;
+  const deletionRoot = document.getElementById(DELETION_MOUNT_ID);
+  const deletion = deletionRoot !== null && typeof deletionRoot?.replaceChildren === 'function'
+    ? createSourceDeletion({ root: deletionRoot, document, basePath, request: session.request, crypto,
+      workId: () => state.work_id ?? null })
+    : null;
   const selections = [];
   const originals = new Map();
   let savedSources = [];
@@ -284,6 +291,7 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   async function loadMaterials(saved) {
     savedSources = saved.source_refs ?? [];
     renderMaterials();
+    if (deletion !== null) deletion.load().catch(() => {});
     for (const ref of savedSources) {
       if (!originals.has(ref.id)) {
         try {
@@ -659,7 +667,8 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
     await saveAll();
   });
 
-  return Object.freeze({ mode, basePath, session, exporter });
+  if (deletion !== null) deletion.load().catch(() => {});
+  return Object.freeze({ mode, basePath, session, exporter, deletion });
 }
 
 // the page's entry: a boot that fails before the exchange still reaches the status line
