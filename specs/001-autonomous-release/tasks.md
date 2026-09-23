@@ -579,6 +579,12 @@ preview, missing evidence and no network send; backup/restore without original d
   key/volume loss, corruption, stream interruption and external receipt. `backup-key-init` follows
   absent O_EXCL+fsync / exact-existing verify-no-op / malformed fail-without-replace semantics and
   is tested across stack-update reruns (OPS-AC07).
+  2026-09-23: the code-owned age caller (`app/workers/backup_crypto.py`, locked-digest verified,
+  native X25519 only, identity via owned fd) and `app/operations/backup.py` (closed table
+  classification, consistent snapshot, restore proof before `ready`, external receipt, exact key
+  modes, staged `restored_review` restore) landed with 12 real-age tests; open until the separate
+  networkless worker service boundary (T081) and GUI/migration gates (T072/T073) exist —
+  evidence/backup-age-t070-2026-09-23.md.
 - [x] T071 [US7] Implement snapshot preview/redaction/pseudonyms/rights/missing-evidence manifest and safe archive validation in app/operations/export.py and app/tests/test_export.py; no self-referential archive hash (FR-028/029).
 - [ ] T072 [US7] Integrate the T025 `DeploymentControlPort` into verified web-release update/recovery
   guidance, backup-before-migration and safe state in app/operations/updates.py,
