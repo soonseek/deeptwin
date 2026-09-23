@@ -53,7 +53,7 @@ from app.tests.test_promotion import (  # noqa: F401 - promotion_owner is an aut
     promotion_owner,
     record_approval,
 )
-from app.tests.test_validation import ledger_with_sealed, report_value
+from app.tests.test_validation import ledger_with_sealed, recorded_round, report_value
 
 
 def test_f1_double_rollback_never_repromotes_without_a_fresh_approval():
@@ -173,7 +173,7 @@ def test_f8_a_forged_inquiry_never_compiles_a_candidate():
         object.__setattr__(forged, name, getattr(real, name))
     object.__setattr__(forged, "_issuer_token", None)
     with pytest.raises(ChangeCompilerError):
-        compile_change_candidate(forged, patch_value())
+        compile_change_candidate(forged, patch_value(), forbidden_spans=["대안 원문"])
 
 
 def test_f9_different_contents_never_share_kind_id_version():
@@ -257,7 +257,7 @@ def test_f15_provenance_must_match_observed_evidence_including_version():
         "evidence_refs": [wrong_version],
     }
     with pytest.raises(ChangeCompilerError):
-        compile_change_candidate(inquiry, value)
+        compile_change_candidate(inquiry, value, forbidden_spans=["대안 원문"])
 
 
 def test_f16_decision_stamps_are_canonical_six_digit_utc():
@@ -302,7 +302,7 @@ def test_f18_a_human_reject_of_a_failed_candidate_is_recordable():
     gates = report_value()["gates"]
     gates["regression"] = {
         "status": "fail", "reasons": ["회귀 실패"],
-        "evidence": [ref("comparison_result", 960)],
+        "evidence": [recorded_round(960)],
     }
     failed, _ = run_validation(
         candidate, ledger_with_sealed("sealed-x"),

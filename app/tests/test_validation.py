@@ -70,10 +70,34 @@ def ledger_with_sealed(dataset_id="sealed-a"):
     })
 
 
+def recorded_round(suffix=960, *, validity="valid", candidate=None):
+    """A comparison round recorded by the framework (the evaluator execution a
+    gate rests on), run for the candidate_value() change candidate by default."""
+
+    from app.services.comparisons import freeze_comparison_plan, record_comparison_round
+    from app.tests.test_comparisons import plan_value
+
+    plan = freeze_comparison_plan(plan_value())
+    return record_comparison_round(plan, {
+        "round_id": f"round-{suffix}", "round_index": 0,
+        "candidate": candidate or ref("change_candidate", 930),
+        "baseline_runs": [ref("run_manifest", suffix)],
+        "candidate_runs": [ref("run_manifest", suffix + 1000)],
+        "validity": validity,
+        "validity_reasons": [] if validity != "invalid" else ["평가 불가"],
+        "mandatory_checks": ref("validation_report", 925),
+        "metric_vector": {"utility": "1"} if validity == "valid" else None,
+        "utility": "1" if validity == "valid" else None,
+        "evidence": [], "usage": ref("decision_record", 927),
+    })
+
+
 def gate(status="pass", *, reasons=(), evidence_suffix=960):
+    if status == "invalid" and not reasons:
+        reasons = ("판정자 실패",)  # an invalid gate states why too
     value = {
         "status": status,
-        "evidence": [ref("comparison_result", evidence_suffix)],
+        "evidence": [recorded_round(evidence_suffix)],
         "reasons": list(reasons),
     }
     return value
@@ -218,3 +242,45 @@ def test_values_are_issued_never_constructed():
     report, _ = run_validation(frozen, ledger, report_value())
     with pytest.raises(TypeError):
         dataclasses.replace(report, status="passed")
+
+
+# --- T064: a gate rests on recorded evaluator executions, never a declaration ------
+
+
+def test_a_pass_needs_the_recorded_evaluator_execution_behind_it():
+    frozen = freeze_candidate(candidate_value())
+    cases = {
+        "evidence-free pass": {"status": "pass", "evidence": [], "reasons": []},
+        "caller-declared ref": {"status": "pass", "evidence": [ref("comparison_result", 961)],
+                                "reasons": []},
+        "invalid round": {"status": "pass", "evidence": [recorded_round(962, validity="invalid")],
+                          "reasons": []},
+        "pending round": {"status": "pass", "evidence": [recorded_round(963, validity="pending")],
+                          "reasons": []},
+        "another candidate's round": {"status": "pass", "reasons": [], "evidence": [
+            recorded_round(964, candidate=ref("change_candidate", 999))]},
+        "unexplained invalid": {"status": "invalid", "evidence": [], "reasons": []},
+    }
+    for label, bad in cases.items():
+        gates = report_value()["gates"]
+        gates["heldout_transfer"] = bad
+        with pytest.raises(GrowthValidationError):
+            run_validation(frozen, ledger_with_sealed(), report_value(gates=gates))
+        assert label  # every case above is refused
+
+
+def test_the_report_names_the_exact_rounds_it_rests_on():
+    from app.services.comparisons import comparison_result_ref
+
+    frozen = freeze_candidate(candidate_value())
+    gates = report_value()["gates"]
+    backing = recorded_round(965)
+    gates["regression"] = {"status": "pass", "evidence": [backing], "reasons": []}
+    report, _seen = run_validation(frozen, ledger_with_sealed(), report_value(gates=gates))
+    regression = dict(report.gates)["regression"]
+    assert regression.evidence == (comparison_result_ref(backing),)
+    # a failed gate may cite an invalid round, bound to the same candidate
+    gates["regression"] = {"status": "fail", "reasons": ["회귀 2건"],
+                           "evidence": [recorded_round(966, validity="invalid")]}
+    failed, _ = run_validation(frozen, ledger_with_sealed(), report_value(gates=gates))
+    assert failed.status == "failed"

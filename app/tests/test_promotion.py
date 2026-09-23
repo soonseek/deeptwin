@@ -43,6 +43,7 @@ from app.tests.test_alternatives import ref
 from app.tests.test_validation import (
     candidate_value,
     ledger_with_sealed,
+    recorded_round,
     report_value,
 )
 
@@ -299,7 +300,7 @@ def test_full_activation_requires_a_passed_sealed_report_on_the_same_bundle():
     gates["regression"] = {
         "status": "fail",
         "reasons": ["회귀 실패"],
-        "evidence": [ref("comparison_result", 960)],
+        "evidence": [recorded_round(960)],
     }
     failed, _ = run_validation(
         candidate,

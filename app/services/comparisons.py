@@ -307,6 +307,25 @@ def _fail_metric_name():
     raise ComparisonError("a metric name is out of bounds")
 
 
+def is_recorded_round(value: object) -> bool:
+    """True only for a round recorded by record_comparison_round."""
+
+    return (
+        type(value) is ComparisonResult
+        and getattr(value, "_issuer_token", None) is _ISSUE_TOKEN
+    )
+
+
+def comparison_result_ref(result) -> EntityRef:
+    """The content-derived reference of one recorded round."""
+
+    if not is_recorded_round(result):
+        raise ComparisonError("a recorded comparison round is required")
+    digest = sha256(canonical_json(result.as_dict())).hexdigest()
+    return EntityRef("comparison_result",
+                     str(uuid5(NAMESPACE_URL, f"deeptwin:comparison-result:{digest}")), 1, digest)
+
+
 def is_frozen_plan(value: object) -> bool:
     """True only for a plan issued by freeze_comparison_plan."""
 
@@ -324,7 +343,9 @@ __all__ = [
     "ComparisonError",
     "ComparisonPlan",
     "ComparisonResult",
+    "comparison_result_ref",
     "freeze_comparison_plan",
     "is_frozen_plan",
+    "is_recorded_round",
     "record_comparison_round",
 ]

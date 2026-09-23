@@ -373,7 +373,20 @@ class ValidationReport:
         }
 
 
-def _parse_gate(name, value) -> GateOutcome:
+def _parse_gate(name, value, candidate) -> GateOutcome:
+    """One gate's outcome over the evaluator executions that back it.
+
+    A gate's evidence is the framework-recorded comparison rounds themselves
+    (`record_comparison_round`, e.g. from isolated paired execution), never
+    caller-declared references: a `pass` needs at least one round, every one
+    `valid` and run for this exact change candidate — so no evidence-free or
+    caller-declared pass can issue an authoritative qualification. A `fail` or
+    `invalid` gate states its reasons; any rounds it cites are held to the same
+    candidate binding.
+    """
+
+    from .comparisons import comparison_result_ref, is_recorded_round
+
     if type(value) is not dict or set(value) != {
         "status", "evidence", "reasons",
     }:
@@ -394,16 +407,31 @@ def _parse_gate(name, value) -> GateOutcome:
         )
     ):
         raise GrowthValidationError(f"{name} gate reasons are out of bounds")
-    if status == "fail" and not reasons:
-        # validation_failed always leaves its causes (§7).
-        raise GrowthValidationError(f"a failed {name} gate must state reasons")
+    if status in {"fail", "invalid"} and not reasons:
+        # validation_failed always leaves its causes (§7); an invalid judge too.
+        raise GrowthValidationError(f"a {status} {name} gate must state reasons")
+    for item in evidence:
+        if not is_recorded_round(item):
+            raise GrowthValidationError(
+                f"{name} gate evidence must be recorded evaluator executions"
+            )
+        if item.candidate != candidate.candidate:
+            raise GrowthValidationError(
+                f"{name} gate evidence was run for another change candidate"
+            )
+    if status == "pass":
+        if not evidence:
+            raise GrowthValidationError(
+                f"a passed {name} gate needs the evaluator execution behind it"
+            )
+        if any(item.validity != "valid" for item in evidence):
+            raise GrowthValidationError(
+                f"a passed {name} gate cannot rest on an invalid or pending round"
+            )
     return _issue(
         GateOutcome,
         status=status,
-        evidence=tuple(
-            _ref(item, "comparison_result", f"{name} evidence")
-            for item in evidence
-        ),
+        evidence=tuple(comparison_result_ref(item) for item in evidence),
         reasons=tuple(reasons),
     )
 
@@ -468,7 +496,7 @@ def run_validation(candidate, ledger, value):
     if type(gates_value) is not dict or set(gates_value) != set(GATES):
         raise GrowthValidationError("expected the exact §8 gate set")
     gates = tuple(
-        (name, _parse_gate(name, gates_value[name])) for name in GATES
+        (name, _parse_gate(name, gates_value[name], candidate)) for name in GATES
     )
     statuses = {outcome.status for _name, outcome in gates}
     if "fail" in statuses:
