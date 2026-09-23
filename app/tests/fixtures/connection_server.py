@@ -37,6 +37,7 @@ def manager(store):
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.bind(('127.0.0.1', args.port))
+sock.listen(128)  # accept (queue) before the URL is announced: no connect race on a slow host
 port = sock.getsockname()[1]
 # Discovery and transport are both controlled boundaries. This fixture does not
 # require a real Codex installation and never opens its credential store.

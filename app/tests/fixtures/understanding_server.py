@@ -59,6 +59,7 @@ def manager(store):
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.bind(('127.0.0.1', args.port))
+sock.listen(128)  # accept (queue) before the URL is announced: no connect race on a slow host
 port = sock.getsockname()[1]
 with patch('app.codex_connection.find_codex', return_value=str(Path(__file__).with_name('fake_codex_rpc.py'))):
     app = create_app(args.data_dir, port=port, codex_factory=manager,
