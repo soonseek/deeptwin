@@ -47,6 +47,7 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "account.mjs": "application/javascript",
         "records.html": "text/html",
         "versions.mjs": "application/javascript",
+        "experiments.mjs": "application/javascript",
         "versions-page.mjs": "application/javascript",
         "versions.html": "text/html",
         "observe.mjs": "application/javascript",

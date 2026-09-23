@@ -369,24 +369,47 @@ def persist_comparison_round(domain_store, plan, value, *, plan_record_ref, **he
 def resume_comparison_round(domain_store, result_ref: EntityRef):
     """The recorded round whose content-derived ref is `result_ref`, re-issued."""
 
-    from .comparisons import comparison_result_ref, record_comparison_round
-
     stored = _existing(domain_store, _round_record_id(result_ref))
     if stored is None:
         raise GrowthStoreError("that comparison round was never persisted")
+    _plan, result = _reissue_round(domain_store, stored, result_ref)
+    return result
+
+
+def resume_comparison_round_record(domain_store, record_ref: EntityRef):
+    """(plan, round) of one persisted round record, both re-issued exactly."""
+
+    from .comparisons import comparison_result_ref
+
+    content = _load(domain_store, record_ref, _ROUND_KIND)
+    try:
+        stated = decode_design_refs(content["result"])
+    except (KeyError, ValueError) as exc:
+        raise GrowthStoreError("the stored comparison round is invalid") from exc
+    plan, result = _reissue_round(domain_store, domain_store.get(record_ref), None)
+    if result.as_dict() != stated or _round_record_id(comparison_result_ref(result)) != record_ref.id:
+        raise GrowthStoreError("the stored comparison round does not read back exactly")
+    return plan, result
+
+
+def _reissue_round(domain_store, stored, result_ref):
+    from .comparisons import comparison_result_ref, record_comparison_round
+
     content = stored.body["content"]
     if content.get("growth_kind") != _ROUND_KIND:
         raise GrowthStoreError("the record is not a comparison round")
-    plan = resume_comparison_plan(domain_store, EntityRef(
-        RECORD_KIND, content["plan_record"], 1, content["plan_record_sha256"]))
     try:
+        plan = resume_comparison_plan(domain_store, EntityRef(
+            RECORD_KIND, content["plan_record"], 1, content["plan_record_sha256"]))
         result = record_comparison_round(plan, decode_design_refs(content["round"]))
-    except ValueError as exc:
+        stated = decode_design_refs(content["result"])
+    except (KeyError, ValueError) as exc:
+        if isinstance(exc, GrowthStoreError):
+            raise
         raise GrowthStoreError("the stored comparison round is invalid") from exc
-    if (result.as_dict() != decode_design_refs(content["result"])
-            or comparison_result_ref(result) != result_ref):
+    if result.as_dict() != stated or (result_ref is not None and comparison_result_ref(result) != result_ref):
         raise GrowthStoreError("the stored comparison round does not read back exactly")
-    return result
+    return plan, result
 
 
 def persist_frozen_candidate(domain_store, candidate, **headers) -> EntityRef:
@@ -465,6 +488,7 @@ __all__ = [
     "persist_validation_report",
     "resume_comparison_plan",
     "resume_comparison_round",
+    "resume_comparison_round_record",
     "resume_dataset_ledger",
     "resume_frozen_candidate",
     "resume_loop",

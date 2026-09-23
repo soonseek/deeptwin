@@ -69,7 +69,7 @@ def test_adopt_approve_apply_and_roll_back(tmp_path):
     with owner_app(tmp_path) as subject:
         domain = subject.domain
         environment = immutable(domain, domain.roots(), "environment").ref
-        assert read(subject).json() == {"state": None, "candidates": [], "experiments": []}
+        assert read(subject).json() == {"state": None, "candidates": [], "experiments": [], "rounds": []}
         adopted = call(subject, "adopt", {"environment_ref": environment.as_dict()})
         assert adopted.status_code == 200, adopted.text
         assert adopted.json()["state"]["current_environment_ref"] == environment.as_dict()
@@ -144,6 +144,52 @@ def test_experiments_show_the_stop_reason_the_loop_recorded(tmp_path):
         assert experiment["lineage_id"] == LOOP_LINEAGE and experiment["revision"] == 3
         assert experiment["stop_reason"] == "human_stop"
         assert experiment["best_observed"]["utility"] == "0.80"
+
+
+def test_paired_rounds_read_back_exactly_with_honest_validity(tmp_path):
+    with owner_app(tmp_path) as subject:
+        domain = subject.domain
+        roots = domain.roots()
+        marks = {"actor_ref": roots.actor, "access_policy_ref": roots.access_policy,
+                 "retention_policy_ref": roots.retention_policy, "created_at_utc": STAMP}
+        plan = freeze_comparison_plan(plan_value())
+        plan_ref = persist_comparison_plan(domain, plan, **marks)
+        valid = round_input(1500)
+        invalid = {**round_input(1600), "round_index": 1, "validity": "invalid",
+                   "validity_reasons": ["기준 실행이 중간에 중단됨"], "metric_vector": None, "utility": None}
+        for value in (invalid, valid):
+            persist_comparison_round(domain, plan, value, plan_record_ref=plan_ref, **marks)
+        rounds = read(subject).json()["rounds"]
+        assert [item["round_index"] for item in rounds] == [0, 1]
+        first, second = rounds
+        assert first["readable"] and first["lineage_id"] == plan.lineage_id
+        assert first["pairs"] == [{"baseline_run_ref": ref("run_manifest", 1500),
+                                   "candidate_run_ref": ref("run_manifest", 2500)}]
+        assert first["validity"] == "valid" and first["utility"] == "1"
+        # an invalid round keeps its stated reasons and carries no score of any kind
+        assert second["validity"] == "invalid" and second["validity_reasons"] == ["기준 실행이 중간에 중단됨"]
+        assert second["metric_vector"] is None and second["utility"] is None
+
+
+def test_a_round_that_does_not_read_back_is_listed_unreadable(tmp_path):
+    from app.services.growth_store import resume_comparison_round_record
+    from app.domain.refs import EntityRef
+
+    with owner_app(tmp_path) as subject:
+        domain = subject.domain
+        roots = domain.roots()
+        marks = {"actor_ref": roots.actor, "access_policy_ref": roots.access_policy,
+                 "retention_policy_ref": roots.retention_policy, "created_at_utc": STAMP}
+        plan = freeze_comparison_plan(plan_value())
+        plan_ref = persist_comparison_plan(domain, plan, **marks)
+        stored = persist_comparison_round(domain, plan, round_input(1700), plan_record_ref=plan_ref, **marks)
+        assert resume_comparison_round_record(domain, stored)[1].round_id == "round-1700"
+        # a wrong digest names no stored record: the resume refuses rather than guessing
+        import pytest
+
+        from app.services.growth_store import GrowthStoreError
+        with pytest.raises(GrowthStoreError):
+            resume_comparison_round_record(domain, EntityRef(stored.kind, stored.id, 1, "0" * 64))
 
 
 def test_the_wire_is_closed(tmp_path):

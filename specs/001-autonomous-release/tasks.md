@@ -581,6 +581,10 @@ heldout validation and exact authenticated human promotion; no automatic operati
   (`versions-v1`: adopt, candidates with gates, approve/reject/defer, exact-revision apply,
   reasoned rollback, experiments with the recorded stop reason; `versions.mjs`) —
   evidence/versions-t066-2026-09-23.md. Paired-round/artifact comparison views remain.
+  2026-09-23 paired rounds: persisted rounds re-issued exactly and shown paired (baseline ↔
+  candidate run, validity/reasons, score only on valid rounds, unreadable listed) in
+  `experiments.mjs`. A side-by-side artifact reading remains: round runs are design
+  run_manifest refs with no path to runs-v1 artifacts.
 - [ ] T067 [US6] Run G-06–G-15 end-to-end recovery/loop/heldout/approval cases in app/tests/browser-growth.test.mjs and specs/001-autonomous-release/evidence/us6.md; label test-actor/synthetic vs actual user evidence (SC-007/SC-008).
 
 ## Phase 9: US7 — Complete records and optional creator feedback (P1)

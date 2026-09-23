@@ -26,6 +26,7 @@ from .growth_store import (
     GrowthStoreError,
     persist_promotion_state,
     resume_loop,
+    resume_comparison_round_record,
     resume_promotion_state,
     resume_validation_report,
 )
@@ -46,6 +47,7 @@ __all__ = ["PersistentVersions", "VersionError"]
 CODES = frozenset({"invalid_input", "unauthenticated", "access_denied", "not_found", "conflict",
                    "unavailable"})
 MAX_CANDIDATES = 64
+MAX_ROUNDS = 256
 _STAMP_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 
 
@@ -173,6 +175,45 @@ class PersistentVersions:
                 "non_improving_valid_count", "completed_round_ids", "consumed_budget", "stop_reason")}})
         return found
 
+    def _rounds(self):
+        """Every persisted paired round, re-issued exactly over its stored plan: which
+        baseline run is paired with which candidate run, the round's validity and its
+        stated reasons, and — only on a valid round — the measurements and utility it
+        recorded. Nothing is scored here; a round that does not read back is listed as
+        unreadable, never dropped."""
+
+        with self._domain._connection() as db:
+            roots = self._domain._read_roots(db)
+            rows = db.execute(
+                "SELECT id, version, sha256 FROM domain_records WHERE vault_id=? AND kind=? AND version=1 "
+                "AND instr(body, ?) > 0 ORDER BY id LIMIT ?",
+                (roots.genesis.id, RECORD_KIND, b'"growth_kind":"growth_comparison_round"',
+                 MAX_ROUNDS)).fetchall()
+        found = []
+        for row in rows:
+            ref = EntityRef(RECORD_KIND, row["id"], row["version"], row["sha256"])
+            try:
+                plan, result = resume_comparison_round_record(self._domain, ref)
+            except GrowthStoreError:
+                found.append({"round_record": ref.as_dict(), "readable": False})
+                continue
+            value = result.as_dict()
+            found.append({
+                "round_record": ref.as_dict(), "readable": True, "lineage_id": plan.lineage_id,
+                "plan_mode": plan.mode, "baseline_environment_ref": plan.baseline_environment.as_dict(),
+                "round_id": value["round_id"], "round_index": value["round_index"],
+                "candidate_ref": value["candidate_ref"],
+                "pairs": [{"baseline_run_ref": baseline, "candidate_run_ref": candidate}
+                          for baseline, candidate in zip(value["baseline_run_refs"],
+                                                         value["candidate_run_refs"], strict=True)],
+                "validity": value["validity"], "validity_reasons": value["validity_reasons"],
+                "metric_vector": value["metric_vector"], "utility": value["utility"],
+                "evidence_refs": value["evidence_refs"],
+            })
+        found.sort(key=lambda item: (item.get("lineage_id", ""), item.get("round_index", -1),
+                                     item["round_record"]["id"]))
+        return found
+
     @staticmethod
     def _state_view(state):
         if state is None:
@@ -193,7 +234,7 @@ class PersistentVersions:
         self._owner.authenticate_bound(request.session)
         state, _ref, _scope, _roots = self._head()
         return {"state": self._state_view(state), "candidates": self._candidates(),
-                "experiments": self._experiments()}
+                "experiments": self._experiments(), "rounds": self._rounds()}
 
     # --- commands -----------------------------------------------------------------------
 

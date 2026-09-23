@@ -7,6 +7,8 @@
 // already happened outside. Growth experiments show the stop reason the loop
 // recorded, never a reconstructed one. All text reaches the DOM through textContent.
 
+import { renderRounds } from './experiments.mjs';
+
 const BASE_PATH = /^\/(?:[0-9a-f]{32}\/)?$/;
 
 export const STOP_REASONS = Object.freeze({
@@ -69,7 +71,8 @@ export function createVersionsPanel({ root, document, request, basePath = '/', c
   const current = element('section', undefined, { 'aria-label': '운영 버전' });
   const candidates = element('section', undefined, { 'aria-label': '후보' });
   const experiments = element('section', undefined, { 'aria-label': '성장 실험' });
-  root.replaceChildren(element('h2', '버전'), status, current, candidates, experiments);
+  const rounds = element('section', undefined, { 'aria-label': '비교 라운드' });
+  root.replaceChildren(element('h2', '버전'), status, current, candidates, experiments, rounds);
 
   function say(text, state) {
     status.textContent = text;
@@ -170,6 +173,7 @@ export function createVersionsPanel({ root, document, request, basePath = '/', c
     renderCurrent();
     renderCandidates();
     renderExperiments();
+    renderRounds({ root: rounds, document, rounds: Array.isArray(view.rounds) ? view.rounds : [] });
   }
 
   async function load() {

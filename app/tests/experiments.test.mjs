@@ -1,0 +1,75 @@
+// T066: paired comparison rounds as recorded — pairs, honest validity, no score on
+// an invalid round, unreadable records listed rather than dropped.
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { MESSAGES, outcomeText, renderRounds, roundsByLineage } from '../static/experiments.mjs';
+import { createVersionsPanel } from '../static/versions.mjs';
+
+class FakeElement {
+  constructor(tagName) { this.tagName = tagName.toUpperCase(); this.children = []; this.attributes = new Map(); this.dataset = {}; this._text = ''; }
+  get textContent() { return this._text + this.children.map(child => child.textContent).join(''); }
+  set textContent(value) { this._text = String(value); this.children = []; }
+  set innerHTML(_value) { throw new Error('markup is never written'); }
+  append(...nodes) { this.children.push(...nodes); }
+  replaceChildren(...nodes) { this.children = [...nodes]; this._text = ''; }
+  setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  getAttribute(name) { return this.attributes.get(name) ?? null; }
+  addEventListener() {}
+  findAll(predicate, found = []) { for (const child of this.children) { if (predicate(child)) found.push(child); child.findAll(predicate, found); } return found; }
+}
+
+const document = { createElement: tag => new FakeElement(tag) };
+const ref = (kind, n) => ({ kind, id: `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`, version: 1, sha256: String(n % 10).repeat(64) });
+const LINEAGE = 'abcdef12-0000-4000-8000-000000000000';
+
+function round(index, overrides = {}) {
+  return { readable: true, round_record: ref('decision_record', 90 + index), lineage_id: LINEAGE, plan_mode: 'automatic',
+    baseline_environment_ref: ref('environment', 1), round_id: `round-${index}`, round_index: index,
+    candidate_ref: ref('change_candidate', 5),
+    pairs: [{ baseline_run_ref: ref('run_manifest', 11), candidate_run_ref: ref('run_manifest', 21) },
+      { baseline_run_ref: ref('run_manifest', 12), candidate_run_ref: ref('run_manifest', 22) }],
+    validity: 'valid', validity_reasons: [], metric_vector: { accuracy: '0.9' }, utility: '0.85', evidence_refs: [ref('artifact', 7)],
+    ...overrides };
+}
+
+test('rounds are grouped by lineage in recorded order; unreadable ones are kept', () => {
+  const { lineages, unreadable } = roundsByLineage([round(2), round(0), { readable: false, round_record: ref('decision_record', 99) }]);
+  assert.deepEqual(lineages.get(LINEAGE).map(item => item.round_index), [0, 2]);
+  assert.equal(unreadable.length, 1);
+});
+
+test('only a valid round shows measurements and utility', () => {
+  assert.match(outcomeText(round(0)), /유효 · accuracy 0\.9 · 효용 0\.85/);
+  const invalid = outcomeText(round(1, { validity: 'invalid', validity_reasons: ['기준 실행 중단'], metric_vector: null, utility: null }));
+  assert.match(invalid, /무효 · 사유: 기준 실행 중단/);
+  assert.ok(invalid.includes(MESSAGES.noScore));
+  assert.doesNotMatch(invalid, /효용 [0-9]/);
+  assert.ok(outcomeText(round(2, { validity: 'pending', metric_vector: null, utility: null })).startsWith('판정 대기'));
+});
+
+test('each baseline run is shown next to the candidate run it was paired with', () => {
+  const root = new FakeElement('section');
+  const counts = renderRounds({ root, document, rounds: [round(0), { readable: false, round_record: ref('decision_record', 99) }] });
+  assert.deepEqual(counts, { lineages: 1, unreadable: 1 });
+  const rows = root.findAll(el => el.tagName === 'TR').slice(1);
+  assert.deepEqual(rows.map(row => row.children.map(cell => cell.textContent)), [
+    ['run_manifest 00000011 (111111111111)', 'run_manifest 00000021 (111111111111)'],
+    ['run_manifest 00000012 (222222222222)', 'run_manifest 00000022 (222222222222)'],
+  ]);
+  assert.match(root.textContent, /짝지은 실행 2쌍/);
+  assert.ok(root.textContent.includes(MESSAGES.artifacts));
+  assert.ok(root.textContent.includes(MESSAGES.unreadable));
+});
+
+test('no rounds says so, and the versions panel renders the rounds it read', async () => {
+  const empty = new FakeElement('section');
+  renderRounds({ root: empty, document, rounds: [] });
+  assert.ok(empty.textContent.includes(MESSAGES.none));
+  const root = new FakeElement('section');
+  const panel = createVersionsPanel({ root, document, crypto: { randomUUID: () => 'x' },
+    request: async () => ({ state: null, candidates: [], experiments: [], rounds: [round(0)] }) });
+  await panel.load();
+  assert.match(root.textContent, /라운드 0 \(round-0\)/);
+});
