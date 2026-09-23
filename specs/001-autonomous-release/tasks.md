@@ -296,6 +296,7 @@ phase. Web session and isolated-worker feasibility are tested here before extens
   `app/tests/test_extension_route_registration.py`; it must register through T025's seam without
   editing `app/server.py` or `app/api/router_composition.py`. It does not own common service-client
   credential/auth/rate-limit/server composition.
+  (2026-09-23: the boundary test landed and the real tree has no violation — evidence/extension-architecture-boundary-t087-2026-09-23.md.)
   Enforce the core boundary in `app/tests/test_extension_architecture.py` by recursively walking the
   transitive import graph from `app/domain/**`, `app/services/**`, `app/runtime/**`,
   `app/operations/**` and `app/extensions/**`; reject direct/indirect API/static/server presentation,
