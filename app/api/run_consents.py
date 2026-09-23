@@ -1,7 +1,8 @@
 """Fixed HTTP adapter for the owner's run consents: the `run-consents-v1` route
 contribution. `POST /api/v1/run-consents` seals one consent per command over the
 exact records a run will name; `GET|HEAD /api/v1/run-consents/{consent_id}` reads
-it. The boundary admits the wire (bounded JSON, no query, exact methods) before
+it; `POST /api/v1/run-consents/{consent_id}/revoke` is the owner withdrawing it. The
+boundary admits the wire (bounded JSON, no query, exact methods) before
 persistent auth; the service seals `run_consent` records.
 """
 
@@ -14,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 from ..domain.refs import uuid_string
 from ..services.run_consents import (
     COMMAND_SCHEMA,
+    REVOCATION_COMMAND_SCHEMA,
     PersistentRunConsents,
     RunConsentError,
 )
@@ -93,6 +95,19 @@ def preflight(scope, body, content_type):
                 _ref_shape(value[name])
             return value
         parts = path[len(PATH) + 1:].split("/")
+        if len(parts) == 2 and parts[1] == "revoke":
+            if method != "POST" or content_type.split(";", 1)[0] != "application/json":
+                raise ConsentRouteError()
+            uuid_string(parts[0])
+            value = parse_json_object(
+                body, required=("schema_version", "command_id"),
+                field_types={"schema_version": str, "command_id": str},
+                limits=WireLimits(max_bytes=512, max_depth=2, max_items=8, max_members=4, max_string_bytes=64),
+            )
+            if value["schema_version"] != REVOCATION_COMMAND_SCHEMA:
+                raise ConsentRouteError()
+            uuid_string(value["command_id"])
+            return value
         if len(parts) != 1 or method not in {"GET", "HEAD"} or body:
             raise ConsentRouteError()
         uuid_string(parts[0])
@@ -125,6 +140,15 @@ def create_router(*, consents):
         try:
             value = await run_in_threadpool(consents.read, request.state.authenticated_request, consent_id)
             return JSONResponse(value)  # HEAD carries GET's headers; the boundary blanks the body
+        except RunConsentError as error:
+            return consent_error(error)
+
+    @router.post(PATH + "/{consent_id}/revoke")
+    async def revoke(request: Request, consent_id: str):
+        try:
+            value = await run_in_threadpool(consents.revoke, request.state.authenticated_request, consent_id,
+                                            request.state.consent_payload)
+            return JSONResponse(value)
         except RunConsentError as error:
             return consent_error(error)
 

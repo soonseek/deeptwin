@@ -493,10 +493,12 @@ class PersistentRuns:
         (experience §6.3: the server verifies each effect, version and scope itself; a
         `run_consent` row without the writer's discipline is no consent at all)."""
         # lazy: run_consents imports this module's readers at import time
-        from .run_consents import INPUTS, RunConsentError, resolve_consent
+        from .run_consents import INPUTS, RunConsentError, consent_revoked, resolve_consent
 
         try:
             consent = resolve_consent(self._domain, db, roots, command["consent_ref"])
+            if consent_revoked(self._domain, db, roots, command["consent_ref"]):
+                raise RunConsentError("access_denied")  # the owner withdrew it
         except RunConsentError:
             raise RunServiceError("access_denied") from None
         if any(consent[name] != command[name].as_dict() for name, _ in INPUTS):
@@ -516,6 +518,17 @@ class PersistentRuns:
                     and content["inputs"]["consent_ref"] == command["consent_ref"].as_dict()
                     and content["command_id"] != command["command_id"]):
                 raise RunServiceError("conflict")
+
+    def _current_consent(self, db, roots, manifest) -> None:
+        """Before any further dispatch of an existing run (resume, recover): its
+        consent must still be current — a revoked or unreadable revocation refuses."""
+        from .run_consents import RunConsentError, consent_revoked
+
+        try:
+            if consent_revoked(self._domain, db, roots, manifest.inputs["consent_ref"]):
+                raise RunServiceError("access_denied")
+        except RunConsentError:
+            raise RunServiceError("access_denied") from None
 
     def _seal(self, db, roots, actor_ref, command: dict) -> tuple[RunManifest, BudgetPolicy]:
         records = {name: self._record(db, roots, command[name]) for name in _INPUT_KINDS}
@@ -580,6 +593,8 @@ class PersistentRuns:
                 # a replay reuses the sealed manifest; any different input is a conflict
                 if any(manifest.inputs[name] != command[name] for name in _INPUT_KINDS):
                     raise RunServiceError("conflict")
+                if not self._stop_recorded(db, roots, manifest, "completed"):
+                    self._current_consent(db, roots, manifest)  # a replay dispatches too
                 policy = self._policy(self._record(db, roots, command["budget_policy_ref"]))
             else:
                 manifest, policy = self._seal(db, roots, actor_ref, command)
@@ -611,6 +626,8 @@ class PersistentRuns:
             roots = self._domain._read_roots(db)
             actor_ref = _owner_actor_ref(db, actor)
             manifest = self._manifest_by_run(db, roots, run_id)
+            if manifest is not None:
+                self._current_consent(db, roots, manifest)
         if manifest is None:
             raise RunServiceError("not_found")
         _compiled, scheduler = self._prepare(manifest)
@@ -639,6 +656,8 @@ class PersistentRuns:
             roots = self._domain._read_roots(db)
             actor_ref = _owner_actor_ref(db, actor)
             manifest = self._manifest_by_run(db, roots, run_id)
+            if manifest is not None:
+                self._current_consent(db, roots, manifest)
         if manifest is None:
             raise RunServiceError("not_found")
         if self._completed(manifest):

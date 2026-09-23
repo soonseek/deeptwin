@@ -17,10 +17,14 @@ write, no billing change and no promotion; the run route still verifies every
 input itself.
 
 The run route starts a run only under a consent that names exactly its
-inputs, and one consent starts one run (`runs.py`: `_consented`). Deliberately
-deferred (recorded open): an expiry and a revocation path (the "current consent"
-runtime.md verifies before dispatch — so `resume`/`recover` and the replay of
-a sealed command do not re-verify), the run `mode` (the run route fixes
+inputs, and one consent starts one run (`runs.py`: `_consented`). The owner can
+revoke a consent (`revoke`): one sealed `decision_record` per consent, authored by
+the owner with `approval.decided(revoked)` in the same transaction; a revoked
+consent starts no run, and `resume`/`recover` of a run under it refuse (the
+"current consent" runtime.md verifies before dispatch). Cancel stays available.
+A revocation is not undone. Deliberately deferred (recorded open): an expiry (the
+command carries no expiry field yet
+runtime.md verifies before dispatch), the run `mode` (the run route fixes
 `live`), and the environment ⇄ graph coherence: the environment record now has
 its producer (`design_store.persist_environment_record`), but its stored design
 is a design-space content hash rather than a store reference, so no consumer can
@@ -53,11 +57,14 @@ from .run_approvals import (
 )
 from .runs import PersistentRuns, RunServiceError
 
-__all__ = ["COMMAND_SCHEMA", "RECORD_SCHEMA", "PersistentRunConsents", "RunConsentError", "consent_identity",
-           "resolve_consent"]
+__all__ = ["COMMAND_SCHEMA", "RECORD_SCHEMA", "REVOCATION_COMMAND_SCHEMA", "PersistentRunConsents",
+           "RunConsentError", "consent_identity", "consent_revoked", "resolve_consent"]
 
 COMMAND_SCHEMA = "run-consent-command-v1"
 RECORD_SCHEMA = "run-consent-v1"
+REVOCATION_COMMAND_SCHEMA = "run-consent-revocation-command-v1"
+REVOCATION_SCHEMA = "run-consent-revocation-v1"
+_REVOCATION_KEYS = frozenset({"schema_version", "command_id", "consent_ref", "revoked_at_utc", "event_sequence"})
 INPUTS = (("graph_ref", "graph"), ("work_revision_ref", "work_revision"),
           ("environment_ref", "environment"), ("budget_policy_ref", "budget_policy"))
 CODES = frozenset({"invalid_input", "unauthenticated", "access_denied", "not_found", "conflict", "unavailable"})
@@ -166,6 +173,57 @@ def resolve_consent(domain, db, roots, ref: EntityRef) -> dict:
     return {"consent_id": ref.id, "ref": ref.as_dict(), **content}
 
 
+def revocation_identity(consent_id: str) -> str:
+    """One revocation per consent: a second revoke is the same record or a conflict."""
+
+    return str(uuid5(NAMESPACE_URL, f"deeptwin:run-consent-revocation:{uuid_string(consent_id)}"))
+
+
+def _revocation(domain, db, roots, consent_ref: EntityRef) -> dict | None:
+    """The revocation of exactly `consent_ref`, re-checked with the writer's whole
+    discipline, or None. A row at the revocation identity without that discipline is
+    not ignored: it makes the consent unusable (`unavailable`), never silently valid."""
+
+    record_id = revocation_identity(consent_ref.id)
+    row = db.execute(
+        "SELECT version, sha256 FROM domain_records WHERE vault_id=? AND kind='decision_record' AND id=? "
+        "ORDER BY version DESC LIMIT 1", (roots.genesis.id, record_id)).fetchone()
+    if row is None:
+        return None
+    try:
+        if row["version"] != 1:
+            raise RunConsentError("unavailable")
+        body = domain._load(db, EntityRef("decision_record", record_id, 1, row["sha256"]), roots)[0].body
+        content = body["content"]
+        if (_stored_owner_actor_ref(db) != body["actor_ref"] or type(content) is not dict
+                or set(content) != _REVOCATION_KEYS or content["schema_version"] != REVOCATION_SCHEMA
+                or content["consent_ref"] != consent_ref.as_dict()
+                or type(content["revoked_at_utc"]) is not str or _STAMP.fullmatch(content["revoked_at_utc"]) is None
+                or type(content["event_sequence"]) is not int):
+            raise RunConsentError("unavailable")
+        uuid_string(content["command_id"])
+        event = db.execute(
+            "SELECT event_type, envelope FROM api_event_envelopes WHERE vault_id=? AND sequence=?",
+            (roots.genesis.id, content["event_sequence"])).fetchone()
+        envelope = json.loads(event["envelope"]) if event is not None else {}
+        if (event is None or event["event_type"] != "approval.decided"
+                or envelope.get("correlation_id") != content["command_id"]
+                or envelope.get("public_metadata") != {"decision": "revoked"}):
+            raise RunConsentError("unavailable")
+    except RunConsentError:
+        raise
+    except Exception:  # noqa: BLE001 - a malformed revocation row is no evidence either way
+        raise RunConsentError("unavailable") from None
+    return {"command_id": content["command_id"], "revoked_at_utc": content["revoked_at_utc"]}
+
+
+def consent_revoked(domain, db, roots, consent_ref: EntityRef) -> bool:
+    """True when the owner revoked this consent; raises `unavailable` for a malformed
+    revocation (the caller treats that as no usable consent)."""
+
+    return _revocation(domain, db, roots, consent_ref) is not None
+
+
 class PersistentRunConsents:
     """Writes and reads run consents over the exact bound store."""
 
@@ -175,7 +233,8 @@ class PersistentRunConsents:
     # --- reads -------------------------------------------------------------
 
     def _load(self, db, roots, ref: EntityRef) -> dict:
-        return resolve_consent(self._domain, db, roots, ref)
+        projection = resolve_consent(self._domain, db, roots, ref)
+        return {**projection, "revocation": _revocation(self._domain, db, roots, ref)}
 
     def _existing(self, db, roots, consent_id: str) -> dict | None:
         row = db.execute(
@@ -269,3 +328,57 @@ class PersistentRunConsents:
             if event.sequence != event_sequence:
                 raise RunConsentError("unavailable")
             return self._load(db, roots, record.ref)
+
+    @_closed
+    def revoke(self, request, consent_id, payload) -> dict:
+        """The owner withdraws a consent. It then starts no run, and runs under it
+        cannot be resumed or recovered; what already happened is not undone."""
+
+        _authenticate_owner(self._owner, request)
+        try:
+            consent_id = uuid_string(consent_id)
+        except (TypeError, ValueError):
+            raise RunConsentError("invalid_input") from None
+        if (type(payload) is not dict or set(payload) != {"schema_version", "command_id"}
+                or payload["schema_version"] != REVOCATION_COMMAND_SCHEMA):
+            raise RunConsentError("invalid_input")
+        try:
+            command_id = uuid_string(payload["command_id"])
+        except (TypeError, ValueError):
+            raise RunConsentError("invalid_input") from None
+        with _writer(), self._domain._connection(write=True) as db:
+            actor = _authenticate_owner(self._owner, request, db)
+            roots = self._domain._read_roots(db)
+            _assert_event_schema(db, roots.genesis.id)
+            consent = self._existing(db, roots, consent_id)
+            if consent is None:
+                raise RunConsentError("not_found")
+            if consent["revocation"] is not None:
+                if consent["revocation"]["command_id"] != command_id:
+                    raise RunConsentError("conflict")  # already revoked by another command
+                return consent
+            consent_ref = EntityRef.from_dict(consent["ref"])
+            actor_ref = _owner_actor_ref(db, actor)
+            stamp = _stamp()
+            event_sequence = _event_stream(db, roots.genesis.id)["next_sequence"]
+            record = ImmutableRecord.create(
+                kind="decision_record", id=revocation_identity(consent_id), version=1, created_at_utc=stamp,
+                actor_ref=actor_ref, parent_refs=(consent_ref,), purpose="operational",
+                access_policy_ref=roots.access_policy, retention_policy_ref=roots.retention_policy,
+                content={"schema_version": REVOCATION_SCHEMA, "command_id": command_id,
+                         "consent_ref": consent_ref.as_dict(), "revoked_at_utc": stamp,
+                         "event_sequence": event_sequence},
+            )
+            self._domain._put_in_transaction(db, record)
+            event = _append_event_in_transaction(
+                db, vault_id=roots.genesis.id, recorded_at_utc=stamp, observed_at_utc=stamp,
+                actor_kind="human", actor_ref=actor_ref, event_type="approval.decided",
+                object_refs=(ObjectRef(record.ref.kind, record.ref.id, record.ref.version, record.ref.sha256),
+                             ObjectRef(consent_ref.kind, consent_ref.id, consent_ref.version, consent_ref.sha256)),
+                correlation_id=command_id, causation_id=None, status="succeeded",
+                error_code=None, public_metadata={"decision": "revoked"}, private_evidence_refs=(),
+                retention_class="core", policy_ref=roots.access_policy,
+            )
+            if event.sequence != event_sequence:
+                raise RunConsentError("unavailable")
+            return self._load(db, roots, consent_ref)

@@ -55,7 +55,8 @@ def test_an_owner_records_one_consent_per_command_over_the_exact_inputs(tmp_path
         created = post(subject, body, consent_path(subject))
         assert created.status_code == 201, created.text
         consent = created.json()
-        assert set(consent) == {"consent_id", "ref", "command_id", "decided_at_utc", *REF_FIELDS}
+        assert set(consent) == {"consent_id", "ref", "command_id", "decided_at_utc", "revocation", *REF_FIELDS}
+        assert consent["revocation"] is None
         assert consent["consent_id"] == consent_identity(body["command_id"])
         assert consent["ref"]["kind"] == "run_consent" and consent["ref"]["id"] == consent["consent_id"]
         assert consent["ref"]["version"] == 1
@@ -341,3 +342,83 @@ def test_a_run_starts_only_under_a_consent_that_names_exactly_its_inputs(tmp_pat
         # a fresh consent over the same inputs starts a fresh run
         fresh = post(subject, run_command(subject, graph_ref, other_consent["ref"]))
         assert fresh.status_code == 201 and fresh.json()["run_id"] != started.json()["run_id"]
+
+
+# --- revocation: the "current consent" verified before any further dispatch ---------------
+
+REVOKE_SCHEMA = "run-consent-revocation-command-v1"
+
+
+def revoke(subject, consent_id, command_id=None):
+    return post(subject, {"schema_version": REVOKE_SCHEMA, "command_id": command_id or str(uuid4())},
+                consent_path(subject) + f"/{consent_id}/revoke")
+
+
+def test_a_revoked_consent_starts_no_run_and_the_revocation_is_its_own_fact(tmp_path):
+    executor = Executor()
+    with owner_app(tmp_path, executor) as subject:
+        graph_ref = graph_record(subject, linear_graph())
+        consent = post(subject, consent_command(subject, graph_ref), consent_path(subject)).json()
+        command_id = str(uuid4())
+        revoked = revoke(subject, consent["consent_id"], command_id)
+        assert revoked.status_code == 200, revoked.text
+        body = revoked.json()
+        assert body["revocation"]["command_id"] == command_id
+        assert {key: value for key, value in body.items() if key != "revocation"} == {
+            key: value for key, value in consent.items() if key != "revocation"}
+        decided = [item for item in events(subject, "approval.decided")
+                   if item["public_metadata"]["decision"] == "revoked"]
+        assert len(decided) == 1 and object_ref(consent["ref"]) in decided[0]["object_refs"]
+        # replay is the same revocation; another command over a revoked consent conflicts
+        assert revoke(subject, consent["consent_id"], command_id).json() == body
+        assert revoke(subject, consent["consent_id"]).status_code == 409
+        assert len([item for item in events(subject, "approval.decided")
+                    if item["public_metadata"]["decision"] == "revoked"]) == 1
+        # the read shows it; a revoked consent starts no run
+        read = subject.client.get(consent_path(subject) + "/" + consent["consent_id"], headers=headers(subject.profile))
+        assert read.json() == body
+        refused = post(subject, run_command(subject, graph_ref, consent["ref"]))
+        assert refused.status_code == 403 and refused.json()["code"] == "access_denied"
+        assert events(subject, "run.started") == [] and executor.calls == []
+        assert revoke(subject, str(uuid4())).status_code == 404
+
+
+def test_a_run_under_a_revoked_consent_is_not_resumed_or_recovered_but_can_be_cancelled(tmp_path):
+    from app.tests.test_runs_api import command as run_body
+    from app.tests.test_runs_api import graph_value
+
+    executor = Executor()
+    with owner_app(tmp_path, executor) as subject:
+        graph_ref = graph_record(subject, graph_value())
+        body = run_body(subject, graph_ref)
+        receipt = post(subject, body).json()
+        assert receipt["phase"] == "awaiting_human"
+        run_path = receipt["links"]["self"]
+        approved = post(subject, {"command_id": str(uuid4()), "node_id": "owner-gate",
+                                  "approval_scope": "release-output", "decision": "approved"}, run_path + "/approvals")
+        assert approved.status_code == 201
+        assert revoke(subject, body["consent_ref"]["id"]).status_code == 200
+        for action in ("resume", "recover"):
+            refused = post(subject, {"command_id": str(uuid4())}, f"{run_path}/{action}")
+            assert refused.status_code == 403 and refused.json()["code"] == "access_denied", action
+        # a replay of the sealed command dispatches too, so it is refused as well
+        assert post(subject, body).status_code == 403
+        assert executor.calls == ["intake", "writer"]
+        cancelled = post(subject, {"command_id": str(uuid4())}, run_path + "/cancel")
+        assert cancelled.status_code == 200, cancelled.text
+
+
+def test_the_revocation_wire_is_exact(tmp_path):
+    with owner_app(tmp_path, Executor()) as subject:
+        graph_ref = graph_record(subject, linear_graph())
+        consent = post(subject, consent_command(subject, graph_ref), consent_path(subject)).json()
+        path = consent_path(subject) + f"/{consent['consent_id']}/revoke"
+        for bad in ({}, {"schema_version": "x", "command_id": str(uuid4())},
+                    {"schema_version": REVOKE_SCHEMA, "command_id": "nope"},
+                    {"schema_version": REVOKE_SCHEMA, "command_id": str(uuid4()), "reason": "x"}):
+            assert post(subject, bad, path).status_code == 400, bad
+        assert post(subject, {"schema_version": REVOKE_SCHEMA, "command_id": str(uuid4())},
+                    consent_path(subject) + "/not-a-uuid/revoke").status_code == 400
+        assert subject.client.get(path, headers=headers(subject.profile)).status_code in {400, 405}
+        subject.client.cookies.clear()
+        assert revoke(subject, consent["consent_id"]).status_code in {401, 403}

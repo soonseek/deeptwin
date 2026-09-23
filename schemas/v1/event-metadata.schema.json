@@ -22,7 +22,8 @@
           "enum": [
             "approved",
             "rejected",
-            "expired"
+            "expired",
+            "revoked"
           ],
           "type": "string"
         }

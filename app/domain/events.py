@@ -127,7 +127,7 @@ _register("loop.updated", round_count=COUNT, patience_count=COUNT, best_changed=
 _register("loop.stopped", reason_code=LOOP_REASON, round_count=COUNT, patience_count=COUNT)
 _register("validation.completed", passed_count=COUNT, failed_count=COUNT, unknown_count=COUNT)
 _register("approval.requested", approval_kind=Field("enum", ("design", "run", "action", "promotion", "rollback")))
-_register("approval.decided", decision=Field("enum", ("approved", "rejected", "expired")))
+_register("approval.decided", decision=Field("enum", ("approved", "rejected", "expired", "revoked")))
 _register("promotion.applied rollback.applied", revision=COUNT)
 _register("retention.changed", revision=COUNT)
 _register("retention.pruned retention.deleted", object_count=COUNT, byte_count=COUNT)
