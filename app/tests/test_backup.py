@@ -318,3 +318,65 @@ def test_backup_key_init_with_the_real_keygen_is_idempotent_across_reruns(runtim
         again = initialize_backup_key(volume, keygen=age_keygen(runtime))
         assert again.status == "verified" and again.recipient == first.recipient
     assert (volume / "identity.age").read_bytes() == identity
+
+
+# --- originals: the content-addressed bytes the records name ----------------------------
+
+ORIGINAL = "원본 PDF 대신 쓰는 합성 원본 바이트".encode() * 64
+
+
+def vault_with_original(root: Path):
+    domain, _record = populated_vault(root)
+    roots = domain.roots()
+    blob = domain.put_blob(ORIGINAL, purpose="operational")
+    source = ImmutableRecord.create(
+        kind="artifact", id=str(uuid4()), version=1, created_at_utc=STAMP, actor_ref=roots.actor,
+        parent_refs=(), purpose="operational", access_policy_ref=roots.access_policy,
+        retention_policy_ref=roots.retention_policy, content={"original": {"blob": blob.as_dict()}})
+    domain.put(source)
+    return domain, source, blob
+
+
+@needs_age
+def test_originals_are_backed_up_and_restored_byte_for_byte(runtime, tmp_path):
+    vault = tmp_path / "vault"
+    _domain, source, blob = vault_with_original(vault)
+    out = tmp_path / "out"
+    out.mkdir()
+    handle = instance_key(runtime, tmp_path)
+    outcome = create_backup(vault, out, runtime=runtime, server_release="1.0.0",
+                            key_mode="instance_backup_key", key_handle=handle)
+    assert outcome.state == "ready", outcome.failure
+    assert "original_bytes" in outcome.receipt["restore_verification_ref"]["scope"]
+    paths = [item["path"] for item in outcome.manifest["item_refs"]]
+    assert f"vault/domain-cas/operational/{blob.sha256}" in paths
+    assert ORIGINAL not in outcome.ciphertext_path.read_bytes()  # encrypted, never in the clear
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    restored = restore_backup(outcome.ciphertext_path, outcome.receipt, staging, runtime=runtime,
+                              key_handle=handle, active_vault_dir=vault)
+    assert restored.state == "restored_review", restored.failure
+    domain = DomainStore(Store(restored.vault_dir))
+    assert domain.get(source.ref).ref == source.ref  # the lineage check reads the original too
+    assert domain.read_blob(blob, purpose="operational") == ORIGINAL
+
+
+@needs_age
+def test_a_missing_or_altered_original_refuses_the_backup(runtime, tmp_path):
+    vault = tmp_path / "vault"
+    _domain, _source, blob = vault_with_original(vault)
+    out = tmp_path / "out"
+    out.mkdir()
+    handle = instance_key(runtime, tmp_path)
+    path = vault / "domain-cas" / "operational" / blob.sha256
+    kept = path.read_bytes()
+    os.chmod(path, 0o600)
+    path.write_bytes(kept[:-1] + b"!")
+    altered = create_backup(vault, out, runtime=runtime, server_release="1.0.0",
+                            key_mode="instance_backup_key", key_handle=handle)
+    assert altered.state == "failed" and "differs from its registered digest" in altered.failure
+    path.unlink()
+    missing = create_backup(vault, out, runtime=runtime, server_release="1.0.0",
+                            key_mode="instance_backup_key", key_handle=handle)
+    assert missing.state == "failed" and "missing" in missing.failure
+    assert list(out.iterdir()) == []

@@ -41,6 +41,7 @@ import json
 import os
 import re
 import sqlite3
+import stat
 import tarfile
 import tempfile
 from dataclasses import dataclass
@@ -61,6 +62,11 @@ KEY_MODES = frozenset({"instance_backup_key", "portable_recovery"})
 DATABASE_NAME = "intake.sqlite3"
 _ARCHIVE_DB = "vault/" + DATABASE_NAME
 _ARCHIVE_MANIFEST = "manifest.json"
+_CAS_DIR = "domain-cas"
+# every original byte the records name lives in the content-addressed store beside the
+# database; a backup that carried only the database would restore records whose
+# originals are gone, so each registered blob is an archive member of its own
+_CAS_MEMBER = re.compile(r"vault/domain-cas/([a-z][a-z_]{0,31})/([0-9a-f]{64})\Z")
 _MARKER = "restored_review.json"
 _MAX_ARCHIVE_BYTES = 1 << 31
 _MAX_MANIFEST_BYTES = 1 << 20
@@ -229,7 +235,10 @@ def _snapshot(source: Path, target: Path) -> tuple[dict, list[str], dict]:
             if vault is None:
                 raise BackupError("the snapshot holds no initialized vault")
             sequence = dst.execute("SELECT count(*) FROM domain_records").fetchone()[0]
-            identity = {"vault_id": vault[0], "snapshot_sequence": sequence,
+            blobs = [tuple(row) for row in dst.execute(
+                "SELECT purpose, sha256, size FROM domain_blobs WHERE vault_id=? ORDER BY purpose, sha256",
+                (vault[0],))]
+            identity = {"vault_id": vault[0], "snapshot_sequence": sequence, "blobs": blobs,
                         "data_schema_version": [list(row) for row in dst.execute(
                             "SELECT version, sha256 FROM domain_migrations ORDER BY version")]}
         finally:
@@ -242,10 +251,42 @@ def _snapshot(source: Path, target: Path) -> tuple[dict, list[str], dict]:
     return identity, categories, consistency
 
 
-def _archive(manifest: dict, database: bytes) -> bytes:
+def _read_original(vault_dir: Path, purpose: str, digest: str, size: int) -> bytes:
+    """One registered original, read without following links and checked exactly."""
+
+    if _CAS_MEMBER.fullmatch(f"vault/{_CAS_DIR}/{purpose}/{digest}") is None:
+        raise BackupError("a registered original has an unexpected identity")
+    try:
+        descriptor = os.open(Path(vault_dir) / _CAS_DIR / purpose / digest,
+                             os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError:
+        raise BackupError("an original the records name is missing from the vault") from None
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise BackupError("an original is not a regular file")
+        chunks, count = [], 0
+        while chunk := os.read(descriptor, min(1 << 16, size + 1 - count)):
+            chunks.append(chunk)
+            count += len(chunk)
+            if count > size:
+                break
+    finally:
+        os.close(descriptor)
+    body = b"".join(chunks)
+    if len(body) != size or _sha256(body) != digest:
+        raise BackupError("an original differs from its registered digest")
+    return body
+
+
+def _cas_name(purpose: str, digest: str) -> str:
+    return f"vault/{_CAS_DIR}/{purpose}/{digest}"
+
+
+def _archive(manifest: dict, database: bytes, originals: dict) -> bytes:
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as archive:
-        for name, body in ((_ARCHIVE_MANIFEST, _canonical(manifest)), (_ARCHIVE_DB, database)):
+        for name, body in ((_ARCHIVE_MANIFEST, _canonical(manifest)), (_ARCHIVE_DB, database),
+                           *sorted(originals.items())):
             info = tarfile.TarInfo(name)
             info.size, info.mode, info.mtime = len(body), 0o600, 0
             archive.addfile(info, io.BytesIO(body))
@@ -256,32 +297,41 @@ def _canonical(value) -> bytes:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
 
 
-def _unarchive(archive: bytes) -> tuple[dict, bytes]:
-    """The exact two members, bounded, regular, with no path games."""
+def _unarchive(archive: bytes) -> tuple[dict, bytes, dict]:
+    """The manifest, the database and each original: bounded, regular, no path games."""
 
-    members = {}
+    members, total = {}, 0
     try:
         with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as reader:
             for info in reader:
-                if (not info.isreg() or info.name not in {_ARCHIVE_MANIFEST, _ARCHIVE_DB}
-                        or info.name in members):
+                if (not info.isreg() or info.name in members
+                        or (info.name not in {_ARCHIVE_MANIFEST, _ARCHIVE_DB}
+                            and _CAS_MEMBER.fullmatch(info.name) is None)):
                     raise BackupError("the archive holds an unexpected member")
                 bound = _MAX_MANIFEST_BYTES if info.name == _ARCHIVE_MANIFEST else _MAX_ARCHIVE_BYTES
-                if info.size > bound:
+                total += info.size
+                if info.size > bound or total > _MAX_ARCHIVE_BYTES:
                     raise BackupError("an archive member exceeds its bound")
                 members[info.name] = reader.extractfile(info).read()
     except tarfile.TarError:
         raise BackupError("the archive is malformed") from None
-    if set(members) != {_ARCHIVE_MANIFEST, _ARCHIVE_DB}:
+    if not {_ARCHIVE_MANIFEST, _ARCHIVE_DB} <= set(members):
         raise BackupError("the archive is incomplete")
     try:
-        manifest = json.loads(members[_ARCHIVE_MANIFEST])
+        manifest = json.loads(members.pop(_ARCHIVE_MANIFEST))
     except ValueError:
         raise BackupError("the backup manifest is malformed") from None
-    return manifest, members[_ARCHIVE_DB]
+    database = members.pop(_ARCHIVE_DB)
+    return manifest, database, members
 
 
-def _check_manifest(manifest, database: bytes) -> None:
+def _items(database: bytes, originals: dict) -> list:
+    return [{"path": _ARCHIVE_DB, "sha256": _sha256(database), "size": len(database)},
+            *({"path": name, "sha256": _sha256(body), "size": len(body)}
+              for name, body in sorted(originals.items()))]
+
+
+def _check_manifest(manifest, database: bytes, originals: dict) -> None:
     expected = {"schema_version", "backup_id", "vault_id", "server_release",
                 "data_schema_version", "snapshot_sequence", "created_at", "item_refs",
                 "encryption_profile_ref", "key_mode", "excluded_categories",
@@ -293,8 +343,11 @@ def _check_manifest(manifest, database: bytes) -> None:
     if manifest["encryption_profile_ref"] != PROFILE or manifest["key_mode"] not in KEY_MODES:
         raise BackupError("the backup encryption profile is not supported")
     items = manifest["item_refs"]
-    if items != [{"path": _ARCHIVE_DB, "sha256": _sha256(database), "size": len(database)}]:
+    if items != _items(database, originals):
         raise BackupError("an archive item differs from its manifest entry")
+    for name, body in originals.items():
+        if _CAS_MEMBER.fullmatch(name).group(2) != _sha256(body):
+            raise BackupError("an original differs from its content address")
 
 
 def _write_excl(path: Path, body: bytes) -> None:
@@ -316,8 +369,23 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
-def _verify_database(path: Path, manifest: dict) -> tuple[str, ...]:
-    """Open the restored data and read every record back; no model or tool runs."""
+def _write_originals(vault: Path, originals: dict) -> None:
+    for name, body in sorted(originals.items()):
+        purpose, digest = _CAS_MEMBER.fullmatch(name).groups()
+        directory = vault / _CAS_DIR / purpose
+        for part in (vault / _CAS_DIR, directory):
+            if not part.exists():
+                part.mkdir(mode=0o700)
+        _write_excl(directory / digest, body)
+    if originals:
+        for part in {vault / _CAS_DIR, *((vault / _CAS_DIR / _CAS_MEMBER.fullmatch(name).group(1))
+                                         for name in originals)}:
+            _fsync_directory(part)
+
+
+def _verify_database(path: Path, manifest: dict, originals: dict) -> tuple[str, ...]:
+    """Open the restored data and read every record back, originals included; no
+    model or tool runs."""
 
     from ..domain.refs import EntityRef
     from ..domain.store import DomainStore
@@ -332,12 +400,17 @@ def _verify_database(path: Path, manifest: dict) -> tuple[str, ...]:
                 raise BackupError("an excluded category is present in the backup")
         vault = db.execute("SELECT vault_id FROM domain_vault").fetchone()
         rows = db.execute("SELECT kind, id, version, sha256 FROM domain_records").fetchall()
+        blobs = {_cas_name(purpose, digest): size for purpose, digest, size in db.execute(
+            "SELECT purpose, sha256, size FROM domain_blobs")}
     except sqlite3.DatabaseError:
         raise BackupError("the restored data does not open") from None
     finally:
         db.close()
     if vault is None or vault[0] != manifest["vault_id"] or len(rows) != manifest["snapshot_sequence"]:
         raise BackupError("the restored data is not the recorded vault")
+    if blobs != {name: len(body) for name, body in originals.items()}:
+        # every registered original is present, and nothing unregistered rides along
+        raise BackupError("the restored originals are not exactly the registered ones")
     try:
         domain = DomainStore(Store(path.parent))
         domain.roots()
@@ -348,7 +421,8 @@ def _verify_database(path: Path, manifest: dict) -> tuple[str, ...]:
     except Exception:  # noqa: BLE001 - the store's detail stays private
         raise BackupError("the restored lineage does not verify") from None
     return ("archive_members", "manifest_hashes", "schema_version", "sqlite_integrity",
-            "foreign_keys", "excluded_categories_absent", "vault_identity", "record_lineage")
+            "foreign_keys", "excluded_categories_absent", "vault_identity", "original_bytes",
+            "record_lineage")
 
 
 def _decrypt(runtime: AgeRuntime, ciphertext: bytes, identity: bytes) -> bytes:
@@ -396,18 +470,19 @@ def create_backup(vault_dir, output_dir, *, runtime: AgeRuntime, key_mode: str,
             identity_fields, categories, consistency = _snapshot(
                 Path(vault_dir) / DATABASE_NAME, snapshot)
             database = snapshot.read_bytes()
+            originals = {_cas_name(purpose, digest): _read_original(Path(vault_dir), purpose, digest, size)
+                         for purpose, digest, size in identity_fields.pop("blobs")}
             manifest = {
                 "schema_version": SCHEMA_VERSION, "backup_id": backup_id,
                 "vault_id": identity_fields["vault_id"], "server_release": server_release,
                 "data_schema_version": identity_fields["data_schema_version"],
                 "snapshot_sequence": identity_fields["snapshot_sequence"],
                 "created_at": clock(),
-                "item_refs": [{"path": _ARCHIVE_DB, "sha256": _sha256(database),
-                               "size": len(database)}],
+                "item_refs": _items(database, originals),
                 "encryption_profile_ref": PROFILE, "key_mode": key_mode,
                 "excluded_categories": categories, "consistency_evidence_ref": consistency,
             }
-            archive = _archive(manifest, database)
+            archive = _archive(manifest, database, originals)
             states.append("encrypting")
             try:
                 ciphertext = runtime.encrypt(archive, target)
@@ -415,15 +490,16 @@ def create_backup(vault_dir, output_dir, *, runtime: AgeRuntime, key_mode: str,
                 raise BackupError("the archive could not be encrypted") from None
             states.append("verify_restore")
             proof = identity.take() if identity is not None else key_handle.identity()
-            restored_manifest, restored_db = _unarchive(_decrypt(runtime, ciphertext, proof))
+            restored_manifest, restored_db, restored_originals = _unarchive(_decrypt(runtime, ciphertext, proof))
             del proof
-            _check_manifest(restored_manifest, restored_db)
+            _check_manifest(restored_manifest, restored_db, restored_originals)
             if restored_manifest != manifest:
                 raise BackupError("the restored manifest differs from the sealed one")
             check_dir = scratch / "verify"
             check_dir.mkdir()
             _write_excl(check_dir / DATABASE_NAME, restored_db)
-            scope = _verify_database(check_dir / DATABASE_NAME, manifest)
+            _write_originals(check_dir, restored_originals)
+            scope = _verify_database(check_dir / DATABASE_NAME, manifest, restored_originals)
         except BackupError as error:
             return failed(str(error))
     path = output / f"{backup_id}.age"
@@ -480,9 +556,9 @@ def restore_backup(ciphertext_path, receipt, staging_dir, *, runtime: AgeRuntime
             raise BackupError("the backup file differs from its external receipt")
         identity = (recovery_identity.take() if recovery_identity is not None
                     else key_handle.identity())
-        manifest, database = _unarchive(_decrypt(runtime, ciphertext, identity))
+        manifest, database, originals = _unarchive(_decrypt(runtime, ciphertext, identity))
         del identity
-        _check_manifest(manifest, database)
+        _check_manifest(manifest, database, originals)
         if manifest["backup_id"] != receipt["backup_id"]:
             raise BackupError("the backup manifest belongs to another receipt")
     except BackupError as error:
@@ -491,7 +567,8 @@ def restore_backup(ciphertext_path, receipt, staging_dir, *, runtime: AgeRuntime
     try:
         vault.mkdir(mode=0o700)
         _write_excl(vault / DATABASE_NAME, database)
-        checked = _verify_database(vault / DATABASE_NAME, manifest)
+        _write_originals(vault, originals)
+        checked = _verify_database(vault / DATABASE_NAME, manifest, originals)
         marker = {
             "state": "restored_review", "dispatch": "blocked",
             "backup_id": manifest["backup_id"], "vault_id": manifest["vault_id"],

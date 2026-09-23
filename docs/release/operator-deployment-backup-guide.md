@@ -126,7 +126,7 @@ Sigsum 증명과 license 입력은 `deploy/manifests/age-1.3.2.json`과
 ### 4.3 백업 과정
 
 `app/operations/backup.py`는 `backup_pending → snapshotting → encrypting → verify_restore →
-ready`(실패 시 `failed`와 이유)로 진행한다. SQLite online backup으로 snapshot을 뜨고, 모든
+ready`(실패 시 `failed`와 이유)로 진행한다. SQLite online backup으로 snapshot을 뜨고, 그 snapshot이 등록한 모든 원본 바이트(`domain-cas`의 content-addressed 파일)를 digest·크기 검증 후 각각 archive member로 담으며(원본이 없거나 digest가 다르면 백업 전체 거절), 모든
 테이블을 포함/제외 범주로 닫힌 분류에 따라 처리한다(분류되지 않은 테이블이 있으면 백업 전체
 거절). 인증 세션, challenge, provider 연결 같은 권한 자료는 제외된다. 암호화한 뒤 **전체를 다시
 복호화해 검증**한 다음에야 `ready`가 된다. 외부 `BackupReceipt`는 암호문 SHA-256/크기와
@@ -136,7 +136,7 @@ ready`(실패 시 `failed`와 이유)로 진행한다. SQLite online backup으�
 
 - 복원 대상은 **비어 있는 staging 디렉터리**여야 한다. 활성 vault나 사용 중인 디렉터리로의 복원은
   거절한다.
-- 복호화 전에 암호문이 외부 receipt와 일치해야 한다. 이후 age 인증, archive member와 크기,
+- 복호화 전에 암호문이 외부 receipt와 일치해야 한다. 이후 age 인증, archive member와 크기, 원본 바이트의 content address와 등록 목록의 정확한 일치,
   manifest 해시, schema 버전, 제외 범주 부재, vault identity, 모든 기록의 계보를 확인한다.
 - 성공하면 `restored_review.json` 표시를 남긴다. 복원된 인스턴스는 새 owner bootstrap 뒤에도
   **모든 dispatch가 차단된 `restored_review`** 로 열리며, 새 소유자가 연결·service client를
