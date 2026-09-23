@@ -577,6 +577,10 @@ heldout validation and exact authenticated human promotion; no automatic operati
   bundles and validation reports have no store resume path (only loop/ledger/report/promotion-state
   writes), so a version approval/rollback UI would have nothing real to decide over; the durable
   candidate/report resume (and round persistence) must land first.
+  2026-09-23 slice (same day): the durable chain resume landed and, over it, the versions surface
+  (`versions-v1`: adopt, candidates with gates, approve/reject/defer, exact-revision apply,
+  reasoned rollback, experiments with the recorded stop reason; `versions.mjs`) —
+  evidence/versions-t066-2026-09-23.md. Paired-round/artifact comparison views remain.
 - [ ] T067 [US6] Run G-06–G-15 end-to-end recovery/loop/heldout/approval cases in app/tests/browser-growth.test.mjs and specs/001-autonomous-release/evidence/us6.md; label test-actor/synthetic vs actual user evidence (SC-007/SC-008).
 
 ## Phase 9: US7 — Complete records and optional creator feedback (P1)

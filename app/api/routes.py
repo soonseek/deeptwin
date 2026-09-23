@@ -299,6 +299,10 @@ def preflight_api_v1(scope, body):
         parse_query(raw_query, allowed=())
         if path.startswith('/api/v1/commands/'):
             uuid_string(path.rsplit('/', 1)[1])
+    from .versions import is_versions_path
+    from .versions import preflight as versions_preflight
+    if is_versions_path(path):
+        versions_preflight(scope, body)
     if path == '/api/v1/commands' and scope['method'] == 'POST':
         fields = ('schema_version', 'command_id', 'command_type', 'target', 'expected_revision', 'target_hash', 'args')
         value = parse_json_object(body, required=fields, limits=WireLimits(max_bytes=131072))

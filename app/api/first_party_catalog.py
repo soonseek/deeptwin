@@ -12,6 +12,7 @@ from .provider_installation import installation_services
 from .run_approvals import approval_services
 from .run_consents import consent_services
 from .runs import run_services
+from .versions import version_services
 from .works import work_services
 
 INSTALLED = (
@@ -62,6 +63,14 @@ INSTALLED = (
         ("work.command", "work.read"),
         requires=("run-approvals.service",),
         provides=("runs.service", "run-artifacts.service", "alternative-drafts.service"),
+    ),
+    InstalledContribution(
+        "versions-v1.json",
+        "app.api.versions:create_router",
+        version_services,
+        ("browser_session",),
+        ("work.command", "work.read"),
+        provides=("versions.service",),
     ),
     InstalledContribution(
         "deployment-prepare-v1.json",

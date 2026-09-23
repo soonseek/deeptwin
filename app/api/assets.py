@@ -44,6 +44,9 @@ MODULES = MappingProxyType({
     "records-page.mjs": JAVASCRIPT,
     "account.mjs": JAVASCRIPT,
     "records.html": "text/html",
+    "versions.mjs": JAVASCRIPT,
+    "versions-page.mjs": JAVASCRIPT,
+    "versions.html": "text/html",
 })
 PUBLIC_ASSET_PATHS = frozenset("/" + name for name in MODULES)
 _SHELL = "index.html"
