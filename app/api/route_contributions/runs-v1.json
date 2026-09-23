@@ -88,6 +88,44 @@
       "path": "/api/v1/runs/{run_id}/artifacts/{artifact_id}/preview",
       "auth_policy": "browser_session",
       "required_scope": "work.read"
+    },
+    {
+      "route_id": "runs.artifact_drafts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "path": "/api/v1/runs/{run_id}/artifacts/{artifact_id}/drafts",
+      "auth_policy": "browser_session",
+      "required_scope": "work.read"
+    },
+    {
+      "route_id": "runs.artifact_draft_save",
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/v1/runs/{run_id}/artifacts/{artifact_id}/drafts",
+      "auth_policy": "browser_session",
+      "required_scope": "work.command"
+    },
+    {
+      "route_id": "runs.artifact_draft",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "path": "/api/v1/runs/{run_id}/artifacts/{artifact_id}/drafts/{draft_id}",
+      "auth_policy": "browser_session",
+      "required_scope": "work.read"
+    },
+    {
+      "route_id": "runs.artifact_draft_freeze",
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/v1/runs/{run_id}/artifacts/{artifact_id}/drafts/{draft_id}/freeze",
+      "auth_policy": "browser_session",
+      "required_scope": "work.command"
     }
   ]
 }

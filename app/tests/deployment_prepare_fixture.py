@@ -53,6 +53,7 @@ def http_sources(tmp_path, monkeypatch, profile, *, capacity=1):
 
     from app.tests.deployment_source_fixture import ActualSources
 
+    host_rename_unqualified(monkeypatch)
     (tmp_path / "sources").mkdir()
     (tmp_path / "data").mkdir(mode=0o700, exist_ok=True)
     actual = ActualSources(tmp_path / "sources", monkeypatch, capacity=capacity)
@@ -86,6 +87,28 @@ def http_sources(tmp_path, monkeypatch, profile, *, capacity=1):
     return actual, values
 
 
+def host_rename_unqualified(monkeypatch):
+    """Publication's no-clobber rename stays unavailable unless a test supplies one.
+
+    These tests were written where the host libc had no `renameat2`, so a
+    publication stayed pending until `syscall_fixture` installed the test-only
+    substitute. On Linux the real syscall exists; it is not what these tests
+    qualify, so the same precondition is made explicit here. A substitute that
+    a test installed before entering the context is left in place.
+    """
+    import importlib
+
+    publication = importlib.import_module("app.deployment.publication")
+    contracts = importlib.import_module("app.deployment.contracts")
+    if publication._rename_noreplace.__module__ != publication.__name__:
+        return
+
+    def unavailable(_directory_fd, _stage, _final):
+        raise contracts.PublicationUnavailable()
+
+    monkeypatch.setattr(publication, "_rename_noreplace", unavailable)
+
+
 @contextmanager
 def service_context(tmp_path, monkeypatch, *, capacity=1):
     """Real owner and source factories; only OS observations are controlled."""
@@ -94,6 +117,8 @@ def service_context(tmp_path, monkeypatch, *, capacity=1):
     from dataclasses import replace
 
     import pytest
+
+    host_rename_unqualified(monkeypatch)
 
     from app.deployment import sources
     from app.tests.deployment_source_fixture import ActualSources

@@ -8,11 +8,13 @@
 // Every dependency (document, location, fetch, crypto) is injected so the
 // boot is testable under node; the page passes the platform's own.
 
+import { createAlternativeEditor } from './alternatives.mjs';
 import { createArtifactViewer } from './artifacts.mjs';
 import { createRunList } from './run-list.mjs';
 import { createRunPanel } from './run-panel.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
 
+export const ALTERNATIVE_MOUNT_ID = 'run-alternative';
 export const MOUNT_IDS = Object.freeze({
   session: 'session-status', source: 'run-source', panel: 'run-panel', artifacts: 'run-artifacts',
 });
@@ -65,7 +67,13 @@ export async function boot({ document, location, fetch, crypto } = {}) {
   roots.session.dataset.state = 'authenticated';
   roots.session.textContent = SESSION_MESSAGES.authenticated;
   const panel = createRunPanel({ root: roots.panel, document, basePath, request: session.request, commandId });
-  const artifacts = createArtifactViewer({ root: roots.artifacts, document, basePath, request: session.request });
+  // the owner's in-place editor mounts only where the page offers its surface (T052)
+  const alternativeRoot = document.getElementById(ALTERNATIVE_MOUNT_ID);
+  const editor = alternativeRoot !== null && typeof alternativeRoot?.replaceChildren === 'function'
+    ? createAlternativeEditor({ root: alternativeRoot, document, basePath, request: session.request, crypto })
+    : null;
+  const artifacts = createArtifactViewer({ root: roots.artifacts, document, basePath, request: session.request,
+    onEdit: editor === null ? undefined : (runId, item) => editor.open(runId, item) });
   const list = createRunList({
     root: roots.source, document, basePath, request: session.request,
     // each refusal is shown on its own surface

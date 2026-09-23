@@ -169,6 +169,21 @@ class ActualSources:
             )
 
         monkeypatch.setattr(os, "fchown", chown)
+        original_unlink = os.unlink
+
+        def unlink(path, *, dir_fd=None):
+            # ext4 hands a removed file's inode number straight to the next file: an
+            # unlinked last link forgets its controlled identity so a new file never
+            # inherits it
+            try:
+                info = self.original_stat(path, dir_fd=dir_fd, follow_symlinks=False)
+            except OSError:
+                info = None
+            original_unlink(path, dir_fd=dir_fd)
+            if info is not None and info.st_nlink <= 1:
+                self.metadata.pop((info.st_dev, info.st_ino), None)
+
+        monkeypatch.setattr(os, "unlink", unlink)
         monkeypatch.setattr(
             self.f,
             "open_directory",

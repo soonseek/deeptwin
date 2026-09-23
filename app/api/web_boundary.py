@@ -31,7 +31,7 @@ from .run_approvals import ApprovalRouteError, approval_error, is_approval_path
 from .run_approvals import preflight as approval_preflight
 from .run_consents import ConsentRouteError, consent_error, is_consent_path
 from .run_consents import preflight as consent_preflight
-from .runs import RunRouteError, is_run_path, run_error
+from .runs import DRAFT_BODY_BYTES, RunRouteError, is_draft_save, is_run_path, run_error
 from .runs import preflight as run_preflight
 from .wire import (
     WireInputError,
@@ -179,6 +179,8 @@ class WebBoundary:
                     limit = 0
                 if (run_route or consent_route) and method in {"GET", "HEAD"}:
                     limit = 0
+                if run_route and is_draft_save(path, method):
+                    limit = DRAFT_BODY_BYTES
                 if work_route:
                     limit = WORK_BODY_BYTES if method == "POST" else 0
                 length = fields.get("content-length", "0")

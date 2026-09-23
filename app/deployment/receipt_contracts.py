@@ -98,7 +98,8 @@ def _timestamp(value):
         parsed = datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)
     except (TypeError, ValueError):
         raise ReceiptWireError() from None
-    _require(parsed.strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-4] + "Z" == value)
+    # isoformat always pads the year to four digits; glibc's strftime("%Y") does not
+    _require(parsed.replace(tzinfo=None).isoformat(timespec="milliseconds") + "Z" == value)
     return parsed
 
 

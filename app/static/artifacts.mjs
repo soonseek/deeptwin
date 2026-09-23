@@ -101,7 +101,11 @@ export function previewView(payload) {
   });
 }
 
-export function createArtifactViewer({ root, document, request, basePath = '/' } = {}) {
+// `onEdit(runId, item)`, when given, offers the owner's in-place editor (alternatives.mjs)
+// for the formats it edits; the viewer itself never changes an artifact
+const EDITABLE = new Set(['text/plain', 'text/markdown', 'application/json', 'text/csv']);
+
+export function createArtifactViewer({ root, document, request, basePath = '/', onEdit } = {}) {
   if (typeof root !== 'object' || root === null || typeof root.replaceChildren !== 'function') fail('a root element is required');
   if (typeof document !== 'object' || document === null || typeof document.createElement !== 'function') fail('a document is required');
   if (typeof request !== 'function') fail('an injected request function is required');
@@ -138,6 +142,11 @@ export function createArtifactViewer({ root, document, request, basePath = '/' }
     const download = element('a', '원본 내려받기', { href: routes.content(runId, item.artifactId),
       download: `${item.role}-${item.ordinal}`, rel: 'noopener' });
     entry.append(show, download);
+    if (typeof onEdit === 'function' && EDITABLE.has(item.mediaType)) {
+      const edit = element('button', '내 버전 편집', { type: 'button' });
+      edit.addEventListener('click', () => Promise.resolve(onEdit(runId, item)).catch(() => {}));
+      entry.append(edit);
+    }
     return entry;
   }
 

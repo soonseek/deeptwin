@@ -7,6 +7,12 @@ from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from ..domain.refs import uuid_string
+from ..services.alternative_drafts import (
+    FREEZE_SCHEMA,
+    SAVE_SCHEMA,
+    DraftError,
+    PersistentAlternativeDrafts,
+)
 from ..services.run_artifacts import PersistentRunArtifacts, RunArtifactError
 from ..services.runs import (
     CANCEL_SCHEMA,
@@ -40,6 +46,10 @@ _CREATE_FIELDS = (
 )
 
 
+# a draft save carries the owner's edited copy: the text bound plus the command's members
+DRAFT_BODY_BYTES = 600_000
+
+
 class RunRouteError(ValueError):
     """Closed wire-level codes for the run routes."""
 
@@ -66,8 +76,8 @@ def run_error(error):
 
 
 def artifact_error(error):
-    code = (error.code if isinstance(error, RunRouteError | RunServiceError | RunArtifactError)
-            else "unavailable")
+    code = (error.code if isinstance(error, RunRouteError | RunServiceError | RunArtifactError
+                                     | DraftError) else "unavailable")
     if code not in ARTIFACT_STATUS:
         code = "unavailable"
     return JSONResponse(
@@ -94,7 +104,28 @@ def is_run_path(path: str) -> bool:
         return False
     parts = path[len(PATH) + 1:].split("/")
     return (len(parts) == 1 or (len(parts) == 2 and parts[1] in {"resume", "cancel", "recover"})
-            or _artifact_parts(parts) is not None)
+            or _artifact_parts(parts) is not None or _draft_parts(parts) is not None)
+
+
+def _draft_parts(parts):
+    """(artifact id, draft id or None, "freeze" or None) for a drafts path, else None."""
+
+    if len(parts) < 4 or parts[1] != "artifacts" or parts[3] != "drafts" or len(parts) > 6:
+        return None
+    if len(parts) == 4:
+        return (parts[2], None, None)
+    if len(parts) == 5:
+        return (parts[2], parts[4], None)
+    return (parts[2], parts[4], "freeze") if parts[5] == "freeze" else None
+
+
+def is_draft_save(path: str, method: str) -> bool:
+    """The one run route whose body is an edited copy (larger than a command)."""
+
+    if method != "POST" or not path.startswith(PATH + "/"):
+        return False
+    drafts = _draft_parts(path[len(PATH) + 1:].split("/"))
+    return drafts is not None and drafts[1] is None
 
 
 def _artifact_parts(parts):
@@ -140,6 +171,39 @@ def preflight(scope, body, content_type):
             return {"schema_version": COMMAND_SCHEMA, **value}
         parts = path[len(PATH) + 1:].split("/")
         run_id = uuid_string(parts[0])
+        drafts = _draft_parts(parts)
+        if drafts is not None:
+            uuid_string(drafts[0])
+            if drafts[1] is not None:
+                uuid_string(drafts[1])
+            if drafts[2] is None and method in {"GET", "HEAD"}:
+                if body:
+                    raise RunRouteError()
+                return None
+            if method != "POST" or content_type.split(";", 1)[0] != "application/json":
+                raise RunRouteError()
+            if drafts[1] is None:  # save
+                value = parse_json_object(
+                    body, required=("schema_version", "command_id", "draft_id", "expected_revision",
+                                    "format"), optional=("text", "rows"),
+                    field_types={"schema_version": str, "command_id": str, "draft_id": (str, type(None)),
+                                 "expected_revision": int, "format": str, "text": str, "rows": list},
+                    limits=WireLimits(max_bytes=DRAFT_BODY_BYTES, max_depth=4, max_items=140_000,
+                                      max_members=8, max_string_bytes=DRAFT_BODY_BYTES))
+                if value["schema_version"] != SAVE_SCHEMA or ("text" in value) == ("rows" in value):
+                    raise RunRouteError()
+                return value
+            if drafts[2] != "freeze":
+                raise RunRouteError()
+            value = parse_json_object(
+                body, required=("schema_version", "command_id", "expected_revision", "reviewed_whole"),
+                field_types={"schema_version": str, "command_id": str, "expected_revision": int,
+                             "reviewed_whole": bool},
+                limits=WireLimits(max_bytes=1024, max_depth=2, max_items=8, max_members=4,
+                                  max_string_bytes=128))
+            if value["schema_version"] != FREEZE_SCHEMA:
+                raise RunRouteError()
+            return value
         artifact = _artifact_parts(parts)
         if artifact is not None:
             if method not in {"GET", "HEAD"} or body:
@@ -177,14 +241,47 @@ def run_services(context, *, dependencies):
         approvals=dependencies["run-approvals.service"], executor=context.run_executor,
     )
     artifacts = PersistentRunArtifacts(context.domain_store, context.owner_authority, runs)
+    drafts = PersistentAlternativeDrafts(artifacts)
     return ContributionServices(
-        create_router(runs=runs, artifacts=artifacts, base_path=context.base_path),
-        {"runs.service": runs, "run-artifacts.service": artifacts},
+        create_router(runs=runs, artifacts=artifacts, drafts=drafts, base_path=context.base_path),
+        {"runs.service": runs, "run-artifacts.service": artifacts,
+         "alternative-drafts.service": drafts},
     )
 
 
-def create_router(*, runs, base_path, artifacts=None):
+def create_router(*, runs, base_path, artifacts=None, drafts=None):
     router = APIRouter()
+
+    async def draft_call(method, *args, status=200, **kwargs):
+        try:
+            if drafts is None:
+                raise RunRouteError("unavailable")
+            value = await run_in_threadpool(method, *args, base_path=base_path, **kwargs)
+            return JSONResponse(value, status_code=status)
+        except (RunRouteError, RunServiceError, RunArtifactError, DraftError) as error:
+            return artifact_error(error)
+
+    @router.api_route(PATH + "/{run_id}/artifacts/{artifact_id}/drafts", methods=["GET", "HEAD"])
+    async def draft_list(request: Request, run_id: str, artifact_id: str):
+        return await draft_call(drafts.list if drafts else None,
+                                request.state.authenticated_request, run_id, artifact_id)
+
+    @router.post(PATH + "/{run_id}/artifacts/{artifact_id}/drafts")
+    async def draft_save(request: Request, run_id: str, artifact_id: str):
+        return await draft_call(drafts.save if drafts else None, request.state.authenticated_request,
+                                run_id, artifact_id, request.state.run_payload, status=201)
+
+    @router.api_route(PATH + "/{run_id}/artifacts/{artifact_id}/drafts/{draft_id}",
+                      methods=["GET", "HEAD"])
+    async def draft_read(request: Request, run_id: str, artifact_id: str, draft_id: str):
+        return await draft_call(drafts.read if drafts else None,
+                                request.state.authenticated_request, run_id, artifact_id, draft_id)
+
+    @router.post(PATH + "/{run_id}/artifacts/{artifact_id}/drafts/{draft_id}/freeze")
+    async def draft_freeze(request: Request, run_id: str, artifact_id: str, draft_id: str):
+        return await draft_call(drafts.freeze if drafts else None,
+                                request.state.authenticated_request, run_id, artifact_id, draft_id,
+                                request.state.run_payload, status=201)
 
     @router.api_route(PATH + "/{run_id}/artifacts", methods=["GET", "HEAD"])
     async def artifact_list(request: Request, run_id: str):

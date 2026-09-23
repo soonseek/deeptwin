@@ -61,7 +61,7 @@ INSTALLED = (
         ("browser_session",),
         ("work.command", "work.read"),
         requires=("run-approvals.service",),
-        provides=("runs.service", "run-artifacts.service"),
+        provides=("runs.service", "run-artifacts.service", "alternative-drafts.service"),
     ),
     InstalledContribution(
         "deployment-prepare-v1.json",

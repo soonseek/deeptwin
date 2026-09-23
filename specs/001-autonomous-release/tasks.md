@@ -531,7 +531,10 @@ whole/partial selectors bind exact original, unreviewed area and impact remain s
 
 - [x] T050 [P] [US4] Add original chronology/actor/selector/alignment/partial-scope tests in app/tests/test_alternatives.py, including onboarding/comments/empty drafts as non-alternatives (G-01/02).
 - [x] T051 [US4] Implement immutable alternative drafts/freeze/original links and separate evidence/change/impact scopes in app/services/alternatives.py (FR-016/017/022).
-- [ ] T052 [US4] Implement in-place text and table own-version editors with revision-safe autosave in app/static/alternatives.mjs; reasons/instructions not mandatory and synthetic full preview not human whole-work (UX-AC05).
+- [x] T052 [US4] Implement in-place text and table own-version editors with revision-safe autosave in app/static/alternatives.mjs; reasons/instructions not mandatory and synthetic full preview not human whole-work (UX-AC05).
+  2026-09-23: drafts as immutable revisions (stale save = conflict, never overwrite), explicit
+  freeze through `accept_own_alternative` with changed-line/cell selectors (whole only when ticked),
+  editor on the observe page — evidence/own-version-editor-t052-2026-09-23.md.
 - [ ] T053 [US4] Add PDF/image/structured/time selector and alternative-file flows to app/static/artifacts.mjs and app/api/routes.py; unsupported semantic alignment remains explicit (FR-015/016).
 - [ ] T054 [US4] Test three-view switch/refresh/conflict/stale-range recovery in app/tests/browser-alternatives.test.mjs and record synthetic-vs-real evidence in specs/001-autonomous-release/evidence/us4.md (SC-006).
 
