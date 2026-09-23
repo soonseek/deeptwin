@@ -50,7 +50,7 @@ def test_the_preview_shows_actual_content_and_states_every_gap(tmp_path):
         # without explicit raw inclusion the original text is not in the export
         assert items["originals/revision-1.json"]["content_mode"] == "metadata_only"
         reasons = {entry["category"]: entry["reason"] for entry in value["missing"]}
-        assert reasons["alternatives"] == "unavailable"
+        assert reasons["alternatives"] == "not_recorded"  # collected, and this work has none
         assert reasons["tool_observations"] == "not_selected"
         assert "비밀스러운" not in shown.text
         # previews store nothing: the same request previews the same digest
@@ -144,3 +144,47 @@ def test_the_export_wire_is_closed(tmp_path):
             "schema_version": PREVIEW, "request_id": str(uuid4()), "categories": ["events"],
             "include_raw": False})
         assert anonymous.status_code in {401, 403}
+
+
+def test_frozen_alternatives_of_the_work_are_exported_as_scope_only(tmp_path):
+    from app.domain.schemas import ImmutableRecord
+
+    with owner_app(tmp_path) as subject:
+        work = create(subject, text="대안이 있는 업무").json()
+        other = create(subject, text="다른 업무").json()
+        domain = subject.domain
+        roots = domain.roots()
+        def first_revision(work_id):
+            with domain._connection() as db:
+                row = db.execute("SELECT sha256 FROM domain_records WHERE kind='work_revision' AND id=? "
+                                 "AND version=1", (work_id,)).fetchone()
+            return {"kind": "work_revision", "id": work_id, "version": 1, "sha256": row["sha256"]}
+
+        def alternative(boundary_id, text):
+            record = ImmutableRecord.create(
+                kind="own_alternative", id=str(uuid4()), version=1, created_at_utc="2026-09-23T00:00:00.000000Z",
+                actor_ref=roots.actor, parent_refs=(), purpose="operational",
+                access_policy_ref=roots.access_policy, retention_policy_ref=roots.retention_policy,
+                content={"run_id": str(uuid4()), "original_artifact_id": str(uuid4()), "coverage": "partial",
+                         "selectors": [{"kind": "text_span", "locator": {"start": 0, "end": 3}}],
+                         "unreviewed_scope": "나머지", "secret_text": text,
+                         "boundary_work_revision_ref": first_revision(boundary_id)})
+            domain.put(record)
+            return record
+
+        mine = alternative(work["work_id"], "대안 본문 비밀")
+        alternative(other["work_id"], "다른 업무의 대안")
+        shown = preview(subject, work["work_id"], ["alternatives"]).json()
+        [item] = shown["items"]
+        assert item["relative_path"] == "alternatives/own-versions.json"
+        assert item["content_mode"] == "metadata_only"
+        receipt = confirm(subject, work["work_id"], shown)
+        assert receipt.status_code == 201, receipt.text
+        bundle = subject.client.get(f"{subject.path}/{work['work_id']}/exports/{receipt.json()['bundle_id']}",
+                                    headers=headers(subject.profile))
+        with zipfile.ZipFile(io.BytesIO(bundle.content)) as archive:
+            [name] = [n for n in archive.namelist() if n.endswith("own-versions.json")]
+            exported = json.loads(archive.read(name))
+        assert [entry["alternative_id"] for entry in exported] == [mine.ref.id]
+        assert exported[0]["coverage"] == "partial" and exported[0]["content"] == "내 버전 내용 미포함"
+        assert "대안 본문 비밀" not in bundle.content.decode("latin-1")

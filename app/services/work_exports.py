@@ -47,7 +47,7 @@ CONFIRM_SCHEMA = "work-export-confirm-v1"
 MAX_REVISIONS = 512
 APP_RELEASE = "deeptwin-dev"
 # selected categories whose records this server does not yet collect into an export
-UNCOLLECTED = frozenset({"model_final_responses", "tool_observations", "alternatives",
+UNCOLLECTED = frozenset({"model_final_responses", "tool_observations",
                          "evaluation_evidence"})
 _ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 
@@ -120,8 +120,24 @@ class PersistentWorkExports:
         return [self._works._version(db, roots, work_id, version)
                 for version in range(1, latest.ref.version + 1)]
 
+    def _alternatives(self, db, roots, work_id):
+        """The owner's frozen alternatives over runs of this work, oldest first."""
+
+        found = []
+        for row in db.execute(
+                "SELECT id, version, sha256 FROM domain_records WHERE vault_id=? AND kind='own_alternative' "
+                "AND instr(body, ?) > 0 ORDER BY id", (roots.genesis.id, work_id.encode())).fetchall():
+            record = self._domain._load(db, EntityRef("own_alternative", row["id"], row["version"],
+                                                      row["sha256"]), roots)[0]
+            content = record.body["content"]
+            if content.get("boundary_work_revision_ref", {}).get("id") == work_id:
+                found.append(record)
+        if len(found) > MAX_REVISIONS:
+            raise WorkServiceError("too_large")
+        return sorted(found, key=lambda record: (record.body["created_at_utc"], record.ref.id))
+
     @staticmethod
-    def _collect(revisions, categories, include_raw):
+    def _collect(revisions, categories, include_raw, alternatives=()):
         """(items with their exact bytes, missing entries), deterministically ordered."""
 
         items, missing = [], []
@@ -159,6 +175,21 @@ class PersistentWorkExports:
             else:
                 missing.append({"category": "artifacts_metadata", "reason": "not_recorded",
                                 "claim": "이 작업에는 첨부 자료가 없다."})
+        if "alternatives" in categories:
+            if alternatives:
+                add("alternatives", "alternatives/own-versions.json", "application/json", _json([
+                    {"alternative_id": record.ref.id, "created_at_utc": record.body["created_at_utc"],
+                     "run_id": record.body["content"]["run_id"],
+                     "original_artifact_id": record.body["content"]["original_artifact_id"],
+                     "coverage": record.body["content"]["coverage"],
+                     "selectors": record.body["content"]["selectors"],
+                     "unreviewed_scope": record.body["content"]["unreviewed_scope"],
+                     "content": "내 버전 내용 미포함"}
+                    for record in alternatives]), mode="metadata_only",
+                    label=f"내 버전 {len(alternatives)}개 (범위·선택 영역만, 내용 제외)")
+            else:
+                missing.append({"category": "alternatives", "reason": "not_recorded",
+                                "claim": "이 작업의 실행에 대해 고정한 내 버전이 없다."})
         for category in sorted(EXPORT_CATEGORIES):
             if category not in categories:
                 missing.append({"category": category, "reason": "not_selected",
@@ -187,7 +218,8 @@ class PersistentWorkExports:
 
     def _current(self, db, roots, work_id, request_id, categories, include_raw):
         revisions = self._revisions(db, roots, work_id)
-        items, missing = self._collect(revisions, categories, include_raw)
+        alternatives = self._alternatives(db, roots, work_id) if "alternatives" in categories else ()
+        items, missing = self._collect(revisions, categories, include_raw, alternatives)
         preview = self._preview_value(work_id, request_id, categories, include_raw, items, missing)
         return revisions, items, missing, preview
 
