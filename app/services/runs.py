@@ -493,7 +493,12 @@ class PersistentRuns:
         (experience §6.3: the server verifies each effect, version and scope itself; a
         `run_consent` row without the writer's discipline is no consent at all)."""
         # lazy: run_consents imports this module's readers at import time
-        from .run_consents import INPUTS, RunConsentError, consent_revoked, resolve_consent
+        from .run_consents import (
+            INPUTS,
+            RunConsentError,
+            consent_revoked,
+            resolve_consent,
+        )
 
         try:
             consent = resolve_consent(self._domain, db, roots, command["consent_ref"])
