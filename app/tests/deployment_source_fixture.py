@@ -10,6 +10,7 @@ import pytest
 
 from app.domain.refs import canonical_json
 from app.operations.setup import OriginProfile
+from app.tests.support.inode_pins import identity_map
 
 ROOT = Path(__file__).resolve().parents[2]
 BASE_HASH = "6a18faa38379724a18466f39b42f66c4405fe11eb790b8e9c21addd39cbd152e"
@@ -103,7 +104,7 @@ class ActualSources:
         self.output = artifacts(capacity=capacity)
         self.pins = json.loads(self.output.pins_bytes)
         self.base = tmp_path
-        self.metadata = {}
+        self.metadata = identity_map(monkeypatch)
         self.original_stat = os.stat
         self.original_fstat = os.fstat
         self.original_open_directory = self.f.open_directory

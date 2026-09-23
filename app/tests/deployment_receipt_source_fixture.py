@@ -13,6 +13,7 @@ import pytest
 from app.domain.refs import canonical_json
 from app.operations.setup import OriginProfile
 from app.tests.deployment_source_fixture import ROOT, inputs, module, profile
+from app.tests.support.inode_pins import identity_map
 
 
 def _b64(raw):
@@ -109,7 +110,7 @@ class ActualReceiptIngress:
         self.receipt_digest_hex = hashlib.sha256(self.receipt_bytes).hexdigest()
         self.receipt_digest = _b64(bytes.fromhex(self.receipt_digest_hex))
         self.base = tmp_path
-        self.metadata = {}
+        self.metadata = identity_map(monkeypatch)
         self.original_stat, self.original_fstat = os.stat, os.fstat
         self.original_open_directory = self.f.open_directory
         device = self.original_stat(tmp_path).st_dev
@@ -268,7 +269,7 @@ class ActualPublicTrust:
         self.trust_bytes = rendered.trust_bytes
         self.trust_sha256 = hashlib.sha256(self.trust_bytes).hexdigest()
         self.base = tmp_path
-        self.metadata = {}
+        self.metadata = identity_map(monkeypatch)
         self.original_stat, self.original_fstat = os.stat, os.fstat
         self.original_open_directory = self.f.open_directory
         device = self.original_stat(tmp_path).st_dev
@@ -381,7 +382,7 @@ class ActualConsumptionExchange:
         self.consumption_exchange_bytes = rendered.consumption_exchange_bytes
         self.pins = json.loads(rendered.pins_bytes)
         self.base = tmp_path
-        self.metadata = {}
+        self.metadata = identity_map(monkeypatch)
         self.original_stat, self.original_fstat = os.stat, os.fstat
         self.original_open_directory = self.f.open_directory
         device = self.original_stat(tmp_path).st_dev
@@ -535,7 +536,7 @@ class ActualReceiptPublicInit:
     def __init__(self, tmp_path, monkeypatch):
         self.c, self.f, self.m = module("contracts"), module("files"), module("mounts")
         self.base = tmp_path
-        self.metadata = {}
+        self.metadata = identity_map(monkeypatch)
         self.original_stat, self.original_fstat = os.stat, os.fstat
         self.original_open_directory = self.f.open_directory
         self.base.chmod(0o755)

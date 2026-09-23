@@ -18,6 +18,7 @@ from app.deployment import files as f
 from app.deployment import mounts as m
 from app.operations.setup import OriginProfile
 from app.tests.provider_source_fixture import case
+from app.tests.support.inode_pins import identity_map
 
 BASE = Path("/run/deeptwin")
 STATIC = BASE / "provider-stage-sources"
@@ -50,7 +51,7 @@ class ReaderTree:
         # tree made the 64-execute capacity test retain ~17 M entries (a 3 GB heap whose
         # cyclic collection paused a later test's IPC for 13–30 s): opt in to record.
         self.record_opens = bool(options.pop("record_opens", False))
-        self.base, self.metadata, self.mount_lines = tmp_path, {}, []
+        self.base, self.metadata, self.mount_lines = tmp_path, identity_map(monkeypatch), []
         _, self.bundle, self.old = case(**options)
         self.profile = OriginProfile.from_dict(
             json.loads(self.bundle[1][1])["origin_profile"]

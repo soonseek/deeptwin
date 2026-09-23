@@ -5,6 +5,7 @@ from uuid import UUID
 import pytest
 
 from app.tests.deployment_source_fixture import module
+from app.tests.support.inode_pins import identity_map
 
 
 class Namespace:
@@ -13,7 +14,7 @@ class Namespace:
         self.root = tmp_path / "namespace"
         self.root.mkdir(mode=0o750)
         self.directory = self.files.Directory.open(self.root)
-        self.metadata = {}
+        self.metadata = identity_map(monkeypatch)
         real_fstat, real_stat = os.fstat, os.stat
 
         def observed(info):

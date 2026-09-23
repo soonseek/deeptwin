@@ -18,6 +18,7 @@ from app.deployment import publication as p
 from app.deployment.provider_source_contracts import validate_provider_source_bundle
 from app.deployment.provider_source_render import render_provider_sources
 from app.tests.provider_source_fixture import case
+from app.tests.support.inode_pins import identity_map
 
 BASE = Path("/run/deeptwin")
 INPUT = BASE / "provider-source-init-input"
@@ -63,7 +64,7 @@ CONFIGS = (
 
 class Tree:
     def __init__(self, tmp_path, monkeypatch):
-        self.base, self.metadata = tmp_path, {}
+        self.base, self.metadata = tmp_path, identity_map(monkeypatch)
         self.kwargs, self.bundle, self.old = case()
         validate_provider_source_bundle(self.bundle)
         assert render_provider_sources(**self.kwargs).bundle_files == self.bundle
