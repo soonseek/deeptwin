@@ -217,3 +217,80 @@ def test_shapes_are_strict():
         opened(frozen_at="not-a-stamp")
     with pytest.raises(InquiryError):
         opened(questions=[])
+
+
+# --- SPLI routing from the qualified lens cards and the H_exp revision (T056) -------
+
+
+def test_routed_questions_are_the_qualified_cards_own_words():
+    from app.services.inquiry import open_routed_inquiry, spli_questions
+
+    accepted, difference, confirmed = investigation()
+    registry, decision = spli_decision(accepted, difference)
+    card = registry.get("L-P032-01")
+    questions, predictions = spli_questions(registry, [decision, decision])
+    assert questions == [card.distinguishing_question]  # one card, one question
+    assert predictions == [{"question_index": 0, "if_supported": card.expected_contrast,
+                            "if_refuted": card.disconfirmation}]
+    inquiry = open_routed_inquiry(difference, confirmed, registry=registry,
+                                  lens_decisions=[decision], frozen_at=FROZEN_AT)
+    assert inquiry.questions == (card.distinguishing_question,)
+    assert inquiry.opposing_predictions[0].if_refuted == card.disconfirmation
+    assert inquiry.lens_refs == (str(card.ref),)
+
+
+def test_routing_refuses_what_the_registry_does_not_vouch_for():
+    from app.services.inquiry import spli_questions
+
+    accepted, difference, _confirmed = investigation()
+    registry, decision = spli_decision(accepted, difference)
+    other, _ = spli_decision(accepted, difference)
+    for bad in ([object()], [], "x"):
+        with pytest.raises(InquiryError):
+            spli_questions(registry, bad)
+    with pytest.raises(InquiryError):
+        spli_questions(other, [decision])  # vouched by another registry instance
+    with pytest.raises(InquiryError):
+        spli_questions(object(), [decision])
+
+
+@pytest.mark.parametrize(("outcome", "status", "keeps_evidence"), [
+    ("supported", "supported_by_fresh_evidence", True),
+    ("refuted", "refuted_by_fresh_evidence", True),
+    ("unresolved", "unchanged", False),
+    ("declined", "unchanged", False),
+])
+def test_a_concluded_inquiry_revises_the_expert_judgment(outcome, status, keeps_evidence):
+    from app.services.inquiry import is_issued_revision, revise_expert_judgment
+
+    accepted, difference, confirmed = investigation()
+    registry, decision = spli_decision(accepted, difference)
+    inquiry = open_inquiry(difference, confirmed, registry=registry, lens_decisions=[decision],
+                           questions=["질문"], opposing_predictions=[{
+                               "question_index": 0, "if_supported": "가", "if_refuted": "나"}],
+                           frozen_at=FROZEN_AT)
+    observed = observe_evidence(inquiry, [ref("comparison_result", 702)], observed_at=AFTER)
+    concluded = conclude_inquiry(observed, outcome)
+    revision = revise_expert_judgment(confirmed, concluded)
+    assert is_issued_revision(revision)
+    assert revision.status == status and revision.h_exp_ids == concluded.confirmed_h_exp
+    assert bool(revision.evidence) is keeps_evidence
+    assert revision.as_dict()["frozen_at"] == FROZEN_AT
+
+
+def test_only_a_concluded_inquiry_over_its_own_set_revises():
+    from app.services.inquiry import revise_expert_judgment
+
+    accepted, _difference, confirmed = investigation()
+    _accepted, open_one = opened()
+    with pytest.raises(InquiryError, match="concluded"):
+        revise_expert_judgment(confirmed, open_one)
+    concluded = conclude_inquiry(open_one, "declined")
+    # a set over another difference (other observations) is not this inquiry's
+    other_difference = record_difference(accepted, [observation(7)], uncertainties=[])
+    other_set = propose_hypotheses(other_difference, [hypothesis("expert_judgment"),
+                                                      hypothesis("system")])
+    with pytest.raises(InquiryError, match="belong"):
+        revise_expert_judgment(other_set, concluded)
+    with pytest.raises(InquiryError):
+        revise_expert_judgment(confirmed, object())

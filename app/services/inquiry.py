@@ -298,14 +298,150 @@ def conclude_inquiry(inquiry, outcome) -> Inquiry:
     return _reissue(inquiry, outcome=outcome)
 
 
+def spli_questions(registry, lens_decisions) -> tuple[list[str], list[dict]]:
+    """The questions and opposing predictions the qualified lens cards state.
+
+    SPLI routing reads each registry-vouched, qualified `post_alternative_spli`
+    decision's own card: its distinguishing question is the frozen question,
+    its expected contrast what the question predicts if the expert judgment
+    holds, and its disconfirmation cue what it predicts if it does not. Nothing
+    is paraphrased or generated, so no question outruns the qualified lens that
+    grounds it; a decision the registry does not vouch for, or one for another
+    path, stops the routing rather than being skipped silently.
+    """
+
+    if type(registry) is not LensRegistry:
+        raise InquiryError("the qualified lens registry is required")
+    if type(lens_decisions) is not list or not 1 <= len(lens_decisions) <= 16:
+        raise InquiryError("lens decisions are out of bounds")
+    questions: list[str] = []
+    predictions: list[dict] = []
+    for decision in lens_decisions:
+        if (
+            type(decision) is not LensDecision
+            or not registry.vouches_for(decision)
+            or decision.path != _SPLI_PATH
+            or decision.qualification_status != "qualified"
+            or decision.state != "proposed"
+        ):
+            raise InquiryError(
+                "every lens decision must be a registry-vouched qualified SPLI use"
+            )
+        definition = registry.get(decision.lens_ref.lens_id)
+        if definition.ref != decision.lens_ref:
+            raise InquiryError("the decision's lens card is not the registry's current card")
+        question = definition.distinguishing_question
+        if question in questions:
+            continue  # two decisions over one card ask one question
+        questions.append(question)
+        predictions.append({
+            "question_index": len(questions) - 1,
+            "if_supported": definition.expected_contrast,
+            "if_refuted": definition.disconfirmation,
+        })
+    return questions, predictions
+
+
+def open_routed_inquiry(difference, hypothesis_set, *, registry, lens_decisions, frozen_at) -> Inquiry:
+    """Open an inquiry whose questions come only from the qualified lens cards."""
+
+    questions, predictions = spli_questions(registry, lens_decisions)
+    return open_inquiry(
+        difference, hypothesis_set, registry=registry, lens_decisions=lens_decisions,
+        questions=questions, opposing_predictions=predictions, frozen_at=frozen_at,
+    )
+
+
+H_EXP_OUTCOMES = {
+    "supported": "supported_by_fresh_evidence",
+    "refuted": "refuted_by_fresh_evidence",
+    "unresolved": "unchanged",
+    "declined": "unchanged",
+}
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class ExpertJudgmentRevision:
+    """What a concluded inquiry did to the confirmed expert judgment (H_exp).
+
+    The hypothesis set stays as it was confirmed; this is the next, separate
+    fact: fresh evidence observed after the freeze supported or refuted the
+    judgment, or the inquiry abstained and the judgment is unchanged. Only a
+    `supported_by_fresh_evidence` revision can ground learn/protect changes
+    (the compiler already requires a supported inquiry); a refuted judgment is
+    withdrawn from change grounds, never quietly kept.
+    """
+
+    difference_ref: EntityRef
+    h_exp_ids: tuple[str, ...]
+    status: str
+    evidence: tuple[tuple[str, EntityRef], ...]
+    lens_refs: tuple[str, ...]
+    frozen_at: str
+    _issuer_token: object = field(repr=False, compare=False)
+
+    def as_dict(self) -> dict:
+        return {
+            "schema_version": "h-exp-revision-v1",
+            "difference_ref": self.difference_ref.as_dict(),
+            "h_exp_ids": list(self.h_exp_ids),
+            "status": self.status,
+            "evidence": [{"observed_at": at, "ref": ref.as_dict()} for at, ref in self.evidence],
+            "lens_refs": list(self.lens_refs),
+            "frozen_at": self.frozen_at,
+        }
+
+
+def revise_expert_judgment(hypothesis_set, inquiry) -> ExpertJudgmentRevision:
+    """The H_exp update a concluded inquiry grounds, bound to its evidence."""
+
+    _require_issued(inquiry)
+    if inquiry.outcome is None:
+        raise InquiryError("only a concluded inquiry revises the expert judgment")
+    if (
+        not is_issued_hypothesis_set(hypothesis_set)
+        or hypothesis_set.difference_ref != inquiry.difference_ref
+    ):
+        raise InquiryError("the hypothesis set must belong to the inquiry's difference")
+    confirmed = {
+        item.hypothesis_id for item in hypothesis_set.hypotheses
+        if item.family == "expert_judgment" and item.status == "confirmed"
+    }
+    if not set(inquiry.confirmed_h_exp) <= confirmed:
+        raise InquiryError("the inquiry's expert judgment is not confirmed in this set")
+    status = H_EXP_OUTCOMES[inquiry.outcome]
+    return _issue(
+        ExpertJudgmentRevision,
+        difference_ref=inquiry.difference_ref,
+        h_exp_ids=inquiry.confirmed_h_exp,
+        status=status,
+        # abstaining keeps no evidence as if it had decided anything
+        evidence=inquiry.new_evidence if status != "unchanged" else (),
+        lens_refs=inquiry.lens_refs,
+        frozen_at=inquiry.frozen_at,
+        _issuer_token=_ISSUE_TOKEN,
+    )
+
+
+def is_issued_revision(value: object) -> bool:
+    return (type(value) is ExpertJudgmentRevision
+            and getattr(value, "_issuer_token", None) is _ISSUE_TOKEN)
+
+
 __all__ = [
+    "H_EXP_OUTCOMES",
     "INQUIRY_SCHEMA_VERSION",
     "OUTCOMES",
+    "ExpertJudgmentRevision",
     "Inquiry",
     "InquiryError",
     "OpposingPrediction",
     "conclude_inquiry",
     "is_issued_inquiry",
+    "is_issued_revision",
     "observe_evidence",
     "open_inquiry",
+    "open_routed_inquiry",
+    "revise_expert_judgment",
+    "spli_questions",
 ]
