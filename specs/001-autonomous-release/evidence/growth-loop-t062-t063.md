@@ -2,6 +2,7 @@
 
 Date: 2026-09-13
 Status: implemented and unit-verified contract slice; **T062/T063 remain open**
+Supersession (2026-09-23): this header predates the audited closure. Commit 32f3ae2 closed the tasks in tasks.md after two adversarial audits of the US4–US6 value chain. The storage binding, UI and browser work that remained is tracked under T052–T054 and T066/T067.
 (no live paired execution feeds rounds, no persistence, no UI, no validation/
 promotion consumption)
 
