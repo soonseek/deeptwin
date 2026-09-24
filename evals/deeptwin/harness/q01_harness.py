@@ -68,6 +68,10 @@ CONTROL_PLANE_FILES = (
     "evals/deeptwin/verifiers/critic.py",
     "evals/deeptwin/tests/test_critic_verifier.py",
     "evals/deeptwin/tests/test_q01_harness.py",
+    "evals/deeptwin/verifiers/claude_judge.py",
+    "evals/deeptwin/qualification/calibration/run_plan.json",
+    "evals/deeptwin/qualification/calibration/independence_profile.json",
+    "evals/deeptwin/qualification/calibration/run_calibration.py",
 )
 _FRAGMENT_MIN = 24
 _SPLIT = re.compile(r"[|`*#>\[\]()]+")

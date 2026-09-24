@@ -1,0 +1,53 @@
+{
+ "schema": "q01-calibration-run-plan-1",
+ "plan_id": "q01-initial-calibration-1",
+ "frozen_on": "2026-09-24",
+ "purpose": "Initial calibration of the Q01 critic harness and verifier on the ten observed development cases. Not release qualification.",
+ "task": {
+  "path": "evals/deeptwin/tasks/v01-q01",
+  "instruction_sha256": "ecc745601415ae49293c88a2abc530bbcde0bbea875325083bcfd1876e537762",
+  "environment_manifest_sha256": "a7e5de3373103cc86b436f89e44e446608fa076d84beba4a245aa90707c5f967"
+ },
+ "provider": {"provider": "claude", "mode": "api"},
+ "critic": {"model": "claude-opus-5", "effort": "medium", "max_tokens": 16000},
+ "judge": {"model": "claude-opus-5", "effort": "medium", "max_tokens": 4000, "template_id": "q01-claude-judge-template-1"},
+ "cases": [
+  {"case_id": "q01-d641d75122", "candidate_id": "c71", "counterexample_id": null},
+  {"case_id": "q01-1f27897ee7", "candidate_id": "c24", "counterexample_id": null},
+  {"case_id": "q01-d6e6a46fa4", "candidate_id": "c86", "counterexample_id": null},
+  {"case_id": "q01-e634953958", "candidate_id": "c09", "counterexample_id": null},
+  {"case_id": "q01-6c02a8788f", "candidate_id": "c53", "counterexample_id": null},
+  {"case_id": "q01-940e0005ee", "candidate_id": "c71", "counterexample_id": "ce-29"},
+  {"case_id": "q01-bea167a34d", "candidate_id": "c86", "counterexample_id": "ce-17"},
+  {"case_id": "q01-625b067bba", "candidate_id": "c71", "counterexample_id": "ce-17"},
+  {"case_id": "q01-81cf72fd6b", "candidate_id": "c42", "counterexample_id": "ce-43"},
+  {"case_id": "q01-15b31afb6e", "candidate_id": "c18", "counterexample_id": null}
+ ],
+ "repetitions": 1,
+ "max_proposed_chains": 2,
+ "deadlines": {
+  "call_seconds": 180,
+  "harness_call_seconds": 195,
+  "trial_seconds": 1800,
+  "run_seconds": 14400
+ },
+ "concurrency": 1,
+ "retry": {"automatic": false, "max_attempts_per_call": 1},
+ "model_fallback": false,
+ "spend": {
+  "currency": "USD",
+  "hard_stop_usd": 6.0,
+  "input_usd_per_million_tokens": 5.0,
+  "output_usd_per_million_tokens": 25.0,
+  "cache_tokens": "counted_as_input",
+  "unobserved_usage": "a dispatched call without observed usage is charged at its pre-call worst case",
+  "pre_call_bound": "input tokens <= UTF-8 bytes of system and user plus 256; output tokens <= max_tokens",
+  "checks": ["before_every_trial", "before_every_call", "after_every_call"]
+ },
+ "scoring": {
+  "verifier_version": "q01-critic-verifier-1",
+  "not_run_is_scored": false,
+  "stopped_trial_is_scored": false
+ },
+ "release_heldout": false
+}
