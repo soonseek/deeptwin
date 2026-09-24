@@ -564,6 +564,12 @@ eligible lens questions frozen before new evidence → typed candidate or justif
   hypotheses `not_generated`, inquiry `not_opened`, no change candidate and no input control
   (real-browser case); real hypothesis/inquiry/candidate display waits on a connected generator —
   evidence/inquiry-observation-t060-2026-09-23.md.
+  2026-09-24: the hypothesis generator is connected — on the owner's explicit request one model
+  turn over the owner's Claude connection proposes competing explanations of a sealed difference,
+  admitted only through `propose_hypotheses` (a lone causal family refused), sealed once per
+  difference, all `proposed` (`hypotheses-v1`, observe-page panel; a live set proposed all five
+  families) — evidence/hypotheses-generator-t060-2026-09-24.md. Inquiry opening and confirmation
+  still need real evidence.
 
 ## Phase 8: US6 — Previous queues, product plateau and human promotion (P1)
 

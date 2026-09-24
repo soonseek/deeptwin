@@ -75,7 +75,7 @@ export async function boot({ document, location, fetch, crypto } = {}) {
   // mount only where the page offers their surfaces (T052/T053/T060)
   const inquiryRoot = document.getElementById(INQUIRY_MOUNT_ID);
   const inquiry = inquiryRoot !== null && typeof inquiryRoot?.replaceChildren === 'function'
-    ? createInquiryPanel({ root: inquiryRoot, document, basePath, request: session.request })
+    ? createInquiryPanel({ root: inquiryRoot, document, basePath, request: session.request, crypto })
     : null;
   const onFrozen = inquiry === null ? undefined : (runId, artifactId, alternativeId) => inquiry.show(runId, artifactId, alternativeId);
   const alternativeRoot = document.getElementById(ALTERNATIVE_MOUNT_ID);

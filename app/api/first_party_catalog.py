@@ -1,6 +1,7 @@
 """The complete build-installed catalog; not a runtime extension registry."""
 
 from .claude_connection import connection_services
+from .hypotheses import hypothesis_services
 from .work_models import work_model_services
 from .deployment_prepare import (
     STARTUP_KEYS,
@@ -81,6 +82,15 @@ INSTALLED = (
         ("work.command", "work.read"),
         requires=("run-approvals.service",),
         provides=("runs.service", "run-artifacts.service", "alternative-drafts.service"),
+    ),
+    InstalledContribution(
+        "hypotheses-v1.json",
+        "app.api.hypotheses:create_router",
+        hypothesis_services,
+        ("browser_session",),
+        ("work.command", "work.read"),
+        requires=("alternative-drafts.service",),
+        provides=("hypotheses.service",),
     ),
     InstalledContribution(
         "versions-v1.json",
