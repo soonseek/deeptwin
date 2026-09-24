@@ -1678,6 +1678,22 @@ class ClaudeAPIAdapter:
                                     raise _ProtocolViolation("nonempty_tool_start_input")
                                 seen_tool_ids.add(tool_id)
                                 active = _Block(index=index, kind="tool_use", tool_use_id=tool_id, tool_name=tool_name)
+                            elif kind in {"thinking", "redacted_thinking"} and not prepared.tool_names:
+                                # Models that think by default open with a thinking block
+                                # (empty text unless summaries are requested). A turn that
+                                # offers no tools is never continued, so the block is never
+                                # replayed: it is consumed within the text bound and
+                                # discarded, never yielded or stored. A tool turn would
+                                # have to hand it back unchanged, which this adapter does
+                                # not do, so there it stays unsupported.
+                                active = _Block(index=index, kind="thinking")
+                                for field in ("thinking", "signature", "data"):
+                                    value = block.get(field)
+                                    if value is not None and not isinstance(value, str):
+                                        raise _ProtocolViolation("invalid_thinking_block")
+                                    text_bytes += len((value or "").encode("utf-8"))
+                                if text_bytes > self._limits.max_text_bytes:
+                                    raise _ProtocolViolation("text_limit")
                             elif isinstance(kind, str) and (
                                 "server_tool" in kind or "web_" in kind or "code_execution" in kind or kind == "container_upload"
                             ):
@@ -1705,6 +1721,13 @@ class ClaudeAPIAdapter:
                                     public = self._safe_text_piece(active, text, secret_canaries)
                                     if public:
                                         yield TextDelta(turn.call_id, active.index, public)
+                            elif active.kind == "thinking" and delta.get("type") in {"thinking_delta", "signature_delta"}:
+                                value = delta.get("thinking" if delta.get("type") == "thinking_delta" else "signature")
+                                if not isinstance(value, str):
+                                    raise _ProtocolViolation("invalid_thinking_delta")
+                                text_bytes += len(value.encode("utf-8"))
+                                if text_bytes > self._limits.max_text_bytes:
+                                    raise _ProtocolViolation("text_limit")
                             elif active.kind == "tool_use" and delta.get("type") == "input_json_delta":
                                 partial = delta.get("partial_json")
                                 if not isinstance(partial, str):

@@ -1966,3 +1966,43 @@ def test_keychain_error_results_do_not_leave_returned_secret_bytes_in_traceback_
     assert caught.value.__context__ is None
     assert SECRET not in repr(caught.value)
     assert SECRET not in traceback_locals_repr(caught.value)
+
+
+def thinking_then_text_stream(text="answer", *, thinking="", signature="sig-opaque"):
+    events = [
+        message_start(),
+        ("content_block_start", {"type": "content_block_start", "index": 0,
+                                 "content_block": {"type": "thinking", "thinking": "", "signature": ""}}),
+        ("content_block_delta", {"type": "content_block_delta", "index": 0,
+                                 "delta": {"type": "thinking_delta", "thinking": thinking}}),
+        ("content_block_delta", {"type": "content_block_delta", "index": 0,
+                                 "delta": {"type": "signature_delta", "signature": signature}}),
+        ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+        ("content_block_start", {"type": "content_block_start", "index": 1,
+                                 "content_block": {"type": "text", "text": ""}}),
+        ("content_block_delta", {"type": "content_block_delta", "index": 1,
+                                 "delta": {"type": "text_delta", "text": text}}),
+        ("content_block_stop", {"type": "content_block_stop", "index": 1}),
+        message_delta("end_turn"),
+        ("message_stop", {"type": "message_stop"}),
+    ]
+    return b"".join(sse_event(name, payload) for name, payload in events)
+
+
+def test_a_default_thinking_block_in_a_toolless_turn_is_consumed_and_never_surfaced():
+    adapter, binding, _, _ = configured(stream_body=thinking_then_text_stream("answer", thinking="private reasoning"))
+    snapshot = adapter.fetch_catalog(binding, explicit_action=True)
+    events = list(adapter.stream(turn(snapshot, binding), snapshot, binding, explicit_action=True))
+    assert terminal(events).state == "completed"
+    texts = [event for event in events if isinstance(event, TextDelta)]
+    assert [(event.index, event.text) for event in texts] == [(1, "answer")]
+    assert "private reasoning" not in repr(events) and "sig-opaque" not in repr(events)
+
+
+def test_a_thinking_block_in_a_tool_turn_stays_unsupported():
+    adapter, binding, _, _ = configured(stream_body=thinking_then_text_stream())
+    snapshot = adapter.fetch_catalog(binding, explicit_action=True)
+    tools = ({"name": "lookup", "description": "read", "input_schema": {"type": "object"}},)
+    events = list(adapter.stream(turn(snapshot, binding, tools=tools), snapshot, binding, explicit_action=True))
+    assert terminal(events).state == "failed"
+    assert terminal(events).failure.detail_code == "unsupported_content_block"

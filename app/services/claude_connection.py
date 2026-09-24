@@ -89,11 +89,21 @@ class ClaudeConnection:
                 raise ClaudeConnectionError("provider_unavailable")
             return self._adapter, self._binding, self._snapshot
 
-    def model_selection(self, model_id: str) -> ModelSelection:
+    def model_selection(self, model_id: str, *, effort: str | None = None) -> ModelSelection:
+        """The selection for one call. A requested effort is kept only when the
+        refreshed catalog says the model supports that level; otherwise it is dropped
+        and the provider default applies (the adapter would refuse it anyway)."""
         adapter, binding, snapshot = self.current()
         del adapter
+        if effort is not None:
+            listed = next((model for model in snapshot.models if model.id == model_id), None)
+            levels = None if listed is None or listed.capabilities is None else listed.capabilities.get("effort")
+            level = levels.get(effort) if isinstance(levels, dict) else None
+            if not (isinstance(levels, dict) and levels.get("supported") is True
+                    and isinstance(level, dict) and level.get("supported") is True):
+                effort = None
         return ModelSelection(binding_id=binding.binding_id, catalog_id=snapshot.catalog_id,
-                              model_id=model_id)
+                              model_id=model_id, effort=effort)
 
     @_closed
     def state(self, request) -> dict:

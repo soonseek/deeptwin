@@ -25,10 +25,10 @@ from app.tests.test_claude_api import (
     MODEL_ID,
     SECRET,
     Spy,
-    complete_text_stream,
     model,
     model_page,
     response,
+    thinking_then_text_stream,
 )
 from app.tests.test_graph_execution import linear_graph
 from app.tests.test_runs_api import events, graph_record, owner_app, post
@@ -36,14 +36,16 @@ from app.tests.test_server_api_v1 import immutable
 from app.tests.test_web_owner_integration import headers
 
 WORK_TEXT = "분기 보고서 초안을 세 문단으로 정리해 주세요."
+EFFORT = {"effort": {"supported": True, "low": {"supported": True}}}
 
 
 def mock_transport():
     def responder(request, body):
         if request.url.path == "/v1/models":
-            return response(request, payload=model_page([model()]))
+            return response(request, payload=model_page([model(capabilities=EFFORT)]))
         if request.url.path == "/v1/messages":
-            return response(request, body=complete_text_stream("합성 모델 출력"),
+            # the provider's default thinking block comes first and is dropped
+            return response(request, body=thinking_then_text_stream("합성 모델 출력"),
                             headers={"content-type": "text/event-stream"})
         raise AssertionError(request.url.path)
 
@@ -74,9 +76,9 @@ def live_graph(subject, choice_ref):
     return graph_record(subject, raw)
 
 
-def real_work(subject):
+def real_work(subject, text=WORK_TEXT):
     created = post(subject, {"schema_version": "work-create-command-v1", "command_id": str(uuid4()),
-                             "text": WORK_TEXT}, subject.profile.base_path + "api/v1/works").json()
+                             "text": text}, subject.profile.base_path + "api/v1/works").json()
     with subject.domain._connection() as db:
         row = db.execute("SELECT sha256 FROM domain_records WHERE kind='work_revision' AND id=? AND version=1",
                          (created["work_id"],)).fetchone()
@@ -129,6 +131,8 @@ def test_an_owner_connected_run_makes_one_model_call_and_records_its_output(tmp_
         sent = json.loads(raw)
         assert request.headers["x-api-key"] == SECRET  # injected at send time only
         assert sent["model"] == MODEL_ID and sent["max_tokens"] == 64
+        assert sent["output_config"] == {"effort": "low"} and "thinking" not in sent
+        assert "Your output limit is 64 tokens" in json.dumps(sent["system"])
         assert WORK_TEXT in json.dumps(sent, ensure_ascii=False)
         results = dict(receipt["outcome"]["result_refs"])
         writer = dict(receipt["outcome"]["execution_ids"])["writer"]

@@ -1,8 +1,8 @@
 # The direct-adapter Claude live path (2026-09-24)
 
-Status: **the product path to a real Claude call exists and is proven offline against a mock
-transport. The one owner-authorized live call waits for the key.** T048, T090 and T087 stay
-open. This is not the release isolation boundary.
+Status: **a real, budget-capped Claude call completed through the product path**, from the
+owner's key, catalog and model choice through a consented run to the model's text read back as
+a run artifact. T048, T090 and T087 stay open. This is not the release isolation boundary.
 
 ## Decision
 
@@ -88,21 +88,50 @@ It gained a Claude connection panel (`claude-connection.mjs`):
 - `claude-connection.test.mjs`: 3 passed. `records-page.test.mjs`: 3 passed.
 - Route-count, composition, server, extension-architecture and works/runs suites: 237 passed.
 - Browser (records, owner lifecycle): 4 passed.
-- Adapter offline suite `test_claude_api.py`: 106 passed. The environment has `anthropic`
+- Adapter offline suite `test_claude_api.py`: 108 passed (106 plus the two thinking-block tests). The environment has `anthropic`
   1.4.0 (locked) and `httpx2` 2.13.0, one minor above the provider lock's 2.12.0.
 
-## The live call (pending the key)
+## The live call (observed 2026-09-24)
 
 `app/tests/test_claude_live_call.py` runs only when the operator sets
-`DEEPTWIN_LIVE_ANTHROPIC_API_KEY`. The owner adds it in the environment settings, and it is
-never pasted in chat. The test makes:
-- one free catalog read
-- **one** Messages call on `DEEPTWIN_LIVE_MODEL` (default `claude-opus-5`) with
-  `max_output_tokens=64`
+`DEEPTWIN_LIVE_ANTHROPIC_API_KEY`. The owner adds it in the environment settings; it is never
+pasted in chat. The test makes one free catalog read, then **one** Messages call on
+`DEEPTWIN_LIVE_MODEL` (default `claude-opus-5`), with `max_output_tokens=512` and low effort. It
+writes non-secret evidence (model, message id, usage, an output excerpt) to
+`DEEPTWIN_LIVE_EVIDENCE_PATH`.
 
-It goes through the same product path and writes non-secret evidence (model, message id, usage,
-an output excerpt) to `DEEPTWIN_LIVE_EVIDENCE_PATH`. `api.anthropic.com` is reachable from this
-environment: an unauthenticated probe returned 401.
+Three attempts, **3 of the 10 authorized calls**. Estimated total spend is about $0.012: about
+290 input tokens and at most 413 output tokens at $5 / $25 per million.
+
+1. **The key was refused before any call.** The first key was not scoped to a workspace. The
+   free catalog read returned 400, asking for an `anthropic-workspace-id` header. The owner
+   replaced it with a workspace-scoped key. No code change.
+2. **Call 1, `msg_011CfMiXGnLErwWrytMGs784`: refused by the adapter.** `claude-opus-5` thinks by
+   default, so the stream opened with a `thinking` block. The adapter accepted only `text` and
+   `tool_use`, so it failed closed with `protocol_error` / `unsupported_content_block`. The
+   executor sealed the failed outcome and the run stopped.
+   - **Fix:** in a turn that offers **no tools**, the adapter now consumes `thinking` and
+     `redacted_thinking` blocks within the text bound and discards them. It never yields or
+     stores them. Such a turn is never continued, so nothing needs to be replayed. In a tool turn
+     they stay unsupported, because the adapter does not hand thinking blocks back.
+   - The executor also asks for `effort: "low"` when the refreshed catalog lists that level (the
+     live catalog does), and records the effort on the call intent.
+   - Offline tests were added in `test_claude_api.py`: the default thinking block is dropped and
+     the text still arrives, and the block is still refused in a tool turn.
+3. **Call 2, `msg_011CfMigNabREwYbQC1TrViN`: honestly incomplete.** The stream parsed cleanly,
+   thinking included. The run's budget policy (`max_output_bytes // 4`) capped the call at 250
+   tokens. The work asked for a three-paragraph report, so the call ended with `max_tokens`
+   (usage 73 input / 250 output). The executor recorded `incomplete` and did not accept a cut-off
+   draft as success.
+   - **Fix:** the system instruction now states the output limit. The live test uses a short task
+     that fits the budget. Truncation is still reported as incomplete.
+4. **Call 3, `msg_011CfMijUdYxEuD9Ctg2S7M9`: completed.** Test passed.
+   - Observed model `claude-opus-5`, stop reason `end_turn`.
+   - Usage: 109 input / 99 output, no cache reads or writes.
+   - The writer node sealed the text as the run's `draft` artifact. It read back through the run
+     artifact route (85 characters): a one-sentence rewrite of the meeting notice, with two
+     alternative phrasings.
+   - The key appears in no stored record, event or evidence file.
 
 ## Known limits
 
@@ -111,3 +140,5 @@ environment: an unauthenticated probe returned 401.
   a statement about the provider.
 - **Scope.** There is no design generator: the graph is supplied, as a test actor would. There
   are no tools, no streaming to the UI, and no key persistence.
+- **Thinking.** It is accepted only in tool-less turns and discarded. A tool loop on a model that
+  thinks by default still fails closed until the adapter preserves thinking blocks across turns.

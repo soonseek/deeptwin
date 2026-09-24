@@ -61,6 +61,7 @@ __all__ = ["INTENT_SCHEMA", "OUTPUT_SCHEMA", "ClaudeRunExecutor", "LiveLimits"]
 OUTPUT_SCHEMA = "claude-model-output-v1"
 SOURCE_SCHEMA = "run-source-text-v1"
 INTENT_SCHEMA = "claude-call-intent-v1"
+CALL_EFFORT = "low"
 OUTCOME_SCHEMA = "claude-call-outcome-v1"
 APPROVAL_SCOPES = ("release-output",)
 MAX_INPUT_CHARS = 60_000
@@ -282,19 +283,22 @@ class ClaudeRunExecutor:
                 if self._process_calls >= self._limits.max_model_calls:
                     raise _NodeRefused("process_model_budget_exhausted")
                 self._process_calls += 1
+            # Low effort keeps default thinking from spending the small output cap.
+            selection = self._connection.model_selection(choice["model_id"], effort=CALL_EFFORT)
             intent = ImmutableRecord.create(
                 kind="decision_record", id=intent_id, version=1, created_at_utc=_stamp(), actor_ref=roots.actor,
                 parent_refs=(), purpose="operational", access_policy_ref=roots.access_policy,
                 retention_policy_ref=roots.retention_policy,
                 content={"schema_version": INTENT_SCHEMA, "run_id": run_id, "node_id": context.node_id,
                          "execution_id": context.execution_id, "model_id": choice["model_id"],
-                         "max_output_tokens": max_tokens})
+                         "max_output_tokens": max_tokens, "effort": selection.effort})
             self._domain._put_in_transaction(db, intent)
         turn = MessageTurn(
             call_id=context.execution_id, agent_id=context.node_id,
-            selection=self._connection.model_selection(choice["model_id"]),
+            selection=selection,
             system=("You perform one role in a work graph. Your role: " + node["responsibility"]
-                    + "\nProduce only this role's output for the material given."),
+                    + "\nProduce only this role's output for the material given."
+                    + f"\nYour output limit is {max_tokens} tokens; finish within it."),
             messages=({"role": "user", "content": prompt},), max_tokens=max_tokens)
         started, usage, terminal, chunks = None, None, None, []
         for event in adapter.stream(turn, snapshot, binding, explicit_action=True):
