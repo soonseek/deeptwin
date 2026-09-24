@@ -420,14 +420,24 @@ def _check_lineage(trial, record):
                 raise _Invalid("lineage_mismatch")
 
 
-def _case_key(trial):
-    candidate_id = trial.calls[0]["visible"]["candidate"]["id"]
+def _case_id(candidate_id, counterexample_id):
+    # the Task package's published case-id rule, computed here so the verifier never
+    # imports the harness it checks
+    key = canonical({"candidate_id": candidate_id, "counterexample_id": counterexample_id})
+    return "q01-" + sha256(key.encode("utf-8")).hexdigest()[:10]
+
+
+def _case_key(trial, record):
+    """The frozen case the trial ran, from its recorded case id; the observed calls must
+    agree with it. A trial may stop before its authored counterexample is reached, so the
+    key is never inferred from how far the trial got."""
+    by_id = {_case_id(*key): key for key in EXPECTED}
+    key = by_id.get(record.get("case_id"))
+    if key is None or not trial.calls or trial.calls[0]["visible"]["candidate"]["id"] != key[0]:
+        raise _Invalid("unknown_case")
     authored = [call["visible"]["counterexample"]["id"] for call in trial.calls
                 if call["purpose"] is P.COUNTEREXAMPLE_VALIDITY and call["manifest"]["lineage"]["kind"] == "authored"]
-    if len(authored) > 1:
-        raise _Invalid("unknown_case")
-    key = (candidate_id, authored[0] if authored else None)
-    if key not in EXPECTED:
+    if len(authored) > 1 or (authored and authored[0] != key[1]):
         raise _Invalid("unknown_case")
     return key
 
@@ -574,7 +584,7 @@ def verify_trial(record: dict, *, judge: SemanticJudge | None = None, ledger_pat
         trial = _Trial(record, ledger, _instructions(Path(task_dir)))
         _check_journal_coverage(trial, record, path)
         _check_lineage(trial, record)
-        key = _case_key(trial)
+        key = _case_key(trial, record)
         expectation = EXPECTED[key]
         _check_access_and_leakage(trial, record, Path(task_dir))
         _check_materials(trial, key, expectation)

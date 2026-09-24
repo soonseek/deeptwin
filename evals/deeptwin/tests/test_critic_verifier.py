@@ -417,3 +417,15 @@ def test_verifier_rebuilds_inputs_with_the_contract(rig):
     assert rebuilt.prompt == first["prompt"]
     assert json.loads(first["prompt"])["input"]["candidate"] == q01_source("c42")["candidate"]
     assert q01_cases.case_id_for("c42", "ce-43") == CASE[("c42", "ce-43")]
+
+
+def test_a_counterexample_case_stopped_at_review_is_scored_as_its_own_case(rig):
+    # found in the first live calibration: a trial that fails the output contract at
+    # review never reaches its authored counterexample, so its key must come from the
+    # frozen case it ran, not from how far it got
+    broken = ScriptedCritic(overrides={"review": lambda visible, answer: {**answer, "findings": []}})
+    for key in [("c42", "ce-43"), ("c71", "ce-29")]:
+        result = verify_trial(trial(rig, key, broken))
+        assert (result["verdict"], result["cause"], result["score"]) == (FAIL, "output_contract", 0.0)
+        assert result["case_key"] == {"candidate_id": key[0], "counterexample_id": key[1]}
+        assert result["boundary"] == EXPECTED[key].boundary

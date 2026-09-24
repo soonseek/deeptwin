@@ -134,15 +134,20 @@ def is_issued_criticism_run(value: object) -> bool:
     )
 
 
-# The contract admits a citation only when it names a location the input actually shows;
-# a model cannot guess that grammar, so the prompt states it.
+# The contract admits a citation only when it names a location the input actually shows,
+# and a response only in the transitions its validity allows; a model cannot guess these
+# rules, so the prompt states them (both were the causes of the first live calibration's
+# contract failures).
 _CITATION_RULE = (
     "Cite evidence only as {document_id, version, location} of an original document, the "
     "criteria document or the candidate document; never cite a counterexample or validity "
     "document, which are claims under test, not evidence. For an original, location is exactly "
     "one of its sections' location values. For the criteria or the candidate, location is a JSON "
     "Pointer (RFC 6901) to an existing value inside that document as given, for example "
-    "/roles/0/responsibility or /items/2; never a prose description or a path of another form."
+    "/roles/0/responsibility or /items/2; never a prose description or a path of another form. "
+    "An original whose availability is not text has no sections and is never cited; cite the "
+    "text document that states the fact instead. In a candidate response, when the given "
+    "validity status is not valid, your status must be unresolved."
 )
 
 
