@@ -1,7 +1,8 @@
 """Fixed HTTP adapter for the owner's common-work target: the `work-models-v1`
 contribution.
 
-- `POST /api/v1/work-models` drafts one work model from an exact work revision with one
+- `POST /api/v1/work-models` drafts one work model from an exact work revision (work id and
+  revision number; the server resolves the immutable record) with one
   explicit model turn over the owner's Claude connection (a replay never calls again).
 - `GET /api/v1/work-models/{id}` reads a draft, its confirmation state and blocking
   unknowns.
@@ -36,7 +37,7 @@ STATUS = {"invalid_input": 400, "unauthenticated": 401, "access_denied": 403, "n
 _LIMITS = WireLimits(max_bytes=4_096, max_depth=3, max_items=32, max_members=8, max_string_bytes=256)
 _REF = ("kind", "id", "version", "sha256")
 BODIES = {
-    "draft": (("schema_version", "command_id", "work_revision_ref", "model_choice_ref"), DRAFT_SCHEMA),
+    "draft": (("schema_version", "command_id", "work_id", "revision", "model_choice_ref"), DRAFT_SCHEMA),
     "confirm": (("schema_version", "command_id", "work_model_ref", "decision"), CONFIRM_SCHEMA),
 }
 

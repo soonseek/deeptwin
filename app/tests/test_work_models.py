@@ -82,7 +82,7 @@ def sourced_work(subject):
 
 def draft_body(work_ref, choice, command_id=None):
     return {"schema_version": "work-model-draft-command-v1", "command_id": command_id or str(uuid4()),
-            "work_revision_ref": work_ref.as_dict(), "model_choice_ref": choice}
+            "work_id": work_ref.id, "revision": work_ref.version, "model_choice_ref": choice}
 
 
 def confirm_body(work_model_ref, decision="accepted"):
@@ -162,3 +162,5 @@ def test_without_a_key_no_draft_is_made_and_bodies_are_admitted_exactly(tmp_path
         assert post(subject, "api/v1/work-models", extra).status_code == 400
         assert get(subject, "api/v1/work-models/not-a-uuid").status_code == 400
         assert get(subject, f"api/v1/work-models/{uuid4()}").status_code == 404
+        absent = {**draft_body(work, choice), "revision": 99}
+        assert post(subject, "api/v1/work-models", absent).status_code == 404

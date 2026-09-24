@@ -228,13 +228,24 @@ class PersistentWorkModels:
 
     @_closed
     def draft(self, request, payload) -> dict:
-        command = _command(payload, DRAFT_SCHEMA, ("work_revision_ref", "model_choice_ref"))
-        revision_ref = _ref(command["work_revision_ref"], "work_revision")
+        command = _command(payload, DRAFT_SCHEMA, ("work_id", "revision", "model_choice_ref"))
         choice_ref = _ref(command["model_choice_ref"], "model_choice")
+        try:
+            work_id = uuid_string(command["work_id"])
+        except (TypeError, ValueError):
+            raise WorkModelServiceError("invalid_input") from None
+        if type(command["revision"]) is not int or not 1 <= command["revision"] <= 1_000_000:
+            raise WorkModelServiceError("invalid_input")
         work_model_id = str(uuid5(NAMESPACE_URL, f"deeptwin:work-model:{command['command_id']}"))
         _authenticate_owner(self._owner, request)  # before any read or provider call
         with self._domain._connection() as db:
             roots = self._domain._read_roots(db)
+            # a revision is immutable: (work, revision) names exactly one record
+            row = db.execute("SELECT sha256 FROM domain_records WHERE vault_id=? AND kind='work_revision' "
+                             "AND id=? AND version=?", (roots.genesis.id, work_id, command["revision"])).fetchone()
+            if row is None:
+                raise WorkModelServiceError("not_found")
+            revision_ref = EntityRef("work_revision", work_id, command["revision"], row["sha256"])
             existing = self._record(db, roots, "work_model", work_model_id)
             if existing is not None:  # a replay never calls again
                 if existing.body["content"]["work_revision_ref"] != revision_ref.as_dict():

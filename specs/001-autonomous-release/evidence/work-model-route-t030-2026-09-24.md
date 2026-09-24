@@ -43,6 +43,26 @@ not yet routed.
 
 All three have the shared exact preflight.
 
+### The work screen's work-model panel (`app/static/work-model.mjs`)
+
+- Mounted optionally on `work.html` as `#work-model`.
+- **Drafting is one explicit action.** Before the button, the panel states the transmission:
+  the saved text goes to the chosen Claude model, and original file contents do not.
+- It picks from the owner's refreshed catalog. It gets the exact `model_choice_ref` from the
+  idempotent model-choice route, then drafts by work id and revision number. The server
+  resolves the immutable revision record; the draft command changed to this form so a
+  browser never has to supply a record hash.
+- It shows the whole draft: goals, deliverables, completion conditions, authorities, risks,
+  and unknowns with blocking marked. It says design cannot start while a blocking unknown
+  remains.
+- The owner accepts or rejects exactly that draft.
+- Without a retained original, or without a connection, it says why and sends nothing.
+- Server text reaches the DOM through `textContent` only.
+- Tests:
+  - `work-model.test.mjs`: 3 passed.
+  - The work page's node tests: 42 passed.
+  - The intake browser case (`browser-owner-material-intake.test.mjs`): 3 passed.
+
 ## Observed
 
 **Offline (`test_work_models.py`, mock transport): 3 passed.**
@@ -66,8 +86,7 @@ The route-count and composition suites were updated (**168 passed**).
 
 ## Still open
 
-- Resolving unknowns (a revised work, then a new draft).
-- The UI.
+- Resolving unknowns in place: the owner answers by revising the work text and drafting again.
 - Lens decisions, which need T035 qualification.
 - Generation and criticism from a confirmed target through routes; approval → environment →
   graph → run.
