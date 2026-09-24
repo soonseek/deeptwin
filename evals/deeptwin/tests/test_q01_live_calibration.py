@@ -39,7 +39,9 @@ def test_live_q01_initial_calibration():
     key, evidence = settings
     plan = load_plan()[0]
     out = evidence.resolve() / f"q01-calibration-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
-    results = run(key, out)
+    # DEEPTWIN_LIVE_Q01_CONTINUE names an earlier results.json of this plan: only its
+    # not_run cases run (the verified ones carry over unchanged)
+    results = run(key, out, continue_from=os.environ.get("DEEPTWIN_LIVE_Q01_CONTINUE") or None)
     written = json.loads((out / "results.json").read_text(encoding="utf-8"))
     assert written["plan_sha256"] == results["plan_sha256"]
     assert len(written["trials"]) == len(plan["cases"])

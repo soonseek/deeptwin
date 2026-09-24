@@ -239,9 +239,34 @@ def _not_run(case: dict, reason: str, state: str = "not_started") -> dict:
             "judge_items": [], "calls": [], "judge_calls": []}
 
 
+def _prior(continue_from, plan_sha, profile_sha):
+    """The trials of an earlier run of this exact plan, keyed by case id, when continuing.
+
+    Only a completed run of the same frozen plan and independence profile qualifies; its
+    verified trials are reused unchanged (their records stay where that run wrote them)
+    and only its `not_run` cases are run again."""
+    if continue_from is None:
+        return None, None
+    path = Path(continue_from).resolve()
+    data = path.read_bytes()
+    prior = json.loads(data)
+    _require(prior.get("schema") == RESULTS_SCHEMA, "the continued run has another results schema")
+    _require(prior.get("plan_sha256") == plan_sha and prior.get("independence_profile_sha256") == profile_sha,
+             "the continued run used another plan or independence profile")
+    _require(prior.get("setup_error") is None and (prior.get("readiness") or {}).get("ready") is True,
+             "the continued run never reached its trials")
+    trials = {trial["case_id"]: trial for trial in prior["trials"]}
+    return trials, {"results_sha256": sha256(data).hexdigest(), "path": str(path),
+                    "totals": prior.get("totals")}
+
+
 def run(secret: str, out_dir, *, transport=None, clock=time.monotonic, plan_path: Path = PLAN_FILE,
-        profile_path: Path = PROFILE_FILE, task_dir: Path = TASK_DIR) -> dict:
-    """Run the frozen initial calibration; returns (and writes) ``results.json`` content."""
+        profile_path: Path = PROFILE_FILE, task_dir: Path = TASK_DIR, continue_from=None) -> dict:
+    """Run the frozen initial calibration; returns (and writes) ``results.json`` content.
+
+    With ``continue_from`` (an earlier ``results.json`` of the same frozen plan) only that
+    run's `not_run` cases run; its verified trials are carried over unchanged and the
+    spend stop applies to this run's own spend."""
     if type(secret) is not str or not secret:
         raise ValueError("an API secret is required")
     out = Path(out_dir).resolve()
@@ -249,6 +274,7 @@ def run(secret: str, out_dir, *, transport=None, clock=time.monotonic, plan_path
     if any(out.iterdir()):
         raise ValueError("out_dir must be empty (fresh calibration state)")
     plan, profile, plan_sha, profile_sha = load_plan(plan_path, profile_path, task_dir=task_dir)
+    prior_trials, continued = _prior(continue_from, plan_sha, profile_sha)
     meter = SpendMeter(plan, clock=clock)
     results = {"schema": RESULTS_SCHEMA, "plan_id": plan["plan_id"], "plan_sha256": plan_sha,
                "independence_profile_sha256": profile_sha,
@@ -257,7 +283,7 @@ def run(secret: str, out_dir, *, transport=None, clock=time.monotonic, plan_path
                "release_heldout": False, "started_at": _now(), "finished_at": None,
                "provider": plan["provider"], "critic": plan["critic"], "judge": dict(plan["judge"]),
                "catalog": None, "readiness": None, "setup_error": None, "trials": [], "suite": None,
-               "not_run": [], "totals": None}
+               "not_run": [], "totals": None, "continued_from": continued}
     results_path = out / "results.json"
 
     def finish():
@@ -303,6 +329,11 @@ def run(secret: str, out_dir, *, transport=None, clock=time.monotonic, plan_path
     results["judge"]["version"] = judge.version
     stop_reason = None
     for case in plan["cases"]:
+        carried = None if prior_trials is None else prior_trials.get(case["case_id"])
+        if carried is not None and carried.get("verdict") != NOT_RUN:
+            results["trials"].append({**carried, "carried_over": True})
+            _write_json(results_path, results, secret)
+            continue
         if stop_reason is None:
             try:
                 meter.check()

@@ -190,3 +190,26 @@ def test_output_must_start_empty(tmp_path):
     (out / "old.json").write_text("{}")
     with pytest.raises(ValueError, match="empty"):
         run(SECRET, out, transport=MockClaude(ScriptedCritic()).transport)
+
+
+def test_a_continuation_runs_only_the_unrun_cases_and_completes_the_suite(tmp_path):
+    first = run(SECRET, tmp_path / "first", transport=MockClaude(ScriptedCritic(propose=True), usage=expensive).transport)
+    unrun = set(first["not_run"])
+    assert unrun and first["suite"]["complete"] is False
+    mock = MockClaude(ScriptedCritic(propose=True))
+    second = run(SECRET, tmp_path / "second", transport=mock.transport,
+                 continue_from=tmp_path / "first" / "results.json")
+    carried = [t for t in second["trials"] if t.get("carried_over")]
+    fresh = [t for t in second["trials"] if not t.get("carried_over")]
+    # verified trials carry over unchanged; only the unrun cases run, and only they are billed
+    assert {t["case_id"] for t in fresh} == unrun
+    assert all({k: v for k, v in t.items() if k != "carried_over"} in first["trials"] for t in carried)
+    assert second["totals"]["calls"] == len(mock.requests()) == sum(len(t["calls"]) + len(t["judge_calls"]) for t in fresh)
+    assert second["suite"]["complete"] is True and second["not_run"] == []
+    assert second["continued_from"]["totals"] == first["totals"]
+    # a continuation of another plan is refused before anything runs
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps({**first, "plan_sha256": "0" * 64}))
+    with pytest.raises(Exception):
+        run(SECRET, tmp_path / "third", transport=MockClaude(ScriptedCritic()).transport, continue_from=bad)
+    assert no_secret(tmp_path) == []
