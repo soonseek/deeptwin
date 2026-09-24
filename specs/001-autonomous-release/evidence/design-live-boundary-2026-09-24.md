@@ -1,8 +1,10 @@
 # The design arc's live model boundary (2026-09-24)
 
-Status: **the design arc can now call Claude through the owner's connection, and a real model's
-graphs pass the functional-graph compiler. No live candidate has been accepted yet:** the last
-completed attempt failed only on a lens-effect value. T030, T036 and T038 stay open.
+Status: **a real model's design candidate is accepted by the framework, and live four-stage
+criticism reaches a framework verdict.** The live chain runs generation → acceptance → review →
+counterexample proposal → validity, all through the owner's connection. The first complete
+verdict is `insufficient_evidence` (not selectable). T030, T036 and T038 stay open: production
+producers, routes and UI are not wired.
 
 ## What landed
 
@@ -50,10 +52,34 @@ completed attempt failed only on a lens-effect value. T030, T036 and T038 stay o
 | 6 | `msg_011CfMriSNGynb9R7wi3HAA5` | failed: the adapter's 180 s per-call deadline (the runtime contract) | unknown |
 
 After attempt 5, the required effects were lifted into the payload with a verbatim instruction.
+The change to one candidate per call had already gone into commit 5e25b95 with the rest of that
+slice. The owner then approved continuing (2026-09-24), and the retries below used it.
 Attempt 6 then ran into the deadline, because three full graphs take longer than 180 s. The
 contract's deadline is kept. The next step asks for **one candidate per call** and lets the
 orchestrator's bounded supplementation rounds fill the pool. That retry was held, pending the
 owner's go-ahead.
+
+### One candidate per call, then live criticism
+
+| # | Result | Calls (in / out tokens) |
+| --- | --- | --- |
+| 7 | **accepted**: research → fact_check → script → publish_gate; lens effect realized exactly; 56 s | 1 (5,544 / 4,229) |
+| 8 | accepted again; the critic's review was refused because citations were prose (`roles[0].id=research`), not the contract's visible JSON-Pointer locations | 2 |
+| 9 | accepted; review and counterexample proposal **passed**; validity was refused because it cited the counterexample document itself, which the contract does not admit as evidence | 4 |
+| 10 | accepted; the **whole chain completed**: review, a proposal of 3 counterexamples, 3 validity checks. Verdict `insufficient_evidence`: validity was unresolved for each counterexample (`ce-join-write-mutation`, `ce-no-script-verification`, `ce-script-no-source-access`), so the candidate is not selectable | 6 (35,724 / 19,780) |
+
+**Fixes for the refusals.** Replaying the saved raw responses offline (free) found the exact
+contract errors, so each fix cost no extra call. The critic prompt now states the citation
+grammar:
+- cite only originals (by their section locations), the criteria or the candidate (by JSON
+  Pointer)
+- never cite the counterexample or validity documents
+
+**Reading the verdict.** The critic proposed plausible failure modes. The validity stage could
+not settle them from the candidate's declared structure, and the framework's fold correctly
+refuses to present the candidate as passed. A selectable candidate needs either a design that
+closes those counterexamples, or evidence the validity stage can resolve. That is design work
+for the supplementation round, not a prompt fix.
 
 In attempt 5, the model designed three different, sensible graphs:
 - a research → verify → script → human publish gate → package chain
@@ -62,13 +88,12 @@ In attempt 5, the model designed three different, sensible graphs:
 
 ## Spend
 
-About $2.45 across all live calls so far, counting attempt 6 at its worst case. The budget is
+About $3.95 across all live calls so far, counting attempt 6 at its worst case. The budget is
 $20.
 
 ## Still open
 
-- An accepted live candidate.
-- Live criticism (four stages per candidate).
+- A live candidate whose criticism passes; a supplementation round against the counterexamples.
 - Production producers of the work model, lens decisions and design decisions.
 - Routes, persistence wiring, owner approval → environment → the `graph` record → run.
 - UI.

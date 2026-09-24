@@ -134,6 +134,18 @@ def is_issued_criticism_run(value: object) -> bool:
     )
 
 
+# The contract admits a citation only when it names a location the input actually shows;
+# a model cannot guess that grammar, so the prompt states it.
+_CITATION_RULE = (
+    "Cite evidence only as {document_id, version, location} of an original document, the "
+    "criteria document or the candidate document; never cite a counterexample or validity "
+    "document, which are claims under test, not evidence. For an original, location is exactly "
+    "one of its sections' location values. For the criteria or the candidate, location is a JSON "
+    "Pointer (RFC 6901) to an existing value inside that document as given, for example "
+    "/roles/0/responsibility or /items/2; never a prose description or a path of another form."
+)
+
+
 def render_criticism_prompt(prepared: PreparedInput) -> tuple[str, str]:
     """Render the deterministic (system, user) prompt pair for one stage."""
 
@@ -142,7 +154,7 @@ def render_criticism_prompt(prepared: PreparedInput) -> tuple[str, str]:
     profile = profile_for(prepared.purpose)
     system = (
         f"{profile.base_instructions}\n{profile.developer_instructions}\n"
-        f"{prepared.schema_json}"
+        f"{_CITATION_RULE}\n{prepared.schema_json}"
     )
     return system, prepared.prompt
 

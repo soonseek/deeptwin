@@ -14,24 +14,29 @@ import os
 
 import pytest
 
+from app.services.design_criticism_live import run_candidate_criticism
 from app.services.design_live import run_candidate_generation
 from app.services.claude_run_executor import DESIGN_INTENT_SCHEMA, OUTCOME_SCHEMA, ClaudeRunExecutor, LiveLimits
 from app.tests.test_claude_design_turn import records
 from app.tests.test_claude_live_path import claude
-from app.tests.test_design_generation import prepared
+from app.tests.test_design_generation import prepared, proposed_lens
 from app.tests.test_runs_api import owner_app
 
 KEY = os.environ.get("DEEPTWIN_LIVE_ANTHROPIC_API_KEY")
 MODEL = os.environ.get("DEEPTWIN_LIVE_MODEL", "claude-opus-5")
 EVIDENCE = os.environ.get("DEEPTWIN_LIVE_EVIDENCE_PATH")
 MAX_TOKENS = int(os.environ.get("DEEPTWIN_LIVE_DESIGN_MAX_TOKENS", "16000"))
+# with DEEPTWIN_LIVE_CRITICISM=1 the accepted candidate is also criticized live: review,
+# counterexample proposal, then validity (and a response when valid) per counterexample
+CRITICISM = os.environ.get("DEEPTWIN_LIVE_CRITICISM") == "1"
 
 pytestmark = pytest.mark.skipif(not KEY or os.environ.get("DEEPTWIN_LIVE_DESIGN") != "1",
                                 reason="live design needs the key and DEEPTWIN_LIVE_DESIGN=1")
 
 
 def test_one_live_design_generation_through_the_framework_boundary(tmp_path):
-    executor = ClaudeRunExecutor(limits=LiveLimits(max_model_calls=1, max_design_output_tokens=MAX_TOKENS))
+    executor = ClaudeRunExecutor(limits=LiveLimits(max_model_calls=12 if CRITICISM else 1,
+                                                   max_design_output_tokens=MAX_TOKENS))
     with owner_app(tmp_path, executor) as subject:
         assert claude(subject, "key", {"secret": KEY}).status_code == 200
         assert claude(subject, "catalog").status_code == 200
@@ -60,11 +65,36 @@ def test_one_live_design_generation_through_the_framework_boundary(tmp_path):
             cause = exc.__cause__
             observed["refused"] = {"error": type(exc).__name__, "message": str(exc),
                                    "cause": None if cause is None else f"{type(cause).__name__}: {cause}"}
-        [outcome] = records(subject, OUTCOME_SCHEMA)
-        observed["call"] = {key: outcome[key] for key in ("provider_message_id", "state", "stop_reason", "usage")}
-        observed["intent"] = records(subject, DESIGN_INTENT_SCHEMA)[0]
+        if CRITICISM and observed.get("accepted"):
+            registry, _lens2 = proposed_lens(request.work_target)
+            critic_turn = executor.model_turn(MODEL, purpose="design_criticism", max_output_tokens=8000)
+            critic_raw = []
+
+            def criticize(system, user):
+                critic_raw.append(critic_turn(system, user))
+                if EVIDENCE:
+                    with open(EVIDENCE + f".critic-{len(critic_raw)}.json", "w", encoding="utf-8") as handle:
+                        handle.write(critic_raw[-1])
+                return critic_raw[-1]
+
+            try:
+                run = run_candidate_criticism(result.candidates[0], request, registry,
+                                              model_turn=criticize, model_id=MODEL)
+                observed["criticism"] = {"verdict": run.verdict.as_dict(), "calls": len(run.call_records)}
+            except Exception as exc:
+                cause = exc.__cause__
+                observed["criticism"] = {"refused": type(exc).__name__, "message": str(exc),
+                                         "cause": None if cause is None else f"{type(cause).__name__}: {cause}",
+                                         "calls_made": len(critic_raw)}
+        outcomes = records(subject, OUTCOME_SCHEMA)
+        observed["calls"] = [{key: outcome[key] for key in ("provider_message_id", "state", "stop_reason", "usage")}
+                             for outcome in outcomes]
+        observed["intents"] = [{key: item[key] for key in ("purpose", "max_output_tokens", "effort")}
+                               for item in records(subject, DESIGN_INTENT_SCHEMA)]
         if EVIDENCE:
             with open(EVIDENCE, "w", encoding="utf-8") as handle:
                 json.dump(observed, handle, ensure_ascii=False, indent=2)
         assert KEY not in json.dumps(observed)
         assert observed.get("accepted"), observed.get("refused")
+        if CRITICISM:
+            assert "verdict" in observed["criticism"], observed["criticism"]
