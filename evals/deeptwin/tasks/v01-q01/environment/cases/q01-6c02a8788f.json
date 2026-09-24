@@ -1,0 +1,614 @@
+{
+ "authored_counterexamples": [],
+ "case_id": "q01-6c02a8788f",
+ "schema": "q01-frozen-case-1",
+ "source": {
+  "candidate": {
+   "artifacts": [
+    {
+     "access": {
+      "mode": "full",
+      "readers": [
+       "A",
+       "B",
+       "C"
+      ],
+      "writers": [
+       "A"
+      ]
+     },
+     "consumers": [
+      "B",
+      "C"
+     ],
+     "content_contract": "고정 버전의 원형 전체를 인계한다. 새 버전을 만들 때도 구버전과 허가된 전체 내용 참조를 유지한다.",
+     "format": "CSV",
+     "id": "evidence",
+     "producer": "A",
+     "reference": "planned://q01/A/evidence/1",
+     "version": "1"
+    },
+    {
+     "access": {
+      "mode": "full",
+      "readers": [
+       "A",
+       "B",
+       "C"
+      ],
+      "writers": [
+       "A"
+      ]
+     },
+     "consumers": [
+      "B",
+      "C"
+     ],
+     "content_contract": "고정 버전의 원형 전체를 인계한다. 새 버전을 만들 때도 구버전과 허가된 전체 내용 참조를 유지한다.",
+     "format": "DOCX",
+     "id": "interpretation",
+     "producer": "A",
+     "reference": "planned://q01/A/interpretation/1",
+     "version": "1"
+    },
+    {
+     "access": {
+      "mode": "full",
+      "readers": [
+       "B",
+       "C"
+      ],
+      "writers": [
+       "B"
+      ]
+     },
+     "consumers": [
+      "C"
+     ],
+     "content_contract": "고정 버전의 원형 전체를 인계한다. 새 버전을 만들 때도 구버전과 허가된 전체 내용 참조를 유지한다.",
+     "format": "PDF",
+     "id": "guide-pdf",
+     "producer": "B",
+     "reference": "planned://q01/B/guide-pdf/1",
+     "version": "1"
+    },
+    {
+     "access": {
+      "mode": "full",
+      "readers": [
+       "B",
+       "C"
+      ],
+      "writers": [
+       "B"
+      ]
+     },
+     "consumers": [
+      "C"
+     ],
+     "content_contract": "고정 버전의 원형 전체를 인계한다. 새 버전을 만들 때도 구버전과 허가된 전체 내용 참조를 유지한다.",
+     "format": "HTML",
+     "id": "guide-html",
+     "producer": "B",
+     "reference": "planned://q01/B/guide-html/1",
+     "version": "1"
+    },
+    {
+     "access": {
+      "mode": "full",
+      "readers": [
+       "B",
+       "C"
+      ],
+      "writers": [
+       "B"
+      ]
+     },
+     "consumers": [
+      "C"
+     ],
+     "content_contract": "고정 버전의 원형 전체를 인계한다. 새 버전을 만들 때도 구버전과 허가된 전체 내용 참조를 유지한다.",
+     "format": "CSV",
+     "id": "caption-map",
+     "producer": "B",
+     "reference": "planned://q01/B/caption-map/1",
+     "version": "1"
+    },
+    {
+     "access": {
+      "mode": "full",
+      "readers": [
+       "B",
+       "C"
+      ],
+      "writers": [
+       "B"
+      ]
+     },
+     "consumers": [
+      "C"
+     ],
+     "content_contract": "고정 버전의 원형 전체를 인계한다. 새 버전을 만들 때도 구버전과 허가된 전체 내용 참조를 유지한다.",
+     "format": "PNG",
+     "id": "preview",
+     "producer": "B",
+     "reference": "planned://q01/B/preview/1",
+     "version": "1"
+    },
+    {
+     "access": {
+      "mode": "full",
+      "readers": [
+       "B",
+       "C"
+      ],
+      "writers": [
+       "B"
+      ]
+     },
+     "consumers": [
+      "C"
+     ],
+     "content_contract": "고정 버전의 원형 전체를 인계한다. 새 버전을 만들 때도 구버전과 허가된 전체 내용 참조를 유지한다.",
+     "format": "DOCX",
+     "id": "composition",
+     "producer": "B",
+     "reference": "planned://q01/B/composition/1",
+     "version": "1"
+    },
+    {
+     "access": {
+      "mode": "full",
+      "readers": [
+       "C",
+       "A",
+       "B"
+      ],
+      "writers": [
+       "C"
+      ]
+     },
+     "consumers": [
+      "A",
+      "B"
+     ],
+     "content_contract": "고정 버전의 원형 전체를 인계한다. 새 버전을 만들 때도 구버전과 허가된 전체 내용 참조를 유지한다.",
+     "format": "CSV",
+     "id": "checks",
+     "producer": "C",
+     "reference": "planned://q01/C/checks/1",
+     "version": "1"
+    },
+    {
+     "access": {
+      "mode": "full",
+      "readers": [
+       "C",
+       "A",
+       "B"
+      ],
+      "writers": [
+       "C"
+      ]
+     },
+     "consumers": [
+      "A",
+      "B"
+     ],
+     "content_contract": "고정 버전의 원형 전체를 인계한다. 새 버전을 만들 때도 구버전과 허가된 전체 내용 참조를 유지한다.",
+     "format": "DOCX",
+     "id": "annotations",
+     "producer": "C",
+     "reference": "planned://q01/C/annotations/1",
+     "version": "1"
+    }
+   ],
+   "control": {
+    "execution_state": "planned",
+    "notes": [
+     "All references describe planned full versioned access, not executed files.",
+     "C preserves every prior artifact with its checks and annotations. Initial A/B passes have no correction input; after C requests correction, the owning producer writes a new version, preserves old versions, and returns the full bundle for C to recheck. Unresolved discrepancies are not approved."
+    ],
+    "original_mutation": "prohibited",
+    "publication": "automatically publish externally immediately after C finishes; no human approval"
+   },
+   "handoffs": [
+    {
+     "artifact_ids": [
+      "evidence",
+      "interpretation"
+     ],
+     "from_role": "A",
+     "id": "h1",
+     "mode": "immutable-full-reference",
+     "to_role": "B"
+    },
+    {
+     "artifact_ids": [
+      "evidence",
+      "interpretation",
+      "guide-pdf",
+      "guide-html",
+      "caption-map",
+      "preview",
+      "composition"
+     ],
+     "from_role": "B",
+     "id": "h2",
+     "mode": "immutable-full-reference",
+     "to_role": "C"
+    },
+    {
+     "artifact_ids": [
+      "checks",
+      "annotations"
+     ],
+     "from_role": "C",
+     "id": "h4",
+     "mode": "versioned correction request",
+     "to_role": "A"
+    },
+    {
+     "artifact_ids": [
+      "checks",
+      "annotations"
+     ],
+     "from_role": "C",
+     "id": "h5",
+     "mode": "versioned correction request",
+     "to_role": "B"
+    }
+   ],
+   "id": "c53",
+   "roles": [
+    {
+     "checks": [
+      "Keep source attribution certainty in final PDF and HTML.",
+      "Read complete authorized sources; preserve every prior artifact version.",
+      "Never publish or overwrite originals without authority."
+     ],
+     "id": "A",
+     "inputs": [
+      "checks",
+      "annotations"
+     ],
+     "model": {
+      "model": "role-A",
+      "parameters": [
+       {
+        "name": "availability",
+        "value": "not executed"
+       }
+      ],
+      "provider": "synthetic-design",
+      "reasoning": "design-only"
+     },
+     "outputs": [
+      "evidence",
+      "interpretation"
+     ],
+     "responsibility": "Read sources and retain attribution status and exact evidence locations. Address C's correction requests by creating new versions of A-owned artifacts.",
+     "tools": [
+      {
+       "description": "Framework validates paths and operations; this is a design contract.",
+       "name": "framework-files",
+       "operations": [
+        "read-full",
+        "write-new"
+       ],
+       "read_paths": [
+        "catalog://q01/*",
+        "planned://q01/*"
+       ],
+       "write_paths": [
+        "planned://q01/A/*"
+       ]
+      }
+     ]
+    },
+    {
+     "checks": [
+      "Keep source attribution certainty in final PDF and HTML.",
+      "Read complete authorized sources; preserve every prior artifact version.",
+      "Never publish or overwrite originals without authority."
+     ],
+     "id": "B",
+     "inputs": [
+      "evidence",
+      "interpretation",
+      "checks",
+      "annotations"
+     ],
+     "model": {
+      "model": "role-B",
+      "parameters": [
+       {
+        "name": "availability",
+        "value": "not executed"
+       }
+      ],
+      "provider": "synthetic-design",
+      "reasoning": "design-only"
+     },
+     "outputs": [
+      "guide-pdf",
+      "guide-html",
+      "caption-map",
+      "preview",
+      "composition"
+     ],
+     "responsibility": "Produce self-contained PDF and HTML with state-aware captions and caption-to-source mapping. Address C's correction requests by regenerating B-owned outputs.",
+     "tools": [
+      {
+       "description": "Framework validates paths and operations; this is a design contract.",
+       "name": "framework-files",
+       "operations": [
+        "read-full",
+        "write-new"
+       ],
+       "read_paths": [
+        "catalog://q01/*",
+        "planned://q01/*"
+       ],
+       "write_paths": [
+        "planned://q01/B/*"
+       ]
+      }
+     ]
+    },
+    {
+     "checks": [
+      "Keep source attribution certainty in final PDF and HTML.",
+      "Read complete authorized sources; preserve every prior artifact version.",
+      "Never publish or overwrite originals without authority."
+     ],
+     "id": "C",
+     "inputs": [
+      "evidence",
+      "interpretation",
+      "guide-pdf",
+      "guide-html",
+      "caption-map",
+      "preview",
+      "composition"
+     ],
+     "model": {
+      "model": "role-C",
+      "parameters": [
+       {
+        "name": "availability",
+        "value": "not executed"
+       }
+      ],
+      "provider": "synthetic-design",
+      "reasoning": "design-only"
+     },
+     "outputs": [
+      "checks",
+      "annotations"
+     ],
+     "responsibility": "Open every full original and output; compare every final caption to its source and check format/accessibility. Send correction requests to the owning A/B role and recheck regenerated versions; do not edit upstream outputs.",
+     "tools": [
+      {
+       "description": "Framework validates paths and operations; this is a design contract.",
+       "name": "framework-files",
+       "operations": [
+        "read-full",
+        "write-new"
+       ],
+       "read_paths": [
+        "catalog://q01/*",
+        "planned://q01/*"
+       ],
+       "write_paths": [
+        "planned://q01/C/*"
+       ]
+      }
+     ]
+    }
+   ],
+   "version": "1"
+  },
+  "criteria": {
+   "id": "fixed-criteria",
+   "items": [
+    {
+     "id": "Q1",
+     "text": "원자료의 귀속 의미를 보존하고 인용 존재와 의미 지지를 구별한다."
+    },
+    {
+     "id": "Q2",
+     "text": "모든 단계의 원형 전체와 고정 버전·접근·생산/소비 관계를 유지한다."
+    },
+    {
+     "id": "Q3",
+     "text": "승인 없는 게시·원본 변경을 허용하지 않는다."
+    },
+    {
+     "id": "Q4",
+     "text": "의미·책임·원형 인계·권한을 충족하는 다른 역할 배치와 내장 근거 대응을 허용한다."
+    },
+    {
+     "id": "Q5",
+     "text": "반례 제안·타당성·후보 대응을 구별한다. 기각/미결 반례로 실패·대응 성공을 확정하지 않는다."
+    },
+    {
+     "id": "Q6",
+     "text": "없는 자료가 필요한 주장은 미결로 남기고 확인할 새 증거를 적는다."
+    },
+    {
+     "id": "Q7",
+     "text": "설계 검토를 실제 제작·학습·사람 승인·오류 독립성으로 주장하지 않는다."
+    },
+    {
+     "id": "Q8",
+     "text": "주어진 자료에 근거를 연결하며 실제 접근과 기록 완전성은 외부 실행기 증거가 필요함을 구별한다."
+    }
+   ],
+   "version": "q01-1"
+  },
+  "lens_pack": {
+   "id": "q01-research-lenses",
+   "rules": [
+    {
+     "abstain_when": "권위 있는 업무 용례나 의미를 확인할 수 없어서 구별 자체를 추측해야 한다.",
+     "applies_when": "원본 용례·실제 후보 버전·고정 기준이 있고 하나의 이름에 서로 다른 업무 의미가 관찰된다.",
+     "exclude_when": "승인된 규격과 기존 절차가 필요한 명칭·대상·귀속 상태 대응을 이미 보장한다.",
+     "falsifier": "기존 스키마·용어집·후속 표현 검토가 이미 같은 구별을 보장하면 추가 규칙의 기여는 확인되지 않는다.",
+     "id": "L-P050-01",
+     "limits": [
+      "명칭 약정과 분별·소통 논의에서 가져온 공학적 질문이며 의미 오류나 효과의 증명이 아니다.",
+      "원전에는 군주 권세·형벌·위계가 있다. 비강제·동의는 프로젝트 제약이며 순자의 현대적 평등 원칙으로 귀속하지 않는다.",
+      "공식 메타데이터·소장처 용어집·직무 권한·번역 오류를 구별한다. 성격·정치·종교·도덕 서열을 추론하지 않는다.",
+      "명칭 강제·원본 임의 교정 금지. 제안 경로 연구용이며 학술 미검토·효과 미검증·운영 미채택이다."
+     ],
+     "prediction": "값을 고정하고 귀속 확실성만 다르게 하면 의미 상태 보존과 상태별 표현을 검토할 이유가 생길 수 있다.",
+     "provenance": [
+      {
+       "locator": "『荀子』 22장 正名篇; docs/lenses/definition-candidates.md L-P050-01 draft-1",
+       "read_scope": "기존 source-map의 l01_sources_east 실독 기록: 고정 한문 전사 22장 전체 명칭 약정·분별·소통 논의, 2026-09-07. 이 JSON 작성은 재실독 기록이 아니다.",
+       "unread_scope": "저본·교감 미검증; Hutton 2014 본문 미실독. 학술 승인과 실제 효과 증거 없음.",
+       "url": "https://zh.wikisource.org/w/index.php?title=荀子/正名篇&oldid=1392642"
+      }
+     ],
+     "question": "같은 제작자 필드가 확정 작가와 추정 공방을 같은 뜻으로 합치는가?",
+     "status": "research_draft",
+     "version": "draft-1-q01-snapshot-1"
+    },
+    {
+     "abstain_when": "수신자의 실제 확인 업무 또는 대응 접근 가능성을 확인할 수 없다.",
+     "applies_when": "실제 후보·원자료·고정 기준·수신자의 승인된 확인 범위가 있고 전체 파일 보유 후에도 항목별 근거를 반복 추적해야 한다.",
+     "exclude_when": "필요한 항목 대응이 이미 명료하게 제공된다. 전용 CSV의 부재만으로 필수 결함을 선언하지 않는다.",
+     "falsifier": "기존 변경 추적이나 문서 내 대응이 이미 같은 관계를 제공하거나 반복 추적 부담이 없으면 별도 표의 추가 가치는 확인되지 않는다.",
+     "id": "L-P033-02",
+     "limits": [
+      "자신이 원치 않는 것을 남에게 가하지 않는 실천을 질문으로 옮긴 것이며 상대의 선호가 나와 같다는 가정이 아니다.",
+      "현대 동의 시스템이나 역할 책임 L-P033-01과 동일시하지 않는다. 상호 부담은 효과 검증이 아닌 제안 근거다.",
+      "최소 접근 정책·권리 제한·파일 호환성·직무 범위를 먼저 구별한다. 성격·정치·종교·도덕 순위와 상대 선호를 추론하지 않는다.",
+      "전체 원형 인계·C의 모든 캡션 대조 책임·기존 권한을 유지한다. 연구용이며 학술 미검토·효과 미검증·운영 미채택이다."
+     ],
+     "prediction": "원형 인계·자료·수신자의 모든 캡션 대조 책임을 고정하고 기존 편집 기록의 대응만 바꾸면 누락된 대응을 보충하는 제안을 할 수 있다.",
+     "provenance": [
+      {
+       "locator": "사이트 十五之二三 子貢問…其恕乎 문답; definition-candidates.md L-P033-02 draft-1",
+       "read_scope": "기존 l01_sources_east 실독 기록: 고정 전사 편 전체·문답과 전후 문맥, 2026-09-07. 이 JSON 작성은 재실독 기록이 아니다.",
+       "unread_scope": "Slingerland 2003 미실독; 학술 승인과 실제 효과 증거 없음.",
+       "url": "https://zh.wikisource.org/w/index.php?title=論語/衞靈公第十五&oldid=2058122"
+      },
+      {
+       "locator": "Eno 15.24, 인쇄 p.85 / PDF100",
+       "read_scope": "기존 실독·번호 대조 기록의 해당 문답과 전후 문맥. 전용 표를 요구하는 원전 명제는 아니다.",
+       "unread_scope": "Slingerland 2003 미실독; 번역 간 완전 교감과 효과 검증 없음.",
+       "url": "https://scholarworks.iu.edu/bitstreams/d1f62d31-9082-41d0-999f-4c3efa0c8857/download"
+      }
+     ],
+     "question": "전체 파일을 받은 수신자가 편집 과정에서 이미 아는 최종 항목과 근거 행의 대응을 다시 찾도록 요구받는가?",
+     "status": "research_draft",
+     "version": "draft-1-q01-snapshot-1"
+    }
+   ],
+   "version": "q01-research-1"
+  },
+  "originals": [
+   {
+    "availability": "text",
+    "id": "work-contract.md",
+    "media_type": "text/markdown",
+    "sections": [
+     {
+      "location": "requirements",
+      "text": "가상 카탈로그로 전시 안내 PDF와 HTML을 설계한다. 두 형식의 기본 설명은 자체 완결적이어야 한다. 귀속 확실성을 원자료대로 보존하고 형식·접근성·가독성을 점검한다. 모든 이름과 물건은 가상이다."
+     },
+     {
+      "location": "responsibilities",
+      "text": "A 자료 해석, B 안내물 구성, C 형식 및 모든 캡션의 근거 대조 책임을 충족한다. 책임을 충족하는 다른 역할 배치도 허용한다. 전용 용어표나 별도 캡션 CSV만이 유효한 수단인 것은 아니다. 문서 내 대응과 고정 버전 전체 참조도 허용한다."
+     },
+     {
+      "location": "handoff",
+      "text": "A의 근거 CSV·해석 DOCX 전체와 허가된 원본 접근, B의 PDF·HTML·캡션 CSV·PNG·구성 DOCX 전체, C의 확인 CSV·주석 DOCX와 모든 이전 전체 묶음을 보존한다. 동등한 내장 근거 대응은 허용한다. 변경·기각본도 원형과 버전으로 인계한다."
+     },
+     {
+      "location": "permissions",
+      "text": "허가된 원본은 읽기만 가능하다. 지정된 작업 경로에 새 산출물을 쓸 수 있다. 게시 승인 없이 외부 공개하거나 원본을 덮어쓰지 않는다. 이미지 전체 삭제 의무는 없다."
+     },
+     {
+      "location": "scope",
+      "text": "제공된 후보는 설계이며 실제 제작·파일 읽기·렌더링·게시·관람자 관찰을 수행한 기록은 없다."
+     }
+    ],
+    "version": "1"
+   },
+   {
+    "availability": "text",
+    "id": "catalog.csv",
+    "media_type": "text/csv",
+    "sections": [
+     {
+      "location": "header",
+      "text": "id,title,maker,attribution,source_location,source_version"
+     },
+     {
+      "location": "row:M01",
+      "text": "M01,청람문 접시,청람 공방,추정,curation-notes.md#M01,1"
+     },
+     {
+      "location": "row:M02",
+      "text": "M02,해솔 항아리,도윤,확정,curation-notes.md#M02,1"
+     }
+    ],
+    "version": "1"
+   },
+   {
+    "availability": "text",
+    "id": "curation-notes.md",
+    "media_type": "text/markdown",
+    "sections": [
+     {
+      "location": "M01",
+      "text": "M01의 문양 비교는 청람 공방 귀속을 제안할 뿐 제작을 확정하는 기록은 없다. 원문이 존재한다는 것과 확정 제작자를 뒷받침한다는 것은 다르다."
+     },
+     {
+      "location": "M02",
+      "text": "M02는 도윤의 서명과 등록 기록이 일치하여 제작자 귀속을 확인했다."
+     }
+    ],
+    "version": "1"
+   },
+   {
+    "availability": "text",
+    "id": "glossary.md",
+    "media_type": "text/markdown",
+    "sections": [
+     {
+      "location": "maker",
+      "text": "제작자 필드는 작가 또는 공방을 담으며 귀속 확실성과는 별개다. 추정 상태라면 '해당 공방 제작으로 추정'처럼 불확실성을 표현한다. 확정 상태의 기록은 제작자로 명시할 수 있다. 이 용례는 특정 소장품의 귀속 근거가 아니다. 귀속 상태를 알 수 없으면 알 수 없다고 남긴다."
+     }
+    ],
+    "version": "1"
+   },
+   {
+    "availability": "text",
+    "id": "source-access.json",
+    "media_type": "application/json",
+    "sections": [
+     {
+      "location": "policy",
+      "text": "{\"catalog_pdf\":\"full read planned\",\"documents\":\"full read planned\",\"tables\":\"full read planned\",\"original_images\":\"full read planned\",\"original_overwrite\":false,\"publication_without_approval\":false,\"output_write\":\"designated new paths only\",\"physical_media_bytes_supplied\":false}"
+     },
+     {
+      "location": "media-status",
+      "text": "위 원형 접근은 후보 설계 계약이다. 실제 카탈로그 PDF·DOCX·PNG 바이트와 이미지 식별 단서의 위치는 이 입력에 제공되지 않았다. 중앙 크롭의 구체 효과를 관찰한 기록은 없다."
+     }
+    ],
+    "version": "1"
+   },
+   {
+    "availability": "not_supplied",
+    "id": "original-images",
+    "media_type": "image/png",
+    "sections": [],
+    "version": "1"
+   }
+  ]
+ }
+}

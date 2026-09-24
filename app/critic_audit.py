@@ -152,6 +152,14 @@ class Ledger:
                 sha TEXT NOT NULL,
                 PRIMARY KEY (request_id, sha)
             )""")
+            db.execute("""CREATE TABLE IF NOT EXISTS authored_evidence (
+                run_id TEXT NOT NULL REFERENCES runs(id),
+                sha TEXT NOT NULL,
+                candidate_id TEXT NOT NULL,
+                candidate_version TEXT NOT NULL,
+                source TEXT NOT NULL,
+                PRIMARY KEY (run_id, sha)
+            )""")
 
     @contextmanager
     def _transaction(self, *, write=True):
@@ -235,18 +243,51 @@ class Ledger:
                 )
         return shas
 
+    def register_authored_evidence(self, run_id, *, candidate_id, candidate_version, item, source):
+        """Record one authored (not model-produced) counterexample for one run.
+
+        An authored boundary counterexample is fixed synthetic material, not
+        a proposal: it is never registered under a proposal request, so it
+        cannot masquerade as model output. Its exact hash, the exact
+        candidate it targets and a bounded source label are recorded before
+        any validity call may bind it.
+        """
+        identifier(run_id)
+        if (type(item) is not dict or not isinstance(candidate_id, str) or not candidate_id
+                or not isinstance(candidate_version, str) or not candidate_version
+                or not isinstance(source, str) or not 1 <= len(source) <= 200):
+            raise ValueError("authored evidence needs an object, a candidate binding and a bounded source")
+        if (item.get("candidate_id"), item.get("candidate_version")) != (candidate_id, candidate_version):
+            raise ValueError("authored evidence binds a different candidate")
+        sha = hashlib.sha256(canonical(item).encode("utf-8")).hexdigest()
+        with self._transaction() as db:
+            if db.execute("SELECT 1 FROM runs WHERE id = ?", (run_id,)).fetchone() is None:
+                raise ValueError("unknown run identifier")
+            db.execute(
+                "INSERT OR IGNORE INTO authored_evidence (run_id, sha, candidate_id, candidate_version, source)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (run_id, sha, candidate_id, candidate_version, source),
+            )
+        return sha
+
     def reserve_with_lineage(self, call, *, parent_request_id, evidence_sha):
         """Reserve a downstream call bound to its exact parent evidence.
 
         Forged cross-call evidence — a hash the parent never produced, a
         parent that never completed, a parent from another run or
         candidate, or a parent of the wrong purpose — refuses (B4).
+
+        A validity call may instead bind an authored counterexample: its
+        ``parent_request_id`` is ``None`` and ``evidence_sha`` must be an
+        authored hash registered for the same run and candidate.
         """
         if type(call) is not FrozenCall:
             raise ValueError("reservation requires an exact FrozenCall")
         expected_parent = _PARENT_PURPOSES.get(call.purpose)
         if expected_parent is None:
             raise ValueError("this purpose has no lineage parent")
+        if parent_request_id is None:
+            return self._reserve_authored(call, evidence_sha)
         needs_hash = call.purpose != "counterexample_proposal"
         if needs_hash:
             if (
@@ -307,6 +348,40 @@ class Ledger:
                 "INSERT INTO events (request_id, at, kind, details) VALUES (?, ?, 'reserved', ?)",
                 (call.request_id, now,
                  canonical({"lineage_parent": parent_request_id})),
+            )
+
+    def _reserve_authored(self, call, evidence_sha):
+        if call.purpose != "counterexample_validity":
+            raise ValueError("only a validity call may bind an authored counterexample")
+        if not isinstance(evidence_sha, str) or re.fullmatch(r"[0-9a-f]{64}", evidence_sha) is None:
+            raise ValueError("an authored evidence hash is required")
+        payload = canonical(call.as_dict())
+        with self._transaction() as db:
+            authored = db.execute(
+                "SELECT candidate_id, candidate_version, source FROM authored_evidence"
+                " WHERE run_id = ? AND sha = ?", (call.run_id, evidence_sha),
+            ).fetchone()
+            if authored is None:
+                raise ValueError("the authored evidence hash was never registered for this run")
+            if (authored["candidate_id"], authored["candidate_version"]) != (
+                    call.candidate_id, call.candidate_version):
+                raise ValueError("the authored evidence binds a different candidate")
+            run = db.execute("SELECT * FROM runs WHERE id = ?", (call.run_id,)).fetchone()
+            now = self.clock()
+            if run is None or now >= run["deadline"] or run["used"] >= run["max_calls"]:
+                raise ValueError("run budget unavailable")
+            if db.execute("SELECT 1 FROM calls WHERE id = ?", (call.request_id,)).fetchone() is not None:
+                raise ValueError("request identifier already used")
+            lineage = {"lineage_parent": None, "lineage_sha": evidence_sha,
+                       "lineage_source": "authored:" + authored["source"]}
+            db.execute(
+                "INSERT INTO calls (id, run_id, payload, digest, state, details) VALUES (?, ?, ?, ?, 'reserved', ?)",
+                (call.request_id, call.run_id, payload, call.digest, canonical(lineage)),
+            )
+            db.execute("UPDATE runs SET used = used + 1 WHERE id = ?", (call.run_id,))
+            db.execute(
+                "INSERT INTO events (request_id, at, kind, details) VALUES (?, ?, 'reserved', ?)",
+                (call.request_id, now, canonical(lineage)),
             )
 
     def remaining(self, run_id):

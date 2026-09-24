@@ -2,6 +2,8 @@
 
 **Status:** Draft · 2026-09-07 · A/B1 부품, B2 내부 감사·오프라인 실행기, B3 결과 분류·문서 동기화·회귀 확인. 최종 문서 명세/전체 품질 검토 통과. 실행형 Harbor Task·독립 의미 판정기·실모델 시험은 미완료.
 
+2026-09-24 (T033/T034, 오프라인): 프로젝트 소유 `task.toml`·`instruction.md`·`environment/`(고정 개발 사례 10개)와 `evals/deeptwin/harness/`의 격리 harness, `evals/deeptwin/verifiers/critic.py`의 독립 판정기(규칙 검사 + 명시적 의미 판정 인터페이스, 실모델 판정기 없음)를 추가했다. Harbor 미설치·미채택, 실모델 시험·T035 자격은 미실시다. 근거: `specs/001-autonomous-release/evidence/q01-harness-verifier-t033-t034-2026-09-24.md`.
+
 후속 사용자 “진행해”에 따라 [B 전체 계획](../../../../docs/superpowers/plans/2026-09-07-deeptwin-critic-evaluation.md)을 작성한 뒤, B1 실행 제안에 대한 별도 동의로 [입력 계약 부품](../../../../docs/superpowers/plans/2026-09-07-deeptwin-critic-input-contract.md)을 구현했다. 합성 논리 자료와 두 연구 규칙은 `evals/deeptwin/q01_materials.py`와 `q01_lenses.json`, 순수 준비/파서는 `app/critic_contract.py`에 있다. B1 당시 계약 검사 113개와 전체 회귀 482개는 역사 기록이다. 최신 동의로 [B2 감사·오프라인 실행 계획](../../../../docs/superpowers/plans/2026-09-07-deeptwin-critic-audit-ledger.md)의 Task 1–3을 진행해 집중 검사 140개/107개, 관련 회귀 315개, 전체 회귀 729개와 기존 경고 1건을 확인했다. 각 구현 작업의 별도 명세·품질 검토는 PASS다. 이 수치와 네 책임의 schema roundtrip은 Q1–Q8 의미 판정의 성적이 아니다. 실제 harness·반례 원본 해시/부모 기록 계보·전 구간 제공자 종료·독립 의미 판정기는 별도 준비 조건으로 남긴다.
 
 이 파일은 개발 검토용 control-plane 문서다. 평가받는 모델의 workspace/image/검색에 넣지 않는다. 내부 [OfflineRunner](../../../../app/critic_trial.py)는 구현됐지만 Q01의 `task.toml`, `instruction.md`, 실행형 environment와 verifier 패키지는 아직 없다. 평가 모델에 기존 프로젝트 전체나 이 문서·World Skill을 그대로 제공하지 않는다.
