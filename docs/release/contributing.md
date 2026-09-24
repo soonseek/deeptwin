@@ -1,18 +1,18 @@
 # Contributing to DeepTwin (draft)
 
-Date: 2026-09-23 · Status: **draft for T084**. This page will not be published until the copyright
-owner approves a repository license ([license-recommendation.md](license-recommendation.md)).
+Date: 2026-09-23 · Status: **draft for T084**. The repository license is Apache-2.0, approved on
+2026-09-24 ([license-recommendation.md](license-recommendation.md)).
 
 ## 0. Licensing status: read this first
 
-The repository has **no license file**. Until the copyright owner explicitly approves one:
+The repository is licensed under the **Apache License 2.0** (`LICENSE`, `NOTICE`). Still open:
 
-- the terms under which outside contributions would be accepted are **undecided**;
 - no inbound-contribution mechanism (for example a Developer Certificate of Origin sign-off or a
-  contributor license agreement) has been chosen;
-- nothing in this repository should be treated as available for reuse or redistribution.
+  contributor license agreement) has been chosen. Until one is, contributions are accepted under
+  Apache-2.0 §5 (a contribution intentionally submitted is under the License's terms);
+- per-image third-party notices and source offers are assembled with the release images.
 
-Outside contributions should therefore wait until the license and the inbound terms are decided.
+Outside contributions should wait until the inbound mechanism is decided.
 The rest of this page describes the engineering workflow those contributions will follow.
 
 ## 1. Governing documents

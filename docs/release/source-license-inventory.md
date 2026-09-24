@@ -8,8 +8,8 @@ in [third-party-notices.md](third-party-notices.md).
 
 | Item | Present? |
 | --- | --- |
-| `LICENSE` / `LICENSES/` / `NOTICE` | **no** — intentionally not added; awaiting owner approval ([license-recommendation.md](license-recommendation.md)) |
-| `license` field in `pyproject.toml` | no |
+| `LICENSE` / `LICENSES/` / `NOTICE` | **yes** — Apache-2.0, approved by the owner on 2026-09-24 ([license-recommendation.md](license-recommendation.md)); `LICENSES/Apache-2.0.txt` is the same canonical text |
+| `license` field in `pyproject.toml` | `license = "Apache-2.0"`, `license-files = ["LICENSE", "NOTICE"]` |
 | SPDX-License-Identifier headers in tracked source | none found (checked with `git grep`, excluding lock/manifest data) |
 | Copyright notices in first-party source | none found in `app/`, `sdk/`, `examples/`, `schemas/`, `deploy/` scripts, prototypes, `evals/`, `docs/` |
 

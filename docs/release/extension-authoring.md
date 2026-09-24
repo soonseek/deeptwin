@@ -95,5 +95,5 @@ are unrelated to product extensions.
 An extension's licence is its author's choice and is recorded as unverified metadata. The example
 manifests declare `Apache-2.0` (tool) and `CC0-1.0` (lens) in their own `license_expression`
 fields; those declarations cover only the example files as authored and have **not** been approved
-or reviewed, and they do not license the DeepTwin repository. The core's own licence is undecided
+or reviewed, and they do not license the DeepTwin repository. The core's own licence is Apache-2.0
 ([license-recommendation.md](license-recommendation.md)).

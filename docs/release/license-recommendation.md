@@ -1,21 +1,22 @@
 # Repository license recommendation (for owner decision)
 
-Date: 2026-09-23 · Status: **recommendation only. No license has been approved, and no license
-file has been added.**
+Date: 2026-09-23 · Status: **decided. On 2026-09-24 the owner approved the Apache License 2.0
+for the repository** (§3's recommended default). This page keeps the analysis that led to it.
 
 ## Decision status
 
-- The copyright owner has **not** approved a repository license.
-- Accordingly, this change adds **no** `LICENSE`, `LICENSES/`, `NOTICE`, SPDX headers or license
-  metadata to source files or `pyproject.toml`.
-- No license file will be added, and nothing will be published, pushed publicly, tagged as a release
-  or uploaded to a registry, until the copyright owner gives **explicit approval** of a specific
-  license (T084, FR-001/032, constitution "Execution Boundaries").
-- Until then the repository remains "all rights reserved" by default and is **not** an open-source
-  release, whatever the README's goal statement says.
+- **Approved license: Apache-2.0**, stated by the owner on 2026-09-24 ("라이선스 Apache-2.0으로
+  확정", "the license is confirmed as Apache-2.0"); record:
+  `specs/001-autonomous-release/evidence/license-approval-apache-2.0-2026-09-24.md`.
+- Added: `LICENSE` and `LICENSES/Apache-2.0.txt` (the canonical text, sha256
+  `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30`), `NOTICE`, and
+  `license = "Apache-2.0"` / `license-files` in `pyproject.toml`.
+- Not done by this decision: SPDX headers in source files, per-image third-party NOTICE and
+  source-offer closure (T081/T082), the inbound-contribution mechanism (§4.2), trademark
+  policy (§4.3), and publication. Publication still needs its own authority; nothing is pushed
+  publicly, tagged or uploaded by this change.
 
-This document is engineering input to that decision. It is not legal advice; the owner may want
-counsel to review it, particularly §4.
+This document is engineering input, not legal advice (§4).
 
 ## 1. What the license must support
 

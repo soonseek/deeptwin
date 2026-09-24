@@ -2,8 +2,9 @@
 
 Date: 2026-09-23 · Status: **draft technical inventory for T084. This is not a NOTICE file, not
 legal advice and not a distribution approval.** No `NOTICE` or `LICENSES/` directory has been
-created; they must be assembled and reviewed before any publication, and only after the copyright
-owner approves the repository license ([license-recommendation.md](license-recommendation.md)).
+created for third-party components; they must be assembled and reviewed per release image before
+any publication. The repository's own license is Apache-2.0 (approved 2026-09-24,
+[license-recommendation.md](license-recommendation.md)).
 
 ## How to read this page
 

@@ -758,6 +758,10 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   2026-09-23 scrub: workstation paths replaced with placeholders in 40 tracked documents (test
   canaries kept); `docs/lenses/source-map.md` is pinned by the reviewed lens bundle and awaits a
   re-review — evidence/publishable-scrub-t084-2026-09-23.md.
+  2026-09-24: the owner approved Apache-2.0; `LICENSE`, `LICENSES/Apache-2.0.txt`, `NOTICE` and
+  the `pyproject.toml` license metadata landed (evidence/license-approval-apache-2.0-2026-09-24.md).
+  SPDX headers, per-image notices/source offers, the inbound-contribution mechanism, the Compose
+  gaps and the pinned lens file remain open.
 - [ ] T085 Run full regression plus quickstart.md acceptance, reconcile every checkbox/result and produce specs/001-autonomous-release/evidence/release-report.md separating engineering/live/effect/human/signing readiness and checking final progress/ETA claims against actual task evidence; mark the goal complete only if the latest required delivery is genuinely achieved (FR-034, SC-010).
 
 ## Dependencies and parallel work
