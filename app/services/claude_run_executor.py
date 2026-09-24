@@ -38,7 +38,8 @@ import json
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from uuid import NAMESPACE_URL, uuid5
+from hashlib import sha256
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from ..adapters.claude_api import (
     MessageTurn,
@@ -63,6 +64,8 @@ SOURCE_SCHEMA = "run-source-text-v1"
 INTENT_SCHEMA = "claude-call-intent-v1"
 CALL_EFFORT = "low"
 OUTCOME_SCHEMA = "claude-call-outcome-v1"
+DESIGN_INTENT_SCHEMA = "claude-design-call-intent-v1"
+DESIGN_EFFORT = "medium"
 APPROVAL_SCOPES = ("release-output",)
 MAX_INPUT_CHARS = 60_000
 MAX_AUTHORITY = 256
@@ -72,12 +75,15 @@ MAX_AUTHORITY = 256
 class LiveLimits:
     max_model_calls: int = 10
     max_output_tokens: int = 512
+    # a design turn returns whole graphs or critic JSON, so its own per-call cap
+    max_design_output_tokens: int = 16_000
 
     def __post_init__(self):
         if type(self.max_model_calls) is not int or not 0 <= self.max_model_calls <= 10_000:
             raise ValueError("max_model_calls is out of bounds")
-        if type(self.max_output_tokens) is not int or not 1 <= self.max_output_tokens <= 32_000:
-            raise ValueError("max_output_tokens is out of bounds")
+        for value in (self.max_output_tokens, self.max_design_output_tokens):
+            if type(value) is not int or not 1 <= value <= 64_000:
+                raise ValueError("an output token cap is out of bounds")
 
 
 class _NodeRefused(RuntimeError):
@@ -112,6 +118,13 @@ class ClaudeRunExecutor:
     def _bound(self):
         if self._domain is None:
             raise RuntimeError("The executor is not bound to a vault")
+
+    def _reserve_process_call(self):
+        # one process-wide cap shared by run nodes and design turns
+        with self._calls_lock:
+            if self._process_calls >= self._limits.max_model_calls:
+                raise _NodeRefused("process_model_budget_exhausted")
+            self._process_calls += 1
 
     # --- compilation ------------------------------------------------------------------
 
@@ -237,6 +250,52 @@ class ClaudeRunExecutor:
             text=text, role="source", parents=(revision.ref,),
             content={"schema_version": SOURCE_SCHEMA, "run_id": run_id, "node_id": context.node_id})
 
+    # --- design turns -----------------------------------------------------------------
+
+    def model_turn(self, model_id, *, purpose, max_output_tokens=None):
+        """The design arc's `model_turn(system, user) -> str` over the owner's connection.
+
+        Each call spends one unit of the process cap shared with run nodes, seals an
+        intent record naming its purpose, model, cap and prompt digest before sending,
+        and seals the outcome after. Only a completed call returns text; anything else
+        raises, and the design drivers treat that as terminal (they never retry)."""
+        self._bound()
+        if type(purpose) is not str or not purpose or len(purpose) > 64:
+            raise ValueError("A bounded design purpose is required")
+        cap = self._limits.max_design_output_tokens
+        if max_output_tokens is not None:
+            cap = min(cap, max_output_tokens)
+
+        def turn(system, user):
+            adapter, binding, snapshot = self._connection.current()
+            model = next((item for item in snapshot.models if item.id == model_id), None)
+            if model is None or model.max_tokens is None:
+                raise _NodeRefused("model_not_in_current_catalog")
+            selection = self._connection.model_selection(model_id, effort=DESIGN_EFFORT)
+            max_tokens = min(cap, model.max_tokens)
+            prompt_digest = sha256(json.dumps({"system": system, "user": user}, ensure_ascii=False,
+                                              sort_keys=True).encode("utf-8")).hexdigest()
+            with _writer(), self._domain._connection(write=True) as db:
+                roots = self._domain._read_roots(db)
+                self._reserve_process_call()
+                intent = ImmutableRecord.create(
+                    kind="decision_record", id=str(uuid4()), version=1, created_at_utc=_stamp(),
+                    actor_ref=roots.actor, parent_refs=(), purpose="operational",
+                    access_policy_ref=roots.access_policy, retention_policy_ref=roots.retention_policy,
+                    content={"schema_version": DESIGN_INTENT_SCHEMA, "purpose": purpose,
+                             "model_id": model_id, "max_output_tokens": max_tokens,
+                             "effort": selection.effort, "prompt_sha256": prompt_digest})
+                self._domain._put_in_transaction(db, intent)
+            message = MessageTurn(call_id=intent.ref.id, agent_id="design", selection=selection, system=system,
+                                  messages=({"role": "user", "content": user},), max_tokens=max_tokens)
+            observed, text = self._stream(adapter, message, snapshot, binding)
+            self._seal_outcome(intent.ref, observed)
+            if observed["state"] != "completed":
+                raise _NodeRefused("design_call_not_completed")
+            return text
+
+        return turn
+
     # --- the model call ---------------------------------------------------------------
 
     def _choice(self, node, bindings):
@@ -279,10 +338,7 @@ class ClaudeRunExecutor:
                 raise _NodeRefused("call_outcome_unknown")  # a sent call is never repeated
             if self._calls_in_run(db, roots, run_id) >= policy.max_model_calls:
                 raise _NodeRefused("run_model_budget_exhausted")
-            with self._calls_lock:
-                if self._process_calls >= self._limits.max_model_calls:
-                    raise _NodeRefused("process_model_budget_exhausted")
-                self._process_calls += 1
+            self._reserve_process_call()
             # Low effort keeps default thinking from spending the small output cap.
             selection = self._connection.model_selection(choice["model_id"], effort=CALL_EFFORT)
             intent = ImmutableRecord.create(
@@ -300,6 +356,20 @@ class ClaudeRunExecutor:
                     + "\nProduce only this role's output for the material given."
                     + f"\nYour output limit is {max_tokens} tokens; finish within it."),
             messages=({"role": "user", "content": prompt},), max_tokens=max_tokens)
+        observed, text = self._stream(adapter, turn, snapshot, binding)
+        if observed["state"] != "completed":
+            self._seal_outcome(intent.ref, observed)
+            raise _NodeRefused("model_call_not_completed")
+        return self._seal_artifact(
+            record_id=str(uuid5(NAMESPACE_URL, f"deeptwin:claude-output:{intent_id}")),
+            text=text, role="draft", parents=(intent.ref, *inputs),
+            content={"schema_version": OUTPUT_SCHEMA, "run_id": run_id, "node_id": context.node_id,
+                     "model_id": choice["model_id"], "intent_ref": intent.ref.as_dict(),
+                     "output": json.loads(json.dumps(observed))})
+
+    @staticmethod
+    def _stream(adapter, turn, snapshot, binding):
+        """Run one Messages call; return the non-secret observation and the joined text."""
         started, usage, terminal, chunks = None, None, None, []
         for event in adapter.stream(turn, snapshot, binding, explicit_action=True):
             if isinstance(event, ProviderStarted):
@@ -325,15 +395,7 @@ class ClaudeRunExecutor:
                 "category": terminal.failure.category, "detail_code": terminal.failure.detail_code,
                 "dispatch_effect": terminal.failure.dispatch_effect},
         }
-        if terminal is None or terminal.state != "completed":
-            self._seal_outcome(intent.ref, observed)
-            raise _NodeRefused("model_call_not_completed")
-        return self._seal_artifact(
-            record_id=str(uuid5(NAMESPACE_URL, f"deeptwin:claude-output:{intent_id}")),
-            text="".join(chunks), role="draft", parents=(intent.ref, *inputs),
-            content={"schema_version": OUTPUT_SCHEMA, "run_id": run_id, "node_id": context.node_id,
-                     "model_id": choice["model_id"], "intent_ref": intent.ref.as_dict(),
-                     "output": json.loads(json.dumps(observed))})
+        return observed, "".join(chunks)
 
     def _seal_outcome(self, intent_ref, observed):
         with _writer(), self._domain._connection(write=True) as db:

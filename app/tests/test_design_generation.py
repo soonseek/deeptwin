@@ -325,8 +325,9 @@ def design_authority():
     )
 
 
-def design_decision(target, registry, lens, *, responsibility=None):
+def design_decision(target, registry, lens, *, responsibility=None, carry_value=False, carried=None):
     responsibility = responsibility or "공개 출처를 탐색하고 주장별 근거와 반증을 원형 링크로 정리한다."
+    extra = {"expected_value": responsibility if carried is None else carried} if carry_value else {}
     return accept_design_decision(target, [lens], {
         "decision_id": "00000000-0000-4000-8000-000000000221",
         "version": 1,
@@ -338,6 +339,7 @@ def design_decision(target, registry, lens, *, responsibility=None):
             "expected_value_sha256": value_hash(responsibility),
             "rationale": "근거와 반증을 작성자의 서술 편의와 분리한다.",
             "contributing_lens_refs": [str(lens.lens_ref)],
+            **extra,
         }],
         "conflicts": [],
         "abstentions": [],
@@ -356,15 +358,16 @@ def candidate(request, graph, *, suffix=231):
     }
 
 
-def prepared(*, shape="multi_agent", unknown_status="acknowledged", agent_count=2):
+def prepared(*, shape="multi_agent", unknown_status="acknowledged", agent_count=2, carry_value=False,
+             candidate_count=3):
     target = confirmed(shape=shape, unknown_status=unknown_status)
     registry, lens = proposed_lens(target)
-    decision = design_decision(target, registry, lens)
+    decision = design_decision(target, registry, lens, carry_value=carry_value)
     request = create_generation_request(
         target,
         [decision],
         request_id="00000000-0000-4000-8000-000000000230",
-        requested_candidate_count=3,
+        requested_candidate_count=candidate_count,
         compilation_authority=design_authority(),
     )
     graph = graph_value(target, decision.decision_ref.as_dict(), agent_count=agent_count)
@@ -745,3 +748,16 @@ def test_any_success_tie_break_order_is_semantic_but_rename_invariant():
 
     order_preserving = _proj(_any_success_join(target, dref, "ab-branch", "zx-branch", 1052))
     assert baseline == order_preserving
+
+
+def test_an_effect_may_carry_its_exact_expected_value_and_the_value_must_match_its_digest():
+    target = confirmed()
+    registry, lens = proposed_lens(target)
+    decision = design_decision(target, registry, lens, carry_value=True)
+    [effect] = decision.as_dict()["proposed_effects"]
+    assert effect["expected_value"] == "공개 출처를 탐색하고 주장별 근거와 반증을 원형 링크로 정리한다."
+    assert effect["expected_value_sha256"] == value_hash(effect["expected_value"])
+    # a carried value changes the decision's content, so its ref differs from the hash-only one
+    assert decision.decision_ref != design_decision(target, registry, lens).decision_ref
+    with pytest.raises(DesignContractError, match="does not match its digest"):
+        design_decision(target, registry, lens, carry_value=True, carried="다른 책임")

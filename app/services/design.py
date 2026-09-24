@@ -6,6 +6,7 @@ approve an environment, or interpret onboarding as a DeepTwin feedback episode.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -532,6 +533,16 @@ class EffectTarget:
         return {"kind": self.kind, "id": self.identifier, "field": self.field_path}
 
 
+class _NoExpectedValue:
+    __slots__ = ()
+
+    def __repr__(self):
+        return "<no expected value>"
+
+
+_NO_EXPECTED_VALUE = _NoExpectedValue()
+
+
 @dataclass(frozen=True, slots=True)
 class ProposedEffect:
     effect_id: str
@@ -540,9 +551,13 @@ class ProposedEffect:
     expected_value_sha256: str
     rationale: str
     contributing_lens_refs: tuple[str, ...]
+    # The exact expected value, when the decision carries it (its canonical hash is
+    # expected_value_sha256). A generator can only realize an effect whose value it can
+    # see; a hash-only effect stays verifiable but cannot be authored from the prompt.
+    expected_value: object = _NO_EXPECTED_VALUE
 
     def as_dict(self):
-        return {
+        value = {
             "effect_id": self.effect_id,
             "axis": self.axis,
             "target": self.target.as_dict(),
@@ -550,6 +565,9 @@ class ProposedEffect:
             "rationale": self.rationale,
             "contributing_lens_refs": list(self.contributing_lens_refs),
         }
+        if self.expected_value is not _NO_EXPECTED_VALUE:
+            value["expected_value"] = self.expected_value
+        return value
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -589,13 +607,10 @@ class FunctionalDesignDecision:
 
 
 def _parse_effect(value, allowed_lenses):
-    _strict(
-        value,
-        {"effect_id", "axis", "target", "expected_value_sha256", "rationale",
-         "contributing_lens_refs"},
-        "proposed effect",
-        DesignContractError,
-    )
+    fields = {"effect_id", "axis", "target", "expected_value_sha256", "rationale",
+              "contributing_lens_refs"}
+    _strict(value, fields | ({"expected_value"} & set(value) if type(value) is dict else set()),
+            "proposed effect", DesignContractError)
     axis = value["axis"]
     if type(axis) is not str or axis not in EFFECT_AXES:
         raise DesignContractError("Invalid effect axis")
@@ -612,6 +627,15 @@ def _parse_effect(value, allowed_lenses):
     digest = value["expected_value_sha256"]
     if type(digest) is not str or _HASH.fullmatch(digest) is None:
         raise DesignContractError("Invalid expected effect digest")
+    expected = _NO_EXPECTED_VALUE
+    if "expected_value" in value:
+        try:
+            carried = canonical_json(value["expected_value"])
+        except DomainContractError as exc:
+            raise DesignContractError("Invalid expected effect value") from exc
+        if sha256(carried).hexdigest() != digest:
+            raise DesignContractError("Expected effect value does not match its digest")
+        expected = json.loads(carried)
     lens_refs = [
         _text(item, "contributing lens ref", 256, error=DesignContractError)
         for item in _list(value["contributing_lens_refs"], "contributing lens refs", 16,
@@ -631,6 +655,7 @@ def _parse_effect(value, allowed_lenses):
         digest,
         _text(value["rationale"], "effect rationale", 4_096, error=DesignContractError),
         tuple(sorted(lens_refs)),
+        expected,
     )
 
 
