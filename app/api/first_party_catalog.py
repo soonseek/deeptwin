@@ -1,6 +1,7 @@
 """The complete build-installed catalog; not a runtime extension registry."""
 
 from .claude_connection import connection_services
+from .work_models import work_model_services
 from .deployment_prepare import (
     STARTUP_KEYS,
     prepare_services,
@@ -63,6 +64,14 @@ INSTALLED = (
         ("browser_session",),
         ("work.command", "work.read"),
         provides=("claude.connection",),
+    ),
+    InstalledContribution(
+        "work-models-v1.json",
+        "app.api.work_models:create_router",
+        work_model_services,
+        ("browser_session",),
+        ("work.command", "work.read"),
+        provides=("work-models.service",),
     ),
     InstalledContribution(
         "runs-v1.json",

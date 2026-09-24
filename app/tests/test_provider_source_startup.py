@@ -335,7 +335,7 @@ def test_actual_application_owner_cleanup(reader_tree, monkeypatch, failure):
         source = application.state.first_party_exports[EXPORT]
         assert source is sources[0]
         assert source.read_current() == reader_tree.bundle
-        assert application.state.route_composition.route_count == 67
+        assert application.state.route_composition.route_count == 70
         if failure == "activation":
             with pytest.raises(RuntimeError), TestClient(application):
                 pytest.fail("activation failure entered serving")
