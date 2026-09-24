@@ -983,9 +983,16 @@ def main():
     with config_path.open('rb') as source:
         configuration = parse_json_object(source.read(8193),
             required=('origin_profile', 'verifier_b64u', 'recovery_epoch'), limits=WireLimits(max_bytes=8192))
+    # the direct-adapter Claude profile: the code-owned run executor, bounded by the
+    # operator's non-secret limits (the API key itself is entered by the owner in the
+    # browser and kept in server memory only)
+    from .services.claude_run_executor import ClaudeRunExecutor, LiveLimits
+
+    limits = LiveLimits(max_model_calls=int(os.environ.get("DEEPTWIN_LIVE_MAX_MODEL_CALLS", "10")),
+                        max_output_tokens=int(os.environ.get("DEEPTWIN_LIVE_MAX_OUTPUT_TOKENS", "512")))
     application = create_app(args.data_dir, deployment_config=configuration,
         session_root_dir=args.session_root_dir, expected_uid=args.expected_uid, expected_gid=args.expected_gid,
-        additional_protected_roots=(config_path.parent,))
+        additional_protected_roots=(config_path.parent,), run_executor=ClaudeRunExecutor(limits=limits))
     uvicorn.run(application, host='0.0.0.0', port=8080, workers=1, reload=False,
                 proxy_headers=False, forwarded_allow_ips='', access_log=False)
 

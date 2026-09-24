@@ -44,6 +44,7 @@ MODULES = MappingProxyType({
     "work.html": "text/html",
     "records-page.mjs": JAVASCRIPT,
     "account.mjs": JAVASCRIPT,
+    "claude-connection.mjs": JAVASCRIPT,
     "records.html": "text/html",
     "versions.mjs": JAVASCRIPT,
     "experiments.mjs": JAVASCRIPT,

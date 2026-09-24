@@ -1,0 +1,18 @@
+{
+  "schema_version": "deeptwin-first-party-route-contribution-v1",
+  "contribution_id": "claude-connection-v1",
+  "factory": "app.api.claude_connection:create_router",
+  "routes": [
+    {"route_id": "connections.claude.read", "methods": ["GET", "HEAD"], "path": "/api/v1/connections/claude",
+     "auth_policy": "browser_session", "required_scope": "work.read"},
+    {"route_id": "connections.claude.key", "methods": ["POST"], "path": "/api/v1/connections/claude/key",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "connections.claude.forget", "methods": ["POST"], "path": "/api/v1/connections/claude/forget",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "connections.claude.catalog", "methods": ["POST"], "path": "/api/v1/connections/claude/catalog",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "connections.claude.model_choice", "methods": ["POST"],
+     "path": "/api/v1/connections/claude/model-choice",
+     "auth_policy": "browser_session", "required_scope": "work.command"}
+  ]
+}

@@ -46,6 +46,7 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "source-deletion.mjs": "application/javascript",
         "records-page.mjs": "application/javascript",
         "account.mjs": "application/javascript",
+        "claude-connection.mjs": "application/javascript",
         "records.html": "text/html",
         "versions.mjs": "application/javascript",
         "experiments.mjs": "application/javascript",

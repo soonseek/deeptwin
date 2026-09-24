@@ -9,6 +9,7 @@
 // automatically. All server text reaches the DOM through textContent only.
 
 import { createAccountPanel } from './account.mjs';
+import { createClaudeConnection } from './claude-connection.mjs';
 import { recordsRoutes } from './records.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
 
@@ -18,6 +19,7 @@ export const MOUNT_IDS = Object.freeze({
 });
 export const PAGE_SIZE = '50';
 export const ACCOUNT_MOUNT_ID = 'records-account';
+export const CONNECTION_MOUNT_ID = 'records-connection';
 
 export const STATUS_LABELS = Object.freeze({
   succeeded: '성공', failed: '실패', cancelled: '취소', pending: '대기', unknown: '결과 미상',
@@ -140,9 +142,13 @@ export async function boot({ document, location, fetch } = {}) {
   const accountRoot = document.getElementById(ACCOUNT_MOUNT_ID);
   const account = accountRoot !== null && typeof accountRoot?.replaceChildren === 'function'
     ? createAccountPanel({ root: accountRoot, document, fetch, basePath, session }) : null;
+  const connectionRoot = document.getElementById(CONNECTION_MOUNT_ID);
+  const connection = connectionRoot !== null && typeof connectionRoot?.replaceChildren === 'function'
+    ? createClaudeConnection({ root: connectionRoot, document, request: session.request, basePath }) : null;
+  if (connection !== null) await connection.load().catch(() => {});
   const log = createEventLog({ root: roots.logs, document, request: session.request, basePath });
   await log.load().catch(() => {});
-  return Object.freeze({ established: true, basePath, sections, log, account });
+  return Object.freeze({ established: true, basePath, sections, log, account, connection });
 }
 
 if (typeof globalThis.document === 'object' && globalThis.document !== null

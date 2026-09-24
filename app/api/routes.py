@@ -303,6 +303,10 @@ def preflight_api_v1(scope, body):
     from .versions import preflight as versions_preflight
     if is_versions_path(path):
         versions_preflight(scope, body)
+    from .claude_connection import is_claude_connection_path
+    from .claude_connection import preflight as claude_connection_preflight
+    if is_claude_connection_path(path):
+        claude_connection_preflight(scope, body)
     if path == '/api/v1/commands' and scope['method'] == 'POST':
         fields = ('schema_version', 'command_id', 'command_type', 'target', 'expected_revision', 'target_hash', 'args')
         value = parse_json_object(body, required=fields, limits=WireLimits(max_bytes=131072))

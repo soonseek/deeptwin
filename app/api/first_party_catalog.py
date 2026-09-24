@@ -1,5 +1,6 @@
 """The complete build-installed catalog; not a runtime extension registry."""
 
+from .claude_connection import connection_services
 from .deployment_prepare import (
     STARTUP_KEYS,
     prepare_services,
@@ -54,6 +55,14 @@ INSTALLED = (
         ("browser_session",),
         ("work.command", "work.read"),
         provides=("run-consents.service",),
+    ),
+    InstalledContribution(
+        "claude-connection-v1.json",
+        "app.api.claude_connection:create_router",
+        connection_services,
+        ("browser_session",),
+        ("work.command", "work.read"),
+        provides=("claude.connection",),
     ),
     InstalledContribution(
         "runs-v1.json",
