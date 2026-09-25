@@ -823,12 +823,32 @@ def create_development_app(data_dir, port=4193, *, codex_factory=None, understan
     return app
 
 
+def _browser_excluded_hosts(host):
+    """The product's own origin host, as the browser grants would spell it: never a
+    recipient of a browser tool (a host no grant could name needs no exclusion)."""
+    from .workers.fetch_channel import check_hostname
+
+    try:
+        return (check_hostname(host.lower()),)
+    except (ValueError, AttributeError):
+        return ()
+
+
 def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, expected_gid,
                runtime_dispatch_resolver=None, worker_dispatch_factory=None,
                first_party_startup_values=None, additional_protected_roots=(), run_executor=None,
                recovery_trust_set=None, credential_gateway=None, document_worker=None,
-               backup_worker=None):
+               backup_worker=None, browser_worker=None):
     """Supported web factory: exact deployment authority, no host provider discovery.
+
+    ``browser_worker`` names the sandboxed browser service and the fetch service's grant
+    side (`BrowserControlConfiguration`, checked against the fixed `cp-browser` and
+    `cp-fetch` profiles; each call runs the verified connect and handshake) or is the
+    host's already built `BrowserClient`. Named, `app.state.browser_tools` is a
+    `BrowserToolset` that builds a graph node's `BrowserAttemptTransport` (the product's
+    own origin host is never a recipient). Unnamed, it is `BrowserToolsUnavailable`:
+    every browser tool build refuses `unavailable`; the control plane never drives a
+    browser or fetches for one itself.
 
     ``backup_worker`` is the deployment's optional naming of the networkless
     backup-crypto worker endpoint (`BackupWorkerConfiguration`, the `cp-backup` pair).
@@ -897,6 +917,16 @@ def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, e
     if backup_worker is not None and type(backup_worker) is not BackupWorkerConfiguration:
         raise ValueError('Invalid backup worker configuration')
     backup_client = None if backup_worker is None else BackupCryptoClient.for_worker(backup_worker)
+    from .runtime.browser_attempt_transport import (
+        BrowserToolset,
+        BrowserToolsUnavailable,
+    )
+    from .workers.browser_channel import BrowserClient, BrowserControlConfiguration
+
+    if type(browser_worker) is BrowserControlConfiguration:
+        browser_worker = BrowserClient.for_worker(browser_worker)
+    elif browser_worker is not None and type(browser_worker) is not BrowserClient:
+        raise ValueError('Invalid browser worker configuration')
     if recovery_trust_set is not None and (type(recovery_trust_set) is not bytes
                                            or not 1 <= len(recovery_trust_set) <= 16384):
         raise ValueError('Invalid recovery trust set')
@@ -1004,6 +1034,8 @@ def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, e
             setattr(application.state, name, getattr(components, name))
         application.state.worker_dispatch = None
         application.state.worker_dispatch_slot = slot
+        application.state.browser_tools = (BrowserToolsUnavailable() if browser_worker is None else BrowserToolset(
+            browser_worker, excluded_hosts=_browser_excluded_hosts(profile.host)))
         publication = compose_first_party(application, ApplicationContext(
             components=components, owner_authority=authority, base_path=profile.base_path,
             runtime_dispatch_resolver=runtime_dispatch_resolver, worker_dispatch_slot=slot,
@@ -1051,6 +1083,8 @@ def main():
                         help='deeptwin-document-worker-attachment-v1 naming the document service endpoint')
     parser.add_argument('--backup-worker-config', type=Path, default=None,
                         help='deeptwin-backup-crypto-attachment-v1 naming the backup-crypto worker endpoint')
+    parser.add_argument('--browser-worker-config', type=Path, default=None,
+                        help='deeptwin-browser-control-attachment-v1 naming the browser and fetch endpoints')
     args = parser.parse_args()
     if min(args.expected_uid, args.expected_gid) < 0:
         parser.error('Expected ownership IDs must be nonnegative')
@@ -1097,6 +1131,17 @@ def main():
         with worker_path.open('rb') as source:
             backup_worker = BackupWorkerConfiguration.from_mapping(parse_json_object(source.read(4097),
                 required=('schema', 'pair_root', 'requester_boot_id'), limits=WireLimits(max_bytes=4096)))
+    browser_worker = None
+    if args.browser_worker_config is not None:
+        from .workers.browser_channel import BrowserControlConfiguration
+
+        browser_path = args.browser_worker_config.absolute()
+        if '..' in browser_path.parts:
+            parser.error('Invalid browser worker configuration path')
+        with browser_path.open('rb') as source:
+            browser_worker = BrowserControlConfiguration.from_mapping(parse_json_object(source.read(4097),
+                required=('schema', 'browser_pair_root', 'browser_requester_boot_id', 'fetch_pair_root',
+                          'fetch_requester_boot_id'), limits=WireLimits(max_bytes=4096)))
     # the direct-adapter Claude profile: the code-owned run executor, bounded by the
     # operator's non-secret limits (the API key itself is entered by the owner in the
     # browser and kept in server memory only)
@@ -1108,7 +1153,7 @@ def main():
         session_root_dir=args.session_root_dir, expected_uid=args.expected_uid, expected_gid=args.expected_gid,
         additional_protected_roots=(config_path.parent,), run_executor=ClaudeRunExecutor(limits=limits),
         recovery_trust_set=trust_set, credential_gateway=credential_gateway,
-        document_worker=document_worker, backup_worker=backup_worker)
+        document_worker=document_worker, backup_worker=backup_worker, browser_worker=browser_worker)
     uvicorn.run(application, host='0.0.0.0', port=8080, workers=1, reload=False,
                 proxy_headers=False, forwarded_allow_ips='', access_log=False)
 

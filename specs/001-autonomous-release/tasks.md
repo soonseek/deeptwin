@@ -600,6 +600,28 @@ creates files and passes full artifacts to later roles; trace survives cancel/re
   2026-09-23 slice: the pinned HTTPS transport behind the broker (literal-address sockets, SNI/cert
   bound to the hostname, no proxy/redirect following, streamed byte limit) —
   evidence/egress-transport-t043-2026-09-23.md. Chromium worker, typed IPC and dispatch wiring remain.
+  2026-09-25: the Chromium worker, typed IPC and dispatch wiring landed
+  (evidence/browser-worker-t043-2026-09-25.md): `app/adapters/browser.py` drives headless
+  Chromium over the DevTools pipe with its sandbox positively probed (renderers under
+  seccomp-BPF in a nested PID namespace), every request answered by controlled fulfillment
+  from the fetch service, scripts off, downloads denied, a fresh profile removed per session;
+  `app/workers/browser_*` (the `cp-browser` responder, networkless: refuses to start with any
+  interface but loopback) and `app/workers/fetch_*` (the `cp-fetch` grant register/revoke and
+  `browser-fetch` responder running `broker_fetch` over the pinned transport); `navigate`/
+  `read`/`screenshot` with deadlines, byte limits, digests and closed codes (`grant_denied`,
+  `dns_denied`, `redirect_denied`, `too_large`, `timeout`, `render_failed`, …; the broker now
+  reports them as `EgressBrokerError.code`); `BrowserAttemptTransport` binds a graph node's
+  `browser_navigate|read|screenshot` tool to the worker through the dispatcher and seals the
+  result; `--browser-worker-config` on the server (`BrowserToolsUnavailable` otherwise).
+  Qualified root-only with real processes under 20104/20105 (own netns)/20102 over real pair
+  roots against a loopback HTTPS fixture: grant/redirect/loopback/IPv6/private/rebinding/
+  iframe/oversize/timeout refusals, the ungranted host never contacted, profile root empty.
+  Still open: source/projection-category binding of outbound content (only URL-prefix
+  sources and recipient hosts are enforced), grants resolved from persisted grant records and
+  a production authority registering the browser ToolDefinitions, the browser image/lock
+  reconciliation (the lock names a Node/playwright-core worker; this one is Python stdlib +
+  chromium-headless-shell) and in-container seccomp/`network_mode: none` qualification
+  (T081/T079).
 - [x] T044 [P] [US3] Implement bounded declarative DOCX/CSV/JSON/PDF/image creation and safe format validation in app/adapters/documents.py and app/tests/test_document_tools.py; use PDF skill and actual render inspection, not file-exists-only checks (SC-004). 2026-09-13: DOCX/CSV/JSON (evidence/document-tools-t044.md); 2026-09-23: PDF (text layer + per-character rasterized ink) and PNG (sampled pixels) with active-content/encryption/bomb refusal, over the T089-locked document-worker libraries (evidence/document-tools-pdf-png-t044.md). The Korean CID font is referenced, not embedded.
 - [x] T045 [US3] Implement purpose-scoped artifact storage/preview/range reads and multi-format viewers in app/services/artifacts.py and app/static/artifacts.mjs; preserve originals and disclose derived/unsupported coverage (FR-015). 2026-09-23 slice: the owner reads a run's artifacts through runs-v1 (`…/runs/{run}/artifacts`, metadata, the original whole or one byte range, a derived preview with digest/fidelity/coverage for text, JSON and CSV; images left to the browser; PDF/DOCX disclosed as needing the isolated codec worker, never parsed in the control plane) and the viewer is mounted on the observe page (evidence/run-artifacts-t045.md). PDF/DOCX page previews through the codec worker and a vault-wide artifact index stay open.
   2026-09-25: closed — PDF pages and DOCX text are previewed through the isolated document
