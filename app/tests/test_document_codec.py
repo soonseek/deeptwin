@@ -137,6 +137,76 @@ def test_containers_that_are_not_docx_or_are_bombs_are_refused(harness):
     assert garbage.value.code == "content_rejected"
 
 
+PDF_SECRET = "aws_secret_access_key=SYNTHETIC-codec-wJalrXUtnFEMI"
+
+
+def _text_pdf(*pages, rotate=0):
+    from reportlab.pdfgen import canvas
+
+    buffer = io.BytesIO()
+    drawing = canvas.Canvas(buffer, pagesize=(612, 792))
+    for lines in pages:
+        drawing.setFont("Helvetica", 12)
+        for index, line in enumerate(lines):
+            drawing.drawString(72, 700 - 20 * index, line)
+        if rotate:
+            drawing.setPageRotation(rotate)
+        drawing.showPage()
+    drawing.save()
+    return buffer.getvalue()
+
+
+def test_pdf_text_is_extracted_per_page_one_character_per_index(harness):
+    client, outcomes = harness
+    pdf = _text_pdf(["first page"], ["second page", PDF_SECRET])
+    text = client.extract_pdf_text(pdf)
+    assert (text.page_count, text.truncated) == (2, False)
+    assert text.pages[0] == "first page"
+    assert text.pages[1].startswith("second page") and PDF_SECRET in text.pages[1]
+    with pytest.raises(DocumentCodecError) as damaged:
+        client.extract_pdf_text(b"%PDF-1.7\nnot a pdf")
+    assert damaged.value.code == "content_rejected"
+    assert outcomes == ["ok", "content_rejected"]
+
+
+def test_a_redacted_pdf_is_a_new_image_only_copy_verified_and_deterministic(harness):
+    client, _outcomes = harness
+    pdf = _text_pdf(["nothing here"], ["before", PDF_SECRET, "after"])
+    page = client.extract_pdf_text(pdf).pages[1]
+    start = page.index(PDF_SECRET)
+    copy = client.redact_pdf(pdf, [(2, start, len(PDF_SECRET))])
+    assert copy.page_count == 2 and copy.boxes == len(PDF_SECRET.replace(" ", ""))
+    assert copy.pdf.startswith(b"%PDF-") and sha256(copy.pdf).hexdigest() == copy.sha256
+    assert PDF_SECRET.encode() not in copy.pdf and b"CreationDate" not in copy.pdf
+    # the copy carries no text layer at all; the same input gives the same bytes
+    assert client.extract_pdf_text(copy.pdf).pages == ("", "")
+    assert client.redact_pdf(pdf, [(2, start, len(PDF_SECRET))]).pdf == copy.pdf
+    # the painted region is dark in the copy's own rendering
+    rendered = client.render_page(copy.pdf, page=2, max_edge_px=1224)
+    from PIL import Image
+
+    image = Image.open(io.BytesIO(rendered.png)).convert("L")
+    assert min(image.crop((150, 170, 300, 190)).tobytes()) < 60
+
+
+def test_redaction_refuses_what_it_cannot_do_exactly(harness):
+    client, _outcomes = harness
+    pdf = _text_pdf(["one line"])
+    with pytest.raises(DocumentCodecError) as beyond:
+        client.redact_pdf(pdf, [(1, 0, 4000)])  # past the page's characters
+    assert beyond.value.code == "invalid_request"
+    with pytest.raises(DocumentCodecError) as missing:
+        client.redact_pdf(pdf, [(3, 0, 1)])
+    assert missing.value.code == "page_out_of_range"
+    with pytest.raises(DocumentCodecError) as rotated:
+        client.redact_pdf(_text_pdf(["one line"], rotate=90), [(1, 0, 3)])
+    assert rotated.value.code == "content_rejected"
+    for ranges in ([], [(0, 0, 1)], [(1, -1, 1)], [(1, 0, 0)], [(1, 0, 1)] * 65, [("1", 0, 1)]):
+        with pytest.raises(DocumentCodecError) as refused:
+            client.redact_pdf(pdf, ranges)
+        assert refused.value.code == "invalid_request" and refused.value.sent is False
+
+
 def test_the_client_bounds_requests_before_anything_is_sent():
     sent = []
     client = DocumentCodecClient(lambda: sent.append(1))
@@ -158,7 +228,14 @@ class _LyingService:
         from uuid import uuid4
 
         from app.workers.document_channel import (
-            RESULT_SCHEMA, RESULT_TYPE, canonical, chunk_count, read_chunks, strict_object, write_chunks)
+            RESULT_SCHEMA,
+            RESULT_TYPE,
+            canonical,
+            chunk_count,
+            read_chunks,
+            strict_object,
+            write_chunks,
+        )
 
         first = connection.read(deadline=deadline)
         request = strict_object(first.payload)
@@ -226,6 +303,8 @@ def test_the_attachment_names_only_the_fixed_pair_root():
 # --- the import boundary ---------------------------------------------------------------
 
 CONTROL_PATH = ("app/services/run_artifacts.py", "app/workers/document_channel.py", "app/api/artifact_index.py",
+                "app/services/work_exports.py", "app/services/work_export_sources.py",
+                "app/services/work_export_records.py", "app/api/works.py",
                 "app/api/runs.py", "app/api/first_party_catalog.py", "app/server.py")
 
 
@@ -241,7 +320,8 @@ def test_the_control_plane_artifact_path_imports_no_document_parser():
 
 
 def test_the_control_plane_process_never_loads_a_pdf_parser():
-    code = ("import sys, app.server, app.api.first_party_catalog, app.services.run_artifacts; "
+    code = ("import sys, app.server, app.api.first_party_catalog, app.services.run_artifacts, "
+            "app.services.work_exports; "
             "print(sorted({n.split('.')[0] for n in sys.modules if n.split('.')[0] in "
             "('pypdfium2', 'pypdfium2_raw', 'pypdf', 'PIL', 'reportlab')}), "
             "'app.workers.document_service' in sys.modules)")

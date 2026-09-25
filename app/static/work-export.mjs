@@ -11,6 +11,10 @@
 // never the matched value — and its raw original stays out unless the owner
 // explicitly confirms that exact finding set, which re-previews with the set's
 // digest (bound into the preview digest and carried by the confirmation).
+// T074: attached originals are a separate explicit choice (only with raw originals).
+// The server has the isolated document worker read each attached PDF; a PDF with an
+// unconfirmed finding is exported only as a verified image-only redacted copy (shown as
+// `가림 처리`, never as the original) or left out with the reason, which is listed.
 // All server text reaches the DOM through textContent or attributes only.
 
 import { EXPORT_CATEGORIES, exportConsent, previewSummary } from './records.mjs';
@@ -72,6 +76,7 @@ export const MESSAGES = Object.freeze({
   needFindings: '비밀 의심 값을 확인한다는 표시가 있어야 원문을 포함할 수 있습니다.',
   findingsConfirmed: '확인한 비밀 의심 값이 들어 있는 원문이 그대로 포함됩니다.',
   truncated: '찾은 값이 많아 일부만 표시했습니다.',
+  sources: '첨부 원본도 포함(원문 포함을 고른 경우만 · PDF는 격리된 문서 작업자가 비밀을 검사하고, 찾으면 가린 사본만 넣거나 뺍니다)',
 });
 
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -145,9 +150,13 @@ export function createWorkExport({ root, document, basePath = '/', request, cryp
   raw.checked = false;
   const rawLabel = element('label', '작업 설명 원문을 그대로 포함(선택하지 않으면 원문은 빠집니다)',
     { for: 'export-include-raw' });
+  const sourcesBox = element('input', undefined, { type: 'checkbox', id: 'export-include-sources' });
+  sourcesBox.checked = false;
+  const sourcesLabel = element('label', MESSAGES.sources, { for: 'export-include-sources' });
   const previewButton = element('button', '포함될 내용 미리보기', { type: 'button' });
   const shown = element('section', undefined, { class: 'export-preview', 'aria-label': '내보내기 미리보기' });
-  root.replaceChildren(element('h2', '기록 내보내기'), status, choices, raw, rawLabel, previewButton, shown);
+  root.replaceChildren(element('h2', '기록 내보내기'), status, choices, raw, rawLabel, sourcesBox, sourcesLabel,
+    previewButton, shown);
 
   let current = null;
   let generation = 0;
@@ -167,8 +176,14 @@ export function createWorkExport({ root, document, basePath = '/', request, cryp
   }
 
   function findingText(finding) {
+    const label = FINDING_LABELS[finding.kind] ?? finding.kind;
+    const source = /sources\/source-(\d+)\./.exec(String(finding.relative_path))?.[1];
+    if (source !== undefined) {
+      const page = Number.isInteger(finding.page) ? ` ${finding.page}쪽` : '';
+      return `${label} · 첨부 원본 ${source}${page} ${Number(finding.line)}행 ${Number(finding.column)}열`;
+    }
     const revision = /revision-(\d+)\./.exec(String(finding.relative_path))?.[1] ?? '?';
-    return `${FINDING_LABELS[finding.kind] ?? finding.kind} · 작업 설명 ${revision}판 `
+    return `${label} · 작업 설명 ${revision}판 `
       + `${Number(finding.line)}행 ${Number(finding.column)}열`;
   }
 
@@ -216,6 +231,14 @@ export function createWorkExport({ root, document, basePath = '/', request, cryp
         + `${REASON_LABELS[entry.reason] ?? entry.reason}`, { 'data-reason': entry.reason }));
     }
     parts.push(element('h3', '빠지는 범주와 이유'), missing);
+    // what each omission means, as the server states it (e.g. which attachment and why)
+    const claims = (Array.isArray(value.missing) ? value.missing : [])
+      .filter(entry => entry.reason !== 'not_selected' && typeof entry.claim === 'string');
+    if (claims.length) {
+      const why = element('ul', undefined, { class: 'export-missing-why', 'aria-label': '빠지는 이유 설명' });
+      for (const entry of claims) why.append(element('li', entry.claim, { 'data-reason': entry.reason }));
+      parts.push(why);
+    }
     renderFindings(value, parts);
     parts.push(element('p', `미리보기 SHA-256 ${summary.previewSha}`, { class: 'export-digest' }));
     if (!value.exportable) {
@@ -249,6 +272,8 @@ export function createWorkExport({ root, document, basePath = '/', request, cryp
     }
     const includeRaw = acknowledged !== null
       || (raw.checked === true && categories.includes('originals'));
+    const includeSources = acknowledged !== null ? shownSelection.include_source_originals === true
+      : includeRaw && sourcesBox.checked === true;
     const mine = ++generation;
     current = null;
     shown.replaceChildren();
@@ -257,6 +282,7 @@ export function createWorkExport({ root, document, basePath = '/', request, cryp
       const body = { schema_version: PREVIEW_SCHEMA, request_id: crypto.randomUUID(), categories,
         include_raw: includeRaw };
       if (acknowledged !== null) body.acknowledged_findings_sha = acknowledged;
+      if (includeSources) body.include_source_originals = true;
       const value = await request(routes.preview(id), { method: 'POST', body });
       if (mine !== generation) return null;
       renderPreview(value);
@@ -282,6 +308,7 @@ export function createWorkExport({ root, document, basePath = '/', request, cryp
       const body = { schema_version: CONFIRM_SCHEMA, request_id: bound.request_id, categories: value.categories,
         include_raw: value.include_raw, preview_sha: bound.preview_sha, confirmed: true };
       if (acknowledged !== null) body.acknowledged_findings_sha = acknowledged;
+      if (value.include_source_originals === true) body.include_source_originals = true;
       const receipt = await request(routes.confirm(id), { method: 'POST', body });
       if (mine !== generation) return null;
       const link = element('a', '내보낸 묶음 내려받기', { href: routes.download(id, receipt.bundle_id),

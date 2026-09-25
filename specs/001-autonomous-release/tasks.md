@@ -844,7 +844,7 @@ preview, missing evidence and no network send; backup/restore without original d
     preview→consent→cleanup, settings navigation, portable staged review) — evidence/us7.md.
   - Not in T073's text and not done: deleting core records other than originals (the store is
     append-only), cache cleanup (no cache is stored), and portable backup creation on screen.
-- [ ] T074 [US7] Run setup/source/candidate/lens/failed-run/alternative/round/approval export, secret canaries, PDF redaction and interrupted restore cases in app/tests/browser-records.test.mjs and specs/001-autonomous-release/evidence/us7.md (SC-009).
+- [x] T074 [US7] Run setup/source/candidate/lens/failed-run/alternative/round/approval export, secret canaries, PDF redaction and interrupted restore cases in app/tests/browser-records.test.mjs and specs/001-autonomous-release/evidence/us7.md (SC-009).
   2026-09-23 partial: work export (actual preview, bound consent, raw only by choice, secret
   canaries absent, stale preview refused) and the records page in real Chromium; fixed the log
   reading `recorded_at_utc` where the projection carries `observed_at_utc` —
@@ -864,6 +864,22 @@ preview, missing evidence and no network send; backup/restore without original d
   response; the manifest canary check now gets the withheld values. CSRF values cannot be checked
   (the server stores no token to derive them from). Candidate/lens/round export, PDF redaction and
   browser restore remain as above — evidence/us7.md.
+  2026-09-25 rest (ticked: every listed case is now exercised in browser-records, real Chromium,
+  test-actor/synthetic): candidate/lens export — the work's design requests, candidates, verdicts
+  as recorded with the critic identity, derivations and design approvals, and the referenced lens
+  definitions (scope: the request's work model was drafted from a revision of this work); round
+  export — rounds whose plan baseline is an environment this work's runs used, with experiments,
+  item outcomes/boundaries and the out-of-scope count; PDF redaction — attached originals by an
+  explicit choice, PDFs read only by the isolated document worker, a finding exported as a
+  worker-made image-only copy re-verified (no text, boxes dark, re-extracted and rescanned, bytes
+  checked) or excluded with the reason, the original only when the owner confirms that finding
+  set; interrupted restore — an upload aborted mid-stream (32 768 of 491 832 bytes received) marks
+  that restore failed, stages nothing, is cleanable at once, the active vault is unchanged and a
+  fresh restore stages for review. Browser 10/10 (records 6, backup 2, retention 2); pytest 477
+  passed over the export/backup/document/route-count sets; node 241. Open (stated in
+  evidence/us7.md): design pools and rounds come from test-actor seeds (no production producer);
+  browser rounds had no tool effects; verdicts are not re-folded; run completion evidence is still
+  not collected — evidence/us7.md.
 
 ## Phase 10: Integrated qualification and release evidence
 

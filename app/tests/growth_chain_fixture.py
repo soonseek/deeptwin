@@ -322,6 +322,40 @@ def seed(domain, reset_base):
     }
 
 
+SCOPED = "67005000-0000-4000-8000-000000000000"
+UNSCOPED = "67006000-0000-4000-8000-000000000000"
+
+
+def seed_environment_rounds(domain, reset_base, environment_ref):
+    """T074 (records export): one lineage whose frozen plan's baseline IS `environment_ref`
+    (a real environment record a work's runs name) — a valid round, then a round whose
+    candidate run crashed (invalid, never counted) — and one lineage over the fixture's
+    unrelated environment, so the export's environment scope rule has something to leave
+    out. Rounds run on the real scheduler in fresh isolated vaults; the loop is advanced
+    and persisted through the store's CAS. Every value is synthetic (test actor)."""
+
+    scoped = freeze_comparison_plan({
+        **{key.removesuffix("_ref"): value for key, value in plan_for(SCOPED).as_dict().items()
+           if key != "schema_version"},
+        "baseline_environment": environment_ref.as_dict()})
+    record = persist_comparison_plan(domain, scoped, **marks(domain))
+    state = start_growth_loop(SCOPED, freeze_quality_profile(dict(PROFILE)))
+    head = persist_loop_state(domain, state, parent_ref=None, **marks(domain))
+    results = []
+    for index, spec in enumerate(("0.80", "crash")):
+        result, _record, consumed = execute_round(domain, scoped, record, reset_base, index=index, spec=spec,
+                                                  candidate=ref("change_candidate", 670050 + index))
+        results.append(result)
+        state, head = advance_and_persist_loop(domain, state, _outcome(result, consumed), prev_ref=head,
+                                               **marks(domain))
+    other = plan_for(UNSCOPED)
+    other_record = persist_comparison_plan(domain, other, **marks(domain))
+    execute_round(domain, other, other_record, reset_base, index=0, spec="0.81",
+                  candidate=ref("change_candidate", 670060))
+    return {"evidence_label": LABEL, "lineage_id": SCOPED, "round_ids": [item.round_id for item in results],
+            "validities": [item.validity for item in results], "outside_lineage_id": UNSCOPED}
+
+
 def _q_round(domain, q):
     from app.domain.refs import EntityRef
     from app.services.growth_store import resume_comparison_round

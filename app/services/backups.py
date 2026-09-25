@@ -395,6 +395,36 @@ class BackupService:
         finally:
             _wipe(identity)  # used once or refused: either way nothing of it stays
 
+    UPLOAD_INTERRUPTED = "the bundle upload was interrupted before it was complete; nothing was staged"
+
+    @_closed
+    def restore_interrupted(self, request, restore_id: str, received_bytes: int) -> dict:
+        """T074: the owner's bundle upload for this restore ended before its body was
+        complete (the client disconnected mid-stream). Nothing of it was kept — the web
+        boundary holds the partial body only in memory and drops it — so the restore is
+        marked `failed` at once (cleanable on the retention screen) instead of waiting an
+        hour as an abandoned `awaiting_bundle`. The active vault is never touched; a
+        fresh restore starts over."""
+
+        _authenticate_owner(self._owner, request)
+        if type(received_bytes) is not int or received_bytes < 0:
+            raise BackupServiceError("invalid_input")
+        if not self._lock.acquire(timeout=5):
+            raise BackupServiceError("conflict")
+        try:
+            path = self._restore_dir(restore_id)
+            status = json.loads((path / "status.json").read_bytes())
+            if status.get("state") != "awaiting_bundle":
+                raise BackupServiceError("conflict")  # only a restore still waiting can be interrupted
+            if any(child.name not in {"status.json", "receipt.json"} for child in path.iterdir()):
+                raise BackupServiceError("unavailable")  # never claim nothing was staged if something was
+            status = {**status, "state": "failed", "failure": self.UPLOAD_INTERRUPTED,
+                      "failure_code": "restore_failed", "interrupted_after_bytes": received_bytes}
+            _write_replace(path / "status.json", _canonical(status))
+        finally:
+            self._lock.release()
+        return self._restore_view(restore_id)
+
     def _stage(self, restore_id: str, bundle: bytes, identity) -> dict:
         if self._client is None:
             raise BackupServiceError("backup_worker_unavailable")

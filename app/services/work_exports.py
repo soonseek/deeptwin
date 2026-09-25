@@ -16,6 +16,17 @@ the exact digest; it seals the owner's consent, the raw-inclusion artifacts, the
 manifest (through `app.operations.export`, which never carries the archive's own
 hash) and the bundle, and returns the external receipt. Nothing is transmitted:
 the bundle is downloaded only by the owner through `download`.
+
+T074 additions (both inside the same preview digest and confirmation):
+- `evaluation_evidence` now carries the work's design records (requests, candidates,
+  verdicts AS RECORDED with the critic identities, owner derivations, design approvals),
+  the lens definitions they reference and the growth rounds scoped by the environment
+  this work's runs ran in (`work_export_records`), metadata only; a run's own completion
+  evaluation is still stated as not collected.
+- `include_source_originals` (only with `include_raw`) adds the work's attached
+  originals, scanned for secrets; an attached PDF is read and, on an unconfirmed
+  finding, redacted only by the isolated document worker (`work_export_sources`), and
+  what cannot be scanned or safely redacted is left out with its stated reason.
 """
 
 from __future__ import annotations
@@ -40,9 +51,12 @@ from ..operations.export import (
     create_export_request,
     seal_export,
 )
+from ..workers.document_channel import DocumentCodecClient
 from .export_secret_scan import findings_digest, scan_text
 from .owner_auth import OwnerAuthError
 from .run_approvals import _authenticate_owner, _owner_actor_ref
+from .work_export_records import collect_design_records, collect_rounds, lens_view
+from .work_export_sources import _Cache, assess, load_sources, materialize
 from .works import PersistentWorks, WorkServiceError
 
 __all__ = ["CONFIRM_SCHEMA", "PREVIEW_SCHEMA", "PersistentWorkExports"]
@@ -53,8 +67,12 @@ MAX_REVISIONS = 512
 APP_RELEASE = "deeptwin-dev"
 RUN_MANIFEST_SCHEMA = "run-manifest-v1"
 # selected categories whose records this server does not yet collect into an export
+# (evaluation evidence is collected for design and growth records only; a run's own
+# completion evaluation is still stated as not collected)
 UNCOLLECTED = frozenset({"model_final_responses", "tool_observations",
                          "evaluation_evidence"})
+# the owner's explicit choice to include attached originals (only with raw originals)
+SOURCES_FIELD = "include_source_originals"
 _ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 # the owner's explicit confirmation of the exact secret-finding set shown in a preview
 ACK_FIELD = "acknowledged_findings_sha"
@@ -89,8 +107,13 @@ def _selection(payload, *, confirm):
     fields = {"schema_version", "request_id", "categories", "include_raw"}
     if confirm:
         fields |= {"preview_sha", "confirmed"}
-    if type(payload) is not dict or set(payload) - {ACK_FIELD} != fields:
+    if type(payload) is not dict or set(payload) - {ACK_FIELD, SOURCES_FIELD} != fields:
         raise WorkServiceError("invalid_input")
+    sources = payload.get(SOURCES_FIELD, False)
+    if type(sources) is not bool:
+        raise WorkServiceError("invalid_input")
+    if sources and payload.get("include_raw") is not True:
+        raise WorkServiceError("invalid_input")  # attached originals are a raw inclusion
     acknowledged = payload.get(ACK_FIELD)
     if ACK_FIELD in payload and (type(acknowledged) is not str or not _HEX64.fullmatch(acknowledged)):
         raise WorkServiceError("invalid_input")
@@ -111,18 +134,22 @@ def _selection(payload, *, confirm):
         raise WorkServiceError("invalid_input")  # raw inclusion is a choice about originals
     if acknowledged is not None and not payload["include_raw"]:
         raise WorkServiceError("invalid_input")  # a finding confirmation is about raw originals
-    return request_id, tuple(sorted(categories)), payload["include_raw"], acknowledged
+    return request_id, tuple(sorted(categories)), payload["include_raw"], acknowledged, sources
 
 
 class PersistentWorkExports:
     """Owner-authenticated export of one work over the actual domain store."""
 
-    def __init__(self, works):
+    def __init__(self, works, *, codec=None):
         if type(works) is not PersistentWorks:
             raise TypeError("Exact PersistentWorks required")
+        if codec is not None and type(codec) is not DocumentCodecClient:
+            raise TypeError("Exact DocumentCodecClient required")
         self._works = works
         self._domain = works._domain
         self._owner = works._owner
+        self._codec = codec  # the isolated document worker; None: attached PDFs are never read
+        self._cache = _Cache()
 
     # --- what the export actually contains ---------------------------------------
 
@@ -151,12 +178,7 @@ class PersistentWorkExports:
             raise WorkServiceError("too_large")
         return sorted(found, key=lambda record: (record.body["created_at_utc"], record.ref.id))
 
-    def _runs(self, db, roots, work_id):
-        """The owner's runs of this work, oldest first: each run's start, every
-        `run.stopped` with its reason (a failed execution is `infrastructure_failure`),
-        the consent it ran under and the action approvals recorded on it. Identities,
-        times and closed codes only — never graph, artifact or model content."""
-
+    def _manifests(self, db, roots, work_id):
         manifests = []
         for row in db.execute(
                 "SELECT id, version, sha256 FROM domain_records WHERE vault_id=? AND kind='run_manifest' "
@@ -170,6 +192,24 @@ class PersistentWorkExports:
                 manifests.append(record)
         if len(manifests) > MAX_REVISIONS:
             raise WorkServiceError("too_large")
+        return manifests
+
+    def _environments(self, db, roots, work_id):
+        """The exact environments this work's runs ran in (the growth-round scope)."""
+
+        found = {}
+        for record in self._manifests(db, roots, work_id):
+            ref = record.body["content"]["inputs"]["environment_ref"]
+            found[canonical_json(ref)] = ref
+        return [found[key] for key in sorted(found)]
+
+    def _runs(self, db, roots, work_id):
+        """The owner's runs of this work, oldest first: each run's start, every
+        `run.stopped` with its reason (a failed execution is `infrastructure_failure`),
+        the consent it ran under and the action approvals recorded on it. Identities,
+        times and closed codes only — never graph, artifact or model content."""
+
+        manifests = self._manifests(db, roots, work_id)
         if not manifests:
             return []
         stops = {}
@@ -216,16 +256,19 @@ class PersistentWorkExports:
         return sorted(runs, key=lambda run: (run["started_at_utc"], run["run_id"]))
 
     @staticmethod
-    def _collect(revisions, categories, include_raw, alternatives=(), runs=(), withheld=frozenset()):
+    def _collect(revisions, categories, include_raw, alternatives=(), runs=(), withheld=frozenset(),
+                 sources=(), evaluation=None):
         """(items with their exact bytes, missing entries), deterministically ordered.
         A revision in `withheld` (a raw original with an unconfirmed secret finding) is
-        exported as metadata only, and the omission is stated."""
+        exported as metadata only, and the omission is stated. `sources` are the attached
+        originals' (item, missing) pairs when the owner asked for them; `evaluation` the
+        design/lens/round records of this work (work_export_records)."""
 
         items, missing = [], []
 
-        def add(category, path, media_type, data, *, mode, label):
+        def add(category, path, media_type, data, *, mode, label, source_ref=None):
             items.append({"category": category, "relative_path": path, "media_type": media_type,
-                          "data": data, "content_mode": mode, "label": label})
+                          "data": data, "content_mode": mode, "label": label, "source_ref": source_ref})
 
         if "originals" in categories:
             for record in revisions:
@@ -244,6 +287,12 @@ class PersistentWorkExports:
             if withheld:
                 missing.append({"category": "originals", "reason": "redacted",
                                 "claim": f"비밀로 보이는 값이 있어 작업 설명 원문 {len(withheld)}개를 제외했다."})
+            for item, entry in sources:
+                if item is not None:
+                    add(item["category"], item["relative_path"], item["media_type"], item["data"],
+                        mode=item["content_mode"], label=item["label"], source_ref=item["source_ref"])
+                if entry is not None:
+                    missing.append(entry)
         if "events" in categories:
             add("events", "events/work-history.json", "application/json", _json([
                 {"revision": record.ref.version, "created_at_utc": record.body["created_at_utc"],
@@ -283,10 +332,53 @@ class PersistentWorkExports:
             else:
                 missing.append({"category": "alternatives", "reason": "not_recorded",
                                 "claim": "이 작업의 실행에 대해 고정한 내 버전이 없다."})
+        collected_evaluation = False
+        if "evaluation_evidence" in categories and evaluation is not None:
+            requests, lenses, rounds, experiments, scope = (
+                evaluation["requests"], evaluation["lenses"], evaluation["rounds"], evaluation["experiments"],
+                evaluation["scope"])
+            if requests:
+                candidates = sum(len(item["candidates"]) for item in requests)
+                verdicts = sum(item["verdict"] is not None for request in requests for item in request["candidates"])
+                derivations = sum(len(item["derivations"]) for item in requests)
+                approvals = sum(len(item["design_approvals"]) for item in requests)
+                critics = sorted({model for request in requests for item in request["candidates"]
+                                  if item["verdict"] for model in item["verdict"]["critic"]["model_ids"]})
+                add("evaluation_evidence", "evaluation/design-requests.json", "application/json", _json({
+                    "scope_rule": ("설계 요청의 작업 모델이 이 작업의 수정본에서 만든 작업 모델일 때만 포함한다."),
+                    "verdict_basis": ("기록된 평가를 기록된 그대로 옮긴다. 평가자 이름은 평가 호출 기록에서 읽고, "
+                                      "내보내기는 평가를 다시 검증하지 않는다."),
+                    "requests": requests}), mode="metadata_only",
+                    label=(f"설계 요청 {len(requests)}개 · 후보 {candidates}개 · 기록된 평가 {verdicts}개"
+                           f"(평가자 {', '.join(critics) or '없음'}, 다시 검증하지 않음) · 파생 {derivations}개"
+                           f" · 설계 승인 {approvals}개"))
+                collected_evaluation = True
+            if lenses:
+                add("evaluation_evidence", "evaluation/lenses.json", "application/json", _json(lenses),
+                    mode="metadata_only", label=f"참조한 렌즈 정의 {len(lenses)}개 (판본·검토 상태)")
+                collected_evaluation = True
+            if rounds:
+                add("evaluation_evidence", "evaluation/rounds.json", "application/json", _json({
+                    "scope_rule": ("비교 라운드는 작업이 아니라 기준 환경에 묶인다. 비교 계획의 기준 환경이 이 작업의 "
+                                   "실행이 쓴 환경과 정확히 같을 때만 포함한다."),
+                    "environments": [{"id": ref["id"], "version": ref["version"]} for ref in scope["environments"]],
+                    "outside_scope_round_count": scope["outside_scope"],
+                    "unreadable_round_count": scope["unreadable"],
+                    "rounds": rounds, "experiments": experiments}), mode="metadata_only",
+                    label=(f"이 작업의 실행 환경에서 한 비교 {len(rounds)}개 · 실험 {len(experiments)}개 "
+                           f"(판정·지표·항목 결과만, 산출물 내용 제외 · 다른 환경의 비교 {scope['outside_scope']}개는 범위 밖)"))
+                collected_evaluation = True
         for category in sorted(EXPORT_CATEGORIES):
             if category not in categories:
                 missing.append({"category": category, "reason": "not_selected",
                                 "claim": "내보내기에서 선택하지 않았다."})
+            elif category == "evaluation_evidence" and collected_evaluation:
+                missing.append({"category": category, "reason": "unavailable",
+                                "claim": "실행의 완료 판정 근거는 이 서버의 내보내기가 아직 모으지 않는다."})
+            elif category == "evaluation_evidence" and evaluation is not None:
+                missing.append({"category": category, "reason": "unavailable",
+                                "claim": ("이 서버의 내보내기는 실행의 완료 판정 근거를 아직 모으지 않고, "
+                                          "이 작업에는 설계 평가·비교 기록이 없다.")})
             elif category in UNCOLLECTED:
                 missing.append({"category": category, "reason": "unavailable",
                                 "claim": "이 서버의 내보내기는 아직 이 범주를 모으지 않는다."})
@@ -297,29 +389,38 @@ class PersistentWorkExports:
         return items, missing
 
     @staticmethod
-    def _preview_value(work_id, request_id, categories, include_raw, items, missing, scan=None):
+    def _preview_value(work_id, request_id, categories, include_raw, items, missing, scan=None, sources=False):
         shown = [{name: item[name] for name in ("export_id", "category", "relative_path",
                                                  "media_type", "size_bytes", "export_sha256",
                                                  "content_mode", "label")} for item in items]
-        digest = sha256(canonical_json({
-            "work_id": work_id, "request_id": request_id, "categories": list(categories),
-            "include_raw": include_raw, "items": shown, "missing": missing, "secret_scan": scan,
-        })).hexdigest()
-        return {"request_id": request_id, "work_id": work_id, "preview_sha": digest,
-                "categories": list(categories), "include_raw": include_raw,
-                "items": shown, "missing": missing, "exportable": bool(shown), "secret_scan": scan}
+        bound = {"work_id": work_id, "request_id": request_id, "categories": list(categories),
+                 "include_raw": include_raw, "items": shown, "missing": missing, "secret_scan": scan}
+        if sources:
+            bound[SOURCES_FIELD] = True
+        digest = sha256(canonical_json(bound)).hexdigest()
+        value = {"request_id": request_id, "work_id": work_id, "preview_sha": digest,
+                 "categories": list(categories), "include_raw": include_raw,
+                 "items": shown, "missing": missing, "exportable": bool(shown), "secret_scan": scan}
+        if sources:
+            value[SOURCES_FIELD] = True
+        return value
 
-    def _scan(self, db, work_id, revisions, acknowledged):
-        """The secret scan over every raw original the export would carry: (the scan
-        shown in the preview, withheld revision numbers, matched values for canaries).
-        Only the kind and location of a finding is ever shown; a raw original with a
-        finding is withheld unless the owner confirmed exactly this finding set."""
-
-        findings, truncated, values, flagged = [], False, [], set()
-
+    def _known(self, db):
         def known(candidate):
             return self._owner.recognizes_secret(db, candidate)
 
+        return known
+
+    def _scan(self, db, work_id, revisions, acknowledged, assessed=()):
+        """The secret scan over every raw original the export would carry: (the scan
+        shown in the preview, withheld revision numbers, matched values for canaries,
+        whether the owner confirmed this exact finding set). Only the kind and location
+        of a finding is ever shown; a raw original with a finding is withheld (an
+        attached PDF: redacted or excluded) unless the owner confirmed exactly this
+        finding set. `assessed` are the attached originals the worker already scanned."""
+
+        findings, truncated, values, flagged = [], False, [], set()
+        known = self._known(db)
         for record in revisions:
             number = record.ref.version
             found, cut, matched = scan_text(record.body["content"]["text"], known=known)
@@ -329,6 +430,9 @@ class PersistentWorkExports:
                 truncated = truncated or cut
                 findings.extend({"relative_path": f"originals/revision-{number}.txt", **item.as_dict()}
                                 for item in found)
+        for entry in assessed:
+            findings.extend(entry["findings"])
+            values.extend(entry["values"])
         digest = findings_digest(work_id, findings) if findings else None
         if acknowledged is not None and acknowledged != digest:
             raise WorkServiceError("conflict")  # the owner confirmed a finding set that is not this one
@@ -337,16 +441,40 @@ class PersistentWorkExports:
                 "confirmed": confirmed}
         withheld = frozenset() if confirmed else frozenset(flagged)
         canaries = [] if confirmed else sorted({value for value in values if value})[:MAX_CANARIES]
-        return scan, withheld, canaries
+        return scan, withheld, canaries, confirmed
 
-    def _current(self, db, roots, work_id, request_id, categories, include_raw, acknowledged=None):
+    def _evaluation(self, db, roots, work_id):
+        requests, lens_keys = collect_design_records(self._domain, db, roots, work_id)
+        environments = self._environments(db, roots, work_id)
+        rounds, experiments, counts = (collect_rounds(self._domain, db, roots, environments)
+                                       if environments else ([], [], {"outside_scope": 0, "unreadable": 0}))
+        return {"requests": requests, "lenses": lens_view(lens_keys) if lens_keys else [],
+                "rounds": rounds, "experiments": experiments, "scope": {"environments": environments, **counts}}
+
+    def _current(self, db, roots, work_id, request_id, categories, include_raw, acknowledged=None,
+                 include_sources=False):
         revisions = self._revisions(db, roots, work_id)
         alternatives = self._alternatives(db, roots, work_id) if "alternatives" in categories else ()
         runs = self._runs(db, roots, work_id) if "events" in categories else ()
-        scan, withheld, canaries = (self._scan(db, work_id, revisions, acknowledged) if include_raw
-                                    else (None, frozenset(), []))
-        items, missing = self._collect(revisions, categories, include_raw, alternatives, runs, withheld)
-        preview = self._preview_value(work_id, request_id, categories, include_raw, items, missing, scan)
+        evaluation = self._evaluation(db, roots, work_id) if "evaluation_evidence" in categories else None
+        assessed = []
+        if include_sources:
+            known = self._known(db)
+            assessed = [assess(source, codec=self._codec, known=known, cache=self._cache)
+                        for source in load_sources(self._domain, db, roots, revisions, with_bytes=True)]
+        scan, withheld, canaries, confirmed = (self._scan(db, work_id, revisions, acknowledged, assessed)
+                                               if include_raw else (None, frozenset(), [], False))
+        sources = [materialize(entry, confirmed=confirmed, codec=self._codec, known=self._known(db),
+                               cache=self._cache) for entry in assessed]
+        items, missing = self._collect(revisions, categories, include_raw, alternatives, runs, withheld,
+                                       sources, evaluation)
+        # a redacted copy must never carry what it painted over
+        for item in items:
+            if item["content_mode"] == "redacted" and any(value.encode("utf-8") in item["data"]
+                                                           for value in canaries):
+                raise WorkServiceError("unavailable")
+        preview = self._preview_value(work_id, request_id, categories, include_raw, items, missing, scan,
+                                      include_sources)
         return revisions, items, missing, preview, canaries
 
     @_closed
@@ -354,11 +482,12 @@ class PersistentWorkExports:
         """What the export would contain now; reads only, stores nothing."""
 
         work_id = uuid_string(work_id)
-        request_id, categories, include_raw, acknowledged = _selection(payload, confirm=False)
+        request_id, categories, include_raw, acknowledged, sources = _selection(payload, confirm=False)
         _authenticate_owner(self._owner, request)
         with self._domain._connection() as db:
             roots = self._domain._read_roots(db)
-            return self._current(db, roots, work_id, request_id, categories, include_raw, acknowledged)[3]
+            return self._current(db, roots, work_id, request_id, categories, include_raw, acknowledged,
+                                 sources)[3]
 
     # --- the explicit, bound confirmation ------------------------------------------
 
@@ -387,7 +516,7 @@ class PersistentWorkExports:
     @_closed
     def confirm(self, request, work_id, payload) -> dict:
         work_id = uuid_string(work_id)
-        request_id, categories, include_raw, acknowledged = _selection(payload, confirm=True)
+        request_id, categories, include_raw, acknowledged, sources = _selection(payload, confirm=True)
         if payload["confirmed"] is not True:
             raise WorkServiceError("invalid_input")  # consent is never implicit
         shown = payload["preview_sha"]
@@ -397,7 +526,7 @@ class PersistentWorkExports:
             if self._for_request(db, roots, request_id):
                 raise WorkServiceError("conflict")  # one bundle per request id
             _revisions, items, _missing, preview, _canaries = self._current(
-                db, roots, work_id, request_id, categories, include_raw, acknowledged)
+                db, roots, work_id, request_id, categories, include_raw, acknowledged, sources)
         if not preview["exportable"]:
             raise WorkServiceError("invalid_input")  # nothing selected exists to export
         if preview["preview_sha"] != shown:
@@ -411,18 +540,25 @@ class PersistentWorkExports:
             if self._for_request(db, roots, request_id):
                 raise WorkServiceError("conflict")
             revisions, items, missing, again, canaries = self._current(
-                db, roots, work_id, request_id, categories, include_raw, acknowledged)
+                db, roots, work_id, request_id, categories, include_raw, acknowledged, sources)
             if again["preview_sha"] != shown:
                 raise WorkServiceError("conflict")
             latest = revisions[-1].ref
             consent = self._record(db, roots, actor_ref, "run_consent", {
                 "export_consent": {"work_id": work_id, "request_id": request_id,
                                    "preview_sha": shown, "categories": list(categories),
-                                   "include_raw": include_raw,
+                                   "include_raw": include_raw, SOURCES_FIELD: sources,
                                    "confirmed_secret_findings_sha": acknowledged}}, (latest,))
             raw_refs, by_revision = [], {record.ref.version: record.ref for record in revisions}
             for item in items:
-                if item["content_mode"] == "raw":
+                if item["content_mode"] == "raw" and item["source_ref"] is not None:
+                    # an attached original the owner chose to include as it is
+                    raw_refs.append(self._record(db, roots, actor_ref, "artifact", {
+                        "export_original": {"source_id": item["source_ref"].id,
+                                            "export_sha256": item["export_sha256"],
+                                            "media_type": item["media_type"]}},
+                        (item["source_ref"], consent)))
+                elif item["content_mode"] == "raw":
                     number = int(item["relative_path"].rsplit("-", 1)[1].split(".")[0])
                     raw_refs.append(self._record(db, roots, actor_ref, "artifact", {
                         "export_original": {"revision": number, "export_sha256": item["export_sha256"],
@@ -448,7 +584,9 @@ class PersistentWorkExports:
                   "recoverable_by_user": entry["reason"] == "not_selected"} for entry in missing],
                 secret_canaries=canaries, created_at=created_at, app_release=APP_RELEASE,
                 pseudonym_map_scope=f"work:{work_id}",
-                reproduction_limits=["모델·도구 실행 기록은 이 내보내기에 포함되지 않았다."],
+                reproduction_limits=["모델·도구 실행 기록은 이 내보내기에 포함되지 않았다."] + (
+                    ["가림 사본은 원본과 같지 않아 원본을 재현하지 않는다."]
+                    if any(item["content_mode"] == "redacted" for item in items) else []),
             )
             manifest_dict = manifest.as_dict()
             bundle = self._bundle(manifest_dict, items)

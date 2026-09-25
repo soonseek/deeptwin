@@ -237,6 +237,64 @@ def test_a_corrupt_bundle_or_a_lost_key_is_stated_and_stages_nothing(tmp_path):
         assert lost_restore["state"] == "failed" and lost_restore["failure_code"] == "backup_key_unavailable"
 
 
+def interrupted_upload(subject, restore_id, data, *, sent, csrf=None):
+    """Drive the real ASGI app with a bundle upload whose client disconnects after `sent`
+    bytes of the declared body (what an aborted browser upload looks like to the server)."""
+    import asyncio
+
+    base = subject.profile.base_path + f"api/v1/backups/restores/{restore_id}/bundle"
+    cookie = "; ".join(f"{name}={value}" for name, value in subject.client.cookies.items())
+    fields = {**headers(subject.profile, subject.csrf if csrf is None else csrf),
+              "Host": subject.profile.http_origin.split("://", 1)[1], "Cookie": cookie,
+              "Content-Type": "application/octet-stream", "Content-Length": str(len(data))}
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST",
+             "scheme": subject.profile.http_origin.split("://", 1)[0], "path": base, "raw_path": base.encode(),
+             "root_path": "", "query_string": b"", "client": ("127.0.0.1", 50000), "server": ("127.0.0.1", 80),
+             "headers": [(name.lower().encode(), value.encode()) for name, value in fields.items()]}
+    messages = [{"type": "http.request", "body": data[:sent], "more_body": True}, {"type": "http.disconnect"}]
+    sent_back = []
+
+    async def receive():
+        return messages.pop(0) if messages else {"type": "http.disconnect"}
+
+    async def send(message):
+        sent_back.append(message)
+
+    asyncio.run(subject.app(scope, receive, send))
+    return sent_back
+
+
+@needs_age
+def test_an_upload_cut_mid_stream_fails_its_restore_stages_nothing_and_a_fresh_restore_works(tmp_path):
+    with owner_app(tmp_path) as subject, with_worker(tmp_path, subject):
+        create(subject, text="중단 복원 확인 작업")
+        receipt = confirm(subject, preview(subject).json()).json()["receipt"]
+        bundle = get(subject, f"/{receipt['backup_id']}/ciphertext").content
+        restore_id = begin_restore(subject, receipt)["restore_id"]
+        active = sorted(p.name for p in Path(subject.domain.data_dir).iterdir())
+        # a disconnect from a request without the owner's CSRF value marks nothing
+        interrupted_upload(subject, restore_id, bundle, sent=len(bundle) // 2, csrf="0" * 43)
+        assert get(subject, f"/restores/{restore_id}").json()["state"] == "awaiting_bundle"
+        # the owner's upload is cut halfway: nothing answers, the restore is failed and empty
+        assert interrupted_upload(subject, restore_id, bundle, sent=len(bundle) // 2) == []
+        view = get(subject, f"/restores/{restore_id}").json()
+        assert view["state"] == "failed" and view["failure_code"] == "restore_failed"
+        assert view["failure"].startswith("the bundle upload was interrupted")
+        assert view["interrupted_after_bytes"] == len(bundle) // 2
+        restore_dir = Path(subject.domain.data_dir) / "restores" / restore_id
+        assert sorted(p.name for p in restore_dir.iterdir()) == ["receipt.json", "status.json"]
+        # cleanable at once on the retention screen, not after the hour an abandoned one waits
+        [item] = [entry for entry in subject.app.state.first_party_exports["backups.service"].cleanup_candidates()
+                  if entry["item_id"] == f"restore:{restore_id}"]
+        assert item["eligible"] is True and item["reason"] == "failed_restore"
+        # the same restore cannot be resumed; a fresh one stages for review; the vault is unchanged
+        assert upload(subject, restore_id, bundle).status_code == 409
+        fresh = begin_restore(subject, receipt)["restore_id"]
+        staged = upload(subject, fresh, bundle).json()
+        assert staged["state"] == "restored_review" and staged["review"]["active_vault_changed"] is False
+        assert sorted(p.name for p in Path(subject.domain.data_dir).iterdir()) == active
+
+
 def portable_backup(tmp_path):
     """A `portable_recovery` backup made elsewhere: its bundle, receipt and the kept identity."""
 

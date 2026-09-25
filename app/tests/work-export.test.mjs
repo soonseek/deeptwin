@@ -233,3 +233,36 @@ test('a withheld preview exports without any finding confirmation', async () => 
   assert.equal('acknowledged_findings_sha' in asked[1][1].body, false);
   await assert.rejects(exporter.preview({ acknowledged: 'x', selection: { include_raw: true, categories: [] } }));
 });
+
+test('attached originals are a separate choice; a redacted PDF and each reason are shown', async () => {
+  const receipt = { bundle_id: BUNDLE, bundle_sha256: 'd'.repeat(64), size_bytes: 10, item_count: 1,
+    manifest_sha256: 'e'.repeat(64), completed_at: '2026-09-23T00:00:00.000000Z', work_id: WORK,
+    request_id: REQ, missing: [] };
+  const reply = previewReply({
+    categories: ['originals'], include_raw: true, include_source_originals: true, preview_sha: '8'.repeat(64),
+    items: [{ export_id: 'item-1', category: 'originals', relative_path: 'originals/sources/source-1.redacted.pdf',
+      media_type: 'application/pdf', size_bytes: 4096, export_sha256: 'b'.repeat(64), content_mode: 'redacted',
+      label: '첨부 원본 1 (PDF 가림 사본)' }],
+    missing: [{ category: 'originals', reason: 'redacted', claim: '첨부 PDF 1은 가린 사본으로만 넣었다.' },
+      { category: 'tool_observations', reason: 'not_selected', claim: '선택하지 않았다.' }],
+    secret_scan: { findings: [{ relative_path: 'originals/sources/source-1.pdf', page: 2, kind: 'aws_secret_access_key',
+      line: 2, column: 5 }], truncated: false, findings_sha: 'f'.repeat(64), confirmed: false },
+  });
+  const { root, asked, exporter } = panel([previewReply(), reply, receipt]);
+  const sources = boxes(root).find(el => el.getAttribute('id') === 'export-include-sources');
+  assert.equal(sources.checked, false);
+  // without raw originals the choice is not sent at all
+  sources.checked = true;
+  await exporter.preview();
+  assert.equal('include_source_originals' in asked[0][1].body, false);
+  boxes(root).find(el => el.getAttribute('id') === 'export-include-raw').checked = true;
+  await exporter.preview();
+  assert.equal(asked[1][1].body.include_source_originals, true);
+  assert.match(root.textContent, /첨부 원본 1 \(PDF 가림 사본\) · 가림 처리/);
+  assert.match(root.textContent, /AWS 비밀 액세스 키 지정 · 첨부 원본 1 2쪽 2행 5열/);
+  const why = root.findAll(el => el.getAttribute?.('class') === 'export-missing-why')[0];
+  assert.deepEqual(why.children.map(li => li.textContent), ['첨부 PDF 1은 가린 사본으로만 넣었다.']);
+  boxes(root).find(el => el.getAttribute('id') === 'export-consent').checked = true;
+  await buttons(root).find(el => el.textContent === '이 내용으로 내보내기').dispatch('click');
+  assert.equal(asked[2][1].body.include_source_originals, true);
+});

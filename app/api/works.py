@@ -23,6 +23,7 @@ from ..services.work_exports import (
     ACK_FIELD,
     CONFIRM_SCHEMA,
     PREVIEW_SCHEMA,
+    SOURCES_FIELD,
     PersistentWorkExports,
 )
 from ..services.works import (
@@ -56,7 +57,7 @@ _LIMITS = WireLimits(max_bytes=MAX_BODY_BYTES, max_depth=2, max_items=8, max_mem
                      max_string_bytes=MAX_TEXT_BYTES)
 
 
-_EXPORT_LIMITS = WireLimits(max_bytes=2_048, max_depth=3, max_items=16, max_members=7,
+_EXPORT_LIMITS = WireLimits(max_bytes=2_048, max_depth=3, max_items=16, max_members=9,
                             max_string_bytes=128)
 
 
@@ -126,11 +127,11 @@ def preflight(scope, body, content_type):
             fields = ("schema_version", "request_id", "categories", "include_raw",
                       *(("preview_sha", "confirmed") if confirm else ()))
             value = parse_json_object(
-                body, required=fields, optional=(ACK_FIELD,),
+                body, required=fields, optional=(ACK_FIELD, SOURCES_FIELD),
                 field_types={**{name: kind for name, kind in (
                     ("schema_version", str), ("request_id", str), ("categories", list),
                     ("include_raw", bool), ("preview_sha", str), ("confirmed", bool))
-                    if name in fields}, ACK_FIELD: str},
+                    if name in fields}, ACK_FIELD: str, SOURCES_FIELD: bool},
                 limits=_EXPORT_LIMITS)
             if value["schema_version"] != (CONFIRM_SCHEMA if confirm else PREVIEW_SCHEMA):
                 raise WorkRouteError()
@@ -190,7 +191,7 @@ def preflight(scope, body, content_type):
 
 def work_services(context):
     works = PersistentWorks(context.domain_store, context.owner_authority)
-    exports = PersistentWorkExports(works)
+    exports = PersistentWorkExports(works, codec=context.document_codec)
     return ContributionServices(create_router(works=works, exports=exports),
                                 {"works.service": works, "work-exports.service": exports})
 

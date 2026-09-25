@@ -25,7 +25,7 @@ from hashlib import sha256
 
 from ..domain.refs import canonical_json
 
-__all__ = ["FINDING_KINDS", "Finding", "findings_digest", "scan_text"]
+__all__ = ["FINDING_KINDS", "Finding", "findings_digest", "scan_text", "scan_text_spans"]
 
 MAX_TEXT = 200_000
 MAX_CANDIDATES = 64
@@ -76,6 +76,15 @@ def scan_text(text: str, *, known=None):
     `known(candidate) -> kind | None` checks one 43-character base64url candidate
     against the instance's stored digests; it must not raise for a non-secret."""
 
+    findings, truncated, values, _spans = scan_text_spans(text, known=known)
+    return findings, truncated, values
+
+
+def scan_text_spans(text: str, *, known=None):
+    """As `scan_text`, plus each matched value's (start, end) character span in `text`
+    (T074: what a redaction must cover). A bound finding (`unscanned_*`) has no span:
+    nothing it names was matched, so nothing can be painted over for it."""
+
     if type(text) is not str:
         raise TypeError("text required")
     locate = _locator(text)
@@ -108,7 +117,7 @@ def scan_text(text: str, *, known=None):
         hits.append((MAX_TEXT, "unscanned_text"))
     hits.sort()
     findings = [Finding(kind, *locate(offset)) for offset, kind in hits]
-    return findings[:MAX_FINDINGS], len(findings) > MAX_FINDINGS, values
+    return findings[:MAX_FINDINGS], len(findings) > MAX_FINDINGS, values, sorted(taken)
 
 
 def findings_digest(work_id: str, findings) -> str:

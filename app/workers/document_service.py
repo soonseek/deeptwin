@@ -17,6 +17,16 @@ nothing is invented to stand in for a page or a text the codec could not produce
   uncompressed size, compression ratio, `word/document.xml` present) so python-docx never
   inflates an archive bomb; body paragraphs and table-cell text are read in document
   order, at most `MAX_TEXT_BYTES` of UTF-8 (cut on a character boundary, `truncated`).
+- PDF (`extract_pdf_text`, T074): each page's text layer read one PDFium character index
+  at a time (so an index names the same character a redaction box covers), pages joined
+  by a form feed, at most `MAX_PDF_TEXT_BYTES` (whole pages only, `truncated`).
+- PDF (`redact_pdf`, T074): every page rasterized at 144 dpi, each named character range
+  painted over with an opaque box, and a NEW PDF written from those images alone by
+  Pillow with no metadata — no text layer, links, forms, attachments or info survive. A
+  rotated page, an oversized page or more than `MAX_REDACT_PAGES` is refused rather than
+  approximated. The copy is reopened: it must have the same page count, zero text
+  characters and every painted box dark when re-rendered, or nothing is answered. This is
+  a raster redaction, not an overlay: the covered glyphs are not in the copy at all.
 """
 
 from __future__ import annotations
@@ -34,6 +44,10 @@ from .document_channel import (
     MAX_INPUT_BYTES,
     MAX_OUTPUT_BYTES,
     MAX_PAGES,
+    MAX_PDF_TEXT_BYTES,
+    MAX_RANGE_CHARS,
+    MAX_REDACT_PAGES,
+    MAX_REDACT_RANGES,
     MAX_TEXT_BYTES,
     MIN_EDGE_PX,
     OPERATIONS,
@@ -53,6 +67,10 @@ MAX_ZIP_ENTRIES = 2_000
 MAX_ZIP_UNCOMPRESSED = 64 * 1024 * 1024
 MAX_ZIP_RATIO = 200
 MAX_UPSCALE = 4.0
+REDACTION_SCALE = 2.0  # 144 dpi
+REDACTION_MAX_PAGE_PT = 2_000
+REDACTION_PAD_PX = 2
+REDACTION_DARKNESS = 48  # mean luminance (0-255) a painted box must stay at or below
 _REQUEST_KEYS = {"schema", "op", "format", "page", "max_edge_px", "input_bytes", "input_sha256",
                  "chunk_count"}
 
@@ -163,8 +181,177 @@ def extract_docx_text(data: bytes) -> tuple[dict, bytes]:
     return {"paragraphs": paragraphs, "tables": tables, "table_cells": cells, "truncated": truncated}, encoded
 
 
+def _pdf_text_layer(textpage) -> str:
+    """The page's text with exactly one character per PDFium character index, so an index
+    in this text names the same character the redaction boxes; a form feed (the page
+    separator) or an unmapped code point is replaced, never dropped."""
+
+    import pypdfium2_raw as raw
+
+    characters = []
+    for index in range(textpage.count_chars()):
+        code = raw.FPDFText_GetUnicode(textpage.raw, index)
+        characters.append(" " if code == 0x0C else chr(code) if 0 < code <= 0x10FFFF
+                          and not 0xD800 <= code <= 0xDFFF else "�")
+    return "".join(characters)
+
+
+def _open_pdf(data: bytes):
+    import pypdfium2 as pdfium
+
+    try:
+        document = pdfium.PdfDocument(data)
+    except Exception:  # noqa: BLE001 - damaged, encrypted or not a PDF at all
+        raise CodecRefusal("content_rejected") from None
+    count = len(document)
+    if not 1 <= count <= MAX_PAGES:
+        document.close()
+        raise CodecRefusal("content_rejected")
+    return document, count
+
+
+def extract_pdf_text(data: bytes) -> tuple[dict, bytes]:
+    document, count = _open_pdf(data)
+    try:
+        texts, size, truncated = [], 0, False
+        for number in range(count):
+            try:
+                page = document[number]
+                textpage = page.get_textpage()
+                text = _pdf_text_layer(textpage)
+                textpage.close()
+                page.close()
+            except Exception:  # noqa: BLE001 - a page whose text layer cannot be read
+                raise CodecRefusal("content_rejected") from None
+            encoded = len(text.encode("utf-8")) + (1 if texts else 0)
+            if size + encoded > MAX_PDF_TEXT_BYTES:
+                truncated = True  # later pages are not claimed as read
+                break
+            texts.append(text)
+            size += encoded
+        return {"page_count": count, "truncated": truncated}, "\f".join(texts).encode("utf-8")
+    finally:
+        document.close()
+
+
+def _dark(image, box) -> bool:
+    left, top, right, bottom = box
+    region = image.crop((left, top, right, bottom)).convert("L")
+    pixels = region.tobytes()
+    return bool(pixels) and sum(pixels) / len(pixels) <= REDACTION_DARKNESS
+
+
+def redact_pdf(data: bytes, ranges) -> tuple[dict, bytes]:
+    """A new, image-only PDF: each page rasterized, every named character range painted
+    over with an opaque box, then re-encoded by Pillow's PDF writer with no metadata. The
+    result is reopened and must have the same page count, no text at all and every box
+    dark, or nothing is answered."""
+
+    from PIL import ImageDraw
+
+    document, count = _open_pdf(data)
+    try:
+        if count > MAX_REDACT_PAGES:
+            raise CodecRefusal("too_large")
+        by_page = {}
+        for page_number, start, length in ranges:
+            if page_number > count:
+                raise CodecRefusal("page_out_of_range", page_count=count)
+            by_page.setdefault(page_number, []).append((start, length))
+        images, scales, boxes = [], [], []
+        for number in range(1, count + 1):
+            try:
+                page = document[number - 1]
+                width_pt, height_pt = page.get_size()
+                if not (0 < width_pt <= REDACTION_MAX_PAGE_PT and 0 < height_pt <= REDACTION_MAX_PAGE_PT):
+                    raise CodecRefusal("content_rejected")
+                if page.get_rotation() != 0:
+                    raise CodecRefusal("content_rejected")  # char boxes are unrotated page space
+                scale = REDACTION_SCALE  # one resolution for every page of the copy
+                left0, _bottom0, _right0, top0 = page.get_cropbox()
+                page_boxes = []
+                if number in by_page:
+                    textpage = page.get_textpage()
+                    total = textpage.count_chars()
+                    for start, length in by_page[number]:
+                        if start + length > total:
+                            raise CodecRefusal("invalid_request")
+                        for index in range(start, start + length):
+                            left, bottom, right, top = textpage.get_charbox(index, loose=True)
+                            if right <= left or top <= bottom:
+                                continue  # a generated character (a space, a line break) has no glyph
+                            page_boxes.append((
+                                max(0, int((left - left0) * scale) - REDACTION_PAD_PX),
+                                max(0, int((top0 - top) * scale) - REDACTION_PAD_PX),
+                                int((right - left0) * scale) + 1 + REDACTION_PAD_PX,
+                                int((top0 - bottom) * scale) + 1 + REDACTION_PAD_PX))
+                    textpage.close()
+                image = page.render(scale=scale, may_draw_forms=False).to_pil().convert("RGB")
+                page.close()
+            except CodecRefusal:
+                raise
+            except Exception:  # noqa: BLE001 - the page could not be rasterized
+                raise CodecRefusal("render_failed") from None
+            clipped = []
+            draw = ImageDraw.Draw(image)
+            for left, top, right, bottom in page_boxes:
+                box = (left, top, min(right, image.size[0]), min(bottom, image.size[1]))
+                if box[2] > box[0] and box[3] > box[1]:
+                    draw.rectangle((box[0], box[1], box[2] - 1, box[3] - 1), fill=(0, 0, 0))
+                    clipped.append(box)
+            images.append(image)
+            scales.append(scale)
+            boxes.append(clipped)
+        if not any(boxes):
+            raise CodecRefusal("invalid_request")  # nothing to paint over is not a redaction
+        buffer = io.BytesIO()
+        # no title, author, producer or dates: the copy says nothing about the original
+        images[0].save(buffer, format="PDF", save_all=True, append_images=images[1:],
+                       resolution=72.0 * scales[0], title=None, author=None, subject=None,
+                       keywords=None, creator=None, producer=None, creationDate=None, modDate=None)
+        output = buffer.getvalue()
+        if len(output) > MAX_OUTPUT_BYTES:
+            raise CodecRefusal("too_large")
+    finally:
+        document.close()
+    # the produced file, not the intent: reopened, no text layer, every box dark
+    produced, produced_count = _open_pdf(output)
+    try:
+        if produced_count != count:
+            raise CodecRefusal("render_failed")
+        characters = 0
+        for number in range(count):
+            page = produced[number]
+            textpage = page.get_textpage()
+            characters += textpage.count_chars()
+            textpage.close()
+            width_pt, _height_pt = page.get_size()
+            again = page.render(scale=images[number].size[0] / width_pt).to_pil().convert("RGB")
+            page.close()
+            if again.size != images[number].size:
+                raise CodecRefusal("render_failed")
+            if not all(_dark(again, box) for box in boxes[number]):
+                raise CodecRefusal("render_failed")
+        if characters != 0:
+            raise CodecRefusal("render_failed")
+    finally:
+        produced.close()
+    return ({"page_count": count, "boxes": sum(len(item) for item in boxes), "text_chars": 0,
+             "verified": True}, output)
+
+
+def _ranges(value) -> list:
+    if (type(value) is not list or not 1 <= len(value) <= MAX_REDACT_RANGES
+            or any(type(item) is not list or len(item) != 3 or any(type(part) is not int for part in item)
+                   or not 1 <= item[0] <= MAX_REDACT_PAGES or item[1] < 0
+                   or not 1 <= item[2] <= MAX_RANGE_CHARS for item in value)):
+        raise CodecRefusal("invalid_request")
+    return [tuple(item) for item in value]
+
+
 def _request(value) -> dict:
-    if type(value) is not dict or set(value) != _REQUEST_KEYS or value["schema"] != REQUEST_SCHEMA:
+    keys = _REQUEST_KEYS | ({"ranges"} if type(value) is dict and value.get("op") == "redact_pdf" else set())
+    if type(value) is not dict or set(value) != keys or value["schema"] != REQUEST_SCHEMA:
         raise CodecRefusal("invalid_request")
     if value["op"] not in OPERATIONS or value["format"] != OPERATIONS[value["op"]]:
         raise CodecRefusal("media_unsupported")
@@ -180,6 +367,8 @@ def _request(value) -> dict:
             raise CodecRefusal("invalid_request")
     elif value["page"] is not None or value["max_edge_px"] is not None:
         raise CodecRefusal("invalid_request")
+    if value["op"] == "redact_pdf":
+        value = {**value, "ranges": _ranges(value["ranges"])}
     return value
 
 
@@ -238,6 +427,10 @@ class DocumentCodecService:
             request = _request(value)
             if request["op"] == "render_page":
                 result, output = render_pdf_page(data, request["page"], request["max_edge_px"])
+            elif request["op"] == "extract_pdf_text":
+                result, output = extract_pdf_text(data)
+            elif request["op"] == "redact_pdf":
+                result, output = redact_pdf(data, request["ranges"])
             else:
                 result, output = extract_docx_text(data)
             deadline.require(dispatch_effect="outcome_unknown")
@@ -249,4 +442,5 @@ class DocumentCodecService:
         return "ok"
 
 
-__all__ = ["DEFAULT_EDGE_PX", "DocumentCodecService", "extract_docx_text", "render_pdf_page"]
+__all__ = ["DEFAULT_EDGE_PX", "DocumentCodecService", "extract_docx_text", "extract_pdf_text", "redact_pdf",
+           "render_pdf_page"]

@@ -4,34 +4,53 @@ with a text and a CSV artifact, one with a human gate, one whose handler fails),
 environment and one budget policy — and the code-owned test executor. The browser test
 itself bootstraps the owner, saves the work, consents to and starts every run, records
 the approval and freezes the alternative through the product routes. No model, tool or
-paid call; every value is synthetic test-actor data."""
+paid call; every value is synthetic test-actor data.
+
+T074 additions, all test-owned:
+- the isolated document service runs as a SEPARATE PROCESS
+  (`app.tests.support.document_worker_harness`) that the supported app reaches through its
+  frame-only client, so attached PDFs are scanned and redacted in that process only;
+- `--growth-rounds`: comparison rounds whose frozen plan's baseline is the seeded
+  environment (plus one over an unrelated environment), produced by the real paired
+  execution in fresh isolated vaults (`growth_chain_fixture.seed_environment_rounds`);
+- `POST /__test__/seed-design` (a wrapper route in front of the app, not a product route):
+  given a saved work id, seeds a TEST-ACTOR work model over the work's actual latest
+  revision and sources and the scripted test-actor design pool over it
+  (`design_workspace_fixture.open_seeded_for_work`), registered with a scripted
+  test-actor critic turn and a TEST-ACTOR critic qualification, so the owner's own
+  derive / review / prepare routes can run over it."""
 import argparse
 import base64
 import copy
 import json
 import os
+import secrets
 import socket
+import subprocess
 import sys
 from pathlib import Path
 
 import uvicorn
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from app.domain.schemas import ImmutableRecord  # noqa: E402
-from app.operations.session_root import initialize_session_root  # noqa: E402
-from app.operations.setup import (  # noqa: E402
+from app.domain.schemas import ImmutableRecord
+from app.operations.session_root import initialize_session_root
+from app.operations.setup import (
     OriginProfile,
     build_bootstrap_configuration,
     derive_capability_verifier,
 )
-from app.runtime import scheduler as sch  # noqa: E402
-from app.runtime.budgets import BudgetPolicy  # noqa: E402
-from app.server import create_app  # noqa: E402
-from app.services.design_persistence import encode_design_refs  # noqa: E402
-from app.tests.test_graph_contract import graph_value, parse  # noqa: E402
-from app.tests.test_graph_execution import linear_graph  # noqa: E402
-from app.tests.test_runs_api import Executor  # noqa: E402
-from app.tests.test_server_api_v1 import immutable  # noqa: E402
+from app.runtime import scheduler as sch
+from app.runtime.budgets import BudgetPolicy
+from app.server import create_app
+from app.services.design_persistence import encode_design_refs
+from app.tests.support.document_worker_harness import process_client
+from app.tests.test_graph_contract import graph_value, parse
+from app.tests.test_graph_execution import linear_graph
+from app.tests.test_runs_api import Executor
+from app.tests.test_server_api_v1 import immutable
+
+REPOSITORY = Path(__file__).resolve().parents[3]
 
 STAMP = "2026-09-25T00:00:00.000000Z"
 TEXT = "첫 줄\n둘째 줄\n셋째 줄\n".encode()
@@ -90,9 +109,59 @@ def seal(domain, executor):
                                            content=policy.domain_content()).ref.as_dict()}
 
 
+def seed_design(app, work_id):
+    """TEST ACTOR: the design pool over the saved work's actual latest revision."""
+    from app.domain.refs import EntityRef
+    from app.services.critic_qualification import critic_qualification_from_suite
+    from app.tests.design_workspace_fixture import (
+        CRITIC_ID,
+        GENERATOR_ID,
+        open_seeded_for_work,
+    )
+    from app.tests.test_environments import CRITIC_DIGEST, actor_record, actor_v3_design
+
+    work = app.state.first_party_exports["works.service"].read(work_id)
+    revision = EntityRef.from_dict(work["ref"])
+    sources = [EntityRef.from_dict(item) for item in work.get("source_refs", [])]
+    with actor_v3_design():
+        qualified = critic_qualification_from_suite(actor_record(), CRITIC_DIGEST)
+    request, roles = open_seeded_for_work(app, revision, sources, criticism_turn=True,
+                                          critic_qualification=qualified)
+    return {"request_id": request.request_id, "generator": GENERATOR_ID, "critic": CRITIC_ID,
+            **{name: item.candidate_id for name, item in roles.items()}}
+
+
+def with_test_routes(app):
+    """The app, with one test-owned route in front of it (never part of the product)."""
+
+    async def wrapper(scope, receive, send):
+        if scope["type"] != "http" or scope["path"] != "/__test__/seed-design" or scope["method"] != "POST":
+            return await app(scope, receive, send)
+        body = b""
+        while True:
+            message = await receive()
+            body += message.get("body", b"")
+            if not message.get("more_body"):
+                break
+        from starlette.concurrency import run_in_threadpool
+
+        try:
+            value = await run_in_threadpool(seed_design, app, json.loads(body)["work_id"])
+            status, payload = 200, value
+        except Exception as error:  # noqa: BLE001 - the test reads the failure class
+            status, payload = 500, {"error": type(error).__name__, "detail": str(error)[:500]}
+        data = json.dumps(payload).encode()
+        await send({"type": "http.response.start", "status": status,
+                    "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": data})
+
+    return wrapper
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--owned-dir", required=True, type=Path)
+    parser.add_argument("--growth-rounds", action="store_true")
     args = parser.parse_args()
     owned = args.owned_dir.resolve(strict=True)
     if not owned.is_dir() or any(owned.iterdir()):
@@ -105,16 +174,35 @@ def main():
     configuration = build_bootstrap_configuration(profile=profile, verifier_b64u=derive_capability_verifier(capability))
     initialize_session_root(owned / "root", profile=profile, recovery_epoch=1,
                             expected_uid=os.getuid(), expected_gid=os.getgid())
+    worker_socket = owned / "document.sock"
+    worker_secret = secrets.token_bytes(32)
+    worker = subprocess.Popen([sys.executable, "-B", "-m", "app.tests.support.document_worker_harness",
+                               str(worker_socket)], cwd=REPOSITORY, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL)
+    worker.stdin.write(worker_secret.hex().encode() + b"\n")
+    worker.stdin.close()
+    if worker.stdout.readline().strip() != b"ready":
+        raise RuntimeError("document worker did not start")
     executor = RecordsExecutor()
     app = create_app(owned / "data", deployment_config=configuration, session_root_dir=owned / "root",
-                     expected_uid=os.getuid(), expected_gid=os.getgid(), run_executor=executor)
+                     expected_uid=os.getuid(), expected_gid=os.getgid(), run_executor=executor,
+                     document_worker=process_client(worker_socket, worker_secret))
     seed = seal(app.state.domain_store, executor)
+    if args.growth_rounds:
+        from app.domain.refs import EntityRef
+        from app.tests.growth_chain_fixture import seed_environment_rounds
+
+        seed["rounds"] = seed_environment_rounds(app.state.domain_store, owned / "reset",
+                                                 EntityRef.from_dict(seed["environment_ref"]))
     print(f"RECORDS_SEED={json.dumps(seed, separators=(',', ':'))}", flush=True)
     print(f"RECORDS_URL={profile.http_origin}{profile.base_path}", flush=True)
     try:
-        uvicorn.Server(uvicorn.Config(app, log_level="warning", access_log=False, timeout_graceful_shutdown=3)).run(sockets=[sock])
+        uvicorn.Server(uvicorn.Config(with_test_routes(app), log_level="warning", access_log=False,
+                                      timeout_graceful_shutdown=3)).run(sockets=[sock])
     finally:
         sock.close()
+        worker.kill()
+        worker.wait(5)
 
 
 if __name__ == "__main__":

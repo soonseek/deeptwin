@@ -17,7 +17,7 @@ from . import owner_material_upload as material_upload
 from . import provider_installation as installation
 from .assets import PUBLIC_ASSET_PATHS
 from .backups import MAX_UPLOAD_BYTES as BACKUP_UPLOAD_BYTES
-from .backups import is_bundle_upload
+from .backups import bundle_upload_restore_id, is_bundle_upload
 from .deployment_prepare import PATH as DEPLOYMENT_PATH
 from .deployment_prepare import deployment_error
 from .deployment_prepare import preflight as deployment_preflight
@@ -73,6 +73,23 @@ def auth_error(error):
 class WebBoundary:
     def __init__(self, app, *, authority):
         self.app, self.authority = app, authority
+
+    async def _interrupted_restore(self, scope, fields, path, received):
+        """Tell the backup service that the owner's bundle upload for this restore ended
+        before its body was complete. Only an authenticated owner request (cookie + CSRF,
+        the same check every POST gets) can mark its restore; anything else is dropped."""
+
+        try:
+            authenticated = await run_in_threadpool(
+                self.authority.authenticate_request, method="POST", host=fields["host"],
+                origin=fields.get("origin"), sec_fetch_site=fields.get("sec-fetch-site"),
+                cookie_header=fields.get("cookie"), csrf_token=fields.get("x-deeptwin-csrf"))
+            service = scope["app"].state.first_party_exports.get("backups.service")
+            if service is not None:
+                await run_in_threadpool(service.restore_interrupted, authenticated,
+                                        bundle_upload_restore_id(path), received)
+        except Exception:  # noqa: BLE001 - nothing is answered to a client that is gone
+            return
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -224,6 +241,10 @@ class WebBoundary:
                 while True:
                     message = await receive()
                     if message["type"] == "http.disconnect":
+                        if backup_upload:
+                            # T074: a bundle upload cut mid-stream; the partial body is dropped
+                            # here and the restore is marked failed, so it is cleanable at once
+                            await self._interrupted_restore(scope, fields, path, len(received))
                         return
                     chunk = message.get("body", b"")
                     if len(received) + len(chunk) > limit:

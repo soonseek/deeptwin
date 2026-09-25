@@ -58,8 +58,8 @@ BODIES = {
 SCHEMAS = {"preview": "backup-preview-request-v1", "create": "backup-create-v1",
            "restore": "backup-restore-v1"}
 
-__all__ = ["MAX_UPLOAD_BYTES", "backup_services", "create_router", "is_backup_path", "is_bundle_upload",
-           "preflight"]
+__all__ = ["MAX_UPLOAD_BYTES", "backup_services", "bundle_upload_restore_id", "create_router", "is_backup_path",
+           "is_bundle_upload", "preflight"]
 MAX_UPLOAD_BYTES = MAX_BUNDLE_BYTES + MAX_IDENTITY_LINE
 
 
@@ -69,6 +69,12 @@ def is_backup_path(path: str) -> bool:
 
 def is_bundle_upload(path: str, method: str) -> bool:
     return method == "POST" and _UPLOAD.fullmatch(path) is not None
+
+
+def bundle_upload_restore_id(path: str) -> str:
+    """The restore id a bundle upload path names (the path is already admitted)."""
+
+    return _UPLOAD.fullmatch(path).group(1)
 
 
 def _body(raw: bytes, name: str) -> dict:

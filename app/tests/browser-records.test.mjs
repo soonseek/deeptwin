@@ -22,6 +22,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { base, open, openEditor, saved } from './helpers/alternatives-fixture.mjs';
 import { closeOwnedFixture, waitForOwnedChildOutput } from './helpers/owned-fixture-lifecycle.mjs';
+import { bytesOf, makeBackup, openBackup, unavailable as backupUnavailable } from './helpers/backup-fixture.mjs';
 
 const CANARY = 'CANARY-원문-7f3a9c';
 const PASSWORD = 'synthetic owner passphrase';
@@ -165,15 +166,15 @@ const SYNTHETIC = {
   providerKey: 'sk-ant-api03-CANARY-provider-key-0000000000000000000000000000-AA',
 };
 
-async function openRecords(t) {
+async function openRecords(t, { args = [], timeoutMs = 30000 } = {}) {
   assert.ok(process.env.CONTROL_PYTHON && process.env.CONTROL_PLAYWRIGHT_MODULE, 'Controlled installed runtimes required; never skip');
   const dir = await mkdtemp(join(tmpdir(), 'deeptwin-records-'));
   let server, browser;
   t.after(() => closeOwnedFixture({ browser, server, removeTemp: () => rm(dir, { recursive: true, force: true }) },
     { serverGraceMs: 5000, serverForceMs: 2000, label: 'Records fixture' }));
-  server = spawn(process.env.CONTROL_PYTHON, ['-B', 'app/tests/fixtures/records_server.py', '--owned-dir', dir],
+  server = spawn(process.env.CONTROL_PYTHON, ['-B', 'app/tests/fixtures/records_server.py', '--owned-dir', dir, ...args],
     { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, LANGSMITH_TRACING: 'false', LANGCHAIN_TRACING_V2: 'false' } });
-  const announced = await waitForOwnedChildOutput(server, { pattern: RECORDS_READY, timeoutMs: 30000, label: 'Records fixture' });
+  const announced = await waitForOwnedChildOutput(server, { pattern: RECORDS_READY, timeoutMs, label: 'Records fixture' });
   const [, seedText, url] = RECORDS_READY.exec(announced);
   const { chromium } = await import(pathToFileURL(process.env.CONTROL_PLAYWRIGHT_MODULE).href);
   browser = await chromium.launch({ channel: 'chrome', headless: true });
@@ -216,15 +217,18 @@ async function startRun(page, seed, graph, workRef) {
   return owner(page, 'api/v1/runs', { command_id: crypto.randomUUID(), ...inputs, consent_ref: consent.body.ref });
 }
 
-async function exportAll(page, { raw, confirmFindings = false }) {
+async function exportAll(page, { raw, confirmFindings = false, sources = false }) {
   const panel = page.locator('#work-records');
   for (const box of await panel.locator('.export-categories input[type=checkbox]').all()) {
     if (!(await box.isChecked())) await box.check();
   }
   const rawBox = panel.locator('#export-include-raw');
   if ((await rawBox.isChecked()) !== raw) await rawBox.click();
+  const sourcesBox = panel.locator('#export-include-sources');
+  if ((await sourcesBox.isChecked()) !== sources) await sourcesBox.click();
   await panel.getByRole('button', { name: '포함될 내용 미리보기' }).click();
-  await panel.locator('#export-consent').waitFor();
+  await panel.locator('#export-consent').waitFor({ timeout: 60000 });
+  const why = await panel.locator('.export-missing-why li').allTextContents();
   const findings = await panel.locator('.export-findings li').allTextContents();
   const withheldItems = await panel.locator('.export-items li').allTextContents();
   if (confirmFindings) {
@@ -243,7 +247,7 @@ async function exportAll(page, { raw, confirmFindings = false }) {
   const href = await link.getAttribute('href');
   const digest = (await panel.locator('.export-digest').textContent()).replace('묶음 SHA-256 ', '');
   const bytes = Buffer.from(await page.evaluate(async target => [...new Uint8Array(await (await fetch(target)).arrayBuffer())], href));
-  return { items, missing, bytes, digest, findings, withheldItems };
+  return { items, missing, bytes, digest, findings, withheldItems, why };
 }
 
 test('export of every produced category: actual preview, bound consent, verified bundle, canaries absent everywhere', { timeout: 240000 }, async t => {
@@ -391,3 +395,239 @@ test('export of every produced category: actual preview, bound consent, verified
   }
   assert.deepEqual(errors, []);
 });
+
+// --- T074 rest: candidate/lens, round export and PDF redaction ---------------------------
+// The records fixture (with `--growth-rounds`) additionally runs the isolated document
+// service as its own process, seeds comparison rounds over its environment, and offers a
+// test-owned route that seeds the TEST-ACTOR design pool over the work the owner saved.
+// Everything else the owner (a scripted test actor) does through the product.
+
+const PDF_CANARY = 'aws_secret_access_key=CANARY-pdf-cred-wJalrXUtnFEMI-K7MD';
+const PDF_NAME = 'CANARY-attached-name-3c1d.pdf';
+
+function makePdf(pages) {
+  const made = spawnSync(process.env.CONTROL_PYTHON, ['-c', `
+import base64, io, json, sys
+from reportlab.pdfgen import canvas
+buffer = io.BytesIO()
+drawing = canvas.Canvas(buffer, pagesize=(612, 792))
+for lines in json.loads(sys.argv[1]):
+    drawing.setFont("Helvetica", 12)
+    for index, line in enumerate(lines):
+        drawing.drawString(72, 700 - 20 * index, line)
+    drawing.showPage()
+drawing.save()
+print(base64.b64encode(buffer.getvalue()).decode())
+`, JSON.stringify(pages)], { encoding: 'utf8' });
+  assert.equal(made.status, 0, made.stderr);
+  return Buffer.from(made.stdout.trim(), 'base64');
+}
+
+// text of every page, extracted on the TEST side (the product never parses a PDF in the
+// control plane; this is the reviewer re-reading the exported copy)
+async function pdfPages(t, bytes) {
+  const dir = await mkdtemp(join(tmpdir(), 'deeptwin-pdf-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = join(dir, 'copy.pdf');
+  await writeFile(file, bytes);
+  const read = spawnSync(process.env.CONTROL_PYTHON, ['-c', `
+import json, sys
+import pypdfium2 as pdfium
+document = pdfium.PdfDocument(sys.argv[1])
+print(json.dumps([document[i].get_textpage().get_text_range() for i in range(len(document))]))
+`, file], { encoding: 'utf8' });
+  assert.equal(read.status, 0, read.stderr);
+  return JSON.parse(read.stdout);
+}
+
+async function unzipBytes(t, bytes) {
+  const dir = await mkdtemp(join(tmpdir(), 'deeptwin-export-bin-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = join(dir, 'bundle.zip');
+  await writeFile(file, bytes);
+  const listed = spawnSync(process.env.CONTROL_PYTHON, ['-c', `
+import base64, json, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as archive:
+    print(json.dumps({info.filename: base64.b64encode(archive.read(info)).decode() for info in archive.infolist()}))
+`, file], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  assert.equal(listed.status, 0, listed.stderr);
+  return Object.fromEntries(Object.entries(JSON.parse(listed.stdout)).map(([name, data]) => [name, Buffer.from(data, 'base64')]));
+}
+
+test('design candidates, recorded verdicts, lenses, growth rounds and a redacted PDF are exported as previewed',
+  { timeout: 300000 }, async t => {
+    const { page, url, errors, seed } = await openRecords(t, { args: ['--growth-rounds'], timeoutMs: 120000 });
+    assert.equal(seed.rounds.evidence_label, 'synthetic/test-actor');
+    // the work, with a real PDF whose second page carries a credential-looking canary
+    const pdf = makePdf([['Synthetic attached page one.'], ['Page two holds', `the key ${PDF_CANARY} here.`]]);
+    await page.goto(url + 'work.html');
+    await page.locator('#work-description').fill('설계·비교·첨부 내보내기 합성 업무');
+    await page.getByLabel('원본 자료 선택').setInputFiles({ name: PDF_NAME, mimeType: 'application/pdf', buffer: pdf });
+    await page.getByRole('button', { name: '이 인스턴스에 저장', exact: true }).click();
+    await page.locator('#work-deletion').getByLabel(PDF_NAME, { exact: false }).waitFor();
+    const workId = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).work_id, `deeptwin:intake:${base}`);
+    const work = await page.evaluate(async ({ base, id }) => (await fetch(`${base}api/v1/works/${id}`)).json(), { base, id: workId });
+    // a run of this work in the seeded environment: the growth rounds' scope
+    const run = await startRun(page, seed, 'completes', work.ref);
+    assert.equal(run.status, 201, JSON.stringify(run.body));
+
+    // TEST ACTOR: the scripted design pool over this work (test-owned fixture route)
+    const design = await page.evaluate(async id => {
+      const response = await fetch('/__test__/seed-design', { method: 'POST', body: JSON.stringify({ work_id: id }) });
+      return { status: response.status, body: await response.json() };
+    }, workId);
+    assert.equal(design.status, 200, JSON.stringify(design.body));
+    const designPath = `api/v1/design-requests/${design.body.request_id}`;
+    // the owner's own design acts: select one presented candidate, have it re-reviewed, prepare it
+    const derived = await owner(page, `${designPath}/derivations`, { schema_version: 'design-derivation-command-v1',
+      command_id: crypto.randomUUID(), action: 'select', parent_candidate_ids: [design.body.base], instruction: null });
+    assert.equal(derived.status, 201, JSON.stringify(derived.body));
+    const reviewed = await owner(page, `${designPath}/reviews`, { schema_version: 'design-review-command-v1',
+      command_id: crypto.randomUUID(), derivation_id: derived.body.derivation_id });
+    assert.equal(reviewed.status, 201, JSON.stringify(reviewed.body));
+    const chosen = reviewed.body.reviewed_candidate.candidate_id;
+    const prepared = await owner(page, `${designPath}/preparations`, { schema_version: 'design-prepare-command-v1',
+      command_id: crypto.randomUUID(), candidate_id: chosen });
+    assert.equal(prepared.status, 201, JSON.stringify(prepared.body));
+
+    // the export: every category, raw originals and attached originals, through the work screen
+    await page.goto(url + 'work.html');
+    await page.locator('#work-records').getByRole('button', { name: '포함될 내용 미리보기' }).waitFor();
+    const withheld = await exportAll(page, { raw: true, sources: true });
+    const shown = withheld.items.join('\n');
+    assert.match(shown, new RegExp(`설계 요청 1개 · 후보 5개 · 기록된 평가 5개\\(평가자 ${design.body.critic}, 다시 검증하지 않음\\) · 파생 1개 · 설계 승인 1개 · 원문 제외\\(메타데이터만\\)`));
+    assert.match(shown, /참조한 렌즈 정의 1개 \(판본·검토 상태\)/);
+    assert.match(shown, /이 작업의 실행 환경에서 한 비교 2개 · 실험 1개 \(판정·지표·항목 결과만, 산출물 내용 제외 · 다른 환경의 비교 1개는 범위 밖\)/);
+    assert.match(shown, /첨부 원본 1 \(PDF 가림 사본: 비밀 의심 값 1곳을 덮은 이미지 PDF, 텍스트 층 없음, 원본과 같지 않음\) · 가림 처리/);
+    assert.ok(withheld.findings.some(text => /^AWS 비밀 액세스 키 지정 · 첨부 원본 1 2쪽 2행 \d+열$/.test(text)),
+      JSON.stringify(withheld.findings));
+    assert.ok(withheld.why.includes('첨부 PDF 1은 비밀 의심 값을 덮은 이미지 사본으로만 넣었다. 사본은 원본과 같지 않고 '
+      + '텍스트 층·메타데이터·링크가 없다.'), JSON.stringify(withheld.why));
+    assert.ok(withheld.why.includes('실행의 완료 판정 근거는 이 서버의 내보내기가 아직 모으지 않는다.'));
+    const panelText = await page.locator('#work-records').textContent();
+    assert.ok(!panelText.includes(PDF_CANARY.split('=')[1]) && !panelText.includes(PDF_NAME));
+
+    const members = await unzipBytes(t, withheld.bytes);
+    const { createHash } = await import('node:crypto');
+    assert.equal(createHash('sha256').update(withheld.bytes).digest('hex'), withheld.digest);
+    const copy = members['originals/sources/source-1.redacted.pdf'];
+    assert.ok(copy && copy.subarray(0, 5).toString() === '%PDF-', Object.keys(members).join(','));
+    assert.equal(members['originals/sources/source-1.pdf'], undefined, 'the original PDF is not in the bundle');
+    assert.ok(!copy.equals(pdf));
+    // the reviewer re-extracts the exported copy: no text layer, the canary nowhere
+    assert.deepEqual(await pdfPages(t, copy), ['', '']);
+    for (const canary of [PDF_CANARY, PDF_CANARY.split('=')[1], PDF_NAME]) {
+      assert.ok(!withheld.bytes.includes(Buffer.from(canary)), `bundle leaked ${canary.slice(0, 16)}`);
+      for (const data of Object.values(members)) assert.ok(!data.includes(Buffer.from(canary)));
+    }
+    const manifest = JSON.parse(members['manifest.json']);
+    assert.deepEqual(manifest.redaction_summary, { originals: 1 });
+    assert.ok(manifest.reproduction_limits.includes('가림 사본은 원본과 같지 않아 원본을 재현하지 않는다.'));
+
+    const designs = JSON.parse(members['evaluation/design-requests.json']);
+    const [request] = designs.requests;
+    assert.equal(request.request_id, design.body.request_id);
+    assert.equal(request.work_revision, work.revision);
+    assert.ok(request.generation_calls.every(call => call.generator_model_id === design.body.generator));
+    const byId = Object.fromEntries(request.candidates.map(item => [item.candidate_id, item]));
+    const rejected = byId[design.body.rejected].verdict;
+    assert.deepEqual([rejected.basis, rejected.re_verified_by_export, rejected.status, rejected.critic.model_ids],
+      ['recorded', false, 'rejected', [design.body.critic]]);
+    assert.equal(byId[chosen].derived_by, derived.body.derivation_id);
+    assert.equal(request.design_approvals[0].candidate_id, chosen);
+    assert.ok(request.candidates.every(item => item.graph.content === '그래프 본문 미포함'));
+    const [lens] = JSON.parse(members['evaluation/lenses.json']);
+    assert.deepEqual([lens.lens_id, lens.version, lens.definition_state], ['L-P032-01', 'draft-1', 'current']);
+    assert.equal(lens.review.effect_status, 'not_validated');
+    const rounds = JSON.parse(members['evaluation/rounds.json']);
+    assert.deepEqual(rounds.rounds.map(item => item.round_id), seed.rounds.round_ids);
+    assert.deepEqual(rounds.rounds.map(item => item.validity), ['valid', 'invalid']);
+    assert.equal(rounds.outside_scope_round_count, 1);
+    assert.deepEqual(rounds.environments, [{ id: seed.environment_ref.id, version: seed.environment_ref.version }]);
+    assert.equal(rounds.experiments[0].lineage_id, seed.rounds.lineage_id);
+    assert.ok(!withheld.bytes.includes(Buffer.from('quality=')), 'no node result content');
+
+    // the owner confirms that exact finding set: the original PDF is exported as chosen
+    const chosenRaw = await exportAll(page, { raw: true, sources: true, confirmFindings: true });
+    assert.match(chosenRaw.items.join('\n'), /첨부 원본 1 \(PDF\) 원문 — 확인한 비밀 의심 값 포함 · 원문 포함/);
+    const rawMembers = await unzipBytes(t, chosenRaw.bytes);
+    assert.ok(rawMembers['originals/sources/source-1.pdf'].equals(pdf));
+    assert.ok(!chosenRaw.bytes.includes(Buffer.from(PDF_NAME)), 'the file name is never exported');
+    assert.deepEqual(errors, []);
+  });
+
+// --- T074 rest: interrupted restore through the backup screen ----------------------------
+// The backup fixture (helpers/backup-fixture.mjs: the real supported app and the REAL
+// backup-crypto worker as its own networkless process). The browser's upload is slowed
+// with Chromium's own network throttling so it is still streaming when the owner presses
+// `업로드 중단`: the fetch is aborted mid-body, the server sees the client disconnect,
+// drops the partial body and marks that restore failed (nothing staged). The screen reads
+// the failed restore back, the retention screen offers it for cleanup at once, the active
+// instance still serves the owner's work, and a fresh restore stages for review.
+
+test('an interrupted restore upload fails its staged restore, leaves the vault untouched, and a fresh restore works',
+  { timeout: 240000, skip: backupUnavailable }, async t => {
+    const { context, page, url, errors } = await openBackup(t);
+    const WORK_TEXT = '중단 복원 후에도 남아야 할 합성 작업 설명';
+    await saveWork(page, url, WORK_TEXT);
+    const receipt = await makeBackup(page, url);
+    const bundle = await bytesOf(page, `${base}api/v1/backups/${receipt.backup_id}/ciphertext`);
+    const receiptBytes = Buffer.from(JSON.stringify(receipt));
+    assert.equal(bundle.length, receipt.ciphertext_size);
+
+    await page.goto(url + 'records.html');
+    const panel = page.locator('#records-backup');
+    await panel.locator('.backup-worker[data-state="ready"]').waitFor();
+    const pick = async () => {
+      await panel.locator('#restore-receipt').setInputFiles({ name: 'backup.receipt.json', mimeType: 'application/json', buffer: receiptBytes });
+      await panel.locator('#restore-bundle').setInputFiles({ name: 'backup.age', mimeType: 'application/octet-stream', buffer: bundle });
+    };
+    // Chromium's network throttling: the bundle upload takes many seconds at this rate
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Network.enable');
+    const rate = Math.max(512, Math.floor(bundle.length / 30));  // about 30 s for the whole body
+    await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1,
+      uploadThroughput: rate });
+    await pick();
+    await panel.getByRole('button', { name: '스테이징 영역에 복원' }).click();
+    const stop = panel.getByRole('button', { name: '업로드 중단' });
+    await stop.waitFor();
+    await page.waitForTimeout(2500);  // part of the body is on its way
+    await stop.click();
+    const review = panel.locator('.restore-review[data-state="interrupted"]');
+    await review.waitFor({ timeout: 20000 });
+    assert.match(await panel.textContent(), /업로드를 중단했습니다\. 이 복원은 실패로 기록되었고 스테이징 영역에 아무것도 남지 않았으며/);
+    assert.match(await review.textContent(), /the bundle upload was interrupted before it was complete; nothing was staged/);
+    assert.equal(await stop.isHidden(), true);
+    await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1,
+      uploadThroughput: -1 });
+
+    // the server's own state: that restore is failed, it staged nothing, and it is cleanable now
+    const state = await page.evaluate(async b => (await fetch(b + 'api/v1/backups')).json(), base);
+    const [failed] = state.restores;
+    assert.equal(state.restores.length, 1);
+    assert.deepEqual([failed.state, failed.failure_code], ['failed', 'restore_failed']);
+    assert.ok(Number.isInteger(failed.interrupted_after_bytes) && failed.interrupted_after_bytes > 0
+      && failed.interrupted_after_bytes < bundle.length,
+      `bytes received before the cut: ${failed.interrupted_after_bytes} of ${bundle.length}`);
+    t.diagnostic(`server received ${failed.interrupted_after_bytes} of ${bundle.length} bundle bytes before the cut`);
+    const retention = await page.evaluate(async b => (await fetch(b + 'api/v1/retention')).json(), base);
+    const item = retention.items.find(entry => entry.item_id === `restore:${failed.restore_id}`);
+    assert.ok(item, JSON.stringify(retention.items));
+    assert.deepEqual([item.eligible, item.reason, item.bytes], [true, 'failed_restore', 0]);
+    // the active instance is untouched: the same owner session reads the same work
+    const workId = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).work_id, `deeptwin:intake:${base}`);
+    const work = await page.evaluate(async ({ b, id }) => (await fetch(`${b}api/v1/works/${id}`)).json(), { b: base, id: workId });
+    assert.equal(work.text, WORK_TEXT);
+
+    // resume with a fresh restore: the whole bundle, staged for review
+    await page.goto(url + 'records.html');
+    await panel.locator('.backup-worker[data-state="ready"]').waitFor();
+    await pick();
+    await panel.getByRole('button', { name: '스테이징 영역에 복원' }).click();
+    await panel.locator('.restore-review[data-state="restored_review"]').waitFor({ timeout: 60000 });
+    assert.match(await panel.textContent(), /활성 인스턴스는 바뀌지 않았습니다/);
+    const after = await page.evaluate(async b => (await fetch(b + 'api/v1/backups')).json(), base);
+    assert.deepEqual(after.restores.map(entry => entry.state).sort(), ['failed', 'restored_review']);
+    assert.deepEqual(errors, []);
+  });

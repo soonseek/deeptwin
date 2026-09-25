@@ -13,6 +13,7 @@ server does not collect are stated as `unavailable`, unselected ones as
 import io
 import json
 import zipfile
+from contextlib import contextmanager
 from hashlib import sha256
 from types import SimpleNamespace
 from uuid import uuid4
@@ -389,3 +390,323 @@ def test_a_metadata_only_export_is_not_scanned_and_unchanged(tmp_path):
         assert shown["secret_scan"] is None
         assert shown["items"][0]["label"] == "작업 설명 1판 (원문 제외)"
         assert confirm(subject, work["work_id"], shown).status_code == 201
+
+
+# --- T074: attached PDFs scanned through the document worker, redacted or excluded ------
+
+PDF_SECRET = "aws_secret_access_key=SYNTHETIC-pdf-wJalrXUtnFEMI-K7MDENG"
+
+
+def synthetic_pdf(*lines_per_page):
+    from reportlab.pdfgen import canvas
+
+    buffer = io.BytesIO()
+    drawing = canvas.Canvas(buffer, pagesize=(612, 792))
+    for lines in lines_per_page:
+        drawing.setFont("Helvetica", 12)
+        for index, line in enumerate(lines):
+            drawing.drawString(72, 700 - 20 * index, line)
+        drawing.showPage()
+    drawing.save()
+    return buffer.getvalue()
+
+
+@contextmanager
+def worker_app(tmp_path, *, worker=True):
+    """The supported app with the isolated document worker (in-thread harness: the real
+    service, frame codec and handshake) or without any worker."""
+    from starlette.testclient import TestClient
+
+    from app.server import create_app
+    from app.tests.support.document_worker_harness import in_thread_client
+    from app.tests.test_web_owner_integration import bootstrap_client, configured
+
+    client_codec = in_thread_client()[0] if worker else None
+    profile, capability, arguments = configured(tmp_path)
+    app = create_app(tmp_path / "data", **arguments, document_worker=client_codec)
+    with TestClient(app, base_url=profile.http_origin) as client:
+        csrf = bootstrap_client(client, profile, capability)
+        yield SimpleNamespace(app=app, client=client, profile=profile, csrf=csrf, codec=client_codec,
+                              domain=app.state.domain_store, path=profile.base_path + "api/v1/works")
+
+
+def attach(subject, work, data, *, name, media="application/pdf", expected):
+    from app.tests.test_owner_material_intake import metadata, upload
+
+    response = upload(subject, work, data, metadata(data, name=name, declared_media_type=media,
+                                                    expected_revision=expected))
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def sources_preview(subject, work_id, **extra):
+    return post(subject, {"schema_version": PREVIEW, "request_id": str(uuid4()), "categories": ["originals"],
+                          "include_raw": True, "include_source_originals": True, **extra},
+                f"{subject.path}/{work_id}/exports/preview")
+
+
+def test_an_attached_pdf_with_a_secret_is_exported_only_as_a_verified_redacted_copy(tmp_path):
+    clean = synthetic_pdf(["Synthetic clean page."])
+    secret = synthetic_pdf(["First page, nothing here."], ["Second page holds", f"key {PDF_SECRET} inline."])
+    with worker_app(tmp_path) as subject:
+        work = create(subject, text="첨부 원본이 있는 합성 업무").json()
+        attach(subject, work, clean, name="clean-CANARY-name.pdf", expected=1)
+        attach(subject, work, secret, name="secret-CANARY-name.pdf", expected=2)
+        attach(subject, work, b"%PDF-1.7\nnot really a pdf\n", name="damaged.pdf", expected=3)
+        attach(subject, work, b"\x89PNG\r\n\x1a\n" + b"\0" * 32, name="image.png", media="image/png", expected=4)
+        # attached originals are a raw inclusion: never without include_raw
+        assert post(subject, {"schema_version": PREVIEW, "request_id": str(uuid4()), "categories": ["originals"],
+                              "include_raw": False, "include_source_originals": True},
+                    f"{subject.path}/{work['work_id']}/exports/preview").status_code == 400
+        response = sources_preview(subject, work["work_id"])
+        assert response.status_code == 200, response.text
+        shown = response.json()
+        assert shown["include_source_originals"] is True
+        # the worker extracted page 2's text; the finding is shown by kind and location only
+        assert [(f["relative_path"], f["page"], f["kind"], f["line"]) for f in shown["secret_scan"]["findings"]] == [
+            ("originals/sources/source-2.pdf", 2, "aws_secret_access_key", 2)]
+        assert PDF_SECRET.split("=")[1] not in response.text and "CANARY-name" not in response.text
+        items = {item["relative_path"]: item for item in shown["items"]}
+        assert items["originals/sources/source-1.pdf"]["content_mode"] == "raw"
+        redacted = items["originals/sources/source-2.redacted.pdf"]
+        assert redacted["content_mode"] == "redacted" and "원본과 같지 않음" in redacted["label"]
+        assert "originals/sources/source-2.pdf" not in items
+        assert not any("source-3" in path or "source-4" in path for path in items)
+        claims = [(entry["reason"], entry["claim"]) for entry in shown["missing"] if entry["category"] == "originals"]
+        assert ("redacted", ("첨부 PDF 2은 비밀 의심 값을 덮은 이미지 사본으로만 넣었다. 사본은 원본과 같지 않고 "
+                            "텍스트 층·메타데이터·링크가 없다.")) in claims
+        assert ("unavailable", "문서 격리 작업자가 첨부 PDF 3을 읽지 못해(content_rejected) 검사할 수 없어 넣지 않았다.") in claims
+        assert ("unavailable", "첨부 원본 4은 비밀 검사를 할 수 없는 형식이라 넣지 않았다.") in claims
+        # the preview is deterministic over the redacted bytes: the same request, the same digest
+        again = sources_preview(subject, work["work_id"], request_id=shown["request_id"]).json()
+        assert again["preview_sha"] == shown["preview_sha"]
+        receipt = confirm(subject, work["work_id"], shown, include_source_originals=True)
+        assert receipt.status_code == 201, receipt.text
+        download, members = _bundle(subject, work["work_id"], receipt.json())
+        assert members["originals/sources/source-1.pdf"] == clean
+        copy = members["originals/sources/source-2.redacted.pdf"]
+        assert copy.startswith(b"%PDF-") and copy != secret
+        for value in (PDF_SECRET, PDF_SECRET.split("=")[1], "CANARY-name"):
+            assert value.encode() not in download.content
+        # re-extracted independently through the worker: the copy has no text layer at all
+        extracted = subject.codec.extract_pdf_text(copy)
+        assert extracted.page_count == 2 and extracted.pages == ("", "")
+        manifest = json.loads(members["manifest.json"])
+        assert manifest["redaction_summary"] == {"originals": 1}
+        assert "가림 사본은 원본과 같지 않아 원본을 재현하지 않는다." in manifest["reproduction_limits"]
+        modes = {item["relative_path"]: item["content_mode"] for item in manifest["items"]}
+        assert modes["originals/sources/source-2.redacted.pdf"] == "redacted"
+        # the owner confirms that exact finding set: the original PDF is exported as chosen
+        digest = shown["secret_scan"]["findings_sha"]
+        acked = sources_preview(subject, work["work_id"], acknowledged_findings_sha=digest).json()
+        assert acked["secret_scan"]["confirmed"] is True
+        assert {item["relative_path"]: item["content_mode"] for item in acked["items"]}[
+            "originals/sources/source-2.pdf"] == "raw"
+        done = confirm(subject, work["work_id"], acked, include_source_originals=True,
+                       acknowledged_findings_sha=digest)
+        assert done.status_code == 201, done.text
+        assert _bundle(subject, work["work_id"], done.json())[1]["originals/sources/source-2.pdf"] == secret
+        # a confirmation without the choice it previewed is a different preview: refused
+        assert confirm(subject, work["work_id"], shown).status_code == 409
+
+
+def test_the_export_never_parses_a_pdf_in_the_control_plane(tmp_path, monkeypatch):
+    """With every PDF parser entry point of this process poisoned, the worker PROCESS
+    (the unmodified service behind the harness's plain socket) still scans and redacts."""
+    import secrets
+    import subprocess
+    import sys
+    import tempfile
+    from pathlib import Path
+
+    from starlette.testclient import TestClient
+
+    from app.server import create_app
+    from app.tests.support.document_worker_harness import process_client
+    from app.tests.test_web_owner_integration import bootstrap_client, configured
+
+    data = synthetic_pdf(["page", f"key {PDF_SECRET}"])
+    directory = Path(tempfile.mkdtemp(prefix="dt-t074-export-"))
+    path = directory / "document.sock"
+    secret = secrets.token_bytes(32)
+    process = subprocess.Popen([sys.executable, "-B", "-m", "app.tests.support.document_worker_harness", str(path)],
+                               cwd=Path(__file__).resolve().parents[2], stdin=subprocess.PIPE,
+                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    process.stdin.write(secret.hex().encode() + b"\n")
+    process.stdin.close()
+    try:
+        assert process.stdout.readline().strip() == b"ready"
+        for name in ("pypdfium2", "pypdfium2_raw", "pypdf", "PIL", "PIL.Image", "reportlab"):
+            monkeypatch.setitem(sys.modules, name, None)
+        profile, capability, arguments = configured(tmp_path)
+        app = create_app(tmp_path / "data", **arguments, document_worker=process_client(path, secret))
+        with TestClient(app, base_url=profile.http_origin) as client:
+            subject = SimpleNamespace(app=app, client=client, profile=profile,
+                                      csrf=bootstrap_client(client, profile, capability),
+                                      domain=app.state.domain_store, path=profile.base_path + "api/v1/works")
+            work = create(subject, text="격리 확인 업무").json()
+            attach(subject, work, data, name="secret.pdf", expected=1)
+            shown = sources_preview(subject, work["work_id"]).json()
+            assert [item["content_mode"] for item in shown["items"] if "sources" in item["relative_path"]] == [
+                "redacted"]
+            assert confirm(subject, work["work_id"], shown, include_source_originals=True).status_code == 201
+    finally:
+        process.kill()
+        process.wait(5)
+        path.unlink(missing_ok=True)
+        directory.rmdir()
+
+
+def test_without_a_document_worker_attached_pdfs_are_excluded_with_the_reason(tmp_path):
+    with worker_app(tmp_path, worker=False) as subject:
+        work = create(subject, text="작업자 없는 합성 업무").json()
+        attach(subject, work, synthetic_pdf([f"key {PDF_SECRET}"]), name="secret.pdf", expected=1)
+        shown = sources_preview(subject, work["work_id"]).json()
+        assert not any(item["relative_path"].startswith("originals/sources/") for item in shown["items"])
+        assert {"category": "originals", "reason": "unavailable",
+                "claim": "문서 격리 작업자가 연결되지 않아 첨부 PDF 1의 내용을 검사할 수 없어 넣지 않았다."} in shown["missing"]
+        assert shown["secret_scan"]["findings"] == []  # nothing was read, nothing is claimed clean or found
+
+
+# --- T074: design candidates, recorded verdicts, derivations, approvals and lenses --------
+
+def test_the_design_records_of_the_work_are_exported_as_recorded_with_their_lenses(tmp_path):
+    from app.services.critic_qualification import critic_qualification_from_suite
+    from app.tests.design_workspace_fixture import (
+        CRITIC_ID,
+        GENERATOR_ID,
+        open_seeded_for_work,
+    )
+    from app.tests.test_environments import CRITIC_DIGEST, actor_record, actor_v3_design
+
+    with actor_v3_design():
+        # TEST-ACTOR qualification of the test-only V3-verifying design id; no real one exists
+        qualified = critic_qualification_from_suite(actor_record(), CRITIC_DIGEST)
+    with worker_app(tmp_path, worker=False) as subject:
+        work = create(subject, text="설계가 있는 합성 업무").json()
+        other = create(subject, text="설계가 없는 다른 업무").json()
+        revised = attach(subject, work, synthetic_pdf(["source"]), name="source.pdf", expected=1)
+        revision = EntityRef.from_dict(revised["ref"])
+        sources = [EntityRef.from_dict(item) for item in revised["source_refs"]]
+        request, roles = open_seeded_for_work(subject.app, revision, sources, criticism_turn=True,
+                                              critic_qualification=qualified)
+        design = subject.profile.base_path + "api/v1/design-requests/" + request.request_id
+        derived = post(subject, {"schema_version": "design-derivation-command-v1", "command_id": str(uuid4()),
+                                 "action": "select", "parent_candidate_ids": [roles["base"].candidate_id],
+                                 "instruction": None}, design + "/derivations")
+        assert derived.status_code == 201, derived.text
+        edit = post(subject, {"schema_version": "design-derivation-command-v1", "command_id": str(uuid4()),
+                              "action": "edit", "parent_candidate_ids": [roles["reshaped"].candidate_id],
+                              "instruction": "소유자 지시 CANARY-instruction"}, design + "/derivations")
+        assert edit.status_code == 201, edit.text
+        reviewed = post(subject, {"schema_version": "design-review-command-v1", "command_id": str(uuid4()),
+                                  "derivation_id": derived.json()["derivation_id"]}, design + "/reviews")
+        assert reviewed.status_code == 201, reviewed.text
+        chosen = reviewed.json()["reviewed_candidate"]["candidate_id"]
+        prepared = post(subject, {"schema_version": "design-prepare-command-v1", "command_id": str(uuid4()),
+                                  "candidate_id": chosen}, design + "/preparations")
+        assert prepared.status_code == 201, prepared.text
+
+        shown = preview(subject, work["work_id"], ["evaluation_evidence"]).json()
+        items = {item["relative_path"]: item for item in shown["items"]}
+        assert set(items) == {"evaluation/design-requests.json", "evaluation/lenses.json"}
+        assert items["evaluation/design-requests.json"]["label"] == (
+            f"설계 요청 1개 · 후보 5개 · 기록된 평가 5개(평가자 {CRITIC_ID}, 다시 검증하지 않음) · 파생 2개 · 설계 승인 1개")
+        assert all(item["content_mode"] == "metadata_only" for item in shown["items"])
+        [gap] = [entry for entry in shown["missing"] if entry["category"] == "evaluation_evidence"]
+        assert gap["reason"] == "unavailable" and "완료 판정" in gap["claim"]
+        receipt = confirm(subject, work["work_id"], shown)
+        assert receipt.status_code == 201, receipt.text
+        download, members = _bundle(subject, work["work_id"], receipt.json())
+        exported = json.loads(members["evaluation/design-requests.json"])
+        [value] = exported["requests"]
+        assert value["request_id"] == request.request_id and value["work_revision"] == revision.version
+        assert [call["generator_model_id"] for call in value["generation_calls"]] == [GENERATOR_ID, GENERATOR_ID]
+        by_id = {item["candidate_id"]: item for item in value["candidates"]}
+        rejected = by_id[roles["rejected"].candidate_id]["verdict"]
+        assert rejected["basis"] == "recorded" and rejected["re_verified_by_export"] is False
+        assert rejected["status"] == "rejected" and rejected["critic"]["model_ids"] == [CRITIC_ID]
+        assert by_id[chosen]["derived_by"] == derived.json()["derivation_id"]
+        assert by_id[chosen]["verdict"]["status"] == "passed"
+        assert all(item["graph"]["content"] == "그래프 본문 미포함" for item in value["candidates"])
+        actions = {item["action"]: item for item in value["derivations"]}
+        assert actions["edit"]["instruction"] == "지시 내용 미포함" and actions["edit"]["re_review_required"] is True
+        [approval] = value["design_approvals"]
+        assert approval["candidate_id"] == chosen and approval["critic_qualification"]["status"] == "qualified"
+        assert b"CANARY-instruction" not in download.content
+        [lens] = json.loads(members["evaluation/lenses.json"])
+        assert (lens["lens_id"], lens["version"], lens["definition_state"]) == ("L-P032-01", "draft-1", "current")
+        assert lens["referenced_by"] == ["candidate_audit", "criticism_lens_use"]
+        assert lens["review"]["adoption_status"] == "not_adopted" and lens["definition"]["neutral_name"]
+        # another work of the vault: none of this is its export
+        assert not preview(subject, other["work_id"], ["evaluation_evidence"]).json()["items"]
+
+
+# --- T074: growth rounds, scoped by the environment the work's runs ran in --------------
+
+def test_growth_rounds_are_exported_by_the_environment_scope_rule(tmp_path):
+    from app.tests import growth_chain_fixture as chain
+    from app.tests import test_runs_api as runs_api
+    from app.tests.test_graph_execution import linear_graph
+    from app.tests.test_works_api import CREATE
+
+    with runs_api.owner_app(tmp_path, runs_api.Executor()) as subject:
+        works = subject.profile.base_path + "api/v1/works"
+        work = runs_api.post(subject, {"schema_version": CREATE, "command_id": str(uuid4()),
+                                       "text": "비교가 있는 합성 업무"}, works).json()
+        idle = runs_api.post(subject, {"schema_version": CREATE, "command_id": str(uuid4()),
+                                       "text": "실행이 없는 업무"}, works).json()
+        graph_ref = runs_api.graph_record(subject, linear_graph())
+        started = runs_api.post(subject, runs_api.command(
+            subject, graph_ref, work_revision_ref=work["ref"],
+            consent_ref=runs_api.consent_for(subject, graph_ref, work_ref=work["ref"])))
+        assert started.status_code == 201, started.text
+        seeded = chain.seed_environment_rounds(subject.domain, tmp_path / "reset", subject.refs.environment)
+        exports = SimpleNamespace(**{**vars(subject), "path": works})
+        shown = preview(exports, work["work_id"], ["evaluation_evidence"]).json()
+        [item] = shown["items"]
+        assert item["relative_path"] == "evaluation/rounds.json"
+        assert item["label"] == ("이 작업의 실행 환경에서 한 비교 2개 · 실험 1개 (판정·지표·항목 결과만, "
+                                 "산출물 내용 제외 · 다른 환경의 비교 1개는 범위 밖)")
+        receipt = confirm(exports, work["work_id"], shown)
+        assert receipt.status_code == 201, receipt.text
+        download, members = _bundle(exports, work["work_id"], receipt.json())
+        value = json.loads(members["evaluation/rounds.json"])
+        assert value["environments"] == [{"id": subject.refs.environment.id,
+                                          "version": subject.refs.environment.version}]
+        assert value["outside_scope_round_count"] == 1
+        assert [item["round_id"] for item in value["rounds"]] == seeded["round_ids"]
+        assert [item["validity"] for item in value["rounds"]] == seeded["validities"] == ["valid", "invalid"]
+        assert value["rounds"][0]["utility"] == "0.8"
+        assert all(item["item_outcomes"] is None and item["item_outcomes_state"] == "no_tool_effects"
+                   for item in value["rounds"])
+        assert value["rounds"][0]["outputs"][0]["node_results"] == "노드 결과 내용 미포함"
+        [experiment] = value["experiments"]
+        # the invalid round is completed but never counted as progress
+        assert experiment["lineage_id"] == seeded["lineage_id"]
+        assert experiment["completed_round_ids"] == seeded["round_ids"]
+        assert experiment["non_improving_valid_count"] == 0
+        assert b"quality=" not in download.content and "합성 업무" not in download.content.decode("latin-1")
+        # a work none of whose runs used that environment carries no round
+        assert not preview(exports, idle["work_id"], ["evaluation_evidence"]).json()["items"]
+
+
+def test_a_round_item_outcome_keeps_its_boundaries_and_drops_everything_else():
+    """The G-14 per-item outcome shape `paired_execution` records (see
+    test_paired_tool_effects): only closed outcome, reasons and each effect's boundary
+    identity survive into the export — never a tool's inputs or result."""
+    from app.services.work_export_records import _item_outcomes
+
+    effect = {"tool_id": "test_actor_notify", "version": "1.0.0", "effect_class": "external_send",
+              "boundary": "replay", "inputs_digest": "a" * 64, "tool_call_sha256": "b" * 64,
+              "output": "원 결과 내용", "run_id": "r"}
+    exported = _item_outcomes([
+        {"item_index": 0, "outcome": "compared", "reasons": [], "past_tool_effects": [],
+         "baseline_effects": [], "candidate_effects": []},
+        {"item_index": 1, "outcome": "not_comparable", "reasons": ["the replay boundary is not approved"],
+         "past_tool_effects": [effect], "baseline_effects": [effect], "candidate_effects": [effect]}])
+    assert exported[0]["outcome"] == "compared"
+    assert exported[1]["reasons"] == ["the replay boundary is not approved"]
+    assert exported[1]["past_tool_effects"] == [{key: effect[key] for key in (
+        "tool_id", "version", "effect_class", "boundary", "tool_call_sha256", "inputs_digest")}]
+    assert _item_outcomes(None) is None
