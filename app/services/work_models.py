@@ -28,7 +28,6 @@ from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore, _writer
 from ..generation_profiles import GenerationPurpose, profile_for
 from .claude_connection import CHOICE_SCHEMA
-from .design_persistence import decode_design_refs, encode_design_refs
 from .design import (
     CONFIRMED_DIMENSIONS,
     WORK_MODEL_CONFIRMATION_SCHEMA_VERSION,
@@ -37,6 +36,7 @@ from .design import (
     WorkModelContractError,
     confirm_work_model,
 )
+from .design_persistence import decode_design_refs, encode_design_refs
 from .owner_auth import OwnerAuthError, PersistentOwnerAuthority
 from .run_approvals import _authenticate_owner, _owner_actor_ref
 
@@ -47,6 +47,7 @@ CONFIRM_SCHEMA = "work-model-confirm-command-v1"
 CONFIRMATION_RECORD_SCHEMA = "work-model-confirmation-record-v1"
 MAX_OUTPUT_TOKENS = 8_000
 MAX_RESPONSE_CHARS = 262_144
+MAX_PROMPT_READING_CHARS = 120_000  # the owner's readings given to one understanding turn, in total
 CODES = frozenset({"invalid_input", "unauthenticated", "access_denied", "not_found", "conflict",
                    "unavailable", "provider_unavailable", "model_output_invalid", "sources_required"})
 
@@ -120,12 +121,23 @@ def _ref(value, kind) -> EntityRef:
     return ref
 
 
-def render_work_model_prompt(text: str) -> tuple[str, str]:
-    """The deterministic (system, user) pair for one work-understanding turn."""
+def render_work_model_prompt(text: str, sources=()) -> tuple[str, str]:
+    """The deterministic (system, user) pair for one work-understanding turn.
+
+    `sources` is given only when the owner read at least one retained original
+    (source_readings.py): each source then appears with its reading state — `not_read`,
+    `complete`, `partial` (with what was not read) or `unreadable` — and only the text the
+    reading actually kept. Without any reading the prompt is the revision text alone."""
 
     profile = profile_for(GenerationPurpose.WORK_UNDERSTANDING)
     system = f"{profile.base_instructions}\n{profile.developer_instructions}\n{_OUTPUT_SCHEMA}"
-    return system, canonical_json({"work_revision": {"text": text}}).decode("utf-8")
+    revision = {"text": text}
+    if sources:
+        revision["sources"] = list(sources)
+        system += (" The work_revision.sources list names each retained original with its reading state; "
+                   "use only the text given, and record anything a not_read, partial or unreadable "
+                   "original leaves open as an unknown.")
+    return system, canonical_json({"work_revision": revision}).decode("utf-8")
 
 
 def admit_work_model(raw, *, work_model_id: str, work_revision_ref: EntityRef, source_refs):
@@ -224,6 +236,37 @@ class PersistentWorkModels:
                 raise WorkModelServiceError("conflict")
             return confirm_work_model(record.body["content"], decode_design_refs(decision.body["content"]["design"]))
 
+    def _readings(self, source_refs):
+        """The owner's latest reading of each source, for the prompt, and their refs (the
+        draft's provenance). No reading at all → ((), ()): the revision text alone."""
+        from .source_readings import latest_readings
+
+        with self._domain._connection() as db:
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='source_readings_v1'"
+                          ).fetchone() is None:
+                return (), ()
+            roots = self._domain._read_roots(db)
+            records = latest_readings(self._domain, db, roots, source_refs)
+            if all(record is None for record in records):
+                return (), ()
+            names = []
+            for ref in source_refs:
+                source = self._domain._load(db, EntityRef.from_dict(ref), roots)[0]
+                names.append(source.body["content"].get("name"))
+        entries, budget = [], MAX_PROMPT_READING_CHARS
+        for name, record in zip(names, records, strict=True):
+            if record is None:
+                entries.append({"name": name, "reading_state": "not_read"})
+                continue
+            content = record.body["content"]
+            text = content["text"][:budget]
+            budget -= len(text)
+            entry = {"name": name, "reading_state": content["state"], "reasons": content["reasons"], "text": text}
+            if len(text) < len(content["text"]):
+                entry["omitted_from_prompt_characters"] = len(content["text"]) - len(text)
+            entries.append(entry)
+        return tuple(entries), tuple(record.ref for record in records if record is not None)
+
     # --- commands ----------------------------------------------------------
 
     @_closed
@@ -270,7 +313,8 @@ class PersistentWorkModels:
         content = choice.body["content"]
         if content.get("schema_version") != CHOICE_SCHEMA or content.get("provider") != "claude":
             raise WorkModelServiceError("invalid_input")
-        system, user = render_work_model_prompt(text)
+        readings, reading_refs = self._readings(sources)
+        system, user = render_work_model_prompt(text, readings)
         started = time.monotonic()
         try:
             raw = self._executor.model_turn(content["model_id"], purpose="work_understanding",
@@ -289,7 +333,7 @@ class PersistentWorkModels:
             actor_ref = _owner_actor_ref(db, actor)
             record = ImmutableRecord.create(
                 kind="work_model", id=work_model_id, version=1, created_at_utc=_stamp(),
-                actor_ref=roots.actor, parent_refs=(revision_ref, choice_ref), purpose="operational",
+                actor_ref=roots.actor, parent_refs=(revision_ref, choice_ref, *reading_refs), purpose="operational",
                 access_policy_ref=roots.access_policy, retention_policy_ref=roots.retention_policy,
                 content=target.work_model.as_dict())
             self._domain._put_in_transaction(db, record)

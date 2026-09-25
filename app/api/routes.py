@@ -343,6 +343,18 @@ def preflight_api_v1(scope, body):
     from .work_models import preflight as work_models_preflight
     if is_work_models_path(path):
         work_models_preflight(scope, body)
+    from .source_readings import is_source_readings_path
+    from .source_readings import preflight as source_readings_preflight
+    if is_source_readings_path(path):
+        source_readings_preflight(scope, body)
+    from .conversations import is_conversations_path
+    from .conversations import preflight as conversations_preflight
+    if is_conversations_path(path):
+        conversations_preflight(scope, body)
+    from .budget_policies import is_budget_policies_path
+    from .budget_policies import preflight as budget_policies_preflight
+    if is_budget_policies_path(path):
+        budget_policies_preflight(scope, body)
     if path == '/api/v1/commands' and scope['method'] == 'POST':
         fields = ('schema_version', 'command_id', 'command_type', 'target', 'expected_revision', 'target_hash', 'args')
         value = parse_json_object(body, required=fields, limits=WireLimits(max_bytes=131072))

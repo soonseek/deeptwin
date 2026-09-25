@@ -19,6 +19,7 @@ import { createAccountPanel, createCredentialsPanel } from './account.mjs';
 import { createBackupPanel } from './records-backup.mjs';
 import { createRetentionPanel } from './records-retention.mjs';
 import { createUpdatePanel } from './records-update.mjs';
+import { createBudgetPolicies } from './budget-policy.mjs';
 import { createClaudeConnection } from './claude-connection.mjs';
 import { recordsRoutes } from './records.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
@@ -31,6 +32,8 @@ export const PAGE_SIZE = '50';
 export const ACCOUNT_MOUNT_ID = 'records-account';
 export const CONNECTION_MOUNT_ID = 'records-connection';
 export const CREDENTIALS_MOUNT_ID = 'records-credentials';
+// T023: the owner's run budgets (budget-policy.mjs), optional like the panels above
+export const BUDGETS_MOUNT_ID = 'records-budgets';
 // T072: the read-only web-release update guidance (records-update.mjs)
 export const UPDATE_MOUNT_ID = 'records-update';
 
@@ -163,6 +166,11 @@ export async function boot({ document, location, fetch, crypto = globalThis.cryp
   const credentials = credentialsRoot !== null && typeof credentialsRoot?.replaceChildren === 'function'
     ? createCredentialsPanel({ root: credentialsRoot, document, fetch, basePath, session }) : null;
   if (credentials !== null) await credentials.load().catch(() => {});
+  const budgetsRoot = document.getElementById(BUDGETS_MOUNT_ID);
+  const budgets = budgetsRoot !== null && typeof budgetsRoot?.replaceChildren === 'function'
+    && typeof crypto?.randomUUID === 'function'
+    ? createBudgetPolicies({ root: budgetsRoot, document, request: session.request, crypto, basePath }) : null;
+  if (budgets !== null) await budgets.load().catch(() => {});
   const backup = createBackupPanel({ root: roots.backup, document, basePath, request: session.request,
     upload: session.uploadBackupBundle, crypto });
   await backup.load().catch(() => {});
@@ -176,7 +184,7 @@ export async function boot({ document, location, fetch, crypto = globalThis.cryp
   if (update !== null) await update.load().catch(() => {});
   const log = createEventLog({ root: roots.logs, document, request: session.request, basePath });
   await log.load().catch(() => {});
-  return Object.freeze({ established: true, basePath, sections, log, account, connection, credentials, backup,
+  return Object.freeze({ established: true, basePath, sections, log, account, connection, credentials, budgets, backup,
     retention, update });
 }
 

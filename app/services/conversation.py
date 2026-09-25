@@ -10,10 +10,16 @@ domain command ran.
 import hmac
 import re
 import secrets
+import time as _time
 from dataclasses import dataclass
+from datetime import UTC as _UTC
+from datetime import datetime as _datetime
+from functools import wraps as _wraps
 from hashlib import sha256
 from threading import RLock
+from uuid import NAMESPACE_URL as _NAMESPACE_URL
 from uuid import uuid4
+from uuid import uuid5 as _uuid5
 
 from ..domain.refs import (
     MAX_INTEGER,
@@ -979,3 +985,601 @@ class Conversation:
                 (work_id,),
             ))
             return [self._validation_row(db, row) for row in rows]
+
+
+# =====================================================================================
+# The supported factory's shared conversation (T023, FR-009): `conversations-v1`.
+#
+# The class above is the development preview's (app/server.py) over its own `Store`. The
+# class below is the one the supported factory installs, over the actual domain store and
+# the owner's persistent session. The same rules hold, now with real authority:
+#
+# - A message is the owner's words bound to the work's current revision and to the exact
+#   records it refers to (a revision, a source, a reading, a work model or an earlier
+#   message of this same work). Its semantic origin and actor are set by the server; the
+#   browser never supplies either. Text such as `응` or even the exact approval phrase
+#   posted as a message stays a message and approves nothing.
+# - A referenced-object command is proposed from one such message over exactly one of the
+#   records it refers to. Proposing grants nothing: the server opens a short-lived
+#   challenge bound to this owner session, one random token (only its digest is stored)
+#   and one exact response phrase.
+# - Approval is the challenge answered, by button or by typing the exact phrase in the
+#   conversation. An ambiguous reply (anything but the phrase) is refused as
+#   `approval_ambiguous`; a wrong/foreign token, another session, an expired or revoked
+#   challenge, a changed work revision or a target no longer undecided is `conflict`; a
+#   body naming an actor, authority or origin never passes the wire. A refusal changes
+#   nothing.
+# - The approved command runs through the same service the button on the work-model panel
+#   uses (`PersistentWorkModels.confirm`), under a command id derived from the proposal,
+#   so a chat approval and a button decision are one decision, never two. The proposal's
+#   sealed versions record proposed → approved → executed (or failed, with its code);
+#   an approval whose execution was interrupted resumes on the command's replay.
+# =====================================================================================
+
+SUPPORTED_MESSAGE_COMMAND = "conversation-message-command-v1"
+SUPPORTED_PROPOSAL_COMMAND = "conversation-proposal-command-v1"
+SUPPORTED_CHALLENGE_COMMAND = "conversation-challenge-command-v1"
+SUPPORTED_APPROVAL_COMMAND = "conversation-approval-command-v1"
+SUPPORTED_MESSAGE_SCHEMA = "conversation-message-v1"
+SUPPORTED_PROPOSAL_SCHEMA = "conversation-proposal-v1"
+SUPPORTED_COMMANDS = {
+    "work_model.confirm": ("accepted", "작업 모델 확정"),
+    "work_model.reject": ("rejected", "작업 모델 반려"),
+}
+SUPPORTED_REFERENCE_KINDS = frozenset({"work_revision", "source", "extraction", "work_model", "chat_message"})
+SUPPORTED_MAX_TEXT_CHARS = 20_000
+SUPPORTED_MAX_TEXT_BYTES = 65_536
+SUPPORTED_MAX_REFERENCES = 16
+SUPPORTED_MAX_MESSAGES = 10_000
+SUPPORTED_CHALLENGE_TTL_MS = 5 * 60 * 1000
+SUPPORTED_CODES = frozenset({"invalid_input", "unauthenticated", "access_denied", "not_found", "conflict",
+                             "approval_ambiguous", "unavailable", "capacity"})
+_SUPPORTED_DDL = (
+    """CREATE TABLE IF NOT EXISTS conversation_v1_messages(
+        vault_id TEXT NOT NULL, work_id TEXT NOT NULL, sequence INTEGER NOT NULL CHECK(sequence > 0),
+        message_id TEXT NOT NULL UNIQUE, sha256 TEXT NOT NULL, PRIMARY KEY(vault_id, work_id, sequence))""",
+    """CREATE TABLE IF NOT EXISTS conversation_v1_proposals(
+        vault_id TEXT NOT NULL, proposal_id TEXT PRIMARY KEY, work_id TEXT NOT NULL,
+        message_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('proposed','approved','executed','failed')),
+        head_version INTEGER NOT NULL, head_sha256 TEXT NOT NULL, created_seq INTEGER NOT NULL)""",
+    """CREATE TABLE IF NOT EXISTS conversation_v1_challenges(
+        challenge_id TEXT PRIMARY KEY, proposal_id TEXT NOT NULL REFERENCES conversation_v1_proposals(proposal_id),
+        token_sha256 TEXT NOT NULL, response_text TEXT NOT NULL, session_id TEXT NOT NULL, owner_id TEXT NOT NULL,
+        issued_at_ms INTEGER NOT NULL, expires_at_ms INTEGER NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('open','consumed','revoked')))""",
+)
+
+
+class SupportedConversationError(ValueError):
+    """Closed codes for the supported conversation; storage detail never leaks."""
+
+    def __init__(self, code="invalid_input"):
+        if code not in SUPPORTED_CODES:
+            code = "unavailable"
+        super().__init__(code)
+        self.code = code
+
+
+def _supported_closed(method):
+    @_wraps(method)
+    def invoke(*args, **kwargs):
+        from .owner_auth import OwnerAuthError
+        from .works import WorkServiceError
+
+        try:
+            return method(*args, **kwargs)
+        except (SupportedConversationError, OwnerAuthError):
+            raise
+        except WorkServiceError as error:
+            raise SupportedConversationError(error.code) from None
+        except Exception:  # noqa: BLE001 - storage detail must not disclose
+            raise SupportedConversationError("unavailable") from None
+
+    return invoke
+
+
+def _supported_stamp():
+    return _datetime.now(_UTC).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+
+
+def _supported_command(payload, schema, fields):
+    if (type(payload) is not dict or set(payload) != {"schema_version", "command_id", *fields}
+            or payload["schema_version"] != schema):
+        raise SupportedConversationError("invalid_input")
+    try:
+        uuid_string(payload["command_id"])
+    except (TypeError, ValueError):
+        raise SupportedConversationError("invalid_input") from None
+    return payload
+
+
+def _supported_text(value):
+    if (type(value) is not str or not value.strip() or len(value) > SUPPORTED_MAX_TEXT_CHARS
+            or len(value.encode("utf-8")) > SUPPORTED_MAX_TEXT_BYTES):
+        raise SupportedConversationError("invalid_input")
+    return value
+
+
+def _supported_ref(value):
+    try:
+        return EntityRef.from_dict(value)
+    except Exception:  # noqa: BLE001 - any malformed reference is plain invalid input
+        raise SupportedConversationError("invalid_input") from None
+
+
+class PersistentConversation:
+    """The owner's shared conversation per work over the actual domain store."""
+
+    def __init__(self, works, work_models, *, clock_ms=None):
+        from .work_models import PersistentWorkModels
+        from .works import PersistentWorks
+
+        if type(works) is not PersistentWorks or type(work_models) is not PersistentWorkModels:
+            raise TypeError("Exact works and work-model services required")
+        if work_models._domain is not works._domain or work_models._owner is not works._owner:
+            raise TypeError("Conversation services must share one domain store and owner authority")
+        self.works, self.work_models = works, work_models
+        self.domain, self.owner = works._domain, works._owner
+        self._clock = clock_ms if callable(clock_ms) else (lambda: _time.time_ns() // 1_000_000)
+        from ..domain.store import _writer
+
+        with _writer(), self.domain._connection(write=True) as db:
+            for statement in _SUPPORTED_DDL:
+                db.execute(statement)
+
+    # --- helpers -----------------------------------------------------------------
+
+    def _writer(self):
+        from ..domain.store import _writer
+
+        return _writer()
+
+    def _now(self):
+        value = self._clock()
+        if type(value) is not int or not 0 <= value <= MAX_INTEGER:
+            raise SupportedConversationError("unavailable")
+        return value
+
+    def _latest(self, db, roots, work_id):
+        latest = self.works._latest(db, roots, work_id)
+        if latest is None:
+            raise SupportedConversationError("not_found")
+        return latest
+
+    def _exact(self, db, roots, ref):
+        row = db.execute("SELECT sha256 FROM domain_records WHERE vault_id=? AND kind=? AND id=? AND version=?",
+                         (roots.genesis.id, ref.kind, ref.id, ref.version)).fetchone()
+        if row is None:
+            raise SupportedConversationError("not_found")
+        if not hmac.compare_digest(row["sha256"], ref.sha256):
+            raise SupportedConversationError("conflict")  # a reference to content that is not this record
+        return self.domain._load(db, ref, roots)[0]
+
+    def _reference(self, db, roots, work_id, latest, value):
+        """One exact record of this same work, or a refusal."""
+        from .source_readings import READING_SCHEMA
+
+        ref = _supported_ref(value)
+        if ref.kind not in SUPPORTED_REFERENCE_KINDS:
+            raise SupportedConversationError("invalid_input")
+        record = self._exact(db, roots, ref)
+        content = record.body["content"]
+        membership = latest.body["content"].get("source_refs", [])
+        if ref.kind == "work_revision":
+            same = ref.id == work_id
+        elif ref.kind == "source":
+            same = ref.as_dict() in membership
+        elif ref.kind == "extraction":
+            same = (content.get("schema_version") == READING_SCHEMA and content.get("work_id") == work_id
+                    and content.get("source_ref") in membership)
+        elif ref.kind == "work_model":
+            same = type(content.get("work_revision_ref")) is dict and content["work_revision_ref"].get("id") == work_id
+        else:
+            same = content.get("schema_version") == SUPPORTED_MESSAGE_SCHEMA and content.get("work_id") == work_id
+        if not same:
+            raise SupportedConversationError("conflict")  # another work's record never joins this conversation
+        return ref
+
+    def _message_view(self, record):
+        content = record.body["content"]
+        return {
+            "message_id": record.ref.id, "message_ref": record.ref.as_dict(), "sequence": content["sequence"],
+            "text": content["text"], "semantic_origin": content["semantic_origin"],
+            "actor": {"kind": "human", "role": "owner"}, "references": content["references"],
+            "work_revision": content["work_revision_ref"]["version"], "proposal_id": content["proposal_id"],
+            "created_at_utc": record.body["created_at_utc"],
+        }
+
+    def _proposal_record(self, db, roots, row):
+        return self.domain._load(db, EntityRef("proposed_command", row["proposal_id"], row["head_version"],
+                                               row["head_sha256"]), roots)[0]
+
+    def _proposal_view(self, db, roots, row, session_id=None):
+        record = self._proposal_record(db, roots, row)
+        content = record.body["content"]
+        challenge = None
+        if session_id is not None and content["state"] == "proposed":
+            open_row = db.execute(
+                "SELECT challenge_id, response_text, expires_at_ms FROM conversation_v1_challenges "
+                "WHERE proposal_id=? AND state='open' AND session_id=? ORDER BY issued_at_ms DESC LIMIT 1",
+                (row["proposal_id"], session_id)).fetchone()
+            if open_row is not None and open_row["expires_at_ms"] > self._now():
+                challenge = {"challenge_id": open_row["challenge_id"], "response_text": open_row["response_text"],
+                             "expires_at_ms": open_row["expires_at_ms"]}
+        return {
+            "proposal_id": content["proposal_id"], "proposal_ref": record.ref.as_dict(),
+            "command_kind": content["command_kind"], "target_ref": content["target_ref"],
+            "message_id": content["message_ref"]["id"], "state": content["state"],
+            "approval": content["approval"], "result": content["result"], "challenge": challenge,
+        }
+
+    def _proposal_row(self, db, roots, work_id, proposal_id):
+        try:
+            uuid_string(proposal_id)
+        except (TypeError, ValueError):
+            raise SupportedConversationError("invalid_input") from None
+        row = db.execute("SELECT * FROM conversation_v1_proposals WHERE vault_id=? AND proposal_id=?",
+                         (roots.genesis.id, proposal_id)).fetchone()
+        if row is None or row["work_id"] != work_id:
+            raise SupportedConversationError("not_found")
+        return row
+
+    def _seal_message(self, db, roots, actor_ref, *, work_id, latest, command_id, text, origin, references,
+                      proposal_id):
+        from ..domain.schemas import ImmutableRecord
+
+        count = db.execute("SELECT count(*) FROM conversation_v1_messages WHERE vault_id=? AND work_id=?",
+                           (roots.genesis.id, work_id)).fetchone()[0]
+        if count >= SUPPORTED_MAX_MESSAGES:
+            raise SupportedConversationError("capacity")
+        parents = [latest.ref, *(ref for ref in references if ref != latest.ref)]
+        record = ImmutableRecord.create(
+            kind="chat_message", id=str(_uuid5(_NAMESPACE_URL, f"deeptwin:conversation-message:{command_id}")),
+            version=1, created_at_utc=_supported_stamp(), actor_ref=actor_ref, parent_refs=tuple(parents),
+            purpose="operational", access_policy_ref=roots.access_policy,
+            retention_policy_ref=roots.retention_policy,
+            content={"schema_version": SUPPORTED_MESSAGE_SCHEMA, "work_id": work_id,
+                     "work_revision_ref": latest.ref.as_dict(), "sequence": count + 1, "text": text,
+                     "semantic_origin": origin, "actor_kind": "human",
+                     "references": [ref.as_dict() for ref in references], "proposal_id": proposal_id,
+                     "command_id": command_id})
+        self.domain._put_in_transaction(db, record)
+        db.execute("INSERT INTO conversation_v1_messages VALUES (?,?,?,?,?)",
+                   (roots.genesis.id, work_id, count + 1, record.ref.id, record.ref.sha256))
+        return self.domain._load(db, record.ref, roots)[0]
+
+    def _seal_proposal(self, db, roots, actor_ref, content, *, version, parent=None):
+        from ..domain.schemas import ImmutableRecord
+
+        parents = (parent.ref,) if parent is not None else (
+            EntityRef.from_dict(content["message_ref"]), EntityRef.from_dict(content["target_ref"]))
+        record = ImmutableRecord.create(
+            kind="proposed_command", id=content["proposal_id"], version=version,
+            created_at_utc=_supported_stamp(), actor_ref=actor_ref, parent_refs=parents, purpose="operational",
+            access_policy_ref=roots.access_policy, retention_policy_ref=roots.retention_policy, content=content)
+        self.domain._put_in_transaction(db, record)
+        return self.domain._load(db, record.ref, roots)[0]
+
+    def _issue_challenge(self, db, proposal_id, request, command_kind):
+        token = secrets.token_urlsafe(32)
+        code = secrets.token_hex(4).upper()
+        response_text = f"{SUPPORTED_COMMANDS[command_kind][1]} 승인 {code}"
+        now = self._now()
+        db.execute("UPDATE conversation_v1_challenges SET state='revoked' WHERE proposal_id=? AND state='open'",
+                   (proposal_id,))
+        challenge_id = str(uuid4())
+        db.execute("INSERT INTO conversation_v1_challenges VALUES (?,?,?,?,?,?,?,?,'open')",
+                   (challenge_id, proposal_id, sha256(token.encode("ascii")).hexdigest(), response_text,
+                    request.session.session_id, request.session.actor.id, now,
+                    now + SUPPORTED_CHALLENGE_TTL_MS))
+        return {"challenge_id": challenge_id, "token": token, "response_text": response_text,
+                "expires_at_ms": now + SUPPORTED_CHALLENGE_TTL_MS}
+
+    def _event(self, db, roots, actor_ref, kind, ref, command_id, metadata):
+        from ..domain.public_events import _append_event_in_transaction
+
+        stamp = _supported_stamp()
+        _append_event_in_transaction(
+            db, vault_id=roots.genesis.id, recorded_at_utc=stamp, observed_at_utc=stamp, actor_kind="human",
+            actor_ref=actor_ref, event_type=kind, object_refs=(ObjectRef(ref.kind, ref.id, ref.version, ref.sha256),),
+            correlation_id=command_id, causation_id=None, status="succeeded", error_code=None,
+            public_metadata=metadata, private_evidence_refs=(), retention_class="core",
+            policy_ref=roots.access_policy)
+
+    def _undecided_target(self, request, target_ref):
+        """The work model's current view when it is exactly the target and still undecided."""
+        from .work_models import WorkModelServiceError
+
+        try:
+            view = self.work_models.read(request, target_ref.id)
+        except WorkModelServiceError as error:
+            raise SupportedConversationError("not_found" if error.code == "not_found" else "unavailable") from None
+        if view["record_ref"] != target_ref.as_dict() or view["state"] != "unconfirmed":
+            raise SupportedConversationError("conflict")
+        return view
+
+    def _replay(self, db, roots, command_id, digest):
+        from . import owner_material_journal as journal
+
+        row = journal.lookup(db, roots.genesis.id, command_id)
+        if row is not None:
+            if row["fingerprint"] != digest:
+                raise SupportedConversationError("conflict")
+            return journal.receipt(row)
+        if self.works._by_command(db, roots, command_id) is not None:
+            raise SupportedConversationError("conflict")  # a works command id is not a conversation's
+        return None
+
+    # --- reads -------------------------------------------------------------------
+
+    @_supported_closed
+    def read(self, request, work_id):
+        try:
+            work_id = uuid_string(work_id)
+        except (TypeError, ValueError):
+            raise SupportedConversationError("invalid_input") from None
+        with self.domain._connection() as db:
+            self.owner.authenticate_bound(request.session)
+            roots = self.domain._read_roots(db)
+            latest = self._latest(db, roots, work_id)
+            messages = [self._message_view(self.domain._load(db, EntityRef("chat_message", row["message_id"], 1,
+                                                                            row["sha256"]), roots)[0])
+                        for row in db.execute("SELECT message_id, sha256 FROM conversation_v1_messages "
+                                              "WHERE vault_id=? AND work_id=? ORDER BY sequence",
+                                              (roots.genesis.id, work_id))]
+            proposals = [self._proposal_view(db, roots, row, request.session.session_id)
+                         for row in db.execute("SELECT * FROM conversation_v1_proposals WHERE vault_id=? "
+                                               "AND work_id=? ORDER BY created_seq", (roots.genesis.id, work_id))]
+        return {"work_id": work_id, "revision": latest.ref.version, "messages": messages, "proposals": proposals}
+
+    # --- the owner's commands ----------------------------------------------------------
+
+    @_supported_closed
+    def post_message(self, request, work_id, payload):
+        from . import owner_material_journal as journal
+        from .run_approvals import _authenticate_owner, _owner_actor_ref
+
+        _authenticate_owner(self.owner, request)
+        command = _supported_command(payload, SUPPORTED_MESSAGE_COMMAND, ("expected_revision", "text", "references"))
+        try:
+            work_id = uuid_string(work_id)
+        except (TypeError, ValueError):
+            raise SupportedConversationError("invalid_input") from None
+        text = _supported_text(command["text"])
+        expected = command["expected_revision"]
+        references = command["references"]
+        if (type(expected) is not int or expected < 1 or type(references) is not list
+                or len(references) > SUPPORTED_MAX_REFERENCES):
+            raise SupportedConversationError("invalid_input")
+        digest = journal.fingerprint("conversation_message", work_id, payload)
+        with self._writer(), self.domain._connection(write=True) as db:
+            actor = _authenticate_owner(self.owner, request, db)
+            roots = self.domain._read_roots(db)
+            replay = self._replay(db, roots, command["command_id"], digest)
+            if replay is not None:
+                return {"message": self._message_view(self.domain._load(
+                    db, EntityRef.from_dict(replay["message_ref"]), roots)[0])}
+            latest = self._latest(db, roots, work_id)
+            if latest.ref.version != expected:
+                raise SupportedConversationError("conflict")  # the message would bind a revision not shown
+            refs = [self._reference(db, roots, work_id, latest, item) for item in references]
+            if len(set(refs)) != len(refs):
+                raise SupportedConversationError("invalid_input")
+            actor_ref = _owner_actor_ref(db, actor)
+            sealed = self._seal_message(db, roots, actor_ref, work_id=work_id, latest=latest,
+                                        command_id=command["command_id"], text=text, origin="owner_message",
+                                        references=refs, proposal_id=None)
+            journal.save(db, roots.genesis.id, command["command_id"], digest,
+                         {"message_ref": sealed.ref.as_dict()})
+            return {"message": self._message_view(sealed)}
+
+    @_supported_closed
+    def propose(self, request, work_id, payload):
+        from . import owner_material_journal as journal
+        from .run_approvals import _authenticate_owner, _owner_actor_ref
+
+        _authenticate_owner(self.owner, request)
+        command = _supported_command(payload, SUPPORTED_PROPOSAL_COMMAND, ("message_id", "command_kind", "target_ref"))
+        try:
+            work_id = uuid_string(work_id)
+            message_id = uuid_string(command["message_id"])
+        except (TypeError, ValueError):
+            raise SupportedConversationError("invalid_input") from None
+        if command["command_kind"] not in SUPPORTED_COMMANDS:
+            raise SupportedConversationError("invalid_input")
+        target = _supported_ref(command["target_ref"])
+        if target.kind != "work_model":
+            raise SupportedConversationError("invalid_input")
+        digest = journal.fingerprint("conversation_proposal", work_id, payload)
+        proposal_id = str(_uuid5(_NAMESPACE_URL, f"deeptwin:conversation-proposal:{command['command_id']}"))
+        with self.domain._connection() as db:
+            roots = self.domain._read_roots(db)
+            replay = self._replay(db, roots, command["command_id"], digest)
+        if replay is None:
+            self._undecided_target(request, target)
+        with self._writer(), self.domain._connection(write=True) as db:
+            actor = _authenticate_owner(self.owner, request, db)
+            roots = self.domain._read_roots(db)
+            replay = self._replay(db, roots, command["command_id"], digest)
+            if replay is not None:
+                row = self._proposal_row(db, roots, work_id, replay["proposal_id"])
+                # the token was never stored: a replayed proposal asks for a fresh challenge
+                return {"proposal": self._proposal_view(db, roots, row, request.session.session_id),
+                        "challenge": None}
+            latest = self._latest(db, roots, work_id)
+            row = db.execute("SELECT sha256 FROM conversation_v1_messages WHERE vault_id=? AND work_id=? "
+                             "AND message_id=?", (roots.genesis.id, work_id, message_id)).fetchone()
+            if row is None:
+                raise SupportedConversationError("not_found")
+            message = self.domain._load(db, EntityRef("chat_message", message_id, 1, row["sha256"]), roots)[0]
+            content = message.body["content"]
+            if content["semantic_origin"] != "owner_message" or content["work_revision_ref"] != latest.ref.as_dict():
+                raise SupportedConversationError("conflict")  # proposed only from a current owner message
+            if target.as_dict() not in content["references"]:
+                raise SupportedConversationError("conflict")  # only over a record the message named exactly
+            open_targets = [
+                self._proposal_record(db, roots, item).body["content"]["target_ref"]
+                for item in db.execute("SELECT * FROM conversation_v1_proposals WHERE vault_id=? AND "
+                                       "work_id=? AND state IN ('proposed','approved')", (roots.genesis.id, work_id))]
+            if target.as_dict() in open_targets:
+                raise SupportedConversationError("conflict")  # one open proposal per target
+            actor_ref = _owner_actor_ref(db, actor)
+            sealed = self._seal_proposal(db, roots, actor_ref, {
+                "schema_version": SUPPORTED_PROPOSAL_SCHEMA, "work_id": work_id, "proposal_id": proposal_id,
+                "command_kind": command["command_kind"], "target_ref": target.as_dict(),
+                "message_ref": message.ref.as_dict(), "proposer": "owner", "state": "proposed",
+                "required_authority": "owner_session_challenge", "approval": None, "result": None,
+                "command_id": command["command_id"]}, version=1)
+            sequence = db.execute("SELECT coalesce(max(created_seq), 0) + 1 FROM conversation_v1_proposals").fetchone()[0]
+            db.execute("INSERT INTO conversation_v1_proposals VALUES (?,?,?,?,?,?,?,?)",
+                       (roots.genesis.id, proposal_id, work_id, message_id, "proposed", 1, sealed.ref.sha256,
+                        sequence))
+            challenge = self._issue_challenge(db, proposal_id, request, command["command_kind"])
+            self._event(db, roots, actor_ref, "approval.requested", sealed.ref, command["command_id"],
+                        {"approval_kind": "action"})
+            journal.save(db, roots.genesis.id, command["command_id"], digest, {"proposal_id": proposal_id})
+            row = self._proposal_row(db, roots, work_id, proposal_id)
+            return {"proposal": self._proposal_view(db, roots, row, request.session.session_id),
+                    "challenge": challenge}
+
+    @_supported_closed
+    def reissue(self, request, work_id, payload):
+        """A fresh challenge for an undecided proposal (after a reload the token is gone)."""
+        from .run_approvals import _authenticate_owner
+
+        _authenticate_owner(self.owner, request)
+        command = _supported_command(payload, SUPPORTED_CHALLENGE_COMMAND, ("proposal_id",))
+        try:
+            work_id = uuid_string(work_id)
+        except (TypeError, ValueError):
+            raise SupportedConversationError("invalid_input") from None
+        with self._writer(), self.domain._connection(write=True) as db:
+            _authenticate_owner(self.owner, request, db)
+            roots = self.domain._read_roots(db)
+            row = self._proposal_row(db, roots, work_id, command["proposal_id"])
+            if row["state"] != "proposed":
+                raise SupportedConversationError("conflict")
+            kind = self._proposal_record(db, roots, row).body["content"]["command_kind"]
+            challenge = self._issue_challenge(db, row["proposal_id"], request, kind)
+            return {"proposal": self._proposal_view(db, roots, row, request.session.session_id),
+                    "challenge": challenge}
+
+    @_supported_closed
+    def approve(self, request, work_id, payload):
+        from . import owner_material_journal as journal
+        from .run_approvals import _authenticate_owner, _owner_actor_ref
+
+        _authenticate_owner(self.owner, request)
+        command = _supported_command(payload, SUPPORTED_APPROVAL_COMMAND,
+                                     ("proposal_id", "challenge_id", "token", "route", "text"))
+        try:
+            work_id = uuid_string(work_id)
+            proposal_id = uuid_string(command["proposal_id"])
+            challenge_id = uuid_string(command["challenge_id"])
+        except (TypeError, ValueError):
+            raise SupportedConversationError("invalid_input") from None
+        route, text, token = command["route"], command["text"], command["token"]
+        if (route not in {"button", "chat"} or (route == "button") != (text is None)
+                or type(token) is not str or not 1 <= len(token) <= 256 or not token.isascii()):
+            raise SupportedConversationError("invalid_input")
+        if route == "chat":
+            _supported_text(text)
+        digest = journal.fingerprint("conversation_approval", work_id, payload)
+        with self.domain._connection() as db:
+            roots = self.domain._read_roots(db)
+            replay = self._replay(db, roots, command["command_id"], digest)
+            row = self._proposal_row(db, roots, work_id, proposal_id)
+            proposal = self._proposal_record(db, roots, row)
+        if replay is not None:
+            return self._execute(request, work_id, proposal_id)  # resumes an interrupted execution
+        target = EntityRef.from_dict(proposal.body["content"]["target_ref"])
+        self._undecided_target(request, target)
+        with self._writer(), self.domain._connection(write=True) as db:
+            actor = _authenticate_owner(self.owner, request, db)
+            roots = self.domain._read_roots(db)
+            if self._replay(db, roots, command["command_id"], digest) is not None:
+                replay = True
+            else:
+                row = self._proposal_row(db, roots, work_id, proposal_id)
+                challenge = db.execute("SELECT * FROM conversation_v1_challenges WHERE challenge_id=? AND "
+                                       "proposal_id=?", (challenge_id, proposal_id)).fetchone()
+                if (challenge is None or row["state"] != "proposed" or challenge["state"] != "open"
+                        or challenge["session_id"] != request.session.session_id
+                        or challenge["owner_id"] != actor.id
+                        or not hmac.compare_digest(challenge["token_sha256"],
+                                                   sha256(token.encode("ascii")).hexdigest())
+                        or not challenge["issued_at_ms"] <= self._now() < challenge["expires_at_ms"]):
+                    raise SupportedConversationError("conflict")
+                if route == "chat" and text.strip() != challenge["response_text"]:
+                    raise SupportedConversationError("approval_ambiguous")  # nothing but the exact phrase
+                proposal = self._proposal_record(db, roots, row)
+                content = proposal.body["content"]
+                latest = self._latest(db, roots, work_id)
+                message = self.domain._load(db, EntityRef.from_dict(content["message_ref"]), roots)[0]
+                if message.body["content"]["work_revision_ref"] != latest.ref.as_dict():
+                    raise SupportedConversationError("conflict")  # the work changed since it was proposed
+                actor_ref = _owner_actor_ref(db, actor)
+                response = None
+                if route == "chat":
+                    response = self._seal_message(
+                        db, roots, actor_ref, work_id=work_id, latest=latest, command_id=command["command_id"],
+                        text=text.strip(), origin="approval_response",
+                        references=[EntityRef.from_dict(content["target_ref"])], proposal_id=proposal_id)
+                changed = db.execute("UPDATE conversation_v1_challenges SET state='consumed' WHERE challenge_id=? "
+                                     "AND state='open'", (challenge_id,)).rowcount
+                if changed != 1:
+                    raise SupportedConversationError("conflict")
+                sealed = self._seal_proposal(db, roots, actor_ref, {
+                    **content, "state": "approved",
+                    "approval": {"route": route, "challenge_id": challenge_id, "approved_at_utc": _supported_stamp(),
+                                 "response_message_ref": None if response is None else response.ref.as_dict(),
+                                 "command_id": command["command_id"]}}, version=2, parent=proposal)
+                db.execute("UPDATE conversation_v1_proposals SET state='approved', head_version=2, head_sha256=? "
+                           "WHERE proposal_id=? AND state='proposed'", (sealed.ref.sha256, proposal_id))
+                journal.save(db, roots.genesis.id, command["command_id"], digest, {"proposal_id": proposal_id})
+        return self._execute(request, work_id, proposal_id)
+
+    def _execute(self, request, work_id, proposal_id):
+        """Run an approved command once through the shared work-model service and seal the result."""
+        from .run_approvals import _authenticate_owner, _owner_actor_ref
+        from .work_models import CONFIRM_SCHEMA, WorkModelServiceError
+
+        with self.domain._connection() as db:
+            roots = self.domain._read_roots(db)
+            row = self._proposal_row(db, roots, work_id, proposal_id)
+            proposal = self._proposal_record(db, roots, row)
+        content = proposal.body["content"]
+        if row["state"] != "approved":
+            with self.domain._connection() as db:
+                roots = self.domain._read_roots(db)
+                return {"proposal": self._proposal_view(db, roots, row, request.session.session_id)}
+        target = EntityRef.from_dict(content["target_ref"])
+        decision = SUPPORTED_COMMANDS[content["command_kind"]][0]
+        try:
+            view = self.work_models.read(request, target.id)
+            if view["record_ref"] != target.as_dict():
+                raise WorkModelServiceError("conflict")
+            decided = self.work_models.confirm(request, target.id, {
+                "schema_version": CONFIRM_SCHEMA,
+                "command_id": str(_uuid5(_NAMESPACE_URL, f"deeptwin:conversation-execution:{proposal_id}")),
+                "work_model_ref": view["work_model_ref"], "decision": decision})
+            result = {"outcome": "executed", "code": None, "work_model_state": decided["state"],
+                      "confirmation_ref": decided["confirmation_ref"]}
+        except WorkModelServiceError as error:
+            if error.code in {"unavailable", "unauthenticated", "access_denied"}:
+                # stays approved: the approval command's replay resumes it
+                raise SupportedConversationError(error.code) from None
+            result = {"outcome": "failed", "code": error.code, "work_model_state": None, "confirmation_ref": None}
+        with self._writer(), self.domain._connection(write=True) as db:
+            actor = _authenticate_owner(self.owner, request, db)
+            roots = self.domain._read_roots(db)
+            row = self._proposal_row(db, roots, work_id, proposal_id)
+            if row["state"] == "approved":
+                current = self._proposal_record(db, roots, row)
+                state = "executed" if result["outcome"] == "executed" else "failed"
+                sealed = self._seal_proposal(db, roots, _owner_actor_ref(db, actor), {
+                    **current.body["content"], "state": state, "result": result}, version=3, parent=current)
+                db.execute("UPDATE conversation_v1_proposals SET state=?, head_version=3, head_sha256=? "
+                           "WHERE proposal_id=? AND state='approved'", (state, sealed.ref.sha256, proposal_id))
+                row = self._proposal_row(db, roots, work_id, proposal_id)
+            return {"proposal": self._proposal_view(db, roots, row, request.session.session_id)}

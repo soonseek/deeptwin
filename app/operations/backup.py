@@ -77,7 +77,7 @@ INCLUDED_PREFIXES = (
     "domain_", "runtime_", "api_event_", "api_command", "extension_candidate_",
     "provider_conformance_", "model_catalog", "work_model_", "run_model_choices",
     "work_usage_", "conversation_", "speech_", "understanding_", "design_requests",
-    "permission_",
+    "permission_", "source_readings_",
 )
 INCLUDED_TABLES = frozenset({"works", "files", "revisions", "events"})
 # never restorable: table (or family) -> the stated excluded category
@@ -90,6 +90,9 @@ EXCLUDED = (
     ("provider_orphan_cleanup", "provider_credential_handles"),
     ("model_catalog_account_state", "provider_account_state"),
     ("conversation_challenges", "pending_challenges"),
+    # the supported conversation's open approval challenges (T023): a digest of a one-time
+    # token bound to one live session — never carried; a restored proposal asks for a new one
+    ("conversation_v1_challenges", "pending_challenges"),
     ("permission_grants", "unconsumed_capabilities"),
     ("permission_projections", "unconsumed_capabilities"),
     ("deployment_prepare_", "deployment_receipt_private_state"),
@@ -541,6 +544,7 @@ _INCLUDED_GROUPS = (
     ("domain_", "records_and_lineage"), ("runtime_", "run_history"), ("api_event_", "event_log"),
     ("api_command", "event_log"), ("conversation_", "conversations"), ("speech_", "conversations"),
     ("understanding_", "conversations"), ("permission_", "approvals_and_permissions"),
+    ("source_readings_", "records_and_lineage"),
 )
 _WORK_TABLES = frozenset({"works", "files", "revisions", "events"})
 # every excluded category -> the closed reason the preview shows

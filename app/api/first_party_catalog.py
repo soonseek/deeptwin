@@ -3,7 +3,9 @@
 from .artifact_index import artifact_index_services
 from .backups import backup_services
 from .browser_grants import browser_grant_services
+from .budget_policies import budget_services
 from .claude_connection import connection_services
+from .conversations import conversation_services
 from .credential_wiring import credential_services
 from .deployment_prepare import (
     STARTUP_KEYS,
@@ -22,6 +24,7 @@ from .retention import retention_services
 from .run_approvals import approval_services
 from .run_consents import consent_services
 from .runs import run_services
+from .source_readings import reading_services
 from .versions import version_services
 from .work_models import work_model_services
 from .works import work_services
@@ -105,6 +108,32 @@ INSTALLED = (
         ("browser_session",),
         ("work.command", "work.read"),
         provides=("work-models.service",),
+    ),
+    InstalledContribution(
+        "source-readings-v1.json",
+        "app.api.source_readings:create_router",
+        reading_services,
+        ("browser_session",),
+        ("work.command", "work.read"),
+        requires=("works.service",),
+        provides=("source-readings.service",),
+    ),
+    InstalledContribution(
+        "conversations-v1.json",
+        "app.api.conversations:create_router",
+        conversation_services,
+        ("browser_session",),
+        ("work.command", "work.read"),
+        requires=("works.service", "work-models.service"),
+        provides=("conversations.service",),
+    ),
+    InstalledContribution(
+        "budget-policies-v1.json",
+        "app.api.budget_policies:create_router",
+        budget_services,
+        ("browser_session",),
+        ("work.command", "work.read"),
+        provides=("budget-policies.service",),
     ),
     InstalledContribution(
         "runs-v1.json",

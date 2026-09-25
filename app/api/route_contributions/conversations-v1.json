@@ -1,0 +1,17 @@
+{
+  "schema_version": "deeptwin-first-party-route-contribution-v1",
+  "contribution_id": "conversations-v1",
+  "factory": "app.api.conversations:create_router",
+  "routes": [
+    {"route_id": "conversations.read", "methods": ["GET", "HEAD"], "path": "/api/v1/conversations/{work_id}",
+     "auth_policy": "browser_session", "required_scope": "work.read"},
+    {"route_id": "conversations.message", "methods": ["POST"], "path": "/api/v1/conversations/{work_id}/messages",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "conversations.propose", "methods": ["POST"], "path": "/api/v1/conversations/{work_id}/proposals",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "conversations.challenge", "methods": ["POST"], "path": "/api/v1/conversations/{work_id}/challenges",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "conversations.approve", "methods": ["POST"], "path": "/api/v1/conversations/{work_id}/approvals",
+     "auth_policy": "browser_session", "required_scope": "work.command"}
+  ]
+}

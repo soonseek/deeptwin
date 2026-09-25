@@ -14,7 +14,7 @@ export const CONFIRM_SCHEMA = 'work-model-confirm-command-v1';
 
 export const MESSAGES = Object.freeze({
   intro: '작업 모델은 설계를 시작하기 전에 목표·완료 조건·권한·위험·미결 사항을 확인하는 단계입니다.',
-  transmission: '만들기를 누르면 저장된 설명이 선택한 Claude 모델로 전송됩니다. 원본 파일의 내용은 전송하지 않습니다.',
+  transmission: '만들기를 누르면 저장된 설명과, 자료 목록에서 직접 읽은 자료의 읽힌 글자만 선택한 Claude 모델로 전송됩니다. 읽지 않은 자료의 내용은 전송하지 않습니다.',
   unsaved: '먼저 설명을 저장해야 작업 모델을 만들 수 있습니다.',
   noSources: '원본 자료를 하나 이상 추가해야 작업 모델을 만들 수 있습니다.',
   noConnection: 'Claude 연결이 준비되지 않았습니다. 기록 화면에서 키를 저장하고 모델 목록을 읽어 주세요.',
@@ -46,7 +46,7 @@ function fail(message) {
   throw new Error(message);
 }
 
-export function createWorkModel({ root, document, request, crypto, basePath = '/', work } = {}) {
+export function createWorkModel({ root, document, request, crypto, basePath = '/', work, onChange = () => {} } = {}) {
   if (typeof root?.replaceChildren !== 'function') fail('a root is required');
   if (typeof request !== 'function') fail('a request adapter is required');
   if (typeof crypto?.randomUUID !== 'function') fail('a UUID source is required');
@@ -160,6 +160,7 @@ export function createWorkModel({ root, document, request, crypto, basePath = '/
       busy = false;
     }
     await render();
+    onChange(view);
   }
 
   async function decide(decision) {
@@ -176,7 +177,20 @@ export function createWorkModel({ root, document, request, crypto, basePath = '/
       busy = false;
     }
     await render();
+    onChange(view);
   }
 
-  return Object.freeze({ load: render, get view() { return view; } });
+  // the conversation decided this draft (the same decision the buttons make): read it again
+  async function refresh() {
+    if (view === null) return render();
+    try {
+      view = await request(`${api}/work-models/${view.work_model_id}`, {});
+      if (view.state !== 'unconfirmed') say(view.state === 'confirmed' ? MESSAGES.confirmed : MESSAGES.rejected, view.state);
+    } catch (error) {
+      failed(error);
+    }
+    return render();
+  }
+
+  return Object.freeze({ load: render, refresh, get view() { return view; } });
 }

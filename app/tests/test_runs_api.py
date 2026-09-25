@@ -304,7 +304,7 @@ def test_the_composition_carries_the_run_routes(tmp_path):
                          "runs.artifacts", "runs.artifact", "runs.artifact_content",
                          "runs.artifact_preview"):
             assert route_id in composition.route_ids
-        assert composition.route_count == 104
+        assert composition.route_count == 114
 
 
 def test_a_router_run_with_an_untaken_branch_completes(tmp_path):

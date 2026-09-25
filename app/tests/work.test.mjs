@@ -130,11 +130,11 @@ test('a new work is asked for, kept as a browser draft, and saved on the instanc
   assert.match(notice, /이 인스턴스/);
   assert.match(notice, /외부 모델/);
   assert.match(notice, /제작자/);
-  // item 5: materials and the microphone are not on this factory yet — said, not faked
+  // item 5: storing an original is not reading it — said, not faked (reading is explicit, per original)
   const materials = field(document, 'materials');
   assert.match(form.textContent, /자료 추가/);
   assert.equal(form.find(el => el.tagName === 'BUTTON' && el.textContent === '자료 추가')?.disabled, false);
-  assert.match(materials.textContent, /아직/);
+  assert.match(materials.textContent, /내용 이해가 아닙니다/);
   assert.equal(field(document, 'observe-link').find(el => el.tagName === 'A').getAttribute('href'), './observe.html');
   // an empty submit sends nothing
   const area = textarea(document);
@@ -543,7 +543,7 @@ test('file-first selection creates honest empty v2 then uploads exact bytes unde
   assert.deepEqual([...uploaded.body], [97, 98, 99]);
   assert.equal(JSON.parse(Buffer.from(uploaded.headers['X-DeepTwin-Source-Metadata'], 'base64url')).expected_revision, 1);
   assert.match(field(subject.document, 'materials').textContent, /원본 보관됨/);
-  assert.match(field(subject.document, 'materials').textContent, /내용 읽기는 아직 지원되지 않습니다/);
+  assert.match(field(subject.document, 'materials').textContent, /자료마다 직접 읽을 때만 읽습니다/);
   assert.equal(JSON.parse(subject.storage.getItem(storageKey(BASE))).pending_command, undefined);
 });
 

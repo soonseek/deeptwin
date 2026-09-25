@@ -612,9 +612,9 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
     with TestClient(reopened, base_url=profile.http_origin) as client:
         assert client.get(profile.base_path + "health").status_code == 200
         composition = reopened.state.route_composition
-        assert composition.route_count == 104
+        assert composition.route_count == 114
         assert composition.contribution_ids == ("core-v1", "extension-candidates-v1", "run-approvals-v1",
-            "works-v1", "run-consents-v1", "claude-connection-v1", "backups-v1", "retention-v1", "credentials-v1", "work-models-v1", "runs-v1", "artifact-index-v1", "graphs-v1", "design-workspace-v1", "hypotheses-v1", "versions-v1", "deployment-prepare-v1", "provider-conformance-v1", "provider-installation-v1", "browser-grants-v1", "platform-update-v1")
+            "works-v1", "run-consents-v1", "claude-connection-v1", "backups-v1", "retention-v1", "credentials-v1", "work-models-v1", "source-readings-v1", "conversations-v1", "budget-policies-v1", "runs-v1", "artifact-index-v1", "graphs-v1", "design-workspace-v1", "hypotheses-v1", "versions-v1", "deployment-prepare-v1", "provider-conformance-v1", "provider-installation-v1", "browser-grants-v1", "platform-update-v1")
         assert composition.route_ids == ("events.read", "events.stream", "events.type", "snapshot.read",
             "commands.read", "commands.create", "extensions.candidates.create", "extensions.candidates.read",
             "runs.approvals.record", "runs.approvals.read",
@@ -631,6 +631,10 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
             "backups.restore_upload_portable", "retention.read", "retention.cleanup_preview", "retention.cleanup",
             "credentials.read", "credentials.store", "credentials.delete",
             "work_models.draft", "work_models.read", "work_models.confirm",
+            "source_readings.list", "source_readings.read", "source_readings.latest",
+            "conversations.read", "conversations.message", "conversations.propose",
+            "conversations.challenge", "conversations.approve",
+            "budget_policies.list", "budget_policies.create",
             "runs.create", "runs.read", "runs.resume", "runs.cancel", "runs.recover",
             "runs.artifacts", "runs.artifact", "runs.artifact_content", "runs.artifact_preview",
             "runs.artifact_page", "runs.artifact_page_image", "runs.artifact_drafts", "runs.artifact_draft_save", "runs.artifact_draft",
@@ -649,7 +653,7 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
             "extensions.provider-conformance.read", "extensions.provider-installation.execute",
             "extensions.provider-installation.read", "browser_grants.read", "browser_grants.create",
             "browser_grants.revoke", "platform.update.read")
-        assert len(set(composition.route_ids)) == 104
+        assert len(set(composition.route_ids)) == 114
 
 
 def test_live_session_root_pin_rejects_a_different_valid_pair(tmp_path):

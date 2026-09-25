@@ -17,7 +17,7 @@
     <main>
       <aside class="development-preview" aria-label="개발 미리보기 상태">
         <strong>개발 미리보기</strong>
-        <p>설명·자료 원본을 저장하고, Claude 연결로 작업 모델을 만들고 확인합니다. 원본 내용 읽기·마이크·설계·실행 연결은 아직 개발 중입니다.</p>
+        <p>설명·자료 원본을 저장하고, 원하는 자료만 직접 읽고, Claude 연결로 작업 모델을 만들어 대화나 버튼으로 확인합니다. 마이크 입력과 관리형 실행기 연결은 아직 개발 중입니다.</p>
       </aside>
       <div class="space-label"><span class="space-mark" aria-hidden="true"></span> 업무</div>
       <h1>설명이나 자료로 시작하세요</h1>
@@ -26,7 +26,9 @@
       <form id="work-form" class="work-surface" aria-label="업무 설명" method="post" hidden></form>
       <p id="save-status" role="status" aria-live="polite" data-state=""></p>
       <section id="materials" class="materials" aria-label="자료"></section>
+      <section id="source-readings" class="source-readings" aria-label="자료 읽기"></section>
       <section id="work-model" class="work-model" aria-label="작업 모델"></section>
+      <section id="work-conversation" class="work-conversation" aria-label="대화"></section>
       <section id="design-workspace" class="design-workspace" aria-label="설계 후보 비교"></section>
       <section id="work-records" class="work-records" aria-label="기록 내보내기"></section>
       <section id="work-deletion" class="work-deletion" aria-label="원본 삭제"></section>

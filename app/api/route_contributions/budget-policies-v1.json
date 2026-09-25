@@ -1,0 +1,11 @@
+{
+  "schema_version": "deeptwin-first-party-route-contribution-v1",
+  "contribution_id": "budget-policies-v1",
+  "factory": "app.api.budget_policies:create_router",
+  "routes": [
+    {"route_id": "budget_policies.list", "methods": ["GET", "HEAD"], "path": "/api/v1/budget-policies",
+     "auth_policy": "browser_session", "required_scope": "work.read"},
+    {"route_id": "budget_policies.create", "methods": ["POST"], "path": "/api/v1/budget-policies",
+     "auth_policy": "browser_session", "required_scope": "work.command"}
+  ]
+}

@@ -14,9 +14,13 @@
 // nothing that could send a command is mounted. Every dependency (document,
 // location, fetch, crypto, storage) is injected; the page passes the
 // platform's own. Originals are stored through the canonical source boundary;
-// contents are not read, and microphone/model work is not part of this slice.
+// their contents are read only when the owner asks, per original (source-reading.mjs),
+// and the shared conversation (chat.mjs) binds messages to this work. The microphone
+// is not part of this screen (T024).
 
+import { createWorkConversation } from './chat.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
+import { createSourceReadings } from './source-reading.mjs';
 import { createSourceDeletion } from './source-deletion.mjs';
 import { createWorkExport } from './work-export.mjs';
 import { createWorkModel } from './work-model.mjs';
@@ -31,6 +35,9 @@ export const DELETION_MOUNT_ID = 'work-deletion';
 export const WORK_MODEL_MOUNT_ID = 'work-model';
 // the design workspace (T037) mounts only where the page offers it
 export const DESIGN_WORKSPACE_MOUNT_ID = 'design-workspace';
+// the owner's explicit readings of originals and the shared conversation (T023), optional too
+export const READINGS_MOUNT_ID = 'source-readings';
+export const CONVERSATION_MOUNT_ID = 'work-conversation';
 export const MAX_TEXT_CHARS = 20_000;  // app/services/works.py MAX_TEXT_CHARS
 export const MAX_TEXT_BYTES = 65_536;  // app/services/works.py MAX_TEXT_BYTES (raw UTF-8)
 const CREATE_SCHEMA = 'work-create-command-v1';
@@ -236,7 +243,7 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   const materialList = element('ul', { class: 'original-list', 'aria-label': '원본 자료 목록' });
   const materialStatus = element('p', { role: 'status', 'aria-live': 'polite' });
   roots.materials.replaceChildren(picker, element('p', {}, '파일당 10 MiB · 업무당 20개, 합계 50 MiB. 설명 없이 자료만 저장할 수 있습니다.'),
-    element('p', {}, '내용 읽기는 아직 지원되지 않습니다. 원본 저장은 파일 형식 검증이나 내용 이해가 아닙니다.'),
+    element('p', {}, '원본 저장은 파일 형식 검증이나 내용 이해가 아닙니다. 내용은 자료 읽기에서 자료마다 직접 읽을 때만 읽습니다.'),
     materialStatus, materialList);
   roots.link.replaceChildren(element('a', { href: './observe.html' }, '기록된 실행 관제 화면'),
     element('a', { href: './records.html' }, '기록·내보내기·백업'));
@@ -255,10 +262,36 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   const selections = [];
   const originals = new Map();
   let savedSources = [];
+  let savedRef = null;
+  let conversation = null;
   const workModelRoot = document.getElementById(WORK_MODEL_MOUNT_ID);
   const workModel = workModelRoot !== null && typeof workModelRoot?.replaceChildren === 'function'
     ? createWorkModel({ root: workModelRoot, document, basePath, request: session.request, crypto,
-      work: () => ({ work_id: state.work_id ?? null, revision: state.revision ?? null, sources: savedSources.length }) })
+      work: () => ({ work_id: state.work_id ?? null, revision: state.revision ?? null, sources: savedSources.length }),
+      onChange: () => conversation?.refreshReferences() })
+    : null;
+  const readingsRoot = document.getElementById(READINGS_MOUNT_ID);
+  const readings = readingsRoot !== null && typeof readingsRoot?.replaceChildren === 'function'
+    ? createSourceReadings({ root: readingsRoot, document, basePath, request: session.request, crypto,
+      workId: () => state.work_id ?? null, onChange: () => conversation?.refreshReferences() })
+    : null;
+  // what the owner can point a message at: exactly the records this screen shows now
+  function conversationReferences() {
+    const items = [];
+    if (savedRef && savedRef.id === state.work_id) items.push({ label: `업무 설명 수정본 ${savedRef.version}`, ref: savedRef });
+    for (const ref of savedSources) items.push({ label: `원본 ${originals.get(ref.id)?.name ?? ref.id}`, ref });
+    for (const entry of readings?.listing?.sources ?? []) {
+      if (entry.reading) items.push({ label: `읽기 결과 ${entry.name}`, ref: entry.reading.reading_ref });
+    }
+    const model = workModel?.view;
+    if (model?.record_ref) items.push({ label: '현재 작업 모델', ref: model.record_ref });
+    return items;
+  }
+  const conversationRoot = document.getElementById(CONVERSATION_MOUNT_ID);
+  conversation = conversationRoot !== null && typeof conversationRoot?.replaceChildren === 'function'
+    ? createWorkConversation({ root: conversationRoot, document, basePath, request: session.request, crypto, storage,
+      work: () => ({ work_id: state.work_id ?? null, revision: state.revision ?? null }),
+      references: conversationReferences, onDecided: () => workModel?.refresh() })
     : null;
   const designRoot = document.getElementById(DESIGN_WORKSPACE_MOUNT_ID);
   const design = designRoot !== null && typeof designRoot?.replaceChildren === 'function'
@@ -309,9 +342,12 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
 
   async function loadMaterials(saved) {
     savedSources = saved.source_refs ?? [];
+    if (saved.ref && typeof saved.ref === 'object') savedRef = saved.ref;
     renderMaterials();
     if (deletion !== null) deletion.load().catch(() => {});
     if (workModel !== null) workModel.load().catch(() => {});
+    if (readings !== null) readings.load().catch(() => {});
+    if (conversation !== null) conversation.load().catch(() => {});
     for (const ref of savedSources) {
       if (!originals.has(ref.id)) {
         try {
@@ -690,7 +726,9 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   if (deletion !== null) deletion.load().catch(() => {});
   if (workModel !== null) workModel.load().catch(() => {});
   if (design !== null) design.load().catch(() => {});
-  return Object.freeze({ mode, basePath, session, exporter, deletion, workModel, design });
+  if (readings !== null) readings.load().catch(() => {});
+  if (conversation !== null) conversation.load().catch(() => {});
+  return Object.freeze({ mode, basePath, session, exporter, deletion, workModel, design, readings, conversation });
 }
 
 // the page's entry: a boot that fails before the exchange still reaches the status line
