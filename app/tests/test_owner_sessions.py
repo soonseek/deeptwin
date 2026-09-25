@@ -59,6 +59,20 @@ def epoch_one(tmp_path):
         with ledger._transaction(write=True) as db:
             ledger._record_command(db, gate_request_identity(**gate), GATE_REQUEST_COMMAND,
                                    canonical_json(gate), {**gate, "requested": True}, 1)
+        # a second gate the owner answered with an execution-bound (v2) approval
+        tool_gate = {"run_id": str(uuid4()), "node_id": "tool-gate", "approval_scope": "tool-scope"}
+        with ledger._transaction(write=True) as db:
+            ledger._record_command(db, gate_request_identity(**tool_gate), GATE_REQUEST_COMMAND,
+                                   canonical_json(tool_gate), {**tool_gate, "requested": True}, 1)
+        execution = {"execution_id": str(uuid4()), "execution_node_id": "tool", "attempt_no": 1}
+        approvals = PersistentRunApprovals(subject.domain, authority)
+        receipt = approvals.record(
+            bound_request(subject.app, subject.client, subject.profile, subject.csrf),
+            {"schema_version": "run-approval-command-v2", "command_id": str(uuid4()),
+             **tool_gate, **execution, "decision": "approved"})
+        v2_ref = EntityRef.from_dict(receipt["approval_ref"])
+        assert approvals.resolve(v2_ref).decision == "approved"
+        assert approvals.lookup_execution(**tool_gate, **execution).approval_ref == v2_ref
         token = object()
         clients = registry(subject.app.state.store, owner_id, token)
         issued = clients.issue(token, client_id=str(uuid4()), name="automation", scopes=("events.read",),
@@ -66,7 +80,8 @@ def epoch_one(tmp_path):
         assert clients.authenticate(issued.secret, network_profile="portable_https").client_id
         cookie = subject.client.cookies[authority.cookie_name]
         result = SimpleNamespace(owner_id=owner_id, graph=graph, consent=consent, gate=gate,
-                                 secret=issued.secret, cookie=cookie, csrf=subject.csrf,
+                                 secret=issued.secret, cookie=cookie,
+                                 tool_gate=tool_gate, execution=execution, v2_ref=v2_ref, csrf=subject.csrf,
                                  cookie_name=authority.cookie_name, refs=subject.refs)
     profile, capability, arguments = configured(tmp_path)
     return SimpleNamespace(**vars(result), profile=profile, capability=capability, arguments=arguments)
@@ -255,3 +270,35 @@ def test_a_rolled_back_or_skipped_configuration_and_a_missing_trust_set_fail_clo
     app = recovered_app(tmp_path, state, recovery)
     with TestClient(app, base_url=state.profile.http_origin) as client:
         assert bootstrap(client, state.profile, recovery.capability).status_code == 201
+
+
+def test_an_execution_bound_approval_made_before_the_recovery_authorizes_nothing_after_it(tmp_path):
+    state = epoch_one(tmp_path)
+    recovery = Recovery(state.profile, state.arguments)
+    recovery.advance()
+    app = recovered_app(tmp_path, state, recovery)
+    profile = state.profile
+    with TestClient(app, base_url=profile.http_origin) as client:
+        domain, authority = app.state.domain_store, app.state.owner_authority
+        approvals = PersistentRunApprovals(domain, authority)
+        # the record stays as evidence, but neither dispatcher read accepts it
+        with pytest.raises(RunApprovalError, match="superseded"):
+            approvals.resolve(state.v2_ref)
+        with pytest.raises(RunApprovalError, match="superseded"):
+            approvals.lookup_execution(**state.tool_gate, **state.execution)
+        with domain._connection() as db:
+            assert db.execute("SELECT count(*) FROM domain_records WHERE kind='action_approval' AND id=?",
+                              (state.v2_ref.id,)).fetchone()[0] == 1
+        # the gate had no v1 decision, so the recovery also expired it
+        assert approvals.lookup(**state.tool_gate).decision == "expired"
+        # the recovered owner can decide afresh; a decision after the recovery is current
+        created = bootstrap(client, profile, recovery.capability)
+        assert created.status_code == 201, created.text
+        request = bound_request(app, client, profile, created.json()["csrf_token"])
+        retry = {**state.execution, "attempt_no": 2}
+        receipt = approvals.record(request, {"schema_version": "run-approval-command-v2",
+                                             "command_id": str(uuid4()), **state.tool_gate, **retry,
+                                             "decision": "approved"})
+        fresh = EntityRef.from_dict(receipt["approval_ref"])
+        assert approvals.resolve(fresh).decision == "approved"
+        assert approvals.lookup_execution(**state.tool_gate, **retry).approval_ref == fresh
