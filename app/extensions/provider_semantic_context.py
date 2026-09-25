@@ -10,6 +10,7 @@ from uuid import UUID
 from ..domain.refs import EntityRef, canonical_json
 from ..domain.store import BlobRef, DomainStore
 from ..workers.credential_contracts import fingerprint, metadata_value, reference
+from .binding_heads import BindingDispatchRefused, DurableBindingHeads
 from .port_schema_generator import validate_port_payload
 from .provider_semantic_contracts import ProviderSemanticError
 from .provider_semantic_records import (require_model_operation_index,
@@ -206,12 +207,23 @@ def validate_bound_handle(*, config, binding, connection_record, current_connect
             "credential_record": record}
 
 
+BINDING_REF_FIELDS = frozenset({"grant_refs", "credential_handle_refs"})
+_DISPATCH_REFUSALS = frozenset({"binding_slot_absent", "binding_disabled", "binding_superseded",
+                                "binding_rolled_back"})
+
+
 @dataclass(frozen=True, slots=True)
 class ProviderSemanticAuthority:
-    binding_record: dict
+    """Current authority projections for one semantic config.
+
+    The binding itself is never taken from here: the binding revision, its state and the slot head
+    are read from the durable binding history at every load (`durable_binding`). ``binding_refs``
+    carries only the grant and credential-handle refs, which the durable
+    `extension-binding-revision-v1` record does not hold yet."""
+
+    binding_refs: dict
     current_connection: dict
     qualification_record: dict
-    binding_head_record: dict
     actor_record: dict
     purpose_record: dict
     grant_records: dict
@@ -227,11 +239,31 @@ class ProviderSemanticAuthority:
             raise ProviderSemanticError("semantic owner boot is invalid") from None
         if str(boot) != self.core_boot_id or boot.int == 0:
             raise ProviderSemanticError("semantic owner boot is invalid")
-        for name in ("binding_record", "current_connection", "qualification_record",
-                     "binding_head_record", "actor_record", "purpose_record", "grant_records",
+        for name in ("binding_refs", "current_connection", "qualification_record",
+                     "actor_record", "purpose_record", "grant_records",
                      "artifact_records", "selector_records", "input_records"):
             if type(getattr(self, name)) is not dict:
                 raise ProviderSemanticError("trusted semantic authority projection is malformed")
+        if set(self.binding_refs) != BINDING_REF_FIELDS:
+            raise ProviderSemanticError("binding authority carries only grant and handle refs")
+
+
+def durable_binding(store, authority, config):
+    """The config's binding revision resolved from the durable slot head of ``store`` (never an
+    injected record): the port validator's binding revision and head projections and the head.
+    A disabled, superseded, rolled-back-away or absent head is a pre-send permission refusal; a
+    config that does not join the durable history is an integrity failure."""
+    try:
+        resolved = DurableBindingHeads(store).resolve_config("provider-port-v1", config)
+    except BindingDispatchRefused as refused:
+        if refused.reason in _DISPATCH_REFUSALS:
+            raise ProviderSemanticAdmissionError(
+                "permission_denied", f"semantic binding is not current ({refused.reason})") from None
+        raise ProviderSemanticError(
+            f"semantic binding does not join the durable slot ({refused.reason})") from None
+    binding = {**resolved["binding_record"], **{name: authority.binding_refs[name]
+                                                for name in sorted(BINDING_REF_FIELDS)}}
+    return binding, resolved["binding_head_record"], resolved["head"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,6 +281,7 @@ class ProviderSemanticContext:
     owner_core_boot_id: str
     worker_session_observation: tuple | None = None
     gateway_session_observation: tuple | None = None
+    binding_head: dict | None = None
 
 
 class ProviderSemanticContextLoader:
@@ -333,25 +366,6 @@ class ProviderSemanticContextLoader:
                      or qualification_expiry <= now)):
             raise ProviderSemanticAdmissionError(
                 "permission_denied", "semantic qualification is not current")
-        binding = authority.binding_record
-        if (type(binding) is dict
-                and binding.get("ref") == config.get("binding_revision_ref")
-                and binding.get("extension_id") == config.get("extension_id")
-                and binding.get("installation_digest") == config.get("installation_digest")
-                and binding.get("port_contract_version") == "provider-port-v1"
-                and type(binding.get("state")) is str
-                and binding.get("state") != "active"):
-            raise ProviderSemanticAdmissionError(
-                "permission_denied", "semantic binding is not active")
-        head = authority.binding_head_record
-        if (type(head) is dict and type(head.get("state")) is str
-                and head.get("binding_slot_key") == config.get("binding_slot_key")
-                and head.get("binding_slot_key_digest") == config.get("binding_slot_key_digest")
-                and (head.get("state") != "active"
-                     or head.get("current_binding_revision_ref")
-                     != config.get("binding_revision_ref"))):
-            raise ProviderSemanticAdmissionError(
-                "permission_denied", "semantic binding is not current")
         if type(request) is not dict:
             return
         actor = authority.actor_record
@@ -411,10 +425,12 @@ class ProviderSemanticContextLoader:
         config = config_content["config"]
         operation_request = operation_content["request"]
         self._precheck_current_authority(config, None, now)
+        binding_record, binding_head_record, binding_head = durable_binding(
+            self._store, self._authority, config)
         config_context = {"validated_at": now_utc,
             "qualification_record": self._authority.qualification_record,
-            "binding_revision_record": self._authority.binding_record,
-            "binding_head_record": self._authority.binding_head_record}
+            "binding_revision_record": binding_record,
+            "binding_head_record": binding_head_record}
         validate_port_payload("provider-port-v1", "config", config, context=config_context)
         connection_ref = EntityRef.from_dict(config_content["connection_ref"])
         connection_record = self._store.get(connection_ref)
@@ -424,12 +440,12 @@ class ProviderSemanticContextLoader:
         connection_content = connection_view["content"]
         stable_current = ({name: connection_content.get(name) for name in connection_fields}
                           if type(connection_content) is dict else {})
-        validate_bound_handle(config=config, binding=self._authority.binding_record,
+        validate_bound_handle(config=config, binding=binding_record,
             connection_record=connection_view, current_connection=stable_current)
         if self._authority.current_connection != stable_current:
             raise ProviderSemanticAdmissionError(
                 "permission_denied", "semantic connection is not current")
-        pin = validate_bound_handle(config=config, binding=self._authority.binding_record,
+        pin = validate_bound_handle(config=config, binding=binding_record,
             connection_record=connection_view, current_connection=self._authority.current_connection)
         self._precheck_current_authority(config, operation_request, now)
         frozen_ref = None if operation_content["frozen_ref"] is None else EntityRef.from_dict(operation_content["frozen_ref"])
@@ -601,8 +617,10 @@ class ProviderSemanticContextLoader:
                                   purpose="operational")
         return ProviderSemanticContext(self._config_ref, self._operation_ref, config,
             operation_content["request"], frozen_ref, frozen_content, inputs, pin,
-            reservation_ref, catalog_ref, self._authority.core_boot_id)
+            reservation_ref, catalog_ref, self._authority.core_boot_id,
+            binding_head=binding_head)
 
 
 __all__ = ["ProviderSemanticAdmissionError", "ProviderSemanticAuthority",
-           "ProviderSemanticContext", "ProviderSemanticContextLoader", "validate_bound_handle"]
+           "ProviderSemanticContext", "ProviderSemanticContextLoader", "durable_binding",
+           "validate_bound_handle"]
