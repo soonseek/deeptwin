@@ -39,3 +39,18 @@ whose blockers are inside this environment.
 The frozen release designs are pinned by `evals/deeptwin/qualification/release-v2/FROZEN.json`.
 That manifest also pins v1, which is superseded by v2 but kept. Other pinned inputs (lens
 bundle, calibration plan, independence profiles) keep their own manifests and guard tests.
+
+## Full offline regression (2026-09-25, commit dbe3185)
+
+The full offline Python regression passed on its first run, in two serial shards on Linux x86_64, run as root with the locked age runtime:
+
+- Scope: every tracked `app/tests/test_*.py`, `evals/deeptwin/tests/test_*.py` and `deploy/tests/test_*.py` file, excluding live files (`_live_`, `live_calibration`).
+- Result: **10,448 passed, 0 failed, 4 skipped**, plus 369 subtests passed.
+- Wall time: about 45 and 57 minutes for the two shards.
+
+An earlier regression run did not pass on its first attempt, for two reasons:
+
+- 4-way sharding on 4 CPUs failed timing-sensitive provider tests under load.
+- Running a snapshot under a root-only scratch directory blocked the tests that run children under other UIDs.
+
+Neither affects this run. Browser (`*.test.mjs`) suites are run per change, as recorded in each task's evidence; they are not part of this Python regression.
