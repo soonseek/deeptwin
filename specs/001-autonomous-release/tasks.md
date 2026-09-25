@@ -584,7 +584,19 @@ creates files and passes full artifacts to later roles; trace survives cancel/re
   bound to the hostname, no proxy/redirect following, streamed byte limit) —
   evidence/egress-transport-t043-2026-09-23.md. Chromium worker, typed IPC and dispatch wiring remain.
 - [x] T044 [P] [US3] Implement bounded declarative DOCX/CSV/JSON/PDF/image creation and safe format validation in app/adapters/documents.py and app/tests/test_document_tools.py; use PDF skill and actual render inspection, not file-exists-only checks (SC-004). 2026-09-13: DOCX/CSV/JSON (evidence/document-tools-t044.md); 2026-09-23: PDF (text layer + per-character rasterized ink) and PNG (sampled pixels) with active-content/encryption/bomb refusal, over the T089-locked document-worker libraries (evidence/document-tools-pdf-png-t044.md). The Korean CID font is referenced, not embedded.
-- [ ] T045 [US3] Implement purpose-scoped artifact storage/preview/range reads and multi-format viewers in app/services/artifacts.py and app/static/artifacts.mjs; preserve originals and disclose derived/unsupported coverage (FR-015). 2026-09-23 slice: the owner reads a run's artifacts through runs-v1 (`…/runs/{run}/artifacts`, metadata, the original whole or one byte range, a derived preview with digest/fidelity/coverage for text, JSON and CSV; images left to the browser; PDF/DOCX disclosed as needing the isolated codec worker, never parsed in the control plane) and the viewer is mounted on the observe page (evidence/run-artifacts-t045.md). PDF/DOCX page previews through the codec worker and a vault-wide artifact index stay open.
+- [x] T045 [US3] Implement purpose-scoped artifact storage/preview/range reads and multi-format viewers in app/services/artifacts.py and app/static/artifacts.mjs; preserve originals and disclose derived/unsupported coverage (FR-015). 2026-09-23 slice: the owner reads a run's artifacts through runs-v1 (`…/runs/{run}/artifacts`, metadata, the original whole or one byte range, a derived preview with digest/fidelity/coverage for text, JSON and CSV; images left to the browser; PDF/DOCX disclosed as needing the isolated codec worker, never parsed in the control plane) and the viewer is mounted on the observe page (evidence/run-artifacts-t045.md). PDF/DOCX page previews through the codec worker and a vault-wide artifact index stay open.
+  2026-09-25: closed — PDF pages and DOCX text are previewed through the isolated document
+  service over the verified `cp-document` channel (`app/workers/document_channel.py` client,
+  `document_service.py` engine, `document_worker_main.py` entrypoint; bounded pages/pixels/bytes/
+  deadline; the worker's PNG/text digest, page or text-part coverage and fidelity disclosed;
+  not named/unreachable/refused/oversize disclosed, never faked; no parser call in the control
+  plane), served as `…/pages/{n}` and `…/pages/{n}/image` in runs-v1, with the vault-wide index
+  `GET /api/v1/artifacts` (`artifact-index-v1`; run/media-type filters, bounded pages) and the
+  viewer's page navigation and index on the observe page; the real entrypoint qualified over a
+  real UDS with SO_PEERCRED and a PDF page previewed in real Chromium
+  (evidence/artifact-previews-t045-2026-09-25.md). Deployment wiring of the document image and
+  the control's `--document-worker-config` (T081), the `artifact-codec-port-v1` extension form
+  and lineage (T053) stay with their tasks.
 - [x] T046 [US3] Implement whole-artifact handoff readiness/delivery/receipt and observed-use lineage in app/services/handoffs.py and app/tests/test_handoffs.py; no producer/consumer acknowledgment deadlock (R06).
 - [x] T047 [US3] Implement schema-registered dispatcher/grants/effect approvals and replay policies in app/runtime/tools.py; test path/symlink/race/injection/renderer/egress denial in app/tests/test_tool_boundary.py (FR-014/FR-032).
   2026-09-23: side channels landed — in-flight-envelope-keyed `open_in_scope` (no symlink at any

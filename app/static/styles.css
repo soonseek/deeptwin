@@ -285,6 +285,11 @@ footer p { margin: 6px 0; }
 .run-artifacts .artifact-table td { border: 1px solid currentColor; padding: 0.125rem 0.375rem; }
 .run-artifacts .artifact-image { max-width: 100%; height: auto; }
 .run-artifacts .artifact-coverage, .run-artifacts .artifact-fidelity { font-size: 0.875rem; }
+.run-artifacts .artifact-page { display: block; max-height: 48rem; width: auto; border: 1px solid currentColor; }
+.run-artifacts .artifact-pages { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+.run-artifacts .artifact-digest { font-size: 0.75rem; font-family: monospace; }
+.artifact-index .artifact-index-list { list-style: none; padding: 0; }
+.artifact-index .artifact-index-list li { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; padding: 0.25rem 0; }
 
 
 /* T037/T048: the readable work graph */

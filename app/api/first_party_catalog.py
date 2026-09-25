@@ -1,5 +1,6 @@
 """The complete build-installed catalog; not a runtime extension registry."""
 
+from .artifact_index import artifact_index_services
 from .claude_connection import connection_services
 from .credential_wiring import credential_services
 from .graphs import graph_services
@@ -91,6 +92,14 @@ INSTALLED = (
         ("work.command", "work.read"),
         requires=("run-approvals.service",),
         provides=("runs.service", "run-artifacts.service", "alternative-drafts.service"),
+    ),
+    InstalledContribution(
+        "artifact-index-v1.json",
+        "app.api.artifact_index:create_router",
+        artifact_index_services,
+        ("browser_session",),
+        ("work.read",),
+        requires=("run-artifacts.service",),
     ),
     InstalledContribution(
         "graphs-v1.json",
