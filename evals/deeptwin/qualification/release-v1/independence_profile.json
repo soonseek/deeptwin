@@ -1,0 +1,19 @@
+{
+ "schema": "q01-independence-profile-1",
+ "profile_id": "q01-release-v1-independence",
+ "frozen_on": "2026-09-25",
+ "requirement": "The semantic judge must not share the critic's model. Either a human reviewer judges every semantic item, or a judge from a different provider does, with its identity recorded.",
+ "options": [
+  {"option": "human_review", "judge": "a human reviewer who did not author the sealed expectations", "independence_basis": "a different kind of judge; correlated errors with the critic are still possible and are not ruled out by this choice alone"},
+  {"option": "cross_provider_model", "judge": "a model from a provider other than the critic's", "independence_basis": "different provider and model; shared training data or prompt effects remain possible"}
+ ],
+ "currently_available": {
+  "authorized_providers": ["claude/api"],
+  "human_review": "not arranged",
+  "consequence": "Neither option is available now, so release-v1 cannot execute until one is arranged; running with a same-model judge would leave every semantic item not_judged under this design."
+ },
+ "not_claimed": [
+  "a universal independence threshold or score",
+  "that any listed option makes errors statistically independent"
+ ]
+}

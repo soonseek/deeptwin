@@ -663,6 +663,14 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
 
 - [ ] T075 Produce the complete requirement→task→test→observed-result matrix and all invalid/failed/missing evidence in specs/001-autonomous-release/evidence/implementation.md; refresh source hashes/supersession map after final design edits and audit the stable-weight progress numerator, uncertainty and ETA-support state (FR-034, SC-002).
 - [ ] T076 Freeze and audit final release qualification version/IndependenceProfile/effect evaluation designs in evals/deeptwin/qualification/release-v1/ and evals/deeptwin/effects/ before any release-heldout access; use new datasets not exposed in T035 calibration, preserve both versions, and do not invent actual user alternatives or universal independence thresholds (V3/V6).
+  2026-09-25: release-v1 designs frozen before any heldout material exists
+  (`evals/deeptwin/qualification/release-v1/{qualification_design,independence_profile}.json`,
+  `evals/deeptwin/effects/lens-effects-v1.json`, hash manifest `FROZEN.json`, guarded by
+  `evals/deeptwin/tests/test_release_design_frozen.py`): a new sealed set authored by someone
+  other than the verifier's developer, 2+ cases per boundary class (a scoped choice, no rate),
+  3 repetitions, every case must pass, an independent judge (human or another provider) required
+  — neither available now, so release-v1 cannot execute yet; the lens-effect comparison keeps
+  the no-lens baseline whole and claims no superiority. Independent audit pending.
 - [ ] T077 Execute authorized bounded actual-provider/critic/multimodal/lens-controlled comparisons and audit all failures/suspicious passes in specs/001-autonomous-release/evidence/live-qualification.md; lack of applicable authority remains explicit, not waived (SC-001/005/006).
 - [ ] T078 After T087's extension UI and the frozen T081 candidate exist, perform final visual/
   keyboard/screen-reader/360px/1024px/
