@@ -184,13 +184,14 @@ class ProviderSendService:
             if time.monotonic() >= deadline:
                 self._states.pop(exchange_id, None)
                 raise ProviderSendError("provider send deadline elapsed")
-            actual_remaining = max(0, int((deadline - time.monotonic()) * 1000))
             if (remaining_ms is not None and (type(remaining_ms) is not int
-                    or not 1 <= remaining_ms <= message.remaining_ms
-                    or remaining_ms > actual_remaining + 1)):
+                    or not 1 <= remaining_ms <= message.remaining_ms)):
                 self._states.pop(exchange_id, None)
                 raise ProviderSendError("commit remaining deadline is invalid")
             if remaining_ms is not None:
+                # the requester's budget was measured before its frame crossed the channel,
+                # so it can exceed what is left here by the transit time; it may only shorten
+                # this exchange's own deadline, never extend it
                 deadline = min(deadline, time.monotonic() + remaining_ms / 1000)
             lease = GatewayExchangeLease(message.dialogue_id, exchange_id, prepare_sha256, commit_id,
                 deepcopy(message.operation_ref), message.request_id, message.request_sha256,

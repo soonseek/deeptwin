@@ -188,3 +188,21 @@ ac04a6b7ed5e74dce629d62ceb68694cdf27ddb25d5c91558b896554bd101bf9  app/tests/test
 Later identity (2026-09-25, T090 routes): `app/workers/credential_channel.py` changed (pre-send
 `GatewayServiceError.sent`); its current identity is frozen in `credential-vault-t090.md`
 §"2026-09-25 — HTTP create/rotate/delete routes"; the block above is kept as historical.
+
+## 2026-09-25: commit deadline budget measured before transit
+
+`test_the_state_claim_order_is_the_wire_order` failed deterministically on an idle host. The gateway
+refused a commit whose `remaining_ms` exceeded the local remainder by more than 1 ms. The requester
+measures its budget before the commit frame crosses the channel, so the transit time alone could exceed
+that tolerance, and a valid commit was refused as `commit remaining deadline is invalid`.
+
+The refusal now applies only to a claim outside `1..prepared remaining_ms`, which is the ready grant. A
+claim inside the grant can only shorten this exchange's deadline, through the existing `min`, and can
+never extend it. Regression test:
+`test_provider_send_gateway.py::test_a_commit_budget_measured_before_transit_shortens_but_never_extends_the_deadline`.
+It commits after 50 ms of simulated transit and still refuses a claim beyond the grant. The two provider
+gateway files pass 125 tests.
+
+```text
+600e8dcfa50a8177a278fc1635bbb9bc0a591a7b322f4fb2d4e798cf10598b44  app/workers/provider_send_service.py
+```

@@ -1523,3 +1523,24 @@ def test_exhausted_deadline_cleanup_makes_gateway_unusable(tmp_path, monkeypatch
             for survivor in survivors:
                 survivor.join(1)
         assert all(not survivor.is_alive() for survivor in survivors)
+
+
+def test_a_commit_budget_measured_before_transit_shortens_but_never_extends_the_deadline(tmp_path):
+    # the requester measures its remaining budget before its commit frame crosses the channel,
+    # so a claim a few milliseconds above what is left here must commit (clamped), while a claim
+    # beyond the ready grant is still refused
+    with controlled_upstream(response=(200, "text/event-stream", b"event: ping\ndata: {}\n\n")) as (port, captures, _entered, _release), \
+            encrypted_credential(tmp_path) as (vault, meta, record):
+        handle, pin, _, _ = connection_values(meta, record)
+        service = ProviderSendService(CredentialedProviderTransport(vault, binding(port)))
+        message = prepared(meta, record, handle, pin)
+        ready = service.prepare(message)
+        time.sleep(0.05)  # the frame's transit: the claim below now exceeds the local remainder
+        lease = service.commit(ready["exchange_id"], ready["prepare_sha256"], str(uuid4()),
+                               remaining_ms=ready["remaining_ms"])
+        assert service.exchange(lease).phase == "terminal_observed" and len(captures) == 1
+        second = service.prepare(prepared(meta, record, handle, pin))
+        with pytest.raises(ProviderSendError, match="commit remaining deadline is invalid"):
+            service.commit(second["exchange_id"], second["prepare_sha256"], str(uuid4()),
+                           remaining_ms=message.remaining_ms + 1)
+        assert len(captures) == 1
