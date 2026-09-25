@@ -687,6 +687,11 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   For STT freeze Korean fixture length/transcript, speech/silence/noise, cold vs warm model, CPU/
   thread/concurrent load and sample count; report recognition error separately from provisional/final
   latency, fix material UI stalls and disclose every unmeasured quality claim (FR-002/013/031).
+  2026-09-25: browser responsiveness measured under the declared workload (20-node/40-edge run,
+  1,000+ events) in real Chromium against the real server — command ack p95 127 ms, event visible
+  after commit p95 60 ms, no long task while typing or opening the run, records log pages p95
+  99 ms (evidence/performance.md). STT unmeasured (no engine; no microphone input); there is no
+  push event view or graph canvas to measure; clean hosts (T083) not measured.
 - [ ] T081 Build the reproducible open-source web distribution and versioned service images under
   deploy/ for both ADR-010 profiles. The Portainer CE no-terminal descriptor/workflow must verify an
   immutable source commit plus exact Compose digest (tag is display-only) and service-keyed OCI
