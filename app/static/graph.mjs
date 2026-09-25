@@ -146,7 +146,33 @@ export function runStates(receipt, graph) {
   return states;
 }
 
-export function createGraphView({ root, document, request = null, basePath = '/' } = {}) {
+const COLLECTION_LABELS = Object.freeze({
+  nodes: '노드', edges: '연결', model_bindings: '모델 연결', tool_bindings: '도구 연결', artifact_contracts: '산출물 계약',
+});
+
+// one readable line per collection that differs, e.g. "노드: 추가 check · 삭제 review · 변경 writer(responsibility)"
+export function differenceSummary(difference) {
+  const lines = [];
+  for (const [name, label] of Object.entries(COLLECTION_LABELS)) {
+    const item = difference[name];
+    const parts = [];
+    if (item.added.length) parts.push(`추가 ${item.added.join(', ')}`);
+    if (item.removed.length) parts.push(`삭제 ${item.removed.join(', ')}`);
+    if (item.changed.length) parts.push(`변경 ${item.changed.map(entry => `${entry.id}(${entry.fields.join(', ')})`).join(', ')}`);
+    if (parts.length) lines.push(`${label}: ${parts.join(' · ')}`);
+  }
+  if (difference.entry_node_ids) {
+    lines.push(`시작 노드: ${difference.entry_node_ids.left.join(', ')} → ${difference.entry_node_ids.right.join(', ')}`);
+  }
+  return lines;
+}
+
+// every node id either graph has, in a stable order: the left graph's first
+export function unionNodeIds(left, right) {
+  return [...new Set([...left.nodes.map(item => item.node_id), ...right.nodes.map(item => item.node_id)])];
+}
+
+export function createGraphView({ root, document, request = null, basePath = '/', title = '작업 그래프' } = {}) {
   if (typeof root?.replaceChildren !== 'function') fail('a root is required');
   if (typeof basePath !== 'string' || !BASE_PATH.test(basePath)) fail('base path is not a deployment base path');
   const api = `${basePath.slice(0, -1)}/api/v1`;
@@ -163,7 +189,7 @@ export function createGraphView({ root, document, request = null, basePath = '/'
   const status = element('p', '', { role: 'status', 'aria-live': 'polite' });
   const canvas = element('div', undefined, { class: 'graph-canvas' });
   const details = element('dl', undefined, { class: 'graph-details', 'aria-label': '선택한 노드' });
-  root.replaceChildren(element('h2', '작업 그래프'), status, canvas, details);
+  root.replaceChildren(...(title === null ? [] : [element('h2', title)]), status, canvas, details);
   let current = null;
 
   function select(nodeId) {

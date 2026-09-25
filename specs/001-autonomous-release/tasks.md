@@ -568,6 +568,19 @@ Independent test: fixed synthetic work → real design decisions/candidates → 
   contribution (exact counterexample ids) / exclusion / abstention with reasons, persisted in the
   criticism record (`lens_use`).
 - [ ] T037 [US2] Implement large readable graph comparison, same-focus differences, model/tool details and edit/merge/review/prepare commands in app/static/graph.mjs and app/static/workspace.mjs (UX-AC01, FR-005/FR-008/FR-009).
+  2026-09-25: `design-workspace-v1` (routes 78 → 83) serves a persisted design request's
+  honest pool, re-admitted through `accept_design_candidates` and re-folded verdicts, with the
+  real count and every exclusion reason. select/edit/merge persist a `design_derivation`
+  (re-review required, no inherited verdict). review runs only through a configured critic turn
+  (otherwise `critic_model_not_configured`; edit/merge `derived_graph_not_generated`). prepare
+  attempts approval and preparation and returns the exact refusal (`the critic configuration is
+  not qualified (unknown: no_suite_record)`). `app/static/workspace.mjs` on the work page shows
+  the side-by-side comparison, same-node focus with model and tool details, and the command
+  states. Tests: pytest 5, node 6, real-browser 1, all over TEST-ACTOR data
+  (evidence/design-commands-t037-2026-09-25.md). Not ticked: no production path registers a
+  design request (an issued request is not restorable from the store; the design arc is not
+  wired, T038), edit/merge have no generation turn to realize them, and no critic is qualified
+  (T077).
 - [ ] T038 [US2] Exercise real generation→critique→selection and 0/1/2/3 valid-candidate/revision/cancel paths in app/tests/browser-design.test.mjs and specs/001-autonomous-release/evidence/us2.md; no fixture scores presented as live (SC-003/SC-005).
 
 ## Phase 5: US3 — Actual graph execution, tools and artifacts (P1)

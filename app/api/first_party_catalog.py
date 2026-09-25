@@ -2,6 +2,7 @@
 
 from .claude_connection import connection_services
 from .credential_wiring import credential_services
+from .design_workspace import design_workspace_services
 from .graphs import graph_services
 from .hypotheses import hypothesis_services
 from .work_models import work_model_services
@@ -99,6 +100,14 @@ INSTALLED = (
         ("browser_session",),
         ("work.read",),
         provides=("graphs.service",),
+    ),
+    InstalledContribution(
+        "design-workspace-v1.json",
+        "app.api.design_workspace:create_router",
+        design_workspace_services,
+        ("browser_session",),
+        ("work.command", "work.read"),
+        provides=("design-workspace.service",),
     ),
     InstalledContribution(
         "hypotheses-v1.json",

@@ -302,3 +302,15 @@ footer p { margin: 6px 0; }
 .graph-nodes { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; padding: 0; }
 .graph-nodes button[aria-pressed="true"] { outline: 2px solid var(--accent); }
 .graph-details { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; }
+/* T037: the design workspace — pooled candidates side by side, large and readable */
+.design-workspace { margin-top: 24px; }
+.design-candidates { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; list-style: none; padding: 0; }
+.design-candidate { border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--panel); }
+.design-candidate textarea { width: 100%; }
+.design-verdict[data-verdict="passed"] { color: var(--ink); }
+.design-not-approvable, .design-review-unavailable, .design-re-review { color: var(--muted); }
+.design-compare-sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+.design-compare-side .graph-node text { font-size: 15px; }
+.design-focus { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.design-focus > p { grid-column: 1 / -1; font-weight: 600; }
+.design-focus dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }

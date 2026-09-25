@@ -1,0 +1,22 @@
+{
+  "schema_version": "deeptwin-first-party-route-contribution-v1",
+  "contribution_id": "design-workspace-v1",
+  "factory": "app.api.design_workspace:create_router",
+  "routes": [
+    {"route_id": "design_requests.list", "methods": ["GET", "HEAD"],
+     "path": "/api/v1/design-requests",
+     "auth_policy": "browser_session", "required_scope": "work.read"},
+    {"route_id": "design_requests.read", "methods": ["GET", "HEAD"],
+     "path": "/api/v1/design-requests/{request_id}",
+     "auth_policy": "browser_session", "required_scope": "work.read"},
+    {"route_id": "design_requests.derive", "methods": ["POST"],
+     "path": "/api/v1/design-requests/{request_id}/derivations",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "design_requests.review", "methods": ["POST"],
+     "path": "/api/v1/design-requests/{request_id}/reviews",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "design_requests.prepare", "methods": ["POST"],
+     "path": "/api/v1/design-requests/{request_id}/preparations",
+     "auth_policy": "browser_session", "required_scope": "work.command"}
+  ]
+}

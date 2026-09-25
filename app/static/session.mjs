@@ -68,7 +68,10 @@ async function readJson(response) {
 
 function refusal(payload, status) {
   const message = typeof payload?.message === 'string' ? payload.message : `요청을 완료하지 못했습니다 (${status}).`;
-  return Object.assign(new Error(message), { code: partition(payload, status), status });
+  const error = Object.assign(new Error(message), { code: partition(payload, status), status });
+  // a refusal may name its exact reason (e.g. the design workspace's not-approvable reason); plain text only
+  if (typeof payload?.reason === 'string' && payload.reason.length <= 512) error.reason = payload.reason;
+  return error;
 }
 
 export function createSupportedSession({ fetch, basePath = '/' } = {}) {

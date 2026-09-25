@@ -20,6 +20,7 @@ import { basePathFrom, createSupportedSession } from './session.mjs';
 import { createSourceDeletion } from './source-deletion.mjs';
 import { createWorkExport } from './work-export.mjs';
 import { createWorkModel } from './work-model.mjs';
+import { createDesignWorkspace } from './workspace.mjs';
 
 export const MOUNT_IDS = Object.freeze({ session: 'session-status', notice: 'intake-notice', form: 'work-form',
   save: 'save-status', materials: 'materials', link: 'observe-link' });
@@ -28,6 +29,8 @@ export const RECORDS_MOUNT_ID = 'work-records';
 export const DELETION_MOUNT_ID = 'work-deletion';
 // the work-model panel's mount is optional too (T030)
 export const WORK_MODEL_MOUNT_ID = 'work-model';
+// the design workspace (T037) mounts only where the page offers it
+export const DESIGN_WORKSPACE_MOUNT_ID = 'design-workspace';
 export const MAX_TEXT_CHARS = 20_000;  // app/services/works.py MAX_TEXT_CHARS
 export const MAX_TEXT_BYTES = 65_536;  // app/services/works.py MAX_TEXT_BYTES (raw UTF-8)
 const CREATE_SCHEMA = 'work-create-command-v1';
@@ -256,6 +259,11 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   const workModel = workModelRoot !== null && typeof workModelRoot?.replaceChildren === 'function'
     ? createWorkModel({ root: workModelRoot, document, basePath, request: session.request, crypto,
       work: () => ({ work_id: state.work_id ?? null, revision: state.revision ?? null, sources: savedSources.length }) })
+    : null;
+  const designRoot = document.getElementById(DESIGN_WORKSPACE_MOUNT_ID);
+  const design = designRoot !== null && typeof designRoot?.replaceChildren === 'function'
+    ? createDesignWorkspace({ root: designRoot, document, basePath, request: session.request,
+      commandId: () => crypto.randomUUID() })
     : null;
   let activeUpload = null;
 
@@ -681,7 +689,8 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
 
   if (deletion !== null) deletion.load().catch(() => {});
   if (workModel !== null) workModel.load().catch(() => {});
-  return Object.freeze({ mode, basePath, session, exporter, deletion, workModel });
+  if (design !== null) design.load().catch(() => {});
+  return Object.freeze({ mode, basePath, session, exporter, deletion, workModel, design });
 }
 
 // the page's entry: a boot that fails before the exchange still reaches the status line
