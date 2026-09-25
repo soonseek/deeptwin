@@ -10,7 +10,8 @@ graph's claims:
 
 The scheduler's handlers are:
 - **deterministic** entry node: the run's work revision text becomes the source
-  artifact.
+  artifact — unless its `handler_id` names a code-owned producer the host passed
+  (`producers`), whose sealed artifact is the node's result instead.
 - **deterministic, human_gate and join** nodes with inputs: forward their
   producer's artifact. A human gate still runs only on the owner's recorded
   approval, which the scheduler enforces.
@@ -98,10 +99,17 @@ class ClaudeRunExecutor:
     """Built by the host before the app exists; the `claude-connection-v1`
     contribution binds it once to the vault and the owner's connection."""
 
-    def __init__(self, *, limits: LiveLimits | None = None, transport=None):
+    def __init__(self, *, limits: LiveLimits | None = None, transport=None, producers=None):
         # `transport` is the adapter's HTTP transport seam: None is the real network,
-        # a test injects httpx2.MockTransport; it never carries a credential
+        # a test injects httpx2.MockTransport; it never carries a credential.
+        # `producers` maps a deterministic node's `handler_id` to host-owned code
+        # `(domain_store, run_id, context) -> EntityRef` sealing that node's artifact;
+        # a graph cannot add one (the host wires it before the app exists)
+        if producers is not None and (type(producers) is not dict or not all(
+                type(key) is str and callable(value) for key, value in producers.items())):
+            raise TypeError("producers must map handler ids to callables")
         self.transport = transport
+        self._producers = dict(producers or {})
         self._domain = None
         self._connection = None
         self._limits = limits or LiveLimits()
@@ -188,6 +196,14 @@ class ClaudeRunExecutor:
             return refs
 
         def forward(context, view):
+            node = nodes[context.node_id]
+            producer = (self._producers.get(node["config"].get("handler_id"))
+                        if node["kind"] == "deterministic" else None)
+            if producer is not None:
+                ref = producer(self._domain, run_id, context)
+                if type(ref) is not EntityRef or ref.kind != "artifact":
+                    raise _NodeRefused("producer_without_artifact")
+                return ref
             refs = upstream(context, view)
             if refs:
                 return refs[0]
@@ -385,6 +401,7 @@ class ClaudeRunExecutor:
         observed = {
             "provider_message_id": None if started is None else started.provider_message_id,
             "observed_model": None if started is None else started.observed_model,
+            "request_id": None if started is None else started.request_id,
             "usage": None if usage is None else {
                 "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens,
                 "cache_creation_input_tokens": usage.cache_creation_input_tokens,
