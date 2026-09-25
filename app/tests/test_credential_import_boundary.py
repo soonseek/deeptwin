@@ -9,6 +9,8 @@ def test_control_import_does_not_import_vault_root_or_crypto():
 import sys
 import app.workers.credential_channel
 import app.api.credential_routes
+import app.api.credential_wiring
+import app.api.first_party_catalog
 import app.server
 for name in ('app.workers.credential_vault', 'app.workers.credential_root',
              'app.workers.credential_envelope', 'app.workers.credential_journal',

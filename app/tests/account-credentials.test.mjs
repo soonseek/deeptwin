@@ -1,0 +1,222 @@
+// T090: the credentials panel over a fake document, fetch and session adapter. The list
+// is the redacted projection only; a secret is read once, cleared from its field before
+// the request leaves and never lands in the DOM or browser storage; deleting says it does
+// not revoke the key at the provider; command_pending, secret_input_lost and an
+// unavailable gateway are shown as they are.
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  CREDENTIAL_ERRORS, CREDENTIAL_MESSAGES, CREDENTIAL_STATES, createCredentialsPanel,
+} from '../static/account.mjs';
+
+class FakeElement {
+  constructor(tagName) { this.tagName = tagName.toUpperCase(); this.children = []; this.attributes = new Map(); this.dataset = {}; this.listeners = new Map(); this._text = ''; this.value = ''; this.disabled = false; }
+  get textContent() { return this._text + this.children.map(child => child.textContent).join(''); }
+  set textContent(value) { this._text = String(value); this.children = []; }
+  set innerHTML(_value) { throw new Error('markup is never written'); }
+  append(...nodes) { this.children.push(...nodes); }
+  replaceChildren(...nodes) { this.children = [...nodes]; this._text = ''; }
+  setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  getAttribute(name) { return this.attributes.get(name) ?? null; }
+  addEventListener(type, listener) { this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]); }
+  async dispatch(type) { for (const listener of this.listeners.get(type) ?? []) await listener({}); }
+  findAll(predicate, found = []) { for (const child of this.children) { if (predicate(child)) found.push(child); child.findAll(predicate, found); } return found; }
+}
+
+const document = { createElement: tag => new FakeElement(tag) };
+const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+const BASE = `/${'2'.repeat(32)}/`;
+const PATH = `${BASE}api/v1/credentials`;
+const H1 = 'a'.repeat(32);
+const SECRET = 'sk-synthetic-ui-secret-0001';
+const CSRF = 'c'.repeat(43);
+
+// every string the page holds: text, attributes, datasets and field values
+function everything(node, found = []) {
+  found.push(node._text, node.value, ...node.attributes.values(), ...Object.values(node.dataset));
+  for (const child of node.children) everything(child, found);
+  return found.join('\n');
+}
+
+function panelWith(responses) {
+  const root = new FakeElement('section');
+  const sent = [];
+  let counter = 0;
+  const fetch = async (path, options) => {
+    sent.push([path, { ...options, body: options.body }]);
+    const next = responses.shift();
+    if (next instanceof Error) throw next;
+    const [status, body] = next;
+    return { ok: status < 400, status, json: async () => body };
+  };
+  const randomUUID = () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}`;
+  const panel = createCredentialsPanel({ root, document, fetch, basePath: BASE, session: { csrfToken: () => CSRF }, randomUUID });
+  const byId = id => root.findAll(el => el.getAttribute('id') === id)[0];
+  const button = text => root.findAll(el => el.tagName === 'BUTTON' && el.textContent === text)[0];
+  return { root, sent, panel, byId, button };
+}
+
+const listed = (...credentials) => [200, { credentials: credentials.map(entry => ({ provider_revocation: 'not_performed', ...entry })) }];
+const refusal = (status, code) => [status, { code, message: 'x', retryability: 'not_retryable', affected_refs: [] }];
+
+test('the list shows only handle, provider and state, and the revocation limit is stated', async () => {
+  const { root, sent, panel } = panelWith([listed({ handle: H1, provider: 'claude', state: 'stored_unbound' },
+    { handle: 'b'.repeat(32), provider: 'codex', state: 'cleanup_pending' })]);
+  const credentials = await panel.load();
+  assert.deepEqual(sent[0], [PATH, { method: 'GET', credentials: 'same-origin', headers: {}, body: undefined }]);
+  assert.deepEqual(credentials, [{ handle: H1, provider: 'claude', state: 'stored_unbound' },
+    { handle: 'b'.repeat(32), provider: 'codex', state: 'cleanup_pending' }]);
+  const text = root.textContent;
+  assert.match(text, new RegExp(`claude · ${H1} · ${CREDENTIAL_STATES.stored_unbound.replace(/[()]/g, '\\$&')}`));
+  assert.match(text, new RegExp(CREDENTIAL_MESSAGES.revocation));
+  // a retired credential offers no rotate or delete
+  const rows = root.findAll(el => el.tagName === 'LI');
+  assert.equal(rows[0].findAll(el => el.tagName === 'BUTTON').length, 2);
+  assert.equal(rows[1].findAll(el => el.tagName === 'BUTTON').length, 0);
+});
+
+test('adding sends the secret once, clears the field before the request and keeps it nowhere', async () => {
+  const touched = [];
+  const storage = new Proxy({}, { get(_target, name) { touched.push(name); return () => null; } });
+  globalThis.localStorage = storage;
+  globalThis.sessionStorage = storage;
+  try {
+    const { root, sent, panel, byId, button } = panelWith([listed(),
+      [201, { handle: H1, provider: 'claude', state: 'stored_unbound' }],
+      listed({ handle: H1, provider: 'claude', state: 'stored_unbound' })]);
+    await panel.load();
+    const field = byId('credential-secret');
+    assert.equal(field.getAttribute('type'), 'password');
+    assert.equal(field.getAttribute('autocomplete'), 'off');
+    field.value = SECRET;
+    const pending = button('키 저장').dispatch('click');
+    assert.equal(field.value, '');  // cleared synchronously, before the request resolves
+    await pending;
+    await flush();
+    const [path, options] = sent[1];
+    assert.equal(path, PATH);
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers['X-DeepTwin-CSRF'], CSRF);
+    assert.deepEqual(JSON.parse(options.body), { intent_id: '00000000-0000-4000-8000-000000000001', provider: 'claude', secret: SECRET });
+    assert.equal(sent.filter(([, value]) => String(value.body).includes(SECRET)).length, 1);
+    assert.match(root.textContent, new RegExp(CREDENTIAL_MESSAGES.created));
+    assert.ok(!everything(root).includes(SECRET));
+    assert.deepEqual(touched, []);
+  } finally {
+    delete globalThis.localStorage;
+    delete globalThis.sessionStorage;
+  }
+});
+
+test('an empty secret sends nothing', async () => {
+  const { sent, panel, root } = panelWith([listed()]);
+  await panel.load();
+  assert.equal(await panel.store(), null);
+  assert.equal(sent.length, 1);
+  assert.match(root.textContent, new RegExp(CREDENTIAL_MESSAGES.noSecret));
+});
+
+test('rotate carries rotate_from for the chosen handle and clears the field', async () => {
+  const { sent, panel, byId, button, root } = panelWith([
+    listed({ handle: H1, provider: 'codex', state: 'stored_unbound' }),
+    [201, { handle: H1, provider: 'codex', state: 'stored_unbound' }],
+    listed({ handle: H1, provider: 'codex', state: 'stored_unbound' })]);
+  await panel.load();
+  await button('교체').dispatch('click');
+  assert.match(root.textContent, new RegExp(CREDENTIAL_MESSAGES.rotating(H1)));
+  byId('credential-secret').value = SECRET;
+  await button('키 교체').dispatch('click');
+  await flush();
+  assert.equal(byId('credential-secret').value, '');
+  assert.deepEqual(JSON.parse(sent[1][1].body), { intent_id: '00000000-0000-4000-8000-000000000001',
+    provider: 'codex', secret: SECRET, rotate_from: H1 });
+  assert.match(root.textContent, new RegExp(CREDENTIAL_MESSAGES.rotated));
+  assert.ok(!everything(root).includes(SECRET));
+});
+
+test('delete asks first, says the provider key is not revoked, and sends only an intent', async () => {
+  const { sent, panel, button, root } = panelWith([
+    listed({ handle: H1, provider: 'claude', state: 'stored_unbound' }),
+    [200, { handle: H1, state: 'cleanup_pending', provider_revocation: 'not_performed' }],
+    listed({ handle: H1, provider: 'claude', state: 'cleanup_pending' })]);
+  await panel.load();
+  await button('삭제').dispatch('click');
+  assert.equal(sent.length, 1);  // nothing leaves before the explicit confirmation
+  assert.match(root.textContent, /제공자 쪽의 키는 폐기되지 않습니다\(provider_revocation: not_performed\)/);
+  await button('삭제 확인').dispatch('click');
+  await flush();
+  assert.deepEqual(sent[1], [`${PATH}/${H1}`, { method: 'DELETE', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-DeepTwin-CSRF': CSRF },
+    body: JSON.stringify({ intent_id: '00000000-0000-4000-8000-000000000001' }) }]);
+  assert.match(root.textContent, new RegExp(CREDENTIAL_MESSAGES.deleted));
+  assert.match(root.textContent, new RegExp(CREDENTIAL_STATES.cleanup_pending.replace(/[()]/g, '\\$&')));
+});
+
+test('command_pending is shown honestly and the retry reuses the same intent, never a new act', async () => {
+  const { sent, panel, byId, button, root } = panelWith([
+    listed(),
+    refusal(503, 'command_pending'),
+    listed({ handle: H1, provider: 'claude', state: 'pending' }),
+    [201, { handle: H1, provider: 'claude', state: 'stored_unbound' }],
+    listed({ handle: H1, provider: 'claude', state: 'stored_unbound' })]);
+  await panel.load();
+  byId('credential-secret').value = SECRET;
+  await button('키 저장').dispatch('click');
+  await flush();
+  assert.match(root.textContent, new RegExp(CREDENTIAL_ERRORS.command_pending));
+  assert.match(root.textContent, new RegExp(CREDENTIAL_STATES.pending));
+  assert.match(root.textContent, /결과 다시 확인/);
+  assert.equal(byId('credential-secret').value, '');
+  byId('credential-secret').value = 'sk-re-entered';
+  await button('결과 다시 확인').dispatch('click');
+  await flush();
+  assert.equal(JSON.parse(sent[1][1].body).intent_id, JSON.parse(sent[3][1].body).intent_id);
+  assert.match(root.textContent, new RegExp(CREDENTIAL_MESSAGES.created));
+  assert.ok(!everything(root).includes(SECRET) && !everything(root).includes('sk-re-entered'));
+});
+
+test('secret_input_lost is terminal for the act: the next submit is a new intent', async () => {
+  const { sent, panel, byId, button, root } = panelWith([
+    listed(),
+    refusal(409, 'secret_input_lost'),
+    listed({ handle: H1, provider: 'claude', state: 'secret_input_lost' }),
+    [201, { handle: 'b'.repeat(32), provider: 'claude', state: 'stored_unbound' }],
+    listed()]);
+  await panel.load();
+  byId('credential-secret').value = SECRET;
+  await button('키 저장').dispatch('click');
+  await flush();
+  assert.match(root.textContent, new RegExp(CREDENTIAL_ERRORS.secret_input_lost));
+  assert.match(root.textContent, new RegExp(CREDENTIAL_STATES.secret_input_lost));
+  assert.equal(root.findAll(el => el.tagName === 'LI')[0].findAll(el => el.tagName === 'BUTTON').length, 0);
+  byId('credential-secret').value = SECRET;
+  await button('키 저장').dispatch('click');
+  await flush();
+  assert.notEqual(JSON.parse(sent[1][1].body).intent_id, JSON.parse(sent[3][1].body).intent_id);
+});
+
+test('an unattached or unreachable gateway is shown as unavailable, with no list', async () => {
+  const { panel, root } = panelWith([refusal(503, 'dependency_unavailable')]);
+  await assert.rejects(panel.load());
+  assert.match(root.textContent, new RegExp(CREDENTIAL_ERRORS.dependency_unavailable));
+  assert.equal(root.findAll(el => el.tagName === 'LI').length, 0);
+  const offline = panelWith([new Error('offline')]);
+  await assert.rejects(offline.panel.load());
+  assert.match(offline.root.textContent, new RegExp(CREDENTIAL_ERRORS.unavailable));
+});
+
+test('a pending delete retries under the same intent', async () => {
+  const { sent, panel, root } = panelWith([
+    listed({ handle: H1, provider: 'claude', state: 'stored_unbound' }),
+    refusal(503, 'command_pending'),
+    listed({ handle: H1, provider: 'claude', state: 'stored_unbound' }),
+    [200, { handle: H1, state: 'cleanup_pending', provider_revocation: 'not_performed' }],
+    listed({ handle: H1, provider: 'claude', state: 'cleanup_pending' })]);
+  await panel.load();
+  await assert.rejects(panel.remove(H1));
+  assert.match(root.textContent, new RegExp(CREDENTIAL_ERRORS.command_pending));
+  await panel.remove(H1);
+  assert.equal(sent[1][1].body, sent[3][1].body);
+});
