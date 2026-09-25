@@ -22,7 +22,8 @@ revoke a consent (`revoke`): one sealed `decision_record` per consent, authored 
 the owner with `approval.decided(revoked)` in the same transaction; a revoked
 consent starts no run, and `resume`/`recover` of a run under it refuse (the
 "current consent" runtime.md verifies before dispatch). Cancel stays available.
-A revocation is not undone. A `run-consent-command-v2` consent also carries the
+A revocation is not undone. An owner recovery revokes every still-open consent the
+same way inside its one reconciliation transaction (`revoke_open_in_transaction`). A `run-consent-command-v2` consent also carries the
 owner's `expires_at_utc`; past it, the consent is no longer current, exactly as if
 revoked (v1 consents have no expiry). The 366-day ceiling is a wire bound, not a
 product policy. Deliberately deferred (recorded open): nothing yet (the
@@ -70,6 +71,7 @@ __all__ = [
     "consent_identity",
     "consent_revoked",
     "resolve_consent",
+    "revoke_open_in_transaction",
 ]
 
 COMMAND_SCHEMA = "run-consent-command-v1"
@@ -259,6 +261,63 @@ def consent_revoked(domain, db, roots, consent_ref: EntityRef) -> bool:
     return _revocation(domain, db, roots, consent_ref) is not None
 
 
+def _write_revocation(domain, db, roots, consent_ref: EntityRef, *, command_id, actor_ref, stamp):
+    """Seal one consent's revocation and its `approval.decided(revoked)` in the caller's writer."""
+
+    event_sequence = _event_stream(db, roots.genesis.id)["next_sequence"]
+    record = ImmutableRecord.create(
+        kind="decision_record", id=revocation_identity(consent_ref.id), version=1, created_at_utc=stamp,
+        actor_ref=actor_ref, parent_refs=(consent_ref,), purpose="operational",
+        access_policy_ref=roots.access_policy, retention_policy_ref=roots.retention_policy,
+        content={"schema_version": REVOCATION_SCHEMA, "command_id": command_id,
+                 "consent_ref": consent_ref.as_dict(), "revoked_at_utc": stamp,
+                 "event_sequence": event_sequence},
+    )
+    domain._put_in_transaction(db, record)
+    event = _append_event_in_transaction(
+        db, vault_id=roots.genesis.id, recorded_at_utc=stamp, observed_at_utc=stamp,
+        actor_kind="human", actor_ref=actor_ref, event_type="approval.decided",
+        object_refs=(ObjectRef(record.ref.kind, record.ref.id, record.ref.version, record.ref.sha256),
+                     ObjectRef(consent_ref.kind, consent_ref.id, consent_ref.version, consent_ref.sha256)),
+        correlation_id=command_id, causation_id=None, status="succeeded",
+        error_code=None, public_metadata={"decision": "revoked"}, private_evidence_refs=(),
+        retention_class="core", policy_ref=roots.access_policy,
+    )
+    if event.sequence != event_sequence:
+        raise RunConsentError("unavailable")
+
+
+def revoke_open_in_transaction(domain, db, roots, *, recovery_id: str, stamp: str) -> int:
+    """Revoke every consent that is still consent evidence and not yet revoked, for one
+    owner recovery. A row that is no consent evidence already starts nothing and is left
+    as historical evidence."""
+
+    owner = _stored_owner_actor_ref(db)
+    rows = list(db.execute(
+        "SELECT id, version, sha256 FROM domain_records WHERE vault_id=? AND kind='run_consent' "
+        "ORDER BY id, version", (roots.genesis.id,)))
+    if not rows:
+        return 0
+    if owner is None:
+        raise RunConsentError("unavailable")  # only the owner authors consents
+    actor_ref = EntityRef.from_dict(owner)
+    revoked = 0
+    for row in rows:
+        if row["version"] != 1:
+            continue
+        ref = EntityRef("run_consent", row["id"], 1, row["sha256"])
+        try:
+            resolve_consent(domain, db, roots, ref)
+            if _revocation(domain, db, roots, ref) is not None:
+                continue
+        except RunConsentError:
+            continue
+        command_id = str(uuid5(NAMESPACE_URL, f"deeptwin:recovery-consent-revocation:{recovery_id}:{ref.id}"))
+        _write_revocation(domain, db, roots, ref, command_id=command_id, actor_ref=actor_ref, stamp=stamp)
+        revoked += 1
+    return revoked
+
+
 def consent_current(domain, db, roots, consent_ref: EntityRef, *, now=None) -> dict:
     """The consent projection when it is still current; `access_denied` when the owner
     revoked it or it expired, `unavailable` when it is no consent evidence at all."""
@@ -410,26 +469,6 @@ class PersistentRunConsents:
                 return consent
             consent_ref = EntityRef.from_dict(consent["ref"])
             actor_ref = _owner_actor_ref(db, actor)
-            stamp = _stamp()
-            event_sequence = _event_stream(db, roots.genesis.id)["next_sequence"]
-            record = ImmutableRecord.create(
-                kind="decision_record", id=revocation_identity(consent_id), version=1, created_at_utc=stamp,
-                actor_ref=actor_ref, parent_refs=(consent_ref,), purpose="operational",
-                access_policy_ref=roots.access_policy, retention_policy_ref=roots.retention_policy,
-                content={"schema_version": REVOCATION_SCHEMA, "command_id": command_id,
-                         "consent_ref": consent_ref.as_dict(), "revoked_at_utc": stamp,
-                         "event_sequence": event_sequence},
-            )
-            self._domain._put_in_transaction(db, record)
-            event = _append_event_in_transaction(
-                db, vault_id=roots.genesis.id, recorded_at_utc=stamp, observed_at_utc=stamp,
-                actor_kind="human", actor_ref=actor_ref, event_type="approval.decided",
-                object_refs=(ObjectRef(record.ref.kind, record.ref.id, record.ref.version, record.ref.sha256),
-                             ObjectRef(consent_ref.kind, consent_ref.id, consent_ref.version, consent_ref.sha256)),
-                correlation_id=command_id, causation_id=None, status="succeeded",
-                error_code=None, public_metadata={"decision": "revoked"}, private_evidence_refs=(),
-                retention_class="core", policy_ref=roots.access_policy,
-            )
-            if event.sequence != event_sequence:
-                raise RunConsentError("unavailable")
+            _write_revocation(self._domain, db, roots, consent_ref, command_id=command_id,
+                              actor_ref=actor_ref, stamp=_stamp())
             return self._load(db, roots, consent_ref)

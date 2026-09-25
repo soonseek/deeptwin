@@ -1,0 +1,146 @@
+{
+  "$comment": "Structural only; request/trust relations, signature authenticity, epoch succession and generation binding remain separately required.",
+  "$id": "urn:deeptwin:schemas:v2:deployment:public-trust-set-v2",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "adapters": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "deployment_profile_id": {
+            "enum": [
+              "local-no-terminal-v1",
+              "portable-compose-v1"
+            ],
+            "type": "string"
+          },
+          "operator_adapter": {
+            "enum": [
+              "deeptwin-stage-operator-v1",
+              "deeptwin-recovery-operator-v1"
+            ],
+            "type": "string"
+          },
+          "operator_version": {
+            "const": "1.0.0",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operator_adapter",
+          "operator_version",
+          "deployment_profile_id"
+        ],
+        "type": "object"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "domain": {
+      "const": "deeptwin-deployment-public-trust-set-v2",
+      "type": "string"
+    },
+    "instance_id": {
+      "maxLength": 32,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{32})(?![\\s\\S])",
+      "type": "string"
+    },
+    "keys": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "adapter_ids": {
+            "items": {
+              "enum": [
+                "deeptwin-recovery-operator-v1",
+                "deeptwin-stage-operator-v1"
+              ],
+              "type": "string"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "algorithm": {
+            "const": "ed25519",
+            "type": "string"
+          },
+          "key_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "not": {
+              "const": "00000000-0000-0000-0000-000000000000"
+            },
+            "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+            "type": "string"
+          },
+          "public_key": {
+            "maxLength": 43,
+            "minLength": 1,
+            "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+            "type": "string"
+          },
+          "trust_class": {
+            "const": "instance_operator",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_id",
+          "algorithm",
+          "public_key",
+          "trust_class",
+          "adapter_ids"
+        ],
+        "type": "object"
+      },
+      "maxItems": 8,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "origin_profile_digest": {
+      "maxLength": 43,
+      "minLength": 1,
+      "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+      "type": "string"
+    },
+    "previous_trust_set_digest": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "maxLength": 43,
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+          "type": "string"
+        }
+      ]
+    },
+    "schema": {
+      "const": "deployment-public-trust-set-v2",
+      "type": "string"
+    },
+    "version": {
+      "const": 2,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema",
+    "domain",
+    "version",
+    "instance_id",
+    "origin_profile_digest",
+    "previous_trust_set_digest",
+    "keys",
+    "adapters"
+  ],
+  "type": "object"
+}

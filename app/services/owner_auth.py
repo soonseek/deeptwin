@@ -82,7 +82,7 @@ class BootstrapExchange:
 
 
 class PersistentOwnerAuthority:
-    def __init__(self, domain_store, *, root, configuration, serving_lock):
+    def __init__(self, domain_store, *, root, configuration, serving_lock, recovery_trust_set=None):
         if type(domain_store) is not DomainStore or type(root) is not SessionRootHandle:
             raise OwnerAuthError("unavailable")
         if version("argon2-cffi") != "25.1.0":
@@ -100,36 +100,83 @@ class PersistentOwnerAuthority:
         self._identities, self._identity_lock = OrderedDict(), RLock()
         self._closed = False
         self._permission_host = None
+        # a verified recovery receipt awaiting the restricted reconciliation start; while it
+        # is set every authority method fails closed and /health reports the reconciliation
+        self._recovery = None
         with _writer(), domain_store._connection(write=True) as db:
             existing = db.execute("SELECT 1 FROM sqlite_master WHERE name='owner_auth_migrations'").fetchone()
             storage.install(db)
             now = time.time_ns() // 1_000_000
             if not existing:
-                storage.insert(db, "control", dict(singleton=1, **self._binding,
+                # a fresh store opens only the explicit initial genesis
+                if self._epoch != 1 or root.recovery is not None:
+                    raise OwnerAuthError("unavailable")
+                storage.insert(db, "control", dict(**self._binding, previous_epoch=None,
+                                                   recovery_request_id=None, recovery_request_nonce=None,
+                                                   recovery_receipt_digest=None,
                                                    opened_at=now, deadline=now + 600000,
                                                    clock_floor=now, revision=1))
                 storage.insert(db, "bootstrap_claims", {"epoch": self._epoch,
                     "verifier": self._verifier.verifier_b64u, "attempts": 0, "state": "available", "claim_id": None,
                     "consumed_at": None, "completed_at": None, "revision": 1})
                 storage.audit(db, "opened", None, now)
-            self._check(db)
             _install_event_schema(db, self._binding["vault_id"])
+            control = storage.current_control(db)
+            if control is not None and control["epoch"] == self._epoch - 1 and root.recovery is not None:
+                from .deployment_control import verify_recovery_start
+
+                storage.verify(db)
+                self._recovery = verify_recovery_start(
+                    control, root=root, profile=self.profile, binding=self._binding,
+                    verifier=self._verifier, trust_bytes=recovery_trust_set)
+            else:
+                self._check(db)
+
+    @property
+    def reconciling(self):
+        """True between a verified recovery start and its committed reconciliation."""
+        return self._recovery is not None
+
+    @_closed_errors
+    def reconcile_recovery(self):
+        """Run the restricted reconciliation start's one DB transaction (idempotent by
+        construction: it either commits epoch N+1 whole or leaves epoch N for the next start)."""
+        if self._recovery is None or self._closed:
+            raise OwnerAuthError("unavailable")
+        from .deployment_control import reconcile_recovery_in_transaction
+
+        with _writer(), self._domain._connection(write=True) as db:
+            reconcile_recovery_in_transaction(self._domain, db, recovery=self._recovery,
+                                              binding=self._binding, verifier=self._verifier)
+        # only a committed transaction opens bootstrap/login; a failure above keeps this
+        # start closed and leaves epoch N for the next start to reconcile again
+        self._recovery = None
+        with self._domain._connection() as db:
+            self._check(db)
+        with self._identity_lock:
+            self._identities.clear()
 
     @property
     def cookie_name(self):
         return "deeptwin_session" if self.profile.scheme == "http" else "__Host-deeptwin_session"
 
     def _check(self, db):
-        if self._closed:
+        if self._closed or self._recovery is not None:
             raise OwnerAuthError("unavailable")
         storage.verify(db)
-        control = db.execute("SELECT * FROM owner_auth_control").fetchone()
-        claim = db.execute("SELECT * FROM owner_auth_bootstrap_claims").fetchone()
+        control = storage.current_control(db)
+        claim = None if control is None else db.execute(
+            "SELECT * FROM owner_auth_bootstrap_claims WHERE epoch=?", (control["epoch"],)).fetchone()
         if (control is None or claim is None or any(control[k] != v for k, v in self._binding.items())
                 or claim["epoch"] != self._epoch or claim["verifier"] != self._verifier.verifier_b64u):
             raise OwnerAuthError("unavailable")
         account = db.execute("SELECT * FROM owner_auth_accounts").fetchone()
-        if (account is None) != (claim["state"] != "completed"):
+        # a completed claim is exactly an owner bound to this epoch; before completion the
+        # instance is ownerless, or holds the owner of an earlier epoch awaiting recovery
+        if claim["state"] == "completed":
+            if account is None or account["recovery_epoch"] != self._epoch:
+                raise OwnerAuthError("unavailable")
+        elif account is not None and account["recovery_epoch"] >= self._epoch:
             raise OwnerAuthError("unavailable")
         if account is not None:
             ref = EntityRef.from_dict(json.loads(account["actor_ref"]))
@@ -155,13 +202,13 @@ class PersistentOwnerAuthority:
             state = claim["state"]
             if state == "available" and self._now(db) >= control["deadline"]:
                 state = "expired"
-            return account is not None, state
+            return account is not None and account["recovery_epoch"] == self._epoch, state
 
     def _now(self, db, *, write=False):
-        control = db.execute("SELECT * FROM owner_auth_control").fetchone()
+        control = storage.current_control(db)
         now = max(time.time_ns() // 1_000_000, control["clock_floor"])
         if write and now > control["clock_floor"]:
-            storage.update(db, "control", control, {"clock_floor": now}, identity="singleton")
+            storage.update(db, "control", control, {"clock_floor": now}, identity="epoch")
         return now
 
     def _admit(self, source_key, account):
@@ -233,7 +280,8 @@ class PersistentOwnerAuthority:
                 now = self._now(db, write=True)
                 if claim["state"] == "consumed":
                     raise OwnerAuthError("setup_incomplete")
-                if claim["state"] != "available" or account is not None:
+                if claim["state"] != "available" or (account is not None
+                                                     and account["recovery_epoch"] == self._epoch):
                     raise OwnerAuthError("setup_unavailable")
                 if now >= control["deadline"]:
                     storage.update(db, "bootstrap_claims", claim, {"state": "expired"}, identity="epoch")
@@ -257,26 +305,31 @@ class PersistentOwnerAuthority:
             with _writer(), self._domain._connection(write=True) as db:
                 _, claim, account = self._check(db)
                 now = self._now(db, write=True)
-                if claim["state"] != "consumed" or claim["claim_id"] != claim_id or account is not None:
+                if (claim["state"] != "consumed" or claim["claim_id"] != claim_id
+                        or (account is not None and account["recovery_epoch"] >= self._epoch)):
                     raise OwnerAuthError("setup_incomplete")
-                roots = self._domain._read_roots(db)
-                owner_id = str(uuid4())
-                record = ImmutableRecord.create(kind="actor", id=owner_id, version=1, created_at_utc=_stamp(now),
-                    actor_ref=roots.actor, parent_refs=(), purpose="operational", access_policy_ref=roots.access_policy,
-                    retention_policy_ref=roots.retention_policy,
-                    content={"id": owner_id, "kind": "human", "origin": "local_session"})
-                self._domain._put_in_transaction(db, record)
-                if self._permission_host is None:
-                    raise OwnerAuthError("unavailable")
-                self._permission_host._register_record_in_transaction(db, record)
-                account = storage.insert(db, "accounts", {"owner_id": owner_id, "singleton": 1,
-                    "actor_ref": canonical_json(record.ref.as_dict()).decode(), "login_name": login_name, "state": "active",
-                    "auth_epoch": 1, "recovery_epoch": self._epoch, "created_at": now, "updated_at": now, "revision": 1})
-                authenticator = storage.insert(db, "authenticators", {"owner_id": owner_id, "revision": 1,
-                    "previous_revision": None, "kind": "password", "profile": PROFILE, "encoded_hash": encoded,
-                    "created_at": now, "revoked_at": None})
-                token, row = self._new_session(db, account, authenticator, now)
-                self._event(db, account, "owner.created", now)
+                if account is not None:
+                    owner_id = account["owner_id"]
+                    token, row = self._rebind_recovered_owner(db, account, login_name, encoded, now)
+                else:
+                    roots = self._domain._read_roots(db)
+                    owner_id = str(uuid4())
+                    record = ImmutableRecord.create(kind="actor", id=owner_id, version=1, created_at_utc=_stamp(now),
+                        actor_ref=roots.actor, parent_refs=(), purpose="operational", access_policy_ref=roots.access_policy,
+                        retention_policy_ref=roots.retention_policy,
+                        content={"id": owner_id, "kind": "human", "origin": "local_session"})
+                    self._domain._put_in_transaction(db, record)
+                    if self._permission_host is None:
+                        raise OwnerAuthError("unavailable")
+                    self._permission_host._register_record_in_transaction(db, record)
+                    account = storage.insert(db, "accounts", {"owner_id": owner_id, "singleton": 1,
+                        "actor_ref": canonical_json(record.ref.as_dict()).decode(), "login_name": login_name, "state": "active",
+                        "auth_epoch": 1, "recovery_epoch": self._epoch, "created_at": now, "updated_at": now, "revision": 1})
+                    authenticator = storage.insert(db, "authenticators", {"owner_id": owner_id, "revision": 1,
+                        "previous_revision": None, "kind": "password", "profile": PROFILE, "encoded_hash": encoded,
+                        "created_at": now, "revoked_at": None})
+                    token, row = self._new_session(db, account, authenticator, now)
+                    self._event(db, account, "owner.created", now)
                 storage.update(db, "bootstrap_claims", claim, {"state": "completed", "completed_at": now}, identity="epoch")
                 storage.audit(db, "owner", owner_id, now)
             return BootstrapExchange(self._publish(row), self._root.derive_csrf(token), token)
@@ -290,6 +343,26 @@ class PersistentOwnerAuthority:
             reservation.close()
             password = raw_capability_b64u = None
 
+    def _rebind_recovered_owner(self, db, account, login_name, encoded, now):
+        """The recovered owner keeps its actor (and so every record it authored); only a new
+        authenticator on the next revision, a new auth epoch and this recovery epoch bind it."""
+        latest = db.execute("SELECT * FROM owner_auth_authenticators WHERE owner_id=? "
+                            "ORDER BY revision DESC LIMIT 1", (account["owner_id"],)).fetchone()
+        if latest is None or latest["revoked_at"] is None:
+            raise OwnerAuthError("unavailable")  # reconciliation revoked every authenticator
+        authenticator = storage.insert(db, "authenticators", {
+            "owner_id": account["owner_id"], "revision": latest["revision"] + 1,
+            "previous_revision": latest["revision"], "kind": "password", "profile": PROFILE,
+            "encoded_hash": encoded, "created_at": now, "revoked_at": None})
+        storage.update(db, "accounts", account, {
+            "login_name": login_name, "state": "active", "auth_epoch": account["auth_epoch"] + 1,
+            "recovery_epoch": self._epoch, "updated_at": max(now, account["updated_at"])}, identity="owner_id")
+        refreshed = db.execute("SELECT * FROM owner_auth_accounts WHERE owner_id=?",
+                               (account["owner_id"],)).fetchone()
+        token, row = self._new_session(db, refreshed, authenticator, now)
+        self._event(db, refreshed, "session.created", now)
+        return token, row
+
     @_closed_errors
     def login(self, *, login_name, password, source_key, prior_cookie=None):
         validate_credentials(login_name, password)
@@ -297,7 +370,8 @@ class PersistentOwnerAuthority:
         started = time.monotonic()
         with self._domain._connection() as db:
             _, _, account = self._check(db)
-            account = dict(account) if account is not None and account["login_name"] == login_name else None
+            account = (dict(account) if account is not None and account["login_name"] == login_name
+                       and account["recovery_epoch"] == self._epoch else None)
             authenticator = None if account is None else db.execute(
                 "SELECT * FROM owner_auth_authenticators WHERE owner_id=? ORDER BY revision DESC LIMIT 1",
                 (account["owner_id"],)).fetchone()

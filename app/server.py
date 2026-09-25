@@ -825,8 +825,15 @@ def create_development_app(data_dir, port=4193, *, codex_factory=None, understan
 
 def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, expected_gid,
                runtime_dispatch_resolver=None, worker_dispatch_factory=None,
-               first_party_startup_values=None, additional_protected_roots=(), run_executor=None):
-    """Supported web factory: exact deployment authority, no host provider discovery."""
+               first_party_startup_values=None, additional_protected_roots=(), run_executor=None,
+               recovery_trust_set=None):
+    """Supported web factory: exact deployment authority, no host provider discovery.
+
+    Equal configuration/root/database recovery epochs start normally. A configuration and
+    root at N+1 over a database at N start restricted: the recovery receipt, verified against
+    the public `recovery_trust_set` bytes, is reconciled in one DB transaction before any
+    route is composed. Anything else fails closed here, with no plaintext fallback.
+    """
     from .api.first_party import (
         ApplicationContext,
         build_startup_inputs,
@@ -836,7 +843,12 @@ def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, e
     from .api.web_boundary import WebBoundary, auth_error
     from .domain.store import DomainStore, UninitializedVault
     from .operations.session_root import open_session_root
-    from .operations.setup import OriginProfile, build_bootstrap_configuration
+    from .operations.setup import (
+        INITIAL_RECOVERY_EPOCH,
+        OriginProfile,
+        build_bootstrap_configuration,
+        build_recovered_configuration,
+    )
     from .services.owner_admission import ServingLock
     from .services.owner_auth import OwnerAuthError, PersistentOwnerAuthority
 
@@ -845,9 +857,14 @@ def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, e
             or type(expected_uid) is not int or type(expected_gid) is not int
             or min(expected_uid, expected_gid) < 0):
         raise ValueError('Deployment configuration is required')
+    if recovery_trust_set is not None and (type(recovery_trust_set) is not bytes
+                                           or not 1 <= len(recovery_trust_set) <= 16384):
+        raise ValueError('Invalid recovery trust set')
     profile = OriginProfile.from_dict(deployment_config['origin_profile'])
-    configuration = build_bootstrap_configuration(profile=profile,
-        verifier_b64u=deployment_config['verifier_b64u'], recovery_epoch=deployment_config['recovery_epoch'])
+    build = (build_bootstrap_configuration if deployment_config['recovery_epoch'] == INITIAL_RECOVERY_EPOCH
+             else build_recovered_configuration)
+    configuration = build(profile=profile, verifier_b64u=deployment_config['verifier_b64u'],
+                          recovery_epoch=deployment_config['recovery_epoch'])
     data_path, root_path = Path(data_dir).absolute(), Path(session_root_dir).absolute()
     if type(additional_protected_roots) is not tuple:
         raise ValueError('Invalid protected roots')
@@ -867,7 +884,13 @@ def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, e
             domain.roots()
         except UninitializedVault:
             domain.initialize_vault()
-        authority = PersistentOwnerAuthority(domain, root=root, configuration=configuration, serving_lock=lock)
+        authority = PersistentOwnerAuthority(domain, root=root, configuration=configuration, serving_lock=lock,
+                                             recovery_trust_set=recovery_trust_set)
+        if authority.reconciling:
+            # the restricted reconciliation start: nothing is composed or served, and so no
+            # bootstrap or login exists, until this one transaction commits; a failure ends
+            # the start (fail closed) and the next start reconciles again
+            authority.reconcile_recovery()
         components = initialize_api_v1(store, authority, domain_store=domain)
         authority._permission_host = components.permission_host
         slot = None if worker_dispatch_factory is None else WorkerDispatchServiceSlot(
@@ -974,6 +997,8 @@ def main():
     parser.add_argument('--session-root-dir', type=Path, required=True)
     parser.add_argument('--expected-uid', type=int, required=True)
     parser.add_argument('--expected-gid', type=int, required=True)
+    parser.add_argument('--recovery-trust-set', type=Path, default=None,
+                        help='public deployment-public-trust-set-v2 for a recovery start')
     args = parser.parse_args()
     if min(args.expected_uid, args.expected_gid) < 0:
         parser.error('Expected ownership IDs must be nonnegative')
@@ -983,6 +1008,13 @@ def main():
     with config_path.open('rb') as source:
         configuration = parse_json_object(source.read(8193),
             required=('origin_profile', 'verifier_b64u', 'recovery_epoch'), limits=WireLimits(max_bytes=8192))
+    trust_set = None
+    if args.recovery_trust_set is not None:
+        trust_path = args.recovery_trust_set.absolute()
+        if '..' in trust_path.parts:
+            parser.error('Invalid recovery trust set path')
+        with trust_path.open('rb') as source:
+            trust_set = source.read(16385)
     # the direct-adapter Claude profile: the code-owned run executor, bounded by the
     # operator's non-secret limits (the API key itself is entered by the owner in the
     # browser and kept in server memory only)
@@ -992,7 +1024,8 @@ def main():
                         max_output_tokens=int(os.environ.get("DEEPTWIN_LIVE_MAX_OUTPUT_TOKENS", "512")))
     application = create_app(args.data_dir, deployment_config=configuration,
         session_root_dir=args.session_root_dir, expected_uid=args.expected_uid, expected_gid=args.expected_gid,
-        additional_protected_roots=(config_path.parent,), run_executor=ClaudeRunExecutor(limits=limits))
+        additional_protected_roots=(config_path.parent,), run_executor=ClaudeRunExecutor(limits=limits),
+        recovery_trust_set=trust_set)
     uvicorn.run(application, host='0.0.0.0', port=8080, workers=1, reload=False,
                 proxy_headers=False, forwarded_allow_ips='', access_log=False)
 

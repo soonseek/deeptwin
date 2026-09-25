@@ -24,6 +24,8 @@ PORTABLE_DEPLOYMENT_PROFILE = "portable-compose-v1"
 LOCAL_MODE = "local_loopback"
 PORTABLE_MODE = "portable_https"
 INITIAL_RECOVERY_EPOCH = 1
+# a bound on the epoch any deployment reaches, not a policy (matches the recovery schemas)
+MAX_RECOVERY_EPOCH = 1_000_000
 
 _HEX_128 = re.compile(r"[0-9a-f]{32}")
 _HEX_256 = re.compile(r"[0-9a-f]{64}")
@@ -330,16 +332,39 @@ def build_bootstrap_configuration(
     }
 
 
+def build_recovered_configuration(
+    *, profile: OriginProfile | dict[str, object], verifier_b64u: object, recovery_epoch: object,
+) -> dict[str, object]:
+    """The same non-secret handoff block after an owner recovery: the new verifier and a
+    recovery epoch above the initial one. Only a matching recovered session root and a
+    verified recovery receipt make it serve; the block itself grants nothing."""
+
+    checked_profile = profile if type(profile) is OriginProfile else OriginProfile.from_dict(profile)
+    if (type(recovery_epoch) is not int
+            or not INITIAL_RECOVERY_EPOCH < recovery_epoch <= MAX_RECOVERY_EPOCH):
+        raise _invalid()
+    if type(verifier_b64u) is not str:
+        raise _invalid()
+    CapabilityVerifier(verifier_b64u)
+    return {
+        "verifier_b64u": verifier_b64u,
+        "recovery_epoch": recovery_epoch,
+        "origin_profile": checked_profile.as_dict(),
+    }
+
+
 __all__ = (
     "INITIAL_RECOVERY_EPOCH",
     "LOCAL_DEPLOYMENT_PROFILE",
     "LOCAL_MODE",
+    "MAX_RECOVERY_EPOCH",
     "PORTABLE_DEPLOYMENT_PROFILE",
     "PORTABLE_MODE",
     "CapabilityVerifier",
     "OriginProfile",
     "SetupContractError",
     "build_bootstrap_configuration",
+    "build_recovered_configuration",
     "derive_capability_verifier",
     "parse_base64url_32",
     "verify_bootstrap_capability",

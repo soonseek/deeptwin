@@ -1657,6 +1657,101 @@ class PersistentServiceClientRegistry:
                 "use_revision": use_revision,
             }
 
+    @classmethod
+    def _revoke_all_in_transaction(cls, db, *, expected_epoch, new_epoch, now):
+        """Revoke every head and advance the recovery epoch inside the caller's writer.
+
+        The owner-recovery reconciliation start calls this in its one DB transaction; the
+        caller has already authenticated the recovery and owns the transaction.
+        """
+        if (
+            type(expected_epoch) is not int
+            or type(new_epoch) is not int
+            or expected_epoch < 0
+            or new_epoch <= expected_epoch
+        ):
+            raise ServiceClientDenied("Service client recovery epoch is invalid")
+        observed_epoch = cls._claim_time(db, now)
+        if observed_epoch != expected_epoch:
+            raise ServiceClientDenied("Service client recovery epoch changed")
+        head_ids = [
+            row["client_id"]
+            for row in db.execute(
+                "SELECT client_id FROM service_client_heads "
+                "ORDER BY client_id"
+            )
+        ]
+        revoked_count = 0
+        for current_id in head_ids:
+            current, _ = cls._history(db, current_id)
+            record, _, record_hash = current
+            if record.state == "active":
+                revoked_count += 1
+                recovery_event = "service_client.recovery_revoked"
+            elif record.state == "revoked":
+                recovery_event = "service_client.recovery_advanced"
+            else:
+                raise CorruptServiceClient("Service-client recovery head changed")
+            next_payload = _record_payload(
+                client_id=record.client_id,
+                revision=record.revision + 1,
+                owner_id=record.owner_id,
+                name=record.name,
+                scopes=record.scopes,
+                network_profile=record.allowed_network_profile,
+                created_at=record.created_at,
+                expires_at=record.expires_at,
+                state="revoked",
+                credential_digest=None,
+                recovery_epoch=new_epoch,
+                recorded_at=now,
+                previous_hash=record_hash,
+            )
+            next_hash = cls._insert_record(db, next_payload)
+            cls._set_head(
+                db,
+                next_payload,
+                next_hash,
+                expected=(record.revision, record_hash),
+            )
+            cls._append_event(
+                db,
+                event_type=recovery_event,
+                client_id=record.client_id,
+                client_revision=record.revision + 1,
+                recovery_epoch=new_epoch,
+                observed_at=now,
+            )
+        (
+            current_epoch,
+            event_sequence,
+            event_hash,
+            last_observed_at,
+            current_control_hash,
+        ) = cls._read_control(db)
+        if current_epoch != expected_epoch:
+            raise ServiceClientDenied("Service client recovery epoch changed")
+        next_control_hash = _control_hash(
+            new_epoch, event_sequence, event_hash, last_observed_at,
+        )
+        changed = db.execute(
+            "UPDATE service_client_control SET recovery_epoch=?,control_hash=? "
+            "WHERE singleton=1 AND recovery_epoch=? AND event_sequence=? "
+            "AND event_hash IS ? AND last_observed_at=? AND control_hash=?",
+            (
+                new_epoch,
+                next_control_hash,
+                expected_epoch,
+                event_sequence,
+                event_hash,
+                last_observed_at,
+                current_control_hash,
+            ),
+        ).rowcount
+        if changed != 1:
+            raise ServiceClientDenied("Service client recovery epoch changed")
+        return revoked_count
+
     def revoke_all_for_recovery(
         self,
         recovery_request,
@@ -1677,85 +1772,9 @@ class PersistentServiceClientRegistry:
         try:
             with self._store._connection() as db:
                 db.execute("BEGIN IMMEDIATE")
-                observed_epoch = self._claim_time(db, now)
-                if observed_epoch != expected_epoch:
-                    raise ServiceClientDenied("Service client recovery epoch changed")
-                head_ids = [
-                    row["client_id"]
-                    for row in db.execute(
-                        "SELECT client_id FROM service_client_heads "
-                        "ORDER BY client_id"
-                    )
-                ]
-                revoked_count = 0
-                for current_id in head_ids:
-                    current, _ = self._history(db, current_id)
-                    record, _, record_hash = current
-                    if record.state == "active":
-                        revoked_count += 1
-                        recovery_event = "service_client.recovery_revoked"
-                    elif record.state == "revoked":
-                        recovery_event = "service_client.recovery_advanced"
-                    else:
-                        raise CorruptServiceClient("Service-client recovery head changed")
-                    next_payload = _record_payload(
-                        client_id=record.client_id,
-                        revision=record.revision + 1,
-                        owner_id=record.owner_id,
-                        name=record.name,
-                        scopes=record.scopes,
-                        network_profile=record.allowed_network_profile,
-                        created_at=record.created_at,
-                        expires_at=record.expires_at,
-                        state="revoked",
-                        credential_digest=None,
-                        recovery_epoch=new_epoch,
-                        recorded_at=now,
-                        previous_hash=record_hash,
-                    )
-                    next_hash = self._insert_record(db, next_payload)
-                    self._set_head(
-                        db,
-                        next_payload,
-                        next_hash,
-                        expected=(record.revision, record_hash),
-                    )
-                    self._append_event(
-                        db,
-                        event_type=recovery_event,
-                        client_id=record.client_id,
-                        client_revision=record.revision + 1,
-                        recovery_epoch=new_epoch,
-                        observed_at=now,
-                    )
-                (
-                    current_epoch,
-                    event_sequence,
-                    event_hash,
-                    last_observed_at,
-                    current_control_hash,
-                ) = self._read_control(db)
-                if current_epoch != expected_epoch:
-                    raise ServiceClientDenied("Service client recovery epoch changed")
-                next_control_hash = _control_hash(
-                    new_epoch, event_sequence, event_hash, last_observed_at,
+                revoked_count = self._revoke_all_in_transaction(
+                    db, expected_epoch=expected_epoch, new_epoch=new_epoch, now=now,
                 )
-                changed = db.execute(
-                    "UPDATE service_client_control SET recovery_epoch=?,control_hash=? "
-                    "WHERE singleton=1 AND recovery_epoch=? AND event_sequence=? "
-                    "AND event_hash IS ? AND last_observed_at=? AND control_hash=?",
-                    (
-                        new_epoch,
-                        next_control_hash,
-                        expected_epoch,
-                        event_sequence,
-                        event_hash,
-                        last_observed_at,
-                        current_control_hash,
-                    ),
-                ).rowcount
-                if changed != 1:
-                    raise ServiceClientDenied("Service client recovery epoch changed")
         except sqlite3.Error as exc:
             raise ServiceClientDenied("Service client storage is unavailable") from exc
         return {

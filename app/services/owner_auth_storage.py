@@ -2,6 +2,11 @@
 
 Row digests detect corruption, not a malicious administrator who can rewrite the DB.
 Every statement is code-owned; no arbitrary auth record import is exposed.
+
+Version 2 keeps one `owner_auth_control` row per recovery epoch (1..N, each naming its
+predecessor and, from epoch 2, the recovery request/receipt that opened it), so historical
+sessions keep their epoch-N references while epoch N+1 becomes current. A version 1 database
+is rebuilt into version 2 on open, inside the opening writer, after every v1 row verifies.
 """
 import sqlite3
 from hashlib import sha256
@@ -70,6 +75,30 @@ _DDL = (
         entity_id TEXT, observed_at INTEGER NOT NULL, previous_hash TEXT, hash TEXT NOT NULL)""",
 )
 CHECKSUM = sha256(canonical_json(list(_DDL))).hexdigest()
+_DDL_V2 = (
+    "CREATE TABLE owner_auth_migrations(version INTEGER PRIMARY KEY CHECK(version IN (1,2)),checksum TEXT NOT NULL)",
+    """CREATE TABLE owner_auth_control(
+        epoch INTEGER PRIMARY KEY CHECK(epoch>=1), vault_id TEXT NOT NULL,
+        instance_id TEXT NOT NULL, origin_digest TEXT NOT NULL, generation_id TEXT NOT NULL UNIQUE,
+        key_id TEXT NOT NULL UNIQUE, manifest_digest TEXT NOT NULL UNIQUE,
+        previous_epoch INTEGER REFERENCES owner_auth_control(epoch),
+        recovery_request_id TEXT UNIQUE, recovery_request_nonce TEXT UNIQUE,
+        recovery_receipt_digest TEXT UNIQUE,
+        opened_at INTEGER NOT NULL, deadline INTEGER NOT NULL CHECK(deadline=opened_at+600000),
+        clock_floor INTEGER NOT NULL CHECK(clock_floor>=opened_at),
+        revision INTEGER NOT NULL CHECK(revision>=1), hash TEXT NOT NULL,
+        CHECK((epoch=1 AND previous_epoch IS NULL AND recovery_request_id IS NULL
+               AND recovery_request_nonce IS NULL AND recovery_receipt_digest IS NULL)
+              OR (epoch>1 AND previous_epoch=epoch-1 AND recovery_request_id IS NOT NULL
+                  AND recovery_request_nonce IS NOT NULL AND recovery_receipt_digest IS NOT NULL)))""",
+    _DDL[2],
+    *_DDL[4:8],
+    """CREATE TABLE owner_auth_audit(
+        sequence INTEGER PRIMARY KEY CHECK(sequence>=1),
+        kind TEXT NOT NULL CHECK(kind IN ('opened','guess','claim','owner','login','logout','recovered')),
+        entity_id TEXT, observed_at INTEGER NOT NULL, previous_hash TEXT, hash TEXT NOT NULL)""",
+)
+CHECKSUM_V2 = sha256(canonical_json(list(_DDL_V2))).hexdigest()
 
 
 def _shape(db):
@@ -80,10 +109,10 @@ def _shape(db):
                 "OR (type='view' AND lower(sql) LIKE '%owner_auth_%')")}
 
 
-def _expected():
+def _expected(ddl=_DDL):
     with sqlite3.connect(":memory:") as db:
         db.row_factory = sqlite3.Row
-        for statement in _DDL:
+        for statement in ddl:
             db.execute(statement)
         shape = _shape(db)
         columns = {name.removeprefix("owner_auth_"): frozenset(row[1] for row in db.execute(f"PRAGMA table_info({name})"))
@@ -94,6 +123,8 @@ def _expected():
 SHAPE, COLUMNS = _expected()
 TABLES = tuple(name.removeprefix("owner_auth_") for name, item in SHAPE.items()
                if item[0] == "table" and name != "owner_auth_migrations")
+SHAPE_V2, COLUMNS_V2 = _expected(_DDL_V2)
+MIGRATIONS_V2 = [(1, CHECKSUM), (2, CHECKSUM_V2)]
 
 
 def digest(row):
@@ -103,7 +134,7 @@ def digest(row):
 def insert(db, table, values):
     if type(table) is not str or table not in TABLES:
         raise AuthStorageError("Unknown private auth table")
-    if type(values) is not dict or set(values) != COLUMNS[table] - {"hash"}:
+    if type(values) is not dict or set(values) != COLUMNS_V2[table] - {"hash"}:
         raise AuthStorageError("Invalid private auth columns")
     row = {**values, "hash": digest(values)}
     db.execute(f"INSERT INTO owner_auth_{table} ({','.join(row)}) VALUES ({','.join('?' for _ in row)})",
@@ -112,10 +143,10 @@ def insert(db, table, values):
 
 
 def update(db, table, old, changes, *, identity):
-    identities = {"control": "singleton", "bootstrap_claims": "epoch", "accounts": "owner_id", "sessions": "session_id"}
+    identities = {"control": "epoch", "bootstrap_claims": "epoch", "accounts": "owner_id", "sessions": "session_id"}
     if table not in identities or identity != identities[table]:
         raise AuthStorageError("Invalid private auth update")
-    columns = COLUMNS[table]
+    columns = COLUMNS_V2[table]
     if (set(dict(old)) != columns or set(changes) - columns or set(changes) & {identity, "hash", "revision"}
             or old["hash"] != digest(dict(old))):
         raise AuthStorageError("Invalid private auth update")
@@ -129,6 +160,23 @@ def update(db, table, old, changes, *, identity):
     return values
 
 
+def revoke_authenticator(db, row, now):
+    """Mark one live authenticator revoked; its owner, revision and history never change."""
+    old = dict(row)
+    if (set(old) != COLUMNS_V2["authenticators"] or old["revoked_at"] is not None
+            or old["hash"] != digest(old) or type(now) is not int or now < old["created_at"]):
+        raise AuthStorageError("Invalid private auth revocation")
+    values = {**old, "revoked_at": now}
+    values["hash"] = digest(values)
+    changed = db.execute(
+        "UPDATE owner_auth_authenticators SET revoked_at=?,hash=? "
+        "WHERE owner_id=? AND revision=? AND revoked_at IS NULL AND hash=?",
+        (now, values["hash"], old["owner_id"], old["revision"], old["hash"])).rowcount
+    if changed != 1:
+        raise AuthStorageError("Private auth revision conflict")
+    return values
+
+
 def audit(db, kind, entity_id, now):
     prior = db.execute("SELECT sequence,hash FROM owner_auth_audit ORDER BY sequence DESC LIMIT 1").fetchone()
     insert(db, "audit", {"sequence": 1 if prior is None else prior["sequence"] + 1,
@@ -137,19 +185,75 @@ def audit(db, kind, entity_id, now):
 
 
 def install(db):
+    """Install v1 on an empty store, then rebuild a verified v1 layout into v2.
+
+    Runs inside the caller's write transaction; any failure leaves the v1 rows untouched.
+    """
     found = _shape(db)
     if not found:
         for statement in _DDL:
             db.execute(statement)
         db.execute("INSERT INTO owner_auth_migrations VALUES(1,?)", (CHECKSUM,))
+    if _shape(db) == SHAPE:
+        _rebuild_v1_as_v2(db)
     verify(db)
 
 
+_ORDER = ("control", "bootstrap_claims", "accounts", "authenticators", "sessions", "commands", "audit")
+_KEYS = {"control": "singleton", "bootstrap_claims": "epoch", "accounts": "owner_id",
+         "authenticators": "owner_id,revision", "sessions": "session_id",
+         "commands": "command_id", "audit": "sequence"}
+
+
+def _rebuild_v1_as_v2(db):
+    # the v1 rows verify first; `verify` re-checks every relationship after the rebuild
+    _verify_rows(db, SHAPE, [(1, CHECKSUM)])
+    snapshots = {table: [dict(row) for row in db.execute(
+        f"SELECT * FROM owner_auth_{table} ORDER BY {_KEYS[table]}")] for table in _ORDER}
+    if len(snapshots["control"]) > 1:
+        raise AuthStorageError("Private auth control mismatch")
+    # children first, so no implicit DELETE of a parent ever meets a live reference
+    db.execute("DROP INDEX owner_auth_control_epoch")
+    for table in reversed(_ORDER):
+        db.execute(f"DROP TABLE owner_auth_{table}")
+    db.execute("DROP TABLE owner_auth_migrations")
+    for statement in _DDL_V2:
+        db.execute(statement)
+    db.executemany("INSERT INTO owner_auth_migrations VALUES(?,?)", MIGRATIONS_V2)
+    for old in snapshots["control"]:
+        values = {key: value for key, value in old.items() if key not in {"singleton", "hash"}}
+        values.update(previous_epoch=None, recovery_request_id=None, recovery_request_nonce=None,
+                      recovery_receipt_digest=None)
+        insert(db, "control", values)
+    for table in _ORDER[1:]:
+        for row in snapshots[table]:
+            # unchanged columns keep their exact stored digests
+            db.execute(f"INSERT INTO owner_auth_{table} ({','.join(row)}) "
+                       f"VALUES ({','.join('?' for _ in row)})", tuple(row.values()))
+        restored = [dict(row) for row in db.execute(
+            f"SELECT * FROM owner_auth_{table} ORDER BY {_KEYS[table]}")]
+        if restored != snapshots[table]:
+            raise AuthStorageError("Private auth migration changed a row")
+
+
+def current_control(db):
+    """The control row of the current (highest) recovery epoch."""
+    return db.execute("SELECT * FROM owner_auth_control ORDER BY epoch DESC LIMIT 1").fetchone()
+
+
 def verify(db):
-    if _shape(db) != SHAPE:
+    _verify_rows(db, SHAPE_V2, MIGRATIONS_V2)
+    epochs = [row["epoch"] for row in db.execute("SELECT epoch FROM owner_auth_control ORDER BY epoch")]
+    if epochs != list(range(1, len(epochs) + 1)):
+        raise AuthStorageError("Private auth epoch chain mismatch")
+
+
+def _verify_rows(db, shape, expected_migrations):
+    if _shape(db) != shape:
         raise AuthStorageError("Private auth schema mismatch")
-    migrations = [tuple(row) for row in db.execute("SELECT version,checksum FROM owner_auth_migrations")]
-    if migrations != [(1, CHECKSUM)]:
+    migrations = [tuple(row) for row in db.execute(
+        "SELECT version,checksum FROM owner_auth_migrations ORDER BY version")]
+    if migrations != expected_migrations:
         raise AuthStorageError("Private auth migration mismatch")
     for table in TABLES:
         for row in db.execute(f"SELECT * FROM owner_auth_{table}"):
