@@ -720,10 +720,11 @@ class ToolCallSpec:
     until ToolDefinition records exist — not a verified definition), the ordered
     artifact inputs it declared, and the action approval that admitted an
     external or instance-critical effect (required for those, refused for the
-    rest; the transport verifies it against the owner's recorded decision for
-    the run, node and tool scope before the send — the ledger records the
-    reference it was given; no expiry exists on a decision, so none is
-    verified anywhere)."""
+    rest; the transport verifies it before the send against the owner's
+    execution-bound decision for the run, gate, tool scope, execution and
+    attempt number — the ledger records the reference it was given and admits
+    one approval for one attempt's call only; no expiry exists on a decision,
+    so none is verified anywhere)."""
 
     tool_call_id: str
     attempt_id: str
@@ -1359,6 +1360,12 @@ class RuntimeLedger:
                 raise LedgerError("The attempt already recorded a different tool call intent")
             encoded = canonical_json(spec.as_dict()["artifact_inputs"])
             approval = spec.approval_ref
+            if approval is not None and db.execute(
+                    "SELECT 1 FROM runtime_tool_calls WHERE vault_id=? AND approval_kind=? AND approval_id=? "
+                    "AND attempt_id<>?", (self.vault_id, approval.kind, approval.id, spec.attempt_id)).fetchone():
+                # one approval is used by one attempt's call: never by another attempt,
+                # a retry of the same visit included (the same attempt replays above)
+                raise LedgerError("The approval already admitted another attempt's tool call")
             db.execute("INSERT INTO runtime_tool_calls VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                        (self.vault_id, spec.tool_call_id, spec.attempt_id, spec.tool_id, spec.version,
                         spec.effect_class, encoded, _digest(encoded), "intent", None, None, None, None,

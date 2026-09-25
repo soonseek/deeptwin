@@ -468,8 +468,12 @@ def test_build_mirrors_the_tools_input_contract_so_a_refusal_is_never_lost_as_un
     # at build (a static mirror pinned to the worker's entry until ToolDefinition records)
     subject, _run = started(tmp_path / "ledger")
     text = b"hello"
-    assert xt.TOOL_INPUT_CONTRACTS[("text_profile", "1.0.0")] == (("document_source", "text/plain"),)
-    assert xt.TOOL_INPUT_CONTRACTS[("text_normalize", "1.0.0")] == (("document_source", "text/plain"),)
+    # the declared ToolArtifactInputContractV1 of each tool (test_tool_execution_binding pins the rest)
+    for key in (("text_profile", "1.0.0"), ("text_normalize", "1.0.0")):
+        assert xt.TOOL_INPUT_CONTRACTS[key].as_dict() == {
+            "mode": "bounded", "min_items": 1, "max_items": 1, "role": "document_source",
+            "allowed_media_types": ["text/plain"], "selector_policy": "forbidden"}
+    assert dict(xt.TOOL_INPUT_CONTRACTS) == dict(ep.TOOL_INPUT_CONTRACTS)
     assert set(xt.TOOL_INPUT_CONTRACTS) == set(xt.TOOL_OUTPUT_CONTRACTS) == set(xt.TOOL_EFFECTS) == {
         (entry["tool_id"], entry["version"]) for entry in ep.tool_descriptions()}
     assert tuple(ep.TEXT_PROFILE_ENTRY["artifact_roles"]) == ("document_source",)

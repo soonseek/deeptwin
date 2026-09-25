@@ -296,8 +296,12 @@ part against what it received, and the dispatcher refuses a binding reserving le
 policy; the wire binds exactly the contract's count), the data-model `Artifact` entity for the sealed
 output (an inline blob reference today; a seal failure after the import leaves a registered,
 unreferenced content-addressed blob),
-the ports contract's per-tool input count (up to 32 for T-tool; the wire carries 8), role and
-selector binding to the ToolDefinition, every model-bearing port); the control observer and admission; positive Linux authentication (non-Linux hosts fail closed at
+the ports contract's per-tool input count (up to 32 for T-tool; the wire carries 8) and selectors
+(each tool now declares its `ToolArtifactInputContractV1` — count interval, literal role, allowed
+media, selector policy — in `app/extensions/tool_input_contracts.py` values declared by control and
+by the worker, pinned equal; control refuses a mismatching call at build and again before the
+connection, the worker re-checks before reading a byte; the declaration is not yet carried by the
+compiled ToolDefinition record, and the wire names no selector), every model-bearing port); the control observer and admission; positive Linux authentication (non-Linux hosts fail closed at
 peer credentials). No human/key authority, metadata mount, allowlist or core fixture lock is
 introduced; boot IDs are per-process `secrets.token_hex(32)` labels, never owner accounts;
 `app/workers` imports nothing from `app.api`, `app.static` or `app.server`; no GUI.
