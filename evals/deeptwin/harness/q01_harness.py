@@ -40,6 +40,7 @@ from app.critic_contract import (
 from app.critic_trial import OfflineRunner, OfflineTransport, freeze_call
 from app.generation_profiles import GenerationPurpose, profile_for
 from app.services.design_criticism_live import _CITATION_RULE, render_criticism_prompt
+from evals.deeptwin.q01_release_manifest import check_pre_dispatch_manifest
 
 from . import q01_cases
 from .q01_cases import (
@@ -66,6 +67,8 @@ CONTROL_PLANE_FILES = (
     "evals/deeptwin/tasks/v01-q01/task.toml",
     ".agents/skills/deeptwin-eval-world/SKILL.md",
     "evals/deeptwin/verifiers/critic.py",
+    "evals/deeptwin/verifiers/q01_core.py",
+    "evals/deeptwin/verifiers/sealed_critic.py",
     "evals/deeptwin/tests/test_critic_verifier.py",
     "evals/deeptwin/tests/test_q01_harness.py",
     "evals/deeptwin/verifiers/claude_judge.py",
@@ -297,6 +300,53 @@ class TrialConfig:
     max_proposed_chains: int = 16
 
 
+@dataclass(frozen=True)
+class PreDispatch:
+    """A release run's committed pre-dispatch manifest (release-v3 ``pre_dispatch.freeze``).
+
+    ``committed_sha256`` is the value committed to the repository (or externally
+    timestamped) before the first dispatch; ``harness`` is the ``{"version", "sha256"}``
+    of the harness about to run, compared with ``run_identity.harness`` when given.
+    """
+
+    manifest_path: Path
+    committed_sha256: str
+    harness: dict | None = None
+
+
+def pre_dispatch_errors(pre_dispatch: PreDispatch, case_id: str, config: TrialConfig,
+                        task_dir: Path = TASK_DIR) -> tuple[dict, list[str]]:
+    """Why dispatch must be refused (empty when the manifest verifies and binds this trial).
+
+    Besides the manifest itself, the trial must match it: the environment manifest the
+    harness is about to read hashes to ``run_identity.sealed_dataset_sha256``, the case is
+    in ``case_order``, and the chain limit and any fixed call/run deadline equal the config.
+    """
+    try:
+        environment_sha = digest((Path(task_dir) / ENVIRONMENT_MANIFEST).read_bytes())
+    except OSError:
+        environment_sha = None
+    check = check_pre_dispatch_manifest(Path(pre_dispatch.manifest_path),
+                                        committed_sha256=pre_dispatch.committed_sha256,
+                                        harness=pre_dispatch.harness)
+    errors = list(check.errors)
+    manifest = check.manifest
+    if manifest is not None and not any(error.startswith("manifest_schema") for error in errors):
+        configuration = manifest["critic_configuration"]
+        if configuration["max_proposed_chains"] != config.max_proposed_chains:
+            errors.append("max_proposed_chains_differs_from_manifest")
+        deadlines = configuration["call_and_run_deadlines"]
+        for name in ("call_seconds", "run_seconds"):
+            if name in deadlines and deadlines[name] != getattr(config, name):
+                errors.append(f"{name}_differs_from_manifest")
+        if case_id not in manifest["run_identity"]["case_order"]["order"]:
+            errors.append("case_not_in_manifest_case_order")
+        if environment_sha != manifest["run_identity"]["sealed_dataset_sha256"]:
+            errors.append("environment_differs_from_sealed_dataset_sha256")
+    return {"manifest_sha256": check.manifest_sha256, "committed_sha256": pre_dispatch.committed_sha256,
+            "environment_manifest_sha256": environment_sha, "errors": errors}, errors
+
+
 class _Stop(Exception):
     def __init__(self, status, cause=None, output_contract=None):
         super().__init__(cause)
@@ -309,14 +359,18 @@ _TERMINAL_CAUSES = {"cancelled": "cancelled", "timed_out": "timed_out", "interru
 class Q01Trial:
     """One fresh trial of one frozen case. Not reusable."""
 
-    def __init__(self, case_id: str, turn, *, base_dir: Path, config: TrialConfig, task_dir: Path = TASK_DIR):
+    def __init__(self, case_id: str, turn, *, base_dir: Path, config: TrialConfig, task_dir: Path = TASK_DIR,
+                 pre_dispatch: PreDispatch | None = None):
         if not callable(turn):
             raise ValueError("a callable (system, user) -> str transport is required")
         if type(config) is not TrialConfig:
             raise ValueError("an explicit TrialConfig is required")
         if type(config.max_proposed_chains) is not int or not 0 <= config.max_proposed_chains <= 16:
             raise ValueError("max_proposed_chains must be an integer from 0 to 16")
+        if pre_dispatch is not None and type(pre_dispatch) is not PreDispatch:
+            raise TypeError("pre_dispatch must be a PreDispatch")
         self.case_id, self.turn, self.config = case_id, turn, config
+        self.pre_dispatch = pre_dispatch
         self.task_dir = Path(task_dir)
         self.trial_id = "t" + uuid4().hex
         base = Path(base_dir)
@@ -351,6 +405,14 @@ class Q01Trial:
                   "stages": {"review": None, "proposal": None, "authored_chains": [], "proposed_chains": [],
                              "proposed_not_driven": 0},
                   "access_log": reader.log}
+        if self.pre_dispatch is not None:
+            # release runs: no read and no dispatch unless the committed manifest verifies
+            record["pre_dispatch"], errors = pre_dispatch_errors(self.pre_dispatch, self.case_id, self.config,
+                                                                 self.task_dir)
+            if errors:
+                record["status"], record["cause"] = "invalid", "pre_dispatch_manifest_unverified"
+                (self.trial_dir / "trial-record.json").write_text(canonical(record), encoding="utf-8")
+                return record
         try:
             case, case_sha = reader.case(self.case_id)
             instructions = reader.instructions()
@@ -492,11 +554,21 @@ def run_trial(case_id: str, turn, *, base_dir: Path, config: TrialConfig, task_d
     return Q01Trial(case_id, turn, base_dir=base_dir, config=config, task_dir=task_dir).run()
 
 
+def run_release_trial(case_id: str, turn, *, base_dir: Path, config: TrialConfig, pre_dispatch: PreDispatch,
+                      task_dir: Path = TASK_DIR) -> dict:
+    """A release-v3 trial: refuses to dispatch without a verifying committed pre-dispatch manifest."""
+    if type(pre_dispatch) is not PreDispatch:
+        raise TypeError("a release trial requires its committed pre-dispatch manifest")
+    return Q01Trial(case_id, turn, base_dir=base_dir, config=config, task_dir=task_dir,
+                    pre_dispatch=pre_dispatch).run()
+
+
 # ---------------------------------------------------------------- readiness
 
 
 REFUSAL_PROBES = (
-    "Task.md", "task.toml", "../../verifiers/critic.py", "../../tests/test_critic_verifier.py",
+    "Task.md", "task.toml", "../../verifiers/critic.py", "../../verifiers/sealed_critic.py",
+    "../../tests/test_critic_verifier.py",
     "../../../../.agents/skills/deeptwin-eval-world/SKILL.md", "/etc/passwd", "environment/../Task.md",
     "environment/cases/../../Task.md",
 )

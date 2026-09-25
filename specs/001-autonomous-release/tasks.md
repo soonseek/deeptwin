@@ -724,6 +724,14 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   release-v3 addresses all eight without editing v1/v2, and the product gate now reads only v3 suite records
   (a pass while V3 is unverified is `scoped_pass`, not a qualification). v3 needs its own independent audit;
   its data-driven verifier is not implemented yet.
+  2026-09-25 sealed verifier: `evals/deeptwin/verifiers/sealed_critic.py` (`q01-sealed-verifier-1`) loads
+  sha256-pinned sealed expectations and a sealed materials bundle at verify time, keeps critic.py's outcome and
+  boundary classes (shared code moved unchanged to `verifiers/q01_core.py`), applies the v3 suite precedence
+  (fail > incomplete > not_judged > pass) and builds schema-valid suite records; `q01_release_manifest.py` checks
+  pre-dispatch manifests and the harness refuses a release dispatch (`run_release_trial`) without a verifying
+  committed manifest. 203 tests on developer-authored synthetic dev data only
+  (evidence/sealed-verifier-t076-2026-09-25.md). Still open: no sealed set, author or reviewer, no independent
+  judge, V3 unverified, harness case-order/spend/single-use/ledger enforcement, and an independent audit of the verifier.
 - [ ] T077 Execute authorized bounded actual-provider/critic/multimodal/lens-controlled comparisons and audit all failures/suspicious passes in specs/001-autonomous-release/evidence/live-qualification.md; lack of applicable authority remains explicit, not waived (SC-001/005/006).
 - [ ] T078 After T087's extension UI and the frozen T081 candidate exist, perform final visual/
   keyboard/screen-reader/360px/1024px/
