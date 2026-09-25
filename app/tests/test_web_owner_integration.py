@@ -612,7 +612,7 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
     with TestClient(reopened, base_url=profile.http_origin) as client:
         assert client.get(profile.base_path + "health").status_code == 200
         composition = reopened.state.route_composition
-        assert composition.route_count == 104
+        assert composition.route_count == 105
         assert composition.contribution_ids == ("core-v1", "extension-candidates-v1", "run-approvals-v1",
             "works-v1", "run-consents-v1", "claude-connection-v1", "backups-v1", "retention-v1", "credentials-v1", "work-models-v1", "runs-v1", "artifact-index-v1", "graphs-v1", "design-workspace-v1", "hypotheses-v1", "versions-v1", "deployment-prepare-v1", "provider-conformance-v1", "provider-installation-v1", "browser-grants-v1", "platform-update-v1")
         assert composition.route_ids == ("events.read", "events.stream", "events.type", "snapshot.read",
@@ -629,7 +629,7 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
             "backups.read", "backups.preview", "backups.create", "backups.ciphertext", "backups.receipt",
             "backups.restore_begin", "backups.restore_read", "backups.restore_upload",
             "backups.restore_upload_portable", "retention.read", "retention.cleanup_preview", "retention.cleanup",
-            "credentials.read", "credentials.store", "credentials.delete",
+            "credentials.read", "credentials.store", "credentials.delete", "credentials.fence",
             "work_models.draft", "work_models.read", "work_models.confirm",
             "runs.create", "runs.read", "runs.resume", "runs.cancel", "runs.recover",
             "runs.artifacts", "runs.artifact", "runs.artifact_content", "runs.artifact_preview",
@@ -649,7 +649,7 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
             "extensions.provider-conformance.read", "extensions.provider-installation.execute",
             "extensions.provider-installation.read", "browser_grants.read", "browser_grants.create",
             "browser_grants.revoke", "platform.update.read")
-        assert len(set(composition.route_ids)) == 104
+        assert len(set(composition.route_ids)) == 105
 
 
 def test_live_session_root_pin_rejects_a_different_valid_pair(tmp_path):

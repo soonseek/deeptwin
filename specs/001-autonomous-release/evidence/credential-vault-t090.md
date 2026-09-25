@@ -1017,3 +1017,213 @@ e9b68b5948400132a2a5f4d5feaed709251ba7055c20e7aaa1cbc220a36af8dc  app/tests/test
   - the T087 manifest/budget binding and send-engine composition in the gateway process.
 - **Audit and regression.** No independent audit of this slice has run, and the full shared
   regression was not re-run.
+
+## 2026-09-25 — binding CAS, catalog/model invalidation, `unbound_orphan`, the unknown-command fence, handle wording
+
+This slice takes the control-plane items carried over above: binding CAS, catalog/model
+invalidation on rotate, `unbound_orphan` cleanup, the unknown-command fence and the API
+contract's handle wording. The gateway, vault, journal schema and channel are unchanged; every
+change is in the control plane (`app/api/credential_commands.py`, `app/api/credential_routes.py`,
+`credentials-v1.json`) and `contracts/api.md`.
+
+### Provider connection binding by compare-and-swap
+
+- The command ledger gains a `connections` table: one binding head per provider
+  `{revision, state: bound|revoked_pending_erasure, record: {record_id, record_version,
+  ciphertext_sha256}, command_id}`. The custody receipt is still never binding authority
+  (custody contract): the store receipt is persisted first (`adopt_store_receipt`), and a
+  **second ledger transaction** (`bind`) applies the binding by CAS, as api.md orders.
+- Allocation records the connection's binding revision (`binding_expected`) with the act.
+  - A create is refused `409 connection_bound` before any gateway call when the provider is
+    already bound (replacing a key is a rotation). Its CAS succeeds only if the revision is
+    unchanged and the head is not `bound`.
+  - A rotation may target only the provider's currently bound record. Its CAS requires the
+    recorded revision **and** the exact predecessor reference in the head. A new rotation's
+    version is one past every version ever allocated to the record (receipted or not), so a
+    fenced version is never reused.
+  - A delete, in its allocation transaction, first CAS-revokes a head bound to that record to
+    `revoked_pending_erasure` (revision + 1) and only then retires the record `owner_delete`. A
+    lost retire reply therefore leaves the binding already revoked. A new create may bind the
+    provider again afterwards.
+- `bind` is idempotent per act. A crash after the receipt but before the binding transaction
+  is completed by retrying the same act, locally, with no gateway call.
+- A lost CAS makes the stored record a valid orphan: the act ends `orphaned`
+  (`409 connection_conflict`, not retryable), the record is marked orphan (never bound, never
+  the handle's current version), and an `unbound_orphan` retirement is allocated durably and sent
+  (same-command replay on ambiguity). A rotation that loses its CAS leaves the predecessor bound
+  and unretired (its `superseded` retirement is cancelled).
+
+### Catalog and model authority keyed by binding revision
+
+- `catalogs` and `model_choices` are keyed by `(provider, binding_revision)`. The rotation CAS and
+  the delete revoke set every current row of that provider to `invalidated` **in the same
+  transaction** as the head change.
+- `record_catalog_refresh(provider, refresh_command, expected_binding_revision, models)` is the
+  only writer of a catalog snapshot. It requires the head to be `bound` at exactly that revision,
+  so a refresh answered for a predecessor cannot land after a rotation. It is idempotent per
+  refresh command. `choose_model` accepts only a model the current revision's catalog lists.
+- No create/rotate/delete/fence path calls either, and `CredentialActs` has no provider seam at
+  all: its client exposes only `store_at`/`query_record`/`retire`.
+
+### Unknown-command fence
+
+The custody contract defines no gateway cancel/fence operation ("a future cancel/fence protocol
+is a separate operation"), so this is the bounded, owner-visible control-plane resolution:
+
+- The status read lists each unfinished act with `fence_available_at` (the send time plus
+  `fence_after_seconds`, default 300 s).
+- `POST /api/v1/credentials/fences {"intent_id"}` (the stuck act's intent; route
+  `credentials.fence`, `work.command`, CSRF) is refused before that time
+  (`409 fence_not_due`, retryable, no gateway call). After it, one fresh `query_record`:
+  - `unknown` → the act becomes terminal `fenced`, `{"state": "fenced", "uncertain_record":
+    "unknown", "provider_revocation": "not_performed"}`;
+  - `pending` → refused `503 command_pending` (the gateway journaled it; its recovery settles
+    it);
+  - `secret_input_lost` → terminal as before;
+  - committed → the record is adopted only as an orphan and retired `unbound_orphan`
+    (`uncertain_record: "cleanup_pending"`); the owner's abandoned act never binds it;
+  - gateway unreachable → `503 dependency_unavailable`, the act stays `sent`.
+- A fenced act never re-sends its secret (`409 fenced` for any replay), never binds, releases
+  the handle for new rotate/delete acts, and a rotation's predecessor stays bound.
+- A delayed accepted store can still commit after the fence (custody contract: `unknown` is
+  nonterminal). Every later owner act first reconciles open fences (bounded to 16, query only)
+  and retires such a late record `unbound_orphan`. The fence neutralizes a late commit; it does
+  not prevent it at the gateway. A delete act is not fenceable (it carries no secret; its
+  recovery is same-command replay).
+
+### Status read and handle wording
+
+- `GET /api/v1/credentials` now returns `{credentials, connections, pending_acts}`, all from the
+  committed ledger (zero gateway/vault/provider effect, re-pinned). Credential entries are
+  unchanged. A seam that returns a bare list still yields `{credentials}` only.
+- `contracts/api.md` now states the handle decision: "handles" in "creation responses return …
+  not … handles" means the gateway's opaque resolution handle and anything secret-derived. The
+  browser-facing `handle` of the credential-v2 routes is the record id in 32-hex form: a stable
+  nonsecret address across rotations, used by `rotate_from` and `DELETE …/{handle}`, derived from
+  no key byte, never resolving a secret and conferring no dispatch or binding authority. api.md
+  also records the binding CAS, the revision-keyed catalog/model authority, the fence route and
+  its limit, and the new GET shape.
+- Ledger migration: an existing ledger gains the new tables and columns on open
+  (`sent_at`, `binding_expected`, `bind_state`, `records.orphan`). Acts that were settled before
+  this slice have no binding head; no deployed ledger exists.
+
+### Tests
+
+`app/tests/test_credential_binding.py` (13, new) runs on the `test_credential_routes_v2` harness:
+the real development app → ledger → frame-only client → real authenticated broker frames on
+socket pairs → `CredentialGatewayService` → encrypted vault, with a fake ledger clock for the
+fence delay. The teardown sweep finds no secret in logs, the ledger or any file.
+
+- **CAS lifecycle.** create binds revision 1; a second create is `409 connection_bound` with zero
+  gateway calls; another provider has its own head. Rotate moves the head to revision 2 on
+  version 2. A delete whose retire reply is lost is `503 command_pending`, but the head is
+  already `revoked_pending_erasure` (revision 3) and listed in `pending_acts`. The same act then
+  settles, and a new create binds revision 4.
+- **Create race.** A second create is allocated and completed while the first create's store is
+  in flight. The second wins the CAS. The first gets `409 connection_conflict`, and its stored
+  record is retired `unbound_orphan` (vault retirements `[(1, "unbound_orphan")]`). A replay of
+  the losing act sends nothing and retires nothing twice.
+- **Rotation race.** The binding revision advances between the successor's store and its CAS.
+  The successor becomes the orphan, and the predecessor stays bound and unretired. The next
+  rotation allocates version 3 (past the orphan) and binds.
+- **Crash between receipt and binding.** A retry of the same act completes the binding with no
+  gateway call.
+- **Catalog/model authority.** A refresh result + model choice at revision 1 is `current`. The
+  rotation voids both (rows `invalidated`, GET `absent`). A refresh for revision 1 is refused;
+  an explicit refresh for revision 2 creates the catalog (idempotent replay); an unlisted model
+  is refused; delete voids the authority again.
+- **No implicit effect.** With `record_catalog_refresh`, `choose_model`,
+  `HTTP(S)Connection.connect`, `socket.create_connection` and `getaddrinfo` patched to fail,
+  create → rotate → unknown rotate → fence → delete all succeed. Only
+  `store_at`/`query_record`/`retire` cross the channel, and the catalog and model tables stay
+  empty.
+- **Fence of an unknown rotation.** The store fails ambiguously before reaching the gateway, so
+  the command stays `unknown`. It blocks delete. A same-act retry only queries. An early fence is
+  `409 fence_not_due` with no gateway call. After the delay: one query, then `fenced`
+  (idempotent). A replay with a new secret is `409 fenced` (only the reconciliation query crosses
+  the channel). The delayed store is then delivered and commits at the gateway. The next owner
+  act reconciles it as `unbound_orphan`, rotates to version 3 and binds it. Version 2 was never
+  bound.
+- **Fence finding a commit.** The store and query replies are both lost. The fence's query finds
+  the command committed, the fence retires it `unbound_orphan`, and the predecessor stays bound.
+- **Fenced create.** The pending entry leaves `credentials`, appears as `fenced` in
+  `pending_acts`, and a new create binds the provider.
+- **Refusals.** Unknown intent 404; a settled act 409; `pending` → 503 `command_pending`;
+  unreachable gateway → 503 with the act still `sent`; delete acts not fenceable; malformed body
+  400; missing CSRF 403.
+- **Zero-effect status read** with binding state: with every client operation patched to fail,
+  the vault tree stays byte-identical.
+- **Migration.** A first-layout ledger gains the new columns on open.
+
+Changed existing tests:
+
+- The real-UDS `test_credential_gateway_startup`/`test_credential_gateway_main` pin the new GET
+  body (binding head revisions 1 → 2 → `revoked_pending_erasure` 3). They ran here as root.
+- `test_credential_routes_v2`'s immediate-recovery create now uses `codex`, because `claude` is
+  bound at that point.
+- Route counts: 104 → 105 installed (`credentials.fence`) in `test_first_party`,
+  `test_web_owner_integration`, `test_works_api`, `test_runs_api` and
+  `test_provider_source_startup`.
+
+Mutation checks (temporary, reverted):
+
+- Forcing every CAS to win fails the create-race and rotation-race tests.
+- Fencing without the fresh query, together with dropping the invalidation, fails the
+  catalog test and three fence tests.
+
+```text
+env -u DEEPTWIN_LIVE_ANTHROPIC_API_KEY .venv/bin/python -m pytest -q -p no:cacheprovider \
+  app/tests/test_credential_binding.py app/tests/test_credential_routes_v2.py app/tests/test_credential_routes.py
+34 passed   (3 serial repeats)
+... app/tests/test_credential_*.py test_first_party.py test_web_owner_integration.py test_server*.py
+    test_works_api.py test_runs_api.py test_provider_source_startup.py test_backup.py
+    test_first_party_dependencies.py test_router_composition.py
+524 passed, 12 skipped (the age-gated backup tests; the real-UDS tests ran as root)
+... app/tests/test_provider_*.py
+2394 passed, 1 skipped, 2 failed: test_provider_gateway_owned::test_the_state_claim_order_is_the_wire_order
+  (also fails 3/3 on the unmodified base tree here, timing-dependent) and
+  test_provider_service::test_changed_generation_during_dialogue_closes_owned_service (passed on
+  an immediate rerun). Neither module imports the changed code.
+node --test app/tests/account-credentials.test.mjs: 9 pass (account.mjs unchanged)
+ruff check (changed Python files): All checks passed
+```
+
+No `test_claude_connection*.py` file exists in this tree.
+
+Frozen identities (SHA-256; this block supersedes earlier blocks for these paths):
+
+```text
+67f8eced99b8961d908f8ad7a2c8e530f3f1d6922a6d47a179dfee199fc3c597  app/api/credential_commands.py
+336e6b2630f19333be88e243a1141618a06e94a6c483799d8e542474a7e4e483  app/api/credential_routes.py
+db50118d6c75c18f3c693eb999da24f41e74f9bc105236feba72c74c204d5872  app/api/route_contributions/credentials-v1.json
+1fe674fd42ab59c7c295884c8ab2155ea85e849ec6648c7a74f5d45f7b8d7383  app/tests/test_credential_binding.py
+5a464125ed2a0fc9d606247034f50d832741729fdc2fa18ed4fbc88ae1b5ee80  app/tests/test_credential_routes_v2.py
+0f586805b0bd2679fa6710f715b7c7bc8a15c49358a8f3d7285e5fe1ec17fae6  app/tests/test_credential_gateway_startup.py
+93a2526d8ae0e79c1cbc95a290a2504637bfa29d2acee8c49a5f482168a6ad6c  app/tests/test_credential_gateway_main.py
+d311225230c70a746ca3b898de6742c597d2ab490a4a811c353b9990f5363ecb  app/tests/test_first_party.py
+3ae7e86abf470cf3901bb7d25f58cccd60026625c722b7129bd68406f474f9cf  app/tests/test_web_owner_integration.py
+a2d1cbbddf806ccbbf6d397b52a37bab527d971c68fdf7080d3ecdab61a438c9  app/tests/test_works_api.py
+88f3dd147a01ead471de21d433f25ce6820a0844d1b0718d659417285902273f  app/tests/test_runs_api.py
+82df699fc9c7aaf8156af4e09caae8188a690af144cba455ca18c1c6640b7cbc  app/tests/test_provider_source_startup.py
+```
+
+### Still not claimed
+
+- **Binding consumers.** The binding head is control-plane authority only. The gateway's send
+  path (`delivery_for_exchange` under a lease) does not yet read it, and no `refresh_catalog`
+  route or provider list-models call through the gateway exists. Only the ledger API writes a
+  catalog. The direct-adapter `ClaudeConnection`/`model_selection` catalog is a separate,
+  unchanged authority.
+- **Gateway-side fence.** No gateway operation refuses a fenced command, so a late commit is
+  neutralized (never bound, retired `unbound_orphan` on a later owner act), not prevented.
+  Reconciliation runs only on owner acts; a gateway that never answers leaves the fence at
+  `unknown`.
+- **Owner UI.** `account.mjs` is unchanged: it neither shows `connections`/`pending_acts` nor
+  offers the fence button, and its `stored_unbound` label ("not yet used for model connection")
+  predates binding. The UI work belongs with the T023 screens.
+- **T087.** The provider-transport manifest and budget binding of the send, plus send-engine
+  composition in the gateway process, were not attempted in this slice.
+- **Other carried items.** Compose/image wiring, vault genesis in deployment,
+  erasure/`erasure_completed`, and a second-`create_app` control-plane restart test.
+- **Audit and regression.** No independent audit of this slice, and the full shared regression
+  was not re-run (only the families listed above).

@@ -224,7 +224,8 @@ def test_a_lost_store_response_is_recovered_by_query_never_by_resending(stack, k
     # a single lost reply is recovered inside the same request by the query
     spy.calls.clear()
     lose(1)
-    immediate = create(client, FIRST)
+    # (claude is bound now; one bound credential per provider connection)
+    immediate = create(client, FIRST, provider="codex")
     assert immediate.status_code == 201, immediate.text
     assert spy.calls == ["store_at", "query_record"]
 
