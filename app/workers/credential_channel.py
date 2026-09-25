@@ -280,6 +280,14 @@ class CredentialGatewayClient:
         return self._call({"schema": "credential-op-v2", "op": "bind_transport",
                            "qualification": qualification})
 
+    def transports(self) -> list:
+        """The gateway's adopted provider-transport qualifications (nonsecret; a read)."""
+        result = self._call({"schema": "credential-op-v2", "op": "transports"})
+        documents = result.get("transports")
+        if set(result) != {"transports"} or type(documents) is not list or len(documents) > 16:
+            raise GatewayServiceError("gateway transports are malformed")
+        return documents
+
     def submit(
         self,
         *,

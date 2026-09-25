@@ -4,6 +4,8 @@
   "factory": "app.api.provider_conformance:create_router",
   "routes": [
     {"route_id":"extensions.provider-conformance.execute","methods":["POST"],"path":"/api/v1/extensions/provider-conformance","auth_policy":"browser_session","required_scope":"extension.manage"},
-    {"route_id":"extensions.provider-conformance.read","methods":["GET","HEAD"],"path":"/api/v1/extensions/provider-conformance/{command_id}","auth_policy":"browser_session","required_scope":"extension.read"}
+    {"route_id":"extensions.provider-conformance.read","methods":["GET","HEAD"],"path":"/api/v1/extensions/provider-conformance/{command_id}","auth_policy":"browser_session","required_scope":"extension.read"},
+    {"route_id":"extensions.provider-transport-qualification.read","methods":["GET"],"path":"/api/v1/extensions/provider-transport-qualification","auth_policy":"browser_session","required_scope":"extension.read"},
+    {"route_id":"extensions.provider-transport-qualification.execute","methods":["POST"],"path":"/api/v1/extensions/provider-transport-qualification","auth_policy":"browser_session","required_scope":"extension.manage"}
   ]
 }

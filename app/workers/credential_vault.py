@@ -442,7 +442,7 @@ class CredentialVault:
                 ("stored_unbound", "cleanup_pending", "secret_input_lost", "pending")} | {"quarantined": self._quarantined}
 
     def capabilities(self):
-        return {"port": "credential-op-v2", "operations": ["store_at", "query_record", "retire", "bind_head", "bind_transport", "snapshot", "health", "capabilities"],
+        return {"port": "credential-op-v2", "operations": ["store_at", "query_record", "retire", "bind_head", "bind_transport", "transports", "snapshot", "health", "capabilities"],
                 "root_rotation": False, "erasure": False, "provider_resolution": False}
 
     def resolve_for_gateway(self, handle):

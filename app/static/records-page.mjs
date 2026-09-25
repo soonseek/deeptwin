@@ -15,7 +15,7 @@
 // preview and bound consent (records-retention.mjs).
 // All server text reaches the DOM through textContent only.
 
-import { createAccountPanel, createCredentialsPanel } from './account.mjs';
+import { createAccountPanel, createCredentialsPanel, createTransportQualificationPanel } from './account.mjs';
 import { createBackupPanel } from './records-backup.mjs';
 import { createRetentionPanel } from './records-retention.mjs';
 import { createUpdatePanel } from './records-update.mjs';
@@ -32,6 +32,7 @@ export const PAGE_SIZE = '50';
 export const ACCOUNT_MOUNT_ID = 'records-account';
 export const CONNECTION_MOUNT_ID = 'records-connection';
 export const CREDENTIALS_MOUNT_ID = 'records-credentials';
+export const TRANSPORT_MOUNT_ID = 'records-transport-qualification';
 // T023: the owner's run budgets (budget-policy.mjs), optional like the panels above
 export const BUDGETS_MOUNT_ID = 'records-budgets';
 // T072: the read-only web-release update guidance (records-update.mjs)
@@ -166,6 +167,15 @@ export async function boot({ document, location, fetch, crypto = globalThis.cryp
   const credentials = credentialsRoot !== null && typeof credentialsRoot?.replaceChildren === 'function'
     ? createCredentialsPanel({ root: credentialsRoot, document, fetch, basePath, session }) : null;
   if (credentials !== null) await credentials.load().catch(() => {});
+  // the gateway's transport qualification sits under the credentials it gates (T087/T090)
+  let transport = null;
+  if (credentials !== null && typeof credentialsRoot.append === 'function') {
+    const transportRoot = document.createElement('div');
+    transportRoot.id = TRANSPORT_MOUNT_ID;
+    credentialsRoot.append(transportRoot);
+    transport = createTransportQualificationPanel({ root: transportRoot, document, fetch, basePath, session });
+    await transport.load().catch(() => {});
+  }
   const budgetsRoot = document.getElementById(BUDGETS_MOUNT_ID);
   const budgets = budgetsRoot !== null && typeof budgetsRoot?.replaceChildren === 'function'
     && typeof crypto?.randomUUID === 'function'
@@ -184,7 +194,7 @@ export async function boot({ document, location, fetch, crypto = globalThis.cryp
   if (update !== null) await update.load().catch(() => {});
   const log = createEventLog({ root: roots.logs, document, request: session.request, basePath });
   await log.load().catch(() => {});
-  return Object.freeze({ established: true, basePath, sections, log, account, connection, credentials, budgets, backup,
+  return Object.freeze({ established: true, basePath, sections, log, account, connection, credentials, transport, budgets, backup,
     retention, update });
 }
 

@@ -31,11 +31,23 @@ client (`bind_transport`) when a publisher is composed. Re-qualifying the same r
 manifest is idempotent: it returns, and republishes, the same record. A manifest whose
 bytes differ from the digest the owner names is refused `conflict`. Nothing here contacts
 a provider origin.
+
+The owner path (`app/api/provider_transport_qualification.py`) reads :meth:`state` (the
+digest, the requirements, the prerequisite with the run that meets it, the newest sealed
+qualification and the gateway's adopted document through the client's `transports` read)
+and runs :meth:`qualify`. Every refusal carries a ``reason`` naming what is missing
+(`verified_installation_missing`, `conformance_run_missing`, `conformance_run_unmatched`,
+`conformance_admission_stale`) or wrong (`manifest_changed`,
+`transport_conformance_failed`, `command_conflict`). The command id is replay-safe: its
+first successful use seals a `provider-transport-qualification-command-record-v1` naming
+the qualification it produced; the same command re-checks the evidence and answers that
+qualification, and the same id with another request is refused.
 """
 
 from __future__ import annotations
 
 import http.client
+import re
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -47,6 +59,7 @@ from ..domain.refs import EntityRef, canonical_json, parse_canonical, uuid_strin
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import _writer
 from ..workers.provider_transport_manifest import (
+    MANIFEST_SCHEMA,
     QUALIFICATION_SCHEMA,
     TransportManifest,
     TransportManifestError,
@@ -61,6 +74,8 @@ from .provider_conformance_vectors import SUITE_SHA256, fixed_vectors
 
 COMMAND_SCHEMA = "provider-transport-qualification-command-v1"
 RECORD_SCHEMA = "provider-transport-qualification-record-v1"
+COMMAND_RECORD_SCHEMA = "provider-transport-qualification-command-record-v1"
+STATE_SCHEMA = "provider-transport-qualification-state-v1"
 RESULT_SCHEMA = "provider-transport-conformance-result-v1"
 TRANSPORT_SUITE_VERSION = "provider-transport-conformance-v1"
 TRANSPORT_SUITE_SHA256 = sha256(canonical_json({
@@ -71,16 +86,27 @@ TRANSPORT_SUITE_SHA256 = sha256(canonical_json({
 })).hexdigest()
 CONFORMANCE_CREDENTIAL = "deeptwin-transport-conformance-v1"
 _MOCK_DEADLINE_SECONDS = 5
+_HEX64 = re.compile(r"[0-9a-f]{64}\Z")
+
+
+# Why an owner act was refused, beyond its code: the prerequisite that is missing (the
+# owner path names it), a manifest that changed, a failed transport conformance, or a
+# command id reused for a different request.
+PREREQUISITES = ("met", "verified_installation_missing", "conformance_run_missing",
+                 "conformance_run_unmatched", "conformance_admission_stale")
+REASONS = (*PREREQUISITES[1:], "manifest_changed", "transport_conformance_failed",
+           "command_conflict")
 
 
 class TransportQualificationError(ValueError):
     CODES = ("invalid_input", "unauthenticated", "access_denied", "not_found", "conflict",
              "unavailable")
 
-    def __init__(self, code="invalid_input"):
+    def __init__(self, code="invalid_input", reason=None):
         if code not in self.CODES:
             code = "unavailable"
         self.code = code
+        self.reason = reason if reason in REASONS else None
         super().__init__(code)
 
 
@@ -247,61 +273,215 @@ def run_transport_conformance(manifest: TransportManifest) -> bytes:
                            "matched_count": sum(row["matched"] for row in rows)})
 
 
+
+
 def _parse_command(payload):
+    """The command; ``conformance_command_id`` is ``None`` only when the owner has no run to
+    name (the act then refuses with the missing prerequisite)."""
     if (type(payload) is not dict
             or set(payload) != {"schema_version", "command_id", "conformance_command_id",
                                 "manifest_sha256"}
             or payload["schema_version"] != COMMAND_SCHEMA
-            or type(payload["manifest_sha256"]) is not str or len(payload["manifest_sha256"]) != 64):
+            or type(payload["manifest_sha256"]) is not str
+            or _HEX64.fullmatch(payload["manifest_sha256"]) is None):
         raise TransportQualificationError("invalid_input")
     try:
         uuid_string(payload["command_id"])
-        uuid_string(payload["conformance_command_id"])
+        if payload["conformance_command_id"] is not None:
+            uuid_string(payload["conformance_command_id"])
     except (ValueError, TypeError):
         raise TransportQualificationError("invalid_input") from None
     return dict(payload)
 
 
 class PersistentTransportQualification:
-    """The owner's qualification act for the shipped provider-transport manifest."""
+    """The owner's qualification act for the shipped provider-transport manifest.
 
-    def __init__(self, conformance_service, *, publisher=None, manifest_loader=claude_api_manifest):
+    ``publisher`` is the credential gateway client's ``bind_transport``; ``reader`` its
+    ``transports`` read (the gateway's adopted documents). Either is ``None`` when the host
+    attached no gateway: the act still seals the record, and the state says the gateway is
+    unavailable."""
+
+    def __init__(self, conformance_service, *, publisher=None, reader=None,
+                 manifest_loader=claude_api_manifest):
         from .provider_conformance_service import PersistentProviderConformance
 
         if type(conformance_service) is not PersistentProviderConformance:
             raise TransportQualificationError("unavailable")
         if publisher is not None and not callable(publisher):
             raise TransportQualificationError("unavailable")
+        if reader is not None and not callable(reader):
+            raise TransportQualificationError("unavailable")
         self._conformance = conformance_service
         self._domain = conformance_service._domain
         self._publisher = publisher
+        self._reader = reader
         self._manifest_loader = manifest_loader
+
+    def _manifest(self):
+        try:
+            return self._manifest_loader()
+        except (TransportManifestError, OSError):
+            raise TransportQualificationError("unavailable") from None
+
+    def _verified_installation_exists(self, db):
+        return db.execute(
+            "SELECT 1 FROM domain_records WHERE vault_id=? AND kind='extension_installation' "
+            "AND version=2 LIMIT 1", (self._domain._read_roots(db).genesis.id,)).fetchone() is not None
 
     def _installation_evidence(self, db, conformance_command_id):
         row = db.execute("SELECT * FROM provider_conformance_runs WHERE command_id=?",
                          (conformance_command_id,)).fetchone()
         if row is None:
-            raise TransportQualificationError("not_found")
+            raise TransportQualificationError(
+                "not_found", "conformance_run_missing" if self._verified_installation_exists(db)
+                else "verified_installation_missing")
         reply = self._conformance._row_reply(row)
         if (reply.get("schema_version") != "provider-conformance-reply-v2"
                 or reply["state"] != "matched" or reply["completed_count"] != 4
                 or reply["matched_count"] != 4 or reply["suite_sha256"] != SUITE_SHA256):
             # only a complete match over a verified installation qualifies
-            raise TransportQualificationError("conflict")
+            raise TransportQualificationError("conflict", "conformance_run_unmatched")
         staged = EntityRef.from_dict(reply["staged_installation_ref"])
         verified = EntityRef.from_dict(reply["verified_installation_ref"])
         try:
             admission = resolve_verified_admission(self._conformance._prepare, db, staged, verified)
-        except ConformanceError:
-            raise TransportQualificationError("conflict") from None
+        except ConformanceError as error:
+            raise TransportQualificationError(
+                "conflict", "conformance_admission_stale" if error.code == "conflict" else None
+            ) from None
         if sha256(canonical_json(admission.as_dict())).hexdigest() != reply["admission_sha256"]:
             # the installation head or its release sources moved since the run
-            raise TransportQualificationError("conflict")
+            raise TransportQualificationError("conflict", "conformance_admission_stale")
         return {"command_id": conformance_command_id,
                 "staged_installation_ref": staged.as_dict(),
                 "verified_installation_ref": verified.as_dict(),
                 "result_ref": reply["result_ref"], "suite_sha256": reply["suite_sha256"],
                 "completed_count": 4, "matched_count": 4}
+
+    def _eligible(self, db):
+        """The newest matched verified run that qualifies now, and the prerequisite state."""
+        rows = db.execute("SELECT command_id, state FROM provider_conformance_runs "
+                          "ORDER BY admitted_ms DESC, command_id").fetchall()
+        reasons = set()
+        for row in rows:
+            if row["state"] != "matched":
+                reasons.add("conformance_run_unmatched")
+                continue
+            try:
+                return self._installation_evidence(db, row["command_id"]), "met"
+            except TransportQualificationError as error:
+                reasons.add(error.reason or "conformance_admission_stale")
+        if "conformance_admission_stale" in reasons:
+            return None, "conformance_admission_stale"
+        if not self._verified_installation_exists(db):
+            return None, "verified_installation_missing"
+        return None, "conformance_run_unmatched" if reasons else "conformance_run_missing"
+
+    @staticmethod
+    def _record_id(manifest, conformance_command_id):
+        return str(uuid5(NAMESPACE_URL, "deeptwin:provider-transport-qualification:"
+                         f"{manifest.manifest_sha256}:{conformance_command_id}"))
+
+    def _record(self, db, roots, record_id):
+        row = db.execute("SELECT version, sha256 FROM domain_records WHERE vault_id=? AND "
+                         "kind='validation_report' AND id=?", (roots.genesis.id, record_id)).fetchone()
+        if row is None:
+            return None
+        return self._domain._load(
+            db, EntityRef("validation_report", record_id, row["version"], row["sha256"]), roots)[0]
+
+    def _latest(self, db, manifest):
+        """The newest sealed qualification of this manifest (any retained run)."""
+        roots = self._domain._read_roots(db)
+        latest = None
+        for row in db.execute("SELECT command_id FROM provider_conformance_runs").fetchall():
+            record = self._record(db, roots, self._record_id(manifest, row["command_id"]))
+            if record is None:
+                continue
+            content = record.body["content"]
+            if (content.get("schema_version") != RECORD_SCHEMA
+                    or content.get("manifest_sha256") != manifest.manifest_sha256):
+                raise TransportQualificationError("unavailable")
+            if latest is None or content["qualified_at_ms"] > latest["revision"]:
+                latest = {"revision": content["qualified_at_ms"],
+                          "qualification_ref": record.ref.as_dict(),
+                          "conformance_command_id": row["command_id"]}
+        return latest
+
+    def _command(self, db, roots, command, request_sha256):
+        """The qualification a replayed command id already produced, or None (first use);
+        a command id reused for a different request is refused."""
+        record = self._record(db, roots, str(uuid5(
+            NAMESPACE_URL, f"deeptwin:provider-transport-qualification-command:{command['command_id']}")))
+        if record is None:
+            return None
+        content = record.body["content"]
+        if (content.get("schema_version") != COMMAND_RECORD_SCHEMA
+                or content.get("request_sha256") != request_sha256):
+            raise TransportQualificationError("conflict", "command_conflict")
+        return EntityRef.from_dict(content["qualification_ref"])
+
+    def _adopted(self, manifest):
+        """The gateway's adopted qualification of this provider (read, never inferred)."""
+        if self._reader is None:
+            return {"state": "unavailable", "revision": None, "manifest_sha256": None}
+        try:
+            documents = self._reader()
+            if type(documents) is not list:
+                raise TypeError
+            adopted = [parse_qualification(document) for document in documents]
+        except Exception:  # noqa: BLE001 - an unreachable or malformed gateway read is unavailable
+            return {"state": "unavailable", "revision": None, "manifest_sha256": None}
+        for document in adopted:
+            if document["provider"] == manifest.provider:
+                return {"state": ("adopted" if document["manifest_sha256"] == manifest.manifest_sha256
+                                  else "adopted_other_manifest"),
+                        "revision": document["revision"],
+                        "manifest_sha256": document["manifest_sha256"]}
+        return {"state": "not_adopted", "revision": None, "manifest_sha256": None}
+
+    def state(self, authenticated_request):
+        """The owner's view: the shipped manifest's digest, what qualification requires,
+        the prerequisite state (with the run that meets it), the newest sealed
+        qualification and what the gateway adopted. No provider or mock is contacted."""
+        manifest = self._manifest()
+        try:
+            with _writer(), self._domain._connection(write=True) as db:
+                self._conformance._authenticate(authenticated_request, db, read=True)
+                eligible, prerequisite = self._eligible(db)
+                latest = self._latest(db, manifest)
+        except TransportQualificationError:
+            raise
+        except ConformanceError as error:
+            raise TransportQualificationError(error.code) from None
+        except (TransportManifestError, ValueError, TypeError, KeyError, OSError):
+            raise TransportQualificationError("unavailable") from None
+        gateway = self._adopted(manifest)
+        reason = (None if gateway["state"] == "adopted"
+                  else "gateway_unavailable" if gateway["state"] == "unavailable"
+                  else "manifest_changed" if gateway["state"] == "adopted_other_manifest"
+                  else "not_published" if latest is not None else "not_qualified")
+        return {
+            "schema_version": STATE_SCHEMA, "provider": manifest.provider,
+            "manifest_schema": MANIFEST_SCHEMA, "manifest_sha256": manifest.manifest_sha256,
+            "api_origin": manifest.api_origin,
+            "requirements": {
+                "installation_conformance": {
+                    "command_schema": "provider-conformance-command-v2",
+                    "verified_installation": True, "suite_sha256": SUITE_SHA256,
+                    "matched_count": 4, "admission": "current"},
+                "transport_conformance": {
+                    "suite_version": TRANSPORT_SUITE_VERSION,
+                    "suite_sha256": TRANSPORT_SUITE_SHA256, "matched_count": 4,
+                    "provider": "offline_loopback_mock"}},
+            "prerequisite": prerequisite,
+            "eligible_conformance": None if eligible is None else {
+                "command_id": eligible["command_id"],
+                "verified_installation_ref": eligible["verified_installation_ref"],
+                "result_ref": eligible["result_ref"]},
+            "qualification": latest, "gateway": gateway,
+            "state": "qualified" if reason is None else "unqualified", "reason": reason}
 
     @staticmethod
     def _document(record):
@@ -318,51 +498,58 @@ class PersistentTransportQualification:
                 "completed_count": transport["completed_count"],
                 "matched_count": transport["matched_count"]}})
 
+    @staticmethod
+    def _timestamp(now):
+        return now.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+
     def qualify(self, authenticated_request, payload):
         """Qualify the shipped manifest from a matched verified conformance run, seal the
-        record and publish the gateway document; returns the document and publication."""
+        record and publish the gateway document; returns the document and publication.
+
+        The command id is replay-safe: its first use seals a command record naming the
+        qualification it produced; the same command again re-checks the evidence and
+        answers (and republishes) that same qualification, and the same id with a
+        different request is refused ``conflict`` (``command_conflict``)."""
         command = _parse_command(payload)
+        request_sha256 = sha256(canonical_json(command)).hexdigest()
+        manifest = self._manifest()
         try:
-            manifest = self._manifest_loader()
-        except (TransportManifestError, OSError):
-            raise TransportQualificationError("unavailable") from None
-        if manifest.manifest_sha256 != command["manifest_sha256"]:
-            # the manifest the owner reviewed is not the one shipped (it changed)
-            raise TransportQualificationError("conflict")
-        record_id = str(uuid5(NAMESPACE_URL, "deeptwin:provider-transport-qualification:"
-                              f"{manifest.manifest_sha256}:{command['conformance_command_id']}"))
-        try:
+            if command["conformance_command_id"] is None:
+                # the owner has no run to name: refuse with the prerequisite that is missing
+                with _writer(), self._domain._connection(write=True) as db:
+                    self._conformance._authenticate(authenticated_request, db)
+                    _eligible, prerequisite = self._eligible(db)
+                if prerequisite == "met":
+                    raise TransportQualificationError("invalid_input")
+                raise TransportQualificationError("conflict", prerequisite)
+            if manifest.manifest_sha256 != command["manifest_sha256"]:
+                # the manifest the owner reviewed is not the one shipped (it changed)
+                raise TransportQualificationError("conflict", "manifest_changed")
+            record_id = self._record_id(manifest, command["conformance_command_id"])
             with _writer(), self._domain._connection(write=True) as db:
                 self._conformance._authenticate(authenticated_request, db)
+                roots = self._domain._read_roots(db)
+                self._command(db, roots, command, request_sha256)
                 installation = self._installation_evidence(db, command["conformance_command_id"])
-                existing = db.execute(
-                    "SELECT version, sha256 FROM domain_records WHERE vault_id=? AND "
-                    "kind='validation_report' AND id=?",
-                    (self._domain._read_roots(db).genesis.id, record_id)).fetchone()
+                existing = self._record(db, roots, record_id)
             if existing is None:
                 # offline: the loopback mock only, no provider origin
                 result = run_transport_conformance(manifest)
                 parsed = parse_canonical(result)
                 if parsed["completed_count"] != 4 or parsed["matched_count"] != 4:
-                    raise TransportQualificationError("conflict")
+                    raise TransportQualificationError("conflict", "transport_conformance_failed")
             with _writer(), self._domain._connection(write=True) as db:
                 _actor, actor_ref = self._conformance._authenticate(authenticated_request, db)
                 if self._installation_evidence(db, command["conformance_command_id"]) != installation:
-                    raise TransportQualificationError("conflict")
+                    raise TransportQualificationError("conflict", "conformance_admission_stale")
                 roots = self._domain._read_roots(db)
-                row = db.execute("SELECT version, sha256 FROM domain_records WHERE vault_id=? AND "
-                                 "kind='validation_report' AND id=?",
-                                 (roots.genesis.id, record_id)).fetchone()
-                if row is not None:
-                    record = self._domain._load(
-                        db, EntityRef("validation_report", record_id, row["version"], row["sha256"]),
-                        roots)[0]
-                else:
-                    now = datetime.now(UTC)
+                replayed = self._command(db, roots, command, request_sha256)
+                record = self._record(db, roots, record_id)
+                now = datetime.now(UTC)
+                if record is None:
                     record = ImmutableRecord.create(
                         kind="validation_report", id=record_id, version=1,
-                        created_at_utc=now.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z",
-                        actor_ref=actor_ref,
+                        created_at_utc=self._timestamp(now), actor_ref=actor_ref,
                         parent_refs=(EntityRef.from_dict(installation["verified_installation_ref"]),
                                      EntityRef.from_dict(installation["result_ref"])),
                         purpose="operational", access_policy_ref=roots.access_policy,
@@ -374,6 +561,21 @@ class PersistentTransportQualification:
                                  "transport_conformance_result": result.decode("utf-8"),
                                  "qualified_at_ms": int(now.timestamp() * 1000)})
                     self._domain._put_in_transaction(db, record)
+                if replayed is None:
+                    self._domain._put_in_transaction(db, ImmutableRecord.create(
+                        kind="validation_report", id=str(uuid5(
+                            NAMESPACE_URL, "deeptwin:provider-transport-qualification-command:"
+                            f"{command['command_id']}")), version=1,
+                        created_at_utc=self._timestamp(now), actor_ref=actor_ref,
+                        parent_refs=(record.ref,), purpose="operational",
+                        access_policy_ref=roots.access_policy,
+                        retention_policy_ref=roots.retention_policy,
+                        content={"schema_version": COMMAND_RECORD_SCHEMA,
+                                 "command_id": command["command_id"],
+                                 "request_sha256": request_sha256,
+                                 "qualification_ref": record.ref.as_dict()}))
+                elif replayed != record.ref:
+                    raise TransportQualificationError("conflict", "command_conflict")
                 document = self._document(record)
         except TransportQualificationError:
             raise
@@ -392,8 +594,12 @@ class PersistentTransportQualification:
 
 
 __all__ = [
+    "COMMAND_RECORD_SCHEMA",
     "COMMAND_SCHEMA",
     "CONFORMANCE_CREDENTIAL",
+    "PREREQUISITES",
+    "REASONS",
+    "STATE_SCHEMA",
     "TRANSPORT_SUITE_SHA256",
     "PersistentTransportQualification",
     "TransportQualificationError",

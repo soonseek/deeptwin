@@ -18,10 +18,17 @@ test_credential_gateway_persistence, in this process). Test-owned substitutions 
 - the gateway's provider-send path (`ProviderSendService` over the same vault, reached by a
   `ProviderSendClient` on socket pairs) is bound to a loopback mock of the provider's
   models endpoint in this process (`MockModels`), never a real provider;
-- the gateway vault adopts a synthetic `provider-transport-qualification-v1` document of
-  the shipped manifest (the real qualification act needs a verified extension
-  installation, which this fixture does not stage); every catalog page is still reserved
-  in the app's own budget book by the product composition;
+- the gateway vault starts unqualified, so the product's transport-qualification section
+  shows the real unqualified state and the real qualification act refuses naming the
+  missing verified installation (this fixture stages none: the verified installation and
+  matched conformance run of `installation_case` need its pytest-owned release tree,
+  monkeypatched publication/source fixtures and retained framed conformance worker, which
+  this standalone server cannot compose). `POST /__test__/adopt-synthetic-transport` (a
+  wrapper route, not a product route) then makes the gateway adopt a synthetic
+  `provider-transport-qualification-v1` document of the shipped manifest, as the
+  authenticated control side would publish it; the section reads that adoption back
+  through the product route. Every catalog page is still reserved in the app's own budget
+  book by the product composition;
 - `GET /__test__/upstream` (a wrapper route in front of the app, not a product route) only
   reports how many requests the mock provider received and how many carried the key the
   gateway currently binds (counts, never the key).
@@ -103,6 +110,9 @@ class ScriptedClient:
     def bind_transport(self, **kwargs):
         return self._client.bind_transport(**kwargs)
 
+    def transports(self):
+        return self._client.transports()
+
 
 class MockModels:
     """A loopback mock of the provider's models endpoint: one page of synthetic models."""
@@ -138,16 +148,21 @@ class MockModels:
         self.server.server_close()
 
 
-def with_upstream_route(app, upstream):
-    """The app, with one observation-only test route in front of it (never the product):
-    how many requests the mock provider received, and how many distinct keys they carried
-    (counts only, never a key)."""
+def with_upstream_route(app, upstream, adopt):
+    """The app, with two test routes in front of it (never the product): how many requests
+    the mock provider received and how many distinct keys they carried (counts only, never
+    a key), and the synthetic transport adoption (`adopt`, the fixture's stand-in for a
+    qualification this fixture cannot stage)."""
 
     async def wrapper(scope, receive, send):
-        if scope["type"] != "http" or scope["path"] != "/__test__/upstream" or scope["method"] != "GET":
+        routes = {("/__test__/upstream", "GET"), ("/__test__/adopt-synthetic-transport", "POST")}
+        if scope["type"] != "http" or (scope["path"], scope["method"]) not in routes:
             return await app(scope, receive, send)
-        payload = {"requests": len(upstream.keys),
-                   "distinct_keys": len({key for key in upstream.keys if key is not None})}
+        if scope["method"] == "POST":
+            payload = {"revision": adopt()["revision"]}
+        else:
+            payload = {"requests": len(upstream.keys),
+                       "distinct_keys": len({key for key in upstream.keys if key is not None})}
         data = json.dumps(payload).encode()
         await send({"type": "http.response.start", "status": 200,
                     "headers": [(b"content-type", b"application/json")]})
@@ -167,11 +182,9 @@ def main():
     (owned / "gateway").mkdir(mode=0o700)
     (owned / "ledger").mkdir(mode=0o700)
     gateway = Gateway(owned / "gateway")
-    # the gateway sends only through a qualified provider-transport manifest (T087); the
-    # fixture adopts a synthetic qualification document of the shipped manifest, as the
-    # authenticated control side would publish it (test_provider_transport_manifest runs
-    # the real qualification act)
-    qualify_vault(gateway.vault)
+    # the gateway sends only through a qualified provider-transport manifest (T087); it
+    # starts unqualified, and only the test route adopts a synthetic document of the shipped
+    # manifest (test_provider_transport_qualification_routes runs the real act end to end)
     ledger_path = owned / "ledger" / credential_wiring.LEDGER_NAME
     ledger = CredentialCommandLedger(ledger_path, fence_after_seconds=args.fence_delay_seconds)
     credential_gateway_service._write_logical_connection = _reply
@@ -198,7 +211,8 @@ def main():
                          pair_root=str(owned / "gateway" / "pair"), requester_boot_id="fixture-control-boot"))
     print(f"CREDENTIALS_URL={profile.http_origin}{profile.base_path}", flush=True)
     try:
-        uvicorn.Server(uvicorn.Config(with_upstream_route(app, upstream), log_level="warning",
+        uvicorn.Server(uvicorn.Config(with_upstream_route(app, upstream, lambda: qualify_vault(gateway.vault)),
+                                      log_level="warning",
                                       access_log=False, timeout_graceful_shutdown=3)).run(sockets=[sock])
     finally:
         sock.close()

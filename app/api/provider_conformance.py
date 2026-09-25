@@ -33,13 +33,20 @@ def conformance_services(context, *, dependencies):
         prepare_service=prepare, source_context=source)
     # T087 -> T090: the owner's qualification of the shipped provider-transport manifest
     # from a matched verified run; the gateway document is published through the
-    # credential gateway client when the host attached one (no HTTP route yet)
+    # credential gateway client (`bind_transport`) and the gateway's adopted documents are
+    # read back (`transports`) when the host attached one. Its owner routes
+    # (`provider_transport_qualification`) are part of this contribution.
     from ..extensions.provider_transport_qualification import PersistentTransportQualification
+    from .provider_transport_qualification import create_router as qualification_router
 
     attachment = context.credential_gateway
-    publisher = None if attachment is None else getattr(attachment.client, "bind_transport", None)
-    qualification = PersistentTransportQualification(service, publisher=publisher)
-    return ContributionServices(create_router(service=service, base_path=context.base_path),
+    client = None if attachment is None else attachment.client
+    qualification = PersistentTransportQualification(
+        service, publisher=getattr(client, "bind_transport", None),
+        reader=getattr(client, "transports", None))
+    router = create_router(service=service, base_path=context.base_path)
+    router.include_router(qualification_router(service=qualification))
+    return ContributionServices(router,
         {"provider-conformance.service": service,
          "provider-transport-qualification.service": qualification})
 

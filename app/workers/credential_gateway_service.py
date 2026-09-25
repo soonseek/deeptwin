@@ -60,6 +60,7 @@ class CredentialGatewayService:
             "retire": {"schema", "op", "command_id", "record", "reason"},
             "bind_head": {"schema", "op", "provider", "revision", "state", "record"},
             "bind_transport": {"schema", "op", "qualification"},
+            "transports": {"schema", "op"},
             "snapshot": {"schema", "op"},
             "health": {"schema", "op"},
             "capabilities": {"schema", "op"},
@@ -79,6 +80,8 @@ class CredentialGatewayService:
                                          state=request["state"], record=request["record"])
         if operation == "bind_transport":
             return self._vault.bind_transport(qualification=request["qualification"])
+        if operation == "transports":
+            return {"transports": self._vault.transports()}
         if operation == "snapshot":
             return {"credentials": self._vault.snapshot()}
         if operation == "health":

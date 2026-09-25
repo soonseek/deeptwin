@@ -688,3 +688,211 @@ export function createCredentialsPanel({ root, document, fetch, basePath = '/', 
     get connections() { return connections.map(entry => ({ ...entry, models: [...entry.models] })); },
     get pendingActs() { return pendingActs.map(entry => ({ ...entry })); } });
 }
+
+// T087 -> T090: the owner's qualification of the gateway's provider-transport manifest
+// (/api/v1/extensions/provider-transport-qualification). The gateway refuses every send
+// (`transport_unqualified`) until it has adopted a qualification naming the digest of the
+// manifest its transport was built from. The read shows that digest, what a qualification
+// requires, whether the prerequisite (a matched 4/4 conformance run over a verified
+// installation whose admission is still current) is met, the newest sealed qualification
+// and what the gateway adopted. "전송 매니페스트 검증" names the run the read offered (or
+// none, and the server then says which prerequisite is missing); the server runs the
+// offline transport conformance against its own loopback mock provider, seals the record
+// and publishes it to the gateway. No provider is contacted. An answer the page could not
+// read is retried under the same command id, which only returns the same qualification.
+
+export const TRANSPORT_QUALIFICATION_MESSAGES = Object.freeze({
+  intro: '게이트웨이는 제공자 전송 매니페스트의 검증(qualification)을 채택하기 전까지 저장된 키로 어떤 요청도 보내지 않습니다(transport_unqualified). 검증에는 검증된 제공자 설치에서 4개 벡터를 모두 통과한 적합성 검사와, 이 매니페스트를 로컬 모의 제공자에 대고 오프라인으로 돌리는 전송 적합성 검사가 필요합니다. 검증하는 동안 실제 제공자에게는 아무것도 보내지 않습니다.',
+  manifest: digest => `전송 매니페스트 SHA-256: ${digest}`,
+  requirement: '요구 조건: 검증된 설치(verified installation)에서 matched 4/4인 적합성 검사, 그 설치의 헤드와 릴리스 소스가 검사 뒤 그대로일 것, 오프라인 전송 적합성 검사 4/4.',
+  prerequisite: Object.freeze({
+    met: run => `충족: 검증된 설치에서 4/4로 통과한 적합성 검사가 있습니다 (실행 ${run}).`,
+    verified_installation_missing: '미충족: 검증된 제공자 설치가 없습니다.',
+    conformance_run_missing: '미충족: 검증된 설치에 대한 적합성 검사 실행이 없습니다.',
+    conformance_run_unmatched: '미충족: 검증된 설치에서 4/4로 통과한 적합성 검사가 없습니다.',
+    conformance_admission_stale: '미충족: 적합성 검사 뒤 설치 헤드나 릴리스 소스가 바뀌었습니다.',
+  }),
+  sealed: (revision, run) => `봉인된 검증 기록: 수정본 ${revision} (적합성 검사 ${run})`,
+  unsealed: '봉인된 검증 기록: 없음',
+  gateway: Object.freeze({
+    adopted: revision => `게이트웨이가 이 매니페스트의 검증을 채택했습니다 (수정본 ${revision}).`,
+    adopted_other_manifest: revision => `게이트웨이가 채택한 검증(수정본 ${revision})은 다른 매니페스트의 것입니다.`,
+    not_adopted: () => '게이트웨이가 채택한 검증이 없습니다.',
+    unavailable: () => '게이트웨이 상태를 읽지 못했습니다(연결되어 있지 않거나 응답하지 않음).',
+  }),
+  state: Object.freeze({
+    qualified: '검증됨: 게이트웨이가 이 매니페스트로 요청을 보낼 수 있습니다.',
+    gateway_unavailable: '검증되지 않음: 자격증명 게이트웨이를 쓸 수 없습니다.',
+    manifest_changed: '검증되지 않음: 게이트웨이가 채택한 검증이 지금 매니페스트와 다릅니다.',
+    not_published: '검증되지 않음: 검증 기록은 봉인됐지만 게이트웨이가 아직 채택하지 않았습니다. 다시 검증하면 같은 기록을 다시 보냅니다.',
+    not_qualified: '검증되지 않음: 이 매니페스트의 검증 기록이 없습니다.',
+  }),
+  working: '검증하는 중… (오프라인 전송 적합성 검사)',
+  published: revision => `전송 매니페스트를 검증했고 게이트웨이가 채택했습니다 (수정본 ${revision}).`,
+  unpublished: revision => `검증 기록(수정본 ${revision})은 봉인했지만 게이트웨이에 반영하지 못했습니다. 다시 누르면 같은 기록을 다시 보냅니다.`,
+});
+
+// the server's exact refusal texts (the route answers the same message for each code)
+export const TRANSPORT_QUALIFICATION_ERRORS = Object.freeze({
+  verified_installation_missing: '검증된 제공자 설치(verified installation)가 없어 전송 매니페스트를 검증하지 않았습니다. 먼저 제공자 설치를 검증하고, 그 설치로 제공자 적합성 검사를 실행해 주세요.',
+  conformance_run_missing: '검증된 설치에 대한 제공자 적합성 검사(conformance) 실행이 없어 전송 매니페스트를 검증하지 않았습니다. 먼저 적합성 검사를 실행해 주세요.',
+  conformance_run_unmatched: '검증된 설치에서 4개 벡터를 모두 통과한(matched 4/4) 제공자 적합성 검사가 없어 전송 매니페스트를 검증하지 않았습니다.',
+  conformance_admission_stale: '적합성 검사 뒤 설치 헤드나 릴리스 소스가 바뀌어 그 검사로는 검증하지 않았습니다. 현재 설치로 적합성 검사를 다시 실행해 주세요.',
+  manifest_changed: '검토한 전송 매니페스트가 지금 배포된 매니페스트와 다릅니다. 상태를 다시 읽고 다시 검증해 주세요.',
+  transport_conformance_failed: '전송 매니페스트가 오프라인 전송 적합성 검사(로컬 모의 제공자)를 통과하지 못해 검증하지 않았습니다.',
+  command_conflict: '이 요청 ID는 이미 다른 내용으로 쓰였습니다. 새 요청으로 다시 시도해 주세요.',
+  invalid_input: '전송 매니페스트 검증 요청 형식을 확인해 주세요.',
+  unauthenticated: '세션이 끝났습니다. 시작 화면(./)에서 다시 로그인해 주세요.',
+  access_denied: '이 요청은 허용되지 않았습니다.',
+  unavailable: '전송 매니페스트 검증을 처리하지 못했습니다.',
+});
+
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+const QUALIFICATION_REASONS = new Set(['gateway_unavailable', 'manifest_changed', 'not_published', 'not_qualified']);
+
+function validQualificationState(value) {
+  return value !== null && typeof value === 'object'
+    && value.schema_version === 'provider-transport-qualification-state-v1'
+    && SHA256_HEX.test(value.manifest_sha256)
+    && Object.hasOwn(TRANSPORT_QUALIFICATION_MESSAGES.prerequisite, value.prerequisite)
+    && ((value.prerequisite === 'met') === (value.eligible_conformance !== null))
+    && (value.eligible_conformance === null || INTENT_ID.test(value.eligible_conformance?.command_id))
+    && (value.qualification === null || (Number.isInteger(value.qualification?.revision)
+      && INTENT_ID.test(value.qualification?.conformance_command_id)))
+    && Object.hasOwn(TRANSPORT_QUALIFICATION_MESSAGES.gateway, value.gateway?.state)
+    && (value.gateway.revision === null || Number.isInteger(value.gateway.revision))
+    && (value.reason === null ? value.state === 'qualified'
+      : QUALIFICATION_REASONS.has(value.reason) && value.state === 'unqualified');
+}
+
+export function createTransportQualificationPanel({ root, document, fetch, basePath = '/', session,
+  randomUUID = () => globalThis.crypto.randomUUID() } = {}) {
+  if (typeof root?.replaceChildren !== 'function') fail('a root is required');
+  if (typeof fetch !== 'function') fail('a fetch function is required');
+  if (typeof session?.csrfToken !== 'function') fail('a session adapter is required');
+  if (typeof randomUUID !== 'function') fail('a UUID source is required');
+  const path = `${basePath.slice(0, -1)}/api/v1/extensions/provider-transport-qualification`;
+  let current = null;
+  let unanswered = null;  // the body of an act whose answer the page could not read
+
+  function element(tag, text, attributes = {}) {
+    const node = document.createElement(tag);
+    if (text !== undefined) node.textContent = text;
+    for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
+    return node;
+  }
+
+  // not role=status: the credentials panel above keeps the section's one status line
+  const line = element('p', '', { 'aria-live': 'polite', 'data-transport-line': '' });
+  const facts = element('ul', undefined, { 'aria-label': '전송 매니페스트 검증 상태' });
+  const qualify = element('button', '전송 매니페스트 검증', { type: 'button', 'data-act': 'transport-qualify' });
+  const reread = element('button', '검증 상태 다시 읽기', { type: 'button' });
+  root.replaceChildren(element('h3', '제공자 전송 매니페스트 검증'),
+    element('p', TRANSPORT_QUALIFICATION_MESSAGES.intro), facts, line, qualify, reread);
+
+  function say(text, state) {
+    line.textContent = text;
+    line.dataset.state = state;
+  }
+
+  function refusal(error) {
+    const code = Object.hasOwn(TRANSPORT_QUALIFICATION_ERRORS, error?.code) ? error.code : 'unavailable';
+    say(TRANSPORT_QUALIFICATION_ERRORS[code], code);
+    return code;
+  }
+
+  async function call(method, body) {
+    const options = { method, credentials: 'same-origin', headers: {} };
+    if (body !== undefined) {
+      options.headers = { 'Content-Type': 'application/json', 'X-DeepTwin-CSRF': session.csrfToken() };
+      options.body = JSON.stringify(body);
+    }
+    let response;
+    try {
+      response = await fetch(path, options);
+    } catch {
+      throw Object.assign(new Error('refused'), { code: 'unavailable', unanswered: true });
+    }
+    let payload = null;
+    try { payload = await response.json(); } catch { payload = null; }
+    if (!response.ok) {
+      throw Object.assign(new Error('refused'), {
+        code: typeof payload?.code === 'string' ? payload.code : 'unavailable',
+        unanswered: response.status >= 500 });
+    }
+    return payload;
+  }
+
+  function render() {
+    const value = current;
+    facts.dataset.state = value.state;
+    facts.dataset.reason = value.reason ?? '';
+    facts.dataset.prerequisite = value.prerequisite;
+    facts.dataset.gateway = value.gateway.state;
+    const prerequisite = TRANSPORT_QUALIFICATION_MESSAGES.prerequisite[value.prerequisite];
+    facts.replaceChildren(
+      element('li', TRANSPORT_QUALIFICATION_MESSAGES.manifest(value.manifest_sha256),
+        { 'data-manifest-sha256': value.manifest_sha256 }),
+      element('li', TRANSPORT_QUALIFICATION_MESSAGES.requirement),
+      element('li', typeof prerequisite === 'function' ? prerequisite(value.eligible_conformance.command_id)
+        : prerequisite, { 'data-prerequisite': value.prerequisite }),
+      element('li', value.qualification === null ? TRANSPORT_QUALIFICATION_MESSAGES.unsealed
+        : TRANSPORT_QUALIFICATION_MESSAGES.sealed(value.qualification.revision, value.qualification.conformance_command_id),
+      { 'data-sealed-revision': value.qualification === null ? '' : String(value.qualification.revision) }),
+      element('li', TRANSPORT_QUALIFICATION_MESSAGES.gateway[value.gateway.state](value.gateway.revision),
+        { 'data-gateway-revision': value.gateway.revision === null ? '' : String(value.gateway.revision) }),
+      element('li', TRANSPORT_QUALIFICATION_MESSAGES.state[value.reason ?? 'qualified'],
+        { 'data-qualification-state': value.state }));
+  }
+
+  async function load() {
+    try {
+      const value = await call('GET');
+      if (!validQualificationState(value)) throw Object.assign(new Error('refused'), { code: 'unavailable' });
+      current = value;
+      render();
+      return { state: value.state, reason: value.reason, prerequisite: value.prerequisite,
+        gateway: { ...value.gateway } };
+    } catch (error) {
+      current = null;
+      facts.replaceChildren();
+      refusal(error);
+      throw error;
+    }
+  }
+
+  // the owner's qualification act: the run the read offered, or none (the server then
+  // names the missing prerequisite); an unread answer is retried under the same command
+  async function run() {
+    const body = unanswered ?? { command_id: randomUUID(),
+      manifest_sha256: current?.manifest_sha256 ?? '0'.repeat(64),
+      conformance_command_id: current?.eligible_conformance?.command_id ?? null };
+    say(TRANSPORT_QUALIFICATION_MESSAGES.working, 'working');
+    try {
+      const answer = await call('POST', body);
+      unanswered = null;
+      const revision = answer?.qualification?.revision;
+      if (answer?.command_id !== body.command_id || !Number.isInteger(revision)
+          || typeof answer?.published !== 'boolean') {
+        throw Object.assign(new Error('refused'), { code: 'unavailable' });
+      }
+      say(answer.published ? TRANSPORT_QUALIFICATION_MESSAGES.published(revision)
+        : TRANSPORT_QUALIFICATION_MESSAGES.unpublished(revision), answer.published ? 'published' : 'unpublished');
+      return { revision, published: answer.published };
+    } catch (error) {
+      unanswered = error?.unanswered === true ? body : null;
+      refusal(error);
+      throw error;
+    } finally {
+      // re-read the state; the act's own outcome stays on the line
+      const said = [line.textContent, line.dataset.state];
+      await load().catch(() => {});
+      [line.textContent, line.dataset.state] = said;
+    }
+  }
+
+  qualify.addEventListener('click', () => run().catch(() => {}));
+  reread.addEventListener('click', () => load().catch(() => {}));
+  return Object.freeze({ load, qualify: run,
+    get state() { return current === null ? null : JSON.parse(JSON.stringify(current)); } });
+}

@@ -7,6 +7,10 @@
 // produce an unconfirmed act. The page shows each binding head (state, revision,
 // catalog/model presence), each pending act with its fence time, offers the fence only
 // once due, and reports its outcome; a second create is refused `connection_bound`;
+// the transport-qualification section shows the gateway's unqualified manifest, the
+// real qualification act refuses naming the missing verified installation (the fixture
+// cannot stage one) and the refresh is refused `transport_unqualified` before any provider
+// byte; after the fixture's stand-in adoption the section reads it back as qualified;
 // the owner's explicit catalog refresh reads the model list through the gateway's
 // provider-send path (a loopback mock provider in the fixture) for the current binding
 // revision only, and a model is chosen from it; a rotation voids both until the next
@@ -24,6 +28,7 @@ import { spawn } from 'node:child_process';
 import { closeOwnedFixture, waitForOwnedChildOutput } from './helpers/owned-fixture-lifecycle.mjs';
 import {
   CATALOG_RESULTS, CONNECTION_MESSAGES, CONNECTION_STATES, CREDENTIAL_ERRORS, CREDENTIAL_MESSAGES, FENCE_RESULTS, PENDING_MESSAGES,
+  TRANSPORT_QUALIFICATION_ERRORS, TRANSPORT_QUALIFICATION_MESSAGES,
 } from '../static/account.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -135,6 +140,35 @@ test('credentials panel: binding heads, catalog refresh and model choice, pendin
   // the only act on the head before a catalog exists is the explicit refresh; no provider request yet
   assert.deepEqual(await connections.getByRole('button').allTextContents(), ['모델 목록 새로 고침']);
   assert.deepEqual(await upstream(), { requests: 0, distinct_keys: 0 });
+
+  // the gateway's transport is unqualified: the section says so and names what is missing
+  const transport = panel.locator('#records-transport-qualification');
+  const transportFacts = transport.getByRole('list', { name: '전송 매니페스트 검증 상태' });
+  const transportLine = transport.locator('[data-transport-line]');
+  await transportFacts.and(page.locator('[data-state=unqualified]')).waitFor();
+  assert.equal(await transportFacts.getAttribute('data-prerequisite'), 'verified_installation_missing');
+  assert.equal(await transportFacts.getAttribute('data-gateway'), 'not_adopted');
+  assert.match(await transportFacts.locator('[data-manifest-sha256]').getAttribute('data-manifest-sha256'), /^[0-9a-f]{64}$/);
+  const transportText = await transportFacts.textContent();
+  for (const text of [TRANSPORT_QUALIFICATION_MESSAGES.requirement, TRANSPORT_QUALIFICATION_MESSAGES.prerequisite.verified_installation_missing,
+    TRANSPORT_QUALIFICATION_MESSAGES.unsealed, TRANSPORT_QUALIFICATION_MESSAGES.gateway.not_adopted(),
+    TRANSPORT_QUALIFICATION_MESSAGES.state.not_qualified]) assert.ok(transportText.includes(text), text);
+  // the owner's qualification act runs the real service and refuses with the exact text
+  await transport.getByRole('button', { name: '전송 매니페스트 검증', exact: true }).click();
+  await transportLine.and(page.locator('[data-state=verified_installation_missing]')).waitFor();
+  assert.equal(await transportLine.textContent(), TRANSPORT_QUALIFICATION_ERRORS.verified_installation_missing);
+  // and the gateway refuses the refresh before any provider byte
+  await claude.getByRole('button', { name: '모델 목록 새로 고침' }).click();
+  await said(CREDENTIAL_ERRORS.transport_unqualified);
+  assert.deepEqual(await upstream(), { requests: 0, distinct_keys: 0 });
+  // the fixture's stand-in adoption (it cannot stage a verified installation), read back
+  // through the product route
+  const adoption = await page.evaluate(async () => (await fetch('/__test__/adopt-synthetic-transport', { method: 'POST' })).json());
+  await transport.getByRole('button', { name: '검증 상태 다시 읽기' }).click();
+  await transportFacts.and(page.locator('[data-state=qualified]')).waitFor();
+  assert.equal(await transportFacts.getAttribute('data-gateway'), 'adopted');
+  assert.equal(await transportFacts.locator('[data-gateway-revision]').getAttribute('data-gateway-revision'), String(adoption.revision));
+  assert.ok((await transportFacts.textContent()).includes(TRANSPORT_QUALIFICATION_MESSAGES.state.qualified));
 
   // the owner's explicit refresh: the gateway reads the model list with the key it holds
   await claude.getByRole('button', { name: '모델 목록 새로 고침' }).click();

@@ -1874,3 +1874,160 @@ cd303175818b928a8ff37044922e5fe78596ad2d937b04799a4e3b16c3c21905  app/tests/test
   production message send crosses the gateway yet.
 - Compose/image wiring and the gateway's egress, a gateway-side fence, erasure/`erasure_completed`,
   an independent audit and the full shared regression are unchanged.
+
+## 2026-09-25 — qualification owner path (route, gateway read-back, credentials-section UI)
+
+Branch `transport-qual-ui` from `codex/ui-structure` (contains f8f2b0d). This closes the first
+"still not claimed" item of the section above: the qualification act now has an owner path.
+
+### Routes (`app/api/provider_transport_qualification.py`, new)
+
+Contributed by `provider-conformance-v1` (the contribution that owns the service): its router now
+includes two more routes, so 119 routes are installed (the five pinned counts and the route-id list
+are updated).
+
+- `GET /api/v1/extensions/provider-transport-qualification`
+  (`extensions.provider-transport-qualification.read`, `extension.read`). It answers
+  `provider-transport-qualification-state-v1` with:
+  - the shipped manifest's digest and the requirements;
+  - `prerequisite`: `met` together with the newest eligible run, or which prerequisite is
+    missing (`verified_installation_missing` when no `extension_installation` v2 exists,
+    `conformance_run_missing`, `conformance_run_unmatched`, `conformance_admission_stale`);
+  - the newest sealed qualification of this manifest;
+  - `gateway`: what the gateway adopted, read back through the new nonsecret `credential-op-v2`
+    `transports` operation (vault `transports()`; a `CredentialGatewayClient.transports()`
+    method);
+  - `state`/`reason` (`gateway_unavailable`, `manifest_changed`, `not_published`,
+    `not_qualified`). `state` is `qualified` only when the gateway adopted this digest.
+
+  The GET runs no conformance, starts no mock and sends no provider request.
+- `POST` the same path (`extensions.provider-transport-qualification.execute`, `extension.manage`,
+  CSRF through the boundary) takes exactly `{command_id, manifest_sha256, conformance_command_id}`
+  (`conformance_command_id` may be `null`). It runs `PersistentTransportQualification.qualify`
+  unchanged in substance, in production exactly as designed:
+  - the named run is re-checked;
+  - the manifest's offline transport conformance runs against the act's own 127.0.0.1 mock (the
+    service's design, not a test affordance);
+  - the record is sealed and published with `bind_transport`.
+
+  A missing prerequisite refuses before anything is sealed. Every refusal is the fixed error
+  schema whose `code` is the reason and whose `message` is the exact text the screen shows
+  (`REFUSALS`). A test pins it equal to `TRANSPORT_QUALIFICATION_ERRORS` in `account.mjs`.
+- **Service changes** (`app/extensions/provider_transport_qualification.py`):
+  - `TransportQualificationError.reason`;
+  - `state()`;
+  - `reader=` (the gateway read);
+  - `null` run → the prerequisite refusal;
+  - **command-id replay safety**: the first successful use seals a
+    `provider-transport-qualification-command-record-v1` `validation_report` (deterministic id
+    from the command id, parent = the qualification). The same id and body re-check the evidence
+    and answer and republish the same qualification, sealing nothing new. The same id with another
+    body is `409 command_conflict`.
+
+  Existing codes are unchanged (`not_found`/`conflict`), so test_provider_transport_manifest
+  passes as before.
+
+### UI
+
+`createTransportQualificationPanel` (`app/static/account.mjs`) is mounted by `records-page.mjs`
+inside the credentials section (`#records-transport-qualification`). It shows:
+
+- the manifest digest and the requirement;
+- the prerequisite (naming the run);
+- the sealed revision and the gateway adoption;
+- the state.
+
+Its "전송 매니페스트 검증" button posts the run the read offered (or `null`) and shows the exact
+refusal text, or published/unpublished. An unread answer (network error or 5xx) is retried under
+the same command id.
+
+### Browser case: why the qualification is not made through the screen
+
+`installation_case` stages its verified installation and matched run through pytest-owned
+machinery: a release tree in `tmp_path` with root-owned mounted release sources, monkeypatched
+publication/source/receipt fixtures, and a retained framed conformance worker. The standalone
+uvicorn credentials fixture cannot compose that machinery.
+
+The browser case therefore now exercises the real path up to its honest refusal:
+
+1. The fixture gateway starts unqualified (the startup synthetic adoption is removed).
+2. The section shows `unqualified`, `verified_installation_missing` and `not_adopted`.
+3. Clicking qualify shows the exact `verified_installation_missing` text.
+4. The catalog refresh is refused `transport_unqualified` with zero mock-provider requests.
+5. A wrapper test route, `POST /__test__/adopt-synthetic-transport` (not a product route), adopts
+   the synthetic document. The section reads it back through the product GET as `qualified`
+   with the adopted revision.
+6. The rest of the case runs as before.
+
+The real act end to end (route → sealed record → `bind_transport` → a real vault → a
+manifest-built send) is covered in pytest over the real `installation_case`.
+
+### Tests
+
+- `app/tests/test_provider_transport_qualification_routes.py` (3, new):
+  - **Unqualified state:** the state and requirements are shown. `verified_installation_missing`
+    is refused for a `null` run and for a named run. After verification,
+    `conformance_run_missing`. Nothing is sealed by a refusal. A missing CSRF is refused
+    (401/403). Extra fields, a bad uuid, a bad digest, a query and a wrong method are refused.
+  - **Real installation case plus a real unqualified `CredentialVault`:**
+    - the unqualified transport refuses the send (`not_sent`, 0 captures);
+    - `conformance_admission_stale` is shown and refused;
+    - the eligible run is named;
+    - `manifest_changed` is refused;
+    - a first POST with an unreachable gateway answers `published:false` (`not_published`);
+    - replaying the same command (gateway reachable) republishes the same qualification and seals
+      no new record; the vault adopts it and the GET shows `qualified` with the revision;
+    - the same command id with another run gives `command_conflict`;
+    - a new command over the same run is idempotent;
+    - the adopted document lets the manifest-built transport send (1 capture).
+  - The screen's refusal texts equal the route's.
+- `app/tests/account-transport-qualification.test.mjs` (5, new): read rendering, every refusal
+  text with a `null` run and a CSRF header, a met prerequisite that publishes, unpublished plus
+  retry under the same command id, and malformed or refused reads.
+- `app/tests/browser-credentials.test.mjs` (extended, see above).
+
+```text
+env -u DEEPTWIN_LIVE_ANTHROPIC_API_KEY .venv/bin/python -m pytest -q -p no:cacheprovider <file>   (one process per file, serial)
+  test_provider_transport_qualification_routes 3, test_provider_transport_manifest 25,
+  test_gateway_send_budget 12, test_provider_conformance_api 6, test_first_party 17,
+  test_web_owner_integration 80, test_works_api 23, test_runs_api 27, test_provider_source_startup 21,
+  test_provider_send_gateway 85, test_provider_gateway_owned 40, and test_credential_*.py
+  (14 files: 13+10+36+21+4+15+38+6+1+8+52+11+10+13 = 238)                      all passed
+node --test account-transport-qualification (5), account-credentials (30), records-page   38 pass, 0 fail
+CONTROL_PYTHON=… CONTROL_PLAYWRIGHT_MODULE=… node --test --test-concurrency=1 \
+  app/tests/browser-credentials.test.mjs app/tests/browser-records.test.mjs     6 pass, 0 fail, 1 skipped
+  (the existing root/age-runtime backup-worker skip in browser-records)
+```
+
+Frozen identities (SHA-256; supersedes earlier blocks for these paths):
+
+```text
+98129ff675ba31c50b0b188b7db6c9b04ddc5db937b0faa77da7433e08da83c1  app/api/provider_transport_qualification.py
+3198457f1f1d461525cf7704819241af97fd2191bfc6dae63499c83295fcbc5a  app/extensions/provider_transport_qualification.py
+5947f8d6bf1fddf5ba41a096b963da59eb1ae7cd5b596cb8a9eaa8f23c0b5a9a  app/api/provider_conformance.py
+aacad792eb285d160a9af30da09e0879f3f1bb20e87c0f70ced79028be66b5fb  app/api/route_contributions/provider-conformance-v1.json
+8075158a79fd7d95637d38832a1ba0618072a4780cd1599ceff8d2e80b20eedf  app/workers/credential_channel.py
+8fb97f62a43e324149b4bdb03b1a449f80d1010ff001e32e7f23344aa8e64828  app/workers/credential_gateway_service.py
+4d62b5a5ac85845f16673cd693dbaac8d684fc5dfe65ca7c8c05567abefb37c7  app/workers/credential_vault.py
+8cc9ab80357993cbfe0c830474bcc769da285ca7ba16c339bfb66ecdd9058de5  app/static/account.mjs
+8811c7db6cda6fc5b61fb24c856fea2152418255e9f2e604e4bef8901a2357b1  app/static/records-page.mjs
+f8b19b3e6aa7d13369c59c9e7920457514962e9ada9cba3457e0444b1631647a  app/tests/fixtures/credentials_server.py
+```
+
+### Still not claimed
+
+- **No browser case qualifies through the screen.** The fixture cannot stage a verified
+  installation (see above). The screen's success path is covered by pytest at the route and by
+  node unit tests only.
+- **No product owner flow yet runs a verified installation's conformance end to end from a
+  screen.** The installation and conformance routes exist, but no UI drives them. An owner can
+  qualify only after those acts were made through their routes.
+- **The GET makes one nonsecret gateway read** (`transports`). It opens no custody and makes no
+  provider request, but it is not ledger-only like the credentials GET.
+- `published:false` is not persisted. The GET derives `not_published` from a sealed record the
+  gateway has not adopted.
+- **Revisions are the sealed `qualified_at_ms`,** so republishing an older qualification after a
+  newer one is refused by the gateway (`published:false`), as designed.
+- The items of the section above other than the owner path are unchanged: origin not exercised
+  offline, the gateway trusts the control-side document, the reservation cap, the code-owned
+  catalog policy, compose/egress, fence and erasure.

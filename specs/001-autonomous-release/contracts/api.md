@@ -534,6 +534,33 @@ revision's catalog lists (`409 catalog_stale` for another revision or no catalog
 model_not_listed`); it makes no provider call. No create/rotate/delete/fence act and no GET calls
 either route's effect.
 
+Provider-transport qualification, the owner path (T087 → T090, 2026-09-25): the
+`provider-conformance-v1` contribution also carries `GET /api/v1/extensions/provider-transport-qualification`
+(route `extensions.provider-transport-qualification.read`, `extension.read`) and `POST` the same
+path (`extensions.provider-transport-qualification.execute`, `extension.manage`, CSRF). The GET
+answers `provider-transport-qualification-state-v1`: the shipped manifest's `manifest_sha256`,
+the `requirements` (a `provider-conformance-command-v2` run matched 4/4 over a verified
+installation whose admission is still current, and the offline transport conformance suite),
+`prerequisite` (`met` with `eligible_conformance` naming the newest such run, or
+`verified_installation_missing` | `conformance_run_missing` | `conformance_run_unmatched` |
+`conformance_admission_stale`), `qualification` (the newest sealed record for this manifest:
+revision, ref, run), `gateway` (`adopted` | `adopted_other_manifest` | `not_adopted` |
+`unavailable`, with the adopted revision) and `state: qualified|unqualified` with `reason`
+(`gateway_unavailable` | `manifest_changed` | `not_published` | `not_qualified`). It makes one
+nonsecret `credential-op-v2` `transports` read of the gateway (the adopted documents) and no custody
+open, provider request or conformance run. The POST takes exactly `{"command_id", "manifest_sha256",
+"conformance_command_id"}` (`null` when the owner has no run to name) and runs the qualification
+act: the named run is re-checked, the manifest's offline transport conformance runs against the
+act's own loopback mock provider, the `validation_report` is sealed and the gateway document is
+published with `bind_transport`; it answers `{command_id, published, qualification: {revision,
+manifest_sha256, qualification_ref, conformance_command_id}}` (`published: false` when the gateway
+was unreachable or refused; re-sending the same command republishes). Refusals use the fixed error
+schema with the named reason as `code`: `409` `verified_installation_missing`,
+`conformance_run_missing`, `conformance_run_unmatched`, `conformance_admission_stale`,
+`manifest_changed`, `transport_conformance_failed`, `command_conflict` (the command id was used for
+another request); `400 invalid_input`; `503 unavailable`. The command id is replay-safe: the same
+id and body answer the same qualification and seal nothing new.
+
 Two independent Claude key paths, by design: (1) the credential gateway path above
 (`/api/v1/credentials/*`: encrypted gateway custody, binding head in the credential ledger,
 catalog/model choice keyed by binding revision in that ledger); (2) the direct-adapter profile

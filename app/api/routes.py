@@ -315,6 +315,10 @@ def preflight_api_v1(scope, body):
     from .retention import preflight as retention_preflight
     if is_retention_path(path):
         retention_preflight(scope, body)
+    from .provider_transport_qualification import is_transport_qualification_path
+    from .provider_transport_qualification import preflight as transport_qualification_preflight
+    if is_transport_qualification_path(path):
+        transport_qualification_preflight(scope, body)
     from .platform_update import is_platform_update_path
     from .platform_update import preflight as platform_update_preflight
     if is_platform_update_path(path):
