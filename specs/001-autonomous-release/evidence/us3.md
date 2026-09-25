@@ -171,3 +171,7 @@ Browser (real Chromium): `browser-graph`, `browser-artifact-previews`, `browser-
   the netns came from `unshare --net`. The E2E is root/Linux only (it skips elsewhere).
 - The screenshot pixel checks used exact colours at two sampled points; they are a rendering
   proof, not a visual-regression baseline.
+
+## 2026-09-25: Codex path delegated to the owner
+
+The owner said, on 2026-09-25, that the Codex-side tests will be done separately with Codex. So T049 closes on the controlled E2E and the authorized Claude path recorded above. The Codex path has **not** been executed or simulated here. It is owner-delegated, not a passed result. T088 (the Codex runner) and T042 (the Codex bridge) stay open.
