@@ -510,12 +510,23 @@ class PersistentExtensionBindings:
             "competition": {"current_holder": current["extension_id"] if current["state"] == "active" else None,
                             "holders": [{"extension_id": name, "revisions": revisions}
                                         for name, revisions in holders.items()]},
-            "affected_environments": {
-                "target_environment_id": first["target_scope"]["environment_id"],
-                "bound_environment_versions": [],
-                "basis": "no_environment_version_records_extension_binding_revisions"},
+            "affected_environments": self._affected(db, roots, digest, head, first),
             "links": {"self": f"/api/v1/extensions/bindings/{digest}"},
         }
+
+    @staticmethod
+    def _affected(db, roots, digest, head, first):
+        from .binding_heads import BindingDispatchRefused, bound_environment_versions
+
+        try:
+            versions = bound_environment_versions(db, roots, digest, head)
+        except BindingDispatchRefused:
+            raise BindingError("unavailable") from None
+        return {"target_environment_id": first["target_scope"]["environment_id"],
+                "bound_environment_versions": versions,
+                "needs_re_preparation": sorted({item["environment_id"] for item in versions
+                                                if item["needs_re_preparation"]}),
+                "basis": "environment_records_recorded_binding_revisions"}
 
     def slot(self, request, slot_digest):
         _require(_hex(slot_digest))
@@ -633,12 +644,13 @@ class PersistentExtensionBindings:
     # -- owner acts -----------------------------------------------------------------------
 
     def _result(self, action, command_id, extension_id, key, digest, head_before, revision_ref, content,
-                retention=None, consumed=None):
+                retention=None, consumed=None, affected=()):
         return {"schema_version": RESULT_SCHEMA, "action": action, "command_id": command_id,
                 "extension_id": extension_id, "binding_slot_key": key, "binding_slot_key_digest": digest,
                 "expected_current_binding_head": head_before,
                 "binding_head": {"revision": revision_ref.version, "binding_record_digest": revision_ref.sha256,
                                  "state": content["state"]},
+                "environments_needing_re_preparation": affected,
                 "binding_action": content["action"], "retained": retention, "consumed": consumed}
 
     def _append(self, db, roots, actor_ref, *, action, command_id, request_sha256, extension_id, key, digest,
@@ -659,9 +671,11 @@ class PersistentExtensionBindings:
         self._capacity(db, roots, 4)
         ref = self._put(db, roots, actor_ref, record_id=values.slot_record_id(digest), version=new_revision,
                         parents=parents, content=content, stamp=stamp)
+        new_head = {"revision": new_revision, "binding_record_digest": ref.sha256, "state": content["state"]}
+        affected = self._affected(db, roots, digest, new_head, content)["needs_re_preparation"]
         self._binding_event(db, roots, actor_ref, command_id=command_id, key=key, action=content["action"],
-                            ref=ref, previous_ref=None if head is None else history[-1][0], affected=0,
-                            stamp=stamp)
+                            ref=ref, previous_ref=None if head is None else history[-1][0],
+                            affected=len(affected), stamp=stamp)
         retained = None
         if head is not None and head["state"] == "active" and retain_head:
             displaced_ref, displaced = history[-1]
@@ -707,7 +721,7 @@ class PersistentExtensionBindings:
                         "retention_head": {"revision": 2, "retention_record_digest": consumed_ref.sha256,
                                            "state": "consumed"}}
         result = self._result(action, command_id, extension_id, key, digest, expected, ref, content,
-                              retained, consumed)
+                              retained, consumed, affected=list(affected))
         self._record_command(db, roots, actor_ref, action=action, command_id=command_id,
                              request_sha256=request_sha256, result=result, parent=ref, stamp=stamp)
         return result

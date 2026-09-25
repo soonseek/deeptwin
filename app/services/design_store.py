@@ -39,6 +39,9 @@ _ENTITY_KIND = "environment"  # the runtime's own kind (runs/run_consents input 
 _APPROVAL_KIND = "design_approval_record"
 _HEAD_KIND = "environment_head"
 _ENTITY_SCHEMA = "environment-record-v1"
+# a version prepared with extension binding revisions (environments.EnvironmentVersion)
+_ENTITY_SCHEMA_WITH_BINDINGS = "environment-record-v2"
+ENTITY_SCHEMAS = (_ENTITY_SCHEMA, _ENTITY_SCHEMA_WITH_BINDINGS)
 
 
 class DesignStoreError(ValueError):
@@ -229,22 +232,29 @@ def persist_environment_record(domain_store, version, *, head_ref, **headers) ->
     if (type(head_content) is not dict or head_content.get("design_kind") != _HEAD_KIND
             or prepared != version.as_dict()):
         raise DesignStoreError("the head record holds another preparation")
+    prepared_value = {
+        "environment_id": version.environment_id,
+        "version": version.version,
+        "design_ref": version.design_ref.as_dict(),
+        "approval_sha": version.approval_sha,
+        "status": version.status,
+    }
+    schema = _ENTITY_SCHEMA
+    if version.extension_bindings:
+        # the exact binding revisions this version was prepared with (slot digest,
+        # revision, record digest: identities, not references the store resolves)
+        schema = _ENTITY_SCHEMA_WITH_BINDINGS
+        prepared_value["extension_binding_revisions"] = version.as_dict()["extension_binding_revisions"]
     return _put(
         domain_store,
         record_id=record_id,
         version=version.version,
         parents=(head_ref,),
         content={
-            "schema_version": _ENTITY_SCHEMA,
+            "schema_version": schema,
             # the design the owner approved may not live in this vault (the arc's own
             # encoder: an identity, never a reference the store would try to resolve)
-            **encode_design_refs({
-                "environment_id": version.environment_id,
-                "version": version.version,
-                "design_ref": version.design_ref.as_dict(),
-                "approval_sha": version.approval_sha,
-                "status": version.status,
-            }),
+            **encode_design_refs(prepared_value),
         },
         kind=_ENTITY_KIND,
         **headers,
@@ -273,6 +283,7 @@ def resume_environment_state(domain_store, ref):
 
 
 __all__ = [
+    "ENTITY_SCHEMAS",
     "RECORD_KIND",
     "DesignStoreError",
     "persist_design_approval",

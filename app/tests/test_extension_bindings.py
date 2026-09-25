@@ -314,8 +314,8 @@ def test_bind_compete_coexist_disable_rollback_and_release(case):
                                     "port_contract_version": "provider-port-v1"}
     assert slot["trust_tier"] == "runtime_worker" and slot["extension_kind"] == "provider"
     assert slot["affected_environments"] == {
-        "target_environment_id": None, "bound_environment_versions": [],
-        "basis": "no_environment_version_records_extension_binding_revisions"}
+        "target_environment_id": None, "bound_environment_versions": [], "needs_re_preparation": [],
+        "basis": "environment_records_recorded_binding_revisions"}
     (retention_a,) = slot["rollback_retentions"]
     assert retention_a["retention_head"]["state"] == "retained" and retention_a["rollback_available"] is True
     assert retention_a["release_warning"] == release_warning(retention_a["target_binding_revision_ref"],

@@ -29,6 +29,8 @@ from ..domain.refs import DomainContractError, EntityRef
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore, StorageError
 
+MAX_SLOTS = 256
+MAX_ENVIRONMENT_RECORDS = 4096
 REASONS = ("binding_slot_absent", "binding_revision_unknown", "binding_disabled",
            "binding_superseded", "binding_rolled_back", "binding_mismatch", "binding_unavailable")
 MAX_HISTORY = 4096
@@ -157,4 +159,81 @@ class DurableBindingHeads:
             _refuse("binding_mismatch")
 
 
-__all__ = ["REASONS", "BindingDispatchRefused", "DurableBindingHeads", "head_of", "read_slot_history"]
+def slot_histories(store, db, roots):
+    """Every binding slot's validated history, keyed by slot digest (bounded)."""
+    from ..domain.refs import parse_canonical
+
+    rows = db.execute("SELECT body FROM domain_records WHERE vault_id=? AND kind='extension_binding' "
+                      "AND version=1", (roots.genesis.id,)).fetchall()
+    slots = {}
+    for row in rows:
+        content = parse_canonical(row["body"])["content"]
+        if content.get("schema_version") == BINDING_SCHEMA:
+            digest = content["binding_slot_key_digest"]
+            slots[digest] = read_slot_history(store, db, roots, digest)
+    if len(slots) > MAX_SLOTS:
+        _refuse("binding_unavailable")
+    return dict(sorted(slots.items()))
+
+
+def environment_binding_revisions(store, environment_id):
+    """The active binding revisions an environment version is prepared with: every slot whose
+    durable head is `active` and whose target scope is this environment or instance-wide
+    (`environment_id: null`), as `{binding_slot_key_digest, revision, binding_record_digest}`
+    sorted by slot."""
+    if type(store) is not DomainStore:
+        raise TypeError("exact DomainStore required")
+    with store._connection() as db:
+        roots = store._read_roots(db)
+        slots = slot_histories(store, db, roots)
+    result = []
+    for digest, history in slots.items():
+        ref, content = history[-1]
+        if content["state"] == "active" and content["target_scope"]["environment_id"] in (None, environment_id):
+            result.append({"binding_slot_key_digest": digest, "revision": ref.version,
+                           "binding_record_digest": ref.sha256})
+    return result
+
+
+def bound_environment_versions(db, roots, slot_digest, head):
+    """Every prepared environment version that recorded a revision of this slot, and whether the
+    environment's latest prepared version needs re-preparation against ``head`` (the slot's
+    current head): it does when the revision it recorded is no longer the active head. This is
+    state only; nothing is re-prepared or promoted here."""
+    from ..domain.refs import parse_canonical
+    from ..services.design_persistence import decode_design_refs
+
+    rows = db.execute("SELECT id, version, sha256, body FROM domain_records WHERE vault_id=? "
+                      "AND kind='environment' ORDER BY id, version LIMIT ?",
+                      (roots.genesis.id, MAX_ENVIRONMENT_RECORDS + 1)).fetchall()
+    if len(rows) > MAX_ENVIRONMENT_RECORDS:
+        _refuse("binding_unavailable")
+    latest, found = {}, []
+    for row in rows:
+        latest[row["id"]] = max(latest.get(row["id"], 0), row["version"])
+        try:
+            content = decode_design_refs(parse_canonical(row["body"])["content"])
+        except (DomainContractError, KeyError, TypeError, ValueError):
+            _refuse("binding_unavailable")
+        if type(content) is not dict or content.get("schema_version") != "environment-record-v2":
+            continue
+        for item in content.get("extension_binding_revisions", ()):
+            if item.get("binding_slot_key_digest") == slot_digest:
+                found.append((row, content, item))
+    result = []
+    for row, content, item in found:
+        current = (head is not None and head["state"] == "active" and head["revision"] == item["revision"]
+                   and head["binding_record_digest"] == item["binding_record_digest"])
+        is_latest = latest[row["id"]] == row["version"]
+        result.append({
+            "environment_id": content["environment_id"], "environment_version": content["version"],
+            "environment_record": {"kind": "environment", "id": row["id"], "version": row["version"],
+                                   "sha256": row["sha256"]},
+            "binding_revision": item["revision"], "binding_record_digest": item["binding_record_digest"],
+            "latest_prepared": is_latest, "uses_current_head": current,
+            "needs_re_preparation": is_latest and not current})
+    return result
+
+
+__all__ = ["MAX_SLOTS", "REASONS", "BindingDispatchRefused", "DurableBindingHeads", "bound_environment_versions",
+           "environment_binding_revisions", "head_of", "read_slot_history", "slot_histories"]
