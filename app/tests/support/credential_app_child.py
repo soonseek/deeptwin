@@ -10,6 +10,12 @@ the real ``create_app`` with a ``CredentialGatewayConfiguration`` naming that pa
 root, establishes an owner session over HTTP and runs the planned credential
 requests. It prints one secret-free JSON line: each response's status and body, the
 ledger's mode and owner, and whether any vault module was loaded.
+
+With ``attachment`` in its config, the child reads the attachment object from that file
+(the same file the gateway entrypoint is started with) instead of building it. The
+``mark``/``wait_for`` steps create or await a file in the child's own directory so the
+parent can act between two requests of one control-plane process (for example restart the
+gateway); they make no request.
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ import json
 import os
 import stat
 import sys
+import time
 from base64 import urlsafe_b64encode
 from pathlib import Path
 
@@ -46,6 +53,7 @@ def main() -> int:
         derive_capability_verifier,
     )
     from app.server import create_app
+    from app.workers.credential_attachment import read_bounded_file
 
     home = base / "control"
     origin = OriginProfile.local(instance_id="1" * 32, path_id="2" * 32, port=4193)
@@ -54,11 +62,15 @@ def main() -> int:
                                                verifier_b64u=derive_capability_verifier(capability))
     initialize_session_root(home / "root", profile=origin, recovery_epoch=1,
                             expected_uid=os.getuid(), expected_gid=os.getgid())
+    if "attachment" in config:
+        attachment = CredentialGatewayConfiguration.from_mapping(
+            json.loads(read_bounded_file(config["attachment"], 4096)))
+    else:
+        attachment = CredentialGatewayConfiguration(pair_root=str(root.pair_root),
+                                                    requester_boot_id=CONTROL_BOOT)
     application = create_app(
         home / "data", deployment_config=deployment, session_root_dir=home / "root",
-        expected_uid=os.getuid(), expected_gid=os.getgid(),
-        credential_gateway=CredentialGatewayConfiguration(pair_root=str(root.pair_root),
-                                                          requester_boot_id=CONTROL_BOOT))
+        expected_uid=os.getuid(), expected_gid=os.getgid(), credential_gateway=attachment)
     path = origin.base_path + "api/v1/credentials"
     steps = []
     with TestClient(application, base_url=origin.http_origin) as client:
@@ -70,6 +82,16 @@ def main() -> int:
         write = {**plain, "X-DeepTwin-CSRF": answer.json()["csrf_token"], "Content-Type": "application/json"}
         handle = None
         for step in config["steps"]:
+            if step["op"] == "mark":
+                (home / step["name"]).touch(mode=0o600)
+                continue
+            if step["op"] == "wait_for":
+                limit = time.monotonic() + step.get("seconds", 60)
+                while not (home / step["name"]).exists():
+                    if time.monotonic() > limit:
+                        raise SystemExit("the parent never released the child")
+                    time.sleep(0.02)
+                continue
             if step["op"] == "list":
                 response = client.get(path, headers=plain)
             elif step["op"] == "store":

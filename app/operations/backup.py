@@ -93,10 +93,17 @@ EXCLUDED = (
     ("permission_projections", "unconsumed_capabilities"),
     ("deployment_prepare_", "deployment_receipt_private_state"),
 )
-# never part of the vault database at all; stated so the manifest is complete
+# never part of the vault database at all; stated so the manifest is complete.
+# `credential_command_ledger` is the control plane's separate 0600
+# `credential-commands.sqlite3` (T090, app/api/credential_commands.py) beside the vault
+# database: it holds no secret, hash or verifier, but every row names a record and
+# command of one specific gateway vault, whose root is itself never backed up
+# (`provider_credential_root`). Restoring it without that vault would present handles
+# and pending commands that nothing can resolve, so it is stated here and never carried
+# (only the database file and the registered originals are archive members).
 OUT_OF_SCOPE_CATEGORIES = (
-    "provider_credential_root", "session_root", "backup_key_volume",
-    "codex_auth_volume_and_tokens", "raw_audio", "regenerable_caches",
+    "provider_credential_root", "credential_command_ledger", "session_root",
+    "backup_key_volume", "codex_auth_volume_and_tokens", "raw_audio", "regenerable_caches",
 )
 STATES = ("backup_pending", "snapshotting", "encrypting", "verify_restore", "ready")
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z")

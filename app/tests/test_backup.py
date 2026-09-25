@@ -137,6 +137,56 @@ def test_table_classification_is_closed():
         classify_table("brand_new_table")
 
 
+def test_the_credential_command_ledger_is_stated_and_never_carried(tmp_path):
+    """The control plane's credential command ledger (T090) sits beside the vault database
+    but is a separate file: the snapshot never reads it and the manifest states it."""
+
+    from app.api.credential_commands import CredentialCommandLedger
+    from app.api.credential_wiring import LEDGER_NAME
+    from app.operations.backup import OUT_OF_SCOPE_CATEGORIES, _snapshot
+
+    vault = tmp_path / "vault"
+    populated_vault(vault)
+    CredentialCommandLedger(vault / LEDGER_NAME)
+    with sqlite3.connect(vault / LEDGER_NAME) as db:
+        ledger_tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert ledger_tables
+    assert "credential_command_ledger" in OUT_OF_SCOPE_CATEGORIES
+    _identity, categories, _consistency = _snapshot(vault / "intake.sqlite3", tmp_path / "snapshot.sqlite3")
+    assert "credential_command_ledger" in categories
+    with sqlite3.connect(tmp_path / "snapshot.sqlite3") as db:
+        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert not ledger_tables & tables
+    # were its tables ever moved into the vault database, they would be unclassified and
+    # refuse the backup rather than ride along
+    for name in ledger_tables:
+        with pytest.raises(BackupError):
+            classify_table(name)
+
+
+@needs_age
+def test_a_backup_beside_a_credential_command_ledger_restores_without_it(runtime, tmp_path):
+    from app.api.credential_commands import CredentialCommandLedger
+    from app.api.credential_wiring import LEDGER_NAME
+
+    vault = tmp_path / "vault"
+    populated_vault(vault)
+    CredentialCommandLedger(vault / LEDGER_NAME)
+    out = tmp_path / "out"
+    out.mkdir()
+    outcome = create_backup(vault, out, runtime=runtime, server_release="1.0.0",
+                            key_handle=instance_key(runtime, tmp_path), key_mode="instance_backup_key")
+    assert outcome.state == "ready", outcome.failure
+    assert "credential_command_ledger" in outcome.manifest["excluded_categories"]
+    assert all(LEDGER_NAME not in item["path"] for item in outcome.manifest["item_refs"])
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    restored = restore_backup(outcome.ciphertext_path, outcome.receipt, staging, runtime=runtime,
+                              key_handle=BackupKeyHandle(tmp_path / "backup-key"), active_vault_dir=vault)
+    assert restored.state == "restored_review", restored.failure
+    assert not (restored.vault_dir / LEDGER_NAME).exists()
+
+
 @needs_age
 def test_age_roundtrip_wrong_identity_and_tamper(runtime):
     identity, recipient = runtime.generate()

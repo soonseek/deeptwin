@@ -12,17 +12,20 @@ configuration naming anything else fails the start. When it is not named, the
 routes are composed unbound and answer an honest `503 dependency_unavailable`:
 there is no fallback, no in-process vault and no ledger file.
 
+The attachment object itself lives in `app.workers.credential_attachment`, because the
+gateway service reads the very same object to learn which requester boot label to expect
+(the control plane and the gateway never generate or override it).
+
 This module imports no vault code.
 """
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import APIRouter
 
+from ..workers.credential_attachment import SCHEMA, CredentialGatewayConfiguration
 from .credential_commands import CredentialCommandLedger
 from .credential_routes import (
     CredentialSeams,
@@ -30,32 +33,7 @@ from .credential_routes import (
     install_credential_ingress,
 )
 
-SCHEMA = "deeptwin-credential-gateway-attachment-v1"
 LEDGER_NAME = "credential-commands.sqlite3"
-_BOOT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
-
-
-@dataclass(frozen=True, slots=True)
-class CredentialGatewayConfiguration:
-    """The operator's nonsecret naming of the gateway endpoint."""
-
-    pair_root: str
-    requester_boot_id: str
-
-    def __post_init__(self):
-        if (type(self.pair_root) is not str or not 1 <= len(self.pair_root.encode("utf-8")) <= 4096
-                or not self.pair_root.startswith("/") or ".." in Path(self.pair_root).parts):
-            raise ValueError("credential gateway pair root is invalid")
-        if type(self.requester_boot_id) is not str or _BOOT_ID.fullmatch(self.requester_boot_id) is None:
-            raise ValueError("credential gateway requester boot id is invalid")
-
-    @classmethod
-    def from_mapping(cls, value) -> CredentialGatewayConfiguration:
-        if type(value) is not dict or set(value) != {"schema", "pair_root", "requester_boot_id"}:
-            raise ValueError("credential gateway configuration is not the exact attachment object")
-        if value["schema"] != SCHEMA:
-            raise ValueError("credential gateway configuration schema is unsupported")
-        return cls(pair_root=value["pair_root"], requester_boot_id=value["requester_boot_id"])
 
 
 class CredentialAttachment:

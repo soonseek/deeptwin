@@ -395,6 +395,19 @@ understanding; failure/restart preserves input. Fixture and live proofs remain s
   unavailable states) with node tests (evidence/credential-vault-t090.md §2026-09-25 wiring). The
   gateway-side bootstrap (listener, generation, trusted requester boot), binding CAS, catalog
   invalidation, the unknown-command fence and erasure are still open.
+  2026-09-25 (open, gateway entrypoint): `python -m app.workers.credential_gateway_main` is the
+  gateway process. It opens the configured vault (never initializes it), validates the root-made
+  `cp-provider` generation and binds the listener as the provider identity, and serves
+  credential-v2 with the requester boot label read from the same attachment object as the control
+  plane (no new trust root). SIGTERM finishes the current dialogue and exits 0, and the logs carry
+  event and class names only. Root-only tests start the real entrypoint and the real `create_app`
+  under their kernel identities: HTTP create/list/rotate/delete, wrong boot label refused with
+  zero effect, SIGTERM mid-dialogue, and a command pending across a gateway restart resolved by
+  query. The command ledger is a stated out-of-scope backup category, and export/retention are
+  unchanged with reasons given (evidence/credential-vault-t090.md §2026-09-25 gateway entrypoint).
+  Compose/image wiring of the entrypoint (the pinned base-compose hash), vault genesis in
+  deployment, binding CAS, catalog invalidation, the unknown-command fence, T087 send composition
+  and erasure are still open.
 - [ ] T024 [US1] Migrate browser MediaDevices/AudioWorklet capture and the existing cumulative
   whisper.cpp POST path to ADR-011's versioned non-overlapping one-second PCM PUT/SSE sessions in
   app/speech.py, app/speech_sessions.py, app/api/speech_routes.py, app/workers/speech.py and

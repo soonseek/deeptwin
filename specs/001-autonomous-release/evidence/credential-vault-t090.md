@@ -773,3 +773,247 @@ aa5db484bb6568041179639e39bab6c06c2bfaab760a2786e83ef233faa00b62  app/tests/test
   - the T087 manifest/budget binding.
 - **Audit and regression.** No independent audit of this slice has run, and the full shared
   regression was not re-run.
+
+## 2026-09-25 — production gateway entrypoint, shared boot-label trust, ledger inventory
+
+This slice addresses "Gateway-side bootstrap" and "Ledger coverage" under "Still not claimed"
+just above.
+
+### Gateway service entrypoint
+
+`app/workers/credential_gateway_main.py` (new) is the provider service's process on the
+`cp-provider` pair: `python -m app.workers.credential_gateway_main
+--service-config=<abs> --attachment-config=<abs>`. It follows the `provider_worker` pattern
+(fixed argv, exit 0 on a requested stop, 1 when unavailable or poisoned, 2 for argv or
+configuration outside the exact shapes).
+
+- **Configuration.** The service configuration is the exact nonsecret object
+  `{"schema": "deeptwin-credential-gateway-service-v1", "vault_id", "root_directory",
+  "records_directory"}`. The attachment configuration is the very object the control plane
+  reads through `--credential-gateway-config`. Both are read as one regular non-symlink file
+  of at most 4,096 bytes and parsed by the strict `domain.wire.parse_json_object`, which
+  refuses duplicate keys. The attachment's pair root must equal the fixed profile's
+  (`gateway_channel.gateway_channel()`); anything else exits 2 before any open.
+- **Vault.** `CredentialVault` is opened under the profile's fixed provider UID/GID. The
+  entrypoint never initializes, repairs or replaces a pair: genesis stays the
+  deployment-only `initialize_credential_root`. An unopenable pair exits 1 without binding.
+- **Pair-root generation.** The generation is created and rotated only by the root-owned
+  initializer (`ipc_root.initialize_pair_root`; a responder cannot). The entrypoint
+  validates it through the existing `listener.bind_worker_listener`. That call requires the
+  process to be the responder UID/GID with the pair group. It acquires the generation under
+  its shared lock, checking the owners and modes of the pair root, `generation.lock`,
+  `boot-secret` and the 02710 endpoint. It removes only a stale listener pair of its own,
+  binds the 0660 socket and publishes the HMAC readiness record under a fresh
+  `secrets.token_hex(32)` responder boot id.
+- **Serving.** The channel's in-flight bound is 1, so one owner is served at a time. The loop
+  waits for a queued connection in 0.25 s `select` slices, then calls `accept_authenticated`
+  under a fresh 30 s operation deadline. An idle wait therefore never shortens a client's
+  handshake window. It then runs `CredentialGatewayService.serve_connection` on the owner.
+  - A refused peer (SO_PEERCRED, wrong boot label, bad handshake) or a failed dialogue closes
+    only that connection.
+  - Listener or generation integrity loss, such as a pair re-initialized for a new boot,
+    exits 1 so the supervisor restarts the gateway against the new generation. It never
+    retries with weaker checks.
+  - The service's boot-secret constructor argument is only type-checked; frames are
+    authenticated by the generation secret through the listener. It receives a fresh random
+    value, which keeps the generation secret out of the service object.
+- **SIGTERM/SIGINT.** The handler only sets a flag, so a vault mutation in progress is
+  never interrupted. The current dialogue completes, then the listener unlinks its socket
+  and `listener.json`, the vault closes, and the process exits 0 after `gateway_stopped`.
+- **Logging.** Each stderr line is one JSON object from a closed vocabulary
+  (`gateway_ready`, `session_accepted`, `session_served`, `session_refused`,
+  `session_failed`, `gateway_unavailable`, `configuration_invalid`, `gateway_stopped`). An
+  entry carries at most an exception class name: never a message, path, metadata, secret,
+  hash or boot id. Nothing is ever written to stdout.
+- **Scope.** It serves the credential-v2 operations only. It does not compose the provider
+  send engine (`ProviderGatewayIngress`), which still needs the T087 transport manifest and
+  budget binding.
+
+### Requester boot-id trust (no new trust root)
+
+`app/workers/credential_attachment.py` (new) now holds `CredentialGatewayConfiguration`
+and `SCHEMA`, moved unchanged out of `credential_wiring.py`, which re-exports them. It also
+holds a bounded file reader. The gateway imports this module with no web or control-plane
+code.
+
+- The trust mechanism is the existing deployment attachment object. The operator names
+  `requester_boot_id` once, and both processes read that same object. The control plane
+  connects under the label. The gateway passes it as `accept_authenticated`'s expected
+  requester boot, so the broker's handshake proof, which covers both boot ids, fails closed
+  on any other label. Neither side generates or overrides it.
+- The existing extension probe profile learns the requester boot from the proven hello. The
+  shared gateway instead expects the configured label, as the attachment configuration
+  already required.
+- The label is not a secret and not a trust root on its own. The per-boot pair secret
+  written by the root-only IPC initializer authenticates the handshake, and SO_PEERCRED
+  tells the pair group's members apart (see the peercred section). The label binds each
+  session transcript to the configured pairing.
+- The label is static per deployment, not regenerated per control-plane boot. Rotating it
+  means rewriting the one attachment object and restarting both services.
+
+### Deployment topology (`deploy/compose.yaml`): unchanged, and why
+
+The compose `provider` service is the gateway's intended home: it mounts `cp-provider`
+read-write with pair group 21101. However, the bytes of `deploy/compose.yaml` and
+`deploy/security/service-ids.json` are pinned by `BASE_COMPOSE_SHA256`/`RECIPE` in
+`app/deployment/contracts.py` and by `deploy/security/deployment-prepare-recipe-v1.json` and
+its sibling recipes. Those pins feed the deployment prepare, receipt and provider-source
+chains.
+
+Adding the gateway command, two vault volumes (key/data separation), their state-root-init
+entries and a shared attachment config would move all of those pins. It would also reopen
+the pinned `test_compose_topology` contract. That is a deployment-release change, so this
+slice does not make it. The service delta a later T081 change must apply:
+
+- `provider`:
+  - `command`: `--service-config=/etc/deeptwin/credential-gateway/service.json`,
+    `--attachment-config=/etc/deeptwin/credential-gateway/attachment.json`;
+  - the image entrypoint must be `python -m app.workers.credential_gateway_main`;
+  - separate `credential-root` and `credential-records` volumes (0700, 20103:20103, created
+    by state-root-init), so `depends_on` also names state-root-init;
+  - the two configs.
+- `control`: the same external attachment config at the path given to
+  `--credential-gateway-config`.
+- A one-shot vault genesis step (`initialize_credential_root` as 20103) that the compose
+  file does not have yet.
+
+`deploy/tests` pass unchanged: 449 passed, 369 subtests.
+
+### Command-ledger inventory
+
+- **Backup** (`app/operations/backup.py`). `credential_command_ledger` joins
+  `OUT_OF_SCOPE_CATEGORIES`, so every backup manifest's `excluded_categories` now states it.
+  - The ledger (`credential-commands.sqlite3`, 0600, beside `intake.sqlite3`) holds no secret,
+    hash or verifier. But every row names a record and command of one specific gateway
+    vault, and that vault's root is itself never backed up (`provider_credential_root`).
+  - A restored ledger would present handles and pending commands that nothing can resolve.
+    A restored instance already requires the owner to re-create credentials
+    (`restored_review`).
+  - The archive carries only the database and the registered originals, so the ledger was
+    never an archive member; the category makes the exclusion explicit.
+  - If its tables (`acts`, `records`) were ever moved into the vault database,
+    `classify_table` would refuse the backup as unclassified. No secret-exclusion rule
+    changed.
+- **Export** (`app/operations/export.py`). Unchanged. Its categories are a closed set with
+  credentials deliberately not selectable, and the ledger is credential custody
+  bookkeeping, not work data.
+- **Retention** (`app/operations/retention.py`). Unchanged. It is a value layer over
+  registered items (`core`/`cache`/`diagnostics`) with no file inventory. Ledger rows record
+  owner acts; `cleanup_pending` rows are released only by the still-unavailable erasure flow
+  (`erasure_completed`), not by retention pruning.
+
+### Tests
+
+`app/tests/test_credential_gateway_main.py` (21, new):
+
+- **17 unprivileged tests, which run anywhere.**
+  - Six argv shapes exit 2.
+  - An attachment naming another pair root exits 2 before any vault or listener call.
+  - Eight configuration mutations exit 2: service schema, extra key, nil vault id, relative
+    path, attachment schema, bad boot label, duplicate key, invalid JSON.
+  - An unopenable vault exits 1 without binding and logs only a class name.
+  - A fresh interpreter importing the entrypoint loads no `fastapi`/`starlette`/`uvicorn`,
+    `app.api`, `app.server` or `app.services` module.
+- **4 real-UDS tests (root on Linux; skipped elsewhere).**
+  - Setup: `ipc_root.initialize_pair_root` runs as root, and `initialize_credential_root` runs
+    as 20103 (the genesis step). The production entrypoint then starts as 20103:20103 with
+    pair group 21101. It goes through `app/tests/support/credential_gateway_launcher.py`,
+    whose only change is the module-local profile relocation used by every real-UDS child;
+    everything after that is `credential_gateway_main.main`.
+  - The real `create_app` runs in `credential_app_child` as 20102:20102 plus the pair group.
+    Both read the same attachment file.
+  - The four tests:
+    1. HTTP create → GET → rotate → GET → delete → GET. The gateway's event log is exactly
+       `ready, (accepted, served)×4, stopped`. The journal is (2,2,2,2), the control process
+       loaded no vault module, and SIGTERM exits 0 with the socket and `listener.json`
+       unlinked while the generation remains.
+    2. A control plane whose attachment names another boot label gets `503
+       dependency_unavailable`. The gateway logs `session_refused` (class
+       `AuthenticationError`) and no `session_accepted`, the journal stays (0,0,0,0), and the
+       gateway keeps running and then stops cleanly.
+    3. SIGTERM during a dialogue. The dialogue is held at the vault's own mutation lock.
+       After SIGTERM the process is still alive; once the lock is released the store
+       commits, the HTTP answer is 201, and the process exits 0.
+    4. Restart with a pending command:
+       - The first gateway is SIGSTOPped while its store waits at the mutation lock. The
+         control plane's store and recovery query both time out, and the POST answers
+         `503 command_pending`. The journal is still (0,0,0,0).
+       - After SIGCONT the gateway commits and fails only to answer (`session_failed`,
+         `TransportUncertain`); the journal is (1,1,1,0).
+       - SIGTERM exits 0. A new gateway process opens the same vault and pair root.
+       - Retrying the same act with *different* bytes queries only. The new gateway logs one
+         served session, the committed receipt is adopted (201), GET lists `stored_unbound`,
+         and the journal stays (1,1,1,0): the re-entered bytes were never ingested.
+  - After each real-UDS test, a sweep of the whole tree, including gateway stderr, finds
+    neither secret nor its sha256.
+- **Mutation checks** (temporary, reverted):
+  - Raising from the signal handler, the old worker pattern, fails all four real-UDS tests.
+  - Removing the pair-root check fails the wrong-endpoint test.
+
+`app/tests/support/credential_app_child.py` gains two things. With an `attachment` path it
+reads the attachment from that file instead of building one. The `mark`/`wait_for` steps
+let the parent act between two requests of one control-plane process. Nothing else changed.
+
+`app/tests/test_backup.py` gains two tests:
+
+- `test_the_credential_command_ledger_is_stated_and_never_carried` (runs without age). It
+  creates a real ledger beside the vault and checks that the category is present, that the
+  snapshot has none of the ledger tables, and that each ledger table name is refused by
+  `classify_table`.
+- `test_a_backup_beside_a_credential_command_ledger_restores_without_it` needs
+  `DEEPTWIN_AGE_RUNTIME_ROOT`, the locked age 1.3.2 build. It **skipped here**: the
+  container's `/usr/bin/age` does not match the locked digests.
+
+```text
+env -u DEEPTWIN_LIVE_ANTHROPIC_API_KEY .venv/bin/python -m pytest -q -p no:cacheprovider \
+  app/tests/test_credential_{custody,gateway_main,gateway_peercred,gateway_persistence,gateway_service,gateway_startup,import_boundary,ingress,root,routes,routes_v2,vault}.py \
+  app/tests/test_provider_gateway_channel.py app/tests/test_provider_gateway_owned.py \
+  app/tests/test_server.py app/tests/test_server_api_v1.py app/tests/test_server_session_integration.py \
+  app/tests/test_provider_transport.py app/tests/test_web_owner_integration.py \
+  app/tests/test_first_party.py app/tests/test_first_party_dependencies.py app/tests/test_backup.py
+459 passed, 12 skipped (the age-gated backup tests), 1 known starlette warning
+  (437 passed / 11 skipped on the base commit; +21 gateway-entrypoint tests, +1 backup
+  ledger test, +1 age-gated backup test skipped here)
+app/tests/test_{works_api,runs_api,provider_source_startup,router_composition}.py
+107 passed
+deploy/tests (no Docker)
+449 passed, 369 subtests passed
+ruff check (new/changed files other than test_backup.py): All checks passed
+(test_backup.py keeps one pre-existing I001 at its deleted-original test)
+```
+
+Frozen identities (SHA-256; this block supersedes earlier blocks for these paths):
+
+```text
+5e0567d63cf5ae078a5ba2957ad434b8112b91dd320ab2ab343e556be3c14214  app/workers/credential_attachment.py
+29e3e5c0f63f10d2bdda069435249aaea3b115a4aaad02d38bb8d51f501c4c9f  app/workers/credential_gateway_main.py
+226d5958ac94ddd4fb88b31194cf2892d6bdf220c8139444fd2b175079531760  app/api/credential_wiring.py
+dce0feb8fa5ae985df7749777c31439a47f29a2b7909c53b5b04d46916b3756b  app/operations/backup.py
+ec75d43a10d3b1b351b67eb693c5b3493b16e7e3f3997225ddd5cea8a7b6abdf  app/tests/test_credential_gateway_main.py
+77f7def9f1398c884d9c1abfda546bc5fb05e88de1de426e68af36114d07c4fe  app/tests/support/credential_gateway_launcher.py
+5262d00f088e312177ce2c76b2c17c95fc51e068b64e81056ea0022be10675cc  app/tests/support/credential_app_child.py
+e9b68b5948400132a2a5f4d5feaed709251ba7055c20e7aaa1cbc220a36af8dc  app/tests/test_backup.py
+6a18faa38379724a18466f39b42f66c4405fe11eb790b8e9c21addd39cbd152e  deploy/compose.yaml (unchanged)
+```
+
+### Still not claimed
+
+- **Compose and image.** Nothing in `deploy/compose.yaml` runs the entrypoint yet (see
+  above). No image packages it, and no deployment step performs vault genesis or delivers
+  the shared attachment object to both services. The real-UDS runs used synthetic numeric
+  identities as root in this development container, not the candidate service images.
+- **Control-plane restart.** The restart test restarts the gateway only. The pending act
+  lives in one control-plane process; recovery after a control-plane restart relies on the
+  ledger's persisted pending state, which the routes tests cover in-process, not with a
+  second `create_app` process.
+- **Age-gated backup test.** It did not run here.
+- **Items carried over.**
+  - binding CAS;
+  - catalog invalidation on rotate;
+  - the unknown-command fence;
+  - `unbound_orphan` cleanup;
+  - the API contract's handle wording;
+  - erasure/`erasure_completed`;
+  - the T087 manifest/budget binding and send-engine composition in the gateway process.
+- **Audit and regression.** No independent audit of this slice has run, and the full shared
+  regression was not re-run.
