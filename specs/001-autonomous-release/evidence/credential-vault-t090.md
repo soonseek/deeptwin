@@ -597,3 +597,179 @@ f3f14f96f9a61ae280ae727c08341cf09bca5eff5b50e662b4929ea738bce1ff  app/tests/test
   responses" wording is still to be reconciled with the addressable rotate/delete routes.
 - Erasure (`vault-maintenance`, `erasure_completed`), the T087 manifest/budget binding, a UI page
   and an independent audit of this slice remain open. The full shared regression was not re-run.
+
+## 2026-09-25 — supported-factory wiring and the owner credential UI
+
+This slice addresses the first item under "Remaining" above: the routes now exist in the supported
+factory and are wired whenever the deployment names the gateway. The gateway-side bootstrap is
+still not built.
+
+### Production wiring
+
+- `app/api/credential_wiring.py` (new, control plane; imports no vault code):
+  - `CredentialGatewayConfiguration` is the deployment's optional, nonsecret naming of the gateway
+    endpoint. It is the exact object `{"schema": "deeptwin-credential-gateway-attachment-v1",
+    "pair_root", "requester_boot_id"}` (absolute pair root, broker boot-id grammar).
+  - `open_credential_attachment` checks the named pair root against the fixed profile
+    (`gateway_channel.gateway_channel()`, i.e. `/run/deeptwin/ipc/cp-provider`). Any other path
+    fails the start with `ValueError`. There is no fallback.
+  - It then opens the `CredentialCommandLedger` at `<instance state dir>/credential-commands.sqlite3`
+    (0600) and builds `CredentialGatewayClient.for_gateway`. Each call of that client runs
+    `listener.connect_authenticated`, which covers readiness-record verification, the socket
+    inode/owner/mode check, `broker.connect_verified` with SO_PEERCRED, and the boot-secret
+    handshake.
+  - The `credentials-v1` first-party contribution (`route_contributions/credentials-v1.json`) adds
+    three routes: `credentials.read` (GET), `credentials.store` (POST) and `credentials.delete`
+    (DELETE `/api/v1/credentials/{handle}`). They use `browser_session` and work.read/work.command
+    and are installed after `claude-connection-v1`.
+- `app/api/credential_routes.py`: `install_credential_ingress(target, *, seams=None)` now also
+  mounts on an `APIRouter` with fixed `CredentialSeams`. Without seams, the development host still
+  reads `app.state`. `credential_seams(client, ledger)` binds `CredentialActs`, and
+  `attach_credential_gateway` uses it. Route behaviour and projections are unchanged.
+- `app/api/first_party.py`: `ApplicationContext.credential_gateway` must be `None` or an exact
+  `CredentialAttachment`.
+- `app/server.py`:
+  - `create_app(..., credential_gateway=None)` opens the attachment once the serving lock, the
+    Store and the API components exist, hands it to the composition and exposes it as
+    `app.state.credential_attachment`.
+  - `main()` accepts `--credential-gateway-config <json>`.
+  - Without it, the routes are composed unbound and answer `503 dependency_unavailable`. No ledger
+    file is created and no connect is attempted.
+- Route count: 73 → 76 installed. The pinned counts and id lists in `test_first_party`,
+  `test_web_owner_integration`, `test_works_api`, `test_runs_api` and `test_provider_source_startup`
+  were updated.
+
+### Owner UI
+
+`app/static/account.mjs` gains `createCredentialsPanel`. It is mounted on the records page next to
+"계정과 세션" (`records-credentials` in `records.html` and `records-page.mjs`). No new static module
+was added.
+
+- The list shows only the redacted projection: provider · handle · state label.
+- The panel states that deleting locally does not revoke the key at the provider. The delete
+  confirmation says `provider_revocation: not_performed`.
+- Add and rotate use a masked field. It is read once and cleared synchronously before the request
+  leaves, and a rotate carries `rotate_from`. The secret goes into no attribute, dataset, status
+  text or storage.
+- Delete asks for explicit confirmation and sends only `{intent_id}`.
+- `command_pending` keeps the act's intent in memory, and the next submit ("결과 다시 확인") reuses
+  it. The server then only queries the earlier command and never ingests the re-entered value.
+- `secret_input_lost` is terminal: the next submit gets a new intent.
+- `dependency_unavailable` (gateway not attached or not answering) is shown as unavailable, with no
+  list.
+
+### Tests
+
+`app/tests/test_credential_gateway_startup.py` (6, new):
+
+- **Real UDS through the real factory** (root on Linux; skipped elsewhere).
+  - The parent initializes the relocated `cp-provider` pair root and starts the existing gateway
+    child (`credential_peercred_child`, role `serve`, provider identity 20103 with pair group
+    21101).
+  - The new `app/tests/support/credential_app_child.py` runs the actual `create_app` as control
+    identity 20102:20102 plus the pair group, with a configuration naming that pair root. The only
+    substitution is the module-local profile relocation.
+  - The child bootstraps an owner session over HTTP, then runs:
+    - create: 201 `stored_unbound`;
+    - GET;
+    - rotate: 201, same handle;
+    - GET;
+    - delete: 200 `cleanup_pending`, `provider_revocation: not_performed`;
+    - GET: `cleanup_pending`.
+  - What the parent checks:
+    - the gateway served exactly 4 sessions (the GETs make no gateway call);
+    - the vault journal counts are (2, 2, 2, 2) and health reports `cleanup_pending` = 2;
+    - the ledger is 0600 and owned by the control UID;
+    - no vault module was loaded in the control process;
+    - a sweep finds neither secret nor its sha256 anywhere in the tree.
+- **Unnamed gateway.** The routes are composed and sit behind the owner session (401 without one).
+  GET, POST and DELETE answer 503 `dependency_unavailable` with no secret echoed. No ledger file
+  exists, and `listener.connect_authenticated`/`broker.connect_verified` are patched to fail if
+  called.
+- **Wrong or invalid naming.** A wrongly named pair root, or a non-configuration object, fails
+  `create_app`, and no ledger is created.
+- **Fixed pair root without a gateway.** The fixed pair root binds a 0600 ledger and the fixed
+  client without connecting.
+- **Configuration exactness.**
+- **`main()`.** It passes `None` without the flag and the parsed configuration with it.
+
+Other test changes:
+
+- `app/tests/test_credential_import_boundary.py` also imports `app.api.credential_wiring` and
+  `app.api.first_party_catalog` in the fresh control interpreter. It still finds no vault or crypto
+  module.
+- `app/tests/account-credentials.test.mjs` (9, new, `node --test`):
+  - the redacted list and the revocation text, with no actions on retired rows;
+  - add: the field is cleared synchronously and exactly one request carries the secret. Afterwards
+    the secret is in no text, attribute, dataset or value, and `localStorage`/`sessionStorage` are
+    never touched;
+  - an empty secret sends nothing;
+  - rotate carries `rotate_from`;
+  - delete asks first, then sends only the intent;
+  - `command_pending` for create and for delete: the retry reuses the same intent;
+  - `secret_input_lost`: the next act gets a new intent;
+  - unavailable and offline.
+- Mutation check (temporary, reverted): composing `credentials-v1` unbound even when a gateway is
+  named fails the real-UDS test.
+
+```text
+env -u DEEPTWIN_LIVE_ANTHROPIC_API_KEY .venv/bin/python -m pytest -q -p no:cacheprovider \
+  app/tests/test_credential_{custody,gateway_peercred,gateway_persistence,gateway_service,gateway_startup,import_boundary,ingress,root,routes,routes_v2,vault}.py \
+  app/tests/test_first_party.py app/tests/test_first_party_dependencies.py \
+  app/tests/test_provider_gateway_channel.py app/tests/test_provider_gateway_owned.py app/tests/test_provider_transport.py \
+  app/tests/test_server.py app/tests/test_server_api_v1.py app/tests/test_server_session_integration.py \
+  app/tests/test_web_owner_integration.py
+433 passed, 2 warnings (the known starlette deprecation; one transient unraisable socket warning
+  that did not reproduce in any subset run)
+app/tests/test_{works_api,runs_api,provider_source_startup,web_shell_assets,router_composition,claude_live_path}.py
+125 passed
+node --test app/tests/{account,account-credentials,records-page,claude-connection,session,settings}.test.mjs
+all pass. app/tests/browser-records.test.mjs fails 3/3 here with "Controlled installed runtimes
+  required; never skip" (no controlled browser runtime in this container)
+ruff check (credential_wiring, credential_routes, startup test, app child): All checks passed
+```
+
+Frozen identities (SHA-256; this block supersedes earlier blocks for these paths):
+
+```text
+9c727910adf9882ef617eebd7809aaf63ebfa5ec3d9dbd303aabe15108b19ef2  app/api/credential_wiring.py
+2c005a15b6e66a270651f75d432a44968aff92f55b109d0f57968f3aba3204e2  app/api/credential_routes.py
+e00bcd293514e6e096e6b47d9be82a49ed7f8bea5cda1fb68cef75d4430c070c  app/api/route_contributions/credentials-v1.json
+70a7305572da66761515894d1a6a4ccc8f8912e8716f74cf112b37faaaa43af9  app/api/first_party.py
+666ca8ccb95cbd22e79de9bb4992eae40838431231dd4f4063ca38d9a7179d46  app/api/first_party_catalog.py
+79a6a9cfb4ad3a6a356fa117fcf1305fcddeedd7b866e49419411bf00e5d857b  app/server.py
+db0eca79cf3fedae898c011a17c77563c23bb00af03195d37d1078c29c532948  app/static/account.mjs
+3e5f3db33a0dffbcb011e66cd7659a31b0401b14d99257e619f3bd5415d8b20f  app/static/records-page.mjs
+51a9a41e6ffd7c29cc26b7e0ac5562c31862db9db2eefea2766b38c68f0fe651  app/static/records.html
+3f97cffd326ecd5bc941187a4a226e1f6f824771e5f3c6dcadb3f12332007f9e  app/tests/test_credential_gateway_startup.py
+29b5ca153b4fb3a8ed4a16fed8d1f9df88ecedd8c46ac2ba5e38b05d49cc05aa  app/tests/support/credential_app_child.py
+4253aa791aafd50d5cb3054a6a2a33e7336d5ce3391e064562c0600a93e38cf6  app/tests/account-credentials.test.mjs
+e3353626f4e528bfcbe8e72feda0d673aad1f76aa94ccee6ec909ef29b98a139  app/tests/test_credential_import_boundary.py
+d5c4470465cef47cc4b1d05c746a444c7f67251e17b7d03adf911b7e1e08dc03  app/tests/test_first_party.py
+2af3aff8b8bcd219798e4879753840eaef9bfc5d435e0dc50d9cbd5347cbafa2  app/tests/test_web_owner_integration.py
+d8cc8dcc5acbb27432f6575b815d7bf8dcfffcaac6fcc3b2a56ee142fbd121b4  app/tests/test_works_api.py
+b101c97be6a2d705cc347a1893e15f8e07d12d3ecdebce212ca1e488237caeb4  app/tests/test_runs_api.py
+aa5db484bb6568041179639e39bab6c06c2bfaab760a2786e83ef233faa00b62  app/tests/test_provider_source_startup.py
+```
+
+### Still not claimed
+
+- **Gateway-side bootstrap.** No production process yet binds the gateway listener, initializes
+  the `cp-provider` generation or serves `CredentialGatewayService`. Nothing establishes the
+  requester-boot trust either: the attachment names the requester boot id, and the gateway must be
+  configured to expect that same id. Until a gateway serves the pair root, a configured deployment
+  answers a retryable `503 dependency_unavailable` (a pre-send connect failure).
+- **Qualification environment.** The real-UDS run used synthetic numeric identities as root in
+  this development container, not in the candidate service image.
+- **Ledger coverage.** The ledger is a separate SQLite file next to `intake.sqlite3`. It is not
+  covered by the backup, export or retention flows.
+- **Items carried over from the section above.**
+  - binding CAS;
+  - catalog invalidation on rotate;
+  - the unknown-command fence;
+  - `unbound_orphan` cleanup;
+  - reconciling the API contract's handle wording;
+  - erasure;
+  - the T087 manifest/budget binding.
+- **Audit and regression.** No independent audit of this slice has run, and the full shared
+  regression was not re-run.

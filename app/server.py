@@ -826,8 +826,14 @@ def create_development_app(data_dir, port=4193, *, codex_factory=None, understan
 def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, expected_gid,
                runtime_dispatch_resolver=None, worker_dispatch_factory=None,
                first_party_startup_values=None, additional_protected_roots=(), run_executor=None,
-               recovery_trust_set=None):
+               recovery_trust_set=None, credential_gateway=None):
     """Supported web factory: exact deployment authority, no host provider discovery.
+
+    ``credential_gateway`` is the deployment's optional naming of the credential gateway
+    endpoint (`CredentialGatewayConfiguration`). Named, the credential routes are bound
+    to a 0600 command ledger in the instance state directory and a frame-only client
+    over the verified `cp-provider` connect and handshake; a name that is not the
+    verified pair root fails the start. Unnamed, those routes answer an honest 503.
 
     Equal configuration/root/database recovery epochs start normally. A configuration and
     root at N+1 over a database at N start restricted: the recovery receipt, verified against
@@ -857,6 +863,10 @@ def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, e
             or type(expected_uid) is not int or type(expected_gid) is not int
             or min(expected_uid, expected_gid) < 0):
         raise ValueError('Deployment configuration is required')
+    from .api.credential_wiring import CredentialGatewayConfiguration, open_credential_attachment
+
+    if credential_gateway is not None and type(credential_gateway) is not CredentialGatewayConfiguration:
+        raise ValueError('Invalid credential gateway configuration')
     if recovery_trust_set is not None and (type(recovery_trust_set) is not bytes
                                            or not 1 <= len(recovery_trust_set) <= 16384):
         raise ValueError('Invalid recovery trust set')
@@ -879,6 +889,7 @@ def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, e
         with _validated_data_dir(data_dir) as (validated_data_path, directory_fd):
             lock = ServingLock(validated_data_path, expected_uid=expected_uid, expected_gid=expected_gid)
             store = Store(validated_data_path, _verified_directory_fd=directory_fd)
+            state_directory = validated_data_path
         domain = DomainStore(store)
         try:
             domain.roots()
@@ -892,6 +903,8 @@ def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, e
             # the start (fail closed) and the next start reconciles again
             authority.reconcile_recovery()
         components = initialize_api_v1(store, authority, domain_store=domain)
+        credential_attachment = (None if credential_gateway is None else open_credential_attachment(
+            credential_gateway, state_directory=Path(state_directory).absolute()))
         authority._permission_host = components.permission_host
         slot = None if worker_dispatch_factory is None else WorkerDispatchServiceSlot(
             domain_store=domain, permission_gate=components.permission_gate,
@@ -964,9 +977,11 @@ def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, e
         publication = compose_first_party(application, ApplicationContext(
             components=components, owner_authority=authority, base_path=profile.base_path,
             runtime_dispatch_resolver=runtime_dispatch_resolver, worker_dispatch_slot=slot,
-            startup_inputs=startup_inputs, run_executor=run_executor))
+            startup_inputs=startup_inputs, run_executor=run_executor,
+            credential_gateway=credential_attachment))
         application.state.route_composition = publication.receipt
         application.state.first_party_exports = publication.exports
+        application.state.credential_attachment = credential_attachment
         application.include_router(create_session_router(authority))
         application.add_middleware(WebBoundary, authority=authority)
 
@@ -999,6 +1014,8 @@ def main():
     parser.add_argument('--expected-gid', type=int, required=True)
     parser.add_argument('--recovery-trust-set', type=Path, default=None,
                         help='public deployment-public-trust-set-v2 for a recovery start')
+    parser.add_argument('--credential-gateway-config', type=Path, default=None,
+                        help='deeptwin-credential-gateway-attachment-v1 naming the credential gateway endpoint')
     args = parser.parse_args()
     if min(args.expected_uid, args.expected_gid) < 0:
         parser.error('Expected ownership IDs must be nonnegative')
@@ -1015,6 +1032,16 @@ def main():
             parser.error('Invalid recovery trust set path')
         with trust_path.open('rb') as source:
             trust_set = source.read(16385)
+    credential_gateway = None
+    if args.credential_gateway_config is not None:
+        from .api.credential_wiring import CredentialGatewayConfiguration
+
+        gateway_path = args.credential_gateway_config.absolute()
+        if '..' in gateway_path.parts:
+            parser.error('Invalid credential gateway configuration path')
+        with gateway_path.open('rb') as source:
+            credential_gateway = CredentialGatewayConfiguration.from_mapping(parse_json_object(source.read(4097),
+                required=('schema', 'pair_root', 'requester_boot_id'), limits=WireLimits(max_bytes=4096)))
     # the direct-adapter Claude profile: the code-owned run executor, bounded by the
     # operator's non-secret limits (the API key itself is entered by the owner in the
     # browser and kept in server memory only)
@@ -1025,7 +1052,7 @@ def main():
     application = create_app(args.data_dir, deployment_config=configuration,
         session_root_dir=args.session_root_dir, expected_uid=args.expected_uid, expected_gid=args.expected_gid,
         additional_protected_roots=(config_path.parent,), run_executor=ClaudeRunExecutor(limits=limits),
-        recovery_trust_set=trust_set)
+        recovery_trust_set=trust_set, credential_gateway=credential_gateway)
     uvicorn.run(application, host='0.0.0.0', port=8080, workers=1, reload=False,
                 proxy_headers=False, forwarded_allow_ips='', access_log=False)
 

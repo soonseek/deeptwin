@@ -147,8 +147,43 @@ def _delete_intent(request: Request, body: bytes) -> str:
     return intent
 
 
-def install_credential_ingress(app) -> None:
-    """Attach the authenticated create/rotate, delete and status routes."""
+class CredentialSeams:
+    """The three bound route seams, fixed at composition (the supported factory).
+
+    ``None`` in a seam keeps that route honestly unavailable."""
+
+    __slots__ = ("credential_gateway_retire", "credential_gateway_submit", "credential_status_snapshot")
+
+    def __init__(self, *, submit=None, retire=None, snapshot=None):
+        for value in (submit, retire, snapshot):
+            if value is not None and not callable(value):
+                raise TypeError("a credential seam must be callable")
+        self.credential_gateway_submit = submit
+        self.credential_gateway_retire = retire
+        self.credential_status_snapshot = snapshot
+
+
+def credential_seams(client, ledger) -> CredentialSeams:
+    """Bind a frame-only gateway client and the control-plane ledger to the seams."""
+    from .credential_commands import CredentialActs
+
+    acts = CredentialActs(client, ledger)
+    return CredentialSeams(
+        submit=acts.store,
+        retire=lambda intent_id, handle: acts.delete(intent_id=intent_id, handle=handle),
+        snapshot=ledger.snapshot,
+    )
+
+
+def install_credential_ingress(app, *, seams=None) -> None:
+    """Attach the authenticated create/rotate, delete and status routes to an app or
+    router. Without ``seams`` each request reads the seams from ``app.state`` (the
+    development host); with a :class:`CredentialSeams` they are fixed."""
+    if seams is not None and type(seams) is not CredentialSeams:
+        raise TypeError("credential seams must be exact")
+
+    def bound(request):
+        return request.app.state if seams is None else seams
 
     @app.api_route("/api/v1/credentials", methods=["POST"])
     async def credentials_v1(request: Request):
@@ -177,7 +212,7 @@ def install_credential_ingress(app) -> None:
                                  message="자격증명 요청 형식을 확인해 주세요.",
                                  retryability=NOT_RETRYABLE)
             submit = getattr(
-                request.app.state, "credential_gateway_submit", None
+                bound(request), "credential_gateway_submit", None
             )
             if submit is None:
                 raise ApiDependencyUnavailable(
@@ -210,7 +245,7 @@ def install_credential_ingress(app) -> None:
                     retryability=NOT_RETRYABLE,
                 )
             retire = getattr(
-                request.app.state, "credential_gateway_retire", None
+                bound(request), "credential_gateway_retire", None
             )
             if retire is None:
                 raise ApiDependencyUnavailable(
@@ -231,7 +266,7 @@ def install_credential_ingress(app) -> None:
             # it makes zero vault, gateway, provider or network effect.
             _authenticated(request, read=True)
             snapshot = getattr(
-                request.app.state, "credential_status_snapshot", None
+                bound(request), "credential_status_snapshot", None
             )
             if snapshot is None:
                 raise ApiDependencyUnavailable(
@@ -245,7 +280,8 @@ def install_credential_ingress(app) -> None:
             return _failure(exc)
 
 
-__all__ = ["attach_credential_gateway", "install_credential_ingress"]
+__all__ = ["CredentialSeams", "attach_credential_gateway", "credential_seams",
+           "install_credential_ingress"]
 
 
 def attach_credential_gateway(app, client, ledger) -> None:
@@ -255,11 +291,7 @@ def attach_credential_gateway(app, client, ledger) -> None:
     The client comes from :mod:`app.workers.credential_channel`, which imports no
     vault code. The status snapshot reads the ledger only — never the gateway.
     """
-    from .credential_commands import CredentialActs
-
-    acts = CredentialActs(client, ledger)
-    app.state.credential_gateway_submit = acts.store
-    app.state.credential_gateway_retire = (
-        lambda intent_id, handle: acts.delete(intent_id=intent_id, handle=handle)
-    )
-    app.state.credential_status_snapshot = ledger.snapshot
+    seams = credential_seams(client, ledger)
+    app.state.credential_gateway_submit = seams.credential_gateway_submit
+    app.state.credential_gateway_retire = seams.credential_gateway_retire
+    app.state.credential_status_snapshot = seams.credential_status_snapshot

@@ -8,7 +8,7 @@
 // claimed where no backup worker is connected, and nothing is deleted
 // automatically. All server text reaches the DOM through textContent only.
 
-import { createAccountPanel } from './account.mjs';
+import { createAccountPanel, createCredentialsPanel } from './account.mjs';
 import { createClaudeConnection } from './claude-connection.mjs';
 import { recordsRoutes } from './records.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
@@ -20,6 +20,7 @@ export const MOUNT_IDS = Object.freeze({
 export const PAGE_SIZE = '50';
 export const ACCOUNT_MOUNT_ID = 'records-account';
 export const CONNECTION_MOUNT_ID = 'records-connection';
+export const CREDENTIALS_MOUNT_ID = 'records-credentials';
 
 export const STATUS_LABELS = Object.freeze({
   succeeded: '성공', failed: '실패', cancelled: '취소', pending: '대기', unknown: '결과 미상',
@@ -146,9 +147,13 @@ export async function boot({ document, location, fetch } = {}) {
   const connection = connectionRoot !== null && typeof connectionRoot?.replaceChildren === 'function'
     ? createClaudeConnection({ root: connectionRoot, document, request: session.request, basePath }) : null;
   if (connection !== null) await connection.load().catch(() => {});
+  const credentialsRoot = document.getElementById(CREDENTIALS_MOUNT_ID);
+  const credentials = credentialsRoot !== null && typeof credentialsRoot?.replaceChildren === 'function'
+    ? createCredentialsPanel({ root: credentialsRoot, document, fetch, basePath, session }) : null;
+  if (credentials !== null) await credentials.load().catch(() => {});
   const log = createEventLog({ root: roots.logs, document, request: session.request, basePath });
   await log.load().catch(() => {});
-  return Object.freeze({ established: true, basePath, sections, log, account, connection });
+  return Object.freeze({ established: true, basePath, sections, log, account, connection, credentials });
 }
 
 if (typeof globalThis.document === 'object' && globalThis.document !== null

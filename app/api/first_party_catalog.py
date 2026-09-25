@@ -1,6 +1,7 @@
 """The complete build-installed catalog; not a runtime extension registry."""
 
 from .claude_connection import connection_services
+from .credential_wiring import credential_services
 from .graphs import graph_services
 from .hypotheses import hypothesis_services
 from .work_models import work_model_services
@@ -66,6 +67,13 @@ INSTALLED = (
         ("browser_session",),
         ("work.command", "work.read"),
         provides=("claude.connection",),
+    ),
+    InstalledContribution(
+        "credentials-v1.json",
+        "app.api.credential_wiring:create_router",
+        credential_services,
+        ("browser_session",),
+        ("work.command", "work.read"),
     ),
     InstalledContribution(
         "work-models-v1.json",

@@ -384,6 +384,17 @@ understanding; failure/restart preserves input. Fixture and live proofs remain s
   replay. `secret_input_lost` is terminal, and GET reads the ledger only. Covered by 10 full-stack
   tests (evidence/credential-vault-t090.md §2026-09-25 routes). Production wiring, binding CAS,
   catalog invalidation, the unknown-command fence and erasure are still open.
+  2026-09-25 (open, wiring + UI): the supported `create_app` composes the credential routes as the
+  `credentials-v1` contribution. When the deployment names the gateway endpoint
+  (`--credential-gateway-config`, which must be the verified `cp-provider` pair root), startup opens
+  the 0600 ledger in the instance state directory and a client over the verified connect/handshake.
+  Unnamed, the routes answer 503 with zero effect. A root-only test runs the real factory in a
+  control-identity child against a gateway child over a real UDS (SO_PEERCRED): HTTP create, GET,
+  rotate, GET, delete and GET. The records page gains a credentials panel (redacted list, add,
+  rotate, delete saying the provider key is not revoked, and command_pending/secret_input_lost/
+  unavailable states) with node tests (evidence/credential-vault-t090.md §2026-09-25 wiring). The
+  gateway-side bootstrap (listener, generation, trusted requester boot), binding CAS, catalog
+  invalidation, the unknown-command fence and erasure are still open.
 - [ ] T024 [US1] Migrate browser MediaDevices/AudioWorklet capture and the existing cumulative
   whisper.cpp POST path to ADR-011's versioned non-overlapping one-second PCM PUT/SSE sessions in
   app/speech.py, app/speech_sessions.py, app/api/speech_routes.py, app/workers/speech.py and

@@ -148,8 +148,13 @@ class ApplicationContext:
     # the code-owned run executor (compilation authority + handler registry);
     # trusted host wiring, never page input; None leaves the run routes unavailable
     run_executor: object | None = None
+    # the credential gateway attachment (ledger + frame-only client) the host opened
+    # from the deployment's named endpoint; None composes the credential routes unbound
+    credential_gateway: object | None = None
 
     def __post_init__(self):
+        from .credential_wiring import CredentialAttachment
+
         if (
             type(self.components) is not ApiV1Components
             or type(self.startup_inputs) is not StartupInputs
@@ -164,6 +169,10 @@ class ApplicationContext:
                 self.run_executor is not None
                 and not (callable(getattr(self.run_executor, "compile", None))
                          and callable(getattr(self.run_executor, "scheduler", None)))
+            )
+            or (
+                self.credential_gateway is not None
+                and type(self.credential_gateway) is not CredentialAttachment
             )
         ):
             raise TypeError(
