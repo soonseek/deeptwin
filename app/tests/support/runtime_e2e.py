@@ -7,7 +7,9 @@ gathers them, the owner's gate holds the release, and one consumer reads everyth
   `page-shooter` (agent) to `browser_screenshot` 1.0.0. Each dispatches ONE attempt
   through the real `NodeAttemptDispatcher` and the product's `BrowserToolset`
   (`app.state.browser_tools`) to the sandboxed browser worker, which reaches the local
-  fixture site only through the fetch service under one `BrowserGrant`.
+  fixture site only through the fetch service under the owner's persisted browser grant
+  record (the compiled binding's `grant_ref`, re-checked against the run's approved
+  tool permissions on every dispatch; never a grant supplied in code).
 - `documents` (deterministic, handler `documents-render-v1`) renders a PDF, a CSV table
   and a PNG figure with the product's document adapter (`app/adapters/documents.py`:
   reportlab/pypdfium2/Pillow, each output reopened and inspected by the adapter).
@@ -46,7 +48,6 @@ from app.runtime.graph import compile_graph
 from app.runtime.ledger import OwnerIdentity
 from app.services.run_artifacts import _entries
 from app.workers.browser_channel import BrowserRequest
-from app.workers.fetch_channel import BrowserGrant
 
 SITE = "https://granted.test/"
 READ_URL = SITE + "report"
@@ -73,7 +74,10 @@ FIGURE_SPEC = {
 }
 
 
-def e2e_graph(*, recovery=False):
+def e2e_graph(grant_ref: EntityRef, *, recovery=False):
+    """The graph, bound to the owner's persisted browser grant record `grant_ref`."""
+
+    from app.tests.support.browser_grant_chain import _replace_grant
     from app.tests.test_graph_contract import (
         approval_edge,
         artifact_edge,
@@ -131,19 +135,42 @@ def e2e_graph(*, recovery=False):
     ]
     raw["completion_criteria"] = [{"criterion_id": "consumer-report", "node_id": "consumer",
                                    "output_slot": "result", "artifact_contract_id": CONTRACT, "min_items": 1}]
-    return raw
+    return _replace_grant(raw, ref("grant", 6), grant_ref.as_dict())
 
 
-def e2e_authority():
-    from app.tests.test_graph_contract import authority_with, trusted_tool
+def e2e_authority(grant_ref: EntityRef):
+    """Both browser ToolDefinitions require exactly the owner's grant record."""
 
-    return authority_with([trusted_tool(tool_id="browser_read", number=4),
-                           trusted_tool(tool_id="browser_screenshot", number=5)])
+    from app.runtime.graph import CompilationAuthority
+    from app.tests.test_graph_contract import ref, trusted_tool
+
+    definitions = []
+    for tool, number in (("browser_read", 4), ("browser_screenshot", 5)):
+        definition = list(trusted_tool(tool_id=tool, number=number))
+        definition[1] = grant_ref
+        definitions.append(tuple(definition))
+    return CompilationAuthority.from_trusted(
+        model_choices=[(EntityRef.from_dict(ref("model_choice", 3)), ("text",))], tool_definitions=definitions,
+        grant_refs=[grant_ref], approval_scopes=["release-output"],
+        observation_contract_refs=[EntityRef.from_dict(ref("observation_contract", 7))],
+        budget_policy_refs=[EntityRef.from_dict(ref("budget_policy", 8))], artifact_schema_refs=[])
 
 
-def browser_grant():
-    return BrowserGrant(sources=(SITE,), recipients=("granted.test",), max_response_bytes=1024 * 1024,
-                        max_total_bytes=4 * 1024 * 1024, max_requests=32, max_redirects=3, ttl_ms=60_000)
+def grant_command():
+    """The owner's `browser-grant-command-v1` for the fixture site: the exact pages the
+    roles open, pure navigation (no parameters, no source values)."""
+
+    from app.tests.support.browser_grant_chain import future
+
+    return {
+        "schema_version": "browser-grant-command-v1", "command_id": str(uuid4()), "label": "T049 고정 사이트 읽기",
+        "tools": ["browser_read", "browser_screenshot"], "sources": [SITE], "recipients": ["granted.test"],
+        "entries": [{"url": url, "parameters": []} for url in (READ_URL, SHOT_URL, SLOW_ONCE_URL)],
+        "data_sources": [],
+        "limits": {"max_response_bytes": 1024 * 1024, "max_total_bytes": 4 * 1024 * 1024, "max_requests": 32,
+                   "max_redirects": 3, "ttl_ms": 60_000},
+        "expires_at_utc": future(),
+    }
 
 
 def _stamp():
@@ -180,13 +207,14 @@ class RuntimeE2EExecutor:
         from app.services.runs import PersistentRuns
 
         self.app, self.refs = app, refs
+        self.grant_ref = EntityRef.from_dict(refs["grant"])
         domain = app.state.domain_store
         for name, raw in graphs.items():
             graph = PersistentRuns._graph(domain.get(EntityRef.from_dict(raw)))
             self.reader_urls[self.compile(graph).graph_digest] = SLOW_ONCE_URL if name == "recovery" else READ_URL
 
     def compile(self, graph):
-        return compile_graph(graph, e2e_authority())
+        return compile_graph(graph, e2e_authority(self.grant_ref))
 
     def _context(self, ledger, run_id):
         """One attempt context per run (principal, grant, deadline), persisted so a
@@ -222,7 +250,7 @@ class RuntimeE2EExecutor:
         transports, bindings = {}, {}
         for node_id, (binding_id, request) in requests.items():
             transport = tools.transport_for(domain_store=domain, ledger=ledger, compiled=compiled, node_id=node_id,
-                                            binding_id=binding_id, request=request, grant=browser_grant())
+                                            binding_id=binding_id, request=request)
             transports[node_id] = transport
             bindings[node_id] = na.AttemptBinding.create(
                 envelope_ref=EntityRef.from_dict(self.refs["envelope"]),

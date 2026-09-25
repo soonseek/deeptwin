@@ -14,9 +14,14 @@ isolated document worker, each a separate process under its own identity.
 
 `serve` (20102) starts the document worker harness as its own child process, builds the
 app with the product's `BrowserToolset` over the real `cp-browser`/`cp-fetch` pair roots
-and the code-owned test executor of `app/tests/support/runtime_e2e.py`, seeds what the
-owner's routes cannot create (two stored graphs, an environment, a budget policy, the
-execution envelope/profile refs) once, and announces `E2E_SEED=` / `E2E_URL=`.
+and the code-owned test executor of `app/tests/support/runtime_e2e.py`, and once: sets up
+the owner (the browser test logs in), creates the owner's browser grant through its route
+(pure navigation to the three fixture pages), approves a design whose tool permissions is
+that grant record (the real producers of `browser_grant_chain.approved_environment`), and
+seeds what the owner's routes cannot create (two stored graphs bound to the grant record,
+a budget policy, the execution envelope/profile refs). It announces `E2E_SEED=` /
+`E2E_URL=`. No browser grant is ever supplied in code: each dispatch builds it from the
+persisted record and re-checks it against the run's approved tool permissions.
 
 The fetch child's only substitutions are the test-support ones of
 `app/tests/support/browser_worker_children.py` (fixture resolver table, test CA, fixture
@@ -39,6 +44,7 @@ from pathlib import Path
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPOSITORY))
+from app.domain.refs import EntityRef  # noqa: E402
 
 CONTROL, FETCH, BROWSER = 20_102, 20_104, 20_105
 BOOTS = {"control": "control-boot-t049", "browser": "browser-boot-t049"}
@@ -261,12 +267,34 @@ def launch(owned: Path) -> int:
 
 # --- the app server (control identity) ----------------------------------------------
 
-def seal(app, graphs_raw):
+def seal(app, profile, capability):
+    """What the owner's routes cannot create, plus the owner's own grant chain: the owner
+    is set up here (the browser later logs in), creates the browser grant through the
+    `browser_grants.create` route, and approves a design whose `tool_permissions` is that
+    grant record through the real producers; the runs' environment is that approval's
+    sealed environment record, and both graphs bind the grant record as their grant."""
+
+    from types import SimpleNamespace
+
+    from fastapi.testclient import TestClient
+
     from app.runtime.budgets import BudgetPolicy
     from app.services.design_persistence import encode_design_refs
+    from app.tests.support.browser_grant_chain import approved_environment
+    from app.tests.support.runtime_e2e import e2e_graph, grant_command
     from app.tests.test_graph_contract import parse
     from app.tests.test_server_api_v1 import immutable
+    from app.tests.test_web_owner_integration import bootstrap_client, bound_request, headers
 
+    client = TestClient(app, base_url=profile.http_origin)  # in-process; no lifespan, no socket
+    csrf = bootstrap_client(client, profile, capability)
+    created = client.post(profile.base_path + "api/v1/browser-grants", headers=headers(profile, csrf),
+                          json=grant_command())
+    if created.status_code != 201:
+        raise RuntimeError(f"the owner's grant was not created: {created.status_code}")
+    grant_ref = EntityRef.from_dict(created.json()["ref"])
+    request = bound_request(app, client, profile, csrf)
+    environment = approved_environment(SimpleNamespace(app=app, request=request), grant_ref)
     domain = app.state.domain_store
     roots = domain.roots()
     policy = BudgetPolicy.create(
@@ -274,15 +302,18 @@ def seal(app, graphs_raw):
         max_node_visits=24, max_loop_rounds=1, max_output_bytes=16 * 1024 * 1024, max_concurrency=4,
         max_wall_seconds=3_600, max_candidates=1)
     graphs = {name: immutable(domain, roots, "graph", content={
-        "design_kind": "functional_graph", "design": encode_design_refs(parse(raw).as_dict())}).ref.as_dict()
-        for name, raw in graphs_raw.items()}
+        "design_kind": "functional_graph",
+        "design": encode_design_refs(parse(e2e_graph(grant_ref, recovery=name == "recovery")).as_dict())}).ref.as_dict()
+        for name in ("main", "recovery")}
     return {"graphs": graphs,
             "work_revision_ref": immutable(domain, roots, "work_revision").ref.as_dict(),
-            "environment_ref": immutable(domain, roots, "environment").ref.as_dict(),
+            "environment_ref": environment.as_dict(),
             "budget_policy_ref": immutable(domain, roots, "budget_policy",
                                            content=policy.domain_content()).ref.as_dict(),
+            "grant_ref": grant_ref.as_dict(),
             "executor": {"envelope": immutable(domain, roots, "execution_envelope").ref.as_dict(),
-                         "profile": immutable(domain, roots, "runtime_profile").ref.as_dict()}}
+                         "profile": immutable(domain, roots, "runtime_profile").ref.as_dict(),
+                         "grant": grant_ref.as_dict()}}
 
 
 def serve(owned: Path, port: int) -> int:
@@ -293,7 +324,7 @@ def serve(owned: Path, port: int) -> int:
     from app.server import create_app
     from app.tests.support.browser_worker_children import _relocate
     from app.tests.support.document_worker_harness import process_client
-    from app.tests.support.runtime_e2e import RuntimeE2EExecutor, e2e_graph
+    from app.tests.support.runtime_e2e import RuntimeE2EExecutor
     from app.workers.browser_channel import BrowserControlConfiguration
 
     base, app_dir = owned / "ipc", owned / "app"
@@ -331,11 +362,11 @@ def serve(owned: Path, port: int) -> int:
     if seed_path.exists():
         seed = json.loads(seed_path.read_text())
     else:
-        seed = seal(app, {"main": e2e_graph(), "recovery": e2e_graph(recovery=True)})
+        seed = seal(app, profile, capability)
         seed_path.write_text(json.dumps(seed))
     executor.bind(app, seed["executor"], seed["graphs"])
     public = {key: seed[key] for key in ("graphs", "work_revision_ref", "environment_ref",
-                                           "budget_policy_ref")}
+                                           "budget_policy_ref", "grant_ref")}
     print(f"E2E_SEED={json.dumps(public, separators=(',', ':'))}", flush=True)
     print(f"E2E_URL={profile.http_origin}{profile.base_path}", flush=True)
     try:
