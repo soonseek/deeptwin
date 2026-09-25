@@ -151,8 +151,13 @@ class ApplicationContext:
     # the credential gateway attachment (ledger + frame-only client) the host opened
     # from the deployment's named endpoint; None composes the credential routes unbound
     credential_gateway: object | None = None
+    # the frame-only client of the isolated document service (`cp-document`) the host
+    # opened from the deployment's named endpoint; None leaves PDF/DOCX previews disclosed
+    # as needing it (and the page routes answering 503)
+    document_codec: object | None = None
 
     def __post_init__(self):
+        from ..workers.document_channel import DocumentCodecClient
         from .credential_wiring import CredentialAttachment
 
         if (
@@ -173,6 +178,10 @@ class ApplicationContext:
             or (
                 self.credential_gateway is not None
                 and type(self.credential_gateway) is not CredentialAttachment
+            )
+            or (
+                self.document_codec is not None
+                and type(self.document_codec) is not DocumentCodecClient
             )
         ):
             raise TypeError(

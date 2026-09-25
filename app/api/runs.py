@@ -37,9 +37,12 @@ STATUS = {
     "too_large": 413,
     "unavailable": 503,
 }
-# the artifact routes answer one code of their own: a byte range past the original
-ARTIFACT_STATUS = {**STATUS, "range_not_satisfiable": 416}
+# the artifact routes answer codes of their own: a byte range (or a page) past the
+# original, a page asked of a file that has none, and a document worker that refused
+ARTIFACT_STATUS = {**STATUS, "range_not_satisfiable": 416, "unsupported_media": 415,
+                   "codec_failed": 502}
 _ARTIFACT_VIEWS = {"content", "preview"}
+MAX_PAGE_DIGITS = 5
 _REF_FIELDS = ("kind", "id", "version", "sha256")
 _CREATE_FIELDS = (
     "command_id", "graph_ref", "work_revision_ref", "environment_ref", "consent_ref",
@@ -98,7 +101,8 @@ def artifact_error(error):
 def is_run_path(path: str) -> bool:
     """`/api/v1/runs`, `/api/v1/runs/{id}`, `/{id}/resume`, `/{id}/cancel` and
     `/{id}/recover`, and the run's artifacts: `/{id}/artifacts`, `/{id}/artifacts/{aid}`,
-    `…/{aid}/content`, `…/{aid}/preview`; the approvals routes under the same prefix
+    `…/{aid}/content`, `…/{aid}/preview`, `…/{aid}/pages/{n}` and `…/{aid}/pages/{n}/image`;
+    the approvals routes under the same prefix
     keep their own adapter."""
 
     if path == PATH:
@@ -147,8 +151,13 @@ def is_file_upload(path: str, method: str) -> bool:
 
 
 def _artifact_parts(parts):
-    """(artifact id or None, view or None) for an artifacts path, else None."""
+    """(artifact id or None, view or None) for an artifacts path, else None; a page
+    path is (artifact id, "pages/{n}") or (artifact id, "pages/{n}/image")."""
 
+    if len(parts) in {5, 6} and parts[1] == "artifacts" and parts[3] == "pages":
+        if len(parts) == 6 and parts[5] != "image":
+            return None
+        return (parts[2], "/".join(parts[3:]))
     if len(parts) < 2 or parts[1] != "artifacts" or len(parts) > 4:
         return None
     if len(parts) == 2:
@@ -156,6 +165,15 @@ def _artifact_parts(parts):
     if len(parts) == 3:
         return (parts[2], None)
     return (parts[2], parts[3]) if parts[3] in _ARTIFACT_VIEWS else None
+
+
+def page_number(raw) -> int:
+    """A canonical decimal page number, 1-based and bounded."""
+
+    if (type(raw) is not str or not 1 <= len(raw) <= MAX_PAGE_DIGITS or not raw.isascii()
+            or not raw.isdecimal() or raw != str(int(raw)) or int(raw) < 1):
+        raise RunRouteError()
+    return int(raw)
 
 
 def _ref_shape(value):
@@ -252,6 +270,8 @@ def preflight(scope, body, content_type):
                 raise RunRouteError()
             if artifact[0] is not None:
                 uuid_string(artifact[0])
+            if artifact[1] is not None and artifact[1].startswith("pages/"):
+                page_number(parts[4])
             return None
         if len(parts) == 2:
             if method != "POST" or content_type.split(";", 1)[0] != "application/json":
@@ -282,7 +302,8 @@ def run_services(context, *, dependencies):
         ledger=context.components.runtime_ledger, budget_book=context.components.budget_book,
         approvals=dependencies["run-approvals.service"], executor=context.run_executor,
     )
-    artifacts = PersistentRunArtifacts(context.domain_store, context.owner_authority, runs)
+    artifacts = PersistentRunArtifacts(context.domain_store, context.owner_authority, runs,
+                                       codec=context.document_codec)
     drafts = PersistentAlternativeDrafts(artifacts)
     return ContributionServices(
         create_router(runs=runs, artifacts=artifacts, drafts=drafts, base_path=context.base_path),
@@ -379,6 +400,36 @@ def create_router(*, runs, base_path, artifacts=None, drafts=None):
             value = await run_in_threadpool(artifacts.preview, request.state.authenticated_request,
                                             run_id, artifact_id, base_path=base_path)
             return JSONResponse(value)
+        except (RunRouteError, RunServiceError, RunArtifactError) as error:
+            return artifact_error(error)
+
+    @router.api_route(PATH + "/{run_id}/artifacts/{artifact_id}/pages/{page}", methods=["GET", "HEAD"])
+    async def artifact_page(request: Request, run_id: str, artifact_id: str, page: str):
+        try:
+            if artifacts is None:
+                raise RunRouteError("unavailable")
+            value = await run_in_threadpool(artifacts.page, request.state.authenticated_request,
+                                            run_id, artifact_id, page_number(page), base_path=base_path)
+            return JSONResponse(value)
+        except (RunRouteError, RunServiceError, RunArtifactError) as error:
+            return artifact_error(error)
+
+    @router.api_route(PATH + "/{run_id}/artifacts/{artifact_id}/pages/{page}/image",
+                      methods=["GET", "HEAD"])
+    async def artifact_page_image(request: Request, run_id: str, artifact_id: str, page: str):
+        try:
+            if artifacts is None:
+                raise RunRouteError("unavailable")
+            number = page_number(page)
+            meta, png, digest = await run_in_threadpool(
+                artifacts.page_image, request.state.authenticated_request, run_id, artifact_id,
+                number, base_path=base_path)
+            # a derived image the document worker produced: typed as the PNG it was
+            # checked to be, never the original, sandboxed like every artifact body
+            headers = {"Content-Disposition": f'inline; filename="{meta["role"]}-{meta["ordinal"]}-page-{number}.png"',
+                       "Content-Length": str(len(png)), "X-DeepTwin-Derived-SHA256": digest,
+                       "Content-Security-Policy": "sandbox; default-src 'none'"}
+            return Response(png, media_type="image/png", headers=headers)
         except (RunRouteError, RunServiceError, RunArtifactError) as error:
             return artifact_error(error)
 

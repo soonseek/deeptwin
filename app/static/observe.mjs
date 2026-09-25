@@ -11,7 +11,7 @@
 import { createAlternativeFileForm } from './alternative-file.mjs';
 import { createApprovalScreen } from './approval-screen.mjs';
 import { createAlternativeEditor } from './alternatives.mjs';
-import { createArtifactViewer } from './artifacts.mjs';
+import { createArtifactIndex, createArtifactViewer } from './artifacts.mjs';
 import { createGraphView } from './graph.mjs';
 import { createInquiryPanel } from './inquiry.mjs';
 import { createRunList } from './run-list.mjs';
@@ -23,6 +23,7 @@ export const ALTERNATIVE_FILE_MOUNT_ID = 'run-alternative-file';
 export const INQUIRY_MOUNT_ID = 'run-inquiry';
 export const GRAPH_MOUNT_ID = 'run-graph';
 export const APPROVALS_MOUNT_ID = 'run-approvals';
+export const INDEX_MOUNT_ID = 'artifact-index';
 export const MOUNT_IDS = Object.freeze({
   session: 'session-status', source: 'run-source', panel: 'run-panel', artifacts: 'run-artifacts',
 });
@@ -105,6 +106,16 @@ export async function boot({ document, location, fetch, crypto } = {}) {
     ? createApprovalScreen({ root: approvalsRoot, document, basePath, request: session.request, commandId,
       onDecided: runId => panel.read(runId) })
     : null;
+  // the vault-wide artifact index: any listed artifact opens in the viewer, with its
+  // run's panel, graph and approvals beside it (T045)
+  const indexRoot = document.getElementById(INDEX_MOUNT_ID);
+  const index = indexRoot !== null && typeof indexRoot?.replaceChildren === 'function'
+    ? createArtifactIndex({ root: indexRoot, document, basePath, request: session.request,
+      onOpen: (runId, artifactId) => Promise.all([panel.read(runId).catch(() => {}),
+        artifacts.open(runId, artifactId).catch(() => {}),
+        ...(graph === null ? [] : [graph.showRun(runId).catch(() => {})]),
+        ...(approvals === null ? [] : [approvals.show(runId).catch(() => {})])]) })
+    : null;
   const list = createRunList({
     root: roots.source, document, basePath, request: session.request,
     // each refusal is shown on its own surface
@@ -117,7 +128,14 @@ export async function boot({ document, location, fetch, crypto } = {}) {
   } catch {
     // the list's own status names the failure; the session stands
   }
-  return Object.freeze({ established: true, basePath, session, list, panel, artifacts, graph, approvals, commandId });
+  if (index !== null) {
+    try {
+      await index.refresh();
+    } catch {
+      // the index's own status names the failure
+    }
+  }
+  return Object.freeze({ established: true, basePath, session, list, panel, artifacts, index, graph, approvals, commandId });
 }
 
 // the page's entry: a boot that fails before or beside the session exchange

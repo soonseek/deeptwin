@@ -1,0 +1,10 @@
+{
+  "schema_version": "deeptwin-first-party-route-contribution-v1",
+  "contribution_id": "artifact-index-v1",
+  "factory": "app.api.artifact_index:create_router",
+  "routes": [
+    {"route_id": "artifacts.index", "methods": ["GET", "HEAD"],
+     "path": "/api/v1/artifacts",
+     "auth_policy": "browser_session", "required_scope": "work.read"}
+  ]
+}

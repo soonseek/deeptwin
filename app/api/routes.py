@@ -315,6 +315,10 @@ def preflight_api_v1(scope, body):
     from .design_workspace import preflight as design_workspace_preflight
     if is_design_workspace_path(path):
         design_workspace_preflight(scope, body)
+    from .artifact_index import is_artifact_index_path
+    from .artifact_index import preflight as artifact_index_preflight
+    if is_artifact_index_path(path):
+        artifact_index_preflight(scope, body)
     from .hypotheses import is_hypotheses_path
     from .hypotheses import preflight as hypotheses_preflight
     if is_hypotheses_path(path):
