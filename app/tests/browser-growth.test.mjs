@@ -4,8 +4,8 @@
 // paired rounds on the real scheduler, CAS loop revisions, sealed validation, the
 // owner's own approvals. The server is then restarted over the same store. Every fact
 // is SYNTHETIC and authored by the vault's test actor; no actual user evidence exists.
-// G-14 (past external effects replay) and G-15 (lens on/off comparison) have no product
-// surface yet and are not exercised here (evidence/us6.md).
+// G-14 (past external effects under isolation) is exercised in browser-growth-effects.test.mjs;
+// G-15 (lens on/off comparison) has no product surface yet and is not exercised (evidence/us6.md).
 
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';

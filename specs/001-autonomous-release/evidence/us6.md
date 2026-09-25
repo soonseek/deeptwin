@@ -1,8 +1,8 @@
 # T067 — US6 G-06..G-15 end to end: recovery, loop, heldout and approval cases (2026-09-25)
 
 Status: **T067 stays open.** G-06 to G-13 and rollback are exercised end to end against the
-supported app. **G-14 and G-15 are not exercised**, because the product has no surface for
-them yet (see below).
+supported app. G-14 was added on 2026-09-25 (see "G-14" below). **G-15 is not exercised**,
+because the product has no surface for it yet, and it needs a qualified lens.
 
 **Evidence label: every fact below is synthetic and was authored by the test actor.** No
 actual user, alternative, candidate, validation or approval exists. None of this is evidence
@@ -70,7 +70,7 @@ of real growth, of a real lens effect, or of an actual user's decision (growth.m
 | G-12 | Q shows `failed (sealed_offline)` with the heldout reason and no approve control. Q′ has no report and is not listed. After review, the ledger reclassified `sealed-q` as `tuning` (seen; there are no unseen datasets left), and the sealed-offline run of Q′ on it was refused ("an unseen pass requires unexposed sealed data"). The same refusal applies to unedited Q, and the reclassified ledger resumes from the store. | browser (listing) + service (ledger and refusal) | pass | synthetic/test-actor |
 | G-13 | In the browser: the owner approves P and R, then applies R. P's apply then fails with the conflict message, and R stays current. After a reasoned rollback the adopted version is current again, and P's old approval **still fails**. That is the product bug fixed below. R's consumed approval fails too, and nothing else is promoted. At the service level: a bundle with a prompt changed after approval is refused by `record_promotion_decision`, and P's decision never activates the tampered bundle. The state is unchanged. | browser + service | pass | synthetic/test-actor |
 | Rollback | Rollback without a reason is refused in the page. With a reason, it restores the adopted version, marks R as `되돌림으로 내림`, and states that already-sent or published effects are not undone. `external_effects_reverted` is false. | browser | pass | synthetic/test-actor |
-| G-14 | **Not exercised: there is no product surface.** Paired execution runs code-owned handler registries in isolated vaults only. A plan's `tool_effect_policy` is a frozen reference; no replay, isolated-copy or sandbox path for past sends or publications exists. So no queue containing external effects can be re-run, honestly or otherwise. | — | not exercised | — |
+| G-14 | (Updated 2026-09-25; see the G-14 section below.) First, the owner performs a real gated send: an approved attempt, the real dispatcher and extension transport, and the test-actor tool over the worker socket. A queue then names that ToolCall by its record digest, and three paired rounds run in isolated vaults. With an approved **replay**, both sides get the recorded result, bound to the ToolCall digest, and the round is valid. With an approved **isolated sink**, both sides deliver to the sink; the candidate's changed notice is visible, and the round is valid. With an **unapproved** boundary, that item is `not comparable`, with its reason, and the round is invalid and unscored. The page shows each item's outcome and the boundary each call used. During the rounds, none of these counts moves: the tool's invocation counter, the production transport factory, the worker channel, the authenticated connection and the dispatcher factory. At the service level, these cases are also not comparable: a digest mismatch, a missing call, a rejected or foreign approval, changed inputs under replay, no bound source, an unreadable policy, and the gated production graph itself (the scheduler refuses it). | browser + service (`test_paired_tool_effects`) | pass | synthetic/test-actor |
 | G-15 | **Not exercised: there is no product surface.** A comparison plan has no lens axis. Lens versions are only one reference inside a frozen candidate bundle, and nothing runs or records a with-lens / without-lens / mixed comparison under equal access, information, cost and evaluator conditions. | — | not exercised | — |
 
 No case above uses actual user evidence.
@@ -122,3 +122,110 @@ on the page. `versions.test.mjs` has one new test.
   `pending` round is not part of this chain.
 - **The dataset ledger is not shown in the GUI.** For G-12, the reclassification is
   service-level evidence.
+
+## G-14 — past external effects under isolation (2026-09-25)
+
+**Evidence label: synthetic/test-actor.** The owner is a scripted test actor. The tool is
+the TEST-ACTOR `test_actor_notify` 1.0.0: it claims `external_irreversible` and performs no
+external effect. It is registered only in the test processes, and the production tool table
+has no external-effect tool. No model, network or paid call is made.
+
+### What was built
+
+- **`app/services/tool_effect_isolation.py`** enforces the plan's `tool_effect_policy`.
+  - The policy is an `observation_contract` record, frozen with the plan. For each tool and
+    version it names one boundary: `replay` or `isolated_sink`. Each boundary must carry
+    the approval of exactly that boundary: a `decision_record` that names the boundary's
+    digest and the decision `approved`.
+  - `recorded_effect_bindings(ledger, run_id)` produces a queue item's
+    `past_tool_effects`: each external-effect ToolCall of the original run, with the
+    sha256 of its exact ledger record.
+  - Before either side runs, each binding is read again from the ledger and its digest is
+    checked. The item is **not comparable**, with its stated reason, in any of these cases:
+    - the digest differs (replay binding mismatch), or the call is missing;
+    - the policy cannot be read, or has no boundary for the tool;
+    - the boundary is missing an approval, is rejected, or carries an approval of another
+      boundary;
+    - replay has no settled result without artifacts to hand back.
+  - During a run, the only tool capability is `IsolatedToolEffects.invoke`, which works
+    only inside the isolated vault:
+    - **Replay** hands back the recorded reply output. The sealed record carries the
+      replayed ToolCall id and digest. The isolated call's declared inputs must equal the
+      recorded call's inputs; if they differ, the item is not comparable.
+    - **Isolated sink** keeps the would-be inputs in the isolated vault and returns a
+      receipt that says `isolated_sink_only`.
+  - A call that no boundary admits makes the item not comparable. The module does not
+    import the extension transport.
+- **`app/services/paired_execution.py`** changes:
+  - `execute_paired_round(..., tool_effects=ToolEffectSource)` accepts the effect source.
+  - `PairedSide.uses_tool_effects` controls whether a side receives the capability.
+  - Isolated runs still get no attempt dispatcher, no transport, no channel and no approval
+    service. The gated graph of the original environment therefore cannot be scheduled in
+    isolation: the scheduler refuses it (`run failed (SchedulerError)`).
+  - A not-comparable item is skipped and stated as `item i: not comparable: <reason>`, so
+    the round is invalid. The other items still run.
+  - `PairedRound.item_outcomes` records each item's outcome (`compared`, `not_comparable`,
+    `invalid` or `failed`), with its reasons, the past effects it named, and the boundary
+    each side's calls used.
+- **Persistence and display.** `persist_round_outputs` stores the item outcomes when a round
+  involves tool effects, and `resume_round_item_outcomes` reads them back. Output items now
+  carry the queue position they ran for. `versions-v1` rounds carry `item_outcomes`.
+  `experiments.mjs` lists, per item, the outcome and the boundary text: "기록 재생: ToolCall
+  기록 …의 결과 · 실제 서비스로 다시 보내지 않음" for replay, or "격리 싱크 …에 보관" for the
+  sink.
+
+### Observed (2026-09-25, offline)
+
+- **`app/tests/test_paired_tool_effects.py` — 12 passed.** Each test starts with a real
+  original send: the tool-gated graph runs on the real scheduler, the owner approves the exact
+  attempt, and the real extension transport calls the in-process worker over its real socket.
+  After that, the tests count the tool's invocations, the worker's served exchanges,
+  `ExtensionAttemptTransport.build`, `extension_channel`,
+  `listener._connect_extension_authenticated` and `NodeAttemptDispatcher.build`. None of
+  these counts moves in any case:
+  - replay (valid; the replayed output equals the recorded output; the digests are bound);
+  - digest mismatch, and a binding that names another call;
+  - no approval, a rejected approval, and a foreign approval;
+  - the sink, with a changed candidate send (the baseline's inputs digest equals the
+    recorded call's; the candidate's differs);
+  - changed inputs under replay;
+  - no bound source, and an all-not-comparable queue (no round is recorded);
+  - an unreadable policy;
+  - the gated production graph (refused);
+  - persistence of the item outcomes.
+
+  A control test shows that the same counters do move during a real send.
+- **`app/tests/browser-growth-effects.test.mjs` — 1 passed, in real Chromium** against
+  `app/tests/fixtures/growth_effects_server.py`.
+  - The owner saves a work item, starts the gated run, approves attempt 1 on the observe
+    screen and resumes. The run completes, and the tool is called once.
+  - The fixture's test-owned driver then runs three rounds over the queue [an item with no
+    effects, the item with the past send]:
+    - REPLAY and SINK are valid, and UNAPPROVED is invalid: "item 1: not comparable: the
+      replay boundary for test_actor_notify 1.0.0 is not approved".
+    - The versions page shows each item's outcome and each side's boundary text. The
+      SINK baseline and candidate show different input digests.
+  - The counters, installed before the original send, are nonzero after it. They are
+    identical before and after the rounds, and the original run still has its one attempt.
+- The following all pass: browser-growth (8), browser-tool-gate, browser-versions, the
+  node experiments/versions tests (11), and the growth, paired, comparison, promotion,
+  validation, versions, tool-gate and tool-binding suites (230 passed, including the 12 new
+  tests).
+
+### Not claimed
+
+- **No owner route or screen records a boundary approval.** Approvals are recorded by the
+  test actor through the service function `record_boundary_approval`. The approval is bound
+  to the boundary's digest and frozen through the plan's policy. It is not an authenticated
+  owner decision.
+- **No production growth driver exists.** The rounds are run by the test-owned driver
+  after the real send.
+- **The isolated sides are code-owned wiring** (intake → writer → publish). They declare
+  their tool call through `IsolatedToolEffects`; they are not the original environment's
+  compiled gated graph. That graph is shown to be unschedulable in isolation. It is not
+  projected into an isolated variant.
+- **Replay hands back only a reply output without artifacts.** A recorded result with
+  output artifacts is not comparable under replay.
+- **No real external service exists.** "No duplicated side effect" is shown at the
+  test-actor tool, the worker connection and the transport factory, not against a live
+  provider.

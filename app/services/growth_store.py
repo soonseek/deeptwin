@@ -447,18 +447,21 @@ def persist_round_outputs(domain_store, round_record_ref: EntityRef, paired_roun
     if result.as_dict() != paired_round.result.as_dict():
         raise GrowthStoreError("the outputs belong to another round")
     items = []
-    for index, ((left, right), changed, unexplained) in enumerate(zip(
-            paired_round.runs, paired_round.changed_nodes, paired_round.unexplained_nodes, strict=True)):
-        items.append({"item_index": index, "changed_nodes": list(changed), "unexplained_nodes": list(unexplained),
+    for (left, right), changed, unexplained in zip(
+            paired_round.runs, paired_round.changed_nodes, paired_round.unexplained_nodes, strict=True):
+        # the queue position the pair ran for (an item that was not compared has no pair)
+        items.append({"item_index": left.item_index, "changed_nodes": list(changed),
+                      "unexplained_nodes": list(unexplained),
                       "baseline": _side_results(left), "candidate": _side_results(right)})
-    return _once(domain_store, _outputs_record_id(round_record_ref.id), {
-        "growth_kind": _OUTPUTS_KIND, "round_record": round_record_ref.id,
-        "round_record_sha256": round_record_ref.sha256, "items": items}, **headers)
+    content = {"growth_kind": _OUTPUTS_KIND, "round_record": round_record_ref.id,
+               "round_record_sha256": round_record_ref.sha256, "items": items}
+    if paired_round.tool_effects_involved:
+        # G-14: each item's outcome and the isolation boundary every isolated call used
+        content["item_outcomes"] = [dict(item) for item in paired_round.item_outcomes]
+    return _once(domain_store, _outputs_record_id(round_record_ref.id), content, **headers)
 
 
-def resume_round_outputs(domain_store, round_record_ref: EntityRef):
-    """The persisted side-by-side outputs of one round, or None when none were kept."""
-
+def _stored_outputs(domain_store, round_record_ref: EntityRef):
     stored = _existing(domain_store, _outputs_record_id(round_record_ref.id))
     if stored is None:
         return None
@@ -466,7 +469,21 @@ def resume_round_outputs(domain_store, round_record_ref: EntityRef):
     if (content.get("growth_kind") != _OUTPUTS_KIND or content.get("round_record") != round_record_ref.id
             or content.get("round_record_sha256") != round_record_ref.sha256):
         raise GrowthStoreError("the stored round outputs belong to another round")
-    return content["items"]
+    return content
+
+
+def resume_round_outputs(domain_store, round_record_ref: EntityRef):
+    """The persisted side-by-side outputs of one round, or None when none were kept."""
+
+    content = _stored_outputs(domain_store, round_record_ref)
+    return None if content is None else content["items"]
+
+
+def resume_round_item_outcomes(domain_store, round_record_ref: EntityRef):
+    """The per-item outcomes of a round that involved tool effects (G-14), else None."""
+
+    content = _stored_outputs(domain_store, round_record_ref)
+    return None if content is None else content.get("item_outcomes")
 
 
 def persist_frozen_candidate(domain_store, candidate, **headers) -> EntityRef:
@@ -542,15 +559,16 @@ __all__ = [
     "persist_frozen_candidate",
     "persist_loop_state",
     "persist_promotion_state",
+    "persist_round_outputs",
     "persist_validation_report",
     "resume_comparison_plan",
     "resume_comparison_round",
     "resume_comparison_round_record",
-    "persist_round_outputs",
-    "resume_round_outputs",
     "resume_dataset_ledger",
     "resume_frozen_candidate",
     "resume_loop",
     "resume_promotion_state",
+    "resume_round_item_outcomes",
+    "resume_round_outputs",
     "resume_validation_report",
 ]

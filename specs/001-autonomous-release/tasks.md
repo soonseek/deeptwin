@@ -705,6 +705,18 @@ heldout validation and exact authenticated human promotion; no automatic operati
   decided before the newest promotion revision is now refused.
   G-14 (replay of past external effects) and G-15 (lens on/off comparison) have no product
   surface and are recorded as not exercised, so T067 stays open (evidence/us6.md).
+  2026-09-25 G-14: the plan's `tool_effect_policy` is now enforced in paired execution
+  (app/services/tool_effect_isolation.py). A queue item names the external-effect ToolCall
+  its original run recorded, bound to the ToolCall record's digest. An isolated run gets only
+  an `IsolatedToolEffects` capability, answered by an approved replay boundary (the recorded
+  result; the inputs must match) or an approved isolated sink. The paired runner builds no
+  dispatcher, transport, channel or approval service. Anything else makes that item not
+  comparable with its stated reason, and the round is then invalid. The versions page shows
+  each item's outcome and the boundary each call used. Evidence: test_paired_tool_effects.py
+  (12) and browser-growth-effects.test.mjs (a real gated send, then three rounds). The tool
+  counter, transport factory, channel, connection and dispatcher counts never move during
+  the rounds. Not ticked: G-15 needs a qualified lens. Boundary approvals have no owner route
+  yet (service function only), and the product has no growth driver.
 
 ## Phase 9: US7 — Complete records and optional creator feedback (P1)
 

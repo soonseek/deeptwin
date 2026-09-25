@@ -17,6 +17,19 @@ item, the nodes whose durable results differ between the sides, and — given th
 changed nodes the candidate declared — the nodes whose difference lies outside
 the declared nodes' downstream closure, which a partial change must explain
 before it is trusted.
+
+Past external effects (growth.md §5, G-14): a queue item may name the external-effect
+ToolCalls its original run recorded (`past_tool_effects`). Given the original runs'
+`ToolEffectSource`, each such binding is re-read from the ledger and checked against
+its frozen record digest, and the plan's `tool_effect_policy` must hold an approved
+replay or isolated-sink boundary for the tool — before either side runs. A side that
+calls tools declares `uses_tool_effects`; its handler factory then receives the
+run's `IsolatedToolEffects`, the only tool capability an isolated run has: this
+runner never builds an attempt dispatcher, a transport, a worker channel or a run
+approval service. Anything no approved boundary admits makes the item not comparable
+with its stated reason (the round is then invalid), never a live send. Each item's
+outcome — compared, not comparable, invalid or failed, with the boundary every
+isolated call used — is kept on the round.
 """
 
 from __future__ import annotations
@@ -37,6 +50,11 @@ from ..runtime.scheduler import build_scheduler
 from ..storage import Store
 from .comparisons import ComparisonResult, is_frozen_plan, record_comparison_round
 from .run_trace import RunTrace, read_run_trace
+from .tool_effect_isolation import (
+    NotComparable,
+    ToolEffectSource,
+    prepare_item_effects,
+)
 
 MAX_ITEMS = 64
 _DECIMAL = re.compile(r"-?(0|[1-9][0-9]{0,17})(\.[0-9]{1,18})?\Z")
@@ -60,6 +78,8 @@ class PairedSide:
     label: str
     compiled: CompiledGraph
     handlers: object
+    # True: `handlers(item, domain, effects)` also receives the run's IsolatedToolEffects
+    uses_tool_effects: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +91,7 @@ class SideRun:
     manifest_ref: EntityRef
     trace: RunTrace
     results: tuple[tuple[str, dict], ...]  # (node id, the node's durable result content)
+    tool_effects: tuple = ()  # every isolated call and the boundary that answered it
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +100,10 @@ class PairedRound:
     runs: tuple[tuple[SideRun, SideRun], ...]
     changed_nodes: tuple[tuple[str, ...], ...]      # per item: nodes whose results differ
     unexplained_nodes: tuple[tuple[str, ...], ...]  # per item: differences outside the scope
+    # per queue item: its outcome (compared | not_comparable | invalid | failed), reasons,
+    # the past effects it named and the boundary each side's isolated calls used
+    item_outcomes: tuple = ()
+    tool_effects_involved: bool = False
 
 
 def _record(domain, roots, kind, content, parents=()):
@@ -91,7 +116,7 @@ def _record(domain, roots, kind, content, parents=()):
     return record.ref
 
 
-def _run_isolated(root: Path, side: PairedSide, item_index: int, item: dict, plan) -> SideRun:
+def _run_isolated(root: Path, side: PairedSide, item_index: int, item: dict, plan, item_effects) -> SideRun:
     """One run in a fresh vault and ledger nobody else opens."""
 
     directory = root / side.label / str(item_index)
@@ -117,15 +142,29 @@ def _run_isolated(root: Path, side: PairedSide, item_index: int, item: dict, pla
     run = RunSpec(str(uuid4()), work, environment, consent, "isolated-comparison", budget,
                   str(uuid4()), manifest)
     ledger.create_run(str(uuid4()), run)
-    handlers = side.handlers(dict(item), domain)
-    build_scheduler(side.compiled, ledger=ledger, run_id=run.run_id, handlers=handlers).run()
+    effects = None
+    if side.uses_tool_effects:
+        effects = item_effects.open(domain, side.label)
+        handlers = side.handlers(dict(item), domain, effects)
+    else:
+        handlers = side.handlers(dict(item), domain)
+    # no attempt dispatcher and no approval service: an isolated run has no transport
+    try:
+        build_scheduler(side.compiled, ledger=ledger, run_id=run.run_id, handlers=handlers).run()
+    except Exception:
+        if effects is not None and effects.refusal is not None:
+            raise NotComparable(effects.refusal) from None
+        raise
+    if effects is not None and effects.refusal is not None:
+        raise NotComparable(effects.refusal)  # a refused call the handler swallowed
     trace = read_run_trace(ledger, run.run_id, side.compiled)
     results = []
     for execution in trace.executions:
         if execution.result_ref is not None:
             results.append((execution.node_id,
                             domain.get(execution.result_ref).body["content"]))
-    return SideRun(side.label, item_index, manifest, trace, tuple(results))
+    return SideRun(side.label, item_index, manifest, trace, tuple(results),
+                   () if effects is None else effects.log)
 
 
 def _mean(values: list[Decimal]) -> str:
@@ -149,12 +188,14 @@ def _downstream(compiled: CompiledGraph, nodes: set[str]) -> set[str]:
 
 
 def execute_paired_round(plan, *, items, baseline, candidate, evaluator, reset_root,
-                         declared_changes, round_value) -> PairedRound:
+                         declared_changes, round_value, tool_effects=None) -> PairedRound:
     """Run both sides over the same frozen items in isolation and record the round.
 
     `round_value` carries the round's identity fields for the comparison record
     (`round_id`, `round_index`, `candidate`, `mandatory_checks`, `evidence`,
     `usage`); runs, validity and measurements come only from this execution.
+    `tool_effects` is the original runs' `ToolEffectSource` (required for items that
+    name past external effects; without it such an item is not comparable).
     """
 
     if not is_frozen_plan(plan):
@@ -165,7 +206,7 @@ def execute_paired_round(plan, *, items, baseline, candidate, evaluator, reset_r
     canonical_json(items)  # the items are data, bounded and canonical
     for side in (baseline, candidate):
         if (type(side) is not PairedSide or type(side.compiled) is not CompiledGraph
-                or not callable(side.handlers)):
+                or not callable(side.handlers) or type(side.uses_tool_effects) is not bool):
             raise PairedExecutionError("each side needs its compiled graph and handlers")
     if baseline.label == candidate.label or not all(
             re.fullmatch(r"[a-z][a-z0-9-]{0,31}", side.label) for side in (baseline, candidate)):
@@ -176,15 +217,33 @@ def execute_paired_round(plan, *, items, baseline, candidate, evaluator, reset_r
     known = {node.node_id for node in candidate.compiled.nodes}
     if not declared or not declared <= known:
         raise PairedExecutionError("the candidate must declare the nodes it changed")
+    if tool_effects is not None and type(tool_effects) is not ToolEffectSource:
+        raise PairedExecutionError("tool effects come from an exact ToolEffectSource")
     root = Path(reset_root)
     if root.exists() and any(root.iterdir()):
         raise PairedExecutionError("the reset root must start empty")
     runs, changed, unexplained, reasons, metrics = [], [], [], [], {}
+    outcomes, policy_cache = [], {}
+    involved = any(side.uses_tool_effects for side in (baseline, candidate))
     scope = _downstream(candidate.compiled, declared)
     try:
         for index, item in enumerate(items):
-            left = _run_isolated(root, baseline, index, item, plan)
-            right = _run_isolated(root, candidate, index, item, plan)
+            outcome = {"item_index": index, "outcome": "compared", "reasons": [],
+                       "past_tool_effects": [], "baseline_effects": [], "candidate_effects": []}
+            outcomes.append(outcome)
+            involved = involved or bool(item.get("past_tool_effects"))
+            try:
+                item_effects = prepare_item_effects(tool_effects, plan, item, policy_cache)
+                outcome["past_tool_effects"] = item_effects.past_effects
+                left = _run_isolated(root, baseline, index, item, plan, item_effects)
+                right = _run_isolated(root, candidate, index, item, plan, item_effects)
+            except NotComparable as refusal:
+                # never a live send: the item is not compared, and the round says why
+                outcome.update(outcome="not_comparable", reasons=[refusal.reason])
+                reasons.append(f"item {index}: not comparable: {refusal.reason}")
+                continue
+            outcome["baseline_effects"] = list(left.tool_effects)
+            outcome["candidate_effects"] = list(right.tool_effects)
             runs.append((left, right))
             before, after = dict(left.results), dict(right.results)
             differing = tuple(sorted(node for node in set(before) | set(after)
@@ -199,6 +258,7 @@ def execute_paired_round(plan, *, items, baseline, candidate, evaluator, reset_r
                 if type(item_reasons) is not list or not item_reasons:
                     raise PairedExecutionError("an invalid item must state its reasons")
                 reasons.extend(f"item {index}: {reason}" for reason in item_reasons)
+                outcome.update(outcome="invalid", reasons=list(item_reasons))
                 continue
             for name, value in verdict["metrics"].items():
                 if type(value) is not str or _DECIMAL.fullmatch(value) is None:
@@ -207,7 +267,9 @@ def execute_paired_round(plan, *, items, baseline, candidate, evaluator, reset_r
     except PairedExecutionError:
         raise
     except Exception as error:  # noqa: BLE001 - a run that failed is an invalid round, stated
-        reasons.append(f"item {len(runs)}: run failed ({type(error).__name__})")
+        failed = outcomes[-1] if outcomes else {"item_index": len(runs)}
+        failed.update(outcome="failed", reasons=[f"run failed ({type(error).__name__})"])
+        reasons.append(f"item {failed['item_index']}: run failed ({type(error).__name__})")
     complete = len(runs) == len(items)
     valid = complete and not reasons and all(len(values) == len(items) for values in metrics.values())
     if not complete and not reasons:
@@ -226,7 +288,8 @@ def execute_paired_round(plan, *, items, baseline, candidate, evaluator, reset_r
         "utility": utility,
     }
     result = record_comparison_round(plan, value)
-    return PairedRound(result, tuple(runs), tuple(changed), tuple(unexplained))
+    return PairedRound(result, tuple(runs), tuple(changed), tuple(unexplained),
+                       tuple(outcomes), involved)
 
 
 def remove_isolated_runs(reset_root) -> None:

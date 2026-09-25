@@ -94,3 +94,32 @@ test('a round shows both sides\' node results side by side, changes and out-of-s
   assert.equal(outputsView(element, null)[0].text, TEXT.noOutputs);
   assert.equal(outputsView(element, 'unreadable')[0].text, TEXT.outputsUnreadable);
 });
+
+test('G-14: a round lists each item outcome and the isolation boundary each tool call used', async () => {
+  const { itemOutcomesView, effectText, MESSAGES: TEXT } = await import('../static/experiments.mjs');
+  const element = (tag, text, attributes = {}) => ({ tag, text: text ?? '', attributes, children: [],
+    append(...nodes) { this.children.push(...nodes); } });
+  const replay = { tool_id: 'test_actor_notify', version: '1.0.0', effect_class: 'external_irreversible',
+    boundary: 'replay', inputs_digest: 'a'.repeat(64), tool_call_id: 'x', tool_call_sha256: 'b'.repeat(64),
+    record_sha256: 'c'.repeat(64) };
+  const sink = { ...replay, boundary: 'isolated_sink', sink_id: 'g14-sink', inputs_digest: 'd'.repeat(64) };
+  const [note, list] = itemOutcomesView(element, [
+    { item_index: 0, outcome: 'compared', reasons: [], past_tool_effects: [], baseline_effects: [], candidate_effects: [] },
+    { item_index: 1, outcome: 'compared', reasons: [], past_tool_effects: [{ tool_id: 'test_actor_notify', version: '1.0.0',
+      tool_call_sha256: 'b'.repeat(64) }], baseline_effects: [replay], candidate_effects: [sink] },
+    { item_index: 2, outcome: 'not_comparable', reasons: ['the replay boundary is not approved'], past_tool_effects: [],
+      baseline_effects: [], candidate_effects: [] },
+  ]);
+  assert.equal(note.text, TEXT.effects);
+  const [plain, sent, refused] = list.children;
+  assert.equal(plain.text, '항목 0: 비교함');
+  assert.equal(plain.children[0].children[0].text, '도구 호출 없음');
+  assert.equal(sent.text, `항목 1: 비교함 · 과거 외부 효과 1건: test_actor_notify 1.0.0 (ToolCall 기록 ${'b'.repeat(12)})`);
+  assert.deepEqual(sent.children[0].children.map(child => child.text), [`기준: ${effectText(replay)}`, `후보: ${effectText(sink)}`]);
+  assert.match(effectText(replay), /기록 재생: ToolCall 기록 b{12}의 결과 · 실제 서비스로 다시 보내지 않음$/);
+  assert.match(effectText(sink), /격리 싱크 g14-sink에 보관\(입력 sha256 d{12}\) · 실제 서비스로 보내지 않음$/);
+  assert.equal(refused.text, '항목 2: 비교 불가 · 사유: the replay boundary is not approved');
+  assert.equal(refused.attributes['data-item-outcome'], 'not_comparable');
+  assert.deepEqual(itemOutcomesView(element, null), []);
+  assert.equal(itemOutcomesView(element, 'unreadable')[0].text, TEXT.outcomesUnreadable);
+});

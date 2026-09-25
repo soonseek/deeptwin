@@ -5,7 +5,10 @@
 // shows a score, and a round whose record does not read back exactly is listed as
 // unreadable rather than dropped. The runs are shown by their exact references; this
 // view renders no artifact and says so, so no side-by-side artifact reading is implied.
-// All text reaches the DOM through textContent.
+// A round whose queue named past external effects (G-14) lists each item's outcome —
+// compared, or not comparable with its reason — and the isolation boundary every
+// isolated tool call used (a replay bound to the recorded ToolCall, or an isolated sink);
+// nothing was sent to a real service again. All text reaches the DOM through textContent.
 
 export const VALIDITY_LABELS = Object.freeze({
   valid: '유효', invalid: '무효', pending: '판정 대기',
@@ -19,7 +22,15 @@ export const MESSAGES = Object.freeze({
   artifacts: '각 라운드는 항목별로 기준과 후보가 만든 노드 결과를 나란히 보여 줍니다. 결과를 보존하지 않은 라운드는 그렇다고 밝힙니다.',
   noOutputs: '이 라운드는 두 쪽의 산출물을 보존하지 않았습니다. 실행 참조만 있습니다.',
   outputsUnreadable: '이 라운드의 보존된 산출물을 정확히 다시 읽지 못했습니다.',
+  effects: '과거 발송·게시는 다시 실행하지 않았습니다. 승인된 기록 재생이나 격리 싱크로만 답했고, 그럴 수 없는 항목은 비교하지 않았습니다.',
+  outcomesUnreadable: '이 라운드의 항목별 결과를 정확히 다시 읽지 못했습니다.',
 });
+
+export const ITEM_OUTCOMES = Object.freeze({
+  compared: '비교함', not_comparable: '비교 불가', invalid: '무효', failed: '실행 실패',
+});
+
+const SIDES = Object.freeze({ baseline_effects: '기준', candidate_effects: '후보' });
 
 const short = ref => (ref && typeof ref.id === 'string' && typeof ref.sha256 === 'string'
   ? `${ref.kind} ${ref.id.slice(0, 8)} (${ref.sha256.slice(0, 12)})` : '없음');
@@ -87,6 +98,45 @@ export function outputsView(element, outputs) {
   return parts;
 }
 
+// one isolated tool call and the boundary that answered it
+export function effectText(effect) {
+  const tool = `${effect.tool_id} ${effect.version} (${effect.effect_class})`;
+  if (effect.boundary === 'replay') {
+    return `${tool} · 기록 재생: ToolCall 기록 ${String(effect.tool_call_sha256).slice(0, 12)}의 결과 · 실제 서비스로 다시 보내지 않음`;
+  }
+  if (effect.boundary === 'isolated_sink') {
+    return `${tool} · 격리 싱크 ${effect.sink_id}에 보관(입력 sha256 ${String(effect.inputs_digest).slice(0, 12)}) · 실제 서비스로 보내지 않음`;
+  }
+  return `${tool} · ${String(effect.boundary)}`;
+}
+
+// each queue item's outcome in a round whose queue involved tool effects; none otherwise
+export function itemOutcomesView(element, outcomes) {
+  if (outcomes === undefined || outcomes === null) return [];
+  if (!Array.isArray(outcomes)) return [element('p', MESSAGES.outcomesUnreadable)];
+  const list = element('ul', undefined, { 'aria-label': '항목별 결과' });
+  for (const item of outcomes) {
+    const past = item.past_tool_effects.length
+      ? ` · 과거 외부 효과 ${item.past_tool_effects.length}건: ${item.past_tool_effects.map(entry =>
+        `${entry.tool_id} ${entry.version} (ToolCall 기록 ${entry.tool_call_sha256.slice(0, 12)})`).join(', ')}` : '';
+    const reasons = item.reasons.length ? ` · 사유: ${item.reasons.join(', ')}` : '';
+    const entry = element('li', `항목 ${item.item_index}: ${ITEM_OUTCOMES[item.outcome] ?? String(item.outcome)}${reasons}${past}`,
+      { 'data-item-outcome': String(item.outcome) });
+    const calls = element('ul');
+    for (const [key, label] of Object.entries(SIDES)) {
+      for (const effect of item[key]) {
+        calls.append(element('li', `${label}: ${effectText(effect)}`, { 'data-boundary': String(effect.boundary) }));
+      }
+    }
+    if (item.outcome === 'compared' && !item.baseline_effects.length && !item.candidate_effects.length) {
+      calls.append(element('li', '도구 호출 없음'));
+    }
+    entry.append(calls);
+    list.append(entry);
+  }
+  return [element('p', MESSAGES.effects), list];
+}
+
 export function renderRounds({ root, document, rounds }) {
   if (typeof root?.replaceChildren !== 'function') fail('a root is required');
   const element = (tag, text, attributes = {}) => {
@@ -114,7 +164,8 @@ export function renderRounds({ root, document, rounds }) {
         row.append(element('td', short(pair.baseline_run_ref)), element('td', short(pair.candidate_run_ref)));
         table.append(row);
       }
-      entry.append(table, element('p', outcomeText(item)), ...outputsView(element, item.outputs));
+      entry.append(table, element('p', outcomeText(item)), ...itemOutcomesView(element, item.item_outcomes),
+        ...outputsView(element, item.outputs));
       entry.append(element('p', item.evidence_refs.length
         ? `근거 ${item.evidence_refs.length}건: ${item.evidence_refs.map(short).join(', ')}` : '근거 참조 없음'));
       group.append(entry);
