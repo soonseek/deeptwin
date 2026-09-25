@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ERROR_MESSAGES, MESSAGES, createVersionsPanel } from '../static/versions.mjs';
+import { ERROR_MESSAGES, MESSAGES, budgetText, createVersionsPanel } from '../static/versions.mjs';
 
 class FakeElement {
   constructor(tagName) { this.tagName = tagName.toUpperCase(); this.children = []; this.attributes = new Map(); this.dataset = {}; this.listeners = new Map(); this._text = ''; this.value = ''; }
@@ -55,6 +55,7 @@ test('the current version, candidate gates and the recorded stop reason are show
   assert.match(text, /회귀: pass · 비교 라운드 1개/);
   assert.match(text, /사용자가 멈춤\(운영 적용 동의가 아님\)/);
   assert.match(text, /최고 0\.80/);
+  assert.match(text, /소비 기록 없음/);
 });
 
 test('approve is separate from apply, and apply names the exact revision shown', async () => {
@@ -93,4 +94,10 @@ test('a moved version is refused plainly', async () => {
   await panel.load();
   await button(root, '거절').dispatch('click');
   assert.match(root.textContent, new RegExp(ERROR_MESSAGES.conflict.slice(0, 10)));
+});
+
+test('the consumed budget is shown exactly as the loop recorded it', () => {
+  assert.equal(budgetText({ isolated_runs: 12, node_visits: 36 }), 'isolated_runs 12, node_visits 36');
+  assert.equal(budgetText({}), '기록 없음');
+  assert.equal(budgetText(undefined), '기록 없음');
 });

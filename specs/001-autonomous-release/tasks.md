@@ -601,6 +601,15 @@ heldout validation and exact authenticated human promotion; no automatic operati
   `experiments.mjs`. A side-by-side artifact reading remains: round runs are design
   run_manifest refs with no path to runs-v1 artifacts.
 - [ ] T067 [US6] Run G-06–G-15 end-to-end recovery/loop/heldout/approval cases in app/tests/browser-growth.test.mjs and specs/001-autonomous-release/evidence/us6.md; label test-actor/synthetic vs actual user evidence (SC-007/SC-008).
+  2026-09-25: G-06–G-13 and rollback exercised end to end in real Chromium against the
+  supported server, over a durable chain seeded through the real services. The rounds come
+  from isolated paired execution; the server is restarted over the same store.
+  Service-only parts are in app/tests/test_growth_e2e.py. All evidence is
+  synthetic/test-actor; there is no actual user evidence.
+  G-13 bug fixed: after apply and rollback, a stale approval applied again. An approval
+  decided before the newest promotion revision is now refused.
+  G-14 (replay of past external effects) and G-15 (lens on/off comparison) have no product
+  surface and are recorded as not exercised, so T067 stays open (evidence/us6.md).
 
 ## Phase 9: US7 — Complete records and optional creator feedback (P1)
 
