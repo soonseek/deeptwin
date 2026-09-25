@@ -408,6 +408,23 @@ understanding; failure/restart preserves input. Fixture and live proofs remain s
   Compose/image wiring of the entrypoint (the pinned base-compose hash), vault genesis in
   deployment, binding CAS, catalog invalidation, the unknown-command fence, T087 send composition
   and erasure are still open.
+  2026-09-25 (open, binding): the control-plane credential ledger now holds one provider
+  connection binding head per provider. The custody receipt is persisted first; a second ledger
+  transaction applies the binding by CAS on the revision recorded at allocation (a rotation also
+  needs the exact predecessor). A create while bound is `409 connection_bound` with zero gateway
+  effect, and a delete CAS-revokes the head to `revoked_pending_erasure` before retiring. Catalog
+  snapshots and model choices are keyed by binding revision and voided in the rotate/delete
+  transaction; only an explicit refresh result for the current revision creates a catalog. A lost
+  CAS retires the stored record `unbound_orphan`. An act whose command stays `unknown` can be
+  fenced by the owner (`POST /api/v1/credentials/fences`) after a fixed delay and a fresh
+  `unknown` query: terminal, never re-sent or bound, and a late commit is retired `unbound_orphan`
+  on later acts. api.md now states the handle wording (the record id is a nonsecret address, not a
+  resolution handle). No credential act checks, refreshes or runs a model (tested). Covered by 13
+  full-stack tests (evidence/credential-vault-t090.md §2026-09-25 binding). Still open: no
+  `refresh_catalog` route or provider list-models call through the gateway, the gateway send
+  resolver does not yet read the binding head, a gateway-side fence (a late commit is neutralized,
+  not prevented), T087 manifest/budget binding and send composition, compose/image wiring,
+  erasure and an independent audit.
 - [ ] T024 [US1] Migrate browser MediaDevices/AudioWorklet capture and the existing cumulative
   whisper.cpp POST path to ADR-011's versioned non-overlapping one-second PCM PUT/SSE sessions in
   app/speech.py, app/speech_sessions.py, app/api/speech_routes.py, app/workers/speech.py and

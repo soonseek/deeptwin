@@ -59,6 +59,12 @@ real_uds = pytest.mark.skipif(
 )
 
 
+def connection(handle, state, revision):
+    """The GET projection of a provider connection's binding head (no catalog yet)."""
+    return {"provider": "claude", "state": state, "handle": handle, "binding_revision": revision,
+            "catalog": "absent", "model_choice": "absent"}
+
+
 def _no_connect(monkeypatch):
     def refuse(*_args, **_kwargs):
         pytest.fail("an unbound credential route attempted a gateway connection")
@@ -203,14 +209,20 @@ def test_the_supported_factory_serves_create_list_rotate_delete_over_the_real_so
     created, listed, rotated, relisted, deleted, final = result["steps"]
     handle = created["body"]["handle"]
     assert created == {"status": 201, "body": {"handle": handle, "provider": "claude", "state": "stored_unbound"}}
-    assert listed == {"status": 200, "body": {"credentials": [
-        {"handle": handle, "provider": "claude", "state": "stored_unbound", "provider_revocation": "not_performed"}]}}
+    assert listed == {"status": 200, "body": {
+        "credentials": [{"handle": handle, "provider": "claude", "state": "stored_unbound",
+                         "provider_revocation": "not_performed"}],
+        "connections": [connection(handle, "bound", 1)], "pending_acts": []}}
     assert rotated == {"status": 201, "body": {"handle": handle, "provider": "claude", "state": "stored_unbound"}}
-    assert relisted == listed
+    # the rotation moved the binding by CAS to revision 2; the credential entry is unchanged
+    assert relisted == {"status": 200, "body": {**listed["body"],
+                                                "connections": [connection(handle, "bound", 2)]}}
     assert deleted == {"status": 200, "body": {"handle": handle, "state": "cleanup_pending",
                                                "provider_revocation": "not_performed"}}
-    assert final == {"status": 200, "body": {"credentials": [
-        {"handle": handle, "provider": "claude", "state": "cleanup_pending", "provider_revocation": "not_performed"}]}}
+    assert final == {"status": 200, "body": {
+        "credentials": [{"handle": handle, "provider": "claude", "state": "cleanup_pending",
+                         "provider_revocation": "not_performed"}],
+        "connections": [connection(handle, "revoked_pending_erasure", 3)], "pending_acts": []}}
     assert result["ledger"] == ["0o600", CONTROL_UID]
     assert result["vault_modules"] == []  # the control plane never loaded the vault
     assert summary["outcomes"] == ["served"] * 4

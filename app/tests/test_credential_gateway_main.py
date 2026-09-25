@@ -57,6 +57,12 @@ real_uds = pytest.mark.skipif(
 )
 
 
+def connection(handle, state, revision):
+    """The GET projection of a provider connection's binding head (no catalog yet)."""
+    return {"provider": "claude", "state": state, "handle": handle, "binding_revision": revision,
+            "catalog": "absent", "model_choice": "absent"}
+
+
 # --- configuration refusals (no privileges) ------------------------------------------
 
 def _write(path, value):
@@ -341,14 +347,20 @@ def test_the_entrypoint_serves_create_list_rotate_delete_to_the_supported_factor
     created, listed, rotated, relisted, deleted, final = result["steps"]
     handle = created["body"]["handle"]
     assert created == {"status": 201, "body": {"handle": handle, "provider": "claude", "state": "stored_unbound"}}
-    assert listed == {"status": 200, "body": {"credentials": [
-        {"handle": handle, "provider": "claude", "state": "stored_unbound", "provider_revocation": "not_performed"}]}}
+    assert listed == {"status": 200, "body": {
+        "credentials": [{"handle": handle, "provider": "claude", "state": "stored_unbound",
+                         "provider_revocation": "not_performed"}],
+        "connections": [connection(handle, "bound", 1)], "pending_acts": []}}
     assert rotated == {"status": 201, "body": {"handle": handle, "provider": "claude", "state": "stored_unbound"}}
-    assert relisted == listed
+    # the rotation moved the binding by CAS to revision 2; the credential entry is unchanged
+    assert relisted == {"status": 200, "body": {**listed["body"],
+                                                "connections": [connection(handle, "bound", 2)]}}
     assert deleted == {"status": 200, "body": {"handle": handle, "state": "cleanup_pending",
                                                "provider_revocation": "not_performed"}}
-    assert final == {"status": 200, "body": {"credentials": [
-        {"handle": handle, "provider": "claude", "state": "cleanup_pending", "provider_revocation": "not_performed"}]}}
+    assert final == {"status": 200, "body": {
+        "credentials": [{"handle": handle, "provider": "claude", "state": "cleanup_pending",
+                         "provider_revocation": "not_performed"}],
+        "connections": [connection(handle, "revoked_pending_erasure", 3)], "pending_acts": []}}
     assert result["vault_modules"] == []
     # four gateway dialogues (create; rotate store + superseded retire; delete), no GET
     assert gateway.names() == ["gateway_ready", *(["session_accepted", "session_served"] * 4), "gateway_stopped"]
@@ -375,7 +387,8 @@ def test_a_requester_boot_label_other_than_the_attachment_is_refused_with_zero_e
     store, listing = refused["steps"]
     assert store["status"] == 503 and store["body"]["code"] == "dependency_unavailable"
     assert FIRST not in json.dumps(store)
-    assert listing == {"status": 200, "body": {"credentials": []}}
+    assert listing == {"status": 200, "body": {"credentials": [], "connections": [],
+                                               "pending_acts": []}}
     names = gateway.names()
     assert "session_accepted" not in names and "session_refused" in names
     _assert_clean_stop(base, gateway, code)
@@ -457,8 +470,10 @@ def test_a_command_pending_across_a_gateway_restart_resolves_by_query(base):  # 
     # the retry of the same act only queried: the committed receipt is adopted and the
     # re-entered bytes were never sent or ingested
     assert retried == {"status": 201, "body": {"handle": handle, "provider": "claude", "state": "stored_unbound"}}
-    assert listing == {"status": 200, "body": {"credentials": [
-        {"handle": handle, "provider": "claude", "state": "stored_unbound", "provider_revocation": "not_performed"}]}}
+    assert listing == {"status": 200, "body": {
+        "credentials": [{"handle": handle, "provider": "claude", "state": "stored_unbound",
+                         "provider_revocation": "not_performed"}],
+        "connections": [connection(handle, "bound", 1)], "pending_acts": []}}
     assert second.names() == ["gateway_ready", "session_accepted", "session_served", "gateway_stopped"]
     _assert_clean_stop(base, second, second_code)
     assert journal_counts(base) == (1, 1, 1, 0)

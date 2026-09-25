@@ -12,6 +12,17 @@ attachment the routes are honestly unavailable. Every seam's return value is
 reshaped to a closed redacted projection, so nothing a gateway returns can echo
 secret material to the browser.
 
+``POST /api/v1/credentials/fences`` (``credential_act_fence``) is the owner's explicit
+resolution of a store act whose gateway command stays ``unknown`` (see
+:meth:`~app.api.credential_commands.CredentialActs.fence`). The status read also
+lists each provider connection's binding head (binding revision, and whether a
+catalog snapshot/model choice is current for that revision) and the unfinished or
+fenced acts, all from the committed ledger.
+
+The browser-facing ``handle`` is the record id (hex): a stable nonsecret address
+for rotate/delete. It is not a gateway resolution handle and confers no dispatch
+authority (api.md "Secrets", handle wording, 2026-09-25).
+
 ``cleanup_pending`` and ``erasure_completed`` describe DeepTwin's locally managed
 encrypted copies only; no route revokes a key at the provider, so every retirement
 projection states ``provider_revocation: "not_performed"``.
@@ -48,6 +59,15 @@ _RETIRE_STATES = frozenset({"cleanup_pending", "erasure_completed"})
 _SNAPSHOT_STATES = frozenset({
     "stored_unbound", "pending", "cleanup_pending", "secret_input_lost", "erasure_completed",
 })
+_SNAPSHOT_KEYS = frozenset({"credentials", "connections", "pending_acts"})
+_CONNECTION_FIELDS = frozenset({"provider", "state", "handle", "binding_revision", "catalog",
+                                "model_choice"})
+_CONNECTION_STATES = frozenset({"bound", "revoked_pending_erasure"})
+_PENDING_FIELDS = frozenset({"intent_id", "kind", "handle", "provider", "state",
+                             "fence_available_at", "uncertain_record"})
+_UNCERTAIN = frozenset({"unknown", "secret_input_lost", "retirement_pending", "cleanup_pending"})
+_FENCE_FIELDS = frozenset({"intent_id", "state", "uncertain_record"})
+_STAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z\Z")
 _HANDLE = re.compile(r"[0-9a-f]{32}\Z")
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z")
 _MAX_DELETE_BODY = 1024
@@ -66,6 +86,18 @@ _ACT_ERRORS = {
                         RETRYABLE),
     "gateway_unavailable": (503, "dependency_unavailable",
                             "자격증명 게이트웨이에 연결하지 못했습니다.", RETRYABLE),
+    "connection_bound": (409, "connection_bound",
+                         "이 제공자에는 이미 연결된 키가 있습니다. 새 키로 바꾸려면 교체를 사용하세요.",
+                         NOT_RETRYABLE),
+    "connection_conflict": (409, "connection_conflict",
+                            "저장하는 동안 제공자 연결이 바뀌었습니다. 이번 키는 연결하지 않고 정리합니다.",
+                            NOT_RETRYABLE),
+    "fenced": (409, "fenced",
+               "이 요청은 결과를 확인하지 못해 차단됐습니다. 새 요청으로 다시 시도해 주세요.",
+               NOT_RETRYABLE),
+    "not_fenceable": (409, "conflict", "이 요청은 차단할 수 있는 상태가 아닙니다.", NOT_RETRYABLE),
+    "fence_not_due": (409, "fence_not_due",
+                      "아직 결과를 기다리는 중입니다. 조금 뒤에 다시 차단할 수 있습니다.", RETRYABLE),
 }
 
 
@@ -99,6 +131,67 @@ def _redacted_retirement(receipt: object) -> dict:
     ):
         raise ApiDependencyUnavailable("credential gateway receipt is invalid")
     return {"handle": receipt["handle"], "state": receipt["state"],
+            "provider_revocation": "not_performed"}
+
+
+def _invalid_snapshot():
+    return ApiDependencyUnavailable("credential snapshot is invalid")
+
+
+def _redacted_connection(entry: object) -> dict:
+    if (
+        type(entry) is not dict
+        or set(entry) != _CONNECTION_FIELDS
+        or entry["provider"] not in ("claude", "codex")
+        or entry["state"] not in _CONNECTION_STATES
+        or type(entry["handle"]) is not str or _HANDLE.fullmatch(entry["handle"]) is None
+        or type(entry["binding_revision"]) is not int or entry["binding_revision"] < 1
+        or entry["catalog"] not in ("current", "absent")
+        or entry["model_choice"] not in ("current", "absent")
+    ):
+        raise _invalid_snapshot()
+    return {name: entry[name] for name in sorted(_CONNECTION_FIELDS)}
+
+
+def _redacted_pending(entry: object) -> dict:
+    if (
+        type(entry) is not dict
+        or set(entry) != _PENDING_FIELDS
+        or type(entry["intent_id"]) is not str or _UUID.fullmatch(entry["intent_id"]) is None
+        or entry["kind"] not in ("create", "rotate", "delete")
+        or type(entry["handle"]) is not str or _HANDLE.fullmatch(entry["handle"]) is None
+        or entry["provider"] not in ("claude", "codex")
+        or entry["state"] not in ("command_pending", "fenced")
+        or not (entry["fence_available_at"] is None
+                or (type(entry["fence_available_at"]) is str
+                    and _STAMP.fullmatch(entry["fence_available_at"]) is not None))
+        or not (entry["uncertain_record"] is None or entry["uncertain_record"] in _UNCERTAIN)
+    ):
+        raise _invalid_snapshot()
+    return {name: entry[name] for name in sorted(_PENDING_FIELDS)}
+
+
+def _redacted_status(value: object) -> dict:
+    """The GET body. A bare list is the credential list alone (a seam without binding
+    state); the ledger's snapshot also carries connections and pending acts."""
+    if type(value) is list:
+        return {"credentials": _redacted_snapshot(value)}
+    if (type(value) is not dict or set(value) != _SNAPSHOT_KEYS
+            or type(value["connections"]) is not list or len(value["connections"]) > 16
+            or type(value["pending_acts"]) is not list or len(value["pending_acts"]) > 256):
+        raise _invalid_snapshot()
+    return {"credentials": _redacted_snapshot(value["credentials"]),
+            "connections": [_redacted_connection(entry) for entry in value["connections"]],
+            "pending_acts": [_redacted_pending(entry) for entry in value["pending_acts"]]}
+
+
+def _redacted_fence(receipt: object) -> dict:
+    if (type(receipt) is not dict or set(receipt) != _FENCE_FIELDS
+            or type(receipt["intent_id"]) is not str or _UUID.fullmatch(receipt["intent_id"]) is None
+            or receipt["state"] != "fenced" or receipt["uncertain_record"] not in _UNCERTAIN):
+        raise ApiDependencyUnavailable("credential fence receipt is invalid")
+    return {"intent_id": receipt["intent_id"], "state": "fenced",
+            "uncertain_record": receipt["uncertain_record"],
             "provider_revocation": "not_performed"}
 
 
@@ -152,15 +245,17 @@ class CredentialSeams:
 
     ``None`` in a seam keeps that route honestly unavailable."""
 
-    __slots__ = ("credential_gateway_retire", "credential_gateway_submit", "credential_status_snapshot")
+    __slots__ = ("credential_act_fence", "credential_gateway_retire", "credential_gateway_submit",
+                 "credential_status_snapshot")
 
-    def __init__(self, *, submit=None, retire=None, snapshot=None):
-        for value in (submit, retire, snapshot):
+    def __init__(self, *, submit=None, retire=None, snapshot=None, fence=None):
+        for value in (submit, retire, snapshot, fence):
             if value is not None and not callable(value):
                 raise TypeError("a credential seam must be callable")
         self.credential_gateway_submit = submit
         self.credential_gateway_retire = retire
         self.credential_status_snapshot = snapshot
+        self.credential_act_fence = fence
 
 
 def credential_seams(client, ledger) -> CredentialSeams:
@@ -172,6 +267,7 @@ def credential_seams(client, ledger) -> CredentialSeams:
         submit=acts.store,
         retire=lambda intent_id, handle: acts.delete(intent_id=intent_id, handle=handle),
         snapshot=ledger.snapshot,
+        fence=lambda intent_id: acts.fence(intent_id=intent_id),
     )
 
 
@@ -259,6 +355,32 @@ def install_credential_ingress(app, *, seams=None) -> None:
         except Exception as exc:  # noqa: BLE001 - sanitize the public boundary
             return _failure(exc)
 
+    @app.api_route("/api/v1/credentials/fences", methods=["POST"])
+    async def credential_fence_v1(request: Request):
+        # The owner's explicit resolution of a create/rotate act whose gateway command
+        # stayed `unknown`: after the fence delay and a fresh `unknown` query the act
+        # becomes terminal `fenced`. No secret is re-sent, nothing is bound, and a late
+        # commit of that command is retired as `unbound_orphan`.
+        try:
+            _authenticated(request, read=False)
+            body = await request.body()
+            try:
+                intent_id = _delete_intent(request, bytes(body))
+            except (ValueError, UnicodeDecodeError, RecursionError):
+                return api_error(status=400, code="invalid_input",
+                                 message="차단할 요청 형식을 확인해 주세요.",
+                                 retryability=NOT_RETRYABLE)
+            fence = getattr(bound(request), "credential_act_fence", None)
+            if fence is None:
+                raise ApiDependencyUnavailable("credential gateway is not attached")
+            try:
+                receipt = await run_in_threadpool(fence, intent_id)
+            except CredentialCommandError as exc:
+                return _act_failure(exc)
+            return JSONResponse(status_code=200, content=_redacted_fence(receipt))
+        except Exception as exc:  # noqa: BLE001 - sanitize the public boundary
+            return _failure(exc)
+
     @app.api_route("/api/v1/credentials", methods=["GET"])
     async def credential_status_v1(request: Request):
         try:
@@ -274,7 +396,7 @@ def install_credential_ingress(app, *, seams=None) -> None:
                 )
             return JSONResponse(
                 status_code=200,
-                content={"credentials": _redacted_snapshot(snapshot())},
+                content=_redacted_status(snapshot()),
             )
         except Exception as exc:  # noqa: BLE001 - sanitize the public boundary
             return _failure(exc)
@@ -295,3 +417,4 @@ def attach_credential_gateway(app, client, ledger) -> None:
     app.state.credential_gateway_submit = seams.credential_gateway_submit
     app.state.credential_gateway_retire = seams.credential_gateway_retire
     app.state.credential_status_snapshot = seams.credential_status_snapshot
+    app.state.credential_act_fence = seams.credential_act_fence

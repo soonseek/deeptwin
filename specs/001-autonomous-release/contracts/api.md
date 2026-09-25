@@ -426,6 +426,13 @@ semantics through OpenAPI.
 
 Secrets use dedicated masked input and backend `CredentialVault`. Creation responses return
 key_present and connection state only, not key bytes, hashes, handles or raw auth errors.
+Handle wording (decided 2026-09-25, T090): "handles" above means the gateway's opaque resolution
+handle and any secret-derived value. The credential-v2 routes (`/api/v1/credentials`) do return a
+browser-facing `handle`: the record id in 32-hex form, a stable nonsecret address that stays the
+same across rotations and is what rotate (`rotate_from`) and `DELETE /api/v1/credentials/{handle}`
+name. It is derived from no key byte, is not a gateway resolution handle, never resolves or opens a
+secret and confers no dispatch, send or binding authority; binding authority is only the
+control-plane connection binding head described below.
 Codex managed device authorization returns only the official verification URL, user code and expiry
 through a narrowly scoped authenticated login action, not logs/events/export. Unknown/malicious
 verification destinations are rejected. Authenticated DeepTwin start/cancel/status commands control
@@ -463,7 +470,29 @@ and concurrent duplicates follow this protocol rather than risking a second cred
 Create/rotate/revoke themselves perform zero provider check, catalog refresh, model call or runtime
 dispatch. A successful rotate atomically invalidates every catalog/model choice bound to its
 predecessor; only a later explicit `refresh_catalog` mutation can establish a new catalog.
+Credential-v2 binding (T090, 2026-09-25): each provider has one connection binding head
+`{revision, state: bound|revoked_pending_erasure, record}` in the control-plane credential ledger.
+A create binds only a connection that is not `bound` (otherwise `409 connection_bound` before any
+gateway call; replacing a bound key is a rotation); a rotation's CAS requires the revision recorded
+at allocation and the exact predecessor record. Catalog snapshots and model choices are keyed by
+binding revision, so the rotation's CAS and a delete's revoke void them in the same transaction. A
+stored record that loses its CAS is a valid create/rotation orphan: `409 connection_conflict`, an
+immutable `unbound_orphan` retirement, and a rotation's predecessor stays bound and unretired.
+Unknown-command fence: the custody contract defines no gateway cancel/fence operation, so an act
+whose store command stays `unknown` is resolved by an explicit owner act,
+`POST /api/v1/credentials/fences {"intent_id"}` (the unresolved act's intent), available only after
+a fixed delay since the command was sent (`fence_available_at` in the status read, 300 s by default).
+The fence makes one more `query_record`: `pending` refuses the fence (`503 command_pending`, the
+gateway's own recovery settles it), `secret_input_lost` is terminal, a committed record is adopted
+only as an unbound orphan and retired `unbound_orphan`, and a still-`unknown` command makes the act
+terminal `fenced` (`409 fenced` for any replay; its secret is never re-sent and its record is never
+bound). A later rotation skips the fenced version. A delayed accepted store may still commit after
+the fence: later owner acts query open fences and retire such a late record as `unbound_orphan`.
+The fence therefore neutralizes a late commit; it does not prevent it at the gateway.
 
+`GET /api/v1/credentials` returns `{credentials, connections, pending_acts}` from the committed
+ledger: redacted credential entries, each provider's binding head (`binding_revision`, and whether a
+catalog snapshot/model choice is `current` for that revision) and the unfinished or fenced acts.
 Connection/status/catalog GETs return only persisted redacted snapshots and perform zero vault open,
 gateway dispatch, provider request, network call or catalog refresh. Only an authenticated mutation
 with a fresh `command_id` can request `refresh_catalog` or a managed login/check action. Connection
