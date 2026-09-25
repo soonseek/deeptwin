@@ -70,7 +70,7 @@ of real growth, of a real lens effect, or of an actual user's decision (growth.m
 | G-12 | Q shows `failed (sealed_offline)` with the heldout reason and no approve control. Q′ has no report and is not listed. After review, the ledger reclassified `sealed-q` as `tuning` (seen; there are no unseen datasets left), and the sealed-offline run of Q′ on it was refused ("an unseen pass requires unexposed sealed data"). The same refusal applies to unedited Q, and the reclassified ledger resumes from the store. | browser (listing) + service (ledger and refusal) | pass | synthetic/test-actor |
 | G-13 | In the browser: the owner approves P and R, then applies R. P's apply then fails with the conflict message, and R stays current. After a reasoned rollback the adopted version is current again, and P's old approval **still fails**. That is the product bug fixed below. R's consumed approval fails too, and nothing else is promoted. At the service level: a bundle with a prompt changed after approval is refused by `record_promotion_decision`, and P's decision never activates the tampered bundle. The state is unchanged. | browser + service | pass | synthetic/test-actor |
 | Rollback | Rollback without a reason is refused in the page. With a reason, it restores the adopted version, marks R as `되돌림으로 내림`, and states that already-sent or published effects are not undone. `external_effects_reverted` is false. | browser | pass | synthetic/test-actor |
-| G-14 | (Updated 2026-09-25; see the G-14 section below.) First, the owner performs a real gated send: an approved attempt, the real dispatcher and extension transport, and the test-actor tool over the worker socket. A queue then names that ToolCall by its record digest, and three paired rounds run in isolated vaults. With an approved **replay**, both sides get the recorded result, bound to the ToolCall digest, and the round is valid. With an approved **isolated sink**, both sides deliver to the sink; the candidate's changed notice is visible, and the round is valid. With an **unapproved** boundary, that item is `not comparable`, with its reason, and the round is invalid and unscored. The page shows each item's outcome and the boundary each call used. During the rounds, none of these counts moves: the tool's invocation counter, the production transport factory, the worker channel, the authenticated connection and the dispatcher factory. At the service level, these cases are also not comparable: a digest mismatch, a missing call, a rejected or foreign approval, changed inputs under replay, no bound source, an unreadable policy, and the gated production graph itself (the scheduler refuses it). | browser + service (`test_paired_tool_effects`) | pass | synthetic/test-actor |
+| G-14 | (Updated 2026-09-25; see the G-14 section below.) First, the owner performs a real gated send: an approved attempt, the real dispatcher and extension transport, and the test-actor tool over the worker socket. A queue then names that ToolCall by its record digest, and the owner approves the REPLAY and SINK boundaries on the versions page (an owner decision over each exact boundary, 2026-09-25). Three paired rounds then run in isolated vaults. With an approved **replay**, both sides get the recorded result, bound to the ToolCall digest, and the round is valid. With an approved **isolated sink**, both sides deliver to the sink; the candidate's changed notice is visible, and the round is valid. With an **unapproved** boundary, that item is `not comparable`, with its reason, and the round is invalid and unscored. The page shows each item's outcome and the boundary each call used. During the rounds, none of these counts moves: the tool's invocation counter, the production transport factory, the worker channel, the authenticated connection and the dispatcher factory. At the service level, these cases are also not comparable: a digest mismatch, a missing call, a missing, rejected or later-rejected owner decision, an approval of another boundary or another policy, a test-actor record in the owner-decision shape, changed inputs under replay, no bound source, an unreadable policy, and the gated production graph itself (the scheduler refuses it). | browser + service (`test_paired_tool_effects`) | pass | synthetic/test-actor |
 | G-15 | **Not exercised: there is no product surface.** A comparison plan has no lens axis. Lens versions are only one reference inside a frozen candidate bundle, and nothing runs or records a with-lens / without-lens / mixed comparison under equal access, information, cost and evaluator conditions. | — | not exercised | — |
 
 No case above uses actual user evidence.
@@ -134,9 +134,11 @@ has no external-effect tool. No model, network or paid call is made.
 
 - **`app/services/tool_effect_isolation.py`** enforces the plan's `tool_effect_policy`.
   - The policy is an `observation_contract` record, frozen with the plan. For each tool and
-    version it names one boundary: `replay` or `isolated_sink`. Each boundary must carry
-    the approval of exactly that boundary: a `decision_record` that names the boundary's
-    digest and the decision `approved`.
+    version it names one boundary: `replay` or `isolated_sink`. Each boundary must be
+    approved by the owner. (Superseded on 2026-09-25 by "G-14 approvals" below: the
+    approval was first a test-actor `decision_record` embedded in the boundary; it is now
+    an authenticated owner decision over the exact boundary, and a policy that embeds an
+    approval is invalid.)
   - `recorded_effect_bindings(ledger, run_id)` produces a queue item's
     `past_tool_effects`: each external-effect ToolCall of the original run, with the
     sha256 of its exact ledger record.
@@ -214,10 +216,8 @@ has no external-effect tool. No model, network or paid call is made.
 
 ### Not claimed
 
-- **No owner route or screen records a boundary approval.** Approvals are recorded by the
-  test actor through the service function `record_boundary_approval`. The approval is bound
-  to the boundary's digest and frozen through the plan's policy. It is not an authenticated
-  owner decision.
+- ~~**No owner route or screen records a boundary approval.**~~ Closed on 2026-09-25; see
+  "G-14 approvals" below.
 - **No production growth driver exists.** The rounds are run by the test-owned driver
   after the real send.
 - **The isolated sides are code-owned wiring** (intake → writer → publish). They declare
@@ -229,3 +229,78 @@ has no external-effect tool. No model, network or paid call is made.
 - **No real external service exists.** "No duplicated side effect" is shown at the
   test-actor tool, the worker connection and the transport factory, not against a live
   provider.
+
+### G-14 approvals — a boundary is approved only by the owner (2026-09-25)
+
+**Evidence label: synthetic/test-actor** (the owner is a scripted test actor in a real
+browser session; the values are synthetic).
+
+- **What changed.** A boundary approval is now an owner decision
+  (`app/services/owner_decisions.py`, new subject kind `tool_effect_boundary`), recorded by
+  `PersistentOwnerDecisions.record` from an authenticated, CSRF-verified owner request, like
+  design approvals and deletions. The subject is exact
+  (`tool_effect_isolation.boundary_subject`): the policy record's id, version and sha256; the
+  boundary itself (tool id, version, effect class, `replay` or `isolated_sink`, sink id);
+  and the boundary's digest. One record per command id: an exact replay returns the same
+  decision; the same id with another decision or boundary is a `conflict`.
+- **How the runner reads it.** `ToolEffectSource.build` now requires the owner-decision
+  reader bound to the same store. `PersistentOwnerDecisions.decisions_over(kind, subject)`
+  returns only records authored by the owner's human actor with their own `approval.decided`
+  event. The latest decision decides: approve admits the boundary; reject gives "… was
+  rejected by the owner"; no decision gives "… is not approved". A policy boundary that
+  embeds an `approval_ref` is refused as invalid, so a test-actor `decision_record` can no
+  longer approve anything. `record_boundary_approval` remains only as a thin helper over the
+  same owner path: it needs `PersistentOwnerDecisions` and an authenticated owner request.
+- **Owner routes** (`versions-v1`, +2 routes, pinned counts updated):
+  - `GET /api/v1/versions/tool-effect-boundaries` lists every persisted comparison plan with
+    its policy's boundaries and the standing state of each: `pending`, `approved`,
+    `rejected` or `unreadable`. A plan whose policy cannot be read is listed with its reason.
+  - `POST /api/v1/versions/tool-effect-boundaries/decisions` takes `{command_id,
+    plan_record_ref, tool_id, version, boundary_sha256, decision}` and authenticates first.
+    It resolves the boundary from the stored plan and policy. A digest that is not the
+    stored boundary's gives 409; an unknown plan or tool gives 404.
+- **Screen.** A new "도구 효과 경계" section on the versions page (`experiments.mjs`
+  `renderBoundaries`, wired in `versions.mjs`) shows each tool's required boundary with what
+  it means:
+  - replay: 과거 호출의 기록된 결과를 그대로 돌려줍니다 (the recorded result is returned);
+  - sink: 보내려던 내용을 격리된 실행의 보관소 안에만 남깁니다 (the send stays inside the
+    isolated vault);
+  - for both: 실제 서비스로 보내지 않습니다 (nothing goes to a real service).
+
+  It also shows the boundary digest, the state and the decision time, with
+  "경계 승인" / "경계 거절" buttons.
+
+Observed (offline):
+
+- `test_paired_tool_effects.py` — **16 passed**. The unapproved cases now cover six ways a
+  boundary is not approved: none, rejected, approved then rejected, only another boundary
+  approved, the same boundary approved in another policy, and an owner-decision-shaped
+  record authored by the test actor. A new test checks the owner-only path: an embedded
+  approval is invalid, and there is no path without `PersistentOwnerDecisions` or without
+  an authenticated request. It also checks replay-safety, conflicts and the reader
+  requirement. The counters still never move.
+- `test_tool_effect_approvals_api.py` — **3 passed**. It covers list, approve, replay,
+  conflicts (another decision or boundary under the same id; a wrong digest), 404s, the
+  CSRF refusal, a later reject replacing an approve, per-plan isolation, and
+  `ToolEffectSource` reading exactly these decisions. It also covers the unreadable-policy
+  listing and exact route shapes.
+- `browser-growth-effects.test.mjs` — **1 passed, real Chromium**.
+  - The approval is now made on the screen. After the owner's real gated send, the driver
+    persists the three plans.
+  - On the versions page, the owner sees each pending boundary and its meaning. The owner
+    clicks "경계 승인" for REPLAY's replay and for SINK's isolated sink. After a reload, the
+    route reads back REPLAY and SINK as approved (one `action_approval` each), and UNAPPROVED
+    as pending.
+  - Only then does the driver run the rounds, reading approvals through the owner-decision
+    reader. REPLAY and SINK are valid, and UNAPPROVED is invalid ("… is not approved").
+  - All counters are unchanged from before the plans to after the rounds.
+- browser-growth (8) and browser-versions (1, which now also states that there are no
+  boundaries to approve) pass. The node versions/experiments tests pass: 14, including 3 new
+  boundary-panel tests.
+- A serial Python run of the paired, growth, comparison, promotion, versions, owner-decision,
+  environments, retention, design-store/workspace, web-owner-integration, first-party,
+  runs/works API, provider-startup, tool-gate-scheduler and web-shell-asset suites gave
+  **388 passed**.
+
+Still not claimed: there is no production growth driver (the rounds are still run by the
+test-owned driver), and G-15 is not exercised.

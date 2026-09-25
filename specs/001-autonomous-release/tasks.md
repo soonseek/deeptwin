@@ -717,6 +717,18 @@ heldout validation and exact authenticated human promotion; no automatic operati
   counter, transport factory, channel, connection and dispatcher counts never move during
   the rounds. Not ticked: G-15 needs a qualified lens. Boundary approvals have no owner route
   yet (service function only), and the product has no growth driver.
+  2026-09-25 G-14 approvals: a boundary approval is now an authenticated owner decision
+  (owner_decisions kind `tool_effect_boundary`). It is made over the exact subject: the
+  policy record, the tool and version, the boundary kind and sink, and the boundary digest.
+  It is replay-safe by command id and conflicts on changed content. ToolEffectSource reads
+  only these decisions through the bound owner-decision reader, and the latest decision
+  decides. A policy that embeds an approval is invalid. Owner routes in versions-v1: GET
+  /api/v1/versions/tool-effect-boundaries and POST …/tool-effect-boundaries/decisions (CSRF).
+  The versions page shows each tool's required boundary, what it means and approve/reject
+  buttons. browser-growth-effects now makes the approval through the screen. Evidence:
+  test_paired_tool_effects.py (16), test_tool_effect_approvals_api.py (3), node
+  versions/experiments tests (14), evidence/us6.md "G-14 approvals". Still not ticked: G-15,
+  and there is no production growth driver.
 
 ## Phase 9: US7 — Complete records and optional creator feedback (P1)
 

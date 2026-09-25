@@ -81,7 +81,7 @@ def gated(tmp_path):
     with owner(tmp_path) as (app, _client, request, _profile, _arguments):
         approvals = ra.PersistentRunApprovals(app.state.domain_store, app.state.owner_authority)
         subject, run = app_subject(app)
-        subject.approvals, subject.request, subject.run = approvals, request, run
+        subject.approvals, subject.request, subject.run, subject.app = approvals, request, run, app
         subject.compiled = compiled_tool_gated()
         yield subject
 

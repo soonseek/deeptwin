@@ -6,14 +6,18 @@ approves the writer's exact attempt, and the real extension attempt transport in
 the TEST-ACTOR tool `test_actor_notify` (external_irreversible; it performs no effect)
 over the in-process extension worker on its real socket. The ledger records that
 ToolCall. The queue item then names it by its record digest, and the paired runner
-executes baseline and candidate in fresh isolated vaults with only the approved
-boundary the plan's `tool_effect_policy` names:
+executes baseline and candidate in fresh isolated vaults with only the boundary the
+plan's `tool_effect_policy` names, and only once the owner approved exactly that
+boundary of exactly that policy through the persistent owner session (an owner
+decision, `owner_decisions` kind `tool_effect_boundary`; 2026-09-25):
 
 - replay hands back the recorded result, bound to the ToolCall record digest;
 - an isolated sink keeps the would-be send inside the isolated vault;
-- a digest mismatch, a missing / rejected / foreign approval, changed inputs under
-  replay, no bound policy, or a graph that would need the production transport all
-  make the item not comparable with the stated reason.
+- a digest mismatch, a missing / rejected / later-rejected approval, an approval of
+  the same boundary in another policy, a record in the owner decision shape authored
+  by the test actor, changed inputs under replay, no bound policy, or a graph that
+  would need the production transport all make the item not comparable with the
+  stated reason; a policy that embeds its own approval reference is invalid.
 
 Every case counts, after the original send: the test-actor tool's own invocation
 counter, the worker's served exchanges, the production transport factory, the worker
@@ -39,13 +43,21 @@ from app.services.growth_store import (
     resume_round_item_outcomes,
     resume_round_outputs,
 )
+from app.services.owner_decisions import (
+    PersistentOwnerDecisions,
+    decision_identity,
+    subject_digest,
+)
 from app.services.paired_execution import (
     PairedExecutionError,
     PairedSide,
     execute_paired_round,
 )
 from app.services.tool_effect_isolation import (
+    ToolEffectIsolationError,
     ToolEffectSource,
+    boundary_decision_command,
+    policy_content,
     record_boundary_approval,
     record_tool_effect_policy,
     recorded_effect_bindings,
@@ -131,8 +143,21 @@ def boundary(kind="replay", *, tool=TOOL, effect=EFFECT):
     return value
 
 
-def approved(domain, value, decision="approved"):
-    return {**value, "approval_ref": record_boundary_approval(domain, value, decision, **marks(domain)).as_dict()}
+def decisions(subject):
+    return PersistentOwnerDecisions(subject.domain, subject.app.state.owner_authority)
+
+
+def decide_boundary(subject, plan, value, decision="approve"):
+    """The owner's decision over one boundary of the plan's policy, through the
+    persistent owner session (authenticated, CSRF-verified request)."""
+    return record_boundary_approval(decisions(subject), subject.request, plan.tool_effect_policy, value, decision)
+
+
+def approved_plan(subject, *values):
+    plan = plan_with(subject.domain, list(values))
+    for value in values:
+        decide_boundary(subject, plan, value)
+    return plan
 
 
 def plan_with(domain, boundaries):
@@ -186,7 +211,8 @@ def run_round(subject, plan, items, reset, *, candidate_payload=PAYLOAD, source=
         round_value={"round_id": f"g14-{uuid4()}", "round_index": 0, "candidate": ref("change_candidate", 14920),
                      "mandatory_checks": ref("validation_report", 14925), "evidence": [],
                      "usage": ref("decision_record", 14927)},
-        tool_effects=(ToolEffectSource.build(domain_store=subject.domain, ledger=subject.ledger)
+        tool_effects=(ToolEffectSource.build(domain_store=subject.domain, ledger=subject.ledger,
+                                             decisions=decisions(subject))
                       if source else None))
 
 
@@ -205,7 +231,7 @@ def assert_nothing_sent(worker, counts):  # noqa: F811 - the imported fixture
 
 def test_replay_answers_the_past_send_from_its_record_and_sends_nothing(tmp_path, worker, guarded):  # noqa: F811
     with original_send(tmp_path, worker) as subject:
-        plan = plan_with(subject.domain, [approved(subject.domain, boundary("replay"))])
+        plan = approved_plan(subject, boundary("replay"))
         counts = guarded()
         paired = run_round(subject, plan, [PLAIN, past(subject)], tmp_path / "reset")
         assert paired.result.validity == "valid" and len(paired.runs) == 2
@@ -230,7 +256,7 @@ def test_replay_answers_the_past_send_from_its_record_and_sends_nothing(tmp_path
 
 def test_a_replay_binding_that_does_not_match_the_record_is_not_comparable(tmp_path, worker, guarded):  # noqa: F811
     with original_send(tmp_path, worker) as subject:
-        plan = plan_with(subject.domain, [approved(subject.domain, boundary("replay"))])
+        plan = approved_plan(subject, boundary("replay"))
         counts = guarded()
         forged = {**subject.binding, "tool_call_sha256": "0" * 64}
         paired = run_round(subject, plan, [PLAIN, past(subject, forged)], tmp_path / "reset")
@@ -246,32 +272,83 @@ def test_a_replay_binding_that_does_not_match_the_record_is_not_comparable(tmp_p
         assert_nothing_sent(worker, counts)
 
 
-@pytest.mark.parametrize("approval", ["none", "rejected", "foreign"])
+@pytest.mark.parametrize("approval", ["none", "rejected", "later_rejected", "other_boundary",
+                                      "other_policy", "test_actor_record"])
 def test_an_unapproved_isolation_boundary_makes_the_item_not_comparable(tmp_path, worker, guarded, approval):  # noqa: F811
     with original_send(tmp_path, worker) as subject:
         domain = subject.domain
         value = boundary("replay")
-        if approval == "rejected":
-            value = approved(domain, value, "rejected")
-        elif approval == "foreign":  # the approval of the sink boundary, attached to replay
-            value = {**value, "approval_ref": approved(domain, boundary("isolated_sink"))["approval_ref"]}
         plan = plan_with(domain, [value])
+        if approval == "rejected":
+            decide_boundary(subject, plan, value, "reject")
+        elif approval == "later_rejected":  # the latest owner decision decides
+            decide_boundary(subject, plan, value)
+            decide_boundary(subject, plan, value, "reject")
+        elif approval == "other_boundary":  # the owner approved the sink, not replay
+            decide_boundary(subject, plan_with(domain, [boundary("isolated_sink")]), boundary("isolated_sink"))
+        elif approval == "other_policy":  # the same boundary, approved in another policy
+            decide_boundary(subject, plan_with(domain, [value]), value)
+        else:  # the owner-decision record shape, authored by the test actor: not a decision
+            command = boundary_decision_command(plan.tool_effect_policy, value, "approve", str(uuid4()))
+            forged = {"schema_version": "owner-decision-v1", "subject_kind": "tool_effect_boundary",
+                      "subject": command["subject"], "subject_sha256": subject_digest(command["subject"]),
+                      "decision": "approve", "command_id": (other := command["command_id"]),
+                      "decided_at_utc": STAMP, "event_sequence": 1}
+            roots = domain.roots()
+            domain.put(ImmutableRecord.create(
+                kind="action_approval", id=decision_identity(other), version=1, created_at_utc=STAMP,
+                actor_ref=roots.actor, parent_refs=(), purpose="operational",
+                access_policy_ref=roots.access_policy, retention_policy_ref=roots.retention_policy,
+                content=forged))
+            assert decisions(subject).decisions_over("tool_effect_boundary", command["subject"]) == ()
         counts = guarded()
         paired = run_round(subject, plan, [PLAIN, past(subject)], tmp_path / "reset")
         assert paired.result.validity == "invalid" and len(paired.runs) == 1
-        expected = {"none": "the replay boundary for test_actor_notify 1.0.0 is not approved",
-                    "rejected": "the replay boundary for test_actor_notify 1.0.0 was not approved (decision rejected)",
-                    "foreign": "the approval does not name the replay boundary for test_actor_notify 1.0.0"}
-        assert list(paired.result.validity_reasons) == [f"item 1: not comparable: {expected[approval]}"]
+        label = "the replay boundary for test_actor_notify 1.0.0"
+        expected = f"{label} was rejected by the owner" if "rejected" in approval else f"{label} is not approved"
+        assert list(paired.result.validity_reasons) == [f"item 1: not comparable: {expected}"]
         assert paired.item_outcomes[1] == {"item_index": 1, "outcome": "not_comparable",
-                                           "reasons": [expected[approval]], "past_tool_effects": [],
+                                           "reasons": [expected], "past_tool_effects": [],
                                            "baseline_effects": [], "candidate_effects": []}
         assert_nothing_sent(worker, counts)
 
 
+def test_a_boundary_is_approved_only_through_the_owner_session(tmp_path, worker):  # noqa: F811
+    with original_send(tmp_path, worker) as subject:
+        domain = subject.domain
+        # a policy cannot carry its own approval
+        with pytest.raises(ToolEffectIsolationError, match="carries no approval"):
+            policy_content([{**boundary("replay"), "approval_ref": ref("decision_record", 14930)}])
+        plan = plan_with(domain, [boundary("replay")])
+        # the helper is the owner path: without the persistent owner service or an
+        # authenticated owner request nothing is recorded
+        with pytest.raises(ToolEffectIsolationError):
+            record_boundary_approval(domain, subject.request, plan.tool_effect_policy, boundary("replay"))
+        with pytest.raises(Exception) as refused:
+            record_boundary_approval(decisions(subject), object(), plan.tool_effect_policy, boundary("replay"))
+        assert type(refused.value).__name__ == "OwnerAuthError"
+        # replay-safe by command id; a changed body under the same id conflicts
+        command_id = str(uuid4())
+        first = record_boundary_approval(decisions(subject), subject.request, plan.tool_effect_policy,
+                                         boundary("replay"), command_id=command_id)
+        again = record_boundary_approval(decisions(subject), subject.request, plan.tool_effect_policy,
+                                         boundary("replay"), command_id=command_id)
+        assert again.approval_ref == first.approval_ref and first.subject_kind == "tool_effect_boundary"
+        assert first.subject["boundary"] == boundary("replay")
+        assert first.subject["policy_record"]["sha256"] == plan.tool_effect_policy.sha256
+        for changed in ({"decision": "reject"}, {"value": boundary("isolated_sink")}):
+            with pytest.raises(Exception, match="conflict"):
+                record_boundary_approval(decisions(subject), subject.request, plan.tool_effect_policy,
+                                         changed.get("value", boundary("replay")),
+                                         changed.get("decision", "approve"), command_id=command_id)
+        # the paired runner needs the owner-decision reader bound to the same store
+        with pytest.raises(ToolEffectIsolationError, match="owner-decision reader"):
+            ToolEffectSource.build(domain_store=domain, ledger=subject.ledger, decisions=None)
+
+
 def test_an_approved_isolated_sink_keeps_a_changed_send_inside_the_isolated_vault(tmp_path, worker, guarded):  # noqa: F811
     with original_send(tmp_path, worker) as subject:
-        plan = plan_with(subject.domain, [approved(subject.domain, boundary("isolated_sink"))])
+        plan = approved_plan(subject, boundary("isolated_sink"))
         counts = guarded()
         changed = b"hello, with the candidate's source line"
         paired = run_round(subject, plan, [past(subject)], tmp_path / "reset", candidate_payload=changed)
@@ -292,7 +369,7 @@ def test_an_approved_isolated_sink_keeps_a_changed_send_inside_the_isolated_vaul
 
 def test_replay_refuses_an_isolated_call_whose_inputs_differ_from_the_record(tmp_path, worker, guarded):  # noqa: F811
     with original_send(tmp_path, worker) as subject:
-        plan = plan_with(subject.domain, [approved(subject.domain, boundary("replay"))])
+        plan = approved_plan(subject, boundary("replay"))
         counts = guarded()
         paired = run_round(subject, plan, [PLAIN, past(subject)], tmp_path / "reset", candidate_payload=b"changed")
         assert paired.result.validity == "invalid" and len(paired.runs) == 1
@@ -304,7 +381,7 @@ def test_replay_refuses_an_isolated_call_whose_inputs_differ_from_the_record(tmp
 
 def test_without_a_bound_isolation_source_a_past_send_is_never_re_run(tmp_path, worker, guarded):  # noqa: F811
     with original_send(tmp_path, worker) as subject:
-        plan = plan_with(subject.domain, [approved(subject.domain, boundary("replay"))])
+        plan = approved_plan(subject, boundary("replay"))
         counts = guarded()
         paired = run_round(subject, plan, [PLAIN, past(subject)], tmp_path / "reset", source=False)
         assert list(paired.result.validity_reasons) == [
@@ -330,7 +407,7 @@ def test_an_unreadable_policy_is_not_a_boundary(tmp_path, worker, guarded):  # n
 
 def test_the_isolated_runner_cannot_schedule_the_gated_production_graph(tmp_path, worker, guarded):  # noqa: F811
     with original_send(tmp_path, worker) as subject:
-        plan = plan_with(subject.domain, [approved(subject.domain, boundary("replay"))])
+        plan = approved_plan(subject, boundary("replay"))
         counts = guarded()
         # the original environment's own graph binds the tool behind its gate: without a
         # per-attempt approval transport and approval service the scheduler refuses it
@@ -342,7 +419,7 @@ def test_the_isolated_runner_cannot_schedule_the_gated_production_graph(tmp_path
 def test_the_round_keeps_each_item_outcome_and_the_boundary_used(tmp_path, worker, guarded):  # noqa: F811
     with original_send(tmp_path, worker) as subject:
         domain = subject.domain
-        plan = plan_with(domain, [approved(domain, boundary("replay"))])
+        plan = approved_plan(subject, boundary("replay"))
         counts = guarded()
         paired = run_round(subject, plan, [PLAIN, past(subject)], tmp_path / "reset")
         value = paired.result.as_dict()

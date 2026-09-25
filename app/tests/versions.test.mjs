@@ -37,11 +37,19 @@ function view(overrides = {}) {
       completed_round_ids: ['round-0'], consumed_budget: {}, stop_reason: 'human_stop' }], ...overrides };
 }
 
-function panelWith(replies) {
+// the boundary routes (G-14) answer from their own queue, so the versions replies stay in order
+function panelWith(replies, boundaryReplies = []) {
   const root = new FakeElement('section');
   const asked = [];
-  const request = async (path, options) => { asked.push([path, options]); const reply = replies.shift(); if (reply instanceof Error) throw reply; return reply; };
-  return { root, asked, panel: createVersionsPanel({ root, document, request, crypto }) };
+  const boundaryAsked = [];
+  const request = async (path, options) => {
+    const own = path.includes('/tool-effect-boundaries');
+    (own ? boundaryAsked : asked).push([path, options]);
+    const reply = own ? (boundaryReplies.length ? boundaryReplies.shift() : { plans: [] }) : replies.shift();
+    if (reply instanceof Error) throw reply;
+    return reply;
+  };
+  return { root, asked, boundaryAsked, panel: createVersionsPanel({ root, document, request, crypto }) };
 }
 
 const button = (root, text) => root.findAll(el => el.tagName === 'BUTTON' && el.textContent === text)[0];
@@ -94,6 +102,69 @@ test('a moved version is refused plainly', async () => {
   await panel.load();
   await button(root, '거절').dispatch('click');
   assert.match(root.textContent, new RegExp(ERROR_MESSAGES.conflict.slice(0, 10)));
+});
+
+// G-14 approvals: each tool's required boundary, what it means, and the owner's decision
+const policy = ref('observation_contract', 7);
+const planRecord = ref('decision_record', 8);
+const replayBoundary = { tool_id: 'test_actor_notify', version: '1.0.0', effect_class: 'external_irreversible',
+  boundary: 'replay', sink_id: null, state: 'pending', decisions: 0, approval_ref: null, decided_at_utc: null,
+  boundary_sha256: 'a'.repeat(64) };
+const sinkBoundary = { ...replayBoundary, tool_id: 'test_actor_publish', version: '2.0.0', boundary: 'isolated_sink',
+  sink_id: 'g14-isolated-sink', boundary_sha256: 'b'.repeat(64) };
+const plans = (...boundaries) => ({ plans: [{ plan_record: planRecord, lineage_id: '67014000-0000-4000-8000-000000000000',
+  tool_effect_policy_ref: policy, readable: true, reason: null, boundaries }] });
+const labelled = (root, label) => root.findAll(el => el.tagName === 'BUTTON' && el.getAttribute('aria-label') === label)[0];
+
+test('each boundary a plan needs is shown with what it means and nothing is sent to a real service', async () => {
+  const { root, panel } = panelWith([view()], [plans(replayBoundary, sinkBoundary)]);
+  await panel.load();
+  const [section] = root.findAll(el => el.getAttribute('aria-label') === '도구 효과 경계');
+  const text = section.textContent;
+  assert.match(text, /어느 경계도 실제 서비스로 보내지 않습니다/);
+  assert.match(text, /test_actor_notify 1\.0\.0 \(external_irreversible\) · 기록 재생 · 과거 호출의 기록된 결과를 그대로 돌려줍니다\. 실제 서비스로 다시 보내지 않습니다\. · 경계 sha256 aaaaaaaaaaaa · 상태: 결정 대기/);
+  assert.match(text, /test_actor_publish 2\.0\.0 \(external_irreversible\) · 격리 싱크 g14-isolated-sink · 보내려던 내용을 격리된 실행의 보관소 안에만 남깁니다\. 실제 서비스로 보내지 않습니다\./);
+  assert.ok(labelled(root, '경계 승인: test_actor_notify 1.0.0 (기록 재생)'));
+  assert.ok(labelled(root, '경계 거절: test_actor_publish 2.0.0 (격리 싱크 g14-isolated-sink)'));
+});
+
+test('approving a boundary sends the exact boundary shown and shows the recorded decision', async () => {
+  const approved = { ...replayBoundary, state: 'approved', decisions: 1, approval_ref: ref('action_approval', 9),
+    decided_at_utc: '2026-09-25T00:00:00.000000Z' };
+  const reply = { approval_ref: approved.approval_ref, decision: 'approve', plan_record_ref: planRecord, boundary: approved };
+  const { root, boundaryAsked, panel } = panelWith([view()], [plans(replayBoundary), reply]);
+  await panel.load();
+  await labelled(root, '경계 승인: test_actor_notify 1.0.0 (기록 재생)').dispatch('click');
+  const [path, options] = boundaryAsked[1];
+  assert.match(path, /\/api\/v1\/versions\/tool-effect-boundaries\/decisions$/);
+  assert.deepEqual(options, { method: 'POST', body: { command_id: crypto.randomUUID(), plan_record_ref: planRecord,
+    tool_id: 'test_actor_notify', version: '1.0.0', boundary_sha256: 'a'.repeat(64), decision: 'approve' } });
+  assert.match(root.textContent, /상태: 승인됨 \(2026-09-25T00:00:00\.000000Z\)/);
+  assert.match(root.textContent, /경계 승인을 기록했습니다/);
+  // an approved boundary offers reject (a later decision replaces it), not approve again
+  assert.equal(labelled(root, '경계 승인: test_actor_notify 1.0.0 (기록 재생)'), undefined);
+  assert.ok(labelled(root, '경계 거절: test_actor_notify 1.0.0 (기록 재생)'));
+});
+
+test('a boundary conflict, an unreadable policy and an unavailable list are said plainly', async () => {
+  const unreadable = { plans: [{ plan_record: planRecord, lineage_id: '67014000-0000-4000-8000-000000000000',
+    tool_effect_policy_ref: policy, readable: false, reason: "the plan's tool effect policy could not be read", boundaries: [] }] };
+  const conflict = panelWith([view()], [plans(replayBoundary), Object.assign(new Error('x'), { code: 'conflict' })]);
+  await conflict.panel.load();
+  await labelled(conflict.root, '경계 거절: test_actor_notify 1.0.0 (기록 재생)').dispatch('click');
+  assert.match(conflict.root.textContent, /이 경계의 내용이 화면에 보인 것과 다르거나/);
+  assert.match(conflict.root.textContent, /상태: 결정 대기/);
+  const bad = panelWith([view()], [unreadable]);
+  await bad.panel.load();
+  assert.match(bad.root.textContent, /도구 효과 정책을 정확히 읽지 못했습니다.*could not be read/);
+  assert.equal(bad.root.findAll(el => el.tagName === 'BUTTON' && /^경계/.test(el.textContent)).length, 0);
+  const down = panelWith([view()], [Object.assign(new Error('x'), { code: 'unavailable' })]);
+  await down.panel.load();
+  assert.match(down.root.textContent, /도구 효과 경계를 불러오지 못했습니다/);
+  assert.match(down.root.textContent, /지금 운영: environment 00000001/);  // the rest of the page still loads
+  const none = panelWith([view()]);
+  await none.panel.load();
+  assert.match(none.root.textContent, /도구 효과 경계를 정한 비교 계획이 없습니다/);
 });
 
 test('the consumed budget is shown exactly as the loop recorded it', () => {

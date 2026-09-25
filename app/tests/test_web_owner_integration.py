@@ -612,7 +612,7 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
     with TestClient(reopened, base_url=profile.http_origin) as client:
         assert client.get(profile.base_path + "health").status_code == 200
         composition = reopened.state.route_composition
-        assert composition.route_count == 86
+        assert composition.route_count == 88
         assert composition.contribution_ids == ("core-v1", "extension-candidates-v1", "run-approvals-v1",
             "works-v1", "run-consents-v1", "claude-connection-v1", "credentials-v1", "work-models-v1", "runs-v1", "artifact-index-v1", "graphs-v1", "design-workspace-v1", "hypotheses-v1", "versions-v1", "deployment-prepare-v1", "provider-conformance-v1", "provider-installation-v1")
         assert composition.route_ids == ("events.read", "events.stream", "events.type", "snapshot.read",
@@ -637,6 +637,7 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
             "graphs.read", "design_requests.list", "design_requests.read", "design_requests.derive",
             "design_requests.review", "design_requests.prepare", "hypotheses.read", "hypotheses.propose",
             "versions.read", "versions.adopt", "versions.decide", "versions.activate", "versions.rollback",
+            "versions.tool_effect_boundaries.read", "versions.tool_effect_boundaries.decide",
             "deployment.requests.prepare", "deployment.requests.cancel", "deployment.requests.read",
             "deployment.requests.receipts.import", "deployment.requests.consume",
             "deployment.provider-requests.prepare", "deployment.provider-requests.cancel",
@@ -644,7 +645,7 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
             "deployment.provider-requests.consume", "extensions.provider-conformance.execute",
             "extensions.provider-conformance.read", "extensions.provider-installation.execute",
             "extensions.provider-installation.read")
-        assert len(set(composition.route_ids)) == 86
+        assert len(set(composition.route_ids)) == 88
 
 
 def test_live_session_root_pin_rejects_a_different_valid_pair(tmp_path):
