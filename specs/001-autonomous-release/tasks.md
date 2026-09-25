@@ -738,7 +738,7 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   44 requirements, 52/90 tasks done) and evidence/implementation.md listing every failed/invalid/missing
   evidence area, the equal-weight checked-task numerator and why no ETA is supported for blocked tasks.
   Final refresh after T085.
-- [ ] T076 Freeze and audit final release qualification version/IndependenceProfile/effect evaluation designs in evals/deeptwin/qualification/release-v1/ and evals/deeptwin/effects/ before any release-heldout access; use new datasets not exposed in T035 calibration, preserve both versions, and do not invent actual user alternatives or universal independence thresholds (V3/V6).
+- [x] T076 Freeze and audit final release qualification version/IndependenceProfile/effect evaluation designs in evals/deeptwin/qualification/release-v1/ and evals/deeptwin/effects/ before any release-heldout access; use new datasets not exposed in T035 calibration, preserve both versions, and do not invent actual user alternatives or universal independence thresholds (V3/V6).
   2026-09-25: release-v1 designs frozen before any heldout material exists
   (`evals/deeptwin/qualification/release-v1/{qualification_design,independence_profile}.json`,
   `evals/deeptwin/effects/lens-effects-v1.json`, hash manifest `FROZEN.json`, guarded by
@@ -824,6 +824,9 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   servers, a deleted-and-rejudged log and a re-asking judge wrapper are caught only by the manual two-way
   provider reconciliation; the T077 dispatcher; no sealed set, author, reviewer or independent judge; V3
   unverifiable; and an independent audit of v7.
+  2026-09-25 closed: audit 7 of release-v7 = AUDIT PASS (no blocking; N1–N5 carried to the next
+  version/T077); release-v1..v6 preserved byte-identical; execution stays T077
+  (evidence/release-designs-t076-2026-09-25.md).
 - [ ] T077 Execute authorized bounded actual-provider/critic/multimodal/lens-controlled comparisons and audit all failures/suspicious passes in specs/001-autonomous-release/evidence/live-qualification.md; lack of applicable authority remains explicit, not waived (SC-001/005/006).
 - [ ] T078 After T087's extension UI and the frozen T081 candidate exist, perform final visual/
   keyboard/screen-reader/360px/1024px/

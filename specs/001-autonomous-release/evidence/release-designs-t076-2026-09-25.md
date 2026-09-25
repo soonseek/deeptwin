@@ -279,3 +279,34 @@ Still not true:
 - The journal, trial directories, records, ledgers and judge logs live on the operator's disk.
 
 T076 stays open until an independent audit of release-v7 passes.
+
+## Audit 7 (of release-v7): AUDIT PASS — no blocking findings
+
+The seventh independent, read-only audit found:
+
+- **Freezes intact:** v1–v6 are byte-identical to their freeze commits (3508883, 2690bef, bd6a976, fb718b6, 4aed36d, c3204d6). Every FROZEN.json hash matches, recomputed at each version's freeze commit, with v7 checked at HEAD (0 mismatches). The v7 verifier and harness identities agree across the manifest, the design and the code.
+- **Tests:** 746 non-live tests pass.
+- **Earlier probes:** every probe from audits 1, 5 and 6 is refused or reported incomplete. The exception is second-manifest cherry-picking, which is organizational and stated in `open`.
+- **New attacks, all refused:**
+  - concurrent re-judging: 8 threads on one trial, and exactly 1 judge call;
+  - a judge-log path pre-placed as a symlink;
+  - verifying without a judge and then with one;
+  - redirecting the transport.
+- **Design invariants hold:**
+  - no calibration data;
+  - no invented user alternatives;
+  - no universal thresholds;
+  - V3 stays unverified and can never become a qualification;
+  - the effect design is fair and claims no superiority.
+
+Non-blocking notes carried forward to the next design version or T077:
+
+| # | Note | Where it goes |
+|---|---|---|
+| N1 | A judge fault turns a trial whose rule check already failed into `invalid`, so the suite reads `incomplete` instead of `fail`. This follows Task.md Q8 and never produces a pass. | Report rule-failing invalid trials explicitly in the next version. |
+| N2 | The verifier does not re-check the harness identity recorded in the trial record against `run_identity.harness`. | Next version: compare them in `verify_trial`, and state that a modified harness is caught only by the ledger-derived checks and provider reconciliation. |
+| N3 | The declared `critic_transport` is self-declared in-process. | Already stated in `open`. |
+| N4 | The per-attempt adapter pin hashes the file on disk, not the imported module. | Operator-control limit; state it next to the adapter-pinning rule. |
+| N5 | Things that depend on people and external records: judge logs live on the operator's disk; fake servers and in-process fabrication are caught only by the two-way provider reconciliation; no T077 or multi-arm dispatcher exists; there is no sealed set or independent judge; binding the verdict to its configuration during approval is still open. | T077 / T036; stated in `open`. |
+
+**T076 is complete:** the final release qualification, IndependenceProfile and effect designs are frozen (release-v7, with v1–v6 preserved) and independently audited, with no blocking findings, before any release-heldout access. Execution (a sealed set, an independent author, reviewer and judge, the dispatcher, the run itself) is T077.
