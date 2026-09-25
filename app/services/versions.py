@@ -295,6 +295,12 @@ class PersistentVersions:
         state, head_ref, scope, roots = self._head()
         if state is None or state.revision != payload["expected_revision"]:
             raise VersionError("conflict")
+        if self._domain.get(head_ref).body["created_at_utc"] > approval.decided_at_utc:
+            # The operating version moved after the owner decided (G-13). Matching the
+            # expected environment is not enough: after an apply and a rollback the same
+            # environment is current again, but the owner decided over a state that no
+            # longer holds, so the approval is never revived — it is given again.
+            raise VersionError("conflict")
         candidate_item = self._candidate_for(approval.validation_report.as_dict())
         candidate, report = resume_validation_report(
             self._domain, EntityRef.from_dict(candidate_item["report_record"]))

@@ -49,7 +49,13 @@ function fail(message) {
   throw new Error(message);
 }
 
-const short = ref => (ref && typeof ref.id === 'string' ? `${ref.kind} ${ref.id.slice(0, 8)} (${ref.sha256.slice(0, 12)})` : '없음');
+// the budget the loop recorded as actually consumed, invalid rounds included
+export const budgetText = budget => {
+  const entries = budget && typeof budget === 'object' ? Object.entries(budget) : [];
+  return entries.length ? entries.map(([name, amount]) => `${name} ${amount}`).join(', ') : '기록 없음';
+};
+
+const short = ref =>(ref && typeof ref.id === 'string' ? `${ref.kind} ${ref.id.slice(0, 8)} (${ref.sha256.slice(0, 12)})` : '없음');
 
 export function createVersionsPanel({ root, document, request, basePath = '/', crypto } = {}) {
   if (typeof root?.replaceChildren !== 'function') fail('a root is required');
@@ -163,7 +169,8 @@ export function createVersionsPanel({ root, document, request, basePath = '/', c
       const stop = item.stop_reason ? (STOP_REASONS[item.stop_reason] ?? item.stop_reason) : '진행 중(멈춤 사유 없음)';
       const best = item.best_observed ? `최고 ${item.best_observed.utility} (${item.best_observed.round_id})` : '유효한 최고 기록 없음';
       parts.push(element('p', `계보 ${item.lineage_id.slice(0, 8)} · ${item.status} · ${stop} · ${best} · `
-        + `완료 라운드 ${item.completed_round_ids.length}개 · 연속 비개선 ${item.non_improving_valid_count}`));
+        + `완료 라운드 ${item.completed_round_ids.length}개 · 연속 비개선 ${item.non_improving_valid_count} · `
+        + `소비 ${budgetText(item.consumed_budget)}`));
     }
     experiments.replaceChildren(...parts);
   }
