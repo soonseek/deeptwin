@@ -216,7 +216,7 @@ async function startRun(page, seed, graph, workRef) {
   return owner(page, 'api/v1/runs', { command_id: crypto.randomUUID(), ...inputs, consent_ref: consent.body.ref });
 }
 
-async function exportAll(page, { raw }) {
+async function exportAll(page, { raw, confirmFindings = false }) {
   const panel = page.locator('#work-records');
   for (const box of await panel.locator('.export-categories input[type=checkbox]').all()) {
     if (!(await box.isChecked())) await box.check();
@@ -225,6 +225,15 @@ async function exportAll(page, { raw }) {
   if ((await rawBox.isChecked()) !== raw) await rawBox.click();
   await panel.getByRole('button', { name: '포함될 내용 미리보기' }).click();
   await panel.locator('#export-consent').waitFor();
+  const findings = await panel.locator('.export-findings li').allTextContents();
+  const withheldItems = await panel.locator('.export-items li').allTextContents();
+  if (confirmFindings) {
+    // the owner explicitly confirms the exact finding set shown; the server re-previews
+    await panel.locator('#export-confirm-findings').check();
+    await panel.getByRole('button', { name: '확인한 값과 함께 원문 포함해 다시 미리보기' }).click();
+    await panel.locator('.export-findings-state[data-state=confirmed]').waitFor();
+    await panel.locator('#export-consent').waitFor();
+  }
   const items = await panel.locator('.export-items li').allTextContents();
   const missing = await panel.locator('.export-missing li').allTextContents();
   await panel.locator('#export-consent').check();
@@ -234,7 +243,7 @@ async function exportAll(page, { raw }) {
   const href = await link.getAttribute('href');
   const digest = (await panel.locator('.export-digest').textContent()).replace('묶음 SHA-256 ', '');
   const bytes = Buffer.from(await page.evaluate(async target => [...new Uint8Array(await (await fetch(target)).arrayBuffer())], href));
-  return { items, missing, bytes, digest };
+  return { items, missing, bytes, digest, findings, withheldItems };
 }
 
 test('export of every produced category: actual preview, bound consent, verified bundle, canaries absent everywhere', { timeout: 240000 }, async t => {
@@ -323,11 +332,31 @@ test('export of every produced category: actual preview, bound consent, verified
       `metadata bundle leaked ${canary.slice(0, 14)}`);
   }
 
-  // raw originals only by explicit choice: the owner's own text is in, nothing else is
-  const withRaw = await exportAll(page, { raw: true });
+  // raw originals by explicit choice, scanned first: the credential the owner typed into the
+  // work text is found (kind + location only, never the value) and that original is withheld
+  const credentialValue = SYNTHETIC.credential.split('=')[1];
+  const withheld = await exportAll(page, { raw: true });
+  // (attaching the PDF made a second revision of the same text: both are found)
+  assert.deepEqual(withheld.findings, ['AWS 비밀 액세스 키 지정 · 작업 설명 1판 1행 32열',
+    'AWS 비밀 액세스 키 지정 · 작업 설명 2판 1행 32열']);
+  assert.ok(!withheld.items.some(item => item.includes('원문 포함')));
+  assert.match(withheld.items.join('\n'), /작업 설명 \d판 \(비밀로 보이는 값이 있어 원문 제외\) · 원문 제외\(메타데이터만\)/);
+  assert.ok(withheld.missing.includes('작업 설명 원문: 가림 처리됨'));
+  const panelText = await page.locator('#work-records').textContent();
+  assert.ok(!panelText.includes(credentialValue), 'the panel never shows the matched value');
+  const withheldText = Object.values(await unzip(t, withheld.bytes)).join('\n');
+  for (const canary of [...secrets, SYNTHETIC.text, credentialValue, SYNTHETIC.fileName, SYNTHETIC.pdf,
+    SYNTHETIC.alternative]) {
+    assert.ok(!withheldText.includes(canary) && !withheld.bytes.includes(Buffer.from(canary)),
+      `withheld raw bundle leaked ${canary.slice(0, 14)}`);
+  }
+  // only after the owner confirms that exact finding set is the original exported as typed
+  const withRaw = await exportAll(page, { raw: true, confirmFindings: true });
+  assert.deepEqual(withRaw.findings, withheld.findings);
   assert.match(withRaw.items.join('\n'), /작업 설명 \d판 원문 · 원문 포함/);
   const rawText = Object.values(await unzip(t, withRaw.bytes)).join('\n');
   assert.ok(rawText.includes(SYNTHETIC.text), 'the chosen raw original is in the bundle');
+  assert.ok(rawText.includes(SYNTHETIC.credential), 'the confirmed finding is exported as the owner chose');
   for (const canary of [...secrets, SYNTHETIC.fileName, SYNTHETIC.pdf, SYNTHETIC.alternative]) {
     assert.ok(!rawText.includes(canary) && !withRaw.bytes.includes(Buffer.from(canary)), `raw bundle leaked ${canary.slice(0, 14)}`);
   }
@@ -355,6 +384,10 @@ test('export of every produced category: actual preview, bound consent, verified
       assert.ok(!body.includes(Buffer.from(secret)) && !headerText.includes(secret), `${method} ${pathname} leaked ${secret.slice(0, 14)}`);
     }
     if (pathname !== `${base}session`) assert.ok(!body.includes(Buffer.from(csrf)), `${method} ${pathname} carried the CSRF value`);
+    // no export preview or receipt ever carries the matched credential (only the confirmed bundle does)
+    if (/\/exports(?:\/preview)?$/.test(pathname)) {
+      assert.ok(!body.includes(Buffer.from(credentialValue)), `${method} ${pathname} carried the matched credential`);
+    }
   }
   assert.deepEqual(errors, []);
 });

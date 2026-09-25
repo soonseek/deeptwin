@@ -9,6 +9,7 @@
 // boot is testable under node; the page passes the platform's own.
 
 import { createAlternativeFileForm } from './alternative-file.mjs';
+import { createApprovalScreen } from './approval-screen.mjs';
 import { createAlternativeEditor } from './alternatives.mjs';
 import { createArtifactViewer } from './artifacts.mjs';
 import { createGraphView } from './graph.mjs';
@@ -21,6 +22,7 @@ export const ALTERNATIVE_MOUNT_ID = 'run-alternative';
 export const ALTERNATIVE_FILE_MOUNT_ID = 'run-alternative-file';
 export const INQUIRY_MOUNT_ID = 'run-inquiry';
 export const GRAPH_MOUNT_ID = 'run-graph';
+export const APPROVALS_MOUNT_ID = 'run-approvals';
 export const MOUNT_IDS = Object.freeze({
   session: 'session-status', source: 'run-source', panel: 'run-panel', artifacts: 'run-artifacts',
 });
@@ -96,18 +98,26 @@ export async function boot({ document, location, fetch, crypto } = {}) {
   const graph = graphRoot !== null && typeof graphRoot?.replaceChildren === 'function'
     ? createGraphView({ root: graphRoot, document, basePath, request: session.request })
     : null;
+  // the owner's approval screen: the selected run's pending gates and execution-bound
+  // asks, decided through the owner routes; a decision re-reads the run panel (T066/T087)
+  const approvalsRoot = document.getElementById(APPROVALS_MOUNT_ID);
+  const approvals = approvalsRoot !== null && typeof approvalsRoot?.replaceChildren === 'function'
+    ? createApprovalScreen({ root: approvalsRoot, document, basePath, request: session.request, commandId,
+      onDecided: runId => panel.read(runId) })
+    : null;
   const list = createRunList({
     root: roots.source, document, basePath, request: session.request,
     // each refusal is shown on its own surface
     onSelect: runId => Promise.all([panel.read(runId).catch(() => {}), artifacts.show(runId).catch(() => {}),
-      ...(graph === null ? [] : [graph.showRun(runId).catch(() => {})])]),
+      ...(graph === null ? [] : [graph.showRun(runId).catch(() => {})]),
+      ...(approvals === null ? [] : [approvals.show(runId).catch(() => {})])]),
   });
   try {
     await list.refresh();
   } catch {
     // the list's own status names the failure; the session stands
   }
-  return Object.freeze({ established: true, basePath, session, list, panel, artifacts, graph, commandId });
+  return Object.freeze({ established: true, basePath, session, list, panel, artifacts, graph, approvals, commandId });
 }
 
 // the page's entry: a boot that fails before or beside the session exchange

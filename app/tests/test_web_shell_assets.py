@@ -33,6 +33,7 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "speech-input.mjs": "application/javascript",
         "audio-capture-worklet.mjs": "application/javascript",
         "approvals.mjs": "application/javascript",
+        "approval-screen.mjs": "application/javascript",
         "records.mjs": "application/javascript",
         "runtime.mjs": "application/javascript",
         "session.mjs": "application/javascript",

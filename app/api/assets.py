@@ -25,6 +25,7 @@ MODULES = MappingProxyType({
     "speech-input.mjs": JAVASCRIPT,
     "audio-capture-worklet.mjs": JAVASCRIPT,
     "approvals.mjs": JAVASCRIPT,
+    "approval-screen.mjs": JAVASCRIPT,
     "records.mjs": JAVASCRIPT,
     "runtime.mjs": JAVASCRIPT,
     "session.mjs": JAVASCRIPT,

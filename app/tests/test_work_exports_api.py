@@ -269,3 +269,123 @@ def test_the_runs_of_the_work_are_exported_with_their_stops_consents_and_approva
         assert start(linear_graph(), work["ref"]).status_code == 201
         stale = confirm(exports, work["work_id"], again)
         assert stale.status_code == 409 and stale.json()["code"] == "conflict"
+
+
+# --- T074 gap: the secret scan over raw originals --------------------------------------
+
+SECRET_KEY = "sk-ant-api03-SYNTHETIC-scan-canary-0123456789abcdefghij-AA"
+SECRET_AWS = "aws_secret_access_key=SYNTHETIC-scan-wJalrXUtnFEMI-K7MDENG"
+
+
+def _bundle(subject, work_id, receipt):
+    response = subject.client.get(f"{subject.path}/{work_id}/exports/{receipt['bundle_id']}",
+                                  headers=headers(subject.profile))
+    assert response.status_code == 200, response.text
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        return response, {name: archive.read(name) for name in archive.namelist()}
+
+
+def _preview_acked(subject, work_id, findings_sha, *, include_raw=True):
+    return post(subject, {"schema_version": PREVIEW, "request_id": str(uuid4()), "categories": ["originals"],
+                          "include_raw": include_raw, "acknowledged_findings_sha": findings_sha},
+                f"{subject.path}/{work_id}/exports/preview")
+
+
+def test_a_raw_original_with_a_secret_is_withheld_and_the_value_never_shown(tmp_path):
+    with owner_app(tmp_path) as subject:
+        text = f"분기 보고서\n키는 {SECRET_KEY} 이고\n  {SECRET_AWS}\n"
+        work = create(subject, text=text).json()
+        shown_response = preview(subject, work["work_id"], ["originals", "events"], include_raw=True)
+        assert shown_response.status_code == 200, shown_response.text
+        shown = shown_response.json()
+        scan = shown["secret_scan"]
+        assert [(f["relative_path"], f["kind"], f["line"], f["column"]) for f in scan["findings"]] == [
+            ("originals/revision-1.txt", "anthropic_api_key", 2, 4),
+            ("originals/revision-1.txt", "aws_secret_access_key", 3, 3)]
+        assert scan["confirmed"] is False and len(scan["findings_sha"]) == 64
+        [original] = [item for item in shown["items"] if item["category"] == "originals"]
+        assert original["content_mode"] == "metadata_only"
+        assert original["relative_path"] == "originals/revision-1.json"
+        assert any(entry == {"category": "originals", "reason": "redacted",
+                             "claim": "비밀로 보이는 값이 있어 작업 설명 원문 1개를 제외했다."}
+                   for entry in shown["missing"])
+        for value in (SECRET_KEY, SECRET_AWS, "SYNTHETIC-scan"):
+            assert value not in shown_response.text
+        # the unconfirmed export leaves the raw original out of the bundle
+        done = confirm(subject, work["work_id"], shown)
+        assert done.status_code == 201, done.text
+        assert "SYNTHETIC-scan" not in done.text
+        _, members = _bundle(subject, work["work_id"], done.json())
+        assert set(members) == {"manifest.json", "originals/revision-1.json", "events/work-history.json"}
+        assert all(b"SYNTHETIC-scan" not in data for data in members.values())
+        manifest = json.loads(members["manifest.json"])
+        assert {item["content_mode"] for item in manifest["items"]} == {"metadata_only"}
+
+
+def test_only_the_exact_confirmed_finding_set_includes_the_raw_original(tmp_path):
+    with owner_app(tmp_path) as subject:
+        work = create(subject, text=f"설명\n{SECRET_KEY}\n").json()
+        first = preview(subject, work["work_id"], ["originals"], include_raw=True).json()
+        findings_sha = first["secret_scan"]["findings_sha"]
+        # a confirmation that is not this finding set is refused; so is one without raw
+        assert _preview_acked(subject, work["work_id"], "0" * 64).status_code == 409
+        assert _preview_acked(subject, work["work_id"], findings_sha, include_raw=False).status_code == 400
+        assert _preview_acked(subject, work["work_id"], "not-a-digest").status_code == 400
+        # the preview without the confirmation cannot be exported as if it had one
+        assert confirm(subject, work["work_id"], first, acknowledged_findings_sha=findings_sha).status_code == 409
+        acked_response = _preview_acked(subject, work["work_id"], findings_sha)
+        assert acked_response.status_code == 200, acked_response.text
+        acked = acked_response.json()
+        assert SECRET_KEY not in acked_response.text  # even confirmed, the preview never shows it
+        assert acked["secret_scan"]["confirmed"] is True
+        assert acked["secret_scan"]["findings_sha"] == findings_sha
+        assert acked["items"][0]["content_mode"] == "raw"
+        assert acked["preview_sha"] != first["preview_sha"]
+        # the confirmation must be carried by the export itself, bound into the digest
+        assert confirm(subject, work["work_id"], acked).status_code == 409
+        done = confirm(subject, work["work_id"], acked, acknowledged_findings_sha=findings_sha)
+        assert done.status_code == 201, done.text
+        assert SECRET_KEY not in done.text
+        _, members = _bundle(subject, work["work_id"], done.json())
+        assert SECRET_KEY.encode() in members["originals/revision-1.txt"]
+        assert SECRET_KEY.encode() not in members["manifest.json"]
+        stored = subject.domain.get(EntityRef.from_dict(
+            _manifest_record(subject, done.json()["bundle_id"]).body["content"]["bundle_artifact_ref"]))
+        consent = subject.domain.get(EntityRef.from_dict(stored.body["parent_refs"][0]))
+        assert consent.body["content"]["export_consent"]["confirmed_secret_findings_sha"] == findings_sha
+
+
+def test_a_new_revision_changes_the_finding_set_and_the_old_confirmation_no_longer_holds(tmp_path):
+    with owner_app(tmp_path) as subject:
+        work = create(subject, text=f"설명 {SECRET_KEY}").json()
+        findings_sha = preview(subject, work["work_id"], ["originals"], include_raw=True).json()[
+            "secret_scan"]["findings_sha"]
+        revised = post(subject, {"schema_version": REVISE, "command_id": str(uuid4()),
+                                 "expected_revision": 1, "text": f"바뀐 설명 {SECRET_AWS}"},
+                       f"{subject.path}/{work['work_id']}/revisions")
+        assert revised.status_code == 201
+        assert _preview_acked(subject, work["work_id"], findings_sha).status_code == 409
+
+
+def test_the_instance_own_session_token_and_capability_are_recognised_by_digest(tmp_path):
+    from base64 import urlsafe_b64encode
+
+    with owner_app(tmp_path) as subject:
+        capability = urlsafe_b64encode(b"S" * 32).rstrip(b"=").decode()  # the fixture's capability
+        token = next(value for value in subject.client.cookies.values() if len(value) == 43)
+        unrelated = "A" * 42 + "Q"
+        work = create(subject, text=f"쿠키 {token}\n초대 {capability}\n무관 {unrelated}\n").json()
+        response = preview(subject, work["work_id"], ["originals"], include_raw=True)
+        assert response.status_code == 200, response.text
+        kinds = [(f["kind"], f["line"]) for f in response.json()["secret_scan"]["findings"]]
+        assert kinds == [("instance_session_token", 1), ("instance_bootstrap_capability", 2)]
+        assert token not in response.text and capability not in response.text
+
+
+def test_a_metadata_only_export_is_not_scanned_and_unchanged(tmp_path):
+    with owner_app(tmp_path) as subject:
+        work = create(subject, text=f"설명 {SECRET_KEY}").json()
+        shown = preview(subject, work["work_id"], ["originals"]).json()
+        assert shown["secret_scan"] is None
+        assert shown["items"][0]["label"] == "작업 설명 1판 (원문 제외)"
+        assert confirm(subject, work["work_id"], shown).status_code == 201
