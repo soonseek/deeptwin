@@ -4,7 +4,8 @@
 - `GET|HEAD /api/v1/source-readings/{work_id}`: every source of the work's latest revision
   with its original state and its latest reading's state (an excerpt, never the full text);
 - `POST /api/v1/source-readings/{work_id}`: read one exact source now (`source-reading-command-v1`);
-- `GET|HEAD /api/v1/source-readings/{work_id}/{source_id}`: the latest reading, its text.
+- `GET|HEAD /api/v1/source-readings/{work_id}/{source_id}`: the latest reading, its text
+  (410 `deleted` once the owner deleted the original and, with it, the text read from it).
 
 The shared `/api/v1` preflight admits each body exactly before auth.
 """
@@ -28,7 +29,7 @@ from .wire import WireInputError, WireLimits, parse_json_object, parse_query
 
 PATH = "/api/v1/source-readings"
 STATUS = {"invalid_input": 400, "unauthenticated": 401, "access_denied": 403, "not_found": 404,
-          "conflict": 409, "unavailable": 503, "reader_unavailable": 503, "capacity": 429}
+          "conflict": 409, "unavailable": 503, "reader_unavailable": 503, "capacity": 429, "deleted": 410}
 _LIMITS = WireLimits(max_bytes=2_048, max_depth=3, max_items=8, max_members=4, max_string_bytes=128)
 _REF = ("kind", "id", "version", "sha256")
 

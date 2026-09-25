@@ -87,3 +87,86 @@ than originals, backup create/restore from the GUI (T070/T081), and backup clean
   suggested-filename), which was recorded before this change.
 
 All of this is synthetic test-actor evidence.
+
+## 2026-09-25: text read from a deleted original is erased with it
+
+Gap found by the T023 audit (evidence/t023-audit-2026-09-25.md, open item 5): a reading
+(`source_readings.py`) sealed the text it read inside its `extraction` record. After the
+owner deleted the original, that text was hidden and no longer sent to a model, but its
+bytes stayed in the database, and so in every later backup.
+
+### Changed
+
+- A reading (`source-reading-v2`) no longer holds its text. The kept text is its own
+  content-addressed blob (`text_blob_ref`, null when nothing was kept). The record holds
+  state, reasons, method and counts only.
+- The deletion preview now lists, for each original:
+  - `readings`: every reading of it (id, state, kept characters, time, `text_state`
+    `stored` / `none` / `deleted`, or `inline_not_erasable` for a v1 record);
+  - `reading_text_shared_with_other_readings`: other readings that hold the same read text;
+  - `work_models_from_its_readings`: work-model drafts made from those readings.
+  All of these, and the readings' dependents, are in `affected_refs`, so the preview digest
+  binds them. A reading made after the preview makes the preview stale (409).
+- The preview also has a `backups` field. Backups made after the deletion hold neither the
+  original nor text read from it. Backups made before still hold both; they are owner-held
+  and are not rewritten. The work-screen panel shows both lines in Korean under `백업`,
+  plus the readings count and the kept drafts.
+- On consent, the deletion seals one `blob-erasure-v1` tombstone per content address:
+  - each original (`former_kind: original`);
+  - each stored reading text (`former_kind: source_reading_text`, `object_id` = reading id).
+  Text that is byte-identical to the original, or shared by several readings, gets one
+  tombstone. The `retention.deleted` byte count covers every erased address. After the commit
+  the bytes are removed and their absence is checked. The result reports `text_removed` per
+  reading.
+- Readers:
+  - the listing shows the reading as metadata with `text_state: deleted`, with no excerpt;
+  - `GET …/source-readings/{work}/{source}` answers **410 `deleted`**;
+  - a replayed read command returns the metadata only;
+  - a new read of the deleted original is `unreadable`/`deleted`;
+  - a work-model draft gets the source as `not_read`.
+  Characters the owner deleted are never stored again under their address. A reading that
+  would keep exactly those characters is sealed `unreadable`/`deleted`.
+- Backups needed no change. `_live_blobs` already copies only blobs without a tombstone, and
+  the reading text is now such a blob.
+
+### Observed (this worktree, synthetic test actor)
+
+- `test_source_reading_erasure.py`: **2 passed**.
+  - A text original with a BOM, so its read text has a separate address, carries a canary.
+    After the reading, the canary is only in `domain-cas/` files, never in the database or
+    WAL. The preview lists the reading. A second reading after the preview makes it stale.
+  - After consent, a byte scan of every file under the data directory (database, WAL, blob
+    directories) finds no canary. There are two tombstones (`original`,
+    `source_reading_text`), neither with content. The listing says `deleted`, the text route
+    answers 410, and the record still reads back.
+  - A backup taken afterwards (a test crypto port that leaves the archive in the clear) does
+    not contain the canary or the text blob. A backup taken before still contains it.
+  - A second case: a work-model draft made from a reading is listed in the preview. After
+    deletion, a new draft's prompt no longer carries the text.
+- `test_source_readings.py` 11, `test_source_deletions.py` 3, `test_work_models.py` 3,
+  `test_conversation.py` 24, `test_work_exports_api.py` 17: all pass. `test_backup.py`:
+  5 passed, 12 skipped. The skipped cases need `DEEPTWIN_AGE_RUNTIME_ROOT`, which is not
+  available in this worktree.
+- `source-deletion.test.mjs` 6, `work-conversation.test.mjs` + `work.test.mjs`: all pass (44).
+- `browser-records.test.mjs` in real Chromium: 5 passed, 1 skipped (backup worker needs
+  root). The deletion case now also:
+  - stores a text original and reads it on the work screen before deleting;
+  - checks the preview's reading line and both backup lines;
+  - checks that the readings panel then says the read text was erased;
+  - checks that the text route answers 410;
+  - scans the fixture's data directory for the canary and finds none.
+  `browser-work-conversation-t023` 2 and `browser-first-use-integration-t023` 8 also pass.
+
+### Not done / limits
+
+- Work-model drafts made from a reading are listed and kept. They hold the model's own
+  wording, not the reading's text, but that wording may paraphrase or quote it. It stays
+  readable and is not erased; the preview says so. Erasing it would need body-level
+  deletion of immutable records, which the append-only store does not have.
+- A `source-reading-v1` record, where the text is inside the record, cannot be erased this
+  way. The preview names it `inline_not_erasable`, and readers no longer show it. v1
+  existed only on the unreleased T023 branch.
+- If a reading's text blob is stored but sealing its record then fails, an unreferenced blob
+  is left behind. A deletion cannot find it, and backups would carry it. This is a narrow
+  race that has not been tested.
+- Backups made before a deletion are not rewritten. This is by design, and the preview says so.

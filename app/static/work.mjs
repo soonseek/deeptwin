@@ -257,7 +257,9 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   const deletionRoot = document.getElementById(DELETION_MOUNT_ID);
   const deletion = deletionRoot !== null && typeof deletionRoot?.replaceChildren === 'function'
     ? createSourceDeletion({ root: deletionRoot, document, basePath, request: session.request, crypto,
-      workId: () => state.work_id ?? null })
+      workId: () => state.work_id ?? null,
+      // the readings panel then shows the erased text as deleted (defined below; called only later)
+      onDeleted: () => { readings?.load({ announce: false }).catch(() => {}); } })
     : null;
   const selections = [];
   const originals = new Map();

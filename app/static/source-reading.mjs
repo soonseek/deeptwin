@@ -19,6 +19,7 @@ export const MESSAGES = Object.freeze({
   reading: '읽는 중…',
   readerMissing: 'PDF·DOCX 읽기 도구가 이 인스턴스에 연결되어 있지 않습니다. 원본은 그대로 보관됩니다.',
   deleted: '원본이 삭제되어 읽을 수 없습니다.',
+  textDeleted: '원본과 함께 읽은 글자도 지웠습니다. 읽기 기록(상태·글자 수)만 남습니다.',
 });
 
 export const STATE_LABELS = Object.freeze({
@@ -104,12 +105,13 @@ export function createSourceReadings({ root, document, request, crypto, basePath
       return;
     }
     const rows = listing.sources.map(entry => {
+      const textGone = entry.reading?.text_state === 'deleted';
       const row = element('li', undefined, { 'data-source-id': entry.source_id,
-        'data-reading-state': entry.reading?.state ?? 'not_read' });
-      row.append(element('span', entry.name, { class: 'original-name' }),
-        element('span', entry.original_state === 'deleted' && entry.reading === null ? MESSAGES.deleted : readingSummary(entry.reading),
-          { class: 'reading-state' }));
-      if (entry.reading && entry.reading.state !== 'unreadable' && entry.reading.excerpt) {
+        'data-reading-state': entry.reading?.state ?? 'not_read', 'data-text-state': entry.reading?.text_state ?? 'none' });
+      const summary = entry.original_state === 'deleted' && entry.reading === null ? MESSAGES.deleted
+        : textGone ? `${readingSummary(entry.reading)} — ${MESSAGES.textDeleted}` : readingSummary(entry.reading);
+      row.append(element('span', entry.name, { class: 'original-name' }), element('span', summary, { class: 'reading-state' }));
+      if (entry.reading && !textGone && entry.reading.state !== 'unreadable' && entry.reading.excerpt) {
         const detail = element('details');
         detail.append(element('summary', '읽힌 글자 앞부분'), element('p', entry.reading.excerpt, { class: 'reading-excerpt' }));
         row.append(detail);

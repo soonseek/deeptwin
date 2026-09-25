@@ -113,6 +113,21 @@ test('the reading panel reads one original only on the owner command and keeps i
   assert.equal(changed, 1);
 });
 
+test('a reading whose original was deleted reads as metadata only: no excerpt, no read button', async () => {
+  const root = new FakeElement('section');
+  const reading = { reading_ref: { kind: 'extraction', id: 'r', version: 1, sha256: 'd'.repeat(64) }, source_ref: SOURCE,
+    state: 'complete', reasons: [], method: 'utf8-text-v1', kept_characters: 12, page_count: null,
+    pages_without_text: null, read_at_utc: 't', text_state: 'deleted' };
+  const { request } = requester([() => ({ work_id: WORK, revision: 2, reader_attached: true,
+    sources: [{ source_id: SOURCE.id, source_ref: SOURCE, name: '표.txt', original_state: 'deleted', reading }] })]);
+  const panel = createSourceReadings({ root, document, request, crypto, basePath: BASE, workId: () => WORK });
+  await panel.load();
+  assert.match(root.textContent, /전부 읽음 · 12자 — 원본과 함께 읽은 글자도 지웠습니다/);
+  assert.equal(root.findAll(el => el.tagName === 'DETAILS').length, 0);
+  assert.equal(root.findAll(el => el.tagName === 'BUTTON').length, 0);
+  assert.equal(root.findAll(el => el.getAttribute('data-text-state') === 'deleted').length, 1);
+});
+
 function conversationView(overrides = {}) {
   return { work_id: WORK, revision: 2, messages: [], proposals: [], ...overrides };
 }

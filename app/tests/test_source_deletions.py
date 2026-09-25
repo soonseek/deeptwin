@@ -71,7 +71,7 @@ def test_preview_then_explicit_deletion_leaves_a_tombstone_and_readable_records(
         assert deleted.status_code == 200, deleted.text
         result = deleted.json()
         assert result["deleted"] == [{"source_id": source_ref.id, "size": len(DATA), "sha256": item["sha256"],
-                                      "bytes_removed": True}]
+                                      "bytes_removed": True, "readings": []}]
         # the bytes are gone from disk; every reader says deleted
         path = tmp_path / "data" / "domain-cas" / "operational" / item["sha256"]
         assert not path.exists()

@@ -16,6 +16,13 @@ them. When that worker is not attached or does not answer, nothing is sealed and
 owner is told the reader is unavailable (a retry is safe: a reading has no other effect).
 Nothing here infers meaning, calls a model or reads anything implicitly; the work-model
 draft (work_models.py) uses a source's latest reading only when the owner made one.
+
+The kept text is not written into the reading record: it is stored as its own
+content-addressed blob (`text_blob_ref`, null when nothing was kept), so that when the
+owner deletes the original (source_deletions.py) the text read from it is erased the
+same way the original is — one tombstone per content address, the bytes removed after
+the commit. The reading record then stays as metadata (state, reasons, counts) and
+every reader answers `deleted` for its text; nothing of it is shown or sent again.
 """
 
 from __future__ import annotations
@@ -28,15 +35,17 @@ from ..domain.owner_material import ARTIFACT_SCHEMA, SOURCE_SCHEMA
 from ..domain.public_events import _append_event_in_transaction
 from ..domain.refs import EntityRef, ObjectRef, uuid_string
 from ..domain.schemas import ImmutableRecord
-from ..domain.store import BlobRef, _writer
+from ..domain.store import BlobRef, ErasedBlob, _writer
 from . import owner_material_journal as journal
 from .owner_auth import OwnerAuthError
 from .run_approvals import _authenticate_owner, _owner_actor_ref
 from .works import PersistentWorks, WorkServiceError
 
-__all__ = ["READING_SCHEMA", "SourceReadingError", "SourceReadings", "latest_readings"]
+__all__ = ["READING_SCHEMA", "SourceReadingError", "SourceReadings", "latest_readings", "reading_text",
+           "text_blob"]
 
-READING_SCHEMA = "source-reading-v1"
+READING_SCHEMA = "source-reading-v2"  # v1 kept the text inline; v2 keeps it as an erasable blob
+TEXT_PURPOSE = "operational"
 COMMAND_SCHEMA = "source-reading-command-v1"
 MAX_KEPT_BYTES = 60_000  # under the domain record's 64 KiB canonical string bound
 EXCERPT_CHARS = 280
@@ -48,7 +57,7 @@ REASONS = frozenset({
 TEXT_EXTENSIONS = (".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".log", ".text")
 DOCX_MEDIA = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 CODES = frozenset({"invalid_input", "unauthenticated", "access_denied", "not_found", "conflict",
-                   "unavailable", "reader_unavailable", "capacity"})
+                   "unavailable", "reader_unavailable", "capacity", "deleted"})
 _GAP = {"unsupported_format": "unsupported", "corrupt": "corrupt", "too_large": "unsupported",
         "no_text": "unsupported", "deleted": "deleted"}
 _INDEX_DDL = """CREATE TABLE IF NOT EXISTS source_readings_v1(
@@ -154,18 +163,55 @@ def _codec_reading(codec, family: str, data: bytes) -> dict:
                 **({"page_count": error.page_count} if error.page_count else {})}
 
 
-def _view(record, *, text=True) -> dict:
+def text_blob(record):
+    """The blob holding a reading's kept text, or None when nothing was kept."""
+    value = record.body["content"].get("text_blob_ref")
+    return None if value is None else BlobRef.from_dict(value)
+
+
+def _original_erased(domain, db, roots, record) -> bool:
+    source = domain._load(db, EntityRef.from_dict(record.body["content"]["source_ref"]), roots)[0]
+    artifact = domain._load(db, EntityRef.from_dict(source.body["content"]["artifact_ref"]), roots)[0]
+    return domain._erasure(db, BlobRef.from_dict(artifact.body["content"]["blob_ref"]), roots) is not None
+
+
+def text_erased(domain, db, roots, record) -> bool:
+    """True once the owner deleted the original or the text read from it."""
+    blob = text_blob(record)
+    return (_original_erased(domain, db, roots, record)
+            or (blob is not None and domain._erasure(db, blob, roots) is not None))
+
+
+def reading_text(domain, db, roots, record):
+    """The kept text of a reading ("" when nothing was kept), or None once it was deleted."""
+    if text_erased(domain, db, roots, record):
+        return None
+    blob = text_blob(record)
+    if blob is None:
+        return ""
+    try:
+        return domain._blob_bytes(db, blob, roots, purpose=TEXT_PURPOSE).decode("utf-8")
+    except ErasedBlob:
+        return None
+
+
+def _view(record, text, *, full=True) -> dict:
+    """`text` is the kept text, or None when the owner deleted it: the record then reads
+    as metadata only, with `text_state: deleted` and neither text nor excerpt."""
     content = record.body["content"]
     value = {
         "reading_ref": record.ref.as_dict(), "source_ref": content["source_ref"],
         "state": content["state"], "reasons": list(content["reasons"]), "method": content["method"],
         "kept_characters": content["kept_characters"], "page_count": content["page_count"],
         "pages_without_text": content["pages_without_text"], "read_at_utc": record.body["created_at_utc"],
+        "text_state": "deleted" if text is None else "kept",
     }
-    if text:
-        value["text"] = content["text"]
+    if text is None:
+        return value
+    if full:
+        value["text"] = text
     else:
-        value["excerpt"] = content["text"][:EXCERPT_CHARS]
+        value["excerpt"] = text[:EXCERPT_CHARS]
     return value
 
 
@@ -173,28 +219,37 @@ def _index(db):
     db.execute(_INDEX_DDL)
 
 
+def _latest_record(domain, db, roots, ref):
+    row = db.execute("SELECT reading_id, sha256 FROM source_readings_v1 WHERE vault_id=? AND source_id=? "
+                     "ORDER BY seq DESC LIMIT 1", (roots.genesis.id, ref["id"])).fetchone()
+    if row is None:
+        return None
+    record = domain._load(db, EntityRef("extraction", row["reading_id"], 1, row["sha256"]), roots)[0]
+    if record.body["content"].get("schema_version") != READING_SCHEMA \
+            or record.body["content"]["source_ref"] != ref:
+        return None  # a reading of another source version (or an older format) never stands in
+    return record
+
+
 def latest_readings(domain, db, roots, source_refs) -> list:
-    """The latest sealed reading of each named source (in order), None where none was made."""
+    """The latest sealed reading of each named source (in order), None where none was made
+    or where the owner deleted the original and the text read from it."""
     result = []
     for ref in source_refs:
-        row = db.execute("SELECT reading_id, sha256 FROM source_readings_v1 WHERE vault_id=? AND source_id=? "
-                         "ORDER BY seq DESC LIMIT 1", (roots.genesis.id, ref["id"])).fetchone()
-        if row is None:
-            result.append(None)
-            continue
-        record = domain._load(db, EntityRef("extraction", row["reading_id"], 1, row["sha256"]), roots)[0]
-        if record.body["content"].get("schema_version") != READING_SCHEMA \
-                or record.body["content"]["source_ref"] != ref:
-            result.append(None)  # a reading of another source version never stands in
-            continue
-        source = domain._load(db, EntityRef.from_dict(ref), roots)[0]
-        artifact = domain._load(db, EntityRef.from_dict(source.body["content"]["artifact_ref"]), roots)[0]
-        if domain._erasure(db, BlobRef.from_dict(artifact.body["content"]["blob_ref"]), roots) is not None:
-            # the owner deleted the original: text read from it is no longer shown or sent
-            result.append(None)
-            continue
+        record = _latest_record(domain, db, roots, ref)
+        if record is not None and text_erased(domain, db, roots, record):
+            record = None  # deleted: text read from it is no longer shown or sent
         result.append(record)
     return result
+
+
+def readings_of_source(db, roots, source_id) -> list:
+    """Every reading ever sealed for this source id, oldest first (the index rows)."""
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='source_readings_v1'").fetchone() is None:
+        return []
+    return [EntityRef("extraction", row[0], 1, row[1]) for row in db.execute(
+        "SELECT reading_id, sha256 FROM source_readings_v1 WHERE vault_id=? AND source_id=? ORDER BY seq",
+        (roots.genesis.id, source_id))]
 
 
 class SourceReadings:
@@ -235,15 +290,16 @@ class SourceReadings:
             self.owner.authenticate_bound(request.session)
             roots = self.domain._read_roots(db)
             latest, refs = self._membership(db, roots, work_id)
-            readings = latest_readings(self.domain, db, roots, refs)
             sources = []
-            for ref, reading in zip(refs, readings, strict=True):
+            for ref in refs:
                 source, artifact = self._original(db, roots, ref)
                 blob = BlobRef.from_dict(artifact.body["content"]["blob_ref"])
+                reading = _latest_record(self.domain, db, roots, ref)
                 sources.append({
                     "source_id": ref["id"], "source_ref": ref, "name": source.body["content"]["name"],
                     "original_state": "deleted" if self.domain._erasure(db, blob, roots) is not None else "stored",
-                    "reading": None if reading is None else _view(reading, text=False),
+                    "reading": None if reading is None else _view(
+                        reading, reading_text(self.domain, db, roots, reading), full=False),
                 })
         return {"work_id": work_id, "revision": latest.ref.version, "reader_attached": self.codec is not None,
                 "sources": sources}
@@ -261,10 +317,13 @@ class SourceReadings:
             ref = next((item for item in refs if item["id"] == source_id), None)
             if ref is None:
                 raise SourceReadingError("not_found")
-            reading = latest_readings(self.domain, db, roots, [ref])[0]
-        if reading is None:
-            raise SourceReadingError("not_found")
-        return _view(reading)
+            reading = _latest_record(self.domain, db, roots, ref)
+            if reading is None:
+                raise SourceReadingError("not_found")
+            text = reading_text(self.domain, db, roots, reading)
+        if text is None:
+            raise SourceReadingError("deleted")  # the record stays; its text was erased with the original
+        return _view(reading, text)
 
     @_closed
     def command(self, request, work_id, payload) -> dict:
@@ -290,7 +349,7 @@ class SourceReadings:
                 if replay["fingerprint"] != digest:
                     raise SourceReadingError("conflict")
                 ref = EntityRef.from_dict(journal.receipt(replay)["reading_ref"])
-                return _view(self.domain._load(db, ref, roots)[0])
+                return self._replayed(db, roots, ref)
             if self.works._by_command(db, roots, command_id) is not None:
                 raise SourceReadingError("conflict")  # one command id, one meaning
             _, refs = self._membership(db, roots, work_id)
@@ -322,6 +381,14 @@ class SourceReadings:
             state = "partial"
         if not set(reasons) <= REASONS or state not in STATES:
             raise SourceReadingError("unavailable")
+        blob = None
+        if text:
+            # the kept text is its own content-addressed blob, so a deletion can erase it
+            try:
+                blob = self.domain.put_blob(text.encode("utf-8"), purpose=TEXT_PURPOSE)
+            except ErasedBlob:
+                # these exact characters were deleted by the owner before: never stored again
+                text, state, reasons, blob = "", "unreadable", ["deleted"], None
         with _writer(), self.domain._connection(write=True) as db:
             actor = _authenticate_owner(self.owner, request, db)
             roots = self.domain._read_roots(db)
@@ -331,7 +398,7 @@ class SourceReadings:
                 if replay["fingerprint"] != digest:
                     raise SourceReadingError("conflict")
                 ref = EntityRef.from_dict(journal.receipt(replay)["reading_ref"])
-                return _view(self.domain._load(db, ref, roots)[0])
+                return self._replayed(db, roots, ref)
             _, refs = self._membership(db, roots, work_id)
             if source_ref.as_dict() not in refs:
                 raise SourceReadingError("not_found")
@@ -343,7 +410,8 @@ class SourceReadings:
                 access_policy_ref=roots.access_policy, retention_policy_ref=roots.retention_policy,
                 content={"schema_version": READING_SCHEMA, "work_id": work_id,
                          "source_ref": source_ref.as_dict(), "artifact_sha256": original["sha256"],
-                         "method": method, "state": state, "reasons": reasons, "text": text,
+                         "method": method, "state": state, "reasons": reasons,
+                         "text_blob_ref": None if blob is None else blob.as_dict(),
                          "kept_characters": len(text), "page_count": outcome.get("page_count"),
                          "pages_without_text": outcome.get("pages_without_text"),
                          "command_id": command_id})
@@ -365,4 +433,8 @@ class SourceReadings:
                 error_code=None, public_metadata=metadata, private_evidence_refs=(), retention_class="core",
                 policy_ref=roots.access_policy)
             journal.save(db, roots.genesis.id, command_id, digest, {"reading_ref": record.ref.as_dict()})
-            return _view(self.domain._load(db, record.ref, roots)[0])
+            return _view(self.domain._load(db, record.ref, roots)[0], text)
+
+    def _replayed(self, db, roots, ref):
+        record = self.domain._load(db, ref, roots)[0]
+        return _view(record, reading_text(self.domain, db, roots, record))

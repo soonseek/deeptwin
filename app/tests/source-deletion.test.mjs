@@ -125,3 +125,29 @@ test('before the work is saved it says so and requests nothing', async () => {
   assert.match(root.textContent, new RegExp(MESSAGES.unsaved));
   assert.equal(asked.length, 0);
 });
+
+test('the preview lists the readings erased with the original, the drafts kept, and what backups hold', async () => {
+  const withReadings = { ...view, backups: { made_after: 'hold_neither_the_original_nor_text_read_from_it',
+    made_before: 'still_hold_both_owner_held_and_not_rewritten' },
+  items: [{ ...view.items[0], shared_with_other_sources: [],
+    readings: [{ reading_id: 'r1', source_id: SRC, state: 'complete', kept_characters: 10, read_at_utc: 't', text_state: 'stored' },
+      { reading_id: 'r2', source_id: SRC, state: 'unreadable', kept_characters: 0, read_at_utc: 't', text_state: 'none' }],
+    reading_text_shared_with_other_readings: ['r9'], work_models_from_its_readings: ['m1'] }] };
+  const result = { request_id: REQ, not_reached: [], deleted: [{ source_id: SRC, size: 2048, sha256: 'b'.repeat(64),
+    bytes_removed: true, readings: [{ reading_id: 'r1', text_removed: true }, { reading_id: 'r2', text_removed: null }] }] };
+  const { root, deletion } = panel([work, detail(SRC, 'stored', '보고서.pdf'), detail(GONE, 'deleted', '옛'),
+    withReadings, result, { ...work, source_refs: [{ id: SRC }] }, detail(SRC, 'deleted', '보고서.pdf')]);
+  await deletion.load();
+  find(root, el => el.getAttribute('value') === SRC).checked = true;
+  await deletion.preview();
+  const text = root.textContent;
+  assert.match(text, /이 원본에서 읽은 기록 2건\(읽은 글자 1건은 함께 지웁니다\)/);
+  assert.match(text, /같은 글자를 가진 다른 읽기 1건도 "삭제됨"이 됩니다/);
+  assert.match(text, /그 읽기로 만든 업무 모델 초안 1개는 남습니다/);
+  assert.match(text, /이 삭제 뒤에 만드는 백업에는 이 원본도, 이 원본에서 읽은 글자도 들어가지 않습니다/);
+  assert.match(text, /이 삭제 전에 만든 백업에는 원본과 읽은 글자가 그대로 남습니다/);
+  assert.match(text, /읽기 기록\(상태·글자 수\)만 남습니다/);
+  find(root, el => el.getAttribute('id') === 'deletion-consent').checked = true;
+  await button(root, '선택한 원본 삭제').dispatch('click');
+  assert.match(root.textContent, /파일 제거를 확인했습니다\. 이 원본에서 읽은 글자 1건도 지웠습니다/);
+});

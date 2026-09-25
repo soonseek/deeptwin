@@ -237,8 +237,19 @@ def test_text_read_from_an_original_the_owner_deleted_is_no_longer_shown_or_sent
             "source_ids": [source_ref["id"]], "reason_code": "user_requested",
             "preview_sha256": preview.json()["preview_sha256"], "confirmed": True})
         assert deleted.status_code in {200, 201}, deleted.text
+        # the read text was byte-identical to the original: one address, one tombstone
+        assert [item["former_kind"] for item in _tombstones(subject)] == ["original"]
         [entry] = get(subject, f"{READINGS}/{work['work_id']}").json()["sources"]
-        assert entry["original_state"] == "deleted" and entry["reading"] is None
-        assert get(subject, f"{READINGS}/{work['work_id']}/{source_ref['id']}").status_code == 404
+        assert entry["original_state"] == "deleted" and entry["reading"]["text_state"] == "deleted"
+        assert "excerpt" not in entry["reading"]
+        gone = get(subject, f"{READINGS}/{work['work_id']}/{source_ref['id']}")
+        assert gone.status_code == 410 and gone.json()["code"] == "deleted"
         again = post(subject, f"{READINGS}/{work['work_id']}", read_body(source_ref)).json()
         assert again["state"] == "unreadable" and again["reasons"] == ["deleted"] and again["text"] == ""
+
+
+def _tombstones(subject):
+    with subject.domain._connection() as db:
+        return [json.loads(row[0])["content"] for row in db.execute(
+            "SELECT body FROM domain_records WHERE kind='decision_record' AND instr(body, ?) > 0",
+            (b"blob-erasure-v1",))]

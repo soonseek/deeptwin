@@ -5,6 +5,10 @@
 // - what would go
 // - how many stored records name it (they stay, and the original then reads as deleted)
 // - other works' sources holding the same bytes
+// - every reading of it (text read on the owner's command): that text is erased with it,
+//   the reading records stay as metadata; work-model drafts made from those readings
+//   are named and kept
+// - what backups made after the deletion hold (neither) and before it (both, owner-held)
 // - what the deletion cannot reach (earlier backups, copies already exported or sent)
 // Consent is a separate unchecked box bound to that preview's digest. A preview made
 // stale by any change is refused and cleared. The result says, per original, whether
@@ -24,13 +28,18 @@ export const NOT_REACHED_LABELS = Object.freeze({
   copies_outside_this_instance: '이 인스턴스 밖의 사본',
 });
 
+export const BACKUP_LABELS = Object.freeze({
+  hold_neither_the_original_nor_text_read_from_it: '이 삭제 뒤에 만드는 백업에는 이 원본도, 이 원본에서 읽은 글자도 들어가지 않습니다.',
+  still_hold_both_owner_held_and_not_rewritten: '이 삭제 전에 만든 백업에는 원본과 읽은 글자가 그대로 남습니다. 백업은 소유자가 보관하는 파일이라 다시 쓰지 않습니다.',
+});
+
 export const MESSAGES = Object.freeze({
   intro: '삭제는 선택 사항입니다. 자동으로 지워지는 원본은 없습니다. 지울 원본을 고르면 실제로 지워질 내용과 영향을 먼저 보여 드립니다.',
   unsaved: '저장된 업무가 없습니다. 원본을 저장한 뒤에 삭제를 고를 수 있습니다.',
   none: '저장된 원본이 없습니다.',
   choose: '지울 원본을 하나 이상 고르세요.',
   previewing: '실제로 지워질 내용을 확인하는 중…',
-  kept: '이 원본을 가리키는 기록은 남고, 원본은 "삭제됨"으로 읽힙니다. 삭제는 되돌릴 수 없습니다.',
+  kept: '이 원본을 가리키는 기록은 남고, 원본은 "삭제됨"으로 읽힙니다. 이 원본에서 읽은 글자도 함께 지워지고 읽기 기록(상태·글자 수)만 남습니다. 삭제는 되돌릴 수 없습니다.',
   consent: '위 미리보기 그대로 삭제하는 것에 동의합니다.',
   needConsent: '미리보기 내용에 동의해야 삭제할 수 있습니다.',
   deleting: '삭제하는 중…',
@@ -75,10 +84,11 @@ export function sizeText(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-export function createSourceDeletion({ root, document, basePath = '/', request, crypto, workId } = {}) {
+export function createSourceDeletion({ root, document, basePath = '/', request, crypto, workId, onDeleted = () => {} } = {}) {
   if (typeof root?.replaceChildren !== 'function') fail('a root is required');
   if (typeof request !== 'function') fail('a request adapter is required');
   if (typeof workId !== 'function') fail('a work id source is required');
+  if (typeof onDeleted !== 'function') fail('onDeleted must be a function');
   if (typeof crypto?.randomUUID !== 'function') fail('a crypto with randomUUID is required');
   const routes = deletionRoutes(basePath);
   let current = null;  // { workId, view }
@@ -176,8 +186,20 @@ export function createSourceDeletion({ root, document, basePath = '/', request, 
     for (const item of view.items) {
       const shared = item.shared_with_other_sources.length
         ? ` · 같은 내용을 가진 다른 원본 ${item.shared_with_other_sources.length}개도 함께 "삭제됨"이 됩니다` : '';
-      items.append(element('li', `${item.name} · ${sizeText(item.size)} · 이 원본을 가리키는 수정본 ${item.revisions_naming_it}개${shared}`));
+      const readings = Array.isArray(item.readings) ? item.readings : [];
+      const texts = readings.filter(reading => reading.text_state === 'stored').length;
+      const inline = readings.filter(reading => reading.text_state === 'inline_not_erasable').length;
+      const read = readings.length
+        ? ` · 이 원본에서 읽은 기록 ${readings.length}건(읽은 글자 ${texts}건은 함께 지웁니다)` : '';
+      const legacy = inline ? ` · 이전 형식 읽기 ${inline}건은 글자가 기록 안에 있어 지울 수 없습니다` : '';
+      const sharedText = (item.reading_text_shared_with_other_readings ?? []).length
+        ? ` · 같은 글자를 가진 다른 읽기 ${item.reading_text_shared_with_other_readings.length}건도 "삭제됨"이 됩니다` : '';
+      const drafts = (item.work_models_from_its_readings ?? []).length
+        ? ` · 그 읽기로 만든 업무 모델 초안 ${item.work_models_from_its_readings.length}개는 남습니다(모델이 쓴 문장이며, 읽은 글자를 옮겨 적었을 수 있습니다)` : '';
+      items.append(element('li', `${item.name} · ${sizeText(item.size)} · 이 원본을 가리키는 수정본 ${item.revisions_naming_it}개${shared}${read}${sharedText}${legacy}${drafts}`));
     }
+    const backups = element('ul', undefined, { 'aria-label': '백업' });
+    for (const key of Object.values(view.backups ?? {})) backups.append(element('li', BACKUP_LABELS[key] ?? key));
     const reach = element('ul', undefined, { 'aria-label': '이 삭제가 닿지 않는 곳' });
     for (const key of view.not_reached) reach.append(element('li', NOT_REACHED_LABELS[key] ?? key));
     const agree = element('input', undefined, { type: 'checkbox', id: 'deletion-consent' });
@@ -185,7 +207,7 @@ export function createSourceDeletion({ root, document, basePath = '/', request, 
     const go = element('button', '선택한 원본 삭제', { type: 'button' });
     go.addEventListener('click', () => confirm(agree).catch(() => {}));
     shown.replaceChildren(items, element('p', `영향받는 기록 ${view.affected_record_count}개. ${MESSAGES.kept}`),
-      element('h3', '이 삭제가 닿지 않는 곳'), reach,
+      element('h3', '이 삭제가 닿지 않는 곳'), reach, element('h3', '백업'), backups,
       agree, element('label', MESSAGES.consent, { for: 'deletion-consent' }), go);
   }
 
@@ -201,10 +223,15 @@ export function createSourceDeletion({ root, document, basePath = '/', request, 
         reason_code: view.reason_code, preview_sha256: view.preview_sha256, confirmed: true } });
       if (mine !== generation) return null;
       current = null;
-      const pending = result.deleted.filter(item => item.bytes_removed !== true).length;
+      const texts = result.deleted.flatMap(item => (Array.isArray(item.readings) ? item.readings : []))
+        .filter(reading => reading.text_removed !== null && reading.text_removed !== undefined);
+      const pending = result.deleted.filter(item => item.bytes_removed !== true).length
+        + texts.filter(reading => reading.text_removed !== true).length;
+      const erasedText = texts.length ? ` 이 원본에서 읽은 글자 ${texts.length}건도 지웠습니다.` : '';
       await load();
-      say(pending ? `삭제를 기록했습니다. 원본 ${pending}개는 파일 제거 확인이 아직 끝나지 않았습니다.`
-        : `원본 ${result.deleted.length}개를 삭제했고 파일 제거를 확인했습니다. 이전 백업과 이미 보낸 사본에는 닿지 않습니다.`,
+      onDeleted(result);
+      say(pending ? `삭제를 기록했습니다. 원본·읽은 글자 ${pending}건은 파일 제거 확인이 아직 끝나지 않았습니다.`
+        : `원본 ${result.deleted.length}개를 삭제했고 파일 제거를 확인했습니다.${erasedText} 이전 백업과 이미 보낸 사본에는 닿지 않습니다.`,
       pending ? 'cleanup_pending' : 'deleted');
       return result;
     } catch (error) {

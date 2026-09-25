@@ -51,7 +51,7 @@ export async function open(t) {
     return run.run_id;
   }, { base, seed });
   assert.match(runId, /^[0-9a-f-]{36}$/);
-  return { browser, context, page, url, errors, runId };
+  return { browser, context, page, url, errors, runId, dir };
 }
 
 export async function openEditor(page, url, runId, role = 'report') {

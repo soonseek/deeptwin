@@ -116,33 +116,79 @@ test('export: a work revised after its preview is refused as stale; records page
   assert.deepEqual(errors, []);
 });
 
+async function filesHolding(dir, needle) {
+  const { readdir, readFile } = await import('node:fs/promises');
+  const found = [];
+  for (const entry of await readdir(dir, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const path = join(entry.parentPath ?? entry.path, entry.name);
+    if ((await readFile(path)).includes(needle)) found.push(path.slice(dir.length + 1));
+  }
+  return found;
+}
+
 test('an original is deleted only through its preview and consent; readers then say deleted', { timeout: 120000 }, async t => {
-  const { page, url, errors } = await open(t);
+  const { page, url, errors, dir } = await open(t);
   await page.goto(url + 'work.html');
   const bytes = Buffer.from('%PDF-1.7\n지울 합성 원본\0');
-  await page.getByLabel('원본 자료 선택').setInputFiles({ name: '지울 원본.pdf', mimeType: 'application/pdf', buffer: bytes });
+  // a text original whose reading is taken before the deletion; the BOM makes the kept
+  // text its own content address, distinct from the original's bytes
+  const READ_CANARY = 'CANARY-읽힌글자-b41c';
+  const memo = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(`합성 메모 ${READ_CANARY} 끝`)]);
+  await page.getByLabel('원본 자료 선택').setInputFiles([
+    { name: '지울 원본.pdf', mimeType: 'application/pdf', buffer: bytes },
+    { name: '읽은 메모.txt', mimeType: 'text/plain', buffer: memo }]);
   await page.getByRole('button', { name: '이 인스턴스에 저장', exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('#save-status')?.textContent.includes('수정본 2'));
   const panel = page.locator('#work-deletion');
   await panel.getByLabel('지울 원본.pdf', { exact: false }).waitFor();
-  const href = await page.getByRole('link', { name: '다운로드' }).getAttribute('href');
-  const status = async () => page.evaluate(async target => (await fetch(target)).status, href);
-  assert.equal(await status(), 200);
+  await panel.getByLabel('읽은 메모.txt', { exact: false }).waitFor();
+  const hrefs = await page.getByRole('link', { name: '다운로드' }).evaluateAll(links => links.map(link => link.href));
+  assert.equal(hrefs.length, 2);
+  const statuses = async () => page.evaluate(async targets => Promise.all(targets.map(async target => (await fetch(target)).status)), hrefs);
+  assert.deepEqual(await statuses(), [200, 200]);
+  // the owner reads the text original before deleting anything
+  const readingsPanel = page.locator('#source-readings');
+  await readingsPanel.getByRole('button', { name: '읽은 메모.txt 내용 읽기' }).click();
+  await readingsPanel.getByText('전부 읽음', { exact: false }).first().waitFor();
+  assert.match(await readingsPanel.locator('.reading-excerpt').textContent(), new RegExp(READ_CANARY));
+  const dataDir = join(dir, 'data');
+  const heldBefore = await filesHolding(dataDir, Buffer.from(READ_CANARY));
+  assert.ok(heldBefore.length >= 1 && heldBefore.every(name => name.startsWith('domain-cas/')), JSON.stringify(heldBefore));
   // a preview removes nothing
   await panel.getByLabel('지울 원본.pdf', { exact: false }).check();
+  await panel.getByLabel('읽은 메모.txt', { exact: false }).check();
   await panel.getByRole('button', { name: '삭제 미리보기' }).click();
   await panel.getByText('이 삭제 전에 만든 백업', { exact: true }).waitFor();
-  assert.match(await panel.textContent(), /이 원본을 가리키는 수정본 1개/);
-  assert.equal(await status(), 200);
+  const shownPreview = await panel.textContent();
+  assert.match(shownPreview, /이 원본을 가리키는 수정본 \d+개/);
+  assert.match(shownPreview, /읽은 메모\.txt · .* · 이 원본에서 읽은 기록 1건\(읽은 글자 1건은 함께 지웁니다\)/);
+  assert.match(shownPreview, /이 삭제 뒤에 만드는 백업에는 이 원본도, 이 원본에서 읽은 글자도 들어가지 않습니다/);
+  assert.match(shownPreview, /이 삭제 전에 만든 백업에는 원본과 읽은 글자가 그대로 남습니다/);
+  assert.ok(!shownPreview.includes(READ_CANARY), 'the preview names what goes, never its content');
+  assert.deepEqual(await statuses(), [200, 200]);
   // consent is separate and off by default
   await panel.getByRole('button', { name: '선택한 원본 삭제' }).click();
   await panel.getByText('미리보기 내용에 동의해야 삭제할 수 있습니다.').waitFor();
-  assert.equal(await status(), 200);
+  assert.deepEqual(await statuses(), [200, 200]);
   await panel.locator('#deletion-consent').check();
   await panel.getByRole('button', { name: '선택한 원본 삭제' }).click();
-  await panel.getByText('원본 1개를 삭제했고 파일 제거를 확인했습니다', { exact: false }).waitFor();
+  await panel.getByText('원본 2개를 삭제했고 파일 제거를 확인했습니다. 이 원본에서 읽은 글자 1건도 지웠습니다.', { exact: false }).waitFor();
   assert.match(await panel.textContent(), /지울 원본\.pdf · .* · 삭제됨/);
-  assert.equal(await status(), 410);
+  assert.deepEqual(await statuses(), [410, 410]);
+  // the reading stays as metadata; its text is gone from every reader and every store file
+  await readingsPanel.getByText('원본과 함께 읽은 글자도 지웠습니다', { exact: false }).waitFor();
+  assert.ok(!(await readingsPanel.textContent()).includes(READ_CANARY));
+  const latest = await page.evaluate(async ({ base, target }) => {
+    const work = target.split('/api/v1/works/')[1].split('/')[0];
+    const listing = await (await fetch(`${base}api/v1/source-readings/${work}`)).json();
+    const read = listing.sources.find(entry => entry.reading !== null);
+    const answer = await fetch(`${base}api/v1/source-readings/${work}/${read.source_id}`);
+    return { status: answer.status, body: await answer.text(), textState: read.reading.text_state };
+  }, { base: new URL(url).pathname, target: hrefs[1] });
+  assert.equal(latest.status, 410);
+  assert.equal(latest.textState, 'deleted');
+  assert.ok(!latest.body.includes(READ_CANARY));
+  assert.deepEqual(await filesHolding(dataDir, Buffer.from(READ_CANARY)), []);
   // the records log shows the deletion as its own event
   await page.goto(url + 'records.html');
   await page.locator('#records-logs li').first().waitFor();

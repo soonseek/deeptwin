@@ -239,7 +239,7 @@ class PersistentWorkModels:
     def _readings(self, source_refs):
         """The owner's latest reading of each source, for the prompt, and their refs (the
         draft's provenance). No reading at all → ((), ()): the revision text alone."""
-        from .source_readings import latest_readings
+        from .source_readings import latest_readings, reading_text
 
         with self._domain._connection() as db:
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='source_readings_v1'"
@@ -249,23 +249,27 @@ class PersistentWorkModels:
             records = latest_readings(self._domain, db, roots, source_refs)
             if all(record is None for record in records):
                 return (), ()
-            names = []
-            for ref in source_refs:
+            names, texts = [], []
+            for ref, record in zip(source_refs, records, strict=True):
                 source = self._domain._load(db, EntityRef.from_dict(ref), roots)[0]
                 names.append(source.body["content"].get("name"))
-        entries, budget = [], MAX_PROMPT_READING_CHARS
-        for name, record in zip(names, records, strict=True):
-            if record is None:
+                texts.append(None if record is None else reading_text(self._domain, db, roots, record))
+        entries, budget, used = [], MAX_PROMPT_READING_CHARS, []
+        for name, record, kept in zip(names, records, texts, strict=True):
+            if record is None or kept is None:  # never read, or the owner deleted what was read
                 entries.append({"name": name, "reading_state": "not_read"})
                 continue
+            used.append(record.ref)
             content = record.body["content"]
-            text = content["text"][:budget]
+            text = kept[:budget]
             budget -= len(text)
             entry = {"name": name, "reading_state": content["state"], "reasons": content["reasons"], "text": text}
-            if len(text) < len(content["text"]):
-                entry["omitted_from_prompt_characters"] = len(content["text"]) - len(text)
+            if len(text) < len(kept):
+                entry["omitted_from_prompt_characters"] = len(kept) - len(text)
             entries.append(entry)
-        return tuple(entries), tuple(record.ref for record in records if record is not None)
+        if not used:
+            return (), ()
+        return tuple(entries), tuple(used)
 
     # --- commands ----------------------------------------------------------
 
