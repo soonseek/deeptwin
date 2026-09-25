@@ -60,7 +60,7 @@ def make_pinned_transport(*, max_response_bytes, ssl_context=None, timeout=15.0,
     """
 
     if type(max_response_bytes) is not int or not 1 <= max_response_bytes <= 64 * 1024 * 1024:
-        raise EgressBrokerError("max_response_bytes is out of bounds")
+        raise EgressBrokerError("max_response_bytes is out of bounds", "invalid_request")
     context = ssl.create_default_context() if ssl_context is None else ssl_context
     if (type(context) is not ssl.SSLContext or context.verify_mode != ssl.CERT_REQUIRED
             or not context.check_hostname):
@@ -74,11 +74,11 @@ def make_pinned_transport(*, max_response_bytes, ssl_context=None, timeout=15.0,
         parts = urlsplit(url)
         host = parts.hostname
         if parts.scheme != "https" or not host or not addresses:
-            raise EgressBrokerError("the transport needs an https url and pinned addresses")
+            raise EgressBrokerError("the transport needs an https url and pinned addresses", "invalid_request")
         try:
             pinned = tuple(str(ipaddress.ip_address(item)) for item in addresses)
         except (TypeError, ValueError) as exc:
-            raise EgressBrokerError("the transport accepts literal pinned addresses only") from exc
+            raise EgressBrokerError("the transport accepts literal pinned addresses only", "dns_denied") from exc
         target = parts.path or "/"
         if parts.query:
             target = f"{target}?{parts.query}"
@@ -95,12 +95,16 @@ def make_pinned_transport(*, max_response_bytes, ssl_context=None, timeout=15.0,
                 return _read(response, method, max_response_bytes)
             except ssl.SSLCertVerificationError as exc:
                 # a pinned address that cannot prove the hostname is never tried around
-                raise EgressBrokerError("the destination's certificate does not match its hostname") from exc
+                raise EgressBrokerError("the destination's certificate does not match its hostname",
+                                        "fetch_failed") from exc
+            except EgressBrokerError:
+                raise  # a bounded read refused: never retried against another address
             except (OSError, http.client.HTTPException) as exc:
                 last_error = exc  # unreachable pinned address: try the next pinned one
             finally:
                 connection.close()
-        raise EgressBrokerError("no pinned address could be reached") from last_error
+        raise EgressBrokerError("no pinned address could be reached",
+                                "timeout" if isinstance(last_error, TimeoutError) else "fetch_failed") from last_error
 
     return transport
 
@@ -108,7 +112,7 @@ def make_pinned_transport(*, max_response_bytes, ssl_context=None, timeout=15.0,
 def _read(response, method, limit):
     header_items = response.getheaders()
     if len(header_items) > _MAX_HEADERS or sum(len(k) + len(v) for k, v in header_items) > _MAX_HEADER_BYTES:
-        raise EgressBrokerError("response headers exceed their bounds")
+        raise EgressBrokerError("response headers exceed their bounds", "too_large")
     headers = {}
     for name, value in header_items:
         key = name.lower()
@@ -116,9 +120,9 @@ def _read(response, method, limit):
     declared = headers.get("content-length")
     if declared is not None:
         if not declared.isdigit():
-            raise EgressBrokerError("the response declares an invalid length")
+            raise EgressBrokerError("the response declares an invalid length", "fetch_failed")
         if int(declared) > limit:
-            raise EgressBrokerError("response body exceeds the byte limit")
+            raise EgressBrokerError("response body exceeds the byte limit", "too_large")
     if method == "HEAD":
         return response.status, headers, b""
     body = bytearray()
@@ -128,5 +132,5 @@ def _read(response, method, limit):
             break
         body.extend(chunk)
         if len(body) > limit:
-            raise EgressBrokerError("response body exceeds the byte limit")
+            raise EgressBrokerError("response body exceeds the byte limit", "too_large")
     return response.status, headers, bytes(body)
