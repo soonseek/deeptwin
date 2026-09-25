@@ -23,6 +23,7 @@ MODULES = MappingProxyType({
     "chat.mjs": JAVASCRIPT,
     "settings.mjs": JAVASCRIPT,
     "browser-grants.mjs": JAVASCRIPT,
+    "extensions.mjs": JAVASCRIPT,
     "speech-input.mjs": JAVASCRIPT,
     "audio-capture-worklet.mjs": JAVASCRIPT,
     "approvals.mjs": JAVASCRIPT,

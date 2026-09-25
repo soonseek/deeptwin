@@ -334,3 +334,10 @@ footer p { margin: 6px 0; }
 .grant-form { display: grid; gap: 8px; margin-top: 16px; max-width: 640px; }
 .grant-form label { display: grid; gap: 4px; }
 .grant-form fieldset label { display: inline-flex; gap: 4px; margin-right: 12px; }
+/* Settings > Extensions (extensions.mjs): server facts as label/value rows */
+#settings-extensions dl { display: grid; grid-template-columns: minmax(10em, max-content) 1fr; gap: 4px 12px; }
+#settings-extensions dt { color: var(--muted); }
+#settings-extensions dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+#settings-extensions dd[data-supplied="false"] { color: var(--muted); font-style: italic; }
+#settings-extensions [data-extensions-section] { margin-top: 16px; }
+@media (max-width: 600px) { #settings-extensions dl { grid-template-columns: 1fr; } }

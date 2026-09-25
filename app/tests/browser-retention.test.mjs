@@ -124,7 +124,7 @@ test('settings hub: one header link on every page opens every entry point, none 
     const hub = page.locator('#settings-hub');
     await hub.locator('.settings-state').first().waitFor();
     const entries = await hub.locator('li[data-entry]').evaluateAll(nodes => nodes.map(node => [node.dataset.entry, node.dataset.required]));
-    assert.deepEqual(entries.map(entry => entry[0]), ['logs', 'export', 'backup', 'retention', 'account', 'connection', 'credentials']);
+    assert.deepEqual(entries.map(entry => entry[0]), ['logs', 'export', 'backup', 'retention', 'account', 'connection', 'credentials', 'extensions']);
     assert.ok(entries.every(entry => entry[1] === 'false'), 'no entry is a required step');
     assert.match(await hub.textContent(), /어떤 작업도 마지막에 내보내기를 거치지 않아도 끝납니다/);
     assert.match(await hub.locator('li[data-entry="backup"]').textContent(), /백업 워커 연결됨 · 만든 백업 0개/);
@@ -136,6 +136,7 @@ test('settings hub: one header link on every page opens every entry point, none 
       retention: ['records.html#records-retention', '#records-retention .retention-categories li'],
       account: ['records.html#records-account', '#records-account h2'],
       export: ['work.html#work-records', '#work-records'],
+      extensions: ['settings.html#settings-extensions', '#settings-extensions h2'],
     };
     for (const [entry, [target, ready]] of Object.entries(targets)) {
       await page.goto(url + 'settings.html');

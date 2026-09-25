@@ -33,6 +33,8 @@ export const SETTINGS_ENTRIES = Object.freeze([
     description: 'Claude API 연결과 모델 선택을 봅니다.' }),
   Object.freeze({ id: 'credentials', label: 'API 자격증명', href: './records.html#records-credentials',
     description: '저장한 API 자격증명을 보고 지웁니다. 값은 다시 보여 주지 않습니다.' }),
+  Object.freeze({ id: 'extensions', label: '확장', href: './settings.html#settings-extensions',
+    description: '확장 후보·제공자 설치 검증·적합성 검사를 보고, 서버가 보내지 않는 항목은 제공되지 않음으로 봅니다. 선택 사항입니다.' }),
 ]);
 
 export const HUB_MESSAGES = Object.freeze({

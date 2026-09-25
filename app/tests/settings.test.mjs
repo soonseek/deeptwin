@@ -50,7 +50,7 @@ class FakeElement {
 
 test('the settings hub lists every records and operations entry point, none required', () => {
   const hub = settingsHub();
-  assert.deepEqual(hub.map(entry => entry.id), ['logs', 'export', 'backup', 'retention', 'account', 'connection', 'credentials']);
+  assert.deepEqual(hub.map(entry => entry.id), ['logs', 'export', 'backup', 'retention', 'account', 'connection', 'credentials', 'extensions']);
   assert.ok(hub.every(entry => entry.required === false && entry.available === 'everywhere' && entry.exportRequired === false));
   assert.equal(hub.find(entry => entry.id === 'export').href, './work.html#work-records');
   assert.equal(hub.find(entry => entry.id === 'retention').href, './records.html#records-retention');
