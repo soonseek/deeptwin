@@ -1,0 +1,94 @@
+{
+ "schema": "q01-release-qualification-design-3",
+ "design_id": "q01-release-v3",
+ "frozen_on": "2026-09-25",
+ "supersedes": {"design": "../release-v2/qualification_design.json", "reason": "independent audit of release-v2 (evidence/release-designs-t076-2026-09-25.md, audit 2): B1-B8 blocking, N1-N8 notes; release-v1 and release-v2 are kept unchanged"},
+ "purpose": "The release qualification design for the Q01-family critic configuration: a scoped acceptance rule for one exact critic configuration on one sealed set, frozen before any heldout material exists. A pass is a scoped pass, not a qualification, while V3 error independence is unverified.",
+ "execution_state": "kept outside this pinned file in a run record whose pre-dispatch part is frozen by sha256 before the first dispatch (see pre_dispatch)",
+ "critic_configuration": {
+  "fields": ["provider", "mode", "model", "effort", "max_tokens", "critic_prompt_digest", "contract_version", "parser_version", "max_proposed_chains", "call_and_run_deadlines", "lens_refs_and_digests"],
+  "digest": "critic_configuration_digest = sha256 of the canonical JSON (sorted keys, no insignificant whitespace, UTF-8) of exactly these fields; a scoped pass is bound to this digest, and the product computes the same digest for a deployed critic",
+  "lens_arm": "The configuration names its lens set explicitly (possibly empty); a pass never carries over between a lens and a no-lens configuration."
+ },
+ "run_identity": {
+  "fields": ["sealed_dataset_sha256", "sealed_expectations_sha256", "judge_identity", "judge_prompt_digest", "independence_profile_path_and_sha256", "harness_version_and_sha256", "verifier_version_and_sha256", "case_order_seed_and_order", "authority_ref", "usd_hard_stop"],
+  "rule": "Run identity describes one attempt and is never part of the critic configuration; every field is fixed in the pre-dispatch manifest."
+ },
+ "pre_dispatch": {
+  "manifest_schema": "pre_dispatch_manifest.schema.json",
+  "content": "the critic configuration and its digest, the full run identity, the attempt number and every prior attempt's verdict for this critic configuration digest, and (when the lens-effect design runs) every arm's frozen text digest and the fixed predictions",
+  "freeze": "The manifest's sha256 is committed to the repository (or recorded with an external timestamp) before the first dispatch. The harness refuses to dispatch unless the manifest it loads hashes to the committed value; the suite record carries that sha256 and the verifier checks it.",
+  "edits": "Any change after the freeze voids the attempt as incomplete; the sealed set is still spent."
+ },
+ "dataset": {
+  "dataset_id": "q01-release-v3-sealed",
+  "must_be_new": "No case, material, candidate, counterexample or wording from evals/deeptwin/q01_materials.py, q01_lenses.json, the ten calibration cases, or ANY previously dispatched sealed set (qualification or lens-effect, any design version), nor paraphrases of them. The lens pack is critic configuration, not dataset material, and the materials are not written to suit a lens.",
+  "authoring": {
+   "author": "A named person who has not seen the verifier's calibration expectations and does not tune the critic configuration.",
+   "excluded_as_author_reviewer_or_judge": ["the developer who built the Q01 harness and verifiers", "anyone who tuned the critic configuration", "any model or session with repository access"],
+   "expectations": "Written by the author from the new materials alone as data conforming to sealed_expectation.schema.json (allowed statuses per criterion, evidence rules, validity and response expectations, judge items with rubrics), before any trial, and sealed (content sha256 in the pre-dispatch manifest).",
+   "judge_rubrics": "Written by the author as part of the sealed expectations and checked by the reviewer; the judge never edits them.",
+   "task_package": "The agent sees the Q01 instruction.md and a fixed-criteria document written by the author for the new materials; Task.md's M01/catalog-specific wording is replaced by the author's criteria text, frozen with the set.",
+   "review": "A second named person, not the author and not the judge, checks each expectation and rubric against the materials before sealing; a disagreement is resolved or the case is dropped before sealing, never after."
+  },
+  "composition": {
+   "boundary_classes": ["accept_without_false_rejection", "required_defect", "rejected_counterexample", "valid_counterexample", "unresolved_specific_claim", "insufficient_evidence"],
+   "minimum_cases_per_class": 2,
+   "required_coverage": ["at least one required_defect for each of Q1 (meaning), Q2 (hand-off), Q3 (authority)", "at least one valid alternative candidate under Q4", "at least one Q5 pair (a valid counterexample handled and one not handled)"],
+   "exclusions": "Only before the first dispatch, with the reason recorded; composition and coverage are re-checked after any exclusion. Nothing is excluded after the first dispatch: a disputed case then makes the suite incomplete.",
+   "note": "A scoped design choice so every class and criterion has instances; it is not a statistical sample size and supports no rate estimate."
+  },
+  "storage_and_access": {
+   "location": "outside the git repository, in an owner-controlled location recorded by path and sha256 in the pre-dispatch manifest",
+   "readers_before_run": ["the author", "the reviewer", "the sealing step"],
+   "during_run": "agent inputs come only from the harness's allowlisted reader; expectations are read only by the verifier at verify time; every read is logged in the run record",
+   "results": "the developer reads trial outputs and verdicts only after the suite verdict is recorded",
+   "single_use": "The first dispatched trial marks the set observed and spent forever (it becomes development data). Exactly one run per sealed set: no continuation, merge or rerun.",
+   "attempt_ledger": "Every attempt for one critic configuration digest is numbered across sets and design versions; each pre-dispatch manifest lists all prior attempts and their verdicts, and any claim cites 'attempt k' with every prior verdict."
+  }
+ },
+ "verifier": {
+  "requirement": "A data-driven verifier, not evals/deeptwin/verifiers/critic.py (whose expectations are the calibration cases), that loads the sealed expectations only at verify time, derives material checks and leak markers from the sealed set, and implements the same outcome classes (pass, fail, not_judged, invalid) and the six boundary classes.",
+  "freeze": "Its version and file sha256 are fixed in the pre-dispatch manifest before sealing; it is written by the harness developer without access to the sealed set and tested only on development data.",
+  "state_at_freeze": "not yet implemented; this design cannot execute until it exists"
+ },
+ "execution": {
+  "repetitions_per_case": 3,
+  "repetition_meaning": "three calls on one case are one task sample, never three independent samples",
+  "retry": "none",
+  "model_fallback": "none",
+  "concurrency": 1,
+  "output_contract_error": "a completed trial whose output breaks the contract is a fail of that repetition (Task.md), never an invalid trial",
+  "invalid_trials": "only harness, evidence, isolation or judge failures; reported with cause, never scored, never replaced within the run",
+  "authority": "The pre-dispatch manifest names who authorized the run, the authority reference and the budget; without it the run is not executed and there is no verdict",
+  "spend": "a hard USD stop fixed before any call; a stopped run is incomplete"
+ },
+ "judge": {
+  "independence_profile": "The profile in force is the one whose path and sha256 the pre-dispatch manifest records. independence_profile.json here fixes the rules; a successor profile that records an established judge is frozen and committed before sealing, names this design id, and is checked by the harness before dispatch.",
+  "judge_errors": "every judge verdict is recorded beside the sealed expectation; a judge failure makes that trial invalid (Task.md Q8); judge-versus-expectation disagreements are listed, never folded into the critic's score"
+ },
+ "acceptance": {
+  "case_pass": "a case passes only if every one of its repetitions is valid and passes under the frozen data-driven verifier",
+  "suite_outcome": {
+   "fail": "any valid repetition failed; takes precedence over invalid, not_judged and incomplete",
+   "incomplete": "no fail, and any case has an invalid, missing or stopped repetition, or the pre-dispatch manifest does not verify",
+   "not_judged": "no fail and not incomplete, and any semantic item is not_judged (a judge answer of undetermined, or a profile without established judge separation)",
+   "pass": "every case passes"
+  },
+  "suite_record": "conforms to suite_record.schema.json: the critic configuration digest, the pre-dispatch manifest sha256, the attempt number with prior verdicts, the profile sha256, judge separation, and the V3 status",
+  "what_a_pass_confers": "status scoped_pass for exactly this critic configuration digest. While V3 is unverified a scoped pass is NOT a critic qualification and approves no design; qualification additionally requires V3 verified under a later frozen profile version.",
+  "post_verdict": "Every pass and any suspicious result is audited after the verdict (verification.md section 4). A verifier or harness defect found after the verdict voids it to incomplete; it never upgrades a fail."
+ },
+ "reporting": ["per case and boundary class: passes, misses (a required defect not found), false rejections (a valid candidate or alternative rejected), abstentions, and not_judged items, each with its real denominator", "judge-versus-expectation disagreements per item, labelled judge_disagreement (never a joint error)", "same-item critic misses and false rejections; V3 joint-error metrics are not computed because this design has no generation path", "cluster counts (cases sharing materials count as one cluster)", "every invalid trial with its cause, calls, tokens, spend and wall time", "attempt k and all prior verdicts for this configuration"],
+ "claims_if_passed": [
+  "Attempt k of this exact critic configuration met the frozen acceptance rule on this sealed set, in these repetitions (prior attempts and verdicts listed).",
+  "V3 (error independence) remains unmet: no critic qualification and no design approval follow from a scoped pass."
+ ],
+ "never_claimed": [
+  "an error rate, false-rejection rate or missed-defect rate beyond the observed counts (Task.md open decision on quantitative qualification remains unmet)",
+  "V3 / FR-006 / SC-005 error independence",
+  "generalization to other tasks or materials",
+  "a lens effect (see evals/deeptwin/effects/lens-effects-v3.json)",
+  "actual user alternatives or behavior"
+ ]
+}

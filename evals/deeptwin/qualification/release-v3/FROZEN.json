@@ -1,0 +1,28 @@
+{
+ "schema": "deeptwin-frozen-design-manifest-2",
+ "frozen_on": "2026-09-25",
+ "release_v1_frozen_in_commit": "3508883",
+ "release_v2_frozen_in_commit": "2690bef",
+ "files": {
+  "evals/deeptwin/qualification/release-v3/qualification_design.json": "349b8f3f50b5e4c3da568c02e2ae8b067ff564c5f7107e0665855634f433895c",
+  "evals/deeptwin/qualification/release-v3/independence_profile.json": "f66f8f9da5d6fe86d278e202274600a7e767ac65e377164495a332ea13952520",
+  "evals/deeptwin/qualification/release-v3/sealed_expectation.schema.json": "1dda4051b35e3ccfde4998c3acda811965b99f2c32b4439c61f1e525487a6d68",
+  "evals/deeptwin/qualification/release-v3/pre_dispatch_manifest.schema.json": "ef58c2032db2272f8bc3712e5debff07a93b23d3fc1b204bf50633a5bd390821",
+  "evals/deeptwin/qualification/release-v3/suite_record.schema.json": "ebe8877a38e25d5afe5111c3de0a6945063c5789bf5fa2deb72f211a0136f9ed",
+  "evals/deeptwin/effects/lens-effects-v3.json": "845396747b1f16fa4cb22e4d017ab2f35054e3bc9e35f83265a841402b730b5a",
+  "evals/deeptwin/qualification/release-v2/qualification_design.json": "304a9606a11c84ce4c84092a645726a0c6e0ee0cb16a9f36a838cd4146e50f04",
+  "evals/deeptwin/qualification/release-v2/independence_profile.json": "7457ed2ad851edca5c00acdb6ed271f9e5fe035eabc3f840a41aba2c2b900f73",
+  "evals/deeptwin/effects/lens-effects-v2.json": "30eb1c0ae8e61ebafcd73fd8eb7feab37a6b57b0866369dfac1ee99edf93ee5c",
+  "evals/deeptwin/qualification/release-v2/FROZEN.json": "3195619d6ae750a8cf81d8b6825afbe32b95669e09b476688efb8892c497de61",
+  "evals/deeptwin/qualification/release-v1/qualification_design.json": "6cb2831af7f95fc053737c753ee175ad3d28220c3a7c20164c561736091c8afa",
+  "evals/deeptwin/qualification/release-v1/independence_profile.json": "3097c30f8cea6d5714ee15127309488990bd623426c7819f561b501267d82ed1",
+  "evals/deeptwin/effects/lens-effects-v1.json": "ad8622ac410def4fa97046e66891c52ef1b8e01a6241460c7f3797c65ac69d55",
+  "evals/deeptwin/qualification/release-v1/FROZEN.json": "df611ba551d580c8952c8f2c3db1f66fb24907906d1b58fbe3f5c2828f71c97e",
+  "app/services/critic_qualification.py": "744d8448799a6f5f7451cda6bafb3a1863e13a5a27cb66cda2f8710e4403f8bb"
+ },
+ "rule": "A change to any listed file is a new design version; every version is kept. This manifest pins v1, v2 and their manifests, and the product gate that reads v3 suite records.",
+ "not_pinned_here": {
+  "data_driven_verifier": "not yet implemented; its version and sha256 go into each pre-dispatch manifest before sealing",
+  "harness": "pinned per attempt in the pre-dispatch manifest"
+ }
+}

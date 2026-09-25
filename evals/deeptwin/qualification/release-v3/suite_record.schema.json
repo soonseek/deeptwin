@@ -1,0 +1,81 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "deeptwin:q01-release-v3:suite-record",
+ "title": "Suite verdict record of one release-v3 attempt",
+ "type": "object",
+ "additionalProperties": false,
+ "required": [
+  "schema_version",
+  "design_id",
+  "critic_configuration_digest",
+  "pre_dispatch_manifest_sha256",
+  "sealed_set_sha256",
+  "attempt",
+  "prior_outcomes",
+  "suite_outcome",
+  "independence_profile_sha256",
+  "judge_separation_established",
+  "v3_error_independence",
+  "record_sha256"
+ ],
+ "properties": {
+  "schema_version": {
+   "const": "q01-release-suite-verdict-v2"
+  },
+  "design_id": {
+   "const": "q01-release-v3"
+  },
+  "critic_configuration_digest": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "pre_dispatch_manifest_sha256": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "sealed_set_sha256": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "attempt": {
+   "type": "integer",
+   "minimum": 1
+  },
+  "prior_outcomes": {
+   "type": "array",
+   "items": {
+    "enum": [
+     "pass",
+     "fail",
+     "incomplete",
+     "not_judged"
+    ]
+   }
+  },
+  "suite_outcome": {
+   "enum": [
+    "pass",
+    "fail",
+    "incomplete",
+    "not_judged"
+   ]
+  },
+  "independence_profile_sha256": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "judge_separation_established": {
+   "type": "boolean"
+  },
+  "v3_error_independence": {
+   "enum": [
+    "unverified",
+    "verified"
+   ]
+  },
+  "record_sha256": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  }
+ }
+}

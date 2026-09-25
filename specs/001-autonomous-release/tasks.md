@@ -701,6 +701,11 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   identity, single-use, storage, coverage, contract-error, reporting, V3 and §8-arm gaps; release-v2
   (`release-v2/`, `lens-effects-v2.json`, manifest pinning v1 too) addresses them without editing v1
   (evidence/release-designs-t076-2026-09-25.md). Still open: no sealed set, no independent judge, V3 unverified.
+  2026-09-25 audit 2 of v2: AUDIT FAIL (B1 calibration-bound verifier, B2 run identity in configuration, B3 v2
+  unable to pass, B4 pass semantics, B5 attempts, B6 pre-dispatch tamper, B7/B8 effect data and baselines);
+  release-v3 addresses all eight without editing v1/v2, and the product gate now reads only v3 suite records
+  (a pass while V3 is unverified is `scoped_pass`, not a qualification). v3 needs its own independent audit;
+  its data-driven verifier is not implemented yet.
 - [ ] T077 Execute authorized bounded actual-provider/critic/multimodal/lens-controlled comparisons and audit all failures/suspicious passes in specs/001-autonomous-release/evidence/live-qualification.md; lack of applicable authority remains explicit, not waived (SC-001/005/006).
 - [ ] T078 After T087's extension UI and the frozen T081 candidate exist, perform final visual/
   keyboard/screen-reader/360px/1024px/

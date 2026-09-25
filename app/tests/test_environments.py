@@ -42,11 +42,16 @@ CRITIC_DIGEST = "c" * 64
 def suite_record(**overrides):
     record = {
         "schema_version": SUITE_RECORD_SCHEMA_VERSION,
-        "design_id": "q01-release-v2",
-        "configuration_digest": CRITIC_DIGEST,
+        "design_id": "q01-release-v3",
+        "critic_configuration_digest": CRITIC_DIGEST,
+        "pre_dispatch_manifest_sha256": "a" * 64,
         "sealed_set_sha256": "d" * 64,
-        "suite_verdict": "pass",
+        "attempt": 1,
+        "prior_outcomes": [],
+        "suite_outcome": "pass",
+        "independence_profile_sha256": "b" * 64,
         "judge_separation_established": True,
+        "v3_error_independence": "verified",
         "record_sha256": "e" * 64,
     }
     record.update(overrides)
@@ -54,7 +59,8 @@ def suite_record(**overrides):
 
 
 def qualified_critic():
-    # A test-actor suite record: no real release suite has passed (T077).
+    # A test-actor suite record (pass, judge separated, V3 verified): no real
+    # release suite has passed and V3 is unverified (T077).
     return critic_qualification_from_suite(suite_record(), CRITIC_DIGEST)
 
 # One real owner session per test module records every design approval in
@@ -231,13 +237,19 @@ def test_prepared_versions_and_states_are_issued_values():
     (lambda: unknown_critic_qualification(CRITIC_DIGEST), "unknown: no_suite_record"),
     (lambda: critic_qualification_from_suite(suite_record(design_id="q01-calibration-v1"), CRITIC_DIGEST),
      "unqualified: not_a_frozen_release_design"),
-    (lambda: critic_qualification_from_suite(suite_record(suite_verdict="fail"), CRITIC_DIGEST),
+    (lambda: critic_qualification_from_suite(suite_record(design_id="q01-release-v2"), CRITIC_DIGEST),
+     "unqualified: not_a_frozen_release_design"),
+    (lambda: critic_qualification_from_suite(suite_record(v3_error_independence="unverified"), CRITIC_DIGEST),
+     "scoped_pass: v3_error_independence_unverified"),
+    (lambda: critic_qualification_from_suite(suite_record(suite_outcome="not_judged"), CRITIC_DIGEST),
+     "unqualified: suite_not_judged"),
+    (lambda: critic_qualification_from_suite(suite_record(suite_outcome="fail"), CRITIC_DIGEST),
      "unqualified: suite_fail"),
-    (lambda: critic_qualification_from_suite(suite_record(suite_verdict="incomplete"), CRITIC_DIGEST),
+    (lambda: critic_qualification_from_suite(suite_record(suite_outcome="incomplete"), CRITIC_DIGEST),
      "unqualified: suite_incomplete"),
     (lambda: critic_qualification_from_suite(suite_record(judge_separation_established=False), CRITIC_DIGEST),
      "unqualified: judge_separation_not_established"),
-    (lambda: critic_qualification_from_suite(suite_record(configuration_digest="f" * 64), CRITIC_DIGEST),
+    (lambda: critic_qualification_from_suite(suite_record(critic_configuration_digest="f" * 64), CRITIC_DIGEST),
      "unknown: suite_is_for_another_configuration"),
 ])
 def test_a_passed_verdict_from_an_unqualified_critic_is_never_approvable(critic, reason):
@@ -259,3 +271,12 @@ def test_a_look_alike_qualification_is_refused_and_the_approval_binds_the_record
     approval = record_design_approval(approval_value(two, verdict(two)))
     assert approval.critic_qualification["record_sha256"] == "e" * 64
     assert approval.as_dict()["critic_qualification"]["status"] == "qualified"
+
+
+def test_a_suite_record_must_list_every_prior_attempt():
+    from app.services.critic_qualification import CriticQualificationError
+
+    with pytest.raises(CriticQualificationError, match="prior outcomes"):
+        critic_qualification_from_suite(suite_record(attempt=2), CRITIC_DIGEST)
+    later = critic_qualification_from_suite(suite_record(attempt=2, prior_outcomes=["fail"]), CRITIC_DIGEST)
+    assert later.status == "qualified"

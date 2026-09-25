@@ -1,0 +1,317 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "deeptwin:q01-release-v3:pre-dispatch-manifest",
+ "title": "Pre-dispatch manifest frozen before the first dispatch",
+ "type": "object",
+ "additionalProperties": false,
+ "required": [
+  "schema",
+  "design_id",
+  "critic_configuration",
+  "critic_configuration_digest",
+  "run_identity",
+  "attempt",
+  "prior_attempts",
+  "lens_effect"
+ ],
+ "properties": {
+  "schema": {
+   "const": "q01-pre-dispatch-manifest-1"
+  },
+  "design_id": {
+   "const": "q01-release-v3"
+  },
+  "critic_configuration": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "provider",
+    "mode",
+    "model",
+    "effort",
+    "max_tokens",
+    "critic_prompt_digest",
+    "contract_version",
+    "parser_version",
+    "max_proposed_chains",
+    "call_and_run_deadlines",
+    "lens_refs_and_digests"
+   ],
+   "properties": {
+    "provider": {
+     "type": "string"
+    },
+    "mode": {
+     "type": "string"
+    },
+    "model": {
+     "type": "string"
+    },
+    "effort": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "max_tokens": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "critic_prompt_digest": {
+     "type": "string",
+     "pattern": "^[0-9a-f]{64}$"
+    },
+    "contract_version": {
+     "type": "string"
+    },
+    "parser_version": {
+     "type": "string"
+    },
+    "max_proposed_chains": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "call_and_run_deadlines": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "number",
+      "exclusiveMinimum": 0
+     }
+    },
+    "lens_refs_and_digests": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "lens_id",
+       "version",
+       "sha256"
+      ],
+      "properties": {
+       "lens_id": {
+        "type": "string"
+       },
+       "version": {
+        "type": "string"
+       },
+       "sha256": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+       }
+      }
+     }
+    }
+   }
+  },
+  "critic_configuration_digest": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "run_identity": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "sealed_dataset_sha256",
+    "sealed_expectations_sha256",
+    "judge_identity",
+    "judge_prompt_digest",
+    "independence_profile",
+    "harness",
+    "verifier",
+    "case_order",
+    "authority_ref",
+    "usd_hard_stop"
+   ],
+   "properties": {
+    "sealed_dataset_sha256": {
+     "type": "string",
+     "pattern": "^[0-9a-f]{64}$"
+    },
+    "sealed_expectations_sha256": {
+     "type": "string",
+     "pattern": "^[0-9a-f]{64}$"
+    },
+    "judge_identity": {
+     "type": "string",
+     "minLength": 1
+    },
+    "judge_prompt_digest": {
+     "oneOf": [
+      {
+       "type": "string",
+       "pattern": "^[0-9a-f]{64}$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "independence_profile": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "path",
+      "sha256"
+     ],
+     "properties": {
+      "path": {
+       "type": "string"
+      },
+      "sha256": {
+       "type": "string",
+       "pattern": "^[0-9a-f]{64}$"
+      }
+     }
+    },
+    "harness": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "version",
+      "sha256"
+     ],
+     "properties": {
+      "version": {
+       "type": "string"
+      },
+      "sha256": {
+       "type": "string",
+       "pattern": "^[0-9a-f]{64}$"
+      }
+     }
+    },
+    "verifier": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "version",
+      "sha256"
+     ],
+     "properties": {
+      "version": {
+       "type": "string"
+      },
+      "sha256": {
+       "type": "string",
+       "pattern": "^[0-9a-f]{64}$"
+      }
+     }
+    },
+    "case_order": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "seed",
+      "order"
+     ],
+     "properties": {
+      "seed": {
+       "type": "string"
+      },
+      "order": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     }
+    },
+    "authority_ref": {
+     "type": "string",
+     "minLength": 1
+    },
+    "usd_hard_stop": {
+     "type": "number",
+     "exclusiveMinimum": 0
+    }
+   }
+  },
+  "attempt": {
+   "type": "integer",
+   "minimum": 1
+  },
+  "prior_attempts": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+     "attempt",
+     "design_id",
+     "sealed_dataset_sha256",
+     "suite_outcome"
+    ],
+    "properties": {
+     "attempt": {
+      "type": "integer",
+      "minimum": 1
+     },
+     "design_id": {
+      "type": "string"
+     },
+     "sealed_dataset_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+     },
+     "suite_outcome": {
+      "enum": [
+       "pass",
+       "fail",
+       "incomplete",
+       "not_judged"
+      ]
+     }
+    }
+   }
+  },
+  "lens_effect": {
+   "oneOf": [
+    {
+     "type": "null"
+    },
+    {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "arms",
+      "predictions_sha256"
+     ],
+     "properties": {
+      "arms": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+         "id",
+         "text_sha256"
+        ],
+        "properties": {
+         "id": {
+          "type": "string"
+         },
+         "text_sha256": {
+          "oneOf": [
+           {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+           },
+           {
+            "type": "null"
+           }
+          ]
+         }
+        }
+       }
+      },
+      "predictions_sha256": {
+       "type": "string",
+       "pattern": "^[0-9a-f]{64}$"
+      }
+     }
+    }
+   ]
+  }
+ }
+}

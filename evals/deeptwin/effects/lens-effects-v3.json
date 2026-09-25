@@ -1,0 +1,102 @@
+{
+ "schema": "deeptwin-lens-effect-design-3",
+ "design_id": "lens-effects-v3",
+ "frozen_on": "2026-09-25",
+ "supersedes": {
+  "design": "lens-effects-v2.json",
+  "reason": "independent audit 2 of release-v2: B7 (dataset rules dropped), B8 (baseline arms without fixed content), N4-N6"
+ },
+ "purpose": "G-15 at the critic counterexample-search application point: whether structured micro-lenses change grounded new counterexamples, missed defects and false rejections, compared under identical conditions.",
+ "application_point": {
+  "measured": "critic counterexample search",
+  "held_fixed": [
+   "initial environment design (no lens intervention)",
+   "post-alternative SPLI (not exercised)"
+  ],
+  "note": "Only this point varies, so only its contribution may be reported."
+ },
+ "precondition": "The no-lens critic configuration has a scoped pass under release-v3 on its own sealed set; the arms are then compared on a further sealed set.",
+ "dataset": {
+  "rules": "follows qualification_design.dataset of release-v3 in full: must_be_new (including every previously dispatched set), independent authoring, review, storage and access, single_use and attempt_ledger",
+  "disjoint": "disjoint from every qualification set and from every earlier lens-effect set",
+  "coverage": "cases where each lens's applicability condition holds, cases where it does not (abstention expected), and cases from each boundary class; applicability is judged by the author from the materials, not by the lens author"
+ },
+ "arms": [
+  {
+   "id": "no_lens",
+   "definition": "counterexample-proposal path retained, same max_proposed_chains, lens text absent",
+   "text": "none"
+  },
+  {
+   "id": "strong_existing_procedure",
+   "definition": "no stronger existing procedure is available for this task; this arm is recorded as identical to no_lens and is not run separately",
+   "state": "duplicate_of_no_lens"
+  },
+  {
+   "id": "general_multi_perspective",
+   "definition": "a generic multi-perspective checklist given the same exploration budget as the lens arms",
+   "text": "frozen full text taken from an existing published checklist or written by someone who is not a lens author; its sha256 enters the pre-dispatch manifest before the sealed set is accessed",
+   "state": "text_not_yet_fixed"
+  },
+  {
+   "id": "user_construct",
+   "definition": "constructs from actual user work cases",
+   "state": "not_runnable_data_needed",
+   "note": "no actual user constructs exist; none are invented"
+  },
+  {
+   "id": "single_L-P050-01",
+   "lenses": [
+    "L-P050-01"
+   ],
+   "text": "the reviewed lens pack text; digest in the critic configuration"
+  },
+  {
+   "id": "single_L-P033-02",
+   "lenses": [
+    "L-P033-02"
+   ],
+   "text": "the reviewed lens pack text; digest in the critic configuration"
+  },
+  {
+   "id": "mix",
+   "lenses": [
+    "L-P050-01",
+    "L-P033-02"
+   ],
+   "text": "the reviewed lens pack text; digest in the critic configuration"
+  }
+ ],
+ "held_equal": [
+  "information access",
+  "task capability and authority",
+  "model, effort, max_tokens",
+  "evaluator, verifier, judge and independence profile",
+  "development/sealed separation",
+  "case order (randomized once, recorded, same for every arm)"
+ ],
+ "budget": {
+  "unit": "model calls and output tokens per case repetition, plus USD per arm",
+  "cap": "the same per-arm cap for every arm, fixed in the pre-dispatch manifest; the added input tokens of lens or checklist text are reported, not hidden",
+  "stop": "an arm that reaches its cap is incomplete for that arm; other arms are not affected"
+ },
+ "run_structure": "one run per sealed set covers all arms; arms are interleaved per case in the recorded order so drift affects all arms equally",
+ "predictions_fixed_in_advance": "each lens arm's expected distinguishing questions, where it should apply and where it should abstain on the new materials, and the defects it predicts to surface; recorded with a sha256 in the pre-dispatch manifest before the first dispatch",
+ "execution": "inherits release-v3 execution, pre_dispatch, acceptance.suite_outcome and post_verdict: 3 repetitions per case, no retry, no fallback, concurrency 1",
+ "measurements": [
+  "per case and arm: verifier verdict and boundary class",
+  "grounded new counterexamples (valid and citing materials) per arm",
+  "misses, false rejections and abstentions per arm with real denominators",
+  "paired differences of each arm against no_lens on the same case",
+  "calls, tokens, spend, wall time and human review burden per arm (a subscription is not cost zero)",
+  "information-gain effect (new evidence found) separated from interpretation effect"
+ ],
+ "reporting": "observed counts and paired differences with every invalid trial listed; source fidelity, question-trace presence, actual added effect and generalization scope reported separately; no effect, a worse effect or a narrower scope is a valid result",
+ "never_claimed": [
+  "that a lens improves the critic in general",
+  "philosophical authority as evidence",
+  "effects at the other two application points",
+  "effects beyond the sealed set",
+  "actual user alternatives"
+ ]
+}
