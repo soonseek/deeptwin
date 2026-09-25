@@ -17,6 +17,7 @@ from .extension_candidates import candidate_services
 from .first_party import InstalledContribution, core_services
 from .provider_conformance import conformance_services
 from .provider_installation import installation_services
+from .retention import retention_services
 from .run_approvals import approval_services
 from .run_consents import consent_services
 from .runs import run_services
@@ -78,6 +79,15 @@ INSTALLED = (
         ("browser_session",),
         ("work.command", "work.read"),
         provides=("backups.service",),
+    ),
+    InstalledContribution(
+        "retention-v1.json",
+        "app.api.retention:create_router",
+        retention_services,
+        ("browser_session",),
+        ("work.command", "work.read"),
+        requires=("backups.service", "works.service"),
+        provides=("retention.service",),
     ),
     InstalledContribution(
         "credentials-v1.json",

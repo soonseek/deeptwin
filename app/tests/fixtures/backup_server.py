@@ -8,7 +8,9 @@ Two roles in one file:
   backup-key-init volume handed read-only to the backup identity), starts the production
   worker entrypoint in an empty network namespace as 20111:20111 with the pair group,
   then starts the ``app`` role as the control identity 20102:20102 with the pair group,
-  relays its announcement lines and stops both children when it is stopped.
+  relays its announcement lines and stops both children when it is stopped. Before that it
+  makes one `portable_recovery` backup of a separate synthetic vault with a fresh identity
+  (the "elsewhere" backup the portable browser restore uses) and announces its directory.
 - ``app`` (the control identity): the supported factory ``create_app`` with
   ``backup_worker`` naming the relocated endpoint; nothing is seeded. The owner
   bootstraps, saves a work, previews, consents and restores only through the product
@@ -69,6 +71,40 @@ def app_role(owned: Path) -> None:
         sock.close()
 
 
+def portable_backup(owned: Path, runtime) -> Path:
+    """A `portable_recovery` backup made "elsewhere" (a separate synthetic vault) with a fresh
+    identity: its bundle, external receipt and the identity the owner kept, for the browser
+    case to restore through the product's portable path. Synthetic test-actor data only."""
+
+    from uuid import uuid4
+
+    from app.domain.schemas import ImmutableRecord
+    from app.domain.store import DomainStore
+    from app.operations.backup import OneShotIdentity, create_backup
+    from app.storage import Store
+
+    directory = owned / "portable"
+    directory.mkdir(mode=0o700)
+    vault = directory / "vault"
+    domain = DomainStore(Store(vault))
+    roots = domain.initialize_vault()
+    domain.put(ImmutableRecord.create(
+        kind="work_revision", id=str(uuid4()), version=1, created_at_utc="2026-09-25T00:00:00.000000Z",
+        actor_ref=roots.actor, parent_refs=(), purpose="operational", access_policy_ref=roots.access_policy,
+        retention_policy_ref=roots.retention_policy, content={"text": "휴대용 복구 백업의 작업"}))
+    identity, recipient = runtime.generate()
+    out = directory / "out"
+    out.mkdir()
+    outcome = create_backup(vault, out, runtime=runtime, key_mode="portable_recovery", server_release="1.0.0",
+                            recipient=recipient, recovery_identity=OneShotIdentity(identity))
+    if outcome.state != "ready":
+        raise RuntimeError("the portable fixture backup was not made")
+    (directory / "bundle.age").write_bytes(outcome.ciphertext_path.read_bytes())
+    (directory / "receipt.json").write_text(json.dumps(outcome.receipt))
+    (directory / "identity.txt").write_bytes(identity.strip())
+    return directory
+
+
 def supervisor(owned: Path) -> int:
     reason = harness.available()
     if reason is not None:
@@ -76,6 +112,7 @@ def supervisor(owned: Path) -> int:
         return 3
     os.chmod(owned, 0o755)
     worker = harness.WorkerBase(owned / "worker")
+    portable = portable_backup(owned, worker.runtime)
     control = owned / "control"
     control.mkdir(mode=0o700)
     os.chown(control, harness.CONTROL_UID, harness.CONTROL_GID)
@@ -92,6 +129,7 @@ def supervisor(owned: Path) -> int:
     try:
         worker.start(die_with_parent=True)
         print(f"BACKUP_WORKER_NETWORKLESS={json.dumps(worker.networkless)}", flush=True)
+        print(f"BACKUP_PORTABLE_DIR={portable}", flush=True)
         app = subprocess.Popen(
             ["setpriv", f"--reuid={harness.CONTROL_UID}", f"--regid={harness.CONTROL_GID}",
              f"--groups={harness.PAIR_GID}", "--inh-caps=-all", "--no-new-privs",

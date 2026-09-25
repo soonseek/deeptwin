@@ -319,3 +319,10 @@ footer p { margin: 6px 0; }
 .design-focus { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .design-focus > p { grid-column: 1 / -1; font-weight: 600; }
 .design-focus dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+.app-settings a, a.app-settings { color: var(--accent); font-weight: 600; text-decoration: none; }
+.app-settings a:hover, a.app-settings:hover, .app-settings a[aria-current="page"] { text-decoration: underline; }
+.settings-entries { list-style: none; padding: 0; display: grid; gap: 12px; }
+.settings-entries li { border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; background: var(--panel); }
+.settings-entries p { margin: 4px 0 0; color: var(--muted); }
+.settings-entries .settings-state { color: var(--ink); }
+.retention-categories li, .retention-items li { margin: 6px 0; }

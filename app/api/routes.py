@@ -311,6 +311,10 @@ def preflight_api_v1(scope, body):
     from .backups import preflight as backups_preflight
     if is_backup_path(path):
         backups_preflight(scope, body)
+    from .retention import is_retention_path
+    from .retention import preflight as retention_preflight
+    if is_retention_path(path):
+        retention_preflight(scope, body)
     from .graphs import is_graphs_path
     from .graphs import preflight as graphs_preflight
     if is_graphs_path(path):

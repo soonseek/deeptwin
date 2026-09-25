@@ -1,0 +1,13 @@
+{
+  "schema_version": "deeptwin-first-party-route-contribution-v1",
+  "contribution_id": "retention-v1",
+  "factory": "app.api.retention:create_router",
+  "routes": [
+    {"route_id": "retention.read", "methods": ["GET", "HEAD"], "path": "/api/v1/retention",
+     "auth_policy": "browser_session", "required_scope": "work.read"},
+    {"route_id": "retention.cleanup_preview", "methods": ["POST"], "path": "/api/v1/retention/cleanup/preview",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "retention.cleanup", "methods": ["POST"], "path": "/api/v1/retention/cleanup",
+     "auth_policy": "browser_session", "required_scope": "work.command"}
+  ]
+}

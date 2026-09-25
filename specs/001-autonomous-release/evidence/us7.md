@@ -169,4 +169,108 @@ worker. That gap is now closed for `instance_backup_key`. The details are in
 Observed: `browser-backup.test.mjs` 1 passed; `browser-records.test.mjs` 4 passed;
 `test_backup_crypto_worker.py` 37 passed; `test_backups_api.py` 5 passed;
 `records-backup.test.mjs` 7 passed. Not exercised: portable-recovery restore through the browser
-(no identity input yet).
+(no identity input yet). This was closed later the same day; see the next section.
+
+## Retention screen, settings hub and portable restore (2026-09-25, T073)
+
+This closes the T073 open items "retention and settings screens", "backup cleanup" and
+"portable_recovery has no browser input". As above, the owner is a scripted **test actor**
+and every value is **synthetic**.
+
+What the server now does:
+
+- **Retention state.** `GET /api/v1/retention` is part of the new `retention-v1`
+  contribution (`app/api/retention.py`, `app/services/retention_cleanup.py`). It reads what
+  the vault and the data directory actually hold. For each category it states what is
+  kept, for how long, that nothing is deleted automatically, and whether and where the
+  owner may clean it up:
+  - **Core records** (records, lineage, the event log) are kept forever
+    (`core_mode = manual_only`) and are never offered for cleanup. The record store is
+    append-only, and other records rest on them.
+  - **Deletion tombstones** are never offered.
+  - **Originals** are deleted only on the work screen, with their own preview.
+  - **Encrypted backups** are kept until the owner cleans them up. The newest one is always
+    kept.
+  - **Staged restores** (failed, abandoned for over an hour, or a decrypted copy waiting
+    for review) are kept until the owner cleans them up.
+  - **Regenerable caches** and **raw audio** are not stored, so there is nothing to clean.
+- **Owner cleanup** mirrors source deletion:
+  - The server computes the preview: the exact items and bytes, what goes and what stays,
+    what it cannot reach (copies already downloaded), what is never deleted, and a digest
+    over all of that plus the request id and the reason.
+  - The cleanup needs `confirmed: true` and that exact digest. It recomputes the preview
+    under the backup lock, so a changed scope answers 409 and a gone item answers 404.
+  - It then writes a tombstone for each item: `{backup_id}.deleted.json` next to the kept
+    receipt and consent, or a restore status of `discarded` next to the kept receipt.
+  - It commits the core `retention.deleted` event (`object_count`, `byte_count`), and only
+    after that removes the bytes. The cleanup receipt, holding the preview shown, the
+    consent and what was removed, is kept under `retention/`.
+  - The same request replays its receipt.
+  - The ciphertext of a removed backup answers 404. Its receipt still downloads.
+- **Portable restore.** `POST /api/v1/backups/restores/{id}/portable-bundle` (a
+  `backups-v1` route) takes one `application/octet-stream` body: the owner's kept age
+  identity as the first LF-terminated line, then the encrypted bundle.
+  - The identity is checked as a native X25519 identity before the worker is asked. A
+    malformed one answers 400.
+  - It is wrapped in `OneShotIdentity`, used for one worker decrypt and then wiped. It is
+    never written to disk, to a status, to an error or to a log.
+  - `restore_begin` now accepts `portable_recovery` receipts. The plain `/bundle` route
+    refuses a portable restore, and the portable route refuses an instance-key restore.
+  - Limit: the ASGI request body is an immutable `bytes` object, so its copy of the
+    identity cannot be zeroed and lives until garbage collection.
+- **Browser.**
+  - The records page's retention section (`app/static/records-retention.mjs`) shows each
+    category and the eligible items. Nothing is preselected and kept items are disabled.
+    It shows the server's preview and a separate consent box that is unchecked by default.
+    After a cleanup it refreshes the backup list, where a removed backup offers only its
+    receipt.
+  - The restore screen has a masked `type=password` input for the kept identity. The input
+    is read once and cleared at once. The identity is framed into the upload and the sent
+    buffer is zeroed after the upload. It is never put in an attribute, a status,
+    `localStorage` or `sessionStorage`.
+  - The settings hub (`settings.html` + `app/static/settings.mjs`) is linked from the header
+    of every page (work, observe, records, versions, settings, start; the preview shell
+    `index.html` too). It lists the event log, export, backup/restore, retention/cleanup,
+    account/session, the Claude connection and API credentials. Each is a plain link with no
+    order or prerequisite, marked `data-required="false"`. The hub states that no work ends
+    in a required export. With a session it adds the server's own backup and retention state.
+
+| Case | Exercised surface | Result | Label |
+|---|---|---|---|
+| Retention state per category | `test_retention_cleanup_api.py`; `browser-retention.test.mjs` (real Chromium, real supported app as 20102, real backup-crypto worker as 20111 in an empty network namespace) | **Pass.** 7 categories, each `automatic_deletion=never`. Core records: `forever`/`not_offered`. Counts come from the server, never content | synthetic, test actor |
+| Cleanup preview → consent → cleanup | Same browser case: 2 backups made through the screen plus 1 failed restore (tampered bundle). The older backup and the failed restore are ticked | **Pass.** The newest backup's box is disabled. The preview lists 2 items with what goes and what stays, and removes nothing. Without the consent box: `미리보기 내용에 동의해야 정리할 수 있습니다.` With it: cleaned. Older ciphertext 404, its receipt 200, newest 200, restore `discarded`, `retention.deleted` in the event log, the saved work reads back | synthetic, test actor |
+| Stale/foreign scope | `test_retention_cleanup_api.py` | **Pass.** Wrong digest 409. `confirmed:false` 400. The newest backup or a fresh restore 409. An item already cleaned by another request 404. A reason changed after the preview 409. The same request replays its receipt | synthetic |
+| Portable restore: API | `test_backups_api.py` (real age 1.3.2, the worker's own dialogue code) | **Pass.** A wrong identity gives `failed`/`restore_failed` and stages nothing. The kept identity gives `restored_review` with dispatch blocked. A second upload 409. The identity bytes are in no response and in no file under the data directory. Malformed lines 400 | synthetic |
+| Portable restore: browser | `browser-backup.test.mjs` second case. The fixture makes a `portable_recovery` backup of a separate synthetic vault with a fresh identity | **Pass.** With no identity, nothing is sent. With a wrong one, refused. With the kept one, staged review with every required step shown. The input is empty after reading. The identity is not in the DOM, browser storage or any response the page saw | synthetic, test actor |
+| Settings hub navigation | `browser-retention.test.mjs` second case | **Pass.** From the work, observe, records, versions and settings pages, the header `설정` link opens the hub. The 7 entries all have `data-required="false"`. The live backup/retention lines are shown. The log, backup, retention, account and export entries each open their section. `start.html` carries the same link | synthetic, test actor |
+
+Observed (Linux x86_64, `DEEPTWIN_AGE_RUNTIME_ROOT` = the verified age 1.3.2):
+
+- `pytest` over `test_backups_api.py`, `test_backup_crypto_worker.py`, `test_backup.py`,
+  `test_source_deletions.py`, `test_retention.py`, `test_retention_cleanup_api.py`,
+  `test_work_exports_api.py`, `test_records_contract_mirror.py`, `test_web_shell_assets.py` and
+  `test_core_import_boundary.py`: 135 passed. Of these, `test_backups_api.py` has 6 and
+  `test_retention_cleanup_api.py` has 4.
+- The route-count set (`test_first_party.py`, `test_web_owner_integration.py`,
+  `test_runs_api.py`, `test_works_api.py`, `test_provider_source_startup.py`,
+  `test_web_shell_assets.py`): 183 passed. There are 98 installed routes: 94, plus 3
+  retention routes, plus 1 portable upload.
+- The composition/mirror/boundary set (credential import boundary, deployment/provider
+  receipt API, document codec, first-party dependencies, the four GUI mirrors, router
+  composition, owner material intake): 178 passed.
+- `node --test` over the 31 non-browser `.test.mjs` files: 236 passed. That includes
+  `records-retention.test.mjs` 5, `records-backup.test.mjs` 9 and `settings.test.mjs` 7.
+- Real browser: `browser-backup.test.mjs` 2 passed; `browser-retention.test.mjs` 2 passed;
+  `browser-records.test.mjs` 4 passed. The header change was also run against
+  `browser-first-use`, `browser-owner-lifecycle-t025`, `browser-owner-recovery-t025`,
+  `browser-versions`, `browser-owner-material-intake` and `browser-first-use-integration-t023`:
+  24 passed.
+
+Not done, stated rather than claimed:
+
+- There is no deletion of core records other than originals. The domain store is
+  append-only. `app/operations/retention.py`'s `delete_items` is a value-layer ledger with
+  no persisted counterpart.
+- There is no cache cleanup, because this server stores no regenerable cache on disk.
+- Portable backup *creation* is still not offered on the screen. Only instance-key backups
+  are made here.

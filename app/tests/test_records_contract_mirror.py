@@ -56,3 +56,12 @@ def test_backup_preview_categories_and_reasons_mirror_the_backup_contract():
     assert categories | {"deleted_originals"} == set(backup.EXCLUDED_REASONS)
     assert _mjs_list("RESTORE_REQUIREMENTS") == {
         "new_owner_bootstrap", "recreate_connections_and_service_clients", "review_and_activate_exact_environment"}
+
+
+def test_retention_vocabularies_mirror_the_retention_service():
+    from app.services import retention_cleanup as retention
+
+    assert _mjs_list("RETENTION_CATEGORIES") == set(retention.CATEGORIES)
+    assert _mjs_list("RETENTION_KEPT") == set(retention.KEPT)
+    assert _mjs_list("RETENTION_OWNER_CLEANUP") == set(retention.OWNER_CLEANUP)
+    assert _mjs_list("CLEANUP_REASONS") == set(retention.REASONS)

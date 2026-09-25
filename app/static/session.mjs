@@ -193,7 +193,7 @@ export function createSupportedSession({ fetch, basePath = '/' } = {}) {
   async function uploadBackupBundle(path, bytes) {
     const target = requirePath(path);
     const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
-    if (!new RegExp(`^/api/v1/backups/restores/${uuid}/bundle$`).test(target.slice(prefix.length))
+    if (!new RegExp(`^/api/v1/backups/restores/${uuid}/(?:bundle|portable-bundle)$`).test(target.slice(prefix.length))
         || !(bytes instanceof Uint8Array) || bytes.byteLength < 1) fail('invalid backup bundle upload');
     if (token === null) fail('브라우저 세션이 아직 없습니다.', 'unauthenticated');
     const response = await send(target, { method: 'POST', credentials: 'same-origin',

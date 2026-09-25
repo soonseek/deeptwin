@@ -16,12 +16,19 @@
 //   what is still required — a new owner bootstrap, re-created connections and
 //   service clients, and an explicit reactivation of an exact environment — and that
 //   dispatch stays blocked until then.
+// - Portable recovery: a receipt whose key mode is `portable_recovery` needs the age
+//   identity the owner kept elsewhere. It is typed into a masked input, read once and the
+//   input is cleared at once, sent as the first line of one upload to the portable route
+//   and the sent buffer is zeroed. It is never put in an attribute, a label, a status,
+//   localStorage or sessionStorage, and the server uses it for one decrypt only.
 // All server text reaches the DOM through textContent or attributes only.
 
 import { backupConsent, backupPreviewSummary, restoreReview } from './records.mjs';
 
 const BASE_PATH = /^\/(?:[0-9a-f]{32}\/)?$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+// a native age X25519 identity (Bech32, upper case); the worker checks it exactly
+const AGE_IDENTITY = /^AGE-SECRET-KEY-1[023456789ACDEFGHJKLMNPQRSTUVWXYZ]{20,120}$/;
 export const PREVIEW_SCHEMA = 'backup-preview-request-v1';
 export const RESTORE_SCHEMA = 'backup-restore-v1';
 
@@ -89,6 +96,11 @@ export const MESSAGES = Object.freeze({
   reactivation: '환경은 자동으로 다시 켜지지 않습니다. 검토한 뒤 정확한 환경을 명시적으로 다시 활성화해야 합니다.',
   inFlight: '백업 당시 진행 중이던 원격 요청이 살아 있는지는 확인 전까지 알 수 없습니다.',
   badReceipt: '영수증 파일을 읽지 못했습니다.',
+  identityLabel: '따로 보관한 복구 키(휴대용 복구 백업에만 필요, 한 번만 쓰고 저장하지 않습니다)',
+  needIdentity: '이 백업은 휴대용 복구 백업입니다. 따로 보관한 복구 키(AGE-SECRET-KEY-1…)를 입력하세요. 입력한 키는 한 번만 쓰고 저장하지 않습니다.',
+  identityNotUsed: '이 배포용 키 백업에는 복구 키가 필요 없어 입력한 키를 쓰지 않고 지웠습니다.',
+  portableStaged: '따로 보관한 복구 키로 복호화해 스테이징 영역에 만들었습니다. 키는 한 번만 쓰였고 어디에도 저장하지 않았습니다.',
+  deleted: '소유자가 정리함 · 암호화된 파일은 지웠고 영수증과 삭제 표시가 남아 있습니다',
 });
 
 export const ERROR_MESSAGES = Object.freeze({
@@ -120,6 +132,7 @@ export function backupRoutes(basePath = '/') {
     receipt: backupId => `${root}/${id(backupId)}/receipt`,
     restore: restoreId => `${root}/restores/${id(restoreId)}`,
     bundle: restoreId => `${root}/restores/${id(restoreId)}/bundle`,
+    portableBundle: restoreId => `${root}/restores/${id(restoreId)}/portable-bundle`,
   });
 }
 
@@ -166,11 +179,15 @@ export function createBackupPanel({ root, document, basePath = '/', request, upl
   const restoreArea = element('section', undefined, { class: 'backup-restore', 'aria-label': '복원' });
   const receiptInput = element('input', undefined, { type: 'file', id: 'restore-receipt', accept: '.json,application/json' });
   const bundleInput = element('input', undefined, { type: 'file', id: 'restore-bundle', accept: '.age,application/octet-stream' });
+  const identityInput = element('input', undefined, { type: 'password', id: 'restore-recovery-identity',
+    autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off', 'data-lpignore': 'true' });
   const restoreButton = element('button', '스테이징 영역에 복원', { type: 'button' });
   const review = element('div', undefined, { class: 'restore-review' });
   restoreArea.append(element('h3', '복원(검토 대기 상태로)'),
     element('label', '외부 영수증(.receipt.json)', { for: 'restore-receipt' }), receiptInput,
-    element('label', '암호화된 백업(.age)', { for: 'restore-bundle' }), bundleInput, restoreButton, review);
+    element('label', '암호화된 백업(.age)', { for: 'restore-bundle' }), bundleInput,
+    element('label', MESSAGES.identityLabel, { for: 'restore-recovery-identity' }), identityInput,
+    restoreButton, review);
   restoreArea.hidden = true;  // shown only when the server says the worker is ready
   root.replaceChildren(element('h2', '백업'), status, worker, note, createArea,
     element('h3', '만든 백업'), list, restoreArea);
@@ -206,9 +223,11 @@ export function createBackupPanel({ root, document, basePath = '/', request, upl
     note.textContent = value.worker === 'not_configured' ? MESSAGES.notConfiguredHow : MESSAGES.notRecoverable;
     restoreArea.hidden = !ready;
     const items = (value.backups ?? []).map(item => {
-      const row = element('li', `${item.completed_at} · ${sizeText(item.ciphertext_size)} · SHA-256 ${item.ciphertext_sha256}`,
-        { 'data-backup-id': item.backup_id });
-      row.append(...downloads(item.backup_id));
+      const removed = item.ciphertext_state === 'deleted';
+      const row = element('li', `${item.completed_at} · ${sizeText(item.ciphertext_size)} · SHA-256 ${item.ciphertext_sha256}`
+        + (removed ? ` · ${MESSAGES.deleted}` : ''),
+      { 'data-backup-id': item.backup_id, 'data-ciphertext-state': item.ciphertext_state ?? 'stored' });
+      row.append(...(removed ? downloads(item.backup_id).slice(1) : downloads(item.backup_id)));
       return row;
     });
     list.replaceChildren(...(items.length ? items : [element('li', '아직 만든 백업이 없습니다.')]));
@@ -324,9 +343,13 @@ export function createBackupPanel({ root, document, basePath = '/', request, upl
   }
 
   async function restore() {
+    // the kept identity is read once and the masked input cleared before anything else
+    let identity = typeof identityInput.value === 'string' ? identityInput.value.trim() : '';
+    identityInput.value = '';
     const receiptFile = receiptInput.files?.[0];
     const bundleFile = bundleInput.files?.[0];
     if (!receiptFile || !bundleFile) {
+      identity = '';
       say(MESSAGES.pickFiles, 'invalid_input');
       return null;
     }
@@ -334,16 +357,41 @@ export function createBackupPanel({ root, document, basePath = '/', request, upl
     try {
       receipt = JSON.parse(await receiptFile.text());
     } catch {
+      identity = '';
       say(MESSAGES.badReceipt, 'invalid_input');
       return null;
     }
+    const portable = receipt?.key_mode === 'portable_recovery';
+    if (portable && !AGE_IDENTITY.test(identity)) {
+      identity = '';
+      say(MESSAGES.needIdentity, 'identity_required');
+      return null;
+    }
+    const unused = !portable && identity !== '';
+    if (!portable) identity = '';
     const bytes = new Uint8Array(await bundleFile.arrayBuffer());
+    let framed = null;
+    if (portable) {
+      const line = new TextEncoder().encode(`${identity}\n`);
+      identity = '';
+      framed = new Uint8Array(line.byteLength + bytes.byteLength);
+      framed.set(line, 0);
+      framed.set(bytes, line.byteLength);
+      line.fill(0);
+    }
     say(MESSAGES.restoring, 'restoring');
     review.replaceChildren();
     try {
       const begun = await request(routes.restores, { method: 'POST',
         body: { schema_version: RESTORE_SCHEMA, request_id: crypto.randomUUID(), receipt } });
-      const view = await upload(routes.bundle(begun.restore_id), bytes);
+      let view;
+      try {
+        view = portable ? await upload(routes.portableBundle(begun.restore_id), framed)
+          : await upload(routes.bundle(begun.restore_id), bytes);
+      } finally {
+        if (framed !== null) framed.fill(0);  // the sent identity does not linger in this buffer
+        framed = null;
+      }
       if (view.state !== 'restored_review') {
         const code = Object.hasOwn(ERROR_MESSAGES, view.failure_code) ? view.failure_code : 'restore_failed';
         review.dataset.state = 'failed';
@@ -352,11 +400,15 @@ export function createBackupPanel({ root, document, basePath = '/', request, upl
         return view;
       }
       renderReview(view);
-      say(MESSAGES.staged, 'restored_review');
+      say(`${MESSAGES.staged}${portable ? ` ${MESSAGES.portableStaged}` : ''}${unused ? ` ${MESSAGES.identityNotUsed}` : ''}`,
+        'restored_review');
       return view;
     } catch (error) {
       refusal(error);
       throw error;
+    } finally {
+      if (framed !== null) framed.fill(0);
+      framed = null;
     }
   }
 
