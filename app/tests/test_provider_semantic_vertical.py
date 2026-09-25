@@ -24,6 +24,7 @@ from app.domain.schemas import Actor, ImmutableRecord
 from app.domain.store import DomainStore
 from app.extensions.port_schema_generator import generate_port_schemas
 from app.extensions.provider_semantic_context import (
+    ProviderSemanticAdmissionError,
     ProviderSemanticAuthority,
     ProviderSemanticContextLoader,
 )
@@ -53,6 +54,7 @@ from app.runtime.provider_attempt_transport import (
     ProviderSemanticOperationController,
 )
 from app.storage import Store
+from app.tests.support import durable_binding
 from app.tests.support.provider_semantic_harness import (
     canonical_provider_config,
     connection_values,
@@ -827,6 +829,10 @@ def _assert_subset_replay_is_immutable(domain, config, operation, request_value,
     ("USD", "valid", "final_reload_exception"),
     ("USD", "valid", "initial_permission"),
     ("USD", "valid", "initial_grant_permission"),
+    ("USD", "valid", "binding_disabled_initial"),
+    ("USD", "valid", "binding_disabled_before_send"),
+    ("USD", "valid", "binding_superseded_before_send"),
+    ("USD", "valid", "binding_rolled_back_before_send"),
     ("USD", "valid", "deadline_after_worker"),
     ("USD", "valid", "deadline_after_reload"),
     ("USD", "valid", "gateway_session_mismatch"),
@@ -930,7 +936,14 @@ def test_authenticated_semantic_path_is_accepted_by_actual_dispatcher_and_retain
             "scope_model_ids": ["model-1"], "claim": "current-models-text-input-output",
             "reviewer_ref": runtime.roots.actor.as_dict()}, parents=(runtime.roots.actor,))
         qualification = _record(runtime.domain, "validation_report", {"fixture": "qualification"})
-        binding_revision = _record(runtime.domain, "validation_report", {"fixture": "binding"})
+        installations = durable_binding.admit_test_installations(monkeypatch)
+        bound = durable_binding.bind(runtime.domain, installations,
+                                     qualification_ref=qualification.as_dict())
+        if fault_phase == "binding_rolled_back_before_send":
+            # the config names revision 2 (B superseding A); A's retention lets a rollback displace it
+            bound = durable_binding.bind(runtime.domain, installations, label="b",
+                                         qualification_ref=qualification.as_dict())
+        binding_revision = EntityRef.from_dict(bound.ref)
         compatibility_observation = _record(runtime.domain, "validation_report",
                                              {"fixture": "compatibility-observation"})
         request_policy_sha256 = sha256(canonical_json({
@@ -968,12 +981,12 @@ def test_authenticated_semantic_path_is_accepted_by_actual_dispatcher_and_retain
             "ref": grant_ref.as_dict(), "active": grant_case,
             "purpose_ref": purpose.as_dict(),
             "allowed_operations": ["catalog", "model_step"] if grant_case else ["model_step"]}})
-        request_identity = {"installation_digest": "1" * 64,
+        request_identity = {"installation_digest": bound.installation.sha256,
             "qualification_ref": qualification.as_dict(),
             "binding_revision_ref": binding_revision.as_dict(), "purpose_ref": purpose.as_dict(),
             "actor_ref": runtime.roots.actor.as_dict(), "grant_refs": grant_refs}
         config_value = canonical_provider_config(connection.as_dict(), identity={
-            **request_identity, "grant_refs": config_grants,
+            **request_identity, **durable_binding.config_identity(bound), "grant_refs": config_grants,
             "egress_policy_ref": runtime.roots.access_policy.as_dict()},
             catalog_ttl_seconds=1 if fault_phase == "stale_catalog" else 3600)
         config_parents = tuple(sorted({connection, text_policy, compatibility_set,
@@ -996,24 +1009,14 @@ def test_authenticated_semantic_path_is_accepted_by_actual_dispatcher_and_retain
             semantic_key=catalog_request["idempotency_key"], created_at_utc=domain_time(now))
         assert not catalog_replay
         if actual_catalog:
-            slot = config_value["binding_slot_key"]
-            catalog_binding = {"ref": binding_revision.as_dict(), "state": "active",
-                "extension_id": config_value["extension_id"],
-                "installation_digest": config_value["installation_digest"],
-                "qualification_ref": qualification.as_dict(),
-                "port_contract_version": "provider-port-v1", "binding_slot_key": slot,
-                "binding_slot_key_digest": config_value["binding_slot_key_digest"],
-                "grant_refs": config_grants, "credential_handle_refs": [connection.as_dict()]}
-            catalog_authority = ProviderSemanticAuthority(binding_record=catalog_binding,
+            catalog_authority = ProviderSemanticAuthority(
+                binding_refs={"grant_refs": config_grants,
+                              "credential_handle_refs": [connection.as_dict()]},
                 current_connection=pin,
                 qualification_record={"ref": qualification.as_dict(), "status": "qualified",
                     "installation_digest": config_value["installation_digest"],
                     "port_contract_version": "provider-port-v1",
                     "expires_at": port_time(now + timedelta(hours=2))},
-                binding_head_record={"state": "active",
-                    "current_binding_revision_ref": binding_revision.as_dict(),
-                    "binding_slot_key": slot,
-                    "binding_slot_key_digest": config_value["binding_slot_key_digest"]},
                 actor_record={"ref": runtime.roots.actor.as_dict(), "authenticated": True,
                               "actor_type": "system"},
                 purpose_record={"ref": purpose.as_dict(), "active": True,
@@ -1399,24 +1402,15 @@ def test_authenticated_semantic_path_is_accepted_by_actual_dispatcher_and_retain
             core_boot_id=model_boot_id, reservation_ref=reservation,
             semantic_key=semantic_request["idempotency_key"], created_at_utc=domain_time(now))
         assert not replay
-        slot = config_value["binding_slot_key"]
-        binding_record = {"ref": binding_revision.as_dict(), "state": "active",
-            "extension_id": config_value["extension_id"],
-            "installation_digest": config_value["installation_digest"],
-            "qualification_ref": qualification.as_dict(), "port_contract_version": "provider-port-v1",
-            "binding_slot_key": slot, "binding_slot_key_digest": config_value["binding_slot_key_digest"],
-            "grant_refs": config_grants, "credential_handle_refs": [connection.as_dict()]}
         authority = ProviderSemanticAuthority(
-            binding_record=binding_record, current_connection=pin,
+            binding_refs={"grant_refs": config_grants,
+                          "credential_handle_refs": [connection.as_dict()]},
+            current_connection=pin,
             qualification_record={
                 "ref": qualification.as_dict(), "status": "qualified",
                 "installation_digest": config_value["installation_digest"],
                 "port_contract_version": "provider-port-v1",
                 "expires_at": port_time(now + timedelta(hours=2))},
-            binding_head_record={"state": "active",
-                "current_binding_revision_ref": binding_revision.as_dict(),
-                "binding_slot_key": slot,
-                "binding_slot_key_digest": config_value["binding_slot_key_digest"]},
             actor_record={"ref": runtime.roots.actor.as_dict(), "authenticated": True,
                           "actor_type": "system"},
             purpose_record={"ref": purpose.as_dict(), "active": True, "purpose": "operational"},
@@ -1453,6 +1447,8 @@ def test_authenticated_semantic_path_is_accepted_by_actual_dispatcher_and_retain
             send_client=send_client, operation_controller=controller)
         if fault_phase == "initial_permission":
             authority.qualification_record["status"] = "revoked"
+        if fault_phase == "binding_disabled_initial":
+            durable_binding.disable(runtime.domain, bound.digest)
         if fault_phase == "session_mismatch":
             original_begin = worker_client.begin
             def corrupt_authenticated_session(*args, **kwargs):
@@ -1736,7 +1732,9 @@ def test_authenticated_semantic_path_is_accepted_by_actual_dispatcher_and_retain
             return
         if fault_phase in {"worker_prepare_exception", "worker_begin_deadline", "gateway_prepare_exception",
                            "final_reload_exception", "initial_permission",
-                           "initial_grant_permission",
+                           "initial_grant_permission", "binding_disabled_initial",
+                           "binding_disabled_before_send", "binding_superseded_before_send",
+                           "binding_rolled_back_before_send",
                            "deadline_after_worker", "deadline_after_reload",
                            "gateway_session_mismatch", "cleanup_cancel_exception",
                            "worker_observation_exception"}:
@@ -1758,6 +1756,23 @@ def test_authenticated_semantic_path_is_accepted_by_actual_dispatcher_and_retain
             elif fault_phase == "gateway_prepare_exception":
                 monkeypatch.setattr(send_client, "prepare", lambda *args, **kwargs: (
                     _ for _ in ()).throw(RuntimeError("test-owned gateway prepare failure")))
+            elif fault_phase in {"binding_disabled_before_send", "binding_superseded_before_send",
+                                 "binding_rolled_back_before_send"}:
+                # the durable slot head moves after the send was built (worker proposal and gateway
+                # prepare done) and before its commit: the pre-commit re-load must refuse it
+                original_prepare = send_client.prepare
+                moved = []
+                def move_head_after_prepare(*args, **kwargs):
+                    value = original_prepare(*args, **kwargs)
+                    if fault_phase == "binding_disabled_before_send":
+                        moved.append(durable_binding.disable(runtime.domain, bound.digest))
+                    elif fault_phase == "binding_superseded_before_send":
+                        moved.append(durable_binding.bind(runtime.domain, installations, label="c",
+                            qualification_ref=qualification.as_dict()))
+                    else:
+                        moved.append(durable_binding.rollback(runtime.domain, bound.digest, 1))
+                    return value
+                monkeypatch.setattr(send_client, "prepare", move_head_after_prepare)
             elif fault_phase == "final_reload_exception":
                 original_load = loader.load
                 load_count = []
@@ -1822,6 +1837,10 @@ def test_authenticated_semantic_path_is_accepted_by_actual_dispatcher_and_retain
                               "final_reload_exception": "internal_failure",
                               "initial_permission": "permission_denied",
                               "initial_grant_permission": "permission_denied",
+                              "binding_disabled_initial": "permission_denied",
+                              "binding_disabled_before_send": "permission_denied",
+                              "binding_superseded_before_send": "permission_denied",
+                              "binding_rolled_back_before_send": "permission_denied",
                               "deadline_after_worker": "deadline_exceeded",
                               "deadline_after_reload": "deadline_exceeded",
                               "gateway_session_mismatch": "integrity_failed",
@@ -1831,6 +1850,16 @@ def test_authenticated_semantic_path_is_accepted_by_actual_dispatcher_and_retain
             assert result["error"]["code"] == expected_code
             if fault_phase == "worker_begin_deadline":
                 assert len(begin_errors) == 1 and type(begin_errors[0]) is broker.DeadlineExceeded
+            if fault_phase.startswith("binding_"):
+                reason = {"binding_disabled_initial": "binding_disabled",
+                          "binding_disabled_before_send": "binding_disabled",
+                          "binding_superseded_before_send": "binding_superseded",
+                          "binding_rolled_back_before_send": "binding_rolled_back"}[fault_phase]
+                with pytest.raises(ProviderSemanticAdmissionError, match=reason):
+                    ProviderSemanticContextLoader(runtime.domain, config_ref=config,
+                        operation_ref=operation, authority=authority).load(now_utc=domain_time(now))
+                if fault_phase.endswith("_before_send"):
+                    assert len(moved) == 1  # moved exactly once, after the build
             if fault_phase == "worker_observation_exception":
                 assert result["terminal"] == "unknown"
                 assert terminal["response_ref"] is not None and len(captures) == 1
