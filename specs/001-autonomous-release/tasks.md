@@ -367,6 +367,17 @@ understanding; failure/restart preserves input. Fixture and live proofs remain s
   check/catalog/model/runtime calls; rotate invalidates the predecessor catalog/model authority and
   a new catalog exists only after explicit refresh. UI/tests distinguish local erasure from remote
   provider credential revocation (FR-010–014/029, runtime §6).
+  2026-09-25 (open, tests only): the credential-v2 gateway now runs on a real UDS under the kernel's
+  SO_PEERCRED identities — root-only Linux test starts gateway and control as separate processes
+  under the fixed `cp-provider` UIDs/GIDs (no handshake/connect seams) and drives store/query/replay/
+  snapshot/retire; a wrong-UID or wrong-GID requester holding the pair group is refused by the
+  gateway with zero vault effect, and an impostor responder is refused by the requester before any
+  byte. Channel-level lost-response (create/rotate/retire), same-command races, distinct-command
+  rotation races, delete-racing-rotate, `secret_input_lost` for lost create/rotate ingress, zero-effect
+  reads and zero provider effect for create/rotate/delete over the owned ingress are pinned
+  (evidence/credential-vault-t090.md §2026-09-25). Still open: the HTTP routes still speak the refused
+  v1 store/delete shapes (no v2 route), no production bootstrap wires the listener/profile, T087
+  provider-transport manifest/budget binding, catalog invalidation and erasure/maintenance.
 - [ ] T024 [US1] Migrate browser MediaDevices/AudioWorklet capture and the existing cumulative
   whisper.cpp POST path to ADR-011's versioned non-overlapping one-second PCM PUT/SSE sessions in
   app/speech.py, app/speech_sessions.py, app/api/speech_routes.py, app/workers/speech.py and
