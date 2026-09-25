@@ -718,3 +718,9 @@ schema, profile, effect, lifecycle, dependency or count changes. Revision-7 byte
 `adr014-review-input-manifest-r7.md`; the distinct `adr014-independent-review-r7.md` verdict accepted
 them with P1=0/P2=0 and closed T086 for design. The r1–r6 inputs/verdicts remain immutable history,
 and implementation, release, effect, legal and human-acceptance gates remain open.
+
+## 2026-09-25 — Owner delegations recorded
+
+- **Codex verification:** the owner will test the Codex side separately with Codex. The Codex paths (T049, T088, and T042's bridge) are not executed or simulated in this environment and are never reported as passed here.
+- **Microphone:** the owner will test microphone input separately. Real microphone capture (T024, and STT latency and quality in T080) is not exercised here. This moves only the testing; the T024 implementation work stays open.
+- **Independent people:** the owner asked that the steps needing independent people, such as a sealed-set author, a reviewer, a judge or real user feedback, be carried out as a *simulation*. Such runs are labelled simulated/test-actor throughout. Under the frozen release-v7 design they are **not** a release qualification: the actors have repository access and share the critic's model family, so judge separation is not established. The product gate stays closed.

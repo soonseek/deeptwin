@@ -516,6 +516,8 @@ understanding; failure/restart preserves input. Fixture and live proofs remain s
   app/tests/test_speech_segments.py and app/tests/browser-speech-input.test.mjs. UI copy must
   distinguish microphone capture in the current browser from transcription in the instance-owned
   worker rather than claiming both happen on “이 컴퓨터” (UX-AC09, API §2).
+  2026-09-25: the owner will test real microphone input separately (decisions.md); the implementation
+  work in this entry stays open.
 - [ ] T025 [US1] Implement web first-owner/auth/deployment-authority foundations in
   (2026-09-18: the instance's first screen landed — `app/static/start.html`/`start.mjs` at the supported `/`, the setup form on an ownerless instance and the login form otherwise, decided by the public setup state on `/health`; evidence/first-screen-setup-login-t025.md. The deployment-authority recovery port (`deployment_control`, typed `credential_client`) stays open — its receipt/trust-set/generation formats are not fixed by any reviewed contract, so a concrete design proposal awaits a decision (evidence/recovery-port-design-proposal-2026-09-23.md); the offline bootstrap vectors and §5.1.4 guidance were already in place and the real-browser owner lifecycle case landed 2026-09-23 (2026-09-23: password change and revoke-others landed — `POST session/password` rotates the session and ends every session on the old password, `POST session/revoke-others`, account panel on the records page; evidence/password-change-t025-2026-09-23.md).)
   app/operations/setup.py, app/services/deployment_control.py,
@@ -1133,6 +1135,8 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   after commit p95 60 ms, no long task while typing or opening the run, records log pages p95
   99 ms (evidence/performance.md). STT unmeasured (no engine; no microphone input); there is no
   push event view or graph canvas to measure; clean hosts (T083) not measured.
+  2026-09-25: STT measurement needs a frozen Korean speech fixture and the speech engine; the owner will
+  test microphone/STT separately (decisions.md).
 - [ ] T081 Build the reproducible open-source web distribution and versioned service images under
   deploy/ for both ADR-010 profiles. The Portainer CE no-terminal descriptor/workflow must verify an
   immutable source commit plus exact Compose digest (tag is display-only) and service-keyed OCI
