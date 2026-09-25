@@ -1227,6 +1227,28 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   `LicenseRef-Upstream-Terms`); `reuse lint` compliant 1671/1671, guarded by
   `app/tests/test_reuse_compliance.py`. Per-image notices/source offers, inbound-contribution
   mechanism, Compose gaps, pinned lens file and quoted-text rights remain open.
+  2026-09-25 refresh: every docs/release/ page re-derived from the current code (served assets,
+  the 25 route descriptors / 128 routes, `app/operations/*.py`, `app/workers/*_main.py`,
+  `app.server` options) and the dated evidence. Browser guide (Korean): settings hub, records
+  page (log, export, backup/restore incl. portable restore, retention cleanup, read-only update
+  guidance, account, Claude connection, API credentials with transport qualification, run
+  budgets), work page (source readings, work model, conversation with in-conversation approval,
+  design workspace with design approval stated as unavailable), observe page (approvals, graph,
+  PDF/DOCX previews, artifact index, hypotheses as proposals), versions page (tool-effect
+  boundaries), browser grants, Settings > Extensions, recovered re-setup; no CLI or native-app
+  journey. Operator guide: optional worker attachments, the five worker processes, the
+  direct-adapter Claude profile, the owner-recovery and update tools with their backup gate.
+  Architecture, surface boundaries, security (two key paths, execution-bound approvals, browser
+  grant projection, recovery), extension authoring (provider-port bindings), API compatibility
+  (session routes, body limits, missing contract routes, documented deviations; inventory
+  regenerated unchanged), contributing (REUSE, offline tests, inventory tool), third-party
+  notices, source-license inventory (REUSE coverage, 1,914 tracked files) and licence
+  recommendation status updated. Stated as not yet: Compose/images (T081), Codex (T088, owner
+  verifying separately), microphone (T024), qualification (T077), design approval (no qualified
+  critic), run start from the browser, browser tools in product runs. Still unticked: per-image
+  notices/source offers need the T081 images; the inbound-contribution mechanism is an owner
+  decision; rights to text quoted in docs/lenses/ are unverified; the pinned lens file and the
+  scrub of content added since 2026-09-23 remain.
 - [ ] T085 Run full regression plus quickstart.md acceptance, reconcile every checkbox/result and produce specs/001-autonomous-release/evidence/release-report.md separating engineering/live/effect/human/signing readiness and checking final progress/ETA claims against actual task evidence; mark the goal complete only if the latest required delivery is genuinely achieved (FR-034, SC-010).
 
 ## Dependencies and parallel work

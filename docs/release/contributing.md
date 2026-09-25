@@ -1,6 +1,6 @@
 # Contributing to DeepTwin (draft)
 
-Date: 2026-09-23 · Status: **draft for T084**. The repository license is Apache-2.0, approved on
+Date: 2026-09-23 · Updated: 2026-09-25 · Status: **draft for T084**. The repository license is Apache-2.0, approved on
 2026-09-24 ([license-recommendation.md](license-recommendation.md)).
 
 ## 0. Licensing status: read this first
@@ -10,7 +10,12 @@ The repository is licensed under the **Apache License 2.0** (`LICENSE`, `NOTICE`
 - no inbound-contribution mechanism (for example a Developer Certificate of Origin sign-off or a
   contributor license agreement) has been chosen. Until one is, contributions are accepted under
   Apache-2.0 §5 (a contribution intentionally submitted is under the License's terms);
-- per-image third-party notices and source offers are assembled with the release images.
+- per-image third-party notices and source offers are assembled with the release images (T081/T082).
+
+Every tracked file carries licence information through `REUSE.toml` (Apache-2.0 by default;
+upstream files kept for verification under `deploy/locks/` are annotated
+`LicenseRef-Upstream-Terms` and are never relicensed). `reuse lint` must stay compliant; it is
+guarded by `app/tests/test_reuse_compliance.py`. A new upstream file needs its own annotation.
 
 Outside contributions should wait until the inbound mechanism is decided.
 The rest of this page describes the engineering workflow those contributions will follow.
@@ -63,8 +68,15 @@ Notes:
 - `app/tests/browser-*.test.mjs` need a real Chromium/Playwright environment supplied through
   environment variables (see `app/README.md`). Without it they fail; that is an environment gap, not
   a pass.
-- `app/tests/test_backup.py` needs a verified age 1.3.2 directory in `DEEPTWIN_AGE_RUNTIME_ROOT`;
-  without it the binary-dependent cases skip with a stated reason.
+- `app/tests/test_backup.py` and `app/tests/test_update_recovery.py` need a verified age 1.3.2
+  directory in `DEEPTWIN_AGE_RUNTIME_ROOT`; without it the binary-dependent cases skip with a
+  stated reason.
+- Run tests offline: unset `DEEPTWIN_LIVE_ANTHROPIC_API_KEY` unless a bounded live run was
+  separately authorized.
+- The `/api/v1` route inventory in [api-compatibility.md](api-compatibility.md) is generated:
+  after adding or changing a route descriptor run
+  `python specs/001-autonomous-release/tools/route_inventory.py --write`. Route-count pins in the
+  tests (for example `test_runs_api.py`, `test_works_api.py`) must be updated deliberately, not loosened.
 - Tests must use only temporary directories they create and must never use real accounts, paid
   calls or real credentials. Live provider runs require a separately recorded, bounded
   authorization.
@@ -72,7 +84,13 @@ Notes:
 ## 4. Code boundaries contributors must keep
 
 - **Browser is the only product surface.** Do not add an end-user CLI, native wrapper or launcher
-  journey. Shell commands in the repository are for development and verification only.
+  journey. Shell commands in the repository are for development and verification only; the
+  stopped-control-plane tools in `app/operations/` are operator tooling and are documented only in
+  the [operator guide](operator-deployment-backup-guide.md). Served assets must pass the wording
+  guard `app/tests/test_product_wording_t023.py` (no device, native-app or launcher claims).
+- **Deployment authority never comes from the browser.** No route may accept an update or owner
+  recovery receipt; operator inputs are read only from operator-owned files outside the data
+  directory and session root.
 - **No container authority in the product.** Never mount a Docker socket, download code/images at
   runtime, or start/stop containers from the control plane.
 - **Closed catalogues.** New routes are added through a JSON descriptor in
@@ -95,7 +113,11 @@ Before anything is proposed for publication (T084 scope):
 - no automatic public push. Publishing, signing and registry actions require explicit authority
   that ordinary development automation does not have.
 
-A repository-wide scrub has **not** been verified as complete by this draft.
+A workstation-path scrub of 40 tracked documents was done on 2026-09-23
+(`evidence/publishable-scrub-t084-2026-09-23.md`); test-owned canary paths are kept on purpose.
+`docs/lenses/source-map.md` still names a workstation path because the reviewed lens bundle pins
+its bytes, and it awaits a lens-bundle re-review. The scrub has not been re-verified for content
+added since.
 
 ## 6. Commits and review
 

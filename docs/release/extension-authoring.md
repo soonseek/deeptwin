@@ -1,13 +1,14 @@
 # Extension authoring (draft)
 
-Date: 2026-09-23 · Status: **draft for T084; the extension framework (T087) is not complete and
-the installable extension-author SDK is not yet provided.** Normative sources: ADR-014 in
+Date: 2026-09-23 · Updated: 2026-09-25 · Status: **draft for T084; the extension framework (T087)
+is not complete and the installable extension-author SDK is not yet provided.** Normative sources: ADR-014 in
 `specs/001-autonomous-release/decisions.md`, `contracts/extension-ports.md`,
 `contracts/extension-candidates.md`, `contracts/operations.md` §8 and `contracts/runtime.md` §6.
 
 This page tells a prospective extension author what the contract will require and what exists
-today. It is not an invitation to install third-party code into a running instance: no path for that
-exists yet.
+today. It is not an invitation to install third-party code into a running instance: the only
+staging, qualification and binding path that exists is the provider port's, and it has been
+exercised only with synthetic, test-owned release trees.
 
 ## 1. Principles
 
@@ -63,6 +64,14 @@ qualification (operation × terminal × artifact matrices) is T087 work and is n
 4. **Verification in the product**: receipt check, handshake, qualification against the current
    runtime/framework/platform/port, then an owner-chosen binding in `Settings > Extensions`.
 
+Bindings are keyed by a five-field slot key (port version, target scope, purpose, slot id,
+capability selector) that the **server** computes (`POST /api/v1/extensions/binding-slot-keys`).
+An extension id is the candidate that occupies a slot, not the key: only candidates for the same key
+compete, and other slots or selectors coexist on the same port. Every bind, disable, rollback and
+rollback-retention release names the exact head the owner last read and is refused (`409`) with no
+write when the head moved. History is immutable; a supersession or disable retains the displaced
+active revision for rollback until the owner releases it.
+
 Registration caps (from `extension-candidates.md`): manifest and descriptor ≤ 256 KiB each, support
 documents ≤ 64 KiB, total registration ≤ 1 MiB. Source, provenance and licence statements are
 stored as **unverified** metadata; registration never means authenticated, available, licence
@@ -80,15 +89,22 @@ are unrelated to product extensions.
 
 | Item | Location | State |
 | --- | --- | --- |
-| Candidate registration (inert metadata) | `POST /api/v1/extensions/candidates`, `GET …/{candidate_id}` | implemented; creates no channel, grant, installation, binding or dispatch |
-| Provider conformance / installation records | `/api/v1/extensions/provider-conformance`, `/api/v1/extensions/provider-installation` | implemented slices for provider path |
-| Port schema artifacts | `schemas/v1/extensions/ports/` | generated; qualification open |
-| Tool path in the extension worker | `app/workers/extension_probe.py`, `app/runtime/extension_attempt_transport.py`, `app/runtime/tools.py` | two code-owned tools (`text_profile`, `text_normalize`) over the bounded artifact stream; not a third-party path |
+| Candidate registration and listing (inert metadata) | `POST /api/v1/extensions/candidates`, `GET …/candidates?limit&after`, `GET …/{candidate_id}` | implemented; creates no channel, grant, installation, binding or dispatch |
+| Provider staging request and receipt | `/api/v1/deployment/provider-requests…` (`deployment-prepare-v1`) | implemented for the provider port; the staging itself is the operator's |
+| Provider installation (staged revision 1 → verified revision 2) | `/api/v1/extensions/provider-installation`, `GET /api/v1/extensions/installations` | implemented; verification consumes a release evidence bundle |
+| Provider conformance over four fixed vectors | `/api/v1/extensions/provider-conformance` | implemented |
+| Provider-transport qualification (sealed record adopted by the credential gateway) | `/api/v1/extensions/provider-transport-qualification` | implemented; the only durable qualification record in this server |
+| Bindings: slot key, bind, disable, rollback, rollback-retention release, slot and list reads | `extension-bindings-v1` (8 routes), `app/extensions/binding_service.py` | implemented for `provider-port-v1` only; other ports are refused (`qualification_missing`, `selector_unsupported`); no environment version records a binding yet and the dispatch path does not yet read binding heads |
+| `Settings > Extensions` UI | `app/static/extensions.mjs` on `settings.html` | shows exactly what the routes above supply and marks the rest "제공되지 않음" |
+| Port schema artifacts | `schemas/v1/extensions/ports/` | generated; qualification matrices open |
+| Tool path in the extension worker | `app/workers/extension_probe.py`, `app/runtime/extension_attempt_transport.py`, `app/runtime/tools.py` | two code-owned tools (`text_profile`, `text_normalize`) over the bounded artifact stream, with execution-bound approvals; not a third-party path |
 | Historical extension kit | `sdk/python/deeptwin_ext/` | source checkpoint for `extension-manifest-v1`; no packaging metadata; **not** the SDK |
 | Examples | `examples/extensions/code_free_lens`, `examples/extensions/pure_text_tool` | inert historical shapes; the tool example is explicitly not a conforming runnable extension |
-| `Settings > Extensions` UI | — | not yet provided in the supported browser shell |
+| Code-free lens/evaluator definition import | — | not yet provided |
 | Installable `deeptwin_ext` SDK | — | not yet provided (T087) |
 | Out-of-tree conformance fixture | — | not yet provided; will not be bundled into the core release |
+
+Evidence: `evidence/extensions-ui-2026-09-25.md` (synthetic, test actor).
 
 ## 7. Licensing of extensions
 

@@ -1,6 +1,6 @@
 # Security model (draft)
 
-Date: 2026-09-23 · Status: **draft for T084. No security qualification has been performed**; T079
+Date: 2026-09-23 · Updated: 2026-09-25 · Status: **draft for T084. No security qualification has been performed**; T079
 (security qualification against the frozen release candidate) and T083 (two fresh hosts) are open.
 Normative sources: `contracts/api.md` §1 and §5, `contracts/operations.md` §2.2, §3, §5, §8,
 `contracts/runtime.md` §5–6, `contracts/encrypted-credential-custody.md`.
@@ -45,7 +45,17 @@ be completed before any publication.
   separate read-only **session root** (`app/operations/session_root.py`) over the origin, session
   token and recovery epoch, compared in constant time.
 - A second serving process is refused by an exclusive `owner-auth.lock`; this is a
-  single-process constraint, not a general rate-limit guarantee.
+  single-process constraint, not a general rate-limit guarantee. The operator tools take the
+  data directory's serving lock too, so they refuse (`busy`) while a control plane runs.
+- **Password change and session revocation**: changing the password ends every other session;
+  the owner can also end all other sessions explicitly.
+- **Owner recovery** (operator only, control plane stopped): a signed recovery receipt verified
+  against a `deployment-public-trust-set-v2` advances the recovery epoch by exactly one. The next
+  start reconciles in one transaction before any route is composed: every authenticator, browser
+  session and service client is revoked, unconsumed challenges and undecided gate requests expire,
+  open run consents are revoked, and execution-bound approvals decided before the recovery are
+  superseded. Rollbacks, skipped epochs and foreign trust sets fail closed. No real signing adapter
+  exists yet.
 
 ## 4. No host paths
 
@@ -62,8 +72,13 @@ deployment-supplied, never browser-configurable.
 - Arguments follow the tool's declared profile and carry **no artifact refs, selectors or host
   paths**; ordered artifact-input bindings are the only byte-input authority.
 - The required grant must match exactly. External and instance-critical effects need an explicit
-  effect approval. The declared replay policy is authoritative; an unknown external outcome holds
-  the request until a real reconciliation.
+  effect approval. An execution-bound approval (`run-approval-v2`) authorizes exactly one attempt
+  of one execution, is bound to the ledger's ask and the attempt's inputs digest, is claimed
+  atomically and expires; a retry needs a new decision. The declared replay policy is
+  authoritative; an unknown external outcome holds the request until a real reconciliation.
+- Growth comparisons never re-send a past external effect: a tool with a recorded effect is answered
+  only by an owner-approved boundary (recorded replay or an isolated sink), otherwise the item is not
+  compared.
 - An admitted dispatch envelope is the **only key to side channels**:
   - `open_in_scope` opens files under a declared scope one component at a time with `O_NOFOLLOW`
     (no absolute, empty, `.` or `..` component, no symlink at any depth, no hardlinked or
@@ -85,20 +100,47 @@ every redirect is revalidated with a fresh resolution under a hop limit. The mod
 no live network activity; resolver and transport are injected. OS-level egress denial is claimed
 only for `network_mode: none` workers.
 
+In the worker topology the broker runs only in the fetch service (`app/workers/fetch_service.py`).
+The browser worker refuses to start if its network namespace has any interface but loopback, runs
+Chromium with its own sandbox and JavaScript disabled, and reaches the web only through the
+`browser-fetch` pair under an owner-created browser grant. A grant binds exact https navigation
+URLs, recipient hosts, byte/request/redirect budgets, an expiry, and the only query parameters that
+may carry values, each bound to an owner-declared value set stored as SHA-256 digests; work
+content, diagnosis, alternatives and secrets are not declarable sources. Derived requests are
+checked for the carried values; an encoding a hostile page invents beyond the checked forms toward
+another granted recipient is not detected (the recipient list stays the outer bound). No
+production run registers the browser tools yet.
+
 ## 7. Credential custody
 
-- Provider credentials live in an **encrypted vault** split across two deployment-supplied
-  directories (root key volume and records volume), never browser-configurable.
-- Records are `credential-record-v1` envelopes encrypted with XChaCha20-Poly1305 (PyNaCl
-  `nacl.secret.Aead`) with fresh 24-byte nonces; the root manifest is HMAC-bound. There is **no
-  plaintext fallback**; unknown or legacy raw layouts fail with `maintenance_required` before any
-  mutation.
-- In the target topology only the credentialed provider gateway mounts the vault; the control
-  plane mounts neither the credential root nor Codex auth state. Secrets are entered through masked
-  input and never returned by reads, logged, exported or backed up as restorable authority.
-- Backups exclude credentials, keys, sessions, challenges and unconsumed capabilities; a restored
-  instance opens in `restored_review` with dispatch blocked
-  ([operator guide](operator-deployment-backup-guide.md) §4).
+There are two separate key paths today. Owners see them as separate panels.
+
+- **Direct-adapter Claude connection (used by runs today).** The owner-entered Claude API key is
+  held in the control-plane process memory only (`InMemoryCredentialVault`), never written to
+  disk, the database, a log, an event or a response, and forgotten on restart. The provider call is
+  made from the same process through the official-SDK adapter, bounded by the operator's
+  `DEEPTWIN_LIVE_MAX_MODEL_CALLS`/`DEEPTWIN_LIVE_MAX_OUTPUT_TOKENS`. This profile was chosen by the
+  owner for development and is **not** the release isolation boundary
+  (`evidence/claude-direct-live-path-2026-09-24.md`).
+- **Credential gateway (release path).** Provider credentials live in an **encrypted vault** split
+  across two deployment-supplied directories (root key volume and records volume), never
+  browser-configurable, opened only by the separate `provider` process
+  (`app/workers/credential_gateway_main.py`). Records are `credential-record-v1` envelopes encrypted
+  with XChaCha20-Poly1305 (PyNaCl `nacl.secret.Aead`) with fresh 24-byte nonces; the root manifest is
+  HMAC-bound. There is **no plaintext fallback**; unknown or legacy raw layouts fail with
+  `maintenance_required` before any mutation. A create/rotate secret crosses the control plane once,
+  in bounded no-store request memory, to the gateway over the authenticated `cp-provider` pair; the
+  control plane never imports the vault implementation. The gateway sends nothing with a stored key
+  until it has adopted a provider-transport qualification for its shipped manifest, and each send is
+  bound to a budget reservation. Deleting a key erases the local copy only; it does not revoke the
+  key at the provider. Runs do not yet use this path (T090/T087 open).
+- Secrets are entered through masked input and never returned by reads, logged, exported or backed
+  up as restorable authority. Export previews scan raw originals for secret-shaped values and
+  exclude those originals unless the owner explicitly acknowledges the shown findings.
+- Backups exclude credentials, keys, sessions, challenges, unconsumed capabilities and deployment
+  private state; a restored instance opens in `restored_review` with dispatch blocked
+  ([operator guide](operator-deployment-backup-guide.md) §5). The backup identity stays in the
+  networkless backup-crypto worker; the control plane never reads the backup-key volume.
 
 ## 8. Isolation and container posture (target)
 
@@ -111,9 +153,15 @@ images.
 
 ## 9. Known gaps
 
-- No final images, so no image-level security evidence.
-- Backup crypto still runs in the control-plane process (not the networkless worker).
-- Document preview worker, speech worker and several isolation paths are not connected in the
-  supported server.
+- No final images, so no image-level security evidence; no worker is wired into Compose yet.
+- The direct-adapter Claude key and provider call share the control-plane process (§7).
+- Operator-side signing adapters for owner recovery and update receipts do not exist; only
+  test-owned signers were used.
+- Speech, evaluation and runtime-extension workers are not connected in the supported server.
+- The control-plane process still imports `python-docx` at start through the legacy owner-upload
+  extractor; the preview path never calls it, but the parser boundary is enforced at process level
+  only for the PDF stack (`evidence/artifact-previews-t045-2026-09-25.md`).
+- Browser JavaScript-enabled pages and interaction tools are not qualified; Chromium's sandbox was
+  probed locally, not in the final container.
 - The development preview (`create_development_app`) is not a security boundary.
 - No private disclosure channel; no third-party audit.
