@@ -141,6 +141,8 @@ export function runStates(receipt, graph) {
   for (const id of outcome.completed_node_ids ?? []) states.set(id, 'completed');
   for (const id of outcome.failed_node_ids ?? []) states.set(id, 'failed');
   for (const entry of outcome.awaiting_human ?? []) states.set(Array.isArray(entry) ? entry[0] : entry, 'awaiting');
+  // T087: a gated tool node waiting on its own attempt's decision (entry[3] is the executing node)
+  for (const entry of outcome.awaiting_execution ?? []) if (Array.isArray(entry)) states.set(entry[3], 'awaiting');
   return states;
 }
 

@@ -108,11 +108,13 @@ def test_the_owner_sees_the_ledgers_ask_and_records_exactly_that_attempts_decisi
     with owner_run(tmp_path, monkeypatch) as owner:
         assert listed(owner) == []
         visit = execution_of(owner.subject, owner.run, 0)
-        ask(owner, visit)
+        asked = ask(owner, visit)
         [request] = listed(owner)
+        # the ask carries its server-set expiry (T087 2026-09-25 scheduler slice)
         assert request == {"run_id": owner.run.run_id, "node_id": GATE, "approval_scope": SCOPE,
                            "execution_id": visit, "execution_node_id": "writer", "attempt_no": 1,
-                           "inputs_digest": digest_of(b"hello"), "state": "pending", "approval_ref": None}
+                           "inputs_digest": digest_of(b"hello"), "expires_at_ms": asked["expires_at_ms"],
+                           "state": "pending", "approval_ref": None}
         assert owner.client.head(owner.path, headers=headers(owner.profile)).content == b""
         body = command_for(request)
         response = post(owner, body)

@@ -42,6 +42,7 @@ from .ledger import (
     RESULT_REASONS,
     TERMINAL_OUTCOMES,
     USAGE_FINALITIES,
+    ApprovalRefused,
     AttemptSpec,
     DispatchPermit,
     LedgerError,
@@ -73,7 +74,13 @@ _VOUCHED_EFFECTS = frozenset({"definitely_not_sent", "may_have_started"})
 
 
 class AttemptDispatchError(RuntimeError):
-    """A visit's attempt could not produce an accepted result; reason codes only."""
+    """A visit's attempt could not produce an accepted result; reason codes only.
+    `approval_refusal` names why an attempt's execution-bound approval was refused at
+    the claim (`ApprovalRefused.reason`), else None."""
+
+    def __init__(self, code, *, approval_refusal=None):
+        super().__init__(code)
+        self.approval_refusal = approval_refusal
 
 
 def _node_id(value):
@@ -223,13 +230,19 @@ class VisitAttempt:
     callable and its outcome. Handlers are code-owned registry entries, so this
     is a documented trust boundary, not a sandbox."""
 
-    __slots__ = ("_accepted", "_committed", "_run", "_state")
+    __slots__ = ("_accepted", "_committed", "_refusal", "_run", "_state")
 
     def __init__(self, run):
         self._run = run
         self._state = "ready"
         self._committed = None
         self._accepted = None
+        self._refusal = None
+
+    @property
+    def approval_refusal(self):
+        """Why the dispatch claim refused this visit's attempt approval, else None."""
+        return self._refusal
 
     @property
     def committed(self):
@@ -245,7 +258,11 @@ class VisitAttempt:
         if self._state != "ready":
             raise AttemptDispatchError("attempt_already_dispatched")
         self._state = "dispatching"
-        self._committed, self._accepted = self._run()
+        try:
+            self._committed, self._accepted = self._run()
+        except AttemptDispatchError as error:
+            self._refusal = error.approval_refusal
+            raise
         self._state = "committed"
         return self._committed
 
@@ -324,6 +341,42 @@ class NodeAttemptDispatcher:
     def node_ids(self):
         return frozenset(self._bindings)
 
+    @property
+    def transport(self):
+        return self._transport
+
+    def next_attempt_no(self, *, run_id, node_id, execution_id, loop_index, recovery=None):
+        """The attempt number the next dispatch of this visit would send under, read
+        from the ledger without writing anything — the same walk `_dispatch` takes: an
+        attempt that definitely never sent, or (under the owner's recovery) one observed
+        terminal with final usage, admits the next number; an absent attempt, or one
+        reserved but not yet sent, is the one to send. None when an attempt already
+        committed its send (a replay resolves it; nothing is sent again). `recovery`
+        overrides this dispatcher's own retry mode for a read (a run's projection names
+        the attempt an owner's recovery asked for, whichever dispatcher reads it)."""
+
+        if node_id not in self._bindings:
+            raise ValueError("node is not bound to this dispatcher")
+        uuid_string(execution_id)
+        retry = self._retry if recovery is None else bool(recovery)
+        for attempt_index in range(MAX_ATTEMPTS_PER_VISIT):
+            attempt_id = attempt_identity(run_id, node_id, loop_index, attempt_index)
+            try:
+                row = self._ledger.get_attempt(attempt_id)
+            except KeyError:
+                return attempt_index + 1
+            if row["spec"]["execution_id"] != execution_id:
+                raise ValueError("attempt belongs to another execution")
+            if self._definitely_unsent(attempt_id):
+                continue
+            if retry and self._observed_terminal(attempt_id):
+                continue
+            if (row["phase"] in {"reserved", "preflighting"} and row["send_intent_at_ms"] is None
+                    and row["dispatch_gate"] == "open"):
+                return attempt_index + 1
+            return None
+        return None
+
     def require_compiled_context(self, compiled):
         if isinstance(self._transport, CompiledToolTransport):
             for node_id in self._bindings:
@@ -397,13 +450,31 @@ class NodeAttemptDispatcher:
             loop_rounds=binding.loop_rounds, output_bytes=binding.output_bytes,
             candidates=binding.candidates, api_microunits=binding.api_microunits,
         )
+        send_command = _command_identity(attempt_id, "send")
+        claim = None
+        claiming = getattr(self._transport, "dispatch_claim", None)
+        current = ledger.get_attempt(attempt_id) if claiming is not None else None
+        if (claiming is not None and current["phase"] in {"reserved", "preflighting"}
+                and current["send_intent_at_ms"] is None and current["dispatch_gate"] == "open"):
+            # a tool call is claimed with its send: the ToolCall intent, its approval use
+            # (checked on the ledger's own transaction and clock) and the budget
+            # reservation commit with the send intent, or none of them does. A replayed,
+            # already-committed attempt claims nothing again (the send never repeats).
+            try:
+                claim = claiming(request, send_command)
+            except ApprovalRefused as refused:
+                raise AttemptDispatchError(f"attempt_approval_{refused.reason}",
+                                           approval_refusal=refused.reason) from None
         try:
             permit = ledger.commit_budgeted_send_intent(
-                _command_identity(attempt_id, "send"), attempt_id, self._owner,
+                send_command, attempt_id, self._owner,
                 expected_revision=reserved["revision"], budget_book=book,
                 budget_request=budget_request, principal=binding.principal,
-                grant=binding.grant,
+                grant=binding.grant, tool_call=claim,
             )
+        except ApprovalRefused as refused:
+            raise AttemptDispatchError(f"attempt_approval_{refused.reason}",
+                                       approval_refusal=refused.reason) from None
         except BudgetExceeded:
             raise AttemptDispatchError("attempt_budget_exceeded") from None
         except LedgerError:

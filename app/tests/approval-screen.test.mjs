@@ -220,3 +220,22 @@ test('a refused execution listing never hides the gate that can still be decided
   assert.equal(items(root, 'approval-executions').length, 0);
   assert.match(root.textContent, /일부 요청은 읽지 못했습니다/);
 });
+
+// T087 expiry slice (2026-09-25): an expired ask is listed as expired, offers no
+// decision, says the attempt is not authorized, and every ask shows its server-set time
+test('an expired ask offers no decision and every ask shows its server-set time limit', async () => {
+  const expires = Date.UTC(2026, 8, 25, 12, 30, 5);
+  const { root, approvals } = screen({ [READ]: [runReceipt({ awaiting: [] })], [LIST]: [listing([
+    { ...ask(1, 'expired'), expires_at_ms: expires }, { ...ask(2, 'pending'), expires_at_ms: expires }])] });
+  await approvals.show(RUN);
+  const rows = items(root, 'approval-executions');
+  assert.equal(rows[0].getAttribute('data-state'), 'expired');
+  assert.ok(rows[0].textContent.includes(STATE_LABELS.expired));
+  assert.equal(rows[0].findAll(el => el.tagName === 'BUTTON').length, 0);
+  assert.match(rows[0].textContent, new RegExp(MESSAGES.notAuthorized));
+  assert.match(rows[0].textContent, /시한 2026-09-25 12:30:05 UTC/);
+  // the attempt after an expired one is its own ask and needs a new decision
+  assert.match(rows[1].textContent, new RegExp(MESSAGES.retry));
+  assert.equal(rows[1].findAll(el => el.tagName === 'BUTTON').length, 2);
+  assert.match(root.textContent, /결정할 일 1개가 있습니다/);
+});

@@ -32,7 +32,14 @@ export const STATE_LABELS = Object.freeze({
   approved: '승인됨',
   rejected: '거절됨',
   superseded: '대체됨 — 소유자 복구 이전의 결정이라 아무것도 허가하지 않습니다',
+  expired: '만료됨 — 요청 시한이 지나 이 시도는 허가되지 않으며 다시 결정할 수 없습니다',
 });
+
+// the ask's server-set expiry as the owner reads it (UTC, to the second)
+export function expiryText(expiresAtMs) {
+  if (expiresAtMs === null || expiresAtMs === undefined) return '';
+  return ` · 시한 ${new Date(expiresAtMs).toISOString().slice(0, 19).replace('T', ' ')} UTC`;
+}
 
 export const MESSAGES = Object.freeze({
   idle: '실행을 선택하면 승인할 일을 보여 줍니다.',
@@ -144,7 +151,8 @@ export function createApprovalScreen({ root, document, basePath = '/', request, 
       const item = element('li', undefined, { 'data-state': entry.state, 'data-attempt': String(entry.attemptNo),
         'data-execution-id': entry.executionId });
       item.append(element('span', `실행 ${entry.runId} · ${executionApprovalPrompt(entry)}`, { class: 'approval-subject' }),
-        element('span', ` · ${STATE_LABELS[entry.state]}`, { class: 'approval-state' }));
+        element('span', ` · ${STATE_LABELS[entry.state]}`, { class: 'approval-state' }),
+        element('span', expiryText(entry.expiresAtMs), { class: 'approval-expiry' }));
       if (entry.state === 'pending') {
         if (isRetryAttempt(listing, entry)) item.append(element('p', MESSAGES.retry, { class: 'approval-retry' }));
         item.append(...decisionButtons(`시도 ${entry.attemptNo}`, decision => decideAttempt(entry, decision)));

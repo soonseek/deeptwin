@@ -11,7 +11,16 @@ durable request for one attempt of one execution behind that gate
 (`request_execution_approval`), carrying the executing node as the ledger's
 execution row names it and, when known, the digest of the attempt's exact
 artifact inputs. Its identity is derived from (run, gate node, scope,
-execution, attempt number) and read back through the helpers below.
+execution, attempt number) and read back through the helpers below. The ask
+also carries the server-set instant it expires at (`expires_at_ms`: the
+ledger's clock when it was first recorded plus a bounded time to live). It is
+kept in the command's result, not its payload, so the replayable identity and
+payload stay the same whenever the ask is repeated.
+
+When the scheduler stops a visit because its attempt's decision is not an
+approval (rejected, expired, superseded by an owner recovery), it records that
+reason once per attempt (`refuse_execution_approval`, identity derived from the
+ask's), so a later read of the run reports the same stop without re-deciding.
 """
 
 from __future__ import annotations
@@ -141,10 +150,15 @@ def execution_approval_request_identity(
 
 def _execution_request_payload(row) -> dict:
     """One held execution-approval ask, re-derived from its own payload; a row that
-    does not reproduce its identity or grammar is never trusted (ValueError)."""
+    does not reproduce its identity or grammar is never trusted (ValueError). The
+    mapping returned adds `expires_at_ms` from the command's recorded result."""
 
     payload = json.loads(bytes(row["payload"]))
     if type(payload) is not dict or set(payload) != EXECUTION_REQUEST_FIELDS:
+        raise ValueError("corrupt execution approval request")
+    result = json.loads(bytes(row["result"]))
+    expires = result.get("expires_at_ms") if type(result) is dict else None
+    if type(expires) is not int or type(expires) is bool or expires < 0:
         raise ValueError("corrupt execution approval request")
     digest = payload["inputs_digest"]
     if digest is not None and (type(digest) is not str or SHA256_HEX.fullmatch(digest) is None):
@@ -155,7 +169,7 @@ def _execution_request_payload(row) -> dict:
         payload["execution_id"], payload["attempt_no"],
     ) != row["command_id"]:
         raise ValueError("corrupt execution approval request")
-    return payload
+    return {**payload, "expires_at_ms": expires}
 
 
 def execution_approval_request(
@@ -171,7 +185,7 @@ def execution_approval_request(
     except ValueError:
         return None
     row = db.execute(
-        "SELECT command_id, payload FROM runtime_commands WHERE vault_id=? AND command_id=? AND kind=?",
+        "SELECT command_id, payload, result FROM runtime_commands WHERE vault_id=? AND command_id=? AND kind=?",
         (vault_id, command_id, EXECUTION_APPROVAL_REQUEST_COMMAND),
     ).fetchone()
     return None if row is None else _execution_request_payload(row)
@@ -187,9 +201,48 @@ def execution_approval_requests(db, vault_id: str, run_id: str) -> list[dict]:
     if table is None:
         return []
     rows = db.execute(
-        "SELECT command_id, payload FROM runtime_commands WHERE vault_id=? AND kind=? "
+        "SELECT command_id, payload, result FROM runtime_commands WHERE vault_id=? AND kind=? "
         "ORDER BY created_at_ms, rowid",
         (vault_id, EXECUTION_APPROVAL_REQUEST_COMMAND),
     ).fetchall()
     held = [_execution_request_payload(row) for row in rows]
     return [item for item in held if item["run_id"] == run_id]
+
+
+# --- the scheduler's recorded stop of one attempt's visit ------------------------------------
+
+EXECUTION_APPROVAL_REFUSAL_COMMAND = "refuse_execution_approval"
+# why a visit stopped at its attempt's decision: the owner rejected it, the ask (or the
+# unused approval) expired, or an owner recovery superseded the decision
+REFUSAL_REASONS = frozenset({"rejected", "expired", "superseded"})
+
+
+def execution_approval_refusal_identity(ask_identity: str) -> str:
+    """The single command identity of the recorded stop of the attempt one ask names."""
+
+    uuid_string(ask_identity)
+    return str(uuid5(NAMESPACE_URL, canonical_json({
+        "domain": "deeptwin-execution-approval-refusal-v1", "request_id": ask_identity}).decode()))
+
+
+def execution_approval_refusal(
+    db, vault_id: str, run_id: str, node_id: str, approval_scope: str,
+    execution_id: str, attempt_no: int,
+) -> str | None:
+    """The reason recorded when the scheduler stopped this attempt's visit, or None."""
+
+    try:
+        command_id = execution_approval_refusal_identity(execution_approval_request_identity(
+            run_id, node_id, approval_scope, execution_id, attempt_no))
+    except ValueError:
+        return None
+    row = db.execute(
+        "SELECT payload FROM runtime_commands WHERE vault_id=? AND command_id=? AND kind=?",
+        (vault_id, command_id, EXECUTION_APPROVAL_REFUSAL_COMMAND),
+    ).fetchone()
+    if row is None:
+        return None
+    payload = json.loads(bytes(row["payload"]))
+    if type(payload) is not dict or payload.get("reason") not in REFUSAL_REASONS:
+        raise ValueError("corrupt execution approval refusal")
+    return payload["reason"]
