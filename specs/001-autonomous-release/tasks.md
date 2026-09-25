@@ -775,6 +775,21 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   it at every call (evidence/release-designs-t076-2026-09-25.md). Still open: verdict-to-configuration binding in
   design approval, a multi-arm effect dispatcher, no sealed set, author, reviewer or independent judge, V3
   unverifiable under v4, and an independent audit of v4.
+  2026-09-25 audit 4 of v4: AUDIT FAIL (B1 best 3 of N trials passed: the repetition slot was caller-assigned
+  at verify time and nothing enumerated a manifest's trials; B2 a spent sealed set could be rerun under a
+  verifying manifest). release-v5 (`release-v5/`, `lens-effects-v5.json`, pre-dispatch manifest schema v3,
+  suite record v4, `release-v5/FROZEN.json` pinning v1..v5, all manifests, the gate, the verifier modules and
+  the harness; v4's code hashes are checked against `fb718b6`) answers them without editing v1..v4: the
+  harness writes an append-only, hash-chained dispatch journal per manifest (trial id and its PreDispatch slot
+  before the first call, only the next of `run_identity.planned_slots`); `q01-sealed-verifier-3` takes the
+  repetition from the journalled slot, requires the results to equal the journal and the journal to follow the
+  planned slots, and puts the journal head in the suite record; the manifest check refuses a set a prior
+  attempt (or a lens arm's prior attempt, or a listed qualification set) already spent; plus N1-N7 (ledger
+  selection re-check, `proposed_not_driven`, commit reference and its audit item, judge separation, the gate
+  refusing schema-invalid v5 records with a pytest-only test-actor hook, lens-effect checks, a bundle key
+  allowlist) (evidence/release-designs-t076-2026-09-25.md). Still open: verdict-to-configuration binding, a
+  multi-arm dispatcher with an arm-aware journal, no sealed set, author, reviewer or independent judge, V3
+  unverifiable under v5, operator-disk trust limits of the journal, and an independent audit of v5.
 - [ ] T077 Execute authorized bounded actual-provider/critic/multimodal/lens-controlled comparisons and audit all failures/suspicious passes in specs/001-autonomous-release/evidence/live-qualification.md; lack of applicable authority remains explicit, not waived (SC-001/005/006).
 - [ ] T078 After T087's extension UI and the frozen T081 candidate exist, perform final visual/
   keyboard/screen-reader/360px/1024px/

@@ -1,7 +1,7 @@
 """Data-driven Q01 release verifier over a sealed set (control plane; never agent-visible).
 
 Implements the ``verifier`` block and ``acceptance.suite_outcome`` of
-``evals/deeptwin/qualification/release-v4/qualification_design.json``. Unlike
+``evals/deeptwin/qualification/release-v5/qualification_design.json``. Unlike
 ``critic.py`` (whose expectations are the ten calibration cases), this module
 holds no expectations, no materials and no lens pack: all are supplied at verify
 time, and the lens pack is critic configuration (pinned by digest in the
@@ -17,32 +17,38 @@ pre-dispatch manifest), never sealed dataset material.
   published path -> bytes in the harness environment layout
   (``environment/manifest.json`` plus ``environment/cases/<case id>.json``) and
   the sha256 of the manifest file bytes. Every case file must be listed with its
-  sha256, nothing unlisted is accepted, and a case that carries a lens pack is
-  refused. Material checks and answer-leak markers are derived from this bundle
+  sha256, nothing unlisted is accepted, a case that carries a lens pack is
+  refused, and a case source or candidate with any key the input contract would
+  silently drop is refused (audit 4). Material checks and answer-leak markers are derived from this bundle
   and the expectations, never from ``q01_materials``, ``critic.EXPECTED`` or
   ``Task.md``.
-* ``load_release_run`` re-checks the full pre-dispatch manifest (schema v2) and
+* ``load_release_run`` re-checks the full pre-dispatch manifest (schema v3) and
   loads the independence profile bytes it pins: the sha256 must match, the
   profile must name this design id, and judge separation and the V3 status are
-  derived from it (V3 is always ``unverified``: release-v4 cannot verify it).
+  derived from it (V3 is always ``unverified``: release-v5 cannot verify it).
   Nothing about the run is taken from the caller.
 * ``verify_trial`` judges one harness release trial record with the same order and
   outcome classes as ``critic.py`` (pass / fail / not_judged / invalid): trial
   validity first (any failure is ``invalid`` and unscored; this includes a trial
   not dispatched under this manifest and a lens pack that does not hash to the
-  critic configuration), then an output contract error (``fail``), rule checks,
+  critic configuration, a call whose durable selection is not the configuration's
+  provider/mode/model/effort, a ``proposed_not_driven`` count the chain limit does not
+  give, and a trial that is not journalled with its record's slot in this manifest's
+  dispatch journal), then an output contract error (``fail``), rule checks,
   and semantic items only through an explicit ``SemanticJudge``. Each result
   carries the trial id, the trial record sha256, the ledger head and its own
-  ``result_sha256``, and is registered as issued by this process.
+  ``result_sha256``, and is registered as issued by this process. The repetition is
+  read from the record's journalled slot; a caller value that differs is refused.
 * ``verify_suite`` applies the release precedence exactly: ``fail`` (any valid
   repetition failed) > ``incomplete`` (an invalid, missing, duplicated or stopped
   repetition, a result not issued by ``verify_trial`` or altered since, a trial
   reused across repetitions, a result of another configuration or judge, an
   expectation set loaded without its composition check, or a manifest/profile
   that does not verify or does not pin these expectations, materials and case
-  order) > ``not_judged`` (a not_judged repetition, or a profile without
-  established judge separation) > ``pass``. Repetitions are fixed at the design's
-  3.
+  order, or results that are not exactly the trials of the manifest's dispatch
+  journal, or a journal that does not follow ``run_identity.planned_slots``) >
+  ``not_judged`` (a not_judged repetition, or a profile without established judge
+  separation) > ``pass``. Repetitions are fixed at the design's 3.
 * ``build_suite_record`` produces the ``suite_record.schema.json`` record from an
   issued suite result and the same loaded run. ``record_sha256`` is the sha256 of
   the canonical JSON of the record without the ``record_sha256`` key, where
@@ -76,12 +82,15 @@ from app.critic_contract import InputContractError, prepare_input
 from evals.deeptwin.q01_release_manifest import (
     DESIGN_DIR,
     DESIGN_ID,
+    REPETITIONS_PER_CASE,
     canonical_bytes,
     check_pre_dispatch_manifest,
     critic_configuration_digest,
     file_set_sha256,
     is_sha256,
+    journal_problems,
     prepared_lens_refs,
+    read_journal,
     schema_valid,
     strict_json,
 )
@@ -120,14 +129,17 @@ from .q01_core import (
     _Trial,
 )
 
-VERIFIER_VERSION = "q01-sealed-verifier-2"
-RESULT_SCHEMA = "q01-sealed-verifier-result-2"
-SUITE_SCHEMA = "q01-sealed-suite-result-2"
-SUITE_RECORD_SCHEMA_VERSION = "q01-release-suite-verdict-v3"
-REPETITIONS_PER_CASE = 3  # release-v4 execution.repetitions_per_case; never caller-supplied
-PROFILE_SCHEMA = "q01-independence-profile-4"
+VERIFIER_VERSION = "q01-sealed-verifier-3"
+RESULT_SCHEMA = "q01-sealed-verifier-result-3"
+SUITE_SCHEMA = "q01-sealed-suite-result-3"
+SUITE_RECORD_SCHEMA_VERSION = "q01-release-suite-verdict-v4"
+PROFILE_SCHEMA = "q01-independence-profile-5"
 JUDGE_OPTIONS = frozenset({"human_reviewer", "other_provider"})
-# Designs able to verify V3 error independence: none (release-v4 has no generation path).
+# The frozen case's source and candidate keys a sealed bundle may carry (audit 4, non-blocking 7).
+SOURCE_KEYS = frozenset({"originals", "criteria", "candidate"})
+CANDIDATE_KEYS = frozenset({"id", "version", "roles", "artifacts", "handoffs", "control"})
+SELECTION_FIELDS = ("provider", "mode", "model", "effort")
+# Designs able to verify V3 error independence: none (release-v5 has no generation path).
 V3_VERIFYING_DESIGN_IDS = frozenset()
 EXPECTATION_SCHEMA_FILE = DESIGN_DIR / "sealed_expectation.schema.json"
 SUITE_RECORD_SCHEMA_FILE = DESIGN_DIR / "suite_record.schema.json"
@@ -260,7 +272,7 @@ def _check_boundary(case, where):
 
 
 def composition_problems(expectations: SealedExpectations) -> list[str]:
-    """Release-v4 ``dataset.composition`` checks that are decidable from the expectations.
+    """Release-v5 ``dataset.composition`` checks that are decidable from the expectations.
 
     'At least one valid alternative candidate under Q4' is not decidable from the
     expectation data and stays a reviewer check.
@@ -384,6 +396,7 @@ def load_sealed_materials(files: Mapping[str, bytes], manifest_sha256: str) -> S
             # The lens pack is critic configuration (pinned by digest in the pre-dispatch
             # manifest and supplied by the harness), never sealed dataset material.
             raise SealedSetError(f"a sealed case must not carry a lens pack: {entry['path']}")
+        _check_allowlisted(case, entry["path"])
         try:
             candidate_id = case["source"]["candidate"]["id"]
             authored = [item["counterexample"]["id"] for item in case["authored_counterexamples"]]
@@ -395,6 +408,50 @@ def load_sealed_materials(files: Mapping[str, bytes], manifest_sha256: str) -> S
     if set(files) != listed:
         raise SealedSetError("materials bundle holds unlisted files")
     return SealedMaterials(manifest_sha256, cases, shas)
+
+
+def _dropped(value, visible, path=""):
+    """Key paths of ``value`` that the input contract's projection ``visible`` does not keep."""
+    if type(value) is dict:
+        if type(visible) is not dict:
+            return [path or "/"]
+        dropped = []
+        for key, item in value.items():
+            dropped += ([f"{path}/{key}"] if key not in visible else _dropped(item, visible[key], f"{path}/{key}"))
+        return dropped
+    if type(value) is list:
+        if type(visible) is not list or len(visible) != len(value):
+            return [path or "/"]
+        return [item for index, child in enumerate(value)
+                for item in _dropped(child, visible[index], f"{path}/{index}")]
+    return []
+
+
+def _check_allowlisted(case, where):
+    """Refuse any source or candidate key the input contract would silently drop (audit 4).
+
+    A lens pack or lens rules hidden under another key (``source.lens_rules``,
+    ``candidate.lens_pack``, ...) never reaches an agent, but it would sit in the sealed
+    bundle as unexamined material; the bundle carries exactly the agent-visible fields.
+    """
+    source = case["source"]
+    candidate = source.get("candidate")
+    if set(source) != SOURCE_KEYS or type(candidate) is not dict or set(candidate) != CANDIDATE_KEYS:
+        raise SealedSetError(f"a sealed case source or candidate carries a key outside the allowlist: {where}")
+    try:
+        visible = json.loads(prepare_input(P.REVIEW, deepcopy(source)).prompt)["input"]
+        dropped = _dropped(source, visible)
+        for item in case["authored_counterexamples"]:
+            if type(item) is not dict or set(item) != {"counterexample", "source"}:
+                raise SealedSetError(f"authored counterexample shape: {where}")
+            prepared = prepare_input(P.COUNTEREXAMPLE_VALIDITY, {**deepcopy(source),
+                                                                 "counterexample": deepcopy(item["counterexample"])})
+            dropped += _dropped(item["counterexample"], json.loads(prepared.prompt)["input"]["counterexample"])
+    except InputContractError:
+        raise SealedSetError(f"materials break the input contract: {where}") from None
+    if dropped:
+        raise SealedSetError(f"a sealed case carries keys the input contract drops ({', '.join(dropped[:3])}): "
+                             f"{where}")
 
 
 def load_sealed_materials_dir(root: Path, manifest_sha256: str) -> SealedMaterials:
@@ -541,9 +598,18 @@ def _check_access_and_leakage(trial, record, markers):
 
 
 def _check_configuration(trial, configuration):
-    """Every call ran the critic configuration of the manifest (as far as a call records it)."""
+    """Every call ran the critic configuration of the manifest (as far as a call records it).
+
+    Provider, mode, model and effort are re-derived from each call's durable, digest-bound
+    ``selection_json`` in the ledger (audit 4, non-blocking 1): a harness that skipped its
+    own check cannot pass a trial run under another model.
+    """
     lenses = configuration["lens_refs_and_digests"]
     for call in trial.calls:
+        selection = call.get("selection")
+        if type(selection) is not dict or any(selection.get(name) != configuration[name]
+                                              for name in SELECTION_FIELDS):
+            raise _Invalid("selection_differs_from_configuration")
         prepared = call["manifest"]["prepared_manifest"]  # re-derived from the ledger by _Trial
         if (prepared.get("contract_version"), prepared.get("parser_version")) != (
                 configuration["contract_version"], configuration["parser_version"]):
@@ -638,6 +704,12 @@ def _profile_problems(profile_bytes, identity):
                 or judge["identity"] != identity["judge_identity"]
                 or judge["prompt_digest"] != identity["judge_prompt_digest"]):
             problems.append("profile:judge_differs_from_run_identity")
+        elif judge["option"] == "other_provider" and not is_sha256(judge["prompt_digest"]):
+            # a model judge is only identifiable with the digest of the prompt it ran (audit 4)
+            problems.append("profile:other_provider_judge_without_prompt_digest")
+        elif judge["option"] == "human_reviewer" and judge["prompt_digest"] is not None and not is_sha256(
+                judge["prompt_digest"]):
+            problems.append("profile:judge_differs_from_run_identity")
     return problems, established and not problems
 
 
@@ -690,6 +762,7 @@ def _result(case_id, sealed, verdict, *, context, cause=None, rules=(), judged=(
               "case_id": case_id, "repetition": context["repetition"],
               "trial_id": context["trial_id"], "trial_record_sha256": context["record_sha256"],
               "ledger_head": context["ledger_head"],
+              "journal_entry_sha256": context["journal_entry_sha256"],
               "case_key": None if sealed is None else {"candidate_id": sealed.candidate_id,
                                                        "counterexample_id": sealed.counterexample_id},
               "boundary": None if sealed is None else sealed.expectation.boundary,
@@ -715,13 +788,67 @@ def _is_issued(value, registry, key):
     return _digest({name: item for name, item in value.items() if name != key}) == value[key]
 
 
+def _record_slot(record):
+    """The (case id, repetition) slot fixed in the record before dispatch, or ``None``."""
+    slot = record.get("slot")
+    if (type(slot) is not dict or set(slot) != {"case_id", "repetition"} or slot["case_id"] != record.get("case_id")
+            or type(slot["repetition"]) is not int or not 1 <= slot["repetition"] <= REPETITIONS_PER_CASE):
+        return None
+    return slot
+
+
+def _journal_path(run):
+    return Path(run.identity["dispatch_journal"]["path"])
+
+
+def _check_journalled(trial, record, run, slot):
+    """The trial is journalled under this manifest with the slot its record carries (audit 4, B1).
+
+    The journal entry (trial id and slot) was written before the first call; its
+    ``entry_sha256`` is in the record and bound into every frozen call's code hashes in
+    the durable ledger, and the journal header names this manifest and the record's
+    commit reference.
+    """
+    pre_dispatch = record["pre_dispatch"]
+    written = pre_dispatch.get("journal")
+    state = read_journal(_journal_path(run))
+    if not state.ok or state.header["manifest_sha256"] != run.manifest_sha256:
+        raise _Invalid("dispatch_journal_unverified")
+    entry = state.by_trial.get(record["trial_id"])
+    if (entry is None or type(written) is not dict or written.get("entry_sha256") != entry["entry_sha256"]
+            or {"case_id": entry["case_id"], "repetition": entry["repetition"]} != slot
+            or pre_dispatch.get("slot") != slot):
+        raise _Invalid("not_journalled_under_this_manifest")
+    if pre_dispatch.get("commit_ref") != state.header["commit_ref"]:
+        raise _Invalid("commit_ref_differs_from_dispatch_journal")
+    if any(call["code_hashes"].get("dispatch_journal_entry") != entry["entry_sha256"] for call in trial.calls):
+        raise _Invalid("journal_entry_not_bound_in_ledger")
+    return entry
+
+
+def _check_proposed_not_driven(trial, record, configuration):
+    """``proposed_not_driven`` is what the configuration's chain limit gives (audit 4, non-blocking 2)."""
+    proposal = next((call for call in trial.calls if call["purpose"] is P.COUNTEREXAMPLE_PROPOSAL), None)
+    if proposal is None or proposal["parsed"] is None:
+        return
+    expected = max(0, len(proposal["parsed"]["counterexamples"]) - configuration["max_proposed_chains"])
+    recorded = (record.get("stages") or {}).get("proposed_not_driven")
+    if type(recorded) is not int or recorded != expected:
+        raise _Invalid("proposed_not_driven_differs_from_chain_limit")
+
+
 def verify_trial(record: dict, *, expectations: SealedExpectations, materials: SealedMaterials,
                  run: ReleaseRun, judge: SemanticJudge | None = None, repetition: int | None = None,
                  ledger_path: Path | None = None, task_dir: Path = TASK_DIR) -> dict:
-    """Verify one harness release trial record against the sealed set. Never raises for a bad record."""
+    """Verify one harness release trial record against the sealed set. Never raises for a bad record.
+
+    The repetition is the one fixed in the record's slot and journalled before dispatch;
+    ``repetition`` is only an assertion by the caller, and a value that differs from the
+    record's slot makes the result invalid (audit 4, B1).
+    """
     case_id = sealed = None
-    context = {"expectations": expectations, "materials": materials, "run": run, "repetition": repetition,
-               "trial_id": None, "record_sha256": None, "ledger_head": None}
+    context = {"expectations": expectations, "materials": materials, "run": run, "repetition": None,
+               "trial_id": None, "record_sha256": None, "ledger_head": None, "journal_entry_sha256": None}
     try:
         try:
             check_binding(expectations, materials)
@@ -737,12 +864,23 @@ def verify_trial(record: dict, *, expectations: SealedExpectations, materials: S
         if record.get("case_id") in expectations.cases:  # attributable even if the trial is invalid
             case_id = record["case_id"]
             sealed = expectations.cases[case_id]
+        slot = _record_slot(record)
+        if slot is not None:
+            context["repetition"] = slot["repetition"]
+            pre_dispatch = record.get("pre_dispatch")
+            written = pre_dispatch.get("journal") if type(pre_dispatch) is dict else None
+            if type(written) is dict and is_sha256(written.get("entry_sha256")):
+                context["journal_entry_sha256"] = written["entry_sha256"]
+        if repetition is not None and (slot is None or repetition != slot["repetition"]):
+            raise _Invalid("repetition_differs_from_journalled_slot")
         if record.get("status") != "completed":
             raise _Invalid("trial_" + str(record.get("cause") or "invalid"))
         pre_dispatch = record.get("pre_dispatch")
         if (context["trial_id"] is None or type(pre_dispatch) is not dict
                 or pre_dispatch.get("manifest_sha256") != run.manifest_sha256 or pre_dispatch.get("errors") != []):
             raise _Invalid("not_a_release_trial_of_this_manifest")
+        if slot is None:
+            raise _Invalid("not_journalled_under_this_manifest")
         path = Path(ledger_path or record.get("ledger_path") or "")
         if not path.is_absolute() or not path.is_file():
             raise _Invalid("evidence_lost")
@@ -754,6 +892,7 @@ def verify_trial(record: dict, *, expectations: SealedExpectations, materials: S
         trial = _Trial(record, ledger, instructions)
         context["ledger_head"] = _ledger_head(trial)
         _check_journal_coverage(trial, record, path)
+        _check_journalled(trial, record, run, slot)
         _check_lineage(trial, record)
         key = _case_key(trial, record, expectations.keys)
         case_id = _case_id(*key)
@@ -761,6 +900,7 @@ def verify_trial(record: dict, *, expectations: SealedExpectations, materials: S
         _check_access_and_leakage(trial, record, answer_markers(expectations, materials, instructions))
         _check_materials(trial, record, materials.cases[case_id], materials.case_sha256[case_id])
         _check_configuration(trial, run.configuration)
+        _check_proposed_not_driven(trial, record, run.configuration)
         _check_completeness(trial, key, record)
     except _Invalid as invalid:
         return _result(case_id, sealed, INVALID, cause=invalid.cause, context=context)
@@ -826,14 +966,25 @@ def _run_problems(run, expectations, materials_shas):
     return problems
 
 
+def _journal_state(run):
+    """(journal state or None, problems) of the manifest's dispatch journal."""
+    if run.manifest is None:
+        return None, ["dispatch_journal:no_verifiable_manifest"]
+    state = read_journal(_journal_path(run))
+    return state, journal_problems(state, run.manifest_sha256, run.identity["planned_slots"])
+
+
 def verify_suite(results: list[dict], *, expectations: SealedExpectations, run: ReleaseRun,
                  stopped: bool = False) -> dict:
-    """Aggregate per-repetition results into the release-v4 suite outcome.
+    """Aggregate per-repetition results into the release-v5 suite outcome.
 
     ``run`` is the loaded pre-dispatch manifest and profile (``load_release_run``): the
     manifest is always re-checked in full, and judge separation comes only from the
     profile it pins. Repetitions are the design's 3; ``stopped`` marks a run halted by
-    its hard stop.
+    its hard stop. The results must be exactly the trials of the manifest's dispatch
+    journal (every journalled trial submitted, nothing else), and the journal must
+    follow ``run_identity.planned_slots`` in order (audit 4, B1): a best-of-N selection
+    is incomplete.
     """
     if type(expectations) is not SealedExpectations:
         raise SealedSetError("loaded sealed expectations are required")
@@ -847,6 +998,10 @@ def verify_suite(results: list[dict], *, expectations: SealedExpectations, run: 
     invalid_causes, materials_shas = [], set()
     seen = {"trial_id": set(), "trial_record_sha256": set(), "ledger_head": set()}
     identity = run.identity
+    journal, journal_issues = _journal_state(run)
+    reasons.update(journal_issues)
+    journalled = journal.by_trial if journal is not None and journal.ok else {}
+    submitted = set()
     for result in results:
         if not _is_issued(result, _ISSUED_RESULTS, "result_sha256"):
             reasons.add("result_not_issued_by_verify_trial")
@@ -859,6 +1014,12 @@ def verify_suite(results: list[dict], *, expectations: SealedExpectations, run: 
         if slot not in slots:
             reasons.add("unplanned_repetition")
             continue
+        entry = journalled.get(result.get("trial_id"))
+        if (entry is None or (entry["case_id"], entry["repetition"]) != slot
+                or entry["entry_sha256"] != result.get("journal_entry_sha256")):
+            reasons.add("result_not_in_dispatch_journal")
+        else:
+            submitted.add(result["trial_id"])
         if slots[slot]:
             reasons.add("duplicate_repetition")
         for name, values in seen.items():
@@ -876,6 +1037,9 @@ def verify_suite(results: list[dict], *, expectations: SealedExpectations, run: 
         slots[slot].append(result["verdict"])
         if result["verdict"] == INVALID:
             invalid_causes.append({"case_id": slot[0], "repetition": slot[1], "cause": result.get("cause")})
+    if set(journalled) - submitted:
+        # a journalled trial that is not among the results: best-of-N selection or a lost trial
+        reasons.add("journalled_trial_not_submitted")
     if len(materials_shas) > 1:
         reasons.add("results_verified_against_different_materials")
     verdicts = [verdict for items in slots.values() for verdict in items]
@@ -912,6 +1076,7 @@ def verify_suite(results: list[dict], *, expectations: SealedExpectations, run: 
                                        "counterexample_id": sealed.counterexample_id},
                           "case_pass": all(items == [PASS] for items in per_rep.values()),
                           "verdicts": {str(rep): items for rep, items in per_rep.items()}}
+    journal_ok = journal is not None and not journal_issues
     suite = {"schema": SUITE_SCHEMA, "verifier_version": VERIFIER_VERSION, "design_id": DESIGN_ID,
              "suite_outcome": outcome, "reasons": sorted(reasons),
              "repetitions_per_case": REPETITIONS_PER_CASE, "cases": cases, "boundaries": boundaries,
@@ -924,6 +1089,10 @@ def verify_suite(results: list[dict], *, expectations: SealedExpectations, run: 
              "committed_manifest_sha256": run.committed_sha256,
              "independence_profile_sha256": run.profile_sha256,
              "case_order": None if identity is None else list(identity["case_order"]["order"]),
+             "dispatch_journal": {"verified": journal_ok,
+                                  "head": journal.head if journal_ok else None,
+                                  "entries": len(journal.dispatches) if journal_ok else None,
+                                  "commit_ref": deepcopy(journal.header["commit_ref"]) if journal_ok else None},
              "judge_separation_established": separated, "stopped": bool(stopped)}
     suite["suite_sha256"] = _digest(suite)
     _ISSUED_SUITES.add(suite["suite_sha256"])
@@ -954,10 +1123,13 @@ def build_suite_record(suite: dict, *, run: ReleaseRun) -> dict:
 
     The suite must be the unaltered result of ``verify_suite`` over the same loaded run.
     The fields come from the re-checked pre-dispatch manifest (configuration digest
-    recomputed, sealed dataset sha256, attempt, prior outcomes, profile sha256); judge
-    separation and the V3 status come from the run (the profile and this design), never
-    from the caller. A manifest or profile problem, or a suite whose expectations,
-    materials or case order are not the ones the manifest pins, turns a would-be pass or
+    recomputed, sealed dataset sha256, attempt, prior outcomes, every prior attempt's
+    sealed set sha256 and a digest of the prior-attempt list, profile sha256), from the
+    dispatch journal the suite verified (its head and the manifest's commit reference);
+    judge separation and the V3 status come from the run (the profile and this design),
+    never from the caller. A manifest or profile problem, a suite whose expectations,
+    materials or case order are not the ones the manifest pins, or a journal that is
+    unverified or has grown since the suite was verified, turns a would-be pass or
     not_judged into incomplete (a fail keeps precedence).
     """
     if not _is_issued(suite, _ISSUED_SUITES, "suite_sha256") or suite.get("schema") != SUITE_SCHEMA:
@@ -968,13 +1140,17 @@ def build_suite_record(suite: dict, *, run: ReleaseRun) -> dict:
         raise ValueError("a schema-valid pre-dispatch manifest is required to build a suite record")
     manifest, identity = run.manifest, run.identity
     outcome = suite["suite_outcome"]
+    journal = suite["dispatch_journal"]
+    current, current_issues = _journal_state(run)
     consistent = (not run.errors and suite["composition_checked"]
                   and suite["expectations_sha256"] == identity["sealed_expectations_sha256"]
                   and suite["materials_manifest_sha256"] == identity["sealed_dataset_sha256"]
                   and suite["case_order"] == identity["case_order"]["order"]
-                  and suite["independence_profile_sha256"] == identity["independence_profile"]["sha256"])
+                  and suite["independence_profile_sha256"] == identity["independence_profile"]["sha256"]
+                  and journal["verified"] and not current_issues and current.head == journal["head"])
     if not consistent and outcome in {PASS, NOT_JUDGED}:
         outcome = INCOMPLETE
+    prior = manifest["prior_attempts"]
     record = {
         "schema_version": SUITE_RECORD_SCHEMA_VERSION,
         "design_id": DESIGN_ID,
@@ -982,11 +1158,15 @@ def build_suite_record(suite: dict, *, run: ReleaseRun) -> dict:
         "pre_dispatch_manifest_sha256": run.manifest_sha256,
         "sealed_set_sha256": identity["sealed_dataset_sha256"],
         "attempt": manifest["attempt"],
-        "prior_outcomes": [item["suite_outcome"] for item in manifest["prior_attempts"]],
+        "prior_outcomes": [item["suite_outcome"] for item in prior],
         "suite_outcome": outcome,
         "independence_profile_sha256": identity["independence_profile"]["sha256"],
         "judge_separation_established": run.judge_separation_established,
         "v3_error_independence": run.v3_error_independence,
+        "prior_sealed_set_sha256s": [item["sealed_dataset_sha256"] for item in prior],
+        "prior_attempts_sha256": _digest(prior),
+        "dispatch_journal_head": journal["head"],
+        "manifest_commit_ref": deepcopy(journal["commit_ref"]),
     }
     record["record_sha256"] = record_sha256(record)
     problems = check_suite_record(record)

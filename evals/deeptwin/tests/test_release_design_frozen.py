@@ -1,4 +1,4 @@
-"""T076: the release-v1..v4 qualification, independence and lens-effect designs are frozen.
+"""T076: the release-v1..v5 qualification, independence and lens-effect designs are frozen.
 
 A changed file is a new design version, never a silent edit of the frozen one; and the
 frozen designs never admit the calibration cases or a same-model judge as independent.
@@ -131,16 +131,44 @@ def _record(schema, **overrides):
         "critic_configuration_digest": "c" * 64, "pre_dispatch_manifest_sha256": "a" * 64,
         "sealed_set_sha256": "d" * 64, "attempt": 1, "prior_outcomes": [], "suite_outcome": "pass",
         "independence_profile_sha256": "b" * 64, "judge_separation_established": True,
-        "v3_error_independence": "unverified",
+        "v3_error_independence": "unverified", "prior_sealed_set_sha256s": [],
+        "prior_attempts_sha256": hashlib.sha256(b"[]").hexdigest(), "dispatch_journal_head": "e" * 64,
+        "manifest_commit_ref": {"kind": "git_commit", "ref": "0123456789abcdef0123456789abcdef01234567"},
     }
     record.update(overrides)
     record["record_sha256"] = suite_record_sha256(record)
     return record
 
 
-def test_the_product_gate_accepts_exactly_the_v4_suite_record_schema():
-    # Audit 3 moved the gate from v3 to v4 records (this test read v3 before; the v3
-    # schema itself is unchanged and still pinned by release-v3/FROZEN.json).
+V4 = ROOT / "evals/deeptwin/qualification/release-v4"
+V5 = ROOT / "evals/deeptwin/qualification/release-v5"
+V4_FROZEN_IN_COMMIT = "fb718b6"  # the commit that added release-v4/FROZEN.json (git log --diff-filter=A)
+# Code that release-v4/FROZEN.json pins and that audit 4 changed for release-v5. v4's frozen JSON is
+# never edited, so for these files its recorded hashes are checked against the file as committed in
+# fb718b6 (git show fb718b6:<path>), not against the working tree; release-v5/FROZEN.json pins the
+# current files.
+V5_CHANGED_CODE = frozenset({
+    GATE, "evals/deeptwin/verifiers/sealed_critic.py", "evals/deeptwin/verifiers/q01_core.py",
+    "evals/deeptwin/q01_release_manifest.py", "evals/deeptwin/harness/q01_harness.py",
+})
+
+
+def _v4_bytes(path):
+    try:
+        return subprocess.run(["git", "show", f"{V4_FROZEN_IN_COMMIT}:{path}"], cwd=ROOT, capture_output=True,
+                              check=True, timeout=60).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None  # e.g. a shallow checkout without fb718b6: the recorded hash still stands
+
+
+def _file_set_sha256(hashes):
+    return hashlib.sha256(json.dumps(hashes, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+                                     allow_nan=False).encode("utf-8")).hexdigest()
+
+
+def test_the_product_gate_accepts_exactly_the_v5_suite_record_schema():
+    # Audit 3 moved the gate to v4 records and audit 4 to v5 records (this test read v3, then v4,
+    # before; those schemas are unchanged and still pinned by their FROZEN.json).
     from jsonschema import Draft202012Validator
 
     from app.services.critic_qualification import (
@@ -149,29 +177,36 @@ def test_the_product_gate_accepts_exactly_the_v4_suite_record_schema():
         V3_VERIFYING_DESIGN_IDS,
         CriticQualificationError,
         critic_qualification_from_suite,
+        suite_record_sha256,
     )
 
-    schema = json.loads((V4 / "suite_record.schema.json").read_text())
+    schema = json.loads((V5 / "suite_record.schema.json").read_text())
     record = _record(schema)
     assert Draft202012Validator(schema).is_valid(record)
     assert set(schema["required"]) == set(record)
     assert schema["properties"]["schema_version"]["const"] == SUITE_RECORD_SCHEMA_VERSION
-    assert RELEASE_DESIGN_IDS == {schema["properties"]["design_id"]["const"]} == {"q01-release-v4"}
+    assert SUITE_RECORD_SCHEMA_VERSION == "q01-release-suite-verdict-v4"
+    assert RELEASE_DESIGN_IDS == {schema["properties"]["design_id"]["const"]} == {"q01-release-v5"}
     assert V3_VERIFYING_DESIGN_IDS == frozenset()
-    # a pass is a scoped pass, never a qualification, whatever the V3 field says
-    for v3 in ("unverified", "verified"):
-        state = critic_qualification_from_suite(_record(schema, v3_error_independence=v3), "c" * 64)
-        assert (state.status, state.reason) == ("scoped_pass", "design_cannot_verify_v3")
+    # a pass is a scoped pass, never a qualification; a V3 claim the schema forbids is refused
+    state = critic_qualification_from_suite(record, "c" * 64)
+    assert (state.status, state.reason) == ("scoped_pass", "design_cannot_verify_v3")
     assert not Draft202012Validator(schema).is_valid(_record(schema, v3_error_independence="verified"))
+    with pytest.raises(CriticQualificationError, match="V3 unverified"):
+        critic_qualification_from_suite(_record(schema, v3_error_independence="verified"), "c" * 64)
     with pytest.raises(CriticQualificationError, match="record sha256"):
         critic_qualification_from_suite({**record, "record_sha256": "e" * 64}, "c" * 64)
-    # a v3 record is no longer a release design
+    # a v3 design id is not a release design, and a v4-shaped record is not read at all
     v3 = json.loads((V3 / "suite_record.schema.json").read_text())
-    old = _record(v3, v3_error_independence="verified")
-    assert critic_qualification_from_suite(old, "c" * 64).status == "unqualified"
-
-
-V4 = ROOT / "evals/deeptwin/qualification/release-v4"
+    assert critic_qualification_from_suite(_record(v3, v3_error_independence="verified"), "c" * 64).status == \
+        "unqualified"
+    v4 = json.loads((V4 / "suite_record.schema.json").read_text())
+    old = {key: value for key, value in _record(v4).items() if key in v4["required"]}
+    old["schema_version"] = v4["properties"]["schema_version"]["const"]
+    old["record_sha256"] = suite_record_sha256(old)
+    assert Draft202012Validator(v4).is_valid(old)
+    with pytest.raises(CriticQualificationError, match="exact suite verdict record"):
+        critic_qualification_from_suite(old, "c" * 64)
 
 
 def test_release_v4_pins_every_version_the_gate_the_verifier_and_the_harness():
@@ -189,24 +224,32 @@ def test_release_v4_pins_every_version_the_gate_the_verifier_and_the_harness():
     ]
     for path in required:
         assert path in manifest["files"], path
+    assert V5_CHANGED_CODE <= set(manifest["files"])
     for path, digest in manifest["files"].items():
+        if path in V5_CHANGED_CODE:
+            # pinned by v4 as it was at the v4 freeze (fb718b6); changed since only as release-v5
+            historical = _v4_bytes(path)
+            if historical is not None:
+                assert hashlib.sha256(historical).hexdigest() == digest, path
+            assert path in json.loads((V5 / "FROZEN.json").read_text())["files"], path
+            continue
         assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest, path
 
 
-def test_release_v4_records_the_verifier_and_harness_that_exist():
-    from evals.deeptwin.harness.q01_harness import harness_identity
-    from evals.deeptwin.verifiers.sealed_critic import VERIFIER_FILES, verifier_identity
-
+def test_release_v4_records_the_verifier_and_harness_it_froze():
     design = json.loads((V4 / "qualification_design.json").read_text())
     manifest = json.loads((V4 / "FROZEN.json").read_text())
-    state = design["verifier"]["state_at_freeze"]
-    assert state["exists"] is True and state["version"] == verifier_identity()["version"]
-    assert state["file_set_sha256"] == verifier_identity()["sha256"] == manifest["verifier"]["file_set_sha256"]
-    assert set(state["files"]) == set(VERIFIER_FILES) >= {"app/critic_contract.py", "app/critic_audit.py"}
-    for path, digest in state["files"].items():
-        assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest, path
-    harness = design["verifier"]["harness_at_freeze"]
-    assert harness["file_set_sha256"] == harness_identity()["sha256"] == manifest["harness"]["file_set_sha256"]
+    state, harness = design["verifier"]["state_at_freeze"], design["verifier"]["harness_at_freeze"]
+    assert state["exists"] is True and state["version"] == "q01-sealed-verifier-2"
+    assert state["file_set_sha256"] == manifest["verifier"]["file_set_sha256"] == _file_set_sha256(state["files"])
+    assert harness["version"] == "q01-harness-2"
+    assert harness["file_set_sha256"] == manifest["harness"]["file_set_sha256"] == _file_set_sha256(
+        harness["files"])
+    # every recorded file hash is the file at the v4 freeze commit (the working tree for unchanged files)
+    for path, digest in {**state["files"], **harness["files"]}.items():
+        data = _v4_bytes(path) if path in V5_CHANGED_CODE else (ROOT / path).read_bytes()
+        if data is not None:
+            assert hashlib.sha256(data).hexdigest() == digest, path
 
 
 def test_release_v4_resolves_the_third_audit():
@@ -236,11 +279,94 @@ def test_release_v4_resolves_the_third_audit():
     assert "one run that covers all arms" in effects["single_use"]
 
 
-def test_frozen_designs_before_v4_are_byte_identical_to_their_freeze():
-    # v1, v2 and v3 files and lens-effects-v1..v3 are never edited in place
-    for manifest_path in (MANIFEST, MANIFEST_V2, V3 / "FROZEN.json"):
+def test_frozen_designs_before_v5_are_byte_identical_to_their_freeze():
+    # v1..v4 files and lens-effects-v1..v4 are never edited in place
+    for manifest_path in (MANIFEST, MANIFEST_V2, V3 / "FROZEN.json", V4 / "FROZEN.json"):
         manifest = json.loads(manifest_path.read_text())
         for path, digest in manifest["files"].items():
-            if path == GATE:
-                continue  # checked against bd6a976 in the v3 test above
+            if path == GATE or (manifest_path.parent == V4 and path in V5_CHANGED_CODE):
+                continue  # checked against bd6a976 / fb718b6 in the v3 and v4 tests above
             assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest, path
+
+
+# ---------------------------------------------------------------- release-v5 (audit 4 of release-v4)
+
+
+def test_release_v5_pins_every_version_every_manifest_the_gate_the_verifier_and_the_harness():
+    manifest = json.loads((V5 / "FROZEN.json").read_text())
+    assert manifest["release_v4_frozen_in_commit"] == V4_FROZEN_IN_COMMIT
+    required = [
+        *(f"evals/deeptwin/qualification/release-v5/{name}" for name in (
+            "qualification_design.json", "independence_profile.json", "sealed_expectation.schema.json",
+            "pre_dispatch_manifest.schema.json", "suite_record.schema.json")),
+        *(f"evals/deeptwin/effects/lens-effects-v{version}.json" for version in (1, 2, 3, 4, 5)),
+        *(f"evals/deeptwin/qualification/release-v{version}/FROZEN.json" for version in (1, 2, 3, 4)),
+        *(f"evals/deeptwin/qualification/release-v4/{name}" for name in (
+            "qualification_design.json", "independence_profile.json", "sealed_expectation.schema.json",
+            "pre_dispatch_manifest.schema.json", "suite_record.schema.json")),
+        GATE, *V5_CHANGED_CODE, "app/critic_contract.py", "app/critic_audit.py",
+    ]
+    for path in required:
+        assert path in manifest["files"], path
+    for path, digest in manifest["files"].items():
+        assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest, path
+
+
+def test_release_v5_records_the_verifier_and_harness_that_exist():
+    from evals.deeptwin.harness.q01_harness import HARNESS_FILES, harness_identity
+    from evals.deeptwin.verifiers.sealed_critic import VERIFIER_FILES, verifier_identity
+
+    design = json.loads((V5 / "qualification_design.json").read_text())
+    manifest = json.loads((V5 / "FROZEN.json").read_text())
+    state = design["verifier"]["state_at_freeze"]
+    assert state["exists"] is True and state["version"] == verifier_identity()["version"] == "q01-sealed-verifier-3"
+    assert state["file_set_sha256"] == verifier_identity()["sha256"] == manifest["verifier"]["file_set_sha256"]
+    assert set(state["files"]) == set(VERIFIER_FILES) >= {"app/critic_contract.py", "app/critic_audit.py"}
+    harness = design["verifier"]["harness_at_freeze"]
+    assert harness["version"] == harness_identity()["version"] == "q01-harness-3"
+    assert harness["file_set_sha256"] == harness_identity()["sha256"] == manifest["harness"]["file_set_sha256"]
+    assert set(harness["files"]) == set(HARNESS_FILES)
+    for path, digest in {**state["files"], **harness["files"]}.items():
+        assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest, path
+    v4 = json.loads((V4 / "FROZEN.json").read_text())
+    assert v4["verifier"]["file_set_sha256"] != state["file_set_sha256"]  # a new verifier is a new version
+    assert v4["harness"]["file_set_sha256"] != harness["file_set_sha256"]
+
+
+def test_release_v5_resolves_the_fourth_audit():
+    design = json.loads((V5 / "qualification_design.json").read_text())
+    profile = json.loads((V5 / "independence_profile.json").read_text())
+    effects = json.loads((ROOT / "evals/deeptwin/effects/lens-effects-v5.json").read_text())
+    schema = json.loads((V5 / "pre_dispatch_manifest.schema.json").read_text())
+    record = json.loads((V5 / "suite_record.schema.json").read_text())
+    assert design["design_id"] == profile["design_id"] == "q01-release-v5"
+    assert schema["properties"]["schema"]["const"] == "q01-pre-dispatch-manifest-3"
+    # B1: the dispatch journal, the planned slots, and the slot fixed before dispatch
+    identity = schema["properties"]["run_identity"]
+    assert {"planned_slots", "dispatch_journal"} <= set(identity["required"])
+    journal = design["pre_dispatch"]["dispatch_journal"]
+    assert "hash-chained" in journal["requirement"] and "before the trial's first read or call" in journal["write"]
+    assert "equal the journal exactly" in journal["verify"]
+    assert "journalled trial whose result is not submitted" in design["acceptance"]["suite_outcome"]["incomplete"]
+    assert "dispatch_journal_head" in record["required"]
+    # B2: a spent set is refused and prior sets travel into the suite record
+    assert "sealed_expectations_sha256" in schema["$defs"]["prior_attempts"]["items"]["required"]
+    assert "qualification_sets" in schema["properties"]["lens_effect"]["oneOf"][1]["required"]
+    assert {"prior_sealed_set_sha256s", "prior_attempts_sha256"} <= set(record["required"])
+    assert "refuses a run whose sealed_dataset_sha256 or sealed_expectations_sha256" in design["pre_dispatch"][
+        "spent_sets"]
+    # N3: the commit reference and its post-verdict audit item
+    assert "manifest_commit_ref" in record["required"]
+    assert any("before the first ledger event" in item for item in design["acceptance"]["post_verdict_audit"])
+    # N4: judge separation
+    assert "non-null prompt digest" in profile["judge_separation"]["requirement"]
+    assert "the sealing step" in profile["judge_separation"]["excluded_as_judge"]
+    # N5: the gate refuses schema-invalid records; V3 stays unverifiable
+    assert record["properties"]["v3_error_independence"]["const"] == "unverified"
+    assert "refuses (does not cap)" in design["acceptance"]["what_a_pass_confers"]
+    assert profile["judge_separation"]["established"] is False
+    assert profile["v3_error_independence"]["verifiable_under_this_design"] is False
+    # N6: lens-effect manifest checks
+    assert "interleaved per case" in effects["pre_dispatch"]["order"]
+    assert "no two arms carry the same lens pack" in effects["pre_dispatch"]["per_arm"]
+    assert "cannot execute" in effects["execution"]

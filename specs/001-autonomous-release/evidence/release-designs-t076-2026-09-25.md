@@ -110,3 +110,56 @@ Still not true:
 - Issued results are recognised only within the verifying process.
 
 T076 stays open until an independent audit of release-v4 passes.
+
+
+## Audit 4 (of release-v4): AUDIT FAIL → release-v5
+
+A fourth independent audit of release-v4 found two blocking problems (B1, B2) and seven non-blocking ones (N1–N7). release-v1..v4 and `lens-effects-v1..v4.json` are unchanged (byte-identical to their freezes). v4's `FROZEN.json` pins the gate, the verifier modules, `q01_release_manifest.py` and the harness, so changing them made a new design version: **release-v5** (`evals/deeptwin/qualification/release-v5/`, `evals/deeptwin/effects/lens-effects-v5.json`, manifest `release-v5/FROZEN.json`). That manifest pins v1–v5, every earlier manifest, the gate, the verifier modules (`sealed_critic.py` `q01-sealed-verifier-3`, `q01_core.py`, `q01_release_manifest.py`, `app/critic_contract.py`, `app/critic_audit.py`) and the harness (`q01_harness.py` `q01-harness-3`), and records the v4 freeze commit (`fb718b6`). v4's manifest still records the code as it was at that commit. Its guard tests now check those hashes against `git show fb718b6:<path>` for the five changed files, and a comment explains why. The v3 gate check against `bd6a976` is unchanged.
+
+| Finding | release-v5 response |
+|---|---|
+| B1: best 3 of N trials could pass. The caller assigned the repetition at verify time (`verify_trial(..., repetition=...)`), the harness never bound a trial to a (case, repetition) slot, and nothing listed every trial dispatched under a manifest. | Every manifest (schema v3) fixes `run_identity.planned_slots` (`case_order` × 3, case-major, in order; the check refuses any other list) and `run_identity.dispatch_journal.path`. The harness writes an append-only, hash-chained JSON-lines dispatch journal (`q01_harness.DispatchJournal`). The header binds the manifest sha256, the commit reference and the planned-slot digest. Each `dispatch` entry holds the trial id and its slot, with `prev` and `entry_sha256`. The harness writes an entry under `flock` with `O_APPEND` and `fsync` before the trial's first read or call, and only for the next planned slot. Anything else (repeated, out of order, extra, no slot left) is refused without a read or a call. The slot is fixed in `PreDispatch.repetition` and recorded in the trial record. The entry sha256 is recorded in the record and bound into every frozen call's code hashes in the durable ledger. `verify_trial` reads the repetition from the record's journalled slot, refuses a caller value that differs, and requires the trial to be in the journal with the same slot, entry sha256 and commit reference, and bound in the ledger. `verify_suite` requires the results to equal the journal exactly (`journalled_trial_not_submitted`, `result_not_in_dispatch_journal`) and the journal to follow the planned slots (`dispatch_journal:out_of_planned_order`, `dispatch_journal:unplanned_slot`). The journal head goes into the suite record. `q01_release_manifest.read_journal` reads and checks the journal (canonical lines, chain, unique trial ids), so the verifier never imports the harness. |
+| B2: a spent sealed set could be rerun under a verifying manifest. | Prior attempts now carry `sealed_expectations_sha256`. The manifest check refuses a run whose `sealed_dataset_sha256` or `sealed_expectations_sha256` equals either sha of any prior attempt, and applies the same check to each lens-effect arm's prior attempts. `lens_effect.qualification_sets` lists the qualification sets, and an effect set equal to any of them is refused. The suite record (`q01-release-suite-verdict-v4`) carries `prior_sealed_set_sha256s` and `prior_attempts_sha256`. The gate refuses a record whose sealed set is among its listed prior sets, or that does not list one set per prior attempt. |
+| N1: the verifier did not re-derive provider, mode, model and effort. | `q01_core._Trial` exposes each call's durable `selection_json` and code hashes. `sealed_critic` refuses a trial whose selection differs from the critic configuration (`selection_differs_from_configuration`), even if a modified harness skipped its own check. |
+| N2: `proposed_not_driven` was self-reported. | The verifier requires `proposed_not_driven == max(0, len(counterexamples) - max_proposed_chains)`. |
+| N3: the commit of the manifest was not recorded. | `PreDispatch.commit_ref` (`git_commit` with a hex id, or `external_timestamp`) is written to the journal header, every trial record and the suite record (`manifest_commit_ref`). The design lists "committed before the first ledger event" as an explicit post-verdict audit item (`acceptance.post_verdict_audit`). |
+| N4: judge separation gaps. | An `other_provider` judge needs a sha256 prompt digest. A judge identity that names the critic's provider family (a token) or model string is refused. Author, reviewer, sealer and judge are compared case- and whitespace-normalized, and a sealer equal to the judge is refused. |
+| N5: the gate capped schema-invalid records instead of refusing them, and the test-actor hook was reachable in production. | The gate reads only `q01-release-v5` (schema v4 records). It refuses (raises on) a v5 record whose V3 status is anything but the schema's constant `unverified`, and a pass without a journal head or a well-formed commit reference. The test-actor hook is honoured only while `PYTEST_CURRENT_TEST` is set, and may not name a release design, so production cannot reach `qualified`. |
+| N6: lens-effect manifest gaps. | The check now requires that each arm's rules match its id (`single_*`, `mix`; the general checklist has its own non-lens rules), that no two arms carry the same pack, that the arm × case order is interleaved in `case_order` blocks, and that the `no_lens` arm's attempt and prior attempts are the run's. |
+| N7: the sealed bundle loader accepted any `source` or `candidate` key. | `load_sealed_materials` refuses a source other than `{originals, criteria, candidate}`, a candidate other than its six contract fields, and any key, at any depth of the source or an authored counterexample, that the input contract would silently drop. The harness refuses a release case with other source keys. |
+
+Probe tests (every audit-4 probe now fails as it should):
+
+- In `evals/deeptwin/tests/test_sealed_critic_verifier.py`:
+  - best 3 of N as written in the probe gives incomplete: the harness refuses every further trial of a full journal, and the gate gives `unqualified`;
+  - the harness refuses a repeated, out-of-order or extra slot;
+  - a journalled failure with the passing trials of a modified harness submitted gives incomplete, and submitting the failure too gives fail;
+  - a relabelled plain trial, a borrowed slot or journal entry, or a changed commit reference is invalid;
+  - an edited, truncated or torn journal is refused;
+  - a manifest edited after dispatch gives incomplete;
+  - a rerun of a spent set (four variants) is refused, and a spent set in a suite record is refused by the gate;
+  - a model mismatch that a modified harness skipped is caught (N1);
+  - a tampered `proposed_not_driven` is refused (N2);
+  - the judge as a case variant of the author or as the sealer, a judge of the critic's provider or model, and an `other_provider` judge with a null digest are refused (N4);
+  - the new lens-effect checks (N6);
+  - a lens pack hidden under five other keys is refused (N7).
+- In `app/tests/test_environments.py`: schema-invalid v5 records are refused, and the hook is ignored without `PYTEST_CURRENT_TEST`.
+- In `test_release_design_frozen.py`: the v5 guards, and the v4 guards against `fb718b6`.
+
+Verification:
+
+- 407 evals tests pass (all of `evals/deeptwin/tests` except the live files).
+- 45 app tests pass: `test_environments.py`, `test_design_store.py`, `test_design_audit_findings2.py` and `test_reuse_compliance.py`.
+- All data is test-actor synthetic data. Nothing was dispatched to a provider.
+
+Still not true:
+
+- No sealed set, author, reviewer or independent judge exists.
+- V3 cannot be verified under v5.
+- Verdict-to-configuration binding in approval is open.
+- No multi-arm effect dispatcher or arm-aware journal exists, so lens-effects-v5 cannot execute.
+- Issued results are recognised only within the verifying process.
+- The journal, records and ledgers live on the operator's disk. The hash chain, the ledger binding and the post-verdict audit detect edits made through the harness path, but not an operator who rewrites every file.
+- That the commit or timestamp precedes the first dispatch is an audit item, not a code check.
+
+T076 stays open until an independent audit of release-v5 passes.

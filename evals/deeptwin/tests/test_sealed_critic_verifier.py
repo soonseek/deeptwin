@@ -1,19 +1,22 @@
-"""Offline tests of the data-driven release-v4 verifier (``verifiers/sealed_critic.py``).
+"""Offline tests of the data-driven release-v5 verifier (``verifiers/sealed_critic.py``).
 
 TEST-ACTOR DEVELOPMENT DATA ONLY. Every material, candidate, counterexample,
 expectation, lens pack, manifest and independence profile below is synthetic
 development data authored in this file by the test actor (the harness/verifier
 developer) to exercise the verifier's mechanics. It is NOT a sealed set, was not
 written by an independent author, was not reviewed, names no real judge, and can
-never qualify anything: release-v4 forbids the developer as author and requires new,
+never qualify anything: release-v5 forbids the developer as author and requires new,
 sealed, owner-held data. Trials are produced by the real harness with a scripted
 ``(system, user) -> str`` fixture; ``DevJudge`` is a deterministic offline stand-in.
 
-Audit 3 (of release-v3) probes are marked ``BF1``/``BF2``/``BF3``: each forged,
-degenerate or cherry-picked input now fails.
+Audit 3 (of release-v3) probes are marked ``BF1``/``BF2``/``BF3`` and audit 4 (of
+release-v4) probes ``B1``/``B2``/``N1``..``N7``: each forged, degenerate, cherry-picked
+or rerun input now fails. Every release trial here gets its own manifest and dispatch
+journal unless a test says otherwise (``run``), so trials follow the planned slots.
 """
 
 import ast
+import dataclasses
 import hashlib
 import itertools
 import json
@@ -22,12 +25,13 @@ import subprocess
 import sys
 from copy import deepcopy
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from jsonschema import Draft202012Validator
 
 from app.critic_contract import CONTRACT_VERSION, PARSER_VERSION
-from app.services.critic_qualification import critic_qualification_from_suite
+from app.services.critic_qualification import CriticQualificationError, critic_qualification_from_suite
 from evals.deeptwin.harness import q01_harness
 from evals.deeptwin.harness.q01_cases import TASK_DIR, case_id_for, digest, file_bytes
 from evals.deeptwin.harness.q01_harness import (
@@ -39,7 +43,11 @@ from evals.deeptwin.harness.q01_harness import (
 from evals.deeptwin.q01_release_manifest import (
     check_pre_dispatch_manifest,
     critic_configuration_digest,
+    journal_entry_sha256,
+    journal_line,
     lens_refs_and_digests,
+    planned_slots,
+    read_journal,
 )
 from evals.deeptwin.tests.q01_support import make_rig
 from evals.deeptwin.verifiers import sealed_critic as sc
@@ -65,11 +73,14 @@ from evals.deeptwin.verifiers.sealed_critic import (
 )
 
 ROOT = Path(__file__).resolve().parents[3]
-V4 = ROOT / "evals/deeptwin/qualification/release-v4"
+V5 = ROOT / "evals/deeptwin/qualification/release-v5"
 ACCEPT, DEFECT, REJECTED = "accept_without_false_rejection", "required_defect", "rejected_counterexample"
 VALID, UNRESOLVED, INSUFFICIENT = "valid_counterexample", "unresolved_specific_claim", "insufficient_evidence"
 LABEL = "test-actor development data, not sealed"
 JUDGE_IDENTITY = "dev fixture judge (test actor; not independent)"
+JUDGE_PROMPT_DIGEST = hashlib.sha256(b"dev fixture judge prompt (test actor)").hexdigest()
+# TEST-ACTOR commit reference: nothing is committed or timestamped for development data.
+COMMIT_REF = {"kind": "external_timestamp", "ref": "test actor: development only, no commit or timestamp"}
 DEV_LENS_PACK = {"id": "dev-lens", "version": "1", "rules": []}  # the configuration's (empty) lens pack
 
 
@@ -304,7 +315,7 @@ def dev_expectation_cases():
 
 
 def expectation_bytes(cases=None, **top):
-    document = {"schema": "q01-sealed-expectations-1", "design_id": "q01-release-v4",
+    document = {"schema": "q01-sealed-expectations-1", "design_id": "q01-release-v5",
                 "dataset_id": "dev-synthetic-test-actor", "cases": dev_expectation_cases() if cases is None else cases}
     document.update(top)
     return json.dumps(document, ensure_ascii=False, sort_keys=True, indent=1).encode("utf-8")
@@ -412,7 +423,7 @@ class DevJudge:
     """Deterministic offline judge for the dev fixtures only."""
 
     version = "dev-fixture-judge-1"
-    prompt_digest = None
+    prompt_digest = JUDGE_PROMPT_DIGEST
 
     def __init__(self, default="supported", identity=None, **by_prefix):
         self.default, self.by_prefix, self.items = default, by_prefix, []
@@ -452,35 +463,47 @@ def attestation(name):
 
 
 def dev_profile(established=True, **changes):
-    """A TEST-ACTOR successor profile naming release-v4 (never a real judge arrangement)."""
-    profile = json.loads((V4 / "independence_profile.json").read_text(encoding="utf-8"))
+    """A TEST-ACTOR successor profile naming release-v5 (never a real judge arrangement)."""
+    profile = json.loads((V5 / "independence_profile.json").read_text(encoding="utf-8"))
     profile["profile_id"] = "test-actor-dev-profile"
     profile["judge_separation"]["established"] = established
-    profile["judge_separation"]["judge"] = ({"identity": JUDGE_IDENTITY, "prompt_digest": None,
+    profile["judge_separation"]["judge"] = ({"identity": JUDGE_IDENTITY, "prompt_digest": JUDGE_PROMPT_DIGEST,
                                              "option": "other_provider"} if established else None)
     profile.update(changes)
     return json.dumps(profile, ensure_ascii=False, indent=1).encode("utf-8")
 
 
+UNUSED_JOURNAL = "/nonexistent-dev-journal/q01-dispatch-journal.jsonl"  # manifests that never dispatch
+
+
+def order_first(case_id):
+    """A case order that plans ``case_id`` first (the dev expectations' ids, sorted, otherwise)."""
+    return [case_id, *sorted(value for value in CASE.values() if value != case_id)]
+
+
 def dev_manifest(expectations, materials_sha, *, rig, task_dir, attempt=1, prior=(), configuration=None,
-                 digest_=None, order=None, profile_bytes=None, lens_effect=None):
+                 digest_=None, order=None, profile_bytes=None, lens_effect=None, journal=None):
     configuration = configuration or dev_configuration(rig, task_dir)
     profile_bytes = dev_profile() if profile_bytes is None else profile_bytes
+    order = sorted(expectations.cases) if order is None else order
     return {
-        "schema": "q01-pre-dispatch-manifest-2", "design_id": "q01-release-v4",
+        "schema": "q01-pre-dispatch-manifest-3", "design_id": "q01-release-v5",
         "critic_configuration": configuration,
         "critic_configuration_digest": digest_ or critic_configuration_digest(configuration),
         "run_identity": {
             "sealed_dataset_sha256": materials_sha, "sealed_expectations_sha256": expectations.sha256,
-            "judge_identity": JUDGE_IDENTITY, "judge_prompt_digest": None,
+            "judge_identity": JUDGE_IDENTITY, "judge_prompt_digest": JUDGE_PROMPT_DIGEST,
             "independence_profile": {"path": "dev/profile.json",
                                      "sha256": hashlib.sha256(profile_bytes).hexdigest()},
             "harness": harness_identity(), "verifier": verifier_identity(),
-            "case_order": {"seed": "dev", "order": sorted(expectations.cases) if order is None else order},
-            "authority_ref": "test actor: development only, no authority", "usd_hard_stop": 0.01},
+            "case_order": {"seed": "dev", "order": order},
+            "authority_ref": "test actor: development only, no authority", "usd_hard_stop": 0.01,
+            "planned_slots": planned_slots(order),
+            "dispatch_journal": {"path": str(journal or UNUSED_JOURNAL)}},
         "attempt": attempt,
-        "prior_attempts": [{"attempt": index + 1, "design_id": "q01-release-v4", "sealed_dataset_sha256": "4" * 64,
-                            "suite_outcome": outcome} for index, outcome in enumerate(prior)],
+        "prior_attempts": [{"attempt": index + 1, "design_id": "q01-release-v5", "sealed_dataset_sha256": "4" * 64,
+                            "sealed_expectations_sha256": "3" * 64, "suite_outcome": outcome}
+                           for index, outcome in enumerate(prior)],
         "attestations": {"author": attestation("test actor as author"),
                          "reviewer": attestation("test actor as reviewer"),
                          "sealing": attestation("test actor as sealer")},
@@ -492,13 +515,19 @@ def as_bytes(manifest):
     return json.dumps(manifest, indent=1).encode("utf-8")
 
 
+# loaded release runs by manifest path and by trial id, so ``verify`` checks each trial
+# against the manifest (and dispatch journal) it was dispatched under
+LOADED, RUNS = {}, {}
+
+
 def release_setup(world, directory, *, manifest=None, manifest_sha=None, task_dir=None, profile_bytes=None,
-                  committed=None, lens_pack=None, harness=None, **manifest_options):
-    """(PreDispatch, loaded ReleaseRun) for one dev manifest written under ``directory``."""
+                  committed=None, lens_pack=None, harness=None, repetition=1, commit_ref=None, **manifest_options):
+    """(PreDispatch, loaded ReleaseRun) for one dev manifest and its journal under ``directory``."""
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     profile_bytes = dev_profile() if profile_bytes is None else profile_bytes
     if manifest is None:
+        manifest_options.setdefault("journal", directory / "dispatch-journal.jsonl")
         manifest = dev_manifest(world["expectations"], manifest_sha or world["manifest_sha"], rig=world["rig"],
                                 task_dir=task_dir or world["task_dir"], profile_bytes=profile_bytes,
                                 **manifest_options)
@@ -507,8 +536,15 @@ def release_setup(world, directory, *, manifest=None, manifest_sha=None, task_di
     path.write_bytes(data)
     committed = committed or hashlib.sha256(data).hexdigest()
     pre_dispatch = PreDispatch(path, committed, harness_identity() if harness is None else harness,
-                               deepcopy(DEV_LENS_PACK) if lens_pack is None else lens_pack)
-    return pre_dispatch, load_release_run(data, committed_sha256=committed, profile_bytes=profile_bytes)
+                               deepcopy(DEV_LENS_PACK) if lens_pack is None else lens_pack, repetition,
+                               deepcopy(COMMIT_REF) if commit_ref is None else commit_ref)
+    loaded = load_release_run(data, committed_sha256=committed, profile_bytes=profile_bytes)
+    LOADED[path] = loaded
+    return pre_dispatch, loaded
+
+
+def scratch(world):
+    return world["root"] / f"scratch-{uuid4().hex[:12]}"
 
 
 @pytest.fixture(scope="module")
@@ -523,15 +559,25 @@ def world(tmp_path_factory):
     return state
 
 
-def run(world, key, critic=None, task_dir=None, pre_dispatch=None):
+def run(world, key, critic=None, task_dir=None, pre_dispatch=None, repetition=None):
+    """One release trial of ``key``. Without ``pre_dispatch`` it gets a fresh manifest and journal
+    planning ``key`` first, so it is journalled as slot (key, 1)."""
     rig = world["rig"]
-    return run_release_trial(CASE[key], critic or DevCritic(), base_dir=rig.base, config=rig.config,
-                             pre_dispatch=pre_dispatch or world["pre_dispatch"],
-                             task_dir=task_dir or world["task_dir"])
+    if pre_dispatch is None:
+        assert task_dir is None, "a trial in another environment needs its own manifest"
+        pre_dispatch, _loaded = release_setup(world, scratch(world), order=order_first(CASE[key]))
+    if repetition is not None:
+        pre_dispatch = dataclasses.replace(pre_dispatch, repetition=repetition)
+    record = run_release_trial(CASE[key], critic or DevCritic(), base_dir=rig.base, config=rig.config,
+                               pre_dispatch=pre_dispatch, task_dir=task_dir or world["task_dir"])
+    if Path(pre_dispatch.manifest_path) in LOADED:
+        RUNS[record["trial_id"]] = LOADED[Path(pre_dispatch.manifest_path)]
+    return record
 
 
 def verify(world, record, judge=None, **kwargs):
-    kwargs.setdefault("run", world["run"])
+    if "run" not in kwargs:
+        kwargs["run"] = (RUNS.get(record.get("trial_id")) if type(record) is dict else None) or world["run"]
     return verify_trial(record, expectations=world["expectations"], materials=world["materials"], judge=judge,
                         **kwargs)
 
@@ -744,9 +790,10 @@ def test_judge_outcomes(world, status, verdict, cause):
 def test_invalid_trials_are_attributed_and_unscored(world):
     def down(_system, _user):
         raise RuntimeError("down")
-    result = verify(world, run(world, ("d-alt", None), down), DevJudge(), repetition=2)
+    result = verify(world, run(world, ("d-alt", None), down), DevJudge(), repetition=1)
     invalid(result, "trial_transport_or_fixture_error")
-    assert (result["case_id"], result["repetition"], result["boundary"]) == (CASE[("d-alt", None)], 2, ACCEPT)
+    assert (result["case_id"], result["repetition"], result["boundary"]) == (CASE[("d-alt", None)], 1, ACCEPT)
+    assert result["journal_entry_sha256"]  # journalled before its first call, so attributable
     record = run(world, ("d-q3", None))
     copy = deepcopy(record)
     copy["calls"][0]["ledger"]["details"]["parsed"]["findings"][0]["status"] = "fail"
@@ -767,12 +814,13 @@ def test_material_mismatch_and_answer_leak_are_derived_from_the_sealed_set(world
     # a manifest pinning the altered environment lets the harness dispatch; the verifier
     # still compares every visible input with the sealed bundle
     altered, sha = make_task(tmp_path / "altered", alter)
-    pre_dispatch, other_run = release_setup(world, tmp_path / "altered", manifest_sha=sha, task_dir=altered)
+    pre_dispatch, other_run = release_setup(world, tmp_path / "altered", manifest_sha=sha, task_dir=altered,
+                                            order=order_first(CASE[("d-good", None)]))
     record = run(world, ("d-good", None), task_dir=altered, pre_dispatch=pre_dispatch)
     assert record["status"] == "completed"
     invalid(verify(world, record, DevJudge(), run=other_run), "material_mismatch")
     # the same record against the world's manifest is not a trial of that manifest
-    invalid(verify(world, record, DevJudge()), "not_a_release_trial_of_this_manifest")
+    invalid(verify(world, record, DevJudge(), run=world["run"]), "not_a_release_trial_of_this_manifest")
 
     basis = world["expectations"].cases[CASE[("d-q3", None)]].expectation.basis
 
@@ -780,7 +828,8 @@ def test_material_mismatch_and_answer_leak_are_derived_from_the_sealed_set(world
         cases[[c["case_id"] for c in cases].index(CASE[("d-good", None)])]["source"]["candidate"]["control"][
             "notes"].append(basis)
     leaked, sha = make_task(tmp_path / "leaked", leak)
-    pre_dispatch, other_run = release_setup(world, tmp_path / "leaked", manifest_sha=sha, task_dir=leaked)
+    pre_dispatch, other_run = release_setup(world, tmp_path / "leaked", manifest_sha=sha, task_dir=leaked,
+                                            order=order_first(CASE[("d-good", None)]))
     record = run(world, ("d-good", None), task_dir=leaked, pre_dispatch=pre_dispatch)
     assert record["status"] == "completed"  # the harness scan does not know sealed answers
     invalid(verify(world, record, DevJudge(), run=other_run), "answer_leak")
@@ -799,26 +848,30 @@ def test_leak_markers_come_from_the_sealed_set_not_calibration_sources(world):
 # ---------------------------------------------------------------- full dev runs (3 repetitions, real trials)
 
 
-def _full(world, directory, profile_bytes):
-    """Every dev case x 3 repetitions as real release trials, plus one fail, invalid and
-    not_judged variant, all under one manifest."""
+KEY = {case_id: key for key, case_id in CASE.items()}
+
+
+def _full(world, directory, profile_bytes, critics=None):
+    """Every dev case x 3 repetitions as real release trials under one manifest, dispatched in
+    its planned slot order and journalled; ``critics`` maps a slot to a scripted critic.
+
+    The fail, invalid and not_judged variants re-verify journalled trials with another judge
+    (a judge that finds an item unsupported, a judge fault, no judge), so every variant is a
+    result of a trial that is in the journal."""
     pre_dispatch, loaded = release_setup(world, directory, profile_bytes=profile_bytes)
-
-    def check(key, rep, critic=None, judge="dev"):
-        record = run(world, key, critic, pre_dispatch=pre_dispatch)
-        return verify(world, record, DevJudge() if judge == "dev" else judge, repetition=rep, run=loaded)
-
-    def down(_system, _user):
-        raise RuntimeError("down")
-
-    passes = {(key, rep): check(key, rep) for key in CASE_KEYS for rep in (1, 2, 3)}
+    records, passes = {}, {}
+    for slot in loaded.identity["planned_slots"]:
+        key, rep = KEY[slot["case_id"]], slot["repetition"]
+        critic = (critics or {}).get((key, rep))
+        records[(key, rep)] = run(world, key, critic, pre_dispatch=pre_dispatch, repetition=rep)
+        passes[(key, rep)] = verify(world, records[(key, rep)], DevJudge(), run=loaded)
     variants = {
-        FAIL: check(CASE_KEYS[0], 1, DevCritic(review=set_finding(
-            "Q2", "fail", [("brief.md", "handoff"), ("@candidate", "/handoffs/0/mode")]))),
-        INVALID: check(CASE_KEYS[1], 1, down),
-        NOT_JUDGED: check(CASE_KEYS[2], 1, judge=None),
+        FAIL: verify(world, records[(CASE_KEYS[0], 1)], DevJudge(accept="not_supported"), run=loaded),
+        INVALID: verify(world, records[(CASE_KEYS[1], 1)], DevJudge(q7=RuntimeError("judge down")), run=loaded),
+        NOT_JUDGED: verify(world, records[(CASE_KEYS[2], 1)], None, run=loaded),
     }
-    return {"run": loaded, "pre_dispatch": pre_dispatch, "passes": passes, "variants": variants}
+    return {"run": loaded, "pre_dispatch": pre_dispatch, "records": records, "passes": passes,
+            "variants": variants}
 
 
 @pytest.fixture(scope="module")
@@ -843,7 +896,7 @@ def passes(full_run):
 
 
 def oracle(fail, invalid_, missing, not_judged, mismatch, stopped, separated):
-    """release-v4 acceptance.suite_outcome, transcribed from the frozen design text."""
+    """release-v5 acceptance.suite_outcome, transcribed from the frozen design text."""
     if fail:
         return "fail"
     if invalid_ or missing or stopped or mismatch:
@@ -887,16 +940,13 @@ def test_case_pass_needs_every_repetition_valid_and_passing(world, full):
     ids = [CASE[key] for key in CASE_KEYS]
     suite = verify_suite(base[:-1], **options)
     assert suite["suite_outcome"] == "incomplete" and "missing_repetition" in suite["reasons"]
+    assert "journalled_trial_not_submitted" in suite["reasons"]
     assert suite["cases"][ids[-1]]["case_pass"] is False
     assert sum(case["case_pass"] for case in suite["cases"].values()) == len(ids) - 1
-    # a replacement for a slot is never absorbed
-    extra = verify(world, run(world, CASE_KEYS[0], pre_dispatch=full["pre_dispatch"]), DevJudge(), repetition=1,
-                   run=full["run"])
+    # a second result for a slot is never absorbed
+    extra = verify(world, full["records"][(CASE_KEYS[0], 1)], DevJudge(), run=full["run"])
     suite = verify_suite([*base, extra], **options)
     assert suite["suite_outcome"] == "incomplete" and "duplicate_repetition" in suite["reasons"]
-    fourth = verify(world, run(world, CASE_KEYS[0], pre_dispatch=full["pre_dispatch"]), DevJudge(), repetition=4,
-                    run=full["run"])
-    assert "unplanned_repetition" in verify_suite([*base, fourth], **options)["reasons"]
     # a fail keeps precedence over every incomplete cause
     failing = [full["variants"][FAIL], *base[1:-1]]
     assert verify_suite(failing, **options, stopped=True)["suite_outcome"] == "fail"
@@ -916,18 +966,25 @@ def test_bf2_repetitions_are_fixed_at_three_not_caller_supplied(world, full):
 
 
 def test_bf2_one_trial_reused_for_three_repetitions_is_refused(world, full):
-    record = run(world, CASE_KEYS[3], pre_dispatch=full["pre_dispatch"])
-    reused = [verify(world, record, DevJudge(), repetition=rep, run=full["run"]) for rep in (1, 2, 3)]
+    record = full["records"][(CASE_KEYS[3], 1)]
+    # B1: the repetition is the record's journalled slot; a caller cannot relabel it
+    for rep in (2, 3):
+        invalid(verify(world, record, DevJudge(), repetition=rep, run=full["run"]),
+                "repetition_differs_from_journalled_slot")
+    reused = [verify(world, record, DevJudge(), run=full["run"]) for _ in (1, 2, 3)]
     assert len({result["trial_id"] for result in reused}) == 1
+    assert {result["repetition"] for result in reused} == {1}
     assert all(result["verdict"] == PASS and result["ledger_head"] and result["trial_record_sha256"]
                for result in reused)
     results = [result for (key, _rep), result in full["passes"].items() if key != CASE_KEYS[3]] + reused
     suite = verify_suite(results, expectations=world["expectations"], run=full["run"])
-    assert suite["suite_outcome"] == INCOMPLETE and "trial_reused" in suite["reasons"]
+    assert suite["suite_outcome"] == INCOMPLETE
+    assert {"trial_reused", "duplicate_repetition", "missing_repetition",
+            "journalled_trial_not_submitted"} <= set(suite["reasons"])
     # a copy of the record under a fresh trial id does not match its own ledger
     copy = deepcopy(record)
     copy["trial_id"] = copy["run_id"] = "t" + "0" * 32
-    invalid(verify(world, copy, DevJudge(), repetition=2), "evidence_incomplete")
+    invalid(verify(world, copy, DevJudge(), run=full["run"]), "evidence_incomplete")
 
 
 def test_bf2_hand_built_or_altered_results_are_refused(world, full):
@@ -946,9 +1003,9 @@ def test_bf2_hand_built_or_altered_results_are_refused(world, full):
     # a result issued under another manifest (another configuration) is unattributable here
     other_pre, other_run = release_setup(world, world["root"] / "other-config",
                                          configuration=dev_configuration(world["rig"], world["task_dir"],
-                                                                         max_tokens=2000))
-    other = verify(world, run(world, CASE_KEYS[-1], pre_dispatch=other_pre), DevJudge(), repetition=3,
-                   run=other_run)
+                                                                         max_tokens=2000),
+                                         order=order_first(CASE[CASE_KEYS[-1]]))
+    other = verify(world, run(world, CASE_KEYS[-1], pre_dispatch=other_pre), DevJudge(), run=other_run)
     assert other["verdict"] == PASS
     suite = verify_suite([*base[:-1], other], **options)
     assert "unattributable_result" in suite["reasons"] and suite["suite_outcome"] == INCOMPLETE
@@ -1003,8 +1060,8 @@ def test_bf2_judge_separation_comes_only_from_the_pinned_profile(world, full, tm
         assert error in loaded.errors and loaded.judge_separation_established is False
         assert verify_suite(base, expectations=world["expectations"], run=loaded)["suite_outcome"] == INCOMPLETE
     # a profile that is pinned but does not name this design, or names another judge
-    for profile, error in [(dev_profile(design_id="q01-release-v3"), "profile:does_not_name_this_design"),
-                           (dev_profile(schema="q01-independence-profile-3"), "profile:schema")]:
+    for profile, error in [(dev_profile(design_id="q01-release-v4"), "profile:does_not_name_this_design"),
+                           (dev_profile(schema="q01-independence-profile-4"), "profile:schema")]:
         _pre, loaded = release_setup(world, tmp_path / error.replace(":", "-"), profile_bytes=profile)
         assert error in loaded.errors and loaded.judge_separation_established is False
     other_judge = json.loads(dev_profile())
@@ -1017,13 +1074,12 @@ def test_bf2_judge_separation_comes_only_from_the_pinned_profile(world, full, tm
     _pre, loaded = release_setup(world, tmp_path / "claims-v3", profile_bytes=json.dumps(claims_v3).encode("utf-8"))
     assert "profile:claims_v3_verified_under_a_design_that_cannot_verify_it" in loaded.errors
     assert loaded.v3_error_independence == "unverified"
-    # the pinned (frozen) v4 profile itself establishes nothing
-    pinned = (V4 / "independence_profile.json").read_bytes()
+    # the pinned (frozen) v5 profile itself establishes nothing
+    pinned = (V5 / "independence_profile.json").read_bytes()
     _pre, loaded = release_setup(world, tmp_path / "pinned", profile_bytes=pinned)
     assert loaded.errors == () and loaded.judge_separation_established is False
     # results judged by another judge than run_identity names are not this run's judgement
-    record = run(world, CASE_KEYS[4], pre_dispatch=full["pre_dispatch"])
-    stranger = verify(world, record, DevJudge(identity="another judge"), repetition=3, run=full["run"])
+    stranger = verify(world, full["records"][(CASE_KEYS[4], 3)], DevJudge(identity="another judge"), run=full["run"])
     results = [result for (key, rep), result in full["passes"].items() if (key, rep) != (CASE_KEYS[4], 3)]
     suite = verify_suite([*results, stranger], expectations=world["expectations"], run=full["run"])
     assert suite["suite_outcome"] == INCOMPLETE and "judge_differs_from_run_identity" in suite["reasons"]
@@ -1036,7 +1092,217 @@ def test_unseparated_profile_makes_a_would_be_pass_not_judged(world, unseparated
     assert record["judge_separation_established"] is False and record["suite_outcome"] == NOT_JUDGED
 
 
-# ---------------------------------------------------------------- pre-dispatch manifest (schema v2)
+# ---------------------------------------------------------------- B1 probes (audit 4): best 3 of N, slots, journal
+
+
+@pytest.fixture(scope="module")
+def cherry(world):
+    """A full dev run whose first planned slot (CASE_KEYS[0], 1) genuinely fails (a false rejection)."""
+    failing = DevCritic(review=set_finding("Q2", "fail", [("brief.md", "handoff"), ("@candidate", "/handoffs/0/mode")]))
+    order = order_first(CASE[CASE_KEYS[0]])
+    pre_dispatch, loaded = release_setup(world, world["root"] / "cherry", order=order)
+    records, results = {}, {}
+    for slot in loaded.identity["planned_slots"]:
+        key, rep = KEY[slot["case_id"]], slot["repetition"]
+        critic = failing if (key, rep) == (CASE_KEYS[0], 1) else None
+        records[(key, rep)] = run(world, key, critic, pre_dispatch=pre_dispatch, repetition=rep)
+        results[(key, rep)] = verify(world, records[(key, rep)], DevJudge(), run=loaded)
+    assert results[(CASE_KEYS[0], 1)]["verdict"] == FAIL
+    assert all(result["verdict"] == PASS for slot, result in results.items() if slot != (CASE_KEYS[0], 1))
+    return {"run": loaded, "pre_dispatch": pre_dispatch, "records": records, "results": results}
+
+
+def test_b1_audit_probe_best_3_of_n_never_passes(world, full):
+    """The audit-4 probe as written: 4 trials of one case, one failing; the 3 passing are submitted."""
+    key, pre, loaded = CASE_KEYS[0], full["pre_dispatch"], full["run"]
+    critic = DevCritic(review=set_finding("Q2", "fail", [("brief.md", "handoff"), ("@candidate", "/handoffs/0/mode")]))
+    failing = run(world, key, critic, pre_dispatch=pre, repetition=1)
+    # the manifest's journal already holds every planned slot: the harness sends nothing more
+    assert (failing["status"], failing["cause"]) == ("invalid", "pre_dispatch_manifest_unverified")
+    assert "no_planned_slot_left" in failing["pre_dispatch"]["errors"] and critic.calls == []
+    invalid(verify(world, failing, DevJudge(), repetition=1, run=loaded), "trial_pre_dispatch_manifest_unverified")
+    good = [run(world, key, pre_dispatch=pre, repetition=rep) for rep in (1, 2, 3)]
+    assert all(record["cause"] == "pre_dispatch_manifest_unverified" for record in good)
+    good = [verify(world, record, DevJudge(), repetition=rep, run=loaded) for rep, record in zip((1, 2, 3), good)]
+    others = [result for (k, _), result in full["passes"].items() if k != key]
+    suite = verify_suite(others + good, expectations=world["expectations"], run=loaded)
+    assert suite["suite_outcome"] == INCOMPLETE and "journalled_trial_not_submitted" in suite["reasons"]
+    record = build_suite_record(suite, run=loaded)
+    state = critic_qualification_from_suite(record, record["critic_configuration_digest"])
+    assert (state.status, state.reason) == ("unqualified", "suite_incomplete")
+    assert len(read_journal(Path(loaded.identity["dispatch_journal"]["path"])).dispatches) == 39
+
+
+def test_b1_the_harness_refuses_any_slot_but_the_next_planned_one(world, tmp_path):
+    key = CASE_KEYS[0]
+    pre, loaded = release_setup(world, tmp_path, order=order_first(CASE[key]))
+    journal = Path(loaded.identity["dispatch_journal"]["path"])
+    critic = DevCritic(review=set_finding("Q2", "fail", [("brief.md", "handoff"), ("@candidate", "/handoffs/0/mode")]))
+    first = run(world, key, critic, pre_dispatch=pre, repetition=1)
+    assert first["slot"] == {"case_id": CASE[key], "repetition": 1} == first["pre_dispatch"]["slot"]
+    assert verify(world, first, DevJudge())["verdict"] == FAIL
+    for repetition, error in ((1, "slot_is_not_the_next_planned_slot"), (3, "slot_is_not_the_next_planned_slot"),
+                              (4, "repetition_is_not_a_planned_repetition")):
+        again = DevCritic()
+        record = run(world, key, again, pre_dispatch=pre, repetition=repetition)
+        assert (record["status"], again.calls, record["access_log"]) == ("invalid", [], [])
+        assert error in record["pre_dispatch"]["errors"]
+    other = run(world, CASE_KEYS[1], DevCritic(), pre_dispatch=pre, repetition=1)
+    assert "slot_is_not_the_next_planned_slot" in other["pre_dispatch"]["errors"]
+    state = read_journal(journal)
+    assert state.ok and [entry["trial_id"] for entry in state.dispatches] == [first["trial_id"]]
+    assert state.header["manifest_sha256"] == pre.committed_sha256 and state.header["commit_ref"] == COMMIT_REF
+    second = run(world, key, pre_dispatch=pre, repetition=2)
+    assert second["status"] == "completed" and second["pre_dispatch"]["journal"]["prev_sha256"] == \
+        first["pre_dispatch"]["journal"]["entry_sha256"]
+    # every frozen call is bound to the trial's journal entry in the durable ledger
+    assert verify(world, second, DevJudge())["journal_entry_sha256"] == read_journal(journal).head
+
+
+def test_b1_cherry_picking_around_a_journalled_failure_is_incomplete(world, cherry, monkeypatch):
+    options = {"expectations": world["expectations"], "run": cherry["run"]}
+    key = CASE_KEYS[0]
+    everything = list(cherry["results"].values())
+    assert verify_suite(everything, **options)["suite_outcome"] == FAIL
+    # a modified harness that skips the next-slot rule dispatches a 4th trial of the case
+    monkeypatch.setattr(q01_harness, "slot_errors", lambda *_args: [])
+    fourth = run(world, key, pre_dispatch=cherry["pre_dispatch"], repetition=1)
+    assert fourth["status"] == "completed"
+    passing = verify(world, fourth, DevJudge(), run=cherry["run"])
+    assert passing["verdict"] == PASS and passing["repetition"] == 1
+    best = [passing, *(result for slot, result in cherry["results"].items() if slot != (key, 1))]
+    suite = verify_suite(best, **options)
+    assert suite["suite_outcome"] == INCOMPLETE, suite["reasons"]
+    assert {"journalled_trial_not_submitted", "dispatch_journal:unplanned_slot"} <= set(suite["reasons"])
+    record = build_suite_record(suite, run=cherry["run"])
+    assert record["suite_outcome"] == INCOMPLETE and record["dispatch_journal_head"] is None
+    # submitting the failure as well keeps the fail
+    assert verify_suite([*everything, passing], **options)["suite_outcome"] == FAIL
+
+
+def test_b1_a_trial_outside_the_journal_is_not_a_release_trial(world, full, tmp_path):
+    """Audit-4 probe: a plain (unjournalled) trial relabelled as a release trial of the manifest."""
+    from evals.deeptwin.harness.q01_harness import run_trial
+
+    def carry(cases):  # the plain path reads the lens pack from the case, as a calibration run does
+        for case in cases:
+            case["source"]["lens_pack"] = deepcopy(DEV_LENS_PACK)
+
+    plain_task, _sha = make_task(tmp_path, carry)
+    rig, loaded = world["rig"], full["run"]
+    record = run_trial(CASE[CASE_KEYS[0]], DevCritic(), base_dir=rig.base, config=rig.config, task_dir=plain_task)
+    assert record["status"] == "completed" and "slot" not in record
+    record["pre_dispatch"] = {"manifest_sha256": loaded.manifest_sha256, "errors": []}
+    invalid(verify(world, record, DevJudge(), repetition=1, run=loaded), "repetition_differs_from_journalled_slot")
+    invalid(verify(world, record, DevJudge(), run=loaded), "not_journalled_under_this_manifest")
+    # borrowing the slot and journal entry of a journalled trial does not help
+    donor = full["records"][(CASE_KEYS[0], 1)]
+    record["slot"], record["pre_dispatch"] = deepcopy(donor["slot"]), deepcopy(donor["pre_dispatch"])
+    invalid(verify(world, record, DevJudge(), run=loaded), "not_journalled_under_this_manifest")
+    donor_record = deepcopy(donor)
+    donor_record["pre_dispatch"]["commit_ref"] = {"kind": "git_commit", "ref": "abcdef1"}
+    invalid(verify(world, donor_record, DevJudge(), run=loaded), "commit_ref_differs_from_dispatch_journal")
+
+
+def test_b1_an_edited_or_truncated_journal_is_refused(world, tmp_path):
+    key = CASE_KEYS[1]
+    pre, loaded = release_setup(world, tmp_path, order=order_first(CASE[key]))
+    records = [run(world, key, pre_dispatch=pre, repetition=rep) for rep in (1, 2)]
+    journal = Path(loaded.identity["dispatch_journal"]["path"])
+    original = journal.read_bytes()
+    assert all(verify(world, record, DevJudge())["verdict"] == PASS for record in records)
+    lines = original.splitlines(keepends=True)
+    # the last entry relabelled as repetition 3 with its own hash recomputed: the chain still
+    # holds, but the entry no longer matches the record or the ledger binding
+    entry = json.loads(lines[-1])
+    entry["repetition"] = 3
+    entry["entry_sha256"] = journal_entry_sha256(entry)
+    journal.write_bytes(b"".join(lines[:-1]) + journal_line(entry))
+    invalid(verify(world, records[1], DevJudge()), "not_journalled_under_this_manifest")
+    journal.write_bytes(b"".join(lines[:-1]))  # the second entry removed
+    invalid(verify(world, records[1], DevJudge()), "not_journalled_under_this_manifest")
+    edited = original.replace(b'"repetition":1', b'"repetition":2', 1)
+    journal.write_bytes(edited)  # an edited entry breaks the hash chain
+    assert read_journal(journal).errors == ("journal_chain_broken",)
+    invalid(verify(world, records[0], DevJudge()), "dispatch_journal_unverified")
+    journal.write_bytes(original[:-5])  # a torn tail
+    invalid(verify(world, records[0], DevJudge()), "dispatch_journal_unverified")
+    # and the harness refuses to append to a journal that does not verify
+    blocked = DevCritic()
+    record = run(world, key, blocked, pre_dispatch=pre, repetition=3)
+    assert "dispatch_journal:journal_torn_tail" in record["pre_dispatch"]["errors"] and blocked.calls == []
+    journal.write_bytes(original)
+    assert all(verify(world, record, DevJudge())["verdict"] == PASS for record in records)
+
+
+def test_b1_a_manifest_edited_after_the_first_dispatch_is_not_the_journalled_manifest(world, full):
+    """Audit-4 probe: the manifest is edited (and re-hashed) after its trials were dispatched."""
+    manifest = json.loads(full["pre_dispatch"].manifest_path.read_bytes())
+    manifest["run_identity"]["usd_hard_stop"] = 999.0
+    data = as_bytes(manifest)
+    edited = load_release_run(data, committed_sha256=hashlib.sha256(data).hexdigest(), profile_bytes=dev_profile())
+    assert edited.errors == ()
+    suite = verify_suite(passes(full), expectations=world["expectations"], run=edited)
+    assert suite["suite_outcome"] == INCOMPLETE
+    assert {"unattributable_result", "dispatch_journal:is_for_another_manifest"} <= set(suite["reasons"])
+    invalid(verify(world, full["records"][CASE_KEYS[0], 1], DevJudge(), run=edited),
+            "not_a_release_trial_of_this_manifest")
+
+
+def test_b1_planned_slots_are_case_order_times_three(world):
+    order = sorted(CASE.values())
+    assert planned_slots(order)[:4] == [{"case_id": order[0], "repetition": 1}, {"case_id": order[0], "repetition": 2},
+                                        {"case_id": order[0], "repetition": 3}, {"case_id": order[1], "repetition": 1}]
+    manifest = dev_manifest(world["expectations"], "5" * 64, rig=world["rig"], task_dir=world["task_dir"])
+    for change in (lambda slots: slots.reverse(), lambda slots: slots.pop(), lambda slots: slots.append(slots[0])):
+        broken = deepcopy(manifest)
+        change(broken["run_identity"]["planned_slots"])
+        data = as_bytes(broken)
+        assert "planned_slots_are_not_case_order_times_three" in check_pre_dispatch_manifest(
+            data, committed_sha256=hashlib.sha256(data).hexdigest()).errors
+
+
+# ---------------------------------------------------------------- B2 probes (audit 4): a spent set is never rerun
+
+
+@pytest.mark.parametrize("field,value", [
+    ("sealed_dataset_sha256", "dataset"), ("sealed_expectations_sha256", "expectations"),
+    ("sealed_dataset_sha256", "expectations"), ("sealed_expectations_sha256", "dataset")])
+def test_b2_a_set_spent_by_a_prior_attempt_is_refused(world, tmp_path, field, value):
+    """Audit-4 probe: attempt 2 on the set attempt 1 already spent."""
+    manifest = dev_manifest(world["expectations"], world["manifest_sha"], rig=world["rig"],
+                            task_dir=world["task_dir"], attempt=2, prior=("fail",),
+                            order=order_first(CASE[CASE_KEYS[0]]), journal=tmp_path / "journal.jsonl")
+    current = {"dataset": world["manifest_sha"], "expectations": world["expectations"].sha256}[value]
+    manifest["prior_attempts"][0][field] = current
+    data = as_bytes(manifest)
+    assert "sealed_set_already_spent_by_a_prior_attempt" in check_pre_dispatch_manifest(
+        data, committed_sha256=hashlib.sha256(data).hexdigest()).errors
+    pre, loaded = release_setup(world, tmp_path, manifest=manifest)
+    assert "manifest:sealed_set_already_spent_by_a_prior_attempt" in loaded.errors
+    critic = DevCritic()
+    record = run(world, CASE_KEYS[0], critic, pre_dispatch=pre)
+    assert record["cause"] == "pre_dispatch_manifest_unverified" and critic.calls == []
+    assert not (tmp_path / "journal.jsonl").exists() or not read_journal(tmp_path / "journal.jsonl").dispatches
+
+
+def test_b2_prior_attempts_carry_their_sets_into_the_suite_record(world, full):
+    record = build_suite_record(verify_suite(passes(full), expectations=world["expectations"], run=full["run"]),
+                                run=full["run"])
+    assert record["prior_sealed_set_sha256s"] == [] and record["attempt"] == 1
+    assert record["prior_attempts_sha256"] == hashlib.sha256(b"[]").hexdigest()
+    from app.services.critic_qualification import suite_record_sha256
+    spent = {**record, "attempt": 2, "prior_outcomes": ["fail"], "prior_sealed_set_sha256s": [record["sealed_set_sha256"]]}
+    spent["record_sha256"] = suite_record_sha256(spent)
+    with pytest.raises(CriticQualificationError, match="already spent"):
+        critic_qualification_from_suite(spent, record["critic_configuration_digest"])
+    unlisted = {**record, "attempt": 2, "prior_outcomes": ["fail"]}
+    unlisted["record_sha256"] = suite_record_sha256(unlisted)
+    with pytest.raises(CriticQualificationError, match="prior attempt"):
+        critic_qualification_from_suite(unlisted, record["critic_configuration_digest"])
+
+
+# ---------------------------------------------------------------- pre-dispatch manifest (schema v3)
 
 
 def manifest_errors(world, **options):
@@ -1078,13 +1344,22 @@ def test_manifest_refuses_schema_violations_and_uncommitted_bytes(world):
                    lambda m: m["critic_configuration"].update(lens_refs_and_digests=[]),
                    lambda m: m.pop("attestations"),
                    lambda m: m["attestations"].pop("sealing"),
-                   lambda m: m.update(schema="q01-pre-dispatch-manifest-1"),
-                   lambda m: m.update(design_id="q01-release-v3")):
+                   lambda m: m["run_identity"].pop("planned_slots"),
+                   lambda m: m["run_identity"].pop("dispatch_journal"),
+                   lambda m: m["run_identity"]["dispatch_journal"].update(path="relative/journal.jsonl"),
+                   lambda m: m.update(schema="q01-pre-dispatch-manifest-2"),
+                   lambda m: m.update(design_id="q01-release-v4")):
         broken = deepcopy(manifest)
         mutate(broken)
         data = as_bytes(broken)
         errors = check_pre_dispatch_manifest(data, committed_sha256=hashlib.sha256(data).hexdigest()).errors
         assert errors and errors[0].startswith("manifest_schema"), errors
+    prior = dev_manifest(world["expectations"], "5" * 64, rig=world["rig"], task_dir=world["task_dir"], attempt=2,
+                         prior=("fail",))
+    prior["prior_attempts"][0].pop("sealed_expectations_sha256")
+    data = as_bytes(prior)
+    assert check_pre_dispatch_manifest(data, committed_sha256=hashlib.sha256(data).hexdigest()).errors[0].startswith(
+        "manifest_schema:/prior_attempts/0")
     assert "manifest_not_strict_json" in check_pre_dispatch_manifest(b"{", committed_sha256="0" * 64).errors
     same = deepcopy(manifest)
     same["attestations"]["reviewer"]["name"] = same["attestations"]["author"]["name"]
@@ -1093,24 +1368,111 @@ def test_manifest_refuses_schema_violations_and_uncommitted_bytes(world):
         data, committed_sha256=hashlib.sha256(data).hexdigest()).errors
 
 
+# ---------------------------------------------------------------- N4 probes (audit 4): judge separation
+
+
+def _manifest_check(manifest):
+    data = as_bytes(manifest)
+    return check_pre_dispatch_manifest(data, committed_sha256=hashlib.sha256(data).hexdigest()).errors
+
+
+def test_n4_attestation_names_are_compared_normalized_and_the_sealer_is_not_the_judge(world):
+    """Audit-4 probe: the judge as the author in another case, and as the sealer."""
+    manifest = dev_manifest(world["expectations"], "5" * 64, rig=world["rig"], task_dir=world["task_dir"])
+    manifest["attestations"]["author"]["name"] = "  " + JUDGE_IDENTITY.upper().replace(" ", "   ") + " "
+    manifest["attestations"]["sealing"]["name"] = JUDGE_IDENTITY
+    errors = _manifest_check(manifest)
+    assert {"attestation:judge_is_author_or_reviewer", "attestation:judge_is_sealer"} <= set(errors)
+    same = dev_manifest(world["expectations"], "5" * 64, rig=world["rig"], task_dir=world["task_dir"])
+    same["attestations"]["reviewer"]["name"] = same["attestations"]["author"]["name"].title()
+    assert "attestation:author_is_reviewer" in _manifest_check(same)
+
+
+@pytest.mark.parametrize("identity", ["{provider}/{model}", "{model}", "judge on {PROVIDER} (another model)",
+                                      "  {model_upper}  via proxy"])
+def test_n4_a_judge_of_the_critic_provider_or_model_is_refused(world, identity):
+    """Audit-4 probe: judge_identity = the critic's provider/model."""
+    configuration = dev_configuration(world["rig"], world["task_dir"])
+    name = identity.format(provider=configuration["provider"], model=configuration["model"],
+                           PROVIDER=configuration["provider"].upper(), model_upper=configuration["model"].upper())
+    manifest = dev_manifest(world["expectations"], "5" * 64, rig=world["rig"], task_dir=world["task_dir"])
+    manifest["run_identity"]["judge_identity"] = name
+    assert "judge:shares_the_critic_provider_or_model" in _manifest_check(manifest)
+    profile = json.loads(dev_profile())
+    profile["judge_separation"]["judge"]["identity"] = name
+    profile_bytes = json.dumps(profile).encode("utf-8")
+    manifest["run_identity"]["independence_profile"]["sha256"] = hashlib.sha256(profile_bytes).hexdigest()
+    data = as_bytes(manifest)
+    loaded = load_release_run(data, committed_sha256=hashlib.sha256(data).hexdigest(), profile_bytes=profile_bytes)
+    assert "manifest:judge:shares_the_critic_provider_or_model" in loaded.errors
+
+
+def test_n4_an_other_provider_judge_needs_a_prompt_digest(world, tmp_path):
+    """Audit-4 probe: option other_provider with a null prompt digest."""
+    profile = json.loads(dev_profile())
+    profile["judge_separation"]["judge"]["prompt_digest"] = None
+    profile_bytes = json.dumps(profile).encode("utf-8")
+    manifest = dev_manifest(world["expectations"], world["manifest_sha"], rig=world["rig"],
+                            task_dir=world["task_dir"], profile_bytes=profile_bytes)
+    manifest["run_identity"]["judge_prompt_digest"] = None
+    _pre, loaded = release_setup(world, tmp_path / "null", manifest=manifest, profile_bytes=profile_bytes)
+    assert "profile:other_provider_judge_without_prompt_digest" in loaded.errors
+    assert loaded.judge_separation_established is False
+    profile["judge_separation"]["judge"]["option"] = "human_reviewer"  # a named person needs no prompt digest
+    profile_bytes = json.dumps(profile).encode("utf-8")
+    manifest["run_identity"]["independence_profile"]["sha256"] = hashlib.sha256(profile_bytes).hexdigest()
+    _pre, loaded = release_setup(world, tmp_path / "human", manifest=manifest, profile_bytes=profile_bytes)
+    assert loaded.errors == () and loaded.judge_separation_established is True
+
+
+# ---------------------------------------------------------------- lens-effect section (N6)
+
+
+CHECKLIST_PACK = {"id": "dev-checklist", "version": "1", "rules": [{"id": "dev-check-1", "version": "1"}]}
+MIX_PACK = {"id": "dev-mix", "version": "1", "rules": [{"id": "L-P050-01", "version": "1"},
+                                                        {"id": "L-P033-02", "version": "1"}]}
+
+
 def effect_section(world, **changes):
-    """A lens-effects-v4 section: every dispatched arm with its own configuration and attempt."""
+    """A lens-effects-v5 section: every dispatched arm with its own configuration and attempt."""
     base = dev_configuration(world["rig"], world["task_dir"])
     arms = []
-    for arm_id, pack in [("no_lens", DEV_LENS_PACK),
-                         ("general_multi_perspective", {"id": "dev-checklist", "version": "1", "rules": []}),
-                         ("mix", {"id": "dev-mix", "version": "1", "rules": []})]:
+    for arm_id, pack in [("no_lens", DEV_LENS_PACK), ("general_multi_perspective", CHECKLIST_PACK),
+                         ("mix", MIX_PACK)]:
         configuration = {**base, "lens_refs_and_digests": lens_refs_and_digests(pack)}
         arms.append({"id": arm_id, "critic_configuration": configuration,
                      "critic_configuration_digest": critic_configuration_digest(configuration),
                      "text_sha256": None if arm_id == "no_lens" else lens_refs_and_digests(pack)["pack_sha256"],
                      "attempt": 1, "prior_attempts": []})
     order = [{"arm": arm["id"], "case_id": case_id} for case_id in sorted(CASE.values()) for arm in arms]
-    section = {"design_id": "lens-effects-v4", "effect_set_sha256": "5" * 64, "arms": arms,
-               "arm_case_order": order, "predictions_sha256": "8" * 64}
+    section = {"design_id": "lens-effects-v5", "effect_set_sha256": "5" * 64,
+               "qualification_sets": [{"design_id": "q01-release-v5", "sealed_dataset_sha256": "2" * 64,
+                                       "sealed_expectations_sha256": "1" * 64}],
+               "arms": arms, "arm_case_order": order, "predictions_sha256": "8" * 64}
     for change in changes.values():
         change(section)
     return section
+
+
+def _repack(arm_index, pack):
+    def change(section):
+        arm = section["arms"][arm_index]
+        arm["critic_configuration"]["lens_refs_and_digests"] = lens_refs_and_digests(pack)
+        arm["critic_configuration_digest"] = critic_configuration_digest(arm["critic_configuration"])
+        arm["text_sha256"] = lens_refs_and_digests(pack)["pack_sha256"]
+    return change
+
+
+def _spend_arm(section):
+    section["arms"][2]["attempt"] = 2
+    section["arms"][2]["prior_attempts"] = [{"attempt": 1, "design_id": "q01-release-v5",
+                                             "sealed_dataset_sha256": "5" * 64,
+                                             "sealed_expectations_sha256": "0" * 64, "suite_outcome": "fail"}]
+
+
+def _swap_first_block(section):
+    order = section["arm_case_order"]
+    order[2], order[3] = order[3], order[2]  # one pair of the first case moved into the second block
 
 
 @pytest.mark.parametrize("change,error", [
@@ -1125,6 +1487,24 @@ def effect_section(world, **changes):
     (lambda s: s["arms"][2].update(attempt=2), "lens_effect:mix:attempt_does_not_follow_prior_attempts"),
     (lambda s: s["arms"][2]["critic_configuration"].update(max_tokens=5),
      "lens_effect:mix:critic_configuration_digest_mismatch"),
+    # audit 4, N6
+    (_repack(2, {"id": "dev-mix", "version": "1", "rules": [{"id": "L-P050-01", "version": "1"}]}),
+     "lens_effect:mix:lens_rules_do_not_match_the_arm"),
+    (_repack(1, {"id": "dev-checklist", "version": "1", "rules": []}),
+     "lens_effect:general_multi_perspective:lens_rules_do_not_match_the_arm"),
+    (_repack(1, {"id": "dev-checklist", "version": "1", "rules": [{"id": "L-P033-02", "version": "1"}]}),
+     "lens_effect:general_multi_perspective:lens_rules_do_not_match_the_arm"),
+    (_repack(1, MIX_PACK), "lens_effect:identical_lens_pack_on_different_arms"),
+    (_swap_first_block, "lens_effect:arm_case_order_is_not_interleaved_per_case_order"),
+    (lambda s: s["arm_case_order"].reverse(), "lens_effect:arm_case_order_is_not_interleaved_per_case_order"),
+    (lambda s: s["arms"][0].update(attempt=2, prior_attempts=[
+        {"attempt": 1, "design_id": "q01-release-v5", "sealed_dataset_sha256": "2" * 64,
+         "sealed_expectations_sha256": "1" * 64, "suite_outcome": "pass"}]),
+     "lens_effect:no_lens:baseline_attempt_differs_from_the_run_attempt"),
+    # audit 4, B2
+    (lambda s: s["qualification_sets"][0].update(sealed_dataset_sha256="5" * 64),
+     "lens_effect:effect_set_is_a_qualification_set"),
+    (_spend_arm, "lens_effect:mix:sealed_set_already_spent_by_a_prior_attempt"),
 ])
 def test_lens_effect_section_binds_every_arm_before_dispatch(world, change, error):
     assert manifest_errors(world, lens_effect=effect_section(world)) == ()
@@ -1148,15 +1528,21 @@ def test_dev_suite_record_validates_and_reaches_the_product_gate(world, full):
     suite = verify_suite(passes(full), expectations=world["expectations"], run=full["run"])
     assert suite["suite_outcome"] == "pass", suite["reasons"]
     assert all(counts["cases"] >= 2 and counts[PASS] == 3 * counts["cases"] for counts in suite["boundaries"].values())
+    journal = read_journal(Path(full["run"].identity["dispatch_journal"]["path"]))
+    assert suite["dispatch_journal"] == {"verified": True, "head": journal.head, "entries": 39,
+                                         "commit_ref": COMMIT_REF}
     record = build_suite_record(suite, run=full["run"])
-    schema = json.loads((V4 / "suite_record.schema.json").read_text(encoding="utf-8"))
+    schema = json.loads((V5 / "suite_record.schema.json").read_text(encoding="utf-8"))
     assert Draft202012Validator(schema).is_valid(record) and check_suite_record(record) == []
-    assert record["design_id"] == "q01-release-v4" and record["attempt"] == 1 and record["prior_outcomes"] == []
+    assert record["design_id"] == "q01-release-v5" and record["attempt"] == 1 and record["prior_outcomes"] == []
     assert record["critic_configuration_digest"] == critic_configuration_digest(
         dev_configuration(world["rig"], world["task_dir"]))
     assert record["sealed_set_sha256"] == world["manifest_sha"]
     assert record["pre_dispatch_manifest_sha256"] == full["pre_dispatch"].committed_sha256
     assert record["judge_separation_established"] is True and record["v3_error_independence"] == "unverified"
+    # N3: the journal head and the manifest's commit reference are in the record
+    assert record["dispatch_journal_head"] == journal.head and record["manifest_commit_ref"] == COMMIT_REF
+    assert all(item["pre_dispatch"]["commit_ref"] == COMMIT_REF for item in full["records"].values())
     stripped = {k: v for k, v in record.items() if k != "record_sha256"}
     assert record["record_sha256"] == hashlib.sha256(json.dumps(
         stripped, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
@@ -1175,16 +1561,14 @@ def test_bf1_v3_status_is_never_taken_from_the_caller_or_the_record(world, full)
     assert sc.V3_VERIFYING_DESIGN_IDS == frozenset() and full["run"].v3_error_independence == "unverified"
     record = build_suite_record(suite, run=full["run"])
     forged = {**record, "v3_error_independence": "verified"}
-    assert check_suite_record(forged)  # schema: v4 records can only say unverified
-    from app.services.critic_qualification import (
-        CriticQualificationError,
-        suite_record_sha256,
-    )
+    assert check_suite_record(forged)  # schema: v5 records can only say unverified
+    from app.services.critic_qualification import suite_record_sha256
     with pytest.raises(CriticQualificationError, match="record sha256"):
         critic_qualification_from_suite(forged, record["critic_configuration_digest"])
     forged["record_sha256"] = suite_record_sha256(forged)
-    state = critic_qualification_from_suite(forged, record["critic_configuration_digest"])
-    assert state.status == "scoped_pass"  # the gate caps a design that cannot verify V3
+    # N5 (audit 4): a schema-invalid v5 record is refused, not capped
+    with pytest.raises(CriticQualificationError, match="V3 unverified"):
+        critic_qualification_from_suite(forged, record["critic_configuration_digest"])
     # an altered suite result is not an issued suite
     for altered in ({**suite, "suite_outcome": "pass", "judge_separation_established": True, "reasons": ["x"]},
                     {**suite, "composition_checked": True, "stopped": False, "dataset_id": "x"}):
@@ -1193,11 +1577,10 @@ def test_bf1_v3_status_is_never_taken_from_the_caller_or_the_record(world, full)
 
 
 def test_unjudged_dev_suite_is_not_judged(world, full):
-    results = [verify(world, run(world, key, pre_dispatch=full["pre_dispatch"]), repetition=1, run=full["run"])
-               for key in CASE_KEYS[:4]]
+    results = [verify(world, full["records"][(key, 1)], None, run=full["run"]) for key in CASE_KEYS[:4]]
     results += [result for (key, rep), result in full["passes"].items() if not (key in CASE_KEYS[:4] and rep == 1)]
     suite = verify_suite(results, expectations=world["expectations"], run=full["run"])
-    assert suite["suite_outcome"] == "not_judged"
+    assert suite["suite_outcome"] == "not_judged", suite["reasons"]
 
 
 # ---------------------------------------------------------------- harness pre-dispatch refusal
@@ -1209,24 +1592,23 @@ def release_trial(world, key, pre_dispatch, critic):
                              task_dir=world["task_dir"])
 
 
-def test_release_trial_requires_a_pre_dispatch_manifest_with_harness_and_lens_pack(world):
+def test_release_trial_requires_a_pre_dispatch_manifest_with_harness_lens_pack_and_slot(world):
+    template = world["pre_dispatch"]
     with pytest.raises(TypeError):
         release_trial(world, ("d-good", None), None, DevCritic())
     with pytest.raises(TypeError):
-        PreDispatch(world["pre_dispatch"].manifest_path, world["pre_dispatch"].committed_sha256)
-    for broken in (PreDispatch(world["pre_dispatch"].manifest_path, world["pre_dispatch"].committed_sha256, None,
-                               DEV_LENS_PACK),
-                   PreDispatch(world["pre_dispatch"].manifest_path, world["pre_dispatch"].committed_sha256,
-                               harness_identity(), None)):
+        PreDispatch(template.manifest_path, template.committed_sha256)
+    with pytest.raises(TypeError):  # the slot's repetition and the commit reference are mandatory
+        PreDispatch(template.manifest_path, template.committed_sha256, harness_identity(), DEV_LENS_PACK)
+    for broken in (dataclasses.replace(template, harness=None), dataclasses.replace(template, lens_pack=None)):
         with pytest.raises(TypeError):
             release_trial(world, ("d-good", None), broken, DevCritic())
 
 
-def _configured(world, **overrides):
-    manifest = dev_manifest(world["expectations"], world["manifest_sha"], rig=world["rig"],
-                            task_dir=world["task_dir"],
-                            configuration=dev_configuration(world["rig"], world["task_dir"], **overrides))
-    return manifest
+def _configured(world, tmp_path, key=("d-good", None), **overrides):
+    return dev_manifest(world["expectations"], world["manifest_sha"], rig=world["rig"], task_dir=world["task_dir"],
+                        configuration=dev_configuration(world["rig"], world["task_dir"], **overrides),
+                        order=order_first(CASE[key]), journal=tmp_path / "journal.jsonl")
 
 
 @pytest.mark.parametrize("variant,error", [
@@ -1243,10 +1625,15 @@ def _configured(world, **overrides):
     ("dataset", "environment_differs_from_sealed_dataset_sha256"),
     ("harness", "harness_is_not_the_running_code"),
     ("manifest_harness", "harness_identity_mismatch"),
+    ("slot", "slot_is_not_the_next_planned_slot"),
+    ("repetition", "repetition_is_not_a_planned_repetition"),
+    ("commit_ref", "commit_ref_malformed"),
+    ("git_commit_ref", "commit_ref_malformed"),
+    ("journal", "dispatch_journal:is_for_another_manifest"),
+    ("spent", "sealed_set_already_spent_by_a_prior_attempt"),
 ])
 def test_harness_refuses_dispatch_without_a_verifying_manifest(world, tmp_path, variant, error):
-    manifest = dev_manifest(world["expectations"], world["manifest_sha"], rig=world["rig"],
-                            task_dir=world["task_dir"])
+    manifest = _configured(world, tmp_path)
     options = {}
     configuration_changes = {"chains": {"max_proposed_chains": 2},
                              "call_deadline": {"call_and_run_deadlines": {"call_seconds": 99.0, "run_seconds": 60.0}},
@@ -1254,7 +1641,7 @@ def test_harness_refuses_dispatch_without_a_verifying_manifest(world, tmp_path, 
                              "contract": {"parser_version": "other-parser"},
                              "prompt": {"critic_prompt_digest": "1" * 64}}
     if variant in configuration_changes:
-        manifest = _configured(world, **configuration_changes[variant])
+        manifest = _configured(world, tmp_path, **configuration_changes[variant])
     elif variant == "uncommitted":
         options["committed"] = "0" * 64
     elif variant == "digest":
@@ -1271,35 +1658,83 @@ def test_harness_refuses_dispatch_without_a_verifying_manifest(world, tmp_path, 
         options["harness"] = {"version": "other", "sha256": "3" * 64}
     elif variant == "manifest_harness":
         manifest["run_identity"]["harness"] = {"version": "other", "sha256": "3" * 64}
+    elif variant == "slot":
+        options["repetition"] = 2
+    elif variant == "repetition":
+        options["repetition"] = 0
+    elif variant == "commit_ref":
+        options["commit_ref"] = {"kind": "hearsay", "ref": "x"}
+    elif variant == "git_commit_ref":
+        options["commit_ref"] = {"kind": "git_commit", "ref": "not a commit id"}
+    elif variant == "journal":  # the manifest's journal already belongs to another manifest
+        other_pre, _other = release_setup(world, tmp_path / "other", manifest=_configured(world, tmp_path,
+                                                                                          max_tokens=7))
+        assert run(world, ("d-good", None), pre_dispatch=other_pre)["status"] == "completed"
+    elif variant == "spent":
+        manifest["attempt"] = 2
+        manifest["prior_attempts"] = [{"attempt": 1, "design_id": "q01-release-v5",
+                                       "sealed_dataset_sha256": world["manifest_sha"],
+                                       "sealed_expectations_sha256": "3" * 64, "suite_outcome": "incomplete"}]
     pre_dispatch, _loaded = release_setup(world, tmp_path, manifest=manifest, **options)
     critic = DevCritic()
     record = release_trial(world, ("d-good", None), pre_dispatch, critic)
     assert (record["status"], record["cause"]) == ("invalid", "pre_dispatch_manifest_unverified")
     assert error in record["pre_dispatch"]["errors"], record["pre_dispatch"]["errors"]
     assert critic.calls == [] and record["calls"] == [] and record["access_log"] == []  # nothing read or sent
+    assert record["pre_dispatch"]["journal"] is None
     invalid(verify(world, record, DevJudge()), "trial_pre_dispatch_manifest_unverified")
 
 
-def test_harness_dispatches_with_a_verifying_manifest(world):
-    pre_dispatch = world["pre_dispatch"]
-    record = release_trial(world, ("d-q3", None), pre_dispatch, DevCritic())
+def test_harness_dispatches_with_a_verifying_manifest(world, tmp_path):
+    pre_dispatch, _loaded = release_setup(world, tmp_path, order=order_first(CASE[("d-q3", None)]))
+    record = run(world, ("d-q3", None), pre_dispatch=pre_dispatch)
     assert record["status"] == "completed" and record["pre_dispatch"]["errors"] == []
     assert record["pre_dispatch"]["manifest_sha256"] == pre_dispatch.committed_sha256
     assert record["pre_dispatch"]["environment_manifest_sha256"] == world["manifest_sha"]
     assert record["pre_dispatch"]["harness"] == harness_identity()
     assert record["pre_dispatch"]["unchecked_configuration_fields"] == ["max_tokens"]
+    assert record["pre_dispatch"]["journal"]["seq"] == 1 and record["slot"]["repetition"] == 1
     assert verify(world, record, DevJudge())["verdict"] == PASS
 
 
 def test_harness_checks_the_selection_at_every_call(world, tmp_path):
-    pre_dispatch, _loaded = release_setup(world, tmp_path, manifest=_configured(world, model="another-model"))
+    pre_dispatch, _loaded = release_setup(world, tmp_path, manifest=_configured(world, tmp_path, key=("d-q3", None),
+                                                                                model="another-model"))
     critic = DevCritic()
     record = release_trial(world, ("d-q3", None), pre_dispatch, critic)
     assert (record["status"], record["cause"]) == ("invalid", "selection_differs_from_configuration")
     assert critic.calls == []
 
 
-# ---------------------------------------------------------------- BF3 probes: the lens pack is configuration
+def test_n1_the_verifier_rederives_the_selection_from_the_ledger(world, monkeypatch, tmp_path):
+    """Audit-4 probe: a modified harness that skips the model check; the manifest claims another model."""
+    claimed = dev_configuration(world["rig"], world["task_dir"], model="claimed-stronger-model", effort="max")
+    pre, claimed_run = release_setup(world, tmp_path / "claimed", configuration=claimed,
+                                     order=order_first(CASE[CASE_KEYS[0]]))
+    assert claimed_run.errors == ()
+    actual = dev_configuration(world["rig"], world["task_dir"])
+    real = q01_harness.pre_dispatch_errors
+
+    def patched(pre_dispatch, case_id, config, task_dir=q01_harness.TASK_DIR):
+        info, _errors, _configuration = real(pre_dispatch, case_id, config, task_dir)
+        return dict(info, errors=[]), [], actual
+
+    monkeypatch.setattr(q01_harness, "pre_dispatch_errors", patched)
+    record = run(world, CASE_KEYS[0], pre_dispatch=pre)
+    assert record["status"] == "completed"
+    invalid(verify(world, record, DevJudge(), run=claimed_run), "selection_differs_from_configuration")
+
+
+def test_n2_proposed_not_driven_must_follow_the_chain_limit(world):
+    record = run(world, ("d-alt", None))
+    assert verify(world, record, DevJudge())["verdict"] == PASS
+    for value in (1, -1, "0"):
+        copy = deepcopy(record)
+        copy["stages"]["proposed_not_driven"] = value
+        invalid(verify(world, copy, DevJudge()), "proposed_not_driven_differs_from_chain_limit")
+
+
+# ---------------------------------------------------------------- BF3 / N7 probes: the lens pack is configuration
 
 
 def test_bf3_a_sealed_bundle_carrying_a_lens_pack_is_refused(world, tmp_path):
@@ -1309,11 +1744,40 @@ def test_bf3_a_sealed_bundle_carrying_a_lens_pack_is_refused(world, tmp_path):
     task_dir, sha = make_task(tmp_path / "carry", carry)
     with pytest.raises(SealedSetError, match="lens pack"):
         load_sealed_materials_dir(task_dir, sha)
-    pre_dispatch, _loaded = release_setup(world, tmp_path / "carry-run", manifest_sha=sha, task_dir=task_dir)
+    pre_dispatch, _loaded = release_setup(world, tmp_path / "carry-run", manifest_sha=sha, task_dir=task_dir,
+                                          order=order_first(CASE[("d-good", None)]))
     critic = DevCritic()
     record = run(world, ("d-good", None), critic, task_dir=task_dir, pre_dispatch=pre_dispatch)
     assert (record["status"], record["cause"]) == ("invalid", "sealed_case_carries_a_lens_pack")
     assert critic.calls == [] and record["calls"] == []
+
+
+@pytest.mark.parametrize("where", ["source.lens_rules", "source.lenses", "candidate.lens_pack",
+                                   "candidate.roles.0.lens", "counterexample.lens_pack"])
+def test_n7_a_lens_pack_hidden_under_another_key_is_refused(world, tmp_path, where):
+    """Audit-4 probe: a lens pack under a key the input contract silently drops."""
+    def hide(cases):
+        for case in cases:
+            source = case["source"]
+            if where.startswith("source."):
+                source[where.split(".")[1]] = deepcopy(DEV_LENS_PACK)
+            elif where == "candidate.lens_pack":
+                source["candidate"]["lens_pack"] = deepcopy(DEV_LENS_PACK)
+            elif where == "candidate.roles.0.lens":
+                source["candidate"]["roles"][0]["lens"] = deepcopy(DEV_LENS_PACK)
+            else:
+                for item in case["authored_counterexamples"]:
+                    item["counterexample"]["lens_pack"] = deepcopy(DEV_LENS_PACK)
+    task_dir, sha = make_task(tmp_path / "hide", hide)
+    with pytest.raises(SealedSetError, match="allowlist|input contract drops"):
+        load_sealed_materials_dir(task_dir, sha)
+    if where.startswith("source."):
+        pre_dispatch, _loaded = release_setup(world, tmp_path / "hide-run", manifest_sha=sha, task_dir=task_dir,
+                                              order=order_first(CASE[("d-good", None)]))
+        critic = DevCritic()
+        record = run(world, ("d-good", None), critic, task_dir=task_dir, pre_dispatch=pre_dispatch)
+        assert (record["status"], record["cause"]) == ("invalid", "sealed_case_source_keys_not_allowlisted")
+        assert critic.calls == []
 
 
 def test_bf3_the_lens_pack_sent_at_each_call_must_hash_to_the_configuration(world, monkeypatch):
@@ -1391,7 +1855,7 @@ def test_importing_the_sealed_verifier_loads_no_calibration_module():
 
 def test_verifier_identity_hashes_its_source_files():
     identity = verifier_identity()
-    assert identity["version"] == "q01-sealed-verifier-2"
+    assert identity["version"] == "q01-sealed-verifier-3"
     assert {"app/critic_contract.py", "app/critic_audit.py"} <= set(sc.VERIFIER_FILES)
     files = {relative: hashlib.sha256((ROOT / relative).read_bytes()).hexdigest() for relative in sc.VERIFIER_FILES}
     assert identity["sha256"] == hashlib.sha256(json.dumps(files, sort_keys=True, separators=(",", ":"))

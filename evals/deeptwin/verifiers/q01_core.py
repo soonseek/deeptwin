@@ -226,7 +226,13 @@ class _Trial:
             if canonical(parsed) != canonical(details.get("parsed")):
                 raise _Invalid("evidence_output_mismatch")
         lineage_events = [event["details"] for event in durable["events"] if event["kind"] == "reserved"]
-        return {"manifest": manifest, "purpose": purpose, "visible": visible, "parsed": parsed,
+        try:
+            # the durable, digest-bound selection and code hashes of this frozen call
+            selection = json.loads(call["selection_json"])
+            code_hashes = json.loads(call["metadata_json"])["code_hashes"]
+        except (ValueError, KeyError, TypeError):
+            raise _Invalid("evidence_input_mismatch") from None
+        return {"selection": selection, "code_hashes": code_hashes,"manifest": manifest, "purpose": purpose, "visible": visible, "parsed": parsed,
                 "contract": details["output_contract"], "request_id": call["request_id"],
                 "system": system, "user": call["prompt"],
                 "reserved": lineage_events[0] if lineage_events else None,

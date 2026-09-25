@@ -21,7 +21,9 @@ use; they are not an OS or hostile-Python sandbox.
 
 from __future__ import annotations
 
+import fcntl
 import json
+import os
 import re
 from copy import deepcopy
 from dataclasses import dataclass
@@ -43,10 +45,20 @@ from app.critic_trial import OfflineRunner, OfflineTransport, freeze_call
 from app.generation_profiles import GenerationPurpose, profile_for
 from app.services.design_criticism_live import _CITATION_RULE, render_criticism_prompt
 from evals.deeptwin.q01_release_manifest import (
+    JOURNAL_GENESIS,
+    JOURNAL_SCHEMA,
+    REPETITIONS_PER_CASE,
+    JournalState,
     canonical_bytes,
     check_pre_dispatch_manifest,
+    commit_ref_errors,
     file_set_sha256,
+    journal_entry_sha256,
+    journal_line,
+    journal_problems,
     lens_refs_and_digests,
+    parse_journal,
+    planned_slots_sha256,
     prepared_lens_refs,
     schema_valid,
 )
@@ -93,7 +105,11 @@ _CODE_FILES = (
     "evals/deeptwin/q01_materials.py", "evals/deeptwin/q01_lenses.json",
     "evals/deeptwin/harness/q01_cases.py", "evals/deeptwin/harness/q01_harness.py",
 )
-HARNESS_VERSION = "q01-harness-2"
+HARNESS_VERSION = "q01-harness-3"
+# The frozen case's source keys a release trial accepts (audit 4, non-blocking 7): the
+# agent-visible originals, criteria and candidate only. Anything else (a lens pack under
+# another key, a lens rule list, extra metadata) is refused, never silently dropped.
+SOURCE_KEYS = frozenset({"originals", "criteria", "candidate"})
 # The harness's source files; their file-set sha256 is the harness sha256 that a
 # pre-dispatch manifest fixes (``run_identity.harness``).
 HARNESS_FILES = (*_CODE_FILES, "evals/deeptwin/q01_release_manifest.py")
@@ -331,20 +347,113 @@ class TrialConfig:
 
 @dataclass(frozen=True)
 class PreDispatch:
-    """A release run's committed pre-dispatch manifest (release-v4 ``pre_dispatch.freeze``).
+    """One release trial's committed pre-dispatch manifest and fixed slot (release-v5 ``pre_dispatch``).
 
     ``committed_sha256`` is the value committed to the repository (or externally
-    timestamped) before the first dispatch. ``harness`` (mandatory) is the
-    ``{"version", "sha256"}`` the operator expects to run; it must equal both
-    ``run_identity.harness`` and ``harness_identity()`` of the code actually running.
-    ``lens_pack`` is the critic configuration's lens pack (never read from the sealed
-    bundle): it must hash to ``critic_configuration.lens_refs_and_digests``.
+    timestamped) before the first dispatch, and ``commit_ref`` says where:
+    ``{"kind": "git_commit" | "external_timestamp", "ref": ...}`` (the commit id, or
+    the timestamp authority's reference). It is written into the dispatch journal
+    header and every trial record, and audited after the verdict. ``harness``
+    (mandatory) is the ``{"version", "sha256"}`` the operator expects to run; it must
+    equal both ``run_identity.harness`` and ``harness_identity()`` of the code actually
+    running. ``lens_pack`` is the critic configuration's lens pack (never read from the
+    sealed bundle): it must hash to ``critic_configuration.lens_refs_and_digests``.
+    ``repetition`` fixes this trial's slot ``(case id, repetition)`` before dispatch:
+    the harness journals the trial id with that slot before the first call, and only
+    when it is the next slot of ``run_identity.planned_slots`` (audit 4, B1).
     """
 
     manifest_path: Path
     committed_sha256: str
     harness: dict
     lens_pack: dict
+    repetition: int
+    commit_ref: dict
+
+
+def _journal_path(manifest: dict) -> Path:
+    return Path(manifest["run_identity"]["dispatch_journal"]["path"])
+
+
+def slot_errors(state: JournalState, planned: list, case_id: str, repetition: int) -> list[str]:
+    """The trial's slot must be the next planned slot not yet in the journal."""
+    used = len(state.dispatches)
+    if used >= len(planned):
+        return ["no_planned_slot_left"]
+    if planned[used] != {"case_id": case_id, "repetition": repetition}:
+        return ["slot_is_not_the_next_planned_slot"]
+    return []
+
+
+class DispatchJournal:
+    """Writer of one manifest's append-only, hash-chained dispatch journal (release-v5, audit 4 B1).
+
+    The file is JSON lines (``q01_release_manifest.parse_journal`` reads and checks it):
+    a header binding the manifest sha256, the commit reference and the planned slot
+    list, then one ``dispatch`` entry ``{seq, trial_id, case_id, repetition, prev,
+    entry_sha256}`` per trial. Under an exclusive ``flock`` the writer re-reads and
+    chain-checks the whole file, refuses a trial whose slot is not the next planned
+    slot, appends with ``O_APPEND`` and fsyncs the file (and its directory when
+    it creates it) before returning, so the entry is durable before the trial's first
+    call. It never rewrites or truncates an entry.
+    """
+
+    def __init__(self, path: Path):
+        self.path = Path(path)
+
+    def dispatch(self, *, manifest_sha256: str, commit_ref: dict, planned: list, trial_id: str, case_id: str,
+                 repetition: int) -> tuple[dict | None, list[str]]:
+        path = self.path
+        if not path.is_absolute():
+            return None, ["dispatch_journal:path_not_absolute"]
+        try:
+            if path.is_symlink():
+                return None, ["dispatch_journal:journal_symlink_refused"]
+            created = not path.exists()
+            fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        except OSError:
+            return None, ["dispatch_journal:journal_unwritable"]
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            chunks = []
+            while chunk := os.pread(fd, 1 << 20, sum(len(item) for item in chunks)):
+                chunks.append(chunk)
+            state = parse_journal(b"".join(chunks), path)
+            if not state.ok:
+                return None, [f"dispatch_journal:{error}" for error in state.errors]
+            pending = []
+            if state.header is None:
+                header = {"schema": JOURNAL_SCHEMA, "seq": 0, "kind": "open", "manifest_sha256": manifest_sha256,
+                          "commit_ref": deepcopy(commit_ref), "planned_slots_sha256": planned_slots_sha256(planned),
+                          "prev": JOURNAL_GENESIS}
+                header["entry_sha256"] = journal_entry_sha256(header)
+                state = JournalState(path, header, (), header["entry_sha256"], ())
+                pending.append(header)
+            errors = journal_problems(state, manifest_sha256, planned)
+            if state.header["commit_ref"] != commit_ref:
+                errors.append("commit_ref_differs_from_dispatch_journal")
+            errors = errors or slot_errors(state, planned, case_id, repetition)
+            if errors:
+                return None, errors
+            entry = {"seq": len(state.dispatches) + 1, "kind": "dispatch", "trial_id": trial_id,
+                     "case_id": case_id, "repetition": repetition, "prev": state.head}
+            entry["entry_sha256"] = journal_entry_sha256(entry)
+            pending.append(entry)
+            data = b"".join(journal_line(item) for item in pending)
+            while data:
+                data = data[os.write(fd, data):]
+            os.fsync(fd)
+        except OSError:
+            return None, ["dispatch_journal:journal_unwritable"]
+        finally:
+            os.close(fd)
+        if created:
+            directory = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        return entry, []
 
 
 def pre_dispatch_errors(pre_dispatch: PreDispatch, case_id: str, config: TrialConfig,
@@ -353,12 +462,14 @@ def pre_dispatch_errors(pre_dispatch: PreDispatch, case_id: str, config: TrialCo
 
     Besides the manifest itself, the trial must match it: the harness identity is the
     running code's, the environment manifest the harness is about to read hashes to
-    ``run_identity.sealed_dataset_sha256``, the case is in ``case_order``, and every
+    ``run_identity.sealed_dataset_sha256``, the case is in ``case_order``, the slot's
+    repetition is a planned one, the commit reference is well formed, and every
     critic-configuration field observable before dispatch equals the running
     configuration (contract and parser version, prompt digest, chain limit, call and run
     deadlines, lens pack digests). Provider, mode, model and effort are checked per call
     against the frozen selection; ``max_tokens`` is not observable offline and is listed
-    as unchecked.
+    as unchecked. The dispatch journal is checked and written afterwards
+    (``DispatchJournal``), immediately before the first read.
     """
     try:
         environment_sha = digest((Path(task_dir) / ENVIRONMENT_MANIFEST).read_bytes())
@@ -368,6 +479,10 @@ def pre_dispatch_errors(pre_dispatch: PreDispatch, case_id: str, config: TrialCo
     running = harness_identity()
     if type(pre_dispatch.harness) is not dict or pre_dispatch.harness != running:
         errors.append("harness_is_not_the_running_code")
+    repetition = pre_dispatch.repetition
+    if type(repetition) is not int or not 1 <= repetition <= REPETITIONS_PER_CASE:
+        errors.append("repetition_is_not_a_planned_repetition")
+    errors += commit_ref_errors(pre_dispatch.commit_ref)
     check = check_pre_dispatch_manifest(Path(pre_dispatch.manifest_path),
                                         committed_sha256=pre_dispatch.committed_sha256, harness=running)
     errors += list(check.errors)
@@ -401,9 +516,28 @@ def pre_dispatch_errors(pre_dispatch: PreDispatch, case_id: str, config: TrialCo
         if environment_sha != manifest["run_identity"]["sealed_dataset_sha256"]:
             errors.append("environment_differs_from_sealed_dataset_sha256")
     return ({"manifest_sha256": check.manifest_sha256, "committed_sha256": pre_dispatch.committed_sha256,
+             "commit_ref": deepcopy(pre_dispatch.commit_ref),
+             "slot": {"case_id": case_id, "repetition": repetition},
              "environment_manifest_sha256": environment_sha, "harness": running,
-             "unchecked_configuration_fields": list(UNCHECKABLE_FIELDS), "errors": errors},
+             "unchecked_configuration_fields": list(UNCHECKABLE_FIELDS), "journal": None, "errors": errors},
             errors, configuration)
+
+
+def journal_dispatch(pre_dispatch: PreDispatch, case_id: str, trial_id: str) -> tuple[dict | None, list[str]]:
+    """Write this trial's slot to the manifest's dispatch journal (before any read or call)."""
+    check = check_pre_dispatch_manifest(Path(pre_dispatch.manifest_path),
+                                        committed_sha256=pre_dispatch.committed_sha256)
+    if not schema_valid(check):
+        return None, ["dispatch_journal:manifest_unverified"]
+    manifest = check.manifest
+    journal = DispatchJournal(_journal_path(manifest))
+    entry, errors = journal.dispatch(manifest_sha256=check.manifest_sha256, commit_ref=pre_dispatch.commit_ref,
+                                     planned=manifest["run_identity"]["planned_slots"], trial_id=trial_id,
+                                     case_id=case_id, repetition=pre_dispatch.repetition)
+    if entry is None:
+        return None, errors
+    return {"path": str(journal.path), "seq": entry["seq"], "entry_sha256": entry["entry_sha256"],
+            "prev_sha256": entry["prev"]}, []
 
 
 class _Stop(Exception):
@@ -433,6 +567,7 @@ class Q01Trial:
         self.case_id, self.turn, self.config = case_id, turn, config
         self.pre_dispatch = pre_dispatch
         self._configuration = None  # the manifest's critic configuration (release trials)
+        self._journal_entry = None  # this trial's dispatch journal entry (release trials)
         self.task_dir = Path(task_dir)
         self.trial_id = "t" + uuid4().hex
         base = Path(base_dir)
@@ -469,8 +604,17 @@ class Q01Trial:
                   "access_log": reader.log}
         if self.pre_dispatch is not None:
             # release runs: no read and no dispatch unless the committed manifest verifies
+            # and this trial's (case, repetition) slot is journalled as the next planned slot
+            record["slot"] = {"case_id": self.case_id, "repetition": self.pre_dispatch.repetition}
             record["pre_dispatch"], errors, self._configuration = pre_dispatch_errors(
                 self.pre_dispatch, self.case_id, self.config, self.task_dir)
+            errors = list(errors)
+            if not errors:
+                self._journal_entry, journal_errors = journal_dispatch(self.pre_dispatch, self.case_id,
+                                                                       self.trial_id)
+                errors += journal_errors
+                record["pre_dispatch"]["journal"] = self._journal_entry
+            record["pre_dispatch"]["errors"] = errors
             if errors:
                 record["status"], record["cause"] = "invalid", "pre_dispatch_manifest_unverified"
                 (self.trial_dir / "trial-record.json").write_text(canonical(record), encoding="utf-8")
@@ -481,6 +625,8 @@ class Q01Trial:
                 if type(case["source"]) is not dict or "lens_pack" in case["source"]:
                     # the lens pack is critic configuration, never sealed dataset material
                     raise _Stop("invalid", "sealed_case_carries_a_lens_pack")
+                if set(case["source"]) != SOURCE_KEYS:
+                    raise _Stop("invalid", "sealed_case_source_keys_not_allowlisted")
                 case = {**case, "source": {**case["source"], "lens_pack": deepcopy(self.pre_dispatch.lens_pack)}}
             instructions = reader.instructions()
             manifest = reader.manifest()
@@ -516,6 +662,9 @@ class Q01Trial:
         with self._lock:
             self._runner = runner
         hashes = code_hashes(instructions, case_sha)
+        if self._journal_entry is not None:
+            # binds every frozen call of this trial to its dispatch journal entry
+            hashes["dispatch_journal_entry"] = self._journal_entry["entry_sha256"]
         counter = iter(range(1, 10_000))
 
         def call(prepared, lineage):
@@ -640,7 +789,8 @@ def run_trial(case_id: str, turn, *, base_dir: Path, config: TrialConfig, task_d
 
 def run_release_trial(case_id: str, turn, *, base_dir: Path, config: TrialConfig, pre_dispatch: PreDispatch,
                       task_dir: Path = TASK_DIR) -> dict:
-    """A release-v4 trial: refuses to dispatch without a verifying committed pre-dispatch manifest."""
+    """A release-v5 trial: refuses to dispatch without a verifying committed pre-dispatch manifest and
+    journals its (case, repetition) slot before the first call."""
     if type(pre_dispatch) is not PreDispatch:
         raise TypeError("a release trial requires its committed pre-dispatch manifest")
     if type(pre_dispatch.harness) is not dict or type(pre_dispatch.lens_pack) is not dict:

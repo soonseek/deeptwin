@@ -43,8 +43,9 @@ ENV_ID = "00000000-0000-4000-8000-00000000e001"
 CRITIC_DIGEST = "c" * 64
 # TEST-ACTOR design id: no frozen design uses it, and production code never
 # admits it (critic_qualification._TEST_ACTOR_V3_DESIGN_IDS is empty outside
-# ``actor_v3_design``). No production record can be ``qualified``:
-# V3_VERIFYING_DESIGN_IDS is empty and release-v4 cannot verify V3 (audit 3).
+# ``actor_v3_design``, and it is honoured only while pytest runs a test). No
+# production record can be ``qualified``: V3_VERIFYING_DESIGN_IDS is empty and
+# release-v5 cannot verify V3 (audits 3 and 4).
 TEST_ACTOR_DESIGN = "test-actor-v3-verifying-design"
 
 
@@ -62,7 +63,7 @@ def actor_v3_design():
 def suite_record(**overrides):
     record = {
         "schema_version": SUITE_RECORD_SCHEMA_VERSION,
-        "design_id": "q01-release-v4",
+        "design_id": "q01-release-v5",
         "critic_configuration_digest": CRITIC_DIGEST,
         "pre_dispatch_manifest_sha256": "a" * 64,
         "sealed_set_sha256": "d" * 64,
@@ -72,6 +73,10 @@ def suite_record(**overrides):
         "independence_profile_sha256": "b" * 64,
         "judge_separation_established": True,
         "v3_error_independence": "unverified",
+        "prior_sealed_set_sha256s": [],
+        "prior_attempts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "dispatch_journal_head": "e" * 64,
+        "manifest_commit_ref": {"kind": "git_commit", "ref": "0123456789abcdef0123456789abcdef01234567"},
     }
     record.update(overrides)
     if "record_sha256" not in overrides:
@@ -270,9 +275,8 @@ def test_prepared_versions_and_states_are_issued_values():
      "unqualified: not_a_frozen_release_design"),
     (lambda: critic_qualification_from_suite(suite_record(), CRITIC_DIGEST),
      "scoped_pass: design_cannot_verify_v3"),
-    # BF1 probe: a v4 record claiming V3 verified is capped (v4 cannot verify V3)
-    (lambda: critic_qualification_from_suite(suite_record(v3_error_independence="verified"), CRITIC_DIGEST),
-     "scoped_pass: design_cannot_verify_v3"),
+    (lambda: critic_qualification_from_suite(suite_record(design_id="q01-release-v4"), CRITIC_DIGEST),
+     "unqualified: not_a_frozen_release_design"),
     # the test-actor design id is refused outside the test-actor hook
     (lambda: critic_qualification_from_suite(actor_record(), CRITIC_DIGEST),
      "unqualified: not_a_frozen_release_design"),
@@ -300,16 +304,60 @@ def test_the_production_gate_can_never_yield_qualified():
     # empty outside tests; every production-shaped pass is at most scoped.
     assert gate.V3_VERIFYING_DESIGN_IDS == frozenset()
     assert gate._TEST_ACTOR_V3_DESIGN_IDS == frozenset()
-    assert gate.RELEASE_DESIGN_IDS == {"q01-release-v4"}
-    for v3 in ("unverified", "verified"):
-        state = critic_qualification_from_suite(suite_record(v3_error_independence=v3), CRITIC_DIGEST)
-        assert state.status == "scoped_pass"
+    assert gate.RELEASE_DESIGN_IDS == {"q01-release-v5"}
+    state = critic_qualification_from_suite(suite_record(), CRITIC_DIGEST)
+    assert state.status == "scoped_pass"
+    # audit 4, N5: a v5 record claiming V3 verified is not schema-valid and is refused, not capped
+    with pytest.raises(CriticQualificationError, match="V3 unverified"):
+        critic_qualification_from_suite(suite_record(v3_error_independence="verified"), CRITIC_DIGEST)
     with actor_v3_design():
         # even under the hook a record of the test-actor design must say V3 verified
         state = critic_qualification_from_suite(actor_record(v3_error_independence="unverified"),
                                                 CRITIC_DIGEST)
         assert (state.status, state.reason) == ("scoped_pass", "v3_error_independence_unverified")
     assert gate._TEST_ACTOR_V3_DESIGN_IDS == frozenset()
+
+
+def test_the_test_actor_hook_is_honoured_only_under_pytest(monkeypatch):
+    # audit 4, N5: outside a running pytest test the hook admits nothing, so even a
+    # test-actor record set up by the hook stays unqualified in production
+    with actor_v3_design():
+        assert critic_qualification_from_suite(actor_record(), CRITIC_DIGEST).status == "qualified"
+        monkeypatch.delenv("PYTEST_CURRENT_TEST")
+        state = critic_qualification_from_suite(actor_record(), CRITIC_DIGEST)
+        assert (state.status, state.reason) == ("unqualified", "not_a_frozen_release_design")
+        with pytest.raises(CriticQualificationError, match="V3 unverified"):
+            critic_qualification_from_suite(suite_record(v3_error_independence="verified"), CRITIC_DIGEST)
+    previous = gate._TEST_ACTOR_V3_DESIGN_IDS
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "hook test")
+    try:
+        gate._TEST_ACTOR_V3_DESIGN_IDS = frozenset({"q01-release-v5"})  # a hook naming a release design
+        with pytest.raises(CriticQualificationError, match="test-only"):
+            critic_qualification_from_suite(suite_record(), CRITIC_DIGEST)
+    finally:
+        gate._TEST_ACTOR_V3_DESIGN_IDS = previous
+
+
+@pytest.mark.parametrize("overrides, match", [
+    ({"prior_sealed_set_sha256s": ["d" * 64], "attempt": 2, "prior_outcomes": ["fail"]}, "already spent"),
+    ({"attempt": 2, "prior_outcomes": ["fail"]}, "prior attempt"),
+    ({"prior_sealed_set_sha256s": "none"}, "prior attempt"),
+    ({"prior_attempts_sha256": "x"}, "prior attempts sha256"),
+    ({"dispatch_journal_head": None}, "journal head"),
+    ({"dispatch_journal_head": "E" * 64}, "journal head"),
+    ({"manifest_commit_ref": None}, "commit reference"),
+    ({"manifest_commit_ref": {"kind": "git_commit", "ref": "not-hex"}}, "commit reference"),
+    ({"manifest_commit_ref": {"kind": "rumour", "ref": "x"}}, "commit reference"),
+])
+def test_a_schema_invalid_v5_record_is_refused(overrides, match):
+    # audit 4 (B2, N3, N5): the gate refuses a v5 record whose set was spent by a listed prior
+    # attempt, that lists no prior sets, or that passes without a journal head or commit reference
+    with pytest.raises(CriticQualificationError, match=match):
+        critic_qualification_from_suite(suite_record(**overrides), CRITIC_DIGEST)
+    # the same fields on a non-pass record that is otherwise valid are still checked
+    if overrides.get("dispatch_journal_head", "e" * 64) is None or overrides.get("manifest_commit_ref", 1) is None:
+        state = critic_qualification_from_suite(suite_record(suite_outcome="incomplete", **overrides), CRITIC_DIGEST)
+        assert (state.status, state.reason) == ("unqualified", "suite_incomplete")
 
 
 def test_a_forged_record_sha256_is_refused():
@@ -342,6 +390,7 @@ def test_a_suite_record_must_list_every_prior_attempt():
     with actor_v3_design():
         with pytest.raises(CriticQualificationError, match="prior outcomes"):
             critic_qualification_from_suite(actor_record(attempt=2), CRITIC_DIGEST)
-        later = critic_qualification_from_suite(actor_record(attempt=2, prior_outcomes=["fail"]),
+        later = critic_qualification_from_suite(actor_record(attempt=2, prior_outcomes=["fail"],
+                                                             prior_sealed_set_sha256s=["9" * 64]),
                                                 CRITIC_DIGEST)
     assert later.status == "qualified"

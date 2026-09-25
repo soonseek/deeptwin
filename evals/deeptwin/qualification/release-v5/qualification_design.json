@@ -1,0 +1,215 @@
+{
+ "schema": "q01-release-qualification-design-5",
+ "design_id": "q01-release-v5",
+ "frozen_on": "2026-09-25",
+ "supersedes": {
+  "design": "../release-v4/qualification_design.json",
+  "reason": "independent audit 4 of release-v4 (evidence/release-designs-t076-2026-09-25.md): B1 best 3 of N trials could pass because the repetition slot was assigned by the caller at verify time and nothing enumerated every trial dispatched under a manifest; B2 a spent sealed set could be rerun under a verifying manifest. release-v1..v4 are kept unchanged."
+ },
+ "purpose": "The release qualification design for the Q01-family critic configuration: a scoped acceptance rule for one exact critic configuration on one sealed set, frozen before any heldout material exists. A pass is a scoped pass and never a qualification: this design has no generation path and cannot verify V3 error independence.",
+ "execution_state": "kept outside this pinned file in a run record whose pre-dispatch part is frozen by sha256 before the first dispatch (see pre_dispatch)",
+ "critic_configuration": {
+  "fields": [
+   "provider",
+   "mode",
+   "model",
+   "effort",
+   "max_tokens",
+   "critic_prompt_digest",
+   "contract_version",
+   "parser_version",
+   "max_proposed_chains",
+   "call_and_run_deadlines",
+   "lens_refs_and_digests"
+  ],
+  "digest": "critic_configuration_digest = sha256 of the canonical JSON (sorted keys, separators (',', ':'), ensure_ascii False, allow_nan False, UTF-8) of exactly these fields; a scoped pass is bound to this digest, and the product computes the same digest for a deployed critic",
+  "call_and_run_deadlines": "an object with both call_seconds and run_seconds (required)",
+  "critic_prompt_digest": "sha256 of the canonical JSON {instruction.md, app/services/design_criticism_live.py, app/generation_profiles.py: file sha256}, i.e. every source of each call's system prompt (q01_harness.critic_prompt_digest)",
+  "lens_refs_and_digests": "{pack_id, pack_version, pack_sha256, rules: [{lens_id, version, sha256}]} of the lens pack sent at every counterexample-proposal call (canonical sha256 of the pack and of each rule, equal to the product's prepared-input manifest). The lens pack is critic configuration: it is supplied to the harness with the configuration, never read from the sealed bundle, and a sealed case that carries a lens pack is refused by the harness and the verifier. A configuration with no lens set uses a pack with no rules.",
+  "checked_at_dispatch": "contract_version, parser_version, critic_prompt_digest, max_proposed_chains, call_seconds, run_seconds and lens_refs_and_digests before any read; provider, mode, model and effort against the frozen selection of every call by the harness, and again by the verifier from each call's durable selection_json in the ledger; the lens pack digests again at every proposal call. max_tokens is not observable by the offline transport and is recorded as unchecked in each trial record. The verifier also requires the recorded proposed_not_driven to equal max(0, number of proposed counterexamples - max_proposed_chains).",
+  "lens_arm": "The configuration names its lens set explicitly (possibly empty); a pass never carries over between a lens and a no-lens configuration."
+ },
+ "run_identity": {
+  "fields": [
+   "sealed_dataset_sha256",
+   "sealed_expectations_sha256",
+   "judge_identity",
+   "judge_prompt_digest",
+   "independence_profile_path_and_sha256",
+   "harness_version_and_sha256",
+   "verifier_version_and_sha256",
+   "case_order_seed_and_order",
+   "authority_ref",
+   "usd_hard_stop",
+   "planned_slots",
+   "dispatch_journal_path"
+  ],
+  "rule": "Run identity describes one attempt and is never part of the critic configuration; every field is fixed in the pre-dispatch manifest. Every verifier result binds to the manifest sha256, the critic configuration digest, the judge identity and prompt digest of this run identity and its journalled slot; a result that does not is not part of the suite.",
+  "planned_slots": "the planned (case, repetition) slot list: case_order x 3, case-major and in order [(order[0],1),(order[0],2),(order[0],3),(order[1],1),...], fixed before the first dispatch; the dispatch journal must follow it"
+ },
+ "pre_dispatch": {
+  "manifest_schema": "pre_dispatch_manifest.schema.json (schema q01-pre-dispatch-manifest-3)",
+  "content": "the critic configuration and its digest, the full run identity (including planned_slots and the dispatch journal path), the attempt number and every prior attempt for this critic configuration digest with its design id, sealed dataset sha256, sealed expectations sha256 and verdict, the author, reviewer and sealing attestations (name, statement, date; author and reviewer differ, the judge is none of author, reviewer and sealer, names compared case- and whitespace-normalized), and, when the lens-effect design runs, the lens_effect section of lens-effects-v5 (per-arm critic configurations and digests, per-arm attempt entries, the qualification sets the effect set must differ from, non-null text digests for general_multi_perspective and every lens arm, the arm x case order interleaved per case, predictions sha256)",
+  "freeze": "The manifest's sha256 is committed to the repository (or recorded with an external timestamp) before the first dispatch; the commit id or the timestamp reference is given to the harness with every trial (PreDispatch.commit_ref) and recorded in the dispatch journal header, every trial record and the suite record. The harness refuses to dispatch unless the manifest it loads hashes to the committed value, its harness identity equals the running harness, and every observable critic-configuration field equals the running configuration; the suite record carries that sha256 and the verifier re-checks the full manifest (there is no hash-values-only path). That the commit or timestamp precedes the first ledger event is checked after the verdict (acceptance.post_verdict_audit).",
+  "harness": "PreDispatch.harness (the expected harness identity), PreDispatch.lens_pack (the configuration's lens pack), PreDispatch.repetition (the trial's slot, with the case id) and PreDispatch.commit_ref are mandatory for every release trial.",
+  "edits": "Any change after the freeze voids the attempt as incomplete; the sealed set is still spent.",
+  "spent_sets": "The manifest check refuses a run whose sealed_dataset_sha256 or sealed_expectations_sha256 equals either sha of any listed prior attempt, and the same for each lens-effect arm's prior attempts; a lens-effect set equal to any listed qualification set is refused. The suite record carries every prior attempt's sealed set sha256 and a digest of the prior-attempt list, and the product gate refuses a record whose sealed set is among them.",
+  "dispatch_journal": {
+   "requirement": "one append-only, hash-chained dispatch journal per manifest, at run_identity.dispatch_journal.path (owner-controlled, outside the repository)",
+   "format": "JSON lines; each line is the canonical JSON of one entry. Entry 0 is the header {schema q01-dispatch-journal-1, seq 0, kind open, manifest_sha256, commit_ref, planned_slots_sha256, prev (64 zeros), entry_sha256}; every further entry is {seq, kind dispatch, trial_id, case_id, repetition, prev, entry_sha256}, where prev is the previous entry's entry_sha256 and entry_sha256 is the sha256 of the canonical JSON of the entry without that key.",
+   "write": "The harness writes a trial's id and its (case, repetition) slot, fixed in PreDispatch, before the trial's first read or call: under an exclusive lock it re-reads and chain-checks the journal, refuses a slot that is not the next planned slot (out of order, repeated, extra), appends with O_APPEND and fsyncs. The entry sha256 is recorded in the trial record and bound into every frozen call's code hashes in the durable ledger. No entry is ever rewritten or removed.",
+   "verify": "verify_trial reads the repetition from the record's journalled slot and refuses a differing caller value; it requires the trial to be in the journal with that slot, entry sha256 and commit reference, and the entry to be bound in the ledger. verify_suite requires the set of results to equal the journal exactly (a journalled trial missing or not submitted, or a result not in the journal, is incomplete) and the journal to follow planned_slots in order (an out-of-order or extra slot is incomplete). The journal head goes into the suite record."
+  }
+ },
+ "dataset": {
+  "dataset_id": "q01-release-v5-sealed",
+  "must_be_new": "No case, material, candidate, counterexample or wording from evals/deeptwin/q01_materials.py, q01_lenses.json, the ten calibration cases, or ANY previously dispatched sealed set (qualification or lens-effect, any design version), nor paraphrases of them. The lens pack is critic configuration, not dataset material: the sealed bundle never carries it, and the materials are not written to suit a lens.",
+  "authoring": {
+   "author": "A named person who has not seen the verifier's calibration expectations and does not tune the critic configuration.",
+   "excluded_as_author_reviewer_or_judge": [
+    "the developer who built the Q01 harness and verifiers",
+    "anyone who tuned the critic configuration",
+    "any model or session with repository access"
+   ],
+   "expectations": "Written by the author from the new materials alone as data conforming to sealed_expectation.schema.json (allowed statuses per criterion, evidence rules, validity and response expectations, judge items with rubrics), before any trial, and sealed (content sha256 in the pre-dispatch manifest).",
+   "judge_rubrics": "Written by the author as part of the sealed expectations and checked by the reviewer; the judge never edits them.",
+   "task_package": "The agent sees the Q01 instruction.md and a fixed-criteria document written by the author for the new materials; Task.md's M01/catalog-specific wording is replaced by the author's criteria text, frozen with the set.",
+   "review": "A second named person, not the author and not the judge, checks each expectation and rubric against the materials before sealing; a disagreement is resolved or the case is dropped before sealing, never after.",
+   "attestations": "The author, the reviewer and the sealing step each record an attestation (name, statement, date) in the pre-dispatch manifest."
+  },
+  "composition": {
+   "boundary_classes": [
+    "accept_without_false_rejection",
+    "required_defect",
+    "rejected_counterexample",
+    "valid_counterexample",
+    "unresolved_specific_claim",
+    "insufficient_evidence"
+   ],
+   "minimum_cases_per_class": 2,
+   "required_coverage": [
+    "at least one required_defect for each of Q1 (meaning), Q2 (hand-off), Q3 (authority)",
+    "at least one valid alternative candidate under Q4",
+    "at least one Q5 pair (a valid counterexample handled and one not handled)"
+   ],
+   "checked": "The verifier checks every coverage rule decidable from the expectations when it loads them and records whether it did; a suite over expectations loaded without that check is incomplete. The Q4 alternative stays a reviewer check.",
+   "exclusions": "Only before the first dispatch, with the reason recorded; composition and coverage are re-checked after any exclusion. Nothing is excluded after the first dispatch: a disputed case then makes the suite incomplete.",
+   "note": "A scoped design choice so every class and criterion has instances; it is not a statistical sample size and supports no rate estimate."
+  },
+  "storage_and_access": {
+   "location": "outside the git repository, in an owner-controlled location recorded by path and sha256 in the pre-dispatch manifest",
+   "readers_before_run": [
+    "the author",
+    "the reviewer",
+    "the sealing step"
+   ],
+   "during_run": "agent inputs come only from the harness's allowlisted reader; expectations are read only by the verifier at verify time; every read is logged in the run record",
+   "results": "the developer reads trial outputs and verdicts only after the suite verdict is recorded",
+   "single_use": "The first dispatched trial marks the set observed and spent forever (it becomes development data). Exactly one run per sealed set: no continuation, merge or rerun. Every trial dispatched under a manifest is in its dispatch journal; a set that a listed prior attempt used is refused by the manifest check.",
+   "attempt_ledger": "Every attempt for one critic configuration digest is numbered across sets and design versions; each pre-dispatch manifest lists all prior attempts with their sealed dataset and sealed expectations sha256 and their verdicts, and any claim cites 'attempt k' with every prior verdict."
+  }
+ },
+ "verifier": {
+  "requirement": "A data-driven verifier, not evals/deeptwin/verifiers/critic.py (whose expectations are the calibration cases), that loads the sealed expectations only at verify time, derives material checks and leak markers from the sealed set, takes the lens pack only from the critic configuration, refuses a sealed case whose source or candidate carries a key outside the input contract, and implements the same outcome classes (pass, fail, not_judged, invalid) and the six boundary classes.",
+  "freeze": "Its version and file-set sha256 are fixed in the pre-dispatch manifest before sealing; it is written by the harness developer without access to the sealed set and tested only on development data.",
+  "identity_covers": [
+   "evals/deeptwin/verifiers/sealed_critic.py",
+   "evals/deeptwin/verifiers/q01_core.py",
+   "evals/deeptwin/q01_release_manifest.py",
+   "app/critic_contract.py",
+   "app/critic_audit.py"
+  ],
+  "state_at_freeze": {
+   "exists": true,
+   "statement": "The data-driven verifier exists at this freeze (evals/deeptwin/verifiers/sealed_critic.py); its identity is below and every file it covers is also pinned in FROZEN.json.",
+   "version": "q01-sealed-verifier-3",
+   "file_set_sha256": "56a2ad35037004b55bdd088f2e555b60f0f11b6c48722dfca864f076afb183dd",
+   "files": {
+    "evals/deeptwin/verifiers/sealed_critic.py": "cefd08251b5361d51df808db44f36e0b0a39d4d1486aa015786de0c6fcccfb1c",
+    "evals/deeptwin/verifiers/q01_core.py": "fb4f3ab5d52124ad02c5b5f2a0884cc02698e36075e4df3a537730a072251539",
+    "evals/deeptwin/q01_release_manifest.py": "c6241efffe915b13a99109c456393f444878e5d7665b798faba981163110a993",
+    "app/critic_contract.py": "fd5179f08fc5f33269dae0aeecd76a9c43e6f4ea356dbda6502cd8f83b09df0d",
+    "app/critic_audit.py": "bb9385df9ce81c6910fa905fcb69303d7afc69570840a4140bce6ea6e901d538"
+   }
+  },
+  "harness_at_freeze": {
+   "version": "q01-harness-3",
+   "file_set_sha256": "b2384b64e923512cb756775baf049f8b959c5f24401c090f7f6900a8b1418f10",
+   "files": {
+    "app/critic_contract.py": "fd5179f08fc5f33269dae0aeecd76a9c43e6f4ea356dbda6502cd8f83b09df0d",
+    "app/critic_trial.py": "a8b1a2edcb140925c330ed0c4863e2fb675cd4ccfc583835559782c3546653d2",
+    "app/critic_audit.py": "bb9385df9ce81c6910fa905fcb69303d7afc69570840a4140bce6ea6e901d538",
+    "app/services/design_criticism_live.py": "b603f791ba3494d137e78d6c6524b415c60960d68e5b21c7a59037a9ffd8dd28",
+    "app/generation_profiles.py": "76d132c71d64e03c723a914e6f66e027e9fb02c79aced8bbe9eee9f10368b6f2",
+    "evals/deeptwin/q01_materials.py": "65dca348bdaca2b174c591723d9a69bee359fb0f3e1bbb51abd8c7ddaff7f374",
+    "evals/deeptwin/q01_lenses.json": "d6b36c5c9f74459472ece18248164dcd35d2ec8cf12c482ca1eedd9db74226e1",
+    "evals/deeptwin/harness/q01_cases.py": "5e5f27b3f8a19472fc40d9f496f60bbb31eb5da433105511050b162a41cce1e4",
+    "evals/deeptwin/harness/q01_harness.py": "9d7e6e455580e9e0333100920d32422d9fa89e0fd7db66fc58cc6dd1ea7041e0",
+    "evals/deeptwin/q01_release_manifest.py": "c6241efffe915b13a99109c456393f444878e5d7665b798faba981163110a993"
+   }
+  },
+  "results": "Each trial result carries the trial id, its journalled slot and journal entry sha256, the trial record sha256, the ledger head, the manifest sha256, the critic configuration digest, the judge identity and prompt digest, and its own result_sha256; a suite accepts only results issued by verify_trial in the same process and unaltered, exactly the journalled trials, one per (case, repetition) slot."
+ },
+ "execution": {
+  "repetitions_per_case": 3,
+  "repetitions_fixed": "fixed by this design and by the verifier (REPETITIONS_PER_CASE = 3); never supplied by the caller; each trial's repetition is fixed in PreDispatch and journalled before dispatch, never assigned at verify time",
+  "repetition_meaning": "three calls on one case are one task sample, never three independent samples",
+  "retry": "none",
+  "model_fallback": "none",
+  "concurrency": 1,
+  "output_contract_error": "a completed trial whose output breaks the contract is a fail of that repetition (Task.md), never an invalid trial",
+  "invalid_trials": "only harness, evidence, isolation, configuration or judge failures; reported with cause, never scored, never replaced within the run (a replacement is an extra slot the harness refuses and the verifier treats as incomplete)",
+  "authority": "The pre-dispatch manifest names who authorized the run, the authority reference and the budget; without it the run is not executed and there is no verdict",
+  "spend": "a hard USD stop fixed before any call; a stopped run is incomplete",
+  "order": "trials are dispatched in run_identity.planned_slots order, one at a time; the harness refuses any other slot"
+ },
+ "judge": {
+  "independence_profile": "The profile in force is the one whose path and sha256 the pre-dispatch manifest records. independence_profile.json here fixes the rules (judge separation not established); a successor profile that records an established judge is frozen and committed before sealing, has schema q01-independence-profile-5, names this design id, and records the judge identity, prompt digest and option. The verifier loads the profile bytes, checks the sha256 and design id and derives judge separation from them; no caller flag exists.",
+  "judge_binding": "the profile's judge, run_identity.judge_identity and judge_prompt_digest, and every judged result's judge must be the same; an other_provider judge needs a non-null prompt digest; a judge identity that names the critic's provider family or model string is refused; the judge is none of the author, reviewer and sealer (case- and whitespace-normalized)",
+  "judge_errors": "every judge verdict is recorded beside the sealed expectation; a judge failure makes that trial invalid (Task.md Q8); judge-versus-expectation disagreements are listed, never folded into the critic's score"
+ },
+ "acceptance": {
+  "case_pass": "a case passes only if every one of its 3 repetitions is a distinct valid trial that passes under the frozen data-driven verifier",
+  "suite_outcome": {
+   "fail": "any valid repetition failed; takes precedence over invalid, not_judged and incomplete",
+   "incomplete": "no fail, and any of: an invalid, missing, duplicated or stopped repetition; a result not issued by verify_trial or altered; one trial used for more than one slot; a result of another manifest, configuration or judge; a result whose trial is not in the manifest's dispatch journal with that slot, or a journalled trial whose result is not submitted; a dispatch journal that does not verify or does not follow planned_slots in order (out-of-order or extra slots); expectations loaded without the composition check; a pre-dispatch manifest or profile that does not verify or does not pin exactly these expectations, materials and case order",
+   "not_judged": "no fail and not incomplete, and any semantic item is not_judged (a judge answer of undetermined, or a profile without established judge separation)",
+   "pass": "every case passes"
+  },
+  "suite_record": "conforms to suite_record.schema.json (q01-release-suite-verdict-v4): the critic configuration digest, the pre-dispatch manifest sha256, the attempt number with prior verdicts, every prior attempt's sealed set sha256 and a digest of the prior-attempt list, the dispatch journal head, the manifest's commit reference, the profile sha256, judge separation (from the profile) and the V3 status (always unverified under this design, derived by the verifier, never from the caller); built only from an issued suite result and the same re-checked run and journal",
+  "what_a_pass_confers": "status scoped_pass for exactly this critic configuration digest. This design cannot verify V3 (no generation path), so a scoped pass is NOT a critic qualification and approves no design; the product gate reads only q01-release-v5 records, recomputes record_sha256 and refuses a mismatch, refuses (does not cap) a record that is not schema-valid (a V3 status other than unverified, a sealed set listed among its prior attempts' sets, a pass without a journal head or commit reference), and caps every valid q01-release-v5 pass at scoped_pass. Qualification is reachable only from a design declared able to verify V3 in the gate's V3_VERIFYING_DESIGN_IDS, which is empty; the gate's test-actor hook is honoured only while pytest runs a test.",
+  "open": "criticism verdicts do not yet carry the critic configuration digest that produced them, so design approval cannot yet bind the qualification's digest to the verdict's critic; this is required before any V3-verifying design is admitted",
+  "post_verdict": "Every pass and any suspicious result is audited after the verdict (verification.md section 4), including every item of post_verdict_audit. A verifier or harness defect found after the verdict voids it to incomplete; it never upgrades a fail.",
+  "post_verdict_audit": [
+   "the manifest sha256 was committed (the commit id in manifest_commit_ref contains it) or externally timestamped before the first ledger event of the first journalled trial",
+   "the dispatch journal at run_identity.dispatch_journal.path is the only journal for this manifest and its head equals the suite record's dispatch_journal_head",
+   "no trial of this manifest exists outside the journal (trial directories and ledgers under the harness base directory)",
+   "no listed prior attempt, and no other known attempt of this configuration digest, used this sealed set"
+  ]
+ },
+ "reporting": [
+  "per case and boundary class: passes, misses (a required defect not found), false rejections (a valid candidate or alternative rejected), abstentions, and not_judged items, each with its real denominator",
+  "judge-versus-expectation disagreements per item, labelled judge_disagreement (never a joint error)",
+  "same-item critic misses and false rejections; V3 joint-error metrics are not computed because this design has no generation path",
+  "cluster counts (cases sharing materials count as one cluster)",
+  "every invalid trial with its cause, calls, tokens, spend and wall time",
+  "attempt k and all prior verdicts for this configuration",
+  "the dispatch journal (every entry, in order) and its head"
+ ],
+ "claims_if_passed": [
+  "Attempt k of this exact critic configuration met the frozen acceptance rule on this sealed set, in 3 repetitions per case, with every dispatched trial journalled and submitted (prior attempts and verdicts listed).",
+  "V3 (error independence) remains unmet and cannot be met under this design: no critic qualification and no design approval follow from a scoped pass."
+ ],
+ "never_claimed": [
+  "an error rate, false-rejection rate or missed-defect rate beyond the observed counts (Task.md open decision on quantitative qualification remains unmet)",
+  "V3 / FR-006 / SC-005 error independence",
+  "generalization to other tasks or materials",
+  "a lens effect (see evals/deeptwin/effects/lens-effects-v5.json)",
+  "actual user alternatives or behavior"
+ ],
+ "open": [
+  "criticism verdicts do not carry the critic configuration digest (acceptance.open)",
+  "the journal and trial records live on the operator's disk: the hash chain, the per-call ledger binding and the post-verdict audit detect edits by the harness path, not a determined operator who rewrites every file",
+  "the commit-before-first-dispatch order is an audit item, not checked by code"
+ ]
+}
