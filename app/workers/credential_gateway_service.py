@@ -58,6 +58,7 @@ class CredentialGatewayService:
             "store_at": {"schema", "op", "metadata", "secret_b64u"},
             "query_record": {"schema", "op", "metadata"},
             "retire": {"schema", "op", "command_id", "record", "reason"},
+            "bind_head": {"schema", "op", "provider", "revision", "state", "record"},
             "snapshot": {"schema", "op"},
             "health": {"schema", "op"},
             "capabilities": {"schema", "op"},
@@ -72,6 +73,9 @@ class CredentialGatewayService:
             return self._vault.query_record(metadata=request["metadata"])
         if operation == "retire":
             return self._vault.retire(command_id=request["command_id"], record=request["record"], reason=request["reason"])
+        if operation == "bind_head":
+            return self._vault.bind_head(provider=request["provider"], revision=request["revision"],
+                                         state=request["state"], record=request["record"])
         if operation == "snapshot":
             return {"credentials": self._vault.snapshot()}
         if operation == "health":

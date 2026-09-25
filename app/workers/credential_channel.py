@@ -268,6 +268,12 @@ class CredentialGatewayClient:
     def retire(self, *, command_id: str, record: dict, reason: str) -> dict:
         return self._call(dict(schema="credential-op-v2", op="retire", command_id=command_id, record=record, reason=reason))
 
+    def bind_head(self, *, provider: str, revision: int, state: str, record: dict) -> dict:
+        """Publish the ledger's provider connection binding head to the gateway (the head
+        the send path checks at claim time). Nonsecret; idempotent per revision."""
+        return self._call({"schema": "credential-op-v2", "op": "bind_head", "provider": provider,
+                           "revision": revision, "state": state, "record": record})
+
     def submit(
         self,
         *,

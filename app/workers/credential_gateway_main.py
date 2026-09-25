@@ -25,7 +25,11 @@ the 0660 socket and publishes the HMAC readiness record under a fresh per-proces
 responder boot id. The generation itself is created and rotated only by the root-owned
 IPC initializer (`ipc_root.initialize_pair_root`); a responder cannot and does not.
 
-Serving: one authenticated owner at a time (the channel's in-flight bound is 1). The loop
+Serving: the shared `ProviderGatewayIngress` routes each owner's first frame to the
+credential-v2 vault engine or, for a `provider-send-prepare-v1`, to the send engine over
+the same vault with the fixed Claude API binding (`provider_gateway.claude_api_binding`).
+The send engine delivers custody, at claim time, only for the record the provider's
+binding head (`bind_head`) binds. One authenticated owner at a time (the channel's in-flight bound is 1). The loop
 waits for a pending connection in short slices, then accepts under a fresh operation
 deadline, so an idle wait never shortens a client's handshake window. A refused peer
 (SO_PEERCRED, wrong requester boot, malformed handshake) or a failed dialogue closes only
@@ -199,6 +203,7 @@ def serve(worker, service, attachment) -> int:
     """Serve accepted owners until a stop is requested or the generation is lost."""
 
     from .credential_channel import GatewayServiceError
+    from .provider_send_messages import ProviderSendError
 
     spec = worker.spec
     while not _stop.is_set():
@@ -219,7 +224,7 @@ def serve(worker, service, attachment) -> int:
         try:
             service.serve_connection(owner, deadline=deadline)
             _log("session_served")
-        except (GatewayServiceError, broker.BrokerError, OSError) as error:
+        except (GatewayServiceError, ProviderSendError, broker.BrokerError, OSError) as error:
             _log("session_failed", error)
         finally:
             try:
@@ -249,6 +254,9 @@ def _run(argv) -> int:
     from .credential_contracts import CredentialVaultError
     from .credential_gateway_service import CredentialGatewayService
     from .credential_vault import CredentialVault
+    from .provider_gateway import CredentialedProviderTransport, claude_api_binding
+    from .provider_gateway_ingress import ProviderGatewayIngress
+    from .provider_send_service import ProviderSendService
 
     root, spec = gateway_channel.gateway_channel()
     try:
@@ -263,7 +271,13 @@ def _run(argv) -> int:
         # The service's boot-secret argument is only type-checked: frames are
         # authenticated by the pair root's generation secret through the listener. A
         # fresh random value keeps the generation secret out of the service object.
-        service = CredentialGatewayService(vault, spec, broker.BootSecret(os.urandom(broker.AUTH_SECRET_BYTES)))
+        credential = CredentialGatewayService(vault, spec,
+                                              broker.BootSecret(os.urandom(broker.AUTH_SECRET_BYTES)))
+        # One ingress on the one endpoint: a credential-v2 operation goes to the vault
+        # engine, a provider-send prepare to the send engine over the same vault, which
+        # delivers custody only for the record the provider's binding head binds.
+        service = ProviderGatewayIngress(credential, ProviderSendService(
+            CredentialedProviderTransport(vault, claude_api_binding())))
         try:
             worker = listener.bind_worker_listener(root, spec, responder_boot_id=secrets.token_hex(32))
         except (listener.ListenerError, ipc_root.IpcRootError, broker.BrokerError) as error:

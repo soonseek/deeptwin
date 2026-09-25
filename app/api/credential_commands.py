@@ -28,6 +28,17 @@ A delete first CAS-revokes the binding to ``revoked_pending_erasure`` and only t
 retires the record. A stored record that loses its binding CAS is a valid unbound
 orphan: it is retired with reason ``unbound_orphan`` and never bound.
 
+Gateway binding head: after each head change (create/rotate CAS, delete revoke) the
+head is published to the gateway (``bind_head``, idempotent per revision) before the
+act retires anything, and the act completes only once the gateway acknowledged it.
+The gateway's send path delivers custody, at claim time, only for the record its head
+binds; a head the gateway has not acknowledged is listed ``gateway_head: pending`` and
+republished by the next act (a send naming its record is refused meanwhile).
+
+Catalog refresh: :meth:`CredentialActs.refresh_catalog` is the owner's one explicit
+provider read. It lists the models for the current binding revision through the
+gateway's provider-send path and records them by CAS on that revision.
+
 Unknown-command fence: the custody contract defines no gateway cancel/fence
 operation, so a store command whose query stays ``unknown`` cannot be cancelled at
 the gateway. After ``fence_after_seconds`` the owner may explicitly fence the act
@@ -40,8 +51,9 @@ later owner acts: a fenced command that turns out stored is retired as
 ``unbound_orphan``. The fence neutralizes a late commit; it does not prevent it.
 
 Reads (``snapshot``) serve only what this ledger already committed; they make
-no vault, gateway, provider or network call. No act here checks a key at the
-provider, refreshes a catalog or runs a model. This module imports no vault code.
+no vault, gateway, provider or network call. No create/rotate/delete/fence act
+checks a key at the provider, refreshes a catalog or runs a model; only the explicit
+refresh act reads the provider's model list. This module imports no vault code.
 """
 
 from __future__ import annotations
@@ -98,6 +110,9 @@ CREATE TABLE IF NOT EXISTS orphans (
     source_intent TEXT NOT NULL,
     state TEXT NOT NULL CHECK(state IN ('allocated', 'retired', 'conflict')),
     created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS stale_refreshes (
+    refresh_command TEXT PRIMARY KEY, provider TEXT NOT NULL, binding_revision INTEGER NOT NULL,
+    refused_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS fences (
     store_command TEXT PRIMARY KEY, intent_id TEXT NOT NULL UNIQUE, metadata TEXT NOT NULL,
     state TEXT NOT NULL CHECK(state IN ('fenced', 'orphaned', 'lost')),
@@ -109,7 +124,11 @@ _ADDED_COLUMNS = (
     ("acts", "binding_expected", "INTEGER"),
     ("acts", "bind_state", "TEXT"),
     ("records", "orphan", "INTEGER NOT NULL DEFAULT 0"),
+    # the highest binding revision the gateway acknowledged through `bind_head`
+    ("connections", "gateway_revision", "INTEGER NOT NULL DEFAULT 0"),
 )
+# Providers whose model list the gateway's send path can read (its `models` endpoint).
+LISTABLE_PROVIDERS = frozenset({"claude"})
 
 
 class CredentialCommandError(RuntimeError):
@@ -233,6 +252,56 @@ class CredentialCommandLedger:
             return None if row is None else {"binding_revision": row["binding_revision"],
                                              "model": row["model"]}
 
+    def unpublished_heads(self):
+        """Binding heads the gateway has not yet acknowledged (bounded)."""
+        with self._connect() as db:
+            return [{"provider": row["provider"], "revision": row["revision"], "state": row["state"],
+                     "record": json.loads(row["record"])} for row in db.execute(
+                "SELECT * FROM connections WHERE gateway_revision < revision ORDER BY provider "
+                "LIMIT ?", (_RECONCILE_BOUND,))]
+
+    def mark_head_published(self, provider, revision):
+        with self._lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("UPDATE connections SET gateway_revision=? WHERE provider=? AND "
+                       "gateway_revision < ?", (revision, provider, revision))
+
+    def bound_head(self, provider):
+        """The bound head, whether the gateway acknowledged it, and the vault metadata of
+        the record it binds (nonsecret; what a send names), or None."""
+        with self._connect() as db:
+            row = self._connection(db, provider)
+            if row is None or row["state"] != "bound":
+                return None
+            record = json.loads(row["record"])
+            for act in db.execute("SELECT store_metadata FROM acts WHERE handle=? AND "
+                                  "store_metadata IS NOT NULL", (handle_of(record["record_id"]),)):
+                metadata = json.loads(act["store_metadata"])
+                if metadata["command_id"] == row["command_id"]:
+                    return {"provider": provider, "revision": row["revision"], "record": record,
+                            "published": row["gateway_revision"] >= row["revision"],
+                            "metadata": metadata}
+            return None
+
+    def refresh_result(self, refresh_command):
+        """(provider, binding revision, state) of a refresh already recorded (``stale``
+        when it was refused because the binding moved), or None."""
+        with self._connect() as db:
+            row = db.execute("SELECT provider, binding_revision, state FROM catalogs WHERE "
+                             "refresh_command=?", (refresh_command,)).fetchone()
+            if row is None:
+                row = db.execute("SELECT provider, binding_revision, 'stale' AS state FROM "
+                                 "stale_refreshes WHERE refresh_command=?",
+                                 (refresh_command,)).fetchone()
+            return None if row is None else (row["provider"], row["binding_revision"], row["state"])
+
+    def refuse_refresh(self, refresh_command, provider, binding_revision):
+        """Make a refresh whose binding moved terminal: a replay answers ``catalog_stale``."""
+        with self._lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("INSERT OR IGNORE INTO stale_refreshes VALUES(?,?,?,?)",
+                       (refresh_command, provider, binding_revision, _now()))
+
     def _current_catalog(self, db, provider):
         head = self._connection(db, provider)
         if head is None or head["state"] != "bound":
@@ -263,9 +332,10 @@ class CredentialCommandLedger:
                 bound = row["state"] == "bound"
                 catalog = model = None
                 if bound:
-                    catalog = db.execute("SELECT 1 FROM catalogs WHERE provider=? AND binding_revision=? "
-                                         "AND state='current'", (row["provider"], row["revision"])).fetchone()
-                    model = db.execute("SELECT 1 FROM model_choices WHERE provider=? AND "
+                    catalog = db.execute("SELECT models FROM catalogs WHERE provider=? AND "
+                                         "binding_revision=? AND state='current'",
+                                         (row["provider"], row["revision"])).fetchone()
+                    model = db.execute("SELECT model FROM model_choices WHERE provider=? AND "
                                        "binding_revision=? AND state='current'",
                                        (row["provider"], row["revision"])).fetchone()
                 connections.append({
@@ -273,7 +343,12 @@ class CredentialCommandLedger:
                     "handle": handle_of(json.loads(row["record"])["record_id"]),
                     "binding_revision": row["revision"],
                     "catalog": "current" if catalog is not None else "absent",
-                    "model_choice": "current" if model is not None else "absent"})
+                    "model_choice": "current" if model is not None else "absent",
+                    # whether the gateway's send path already enforces this head
+                    "gateway_head": ("applied" if row["gateway_revision"] >= row["revision"]
+                                     else "pending"),
+                    "models": [] if catalog is None else json.loads(catalog["models"]),
+                    "chosen_model": None if model is None else model["model"]})
             pending = []
             for row in db.execute(
                     "SELECT a.*, f.state AS fence_state, r.state AS fenced_record FROM acts a "
@@ -490,7 +565,8 @@ class CredentialCommandLedger:
             won = won and record_row["state"] == "stored_unbound"
             if won:
                 if head is None:
-                    db.execute("INSERT INTO connections VALUES(?,?,?,?,?,?)", (
+                    db.execute("INSERT INTO connections(provider, revision, state, record, "
+                               "command_id, updated_at) VALUES(?,?,?,?,?,?)", (
                         act["provider"], revision + 1, "bound", _canonical(record),
                         metadata["command_id"], _now()))
                 else:
@@ -651,7 +727,8 @@ class CredentialCommandLedger:
                 return
             head = self._connection(db, provider)
             if head is None or head["state"] != "bound" or head["revision"] != expected_binding_revision:
-                raise CredentialCommandError("conflict")
+                # the binding moved between the refresh request and its result
+                raise CredentialCommandError("catalog_stale")
             db.execute("DELETE FROM catalogs WHERE provider=? AND binding_revision=?",
                        (provider, expected_binding_revision))
             db.execute("INSERT INTO catalogs VALUES(?,?,?,?,?,?,?)", (
@@ -669,9 +746,10 @@ class CredentialCommandLedger:
         with self._lock, self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             catalog = self._current_catalog(db, provider)
-            if (catalog is None or catalog["binding_revision"] != expected_binding_revision
-                    or model not in json.loads(catalog["models"])):
-                raise CredentialCommandError("conflict")
+            if catalog is None or catalog["binding_revision"] != expected_binding_revision:
+                raise CredentialCommandError("catalog_stale")
+            if model not in json.loads(catalog["models"]):
+                raise CredentialCommandError("model_not_listed")
             db.execute("INSERT OR REPLACE INTO model_choices VALUES(?,?,?,?,?,?)", (
                 provider, expected_binding_revision, model, "current", _now(), None))
 
@@ -696,20 +774,51 @@ class _Transaction:
 class CredentialActs:
     """Drive owner acts against a frame-only gateway client (no vault import).
 
-    No act here performs a provider key check, a catalog refresh, a model call or a
-    runtime dispatch: the client exposes only custody operations."""
+    No create/rotate/delete/fence act performs a provider key check, a catalog refresh,
+    a model call or a runtime dispatch: the custody client exposes only custody
+    operations and the binding-head publication. The one provider read is the owner's
+    explicit :meth:`refresh_catalog`, through the separate ``catalog_lister`` (the
+    gateway's provider-send path), and nothing else calls it."""
 
-    def __init__(self, client, ledger):
+    def __init__(self, client, ledger, *, catalog_lister=None):
         from ..workers.credential_channel import GatewayServiceError
 
         if type(ledger) is not CredentialCommandLedger:
             raise TypeError("an exact credential command ledger is required")
-        for name in ("store_at", "query_record", "retire"):
+        for name in ("store_at", "query_record", "retire", "bind_head"):
             if not callable(getattr(client, name, None)):
                 raise TypeError("a credential gateway client is required")
+        if catalog_lister is not None and not callable(catalog_lister):
+            raise TypeError("a catalog lister must be callable")
         self._client = client
         self._ledger = ledger
+        self._lister = catalog_lister
         self._gateway_error = GatewayServiceError
+
+    # ------------------------------------------------------------ binding heads
+
+    def _publish_heads(self, *, strict):
+        """Publish every binding head the gateway has not acknowledged (``bind_head``,
+        idempotent per revision, no secret). The gateway's send path delivers custody
+        only for the record its head binds, so until a rotation's or delete's head is
+        acknowledged the act is not complete: ``strict`` raises ``command_pending``
+        (retryable; the same act replays the publication)."""
+        for head in self._ledger.unpublished_heads():
+            try:
+                result = self._client.bind_head(provider=head["provider"], revision=head["revision"],
+                                                state=head["state"], record=head["record"])
+            except self._gateway_error as exc:
+                if not strict:
+                    continue
+                if exc.code == "conflict":
+                    # the gateway holds a newer or different head than this ledger
+                    raise CredentialCommandError("gateway_invalid") from None
+                raise CredentialCommandError("command_pending", retryable=True) from None
+            if result != head:
+                if not strict:
+                    continue
+                raise CredentialCommandError("gateway_invalid")
+            self._ledger.mark_head_published(head["provider"], head["revision"])
 
     # ------------------------------------------------------------ create / rotate
 
@@ -748,6 +857,8 @@ class CredentialActs:
             # unbound orphan, retired and never bound (a rotation's predecessor stays bound)
             self._retire_orphans()
             raise CredentialCommandError("connection_conflict")
+        # the gateway enforces the new head before the predecessor is retired
+        self._publish_heads(strict=True)
         act = self._ledger.act(intent)
         if act["retire_state"] == "conflict":
             raise CredentialCommandError("conflict")
@@ -795,6 +906,8 @@ class CredentialActs:
     def delete(self, *, intent_id, handle):
         self._reconcile()
         act = self._ledger.allocate_delete(intent_id=intent_id, handle=handle)
+        # the revoked head reaches the gateway before the record is retired
+        self._publish_heads(strict=True)
         if act["retire_state"] == "conflict":
             raise CredentialCommandError("conflict")
         if act["retire_state"] != "retired":
@@ -841,7 +954,9 @@ class CredentialActs:
 
     def _reconcile(self):
         """Best-effort, bounded: query fenced commands and retire orphans. Queries and
-        retirements only; never a secret, a new store command or a provider call."""
+        retirements only; never a secret, a new store command or a provider call. Unpublished
+        binding heads are republished first (``bind_head``, best effort)."""
+        self._publish_heads(strict=False)
         for fence in self._ledger.open_fences():
             metadata = json.loads(fence["metadata"])
             try:
@@ -899,6 +1014,96 @@ class CredentialActs:
         return {"intent_id": intent_id, "state": "fenced",
                 "uncertain_record": _uncertain(state, record_state)}
 
+    # ------------------------------------------------------------ catalog / model
 
-__all__ = ["FENCE_AFTER_SECONDS", "CredentialActs", "CredentialCommandError",
+    def _catalog_receipt(self, provider):
+        head = self._ledger.connection(provider)
+        catalog = self._ledger.catalog(provider)
+        choice = self._ledger.model_choice(provider)
+        if head is None or catalog is None:
+            raise CredentialCommandError("catalog_stale")
+        return {"provider": provider, "binding_revision": catalog["binding_revision"],
+                "catalog": "current", "models": catalog["models"],
+                "chosen_model": None if choice is None else choice["model"]}
+
+    def refresh_catalog(self, *, intent_id, provider):
+        """The owner's explicit catalog refresh for the connection's CURRENT binding.
+
+        The model list is read through the gateway's provider-send path
+        (``catalog_lister``): the gateway resolves the credential from its own custody,
+        and only for the record its binding head binds; the control plane names the
+        record and never sees the key. The result is recorded with
+        :meth:`CredentialCommandLedger.record_catalog_refresh` bound to the revision read
+        before the request, so a rotation or delete between request and result makes the
+        result stale and it is refused (``catalog_stale``). ``intent_id`` is the refresh
+        command: a replay of a recorded refresh answers from the ledger, with no provider
+        call. No other act calls this."""
+        if self._lister is None:
+            raise CredentialCommandError("catalog_unavailable", retryable=True)
+        if provider not in PROVIDER_MODES:
+            raise CredentialCommandError("invalid_input")
+        if provider not in LISTABLE_PROVIDERS:
+            raise CredentialCommandError("catalog_unsupported")
+        UUID(intent_id)
+        prior = self._ledger.refresh_result(intent_id)
+        if prior is not None:
+            head = self._ledger.connection(provider)
+            if (prior[0] != provider or prior[2] != "current" or head is None
+                    or head["state"] != "bound" or head["revision"] != prior[1]):
+                raise CredentialCommandError("catalog_stale")
+            return self._catalog_receipt(provider)
+        self._reconcile()
+        head = self._ledger.bound_head(provider)
+        if head is None:
+            raise CredentialCommandError("connection_unbound")
+        if not head["published"]:
+            # the gateway must enforce this head before a send can name its record
+            self._publish_heads(strict=True)
+        try:
+            models = self._lister(provider=provider, metadata=head["metadata"],
+                                  record=head["record"], binding_revision=head["revision"],
+                                  refresh_id=intent_id)
+        except CatalogListError as exc:
+            current = self._ledger.connection(provider)
+            if (current is None or current["state"] != "bound"
+                    or current["revision"] != head["revision"]):
+                self._ledger.refuse_refresh(intent_id, provider, head["revision"])
+                raise CredentialCommandError("catalog_stale") from None
+            raise CredentialCommandError(exc.code, retryable=exc.retryable) from None
+        # CAS on the revision read before the request: a rotation in between voids it
+        try:
+            self._ledger.record_catalog_refresh(provider, refresh_command=intent_id,
+                                                expected_binding_revision=head["revision"],
+                                                models=models)
+        except CredentialCommandError as exc:
+            if exc.code == "invalid_input":  # an empty or out-of-bounds provider list
+                raise CredentialCommandError("provider_unavailable", retryable=True) from None
+            if exc.code == "catalog_stale":
+                self._ledger.refuse_refresh(intent_id, provider, head["revision"])
+            raise
+        return self._catalog_receipt(provider)
+
+    def choose_model(self, *, provider, binding_revision, model):
+        """The owner's model choice: only a model the current revision's catalog lists."""
+        if provider not in PROVIDER_MODES:
+            raise CredentialCommandError("invalid_input")
+        self._ledger.choose_model(provider, expected_binding_revision=binding_revision, model=model)
+        return {"provider": provider, "binding_revision": binding_revision, "model": model}
+
+
+class CatalogListError(RuntimeError):
+    """A sanitized failure of the gateway's model-list read (never provider bytes)."""
+
+    RETRYABLE_CODES = ("provider_unavailable",)
+    CODES = ("binding_refused", "provider_rejected", *RETRYABLE_CODES)
+
+    def __init__(self, code):
+        if code not in self.CODES:
+            code = "provider_unavailable"
+        self.code = code
+        self.retryable = code in self.RETRYABLE_CODES
+        super().__init__(code)
+
+
+__all__ = ["FENCE_AFTER_SECONDS", "LISTABLE_PROVIDERS", "CatalogListError", "CredentialActs", "CredentialCommandError",
            "CredentialCommandLedger"]

@@ -4,12 +4,14 @@
 // returns it. Refreshing the catalog is an explicit, free models read. Choosing a model
 // seals the owner's choice of a model the refreshed catalog listed; generation happens
 // only in a run the owner consented to, within its budget. Server text reaches the DOM
-// through textContent only.
+// through textContent only. This key is independent of the credential gateway's key
+// (records page): neither path ever changes the other, and the page says so.
 
 const BASE_PATH = /^\/(?:[0-9a-f]{32}\/)?$/;
 
 export const MESSAGES = Object.freeze({
   intro: 'Claude API 키는 이 서버의 메모리에만 보관됩니다. 서버를 다시 시작하면 다시 입력해야 합니다. 키를 저장하거나 모델 목록을 읽는 것만으로는 과금되는 모델 호출이 일어나지 않습니다.',
+  independent: '이 키는 기록 페이지의 자격증명 게이트웨이 키와 별개입니다. 게이트웨이에서 키를 교체하거나 삭제해도 이 키는 바뀌지 않으니, 더 쓰지 않을 키라면 여기서도 따로 잊으세요. 런(run) 실행은 이 키를 씁니다.',
   noKey: '저장된 키가 없습니다.',
   keyStored: '키가 이 서버의 메모리에 있습니다.',
   noCatalog: '모델 목록을 아직 읽지 않았습니다.',
@@ -46,7 +48,8 @@ export function createClaudeConnection({ root, document, request, basePath = '/'
 
   const status = element('p', '', { role: 'status', 'aria-live': 'polite' });
   const body = element('div');
-  root.replaceChildren(element('h2', 'Claude 연결'), element('p', MESSAGES.intro), status, body);
+  root.replaceChildren(element('h2', 'Claude 연결'), element('p', MESSAGES.intro),
+    element('p', MESSAGES.independent), status, body);
 
   function say(text, code) {
     status.textContent = text;

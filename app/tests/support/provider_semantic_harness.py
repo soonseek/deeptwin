@@ -91,6 +91,8 @@ def encrypted_credential(tmp_path, secret=b"synthetic-task47-api-key"):
     with CredentialVault(**args) as vault:
         receipt = vault.store_at(metadata=meta, secret=secret)
         record = {key: receipt[key] for key in ("record_id", "record_version", "ciphertext_sha256")}
+        # the gateway delivers custody only for the record its binding head binds (T090)
+        vault.bind_head(provider=meta["provider"], revision=1, state="bound", record=record)
         yield vault, meta, record
 
 

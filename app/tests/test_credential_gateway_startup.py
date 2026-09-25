@@ -62,7 +62,8 @@ real_uds = pytest.mark.skipif(
 def connection(handle, state, revision):
     """The GET projection of a provider connection's binding head (no catalog yet)."""
     return {"provider": "claude", "state": state, "handle": handle, "binding_revision": revision,
-            "catalog": "absent", "model_choice": "absent"}
+            "catalog": "absent", "model_choice": "absent", "gateway_head": "applied",
+            "models": [], "chosen_model": None}
 
 
 def _no_connect(monkeypatch):
@@ -191,9 +192,10 @@ def test_the_supported_factory_serves_create_list_rotate_delete_over_the_real_so
     control = base / "control"
     control.mkdir(mode=0o700)
     os.chown(control, CONTROL_UID, CONTROL_GID)
-    # the HTTP flow makes exactly four gateway calls: create store_at, rotate store_at +
-    # superseded retire, delete retire; the status reads make none
-    server = start_gateway(base, sessions=4)
+    # the HTTP flow makes exactly seven gateway calls: create store_at + bind_head, rotate
+    # store_at + bind_head + superseded retire, delete bind_head (the revoked head) + retire;
+    # the status reads make none
+    server = start_gateway(base, sessions=7)
     try:
         result = _run_app_child(base, [
             {"op": "store", "intent_id": str(uuid4()), "secret": FIRST},
@@ -225,7 +227,7 @@ def test_the_supported_factory_serves_create_list_rotate_delete_over_the_real_so
         "connections": [connection(handle, "revoked_pending_erasure", 3)], "pending_acts": []}}
     assert result["ledger"] == ["0o600", CONTROL_UID]
     assert result["vault_modules"] == []  # the control plane never loaded the vault
-    assert summary["outcomes"] == ["served"] * 4
+    assert summary["outcomes"] == ["served"] * 7
     assert summary["health"]["cleanup_pending"] == 2 and summary["health"]["stored_unbound"] == 0
     assert journal_counts(base) == (2, 2, 2, 2)
     assert_no_secret_bytes(base, FIRST.encode(), SECOND.encode())

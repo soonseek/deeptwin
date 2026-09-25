@@ -1382,3 +1382,240 @@ Frozen identities (SHA-256; this block supersedes earlier blocks for these paths
   test_credential_gateway_startup/main).
 - **Carried items.** Everything else carried above (gateway-side fence, binding consumers, T087,
   compose, erasure, audit and full regression) is unchanged.
+
+## 2026-09-25 — explicit catalog refresh, model choice, the gateway's claim-time binding check
+
+This slice takes the three open items above: (1) no `refresh_catalog` route or provider
+list-models call; (2) the gateway send path did not read the binding head; (3) the
+direct-adapter `ClaudeConnection` catalog as a separate authority.
+
+### Gateway binding head (`bind_head`) and the claim-time check
+
+- The vault journal gains a `heads` table (one row per provider: `{provider, revision, state,
+  record}` plus its SHA-256). A first-layout journal gains it on open (additive; tested). The
+  journal validator checks each head against its receipt.
+- `credential-op-v2` gains `bind_head {provider, revision, state, record}`. It is nonsecret and
+  revision-monotone. The identical head is an idempotent replay. A lower revision, or the same
+  revision with another body, is refused `conflict`. A `bound` head must name a receipted,
+  unretired record of that provider. The gateway trusts the authenticated control side for this,
+  exactly as it does for `retire`.
+- The control plane publishes every head change (create/rotate CAS, delete revoke) before it
+  retires anything. The ledger's `connections.gateway_revision` records the acknowledgement. An
+  act is complete only after the gateway acknowledged its head; otherwise the act answers
+  `503 command_pending` and GET shows `gateway_head: "pending"`. The same act (or the next owner
+  act's reconciliation) republishes it.
+- `CredentialVault.delivery_for_exchange` (the send path, after `claim`) now requires, under the
+  same vault exclusion that `bind_head` takes, that the lease's record is exactly the provider's
+  head record in state `bound`. Refusal is `provider_binding_unavailable` → `permission_denied`,
+  phase `not_sent`, before any connection is opened.
+- Consequences:
+  - A rotation that lands between a send's commit and its claim refuses the send.
+  - A send claimed first keeps the exclusion while writing, so the rotation is serialized after
+    that one exchange.
+  - A revoked, orphaned or never-bound record, a fenced command's late commit, and a successor
+    whose head is not yet acknowledged are never delivered.
+  - Until a rotation's head is acknowledged, the gateway keeps enforcing the previous head. The
+    rotation act reports `command_pending` meanwhile, so this is visible, not silent.
+
+### Explicit catalog refresh and model choice
+
+- `POST /api/v1/credentials/connections/{provider}/catalog-refresh {"intent_id"}` (route
+  `credentials.catalog_refresh`, `work.command`, CSRF). `CredentialActs.refresh_catalog` reads the
+  bound head and the vault metadata of its record (nonsecret), publishes the head if needed, then
+  calls `GatewayCatalogLister` (`app/api/credential_catalog.py`).
+- The lister sends one `provider-send-prepare-v1` `models` dialogue per page through
+  `ProviderSendClient`, naming the record's custody metadata and reference. The gateway resolves
+  and injects the key at send time. Pages are joined by the semantic codec's bounded traversal.
+- The result is recorded with `record_catalog_refresh(expected_binding_revision=<revision read
+  before the request>)`. A rotation or delete in between refuses it `409 catalog_stale`, which is
+  terminal for that intent (`stale_refreshes`). A replay of a recorded refresh answers from the
+  ledger with no provider request.
+- Other refusals: `connection_unbound`, `catalog_unsupported` (only `claude` is listable),
+  `binding_refused`, `424 provider_rejected` (401/403), `503 provider_unavailable`, and `503
+  dependency_unavailable` without a lister.
+- `POST …/{provider}/model-choice {"binding_revision", "model"}` (route `credentials.model_choice`)
+  accepts only a model of the current revision's catalog (`catalog_stale`, `model_not_listed`).
+  It makes no provider call.
+- GET stays ledger-only and zero-effect (re-pinned with every custody op, `bind_head` and the lister
+  patched to fail). It now also carries `gateway_head`, the catalog's `models` and
+  `chosen_model`.
+- Production wiring:
+  - `open_credential_attachment` builds the lister over `ProviderSendClient.for_gateway`, on the
+    same verified endpoint and requester boot as the custody client.
+  - `credential_gateway_main` now serves the shared `ProviderGatewayIngress`: credential-v2 to the
+    vault engine, and a send prepare to `ProviderSendService` over the same vault, with the fixed
+    `provider_gateway.claude_api_binding()` (HTTPS `api.anthropic.com:443`, `/v1`, `x-api-key`).
+    `serve()` also absorbs a failed send dialogue (`ProviderSendError`) as `session_failed`.
+  - Routes: 115 → 117 installed (118 with the example contribution in `test_first_party`).
+
+### Two independent Claude key paths (item 3)
+
+They are independent by design, and api.md now says so precisely:
+
+- The credential gateway path (`/api/v1/credentials/*`) uses encrypted gateway custody, the ledger
+  binding head, and a catalog/model choice keyed by binding revision.
+- The direct-adapter `/api/v1/connections/claude/*` (`ClaudeConnection`) keeps its key in
+  control-plane memory only, with its own catalog snapshot and sealed `model_choice`. The run
+  executor uses this key for generation today.
+- Neither path reads the other's key, so a rotation in the ledger cannot leave the direct adapter
+  on "the old key". It never had that key.
+- Both screens state it. The records-page credentials panel has `CONNECTION_MESSAGES.independent`,
+  and the Claude connection panel has `MESSAGES.independent`. The owner who retires a key must
+  forget it in each path where it was entered.
+
+### Owner UI
+
+`createCredentialsPanel` changes:
+
+- **Refresh button.** A bound `claude` head gets "모델 목록 새로 고침". It POSTs a fresh
+  `{"intent_id"}` with CSRF, then re-reads the ledger.
+- **Model choice.** A current catalog gets a model `<select>` and "이 모델 선택", which POSTs
+  `{binding_revision, model}`. The chosen model is shown.
+- **Other rows.** A `codex` head says it is not listable. A `gateway_head: pending` head says the
+  key is not used until the gateway confirms the binding.
+- **Messages.** Each refusal has its own message and `data-state`. The voiding notice now says
+  that only the refresh button reads the list.
+- **Validation.** Malformed `models`/`chosen_model`/`gateway_head` in the status read is refused.
+
+### Tests
+
+`app/tests/test_credential_catalog_refresh.py` (10, new). It runs on the binding harness plus
+`Gateway.send_client(port)`: real authenticated frames on socket pairs into a `ProviderSendService`
+over the same vault, bound to a loopback mock of the paginated models endpoint.
+
+- **Refresh and choice.** Two pages, the second after the first page's `last_id`. Every request
+  carried the bound key (injected by the gateway), and the custody client saw only the create's
+  `store_at`. GET lists the models. A replay makes no request. A choice is validated
+  (`model_not_listed`, `catalog_stale`). A rotation voids both, and a new refresh uses the new key.
+- **Rotation between request and result.** The mock rotates while answering page 1. The next page
+  is refused by the gateway head, and the result is `409 catalog_stale` (also on replay). There is
+  no catalog, and there was exactly one provider request.
+- **Refusals with zero provider effect.** Unbound, codex, bad provider or body, missing CSRF, 401
+  → 424, 503, and no lister → 503.
+- **GET zero-effect** with a catalog.
+- **Rotation racing a send.** A lease is committed under revision 1. The rotation lands and its
+  predecessor retirement is held back (so only the head refuses). The exchange is refused
+  `permission_denied`/`not_sent` with zero requests at the mock. A send naming revision 2 is then
+  delivered with the new key.
+- **Send claimed first.** The mock triggers the rotation while it receives the request. The
+  exchange completes with the old key, the rotation completes after it, and the next revision-1
+  send is refused.
+- **Unacknowledged head.** A lost `bind_head` leaves `gateway_head: pending` and the rotation
+  `503`. A send of the successor is refused, and a refresh is `503 command_pending`, with no
+  request. The replay publishes the head. Delete publishes `revoked_pending_erasure` 3, and both
+  versions are refused.
+- **A record no head binds** is never delivered.
+- **Stale or conflicting `bind_head`** is refused; an identical head is idempotent.
+- **Migration** of a first-layout journal.
+
+Mutation check (temporary, reverted): disabling the claim-time head check fails the racing-send,
+unacknowledged-head and unbound-record tests. The racing test holds back the predecessor's
+retirement precisely so that the retirement alone cannot mask the check.
+
+Changed existing tests:
+
+- `provider_semantic_harness.encrypted_credential` binds its record (head revision 1), because the
+  send path now requires a head. All provider-send and semantic-vertical tests run over it.
+- `test_credential_binding`/`test_credential_routes_v2`:
+  - The `Spy` records `bind_head` apart from the custody calls, so the existing custody-call pins
+    are unchanged.
+  - The lost-reply arms skip head replies (`is_head_reply`); `lose_head` arms a head reply
+    explicitly.
+  - The `connection` projection gains the new fields.
+- Real-UDS `test_credential_gateway_startup`/`main`:
+  - Sessions for create → rotate → delete are 4 → 7 (each head publication is a dialogue).
+  - The SIGTERM case's create is now `503 command_pending`: the store completed, and then the head
+    publication found the gateway stopped.
+  - The restart case's retry is query + `bind_head` (2 sessions).
+- Route-count pins 115 → 117 in the five files. `test_web_owner_integration` lists the two new
+  route ids.
+- `account-credentials.test.mjs` 20 → 30 node tests. The head test now allows exactly the refresh
+  and choice buttons. The new tests cover the refresh POST (exact path, CSRF, fresh intent), the
+  choice POST, five refresh refusals, the choice refusals, a non-listable provider or pending head,
+  and a malformed catalog.
+- `claude-connection.test.mjs` asserts the independence notice.
+- `browser-credentials.test.mjs` and `fixtures/credentials_server.py`:
+  - The test-only `POST /__test__/catalog` route is gone.
+  - The browser case uses the product refresh and choice routes through the gateway's send path to
+    an in-fixture loopback mock provider.
+  - An observation-only `GET /__test__/upstream` reports request and distinct-key counts, never a
+    key.
+  - The case checks: no request before the refresh; one request after it; a choice makes none; the
+    rotation voids the catalog and makes none; a refresh at revision 2 uses a second distinct key;
+    a revoked head offers no button. The secret sweep is unchanged.
+
+```text
+env -u DEEPTWIN_LIVE_ANTHROPIC_API_KEY .venv/bin/python -m pytest -q -p no:cacheprovider \
+  app/tests/test_credential_*.py test_first_party.py test_web_owner_integration.py test_works_api.py \
+  test_runs_api.py test_model_selection.py test_model_selection_api.py test_web_shell_assets.py
+    415 passed (the real-UDS startup/main tests ran here as root)
+... app/tests/test_provider_*.py, one serial pytest process per file (62 files, no other load)
+    2396 passed, 1 skipped (unchanged metadata skip), 1 failed: test_provider_service (one test;
+    the file passed 39/39 on 2 immediate reruns; it imports none of the changed code). A single
+    combined run of all 62 files stalled here in test_provider_conformance_verified; that test
+    passes alone on both the base 2746376 and this tree (17 s each), and in the per-file run.
+node --test app/tests/[!b]*.test.mjs app/tests/b[!r]*.test.mjs     279 pass, 0 fail
+    (account-credentials 20 → 30; claude-connection unchanged count)
+CONTROL_PYTHON=… CONTROL_PLAYWRIGHT_MODULE=… node --test --test-concurrency=1 \
+  browser-model-selection browser-credentials browser-records     14 pass, 0 fail, 1 skipped
+    (the existing environment-gated skip)
+ruff check on the new modules and changed lines: clean (pre-existing findings elsewhere in the
+    touched files are unchanged)
+```
+
+Frozen identities (SHA-256; this block supersedes earlier blocks for these paths):
+
+```text
+c0a4d44875b39d8da589771a70bcc4daa5f11b1dd9d61fe6c926677bb5ae1cf7  app/api/credential_catalog.py
+ef42cc1459f5b88e76b99f4e5fe2b9dd1e1b055bf777b93b76ccb8f8cafeaadd  app/api/credential_commands.py
+e53c7df8fa255f461258e27df454230f3bfcd858bc580055f53bbb858186fe52  app/api/credential_routes.py
+e596a015908f77fcac181d74f56b535409ebafd8623c9e3779dc9afce10ae573  app/api/credential_wiring.py
+0363e82848be08a0ac09a6dd1e75749c8b64008ef25adb155f6e5d25503588b5  app/api/route_contributions/credentials-v1.json
+ccba483517546d31a1fabaab1356e41e8520130cbe0b7a83344f494fd3fe6037  app/workers/credential_vault.py
+8396cb7ec11b7c20b4032468cad94a6a5fb6c6af6a08a1e7d75a9f5a88073d31  app/workers/credential_journal.py
+f09521971424910406a0d91dfd54ad7cc70aeadd186cd4e358f035937efb6986  app/workers/credential_channel.py
+f57ce37759c668eff3dde23c6cc69c112049bb94aa6e9f037799b7726b3f0bf8  app/workers/credential_gateway_service.py
+67c147f3121597d371a08226f5532293efcaf6d3e85c320b75948f5a38021fb6  app/workers/credential_gateway_main.py
+e29c776ad5797f12304845b62aca05fd9139494a406eb476599869c2c5900493  app/workers/provider_gateway.py
+40c881cbebab2869bfc6e314e4392c3f17973d770b7590aa1b721798e99873d8  app/static/account.mjs
+024b0fab55aff0033264fd15743fd41803848b24a03bd6e3e6878452399e76db  app/static/claude-connection.mjs
+1d55e6bd3f01eda7965df6ef658b16b6a92a3bb6752cc4528a76789d509f27ed  app/tests/test_credential_catalog_refresh.py
+997300e2d3e0f55e3c8a1704a5c5c05c794ee8bf83bd82ef6a9d3e498964457a  app/tests/test_credential_binding.py
+2dc7b3ecd5414b041ea3310ebefdc56981b30770a9a1df46dec83576a472451e  app/tests/test_credential_routes_v2.py
+c2a373a2705981c97fb08e142d8dd374acca3ec76a8b34e2f00bb1dacded43d8  app/tests/test_credential_gateway_persistence.py
+aeff91677a8f04c954130fcf92b2e0665be40cb70ee56929bc808c8a8373d290  app/tests/test_credential_gateway_startup.py
+0e9587788d2b40f3f339192e4072a914850841504ec61248227ba177434e8f5b  app/tests/test_credential_gateway_main.py
+d7f258e73fe813f75ee664bec383b53395f70ca9293df40044257500c3e0b714  app/tests/support/provider_semantic_harness.py
+f367e80d48f50d3a038919164c292f91fb6021599e70dadecc5ce4dd73f52432  app/tests/account-credentials.test.mjs
+63387addd8a4041eeb10a73dd5a98889ad2aea94edd345b2e0058ca2c14c89df  app/tests/claude-connection.test.mjs
+ec2b6e7ace787e384701f032ddf98a22cc3a2dea4bb2ffc2d24fa0d73e293724  app/tests/browser-credentials.test.mjs
+e3627f136106bc9ac5eaed7a523342aa3e94eac52ae1ba8569e833816058900f  app/tests/fixtures/credentials_server.py
+c1bf68a8d382c408601c235312b759a7f1f07c6756ea892de13b5aa74d8b3ec4  app/tests/test_first_party.py
+acb79f7f59f566950c8ac91a7b70604d83a447c296b3ebe37928e7ab49935c2c  app/tests/test_web_owner_integration.py
+a01bfb1d1699d45b52eb6797bdfaacb3c396e1c63e389cedf7c4300597b2aaa9  app/tests/test_works_api.py
+b621a39d8279292c9091b1c6e197ad92ae8a527246b29770f21db7514bce4063  app/tests/test_runs_api.py
+2b35232372ca5ce0ce3dc771b743f8ebeb69cddeaaaddc33adf2ac83f14de847  app/tests/test_provider_source_startup.py
+```
+
+### Still not claimed
+
+- **Runtime dispatch through the gateway.** Runs still generate through the direct-adapter
+  `ClaudeConnection` key. The gateway send path is used only by the catalog refresh. The ledger's
+  model choice is not yet read by any run.
+- **T087.** `claude_api_binding()` is a fixed built-in binding, not a T087-qualified
+  provider-transport manifest. There is no budget binding of the send.
+- **Production send composition, untested end to end.** The gateway process composes the send
+  engine, but no test drives a provider-send dialogue through `credential_gateway_main` over the
+  real UDS. That would need a network seam or a real provider. The send branch over the real
+  listener is covered by the existing `test_provider_gateway_owned` harness, and the refresh by the
+  in-process harness here. Compose/image wiring and the gateway container's egress to the provider
+  origin are unchanged.
+- **Head publication is not atomic with the ledger CAS.** Between the ledger CAS and the gateway's
+  acknowledgement, the gateway still enforces the previous head. The act stays `command_pending`
+  and GET shows `gateway_head: pending`, but a sender holding the previous record could still be
+  served in that window. Today the only sender is the refresh, and it refuses an unacknowledged
+  head. The gateway trusts the authenticated control side for `bind_head`, exactly as it does for
+  `retire`.
+- **Other carried items.** The gateway-side fence (a late commit is neutralized, not prevented),
+  erasure/`erasure_completed`, an independent audit, and the full shared regression are all
+  unchanged.

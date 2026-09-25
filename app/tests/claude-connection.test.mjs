@@ -41,6 +41,8 @@ test('the key is masked, sent once, and cleared from the field', async () => {
   const { root, asked, connection } = panel([empty, keyed]);
   await connection.load();
   assert.match(root.textContent, new RegExp(MESSAGES.intro.slice(0, 20)));
+  // the direct-adapter key is independent of the credential gateway's, and the page says so
+  assert.ok(root.textContent.includes(MESSAGES.independent));
   const key = byId(root, 'claude-key');
   assert.equal(key.getAttribute('type'), 'password');
   assert.equal(key.getAttribute('autocomplete'), 'off');

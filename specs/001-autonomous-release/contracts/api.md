@@ -491,8 +491,53 @@ the fence: later owner acts query open fences and retire such a late record as `
 The fence therefore neutralizes a late commit; it does not prevent it at the gateway.
 
 `GET /api/v1/credentials` returns `{credentials, connections, pending_acts}` from the committed
-ledger: redacted credential entries, each provider's binding head (`binding_revision`, and whether a
-catalog snapshot/model choice is `current` for that revision) and the unfinished or fenced acts.
+ledger: redacted credential entries, each provider's binding head (`binding_revision`, whether a
+catalog snapshot/model choice is `current` for that revision, `models` of that catalog,
+`chosen_model`, and `gateway_head: applied|pending`) and the unfinished or fenced acts.
+
+Gateway binding head and claim-time check (T090, 2026-09-25 refresh slice): after every head change
+(create/rotate CAS, delete revoke) the control plane publishes the head to the gateway with the
+nonsecret, revision-monotone, idempotent `credential-op-v2` `bind_head {provider, revision, state,
+record}` (a lower revision, or the same revision with another body, is refused `conflict`),
+before it retires anything; the act completes only after the gateway acknowledged it (otherwise
+`503 command_pending`, the head reads `gateway_head: pending`, and the same act or the next act
+republishes). The gateway journals the head beside custody. Its provider-send path, at claim time
+and under the same vault exclusion as `bind_head`, delivers custody only for the record the
+provider's current head binds in state `bound`; a rotated predecessor, a revoked, orphaned or
+fenced record, a record no head binds, or a successor whose head the gateway has not acknowledged
+is refused `permission_denied` in phase `not_sent`, before any provider byte. A rotation therefore
+either lands before a send's claim (the send is refused) or after its request was written (that
+one exchange was claimed under the previous head); the rotation act is not reported complete until
+the gateway enforces the new head.
+
+Catalog refresh and model choice (credential gateway path): `POST /api/v1/credentials/connections/
+{provider}/catalog-refresh {"intent_id"}` (route `credentials.catalog_refresh`, `work.command`,
+CSRF) is the owner's one explicit provider read. The control plane reads the current bound head,
+then asks the gateway through the provider-send dialogue (`provider-send-prepare-v1`, endpoint
+`models`, one dialogue per page) naming only the bound record's nonsecret custody metadata; the
+gateway resolves and injects the credential at send time, and the control plane never sees it.
+The result is recorded with `record_catalog_refresh` bound to the revision read before the
+request: a rotation or delete between request and result refuses it `409 catalog_stale` (terminal
+for that intent). `intent_id` is the refresh command; a replay of a recorded refresh answers from
+the ledger with no provider request. Other refusals: `409 connection_unbound`, `409
+catalog_unsupported` (only `claude` is listable), `409 binding_refused` (the gateway refused
+custody), `424 provider_rejected` (the provider answered 401/403), `503 provider_unavailable`,
+`503 dependency_unavailable` (no gateway/lister). `POST …/{provider}/model-choice
+{"binding_revision", "model"}` (route `credentials.model_choice`) records a model that the current
+revision's catalog lists (`409 catalog_stale` for another revision or no catalog, `409
+model_not_listed`); it makes no provider call. No create/rotate/delete/fence act and no GET calls
+either route's effect.
+
+Two independent Claude key paths, by design: (1) the credential gateway path above
+(`/api/v1/credentials/*`: encrypted gateway custody, binding head in the credential ledger,
+catalog/model choice keyed by binding revision in that ledger); (2) the direct-adapter profile
+`/api/v1/connections/claude/*` (`ClaudeConnection`: a key held only in the control-plane server's
+memory, its own catalog snapshot and sealed `model_choice` record), which is what the run executor
+uses for generation today. They share no key, handle, catalog or model choice: a rotation or delete
+in the credential ledger never changes the direct-adapter key and never makes it "the old key", and
+forgetting the direct-adapter key never touches the gateway. Neither path can silently continue on
+the other's revoked key, because neither reads the other's key at all; both owner screens state
+this, and an owner who retires a key must forget it in each path where it was entered.
 Connection/status/catalog GETs return only persisted redacted snapshots and perform zero vault open,
 gateway dispatch, provider request, network call or catalog refresh. Only an authenticated mutation
 with a fresh `command_id` can request `refresh_catalog` or a managed login/check action. Connection

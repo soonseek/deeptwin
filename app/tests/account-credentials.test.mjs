@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  CONNECTION_MESSAGES, CONNECTION_STATES, CREDENTIAL_ERRORS, CREDENTIAL_MESSAGES, CREDENTIAL_STATES,
+  CATALOG_RESULTS, CONNECTION_MESSAGES, CONNECTION_STATES, CREDENTIAL_ERRORS, CREDENTIAL_MESSAGES, CREDENTIAL_STATES,
   FENCE_RESULTS, PENDING_MESSAGES, createCredentialsPanel,
 } from '../static/account.mjs';
 
@@ -254,13 +254,16 @@ function clockedPanel(responses, start) {
 
 const snapshot = ({ credentials = [], connections = [], pending_acts = [] }) => [200, {
   credentials: credentials.map(entry => ({ provider_revocation: 'not_performed', ...entry })), connections, pending_acts }];
-const head = (handle, state, revision, catalog = 'absent', model_choice = 'absent', provider = 'claude') =>
-  ({ provider, state, handle, binding_revision: revision, catalog, model_choice });
+const MODELS = ['synthetic-model-a', 'synthetic-model-b'];
+const head = (handle, state, revision, catalog = 'absent', model_choice = 'absent', provider = 'claude',
+  { gateway_head = 'applied', models = catalog === 'current' ? MODELS : [],
+    chosen_model = model_choice === 'current' ? models[0] : null } = {}) =>
+  ({ provider, state, handle, binding_revision: revision, catalog, model_choice, gateway_head, models, chosen_model });
 const act = (overrides = {}) => ({ intent_id: INTENT, kind: 'rotate', handle: H1, provider: 'claude',
   state: 'command_pending', fence_available_at: DUE, uncertain_record: null, ...overrides });
 const escaped = text => new RegExp(text.replace(/[()]/g, '\\$&'));
 
-test('connections are shown read-only with binding state, revision and catalog/model presence', async () => {
+test('connections show binding state, revision and catalog/model presence; a head offers only refresh and choice', async () => {
   const H2 = 'b'.repeat(32);
   const { root, panel, list } = clockedPanel([snapshot({
     credentials: [{ handle: H1, provider: 'claude', state: 'stored_unbound' }, { handle: H2, provider: 'codex', state: 'cleanup_pending' }],
@@ -270,14 +273,19 @@ test('connections are shown read-only with binding state, revision and catalog/m
     head(H2, 'revoked_pending_erasure', 3, 'absent', 'absent', 'codex')]);
   const rows = list('제공자 연결').children;
   assert.equal(rows.length, 2);
-  assert.equal(rows[0].textContent, `claude · ${CONNECTION_STATES.bound} · 키 ${H1} · 바인딩 수정본 2`
-    + ` · ${CONNECTION_MESSAGES.catalog.current} · ${CONNECTION_MESSAGES.model_choice.absent}`);
+  assert.equal(rows[0].children[0].textContent, `claude · ${CONNECTION_STATES.bound} · 키 ${H1} · 바인딩 수정본 2`);
+  assert.match(rows[0].textContent, new RegExp(`${CONNECTION_MESSAGES.catalog.current} · ${CONNECTION_MESSAGES.model_choice.absent}`));
   assert.equal(rows[1].textContent, `codex · ${CONNECTION_STATES.revoked_pending_erasure} · 키 ${H2} · 바인딩 수정본 3`);
   assert.equal(rows[0].getAttribute('data-binding-revision'), '2');
-  // no act is offered on a binding head
-  assert.equal(list('제공자 연결').findAll(el => el.tagName === 'BUTTON').length, 0);
+  // the only acts on a bound head: the explicit refresh, and a choice from its catalog
+  assert.deepEqual(rows[0].findAll(el => el.tagName === 'BUTTON').map(el => el.textContent),
+    ['모델 목록 새로 고침', '이 모델 선택']);
+  assert.deepEqual(rows[0].findAll(el => el.tagName === 'OPTION').map(el => el.getAttribute('value')), MODELS);
+  assert.equal(rows[1].findAll(el => el.tagName === 'BUTTON').length, 0);
   // rotation voids the catalog/model choice until an explicit refresh, and the page says so
-  assert.match(root.textContent, new RegExp(CONNECTION_MESSAGES.voids));
+  assert.match(root.textContent, new RegExp(CONNECTION_MESSAGES.voids.replace(/[()]/g, '\\$&')));
+  // the direct-adapter Claude connection is a separate key, and the page says so
+  assert.match(root.textContent, new RegExp(CONNECTION_MESSAGES.independent.replace(/[()]/g, '\\$&')));
   // the credential row names the key the connection is bound to; the stale label is gone
   assert.match(list('저장된 자격증명').children[0].textContent, escaped(CONNECTION_MESSAGES.boundKey(2)));
   assert.ok(!root.textContent.includes('아직 모델 연결에 쓰이지 않음'));
@@ -394,5 +402,116 @@ test('a malformed binding head or pending act is refused as unavailable, nothing
     await assert.rejects(panel.load());
     assert.equal(root.findAll(el => el.tagName === 'LI').length, 0);
     assert.match(root.textContent, new RegExp(CREDENTIAL_ERRORS.unavailable));
+  }
+});
+
+// ---- explicit catalog refresh and model choice (T090 refresh slice)
+
+const catalogReceipt = (revision, models = MODELS, chosen = null) =>
+  [200, { provider: 'claude', binding_revision: revision, catalog: 'current', models, chosen_model: chosen }];
+const REFRESH = `${PATH}/connections/claude/catalog-refresh`;
+const CHOICE = `${PATH}/connections/claude/model-choice`;
+
+test('the refresh button posts only a fresh intent with CSRF, then re-reads the ledger', async () => {
+  const { sent, panel, button, list, line } = clockedPanel([
+    snapshot({ credentials: [{ handle: H1, provider: 'claude', state: 'stored_unbound' }], connections: [head(H1, 'bound', 1)] }),
+    catalogReceipt(1),
+    snapshot({ credentials: [{ handle: H1, provider: 'claude', state: 'stored_unbound' }], connections: [head(H1, 'bound', 1, 'current')] }),
+  ], 0);
+  await panel.load();
+  // no catalog yet: a refresh button, no model select
+  let row = list('제공자 연결').children[0];
+  assert.equal(row.findAll(el => el.tagName === 'SELECT').length, 0);
+  await button('모델 목록 새로 고침').dispatch('click');
+  await flush();
+  assert.equal(sent.length, 3);
+  const [path, options] = sent[1];
+  assert.equal(path, REFRESH);
+  assert.equal(options.method, 'POST');
+  assert.equal(options.headers['X-DeepTwin-CSRF'], CSRF);
+  assert.deepEqual(JSON.parse(options.body), { intent_id: '00000000-0000-4000-8000-000000000001' });
+  assert.equal(sent[2][0], PATH);
+  assert.equal(line().dataset.state, 'catalog_refreshed');
+  assert.equal(line().textContent, CATALOG_RESULTS.refreshed(1, 2));
+  row = list('제공자 연결').children[0];
+  assert.deepEqual(row.findAll(el => el.tagName === 'OPTION').map(el => el.textContent), MODELS);
+  // a second click is a new refresh act (a new intent)
+  const again = clockedPanel([snapshot({ connections: [head(H1, 'bound', 1)] }), catalogReceipt(1),
+    snapshot({ connections: [head(H1, 'bound', 1, 'current')] }), catalogReceipt(1),
+    snapshot({ connections: [head(H1, 'bound', 1, 'current')] })], 0);
+  await again.panel.load();
+  await again.panel.refreshCatalog('claude');
+  await again.panel.refreshCatalog('claude');
+  const intents = again.sent.filter(([target]) => target === REFRESH).map(([, value]) => JSON.parse(value.body).intent_id);
+  assert.equal(new Set(intents).size, 2);
+});
+
+test('a model choice names the binding revision and a listed model; the choice is shown', async () => {
+  const { sent, panel, button, list, line, root } = clockedPanel([
+    snapshot({ connections: [head(H1, 'bound', 3, 'current')] }),
+    [200, { provider: 'claude', binding_revision: 3, model: MODELS[1] }],
+    snapshot({ connections: [head(H1, 'bound', 3, 'current', 'current', 'claude', { chosen_model: MODELS[1] })] }),
+  ], 0);
+  await panel.load();
+  const select = list('제공자 연결').findAll(el => el.tagName === 'SELECT')[0];
+  assert.equal(select.value, MODELS[0]);
+  select.value = MODELS[1];
+  await button('이 모델 선택').dispatch('click');
+  await flush();
+  assert.equal(sent[1][0], CHOICE);
+  assert.equal(sent[1][1].headers['X-DeepTwin-CSRF'], CSRF);
+  assert.deepEqual(JSON.parse(sent[1][1].body), { binding_revision: 3, model: MODELS[1] });
+  assert.equal(line().dataset.state, 'model_chosen');
+  assert.equal(line().textContent, CATALOG_RESULTS.chosen(MODELS[1]));
+  assert.match(root.textContent, new RegExp(CONNECTION_MESSAGES.chosen(MODELS[1])));
+  assert.equal(list('제공자 연결').findAll(el => el.tagName === 'SELECT')[0].value, MODELS[1]);
+});
+
+for (const [status, code] of [[409, 'catalog_stale'], [409, 'binding_refused'], [424, 'provider_rejected'],
+  [503, 'provider_unavailable'], [409, 'connection_unbound']]) {
+  test(`a refresh refused as ${code} is shown with its message and leaves no catalog`, async () => {
+    const { panel, line, list } = clockedPanel([snapshot({ connections: [head(H1, 'bound', 2)] }), refusal(status, code),
+      snapshot({ connections: [head(H1, 'bound', 2)] })], 0);
+    await panel.load();
+    await assert.rejects(panel.refreshCatalog('claude'));
+    await flush();
+    assert.equal(line().dataset.state, code);
+    assert.equal(line().textContent, CREDENTIAL_ERRORS[code]);
+    assert.equal(list('제공자 연결').findAll(el => el.tagName === 'SELECT').length, 0);
+  });
+}
+
+test('a model no longer listed, or a stale revision, is refused with its message', async () => {
+  for (const code of ['model_not_listed', 'catalog_stale']) {
+    const { panel, line } = clockedPanel([snapshot({ connections: [head(H1, 'bound', 1, 'current')] }), refusal(409, code),
+      snapshot({ connections: [head(H1, 'bound', 1, 'current')] })], 0);
+    await panel.load();
+    await assert.rejects(panel.chooseModel('claude', 1, MODELS[0]));
+    assert.equal(line().dataset.state, code);
+    assert.equal(line().textContent, CREDENTIAL_ERRORS[code]);
+  }
+});
+
+test('an unlistable provider offers no refresh, and an unacknowledged head says so', async () => {
+  const H2 = 'b'.repeat(32);
+  const { panel, list } = clockedPanel([snapshot({ connections: [
+    head(H1, 'bound', 2, 'absent', 'absent', 'claude', { gateway_head: 'pending' }),
+    head(H2, 'bound', 1, 'absent', 'absent', 'codex')] })], 0);
+  await panel.load();
+  const [claude, codex] = list('제공자 연결').children;
+  assert.equal(claude.getAttribute('data-gateway-head'), 'pending');
+  assert.match(claude.textContent, new RegExp(CONNECTION_MESSAGES.gatewayPending));
+  assert.equal(codex.findAll(el => el.tagName === 'BUTTON').length, 0);
+  assert.match(codex.textContent, new RegExp(CONNECTION_MESSAGES.notListable));
+});
+
+test('a malformed catalog in the status read is refused as unavailable', async () => {
+  for (const bad of [head(H1, 'bound', 1, 'absent', 'absent', 'claude', { models: MODELS }),
+    head(H1, 'bound', 1, 'current', 'current', 'claude', { chosen_model: 'synthetic-model-z' }),
+    head(H1, 'bound', 1, 'current', 'absent', 'claude', { models: ['bad model'] }),
+    head(H1, 'bound', 1, 'absent', 'absent', 'claude', { gateway_head: 'maybe' })]) {
+    const { root, panel } = clockedPanel([snapshot({ connections: [bad] })], 0);
+    await assert.rejects(panel.load());
+    assert.equal(root.findAll(el => el.tagName === 'LI').length, 0);
   }
 });

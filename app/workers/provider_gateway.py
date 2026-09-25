@@ -103,6 +103,18 @@ class ProviderBinding:
             raise GatewayError("plain http is loopback-only")
 
 
+def claude_api_binding() -> ProviderBinding:
+    """The fixed Claude API request surface the gateway process serves (T090): the
+    official HTTPS origin, the `/v1` messages/models paths the lease builds, the two
+    projected headers and `x-api-key` injected at send time. Not a T087-qualified
+    provider-transport manifest; it is the gateway's one built-in binding."""
+    return ProviderBinding(provider="claude", scheme="https", host="api.anthropic.com", port=443,
+                           allowed_methods=("GET", "POST"), allowed_path_prefixes=("/v1",),
+                           allowed_request_headers=("anthropic-version", "content-type"),
+                           auth_header="x-api-key", max_request_bytes=1_048_576,
+                           max_response_bytes=1_048_576, timeout_seconds=30)
+
+
 @dataclass(frozen=True, slots=True)
 class GatewayResponse:
     status: int
@@ -406,4 +418,5 @@ __all__ = [
     "GatewayError",
     "GatewayResponse",
     "ProviderBinding",
+    "claude_api_binding",
 ]

@@ -7,7 +7,10 @@
 // produce an unconfirmed act. The page shows each binding head (state, revision,
 // catalog/model presence), each pending act with its fence time, offers the fence only
 // once due, and reports its outcome; a second create is refused `connection_bound`;
-// delete says the provider key is not revoked. No secret reaches the DOM, browser storage,
+// the owner's explicit catalog refresh reads the model list through the gateway's
+// provider-send path (a loopback mock provider in the fixture) for the current binding
+// revision only, and a model is chosen from it; a rotation voids both until the next
+// refresh; delete says the provider key is not revoked. No secret reaches the DOM, browser storage,
 // any response or any file on disk. The owner is a scripted test actor: synthetic
 // evidence of the mechanism, never user evidence.
 
@@ -20,7 +23,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { closeOwnedFixture, waitForOwnedChildOutput } from './helpers/owned-fixture-lifecycle.mjs';
 import {
-  CONNECTION_MESSAGES, CONNECTION_STATES, CREDENTIAL_ERRORS, CREDENTIAL_MESSAGES, FENCE_RESULTS, PENDING_MESSAGES,
+  CATALOG_RESULTS, CONNECTION_MESSAGES, CONNECTION_STATES, CREDENTIAL_ERRORS, CREDENTIAL_MESSAGES, FENCE_RESULTS, PENDING_MESSAGES,
 } from '../static/account.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -86,7 +89,7 @@ async function open(t) {
   return { page, url, errors, bodies };
 }
 
-test('credentials panel: binding heads, pending acts, the owner fence and refusals, no secret anywhere', { timeout: 120000 }, async t => {
+test('credentials panel: binding heads, catalog refresh and model choice, pending acts, the owner fence and refusals, no secret anywhere', { timeout: 120000 }, async t => {
   const { page, url, errors, bodies } = await open(t);
   await page.goto(url + 'records.html');
   const panel = page.locator('#records-credentials');
@@ -114,7 +117,9 @@ test('credentials panel: binding heads, pending acts, the owner fence and refusa
   await credentials.getByText(CREDENTIAL_MESSAGES.empty).waitFor();
   await connections.getByText(CONNECTION_MESSAGES.empty).waitFor();
   await acts.getByText(PENDING_MESSAGES.empty).waitFor();
-  assert.match(await panel.textContent(), new RegExp(CONNECTION_MESSAGES.voids));
+  assert.ok((await panel.textContent()).includes(CONNECTION_MESSAGES.voids));
+  assert.ok((await panel.textContent()).includes(CONNECTION_MESSAGES.independent));
+  const upstream = async () => page.evaluate(async () => (await fetch('/__test__/upstream')).json());
 
   // create: bound at revision 1, no catalog or model choice for it
   await (await typeSecret(SECRETS.first))('키 저장');
@@ -123,17 +128,27 @@ test('credentials panel: binding heads, pending acts, the owner fence and refusa
   await claude.and(page.locator('[data-binding-revision="1"]')).waitFor();
   const handle = await credentials.locator('li').first().getAttribute('data-handle');
   assert.match(handle, /^[0-9a-f]{32}$/);
-  assert.equal(await claude.textContent(), `claude · ${CONNECTION_STATES.bound} · 키 ${handle} · 바인딩 수정본 1`
-    + ` · ${CONNECTION_MESSAGES.catalog.absent} · ${CONNECTION_MESSAGES.model_choice.absent}`);
+  assert.equal(await claude.locator('span').first().textContent(), `claude · ${CONNECTION_STATES.bound} · 키 ${handle} · 바인딩 수정본 1`);
+  assert.ok((await claude.textContent()).includes(`${CONNECTION_MESSAGES.catalog.absent} · ${CONNECTION_MESSAGES.model_choice.absent}`));
+  assert.equal(await claude.getAttribute('data-gateway-head'), 'applied');
   assert.match(await credentials.locator('li').first().textContent(), /이 제공자 연결에 쓰이는 키 \(바인딩 수정본 1\)/);
-  assert.equal(await connections.getByRole('button').count(), 0);  // read-only
+  // the only act on the head before a catalog exists is the explicit refresh; no provider request yet
+  assert.deepEqual(await connections.getByRole('button').allTextContents(), ['모델 목록 새로 고침']);
+  assert.deepEqual(await upstream(), { requests: 0, distinct_keys: 0 });
 
-  // an explicit catalog refresh result + model choice for revision 1 (test-owned stand-in route)
-  const refreshed = await page.evaluate(async () => (await fetch('/__test__/catalog', { method: 'POST', body: JSON.stringify({ provider: 'claude' }) })).json());
-  assert.deepEqual(refreshed, { binding_revision: 1 });
-  await panel.getByRole('button', { name: '상태 다시 읽기' }).click();
+  // the owner's explicit refresh: the gateway reads the model list with the key it holds
+  await claude.getByRole('button', { name: '모델 목록 새로 고침' }).click();
+  await said(CATALOG_RESULTS.refreshed(1, 2));
   await claude.locator('[data-catalog=current]').waitFor();
-  assert.match(await claude.textContent(), new RegExp(`${CONNECTION_MESSAGES.catalog.current} · ${CONNECTION_MESSAGES.model_choice.current}`));
+  assert.deepEqual(await upstream(), { requests: 1, distinct_keys: 1 });
+  const models = claude.locator('select');
+  assert.deepEqual(await models.locator('option').allTextContents(), ['synthetic-model-a', 'synthetic-model-b']);
+  await models.selectOption('synthetic-model-b');
+  await claude.getByRole('button', { name: '이 모델 선택' }).click();
+  await said(CATALOG_RESULTS.chosen('synthetic-model-b'));
+  await claude.locator('[data-chosen-model="synthetic-model-b"]').waitFor();
+  assert.ok((await claude.textContent()).includes(`${CONNECTION_MESSAGES.catalog.current} · ${CONNECTION_MESSAGES.model_choice.current}`));
+  assert.deepEqual(await upstream(), { requests: 1, distinct_keys: 1 });  // a choice calls no provider
 
   // a second create for a bound provider is refused before any gateway call
   await (await typeSecret(SECRETS.second))('키 저장');
@@ -193,7 +208,15 @@ test('credentials panel: binding heads, pending acts, the owner fence and refusa
   await (await typeSecret(SECRETS.third))('키 교체');
   await said(CREDENTIAL_MESSAGES.rotated);
   await claude.and(page.locator('[data-binding-revision="2"]')).waitFor();
-  assert.match(await claude.textContent(), new RegExp(`${CONNECTION_MESSAGES.catalog.absent} · ${CONNECTION_MESSAGES.model_choice.absent}`));
+  assert.ok((await claude.textContent()).includes(`${CONNECTION_MESSAGES.catalog.absent} · ${CONNECTION_MESSAGES.model_choice.absent}`));
+  assert.equal(await claude.locator('select').count(), 0);
+  assert.equal(await claude.locator('[data-chosen-model]').count(), 0);
+  assert.deepEqual(await upstream(), { requests: 1, distinct_keys: 1 });  // the rotation made no provider request
+  // only a new explicit refresh gives revision 2 a catalog, read with the new key
+  await claude.getByRole('button', { name: '모델 목록 새로 고침' }).click();
+  await said(CATALOG_RESULTS.refreshed(2, 2));
+  await claude.locator('[data-catalog=current]').waitFor();
+  assert.deepEqual(await upstream(), { requests: 2, distinct_keys: 2 });
 
   // delete: asks first, says the provider key is not revoked; the binding is revoked
   await credentials.locator(`li[data-handle="${handle}"]`).getByRole('button', { name: '삭제' }).click();
@@ -202,6 +225,7 @@ test('credentials panel: binding heads, pending acts, the owner fence and refusa
   await said(CREDENTIAL_MESSAGES.deleted);
   await claude.and(page.locator('[data-state=revoked_pending_erasure]')).waitFor();
   assert.equal(await claude.textContent(), `claude · ${CONNECTION_STATES.revoked_pending_erasure} · 키 ${handle} · 바인딩 수정본 3`);
+  assert.equal(await connections.getByRole('button').count(), 0);  // a revoked head offers nothing
 
   // no secret in the DOM, in browser storage or in any response the page received
   const dom = await page.evaluate(() => [document.documentElement.outerHTML,

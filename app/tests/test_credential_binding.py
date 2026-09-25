@@ -28,7 +28,14 @@ from app.api.credential_routes import attach_credential_gateway
 from app.tests.local_http import LocalTestClient
 from app.tests.test_credential_gateway_persistence import Gateway
 from app.tests.test_credential_routes import make_app
-from app.tests.test_credential_routes_v2 import Spy, create, delete, intent, vault_meta
+from app.tests.test_credential_routes_v2 import (
+    Spy,
+    create,
+    delete,
+    intent,
+    is_head_reply,
+    vault_meta,
+)
 from app.tests.test_server_api_v1 import FETCH, ORIGIN, assert_error
 from app.workers import credential_gateway_service
 from app.workers.credential_channel import GatewayServiceError
@@ -60,11 +67,12 @@ def bench(tmp_path, monkeypatch, caplog):
     application = make_app(tmp_path / "app")
     attach_credential_gateway(application, spy, ledger)
     original = credential_gateway_service._write_logical_connection
-    armed = []
+    armed, heads_armed = [], []
 
     def reply(connection, **kwargs):
-        if armed:
-            armed.pop()
+        head = is_head_reply(kwargs["payload"])
+        if (armed and not head) or (heads_armed and head):
+            (heads_armed if head else armed).pop()
             connection.close()  # the committed result never reaches the control plane
             return None
         return original(connection, **kwargs)
@@ -72,7 +80,8 @@ def bench(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr(credential_gateway_service, "_write_logical_connection", reply)
     with LocalTestClient(application, base_url=ORIGIN) as client:
         yield {"client": client, "gateway": gateway, "spy": spy, "ledger": ledger, "clock": clock,
-               "lose": lambda count=1: armed.extend([True] * count)}
+               "lose": lambda count=1: armed.extend([True] * count),
+               "lose_head": lambda count=1: heads_armed.extend([True] * count)}
     gateway.close()
     for secret in SECRETS:
         assert secret not in caplog.text
@@ -114,9 +123,15 @@ def ledger_rows(ledger, sql):
         return [dict(row) for row in db.execute(sql)]
 
 
-def connection(handle, state, revision, *, catalog="absent", model="absent", provider="claude"):
+def connection(handle, state, revision, *, catalog="absent", model="absent", provider="claude",
+               models=None, chosen=None, gateway="applied"):
+    if models is None:
+        models = MODELS if catalog == "current" else []
+    if chosen is None and model == "current":
+        chosen = models[0]
     return {"provider": provider, "state": state, "handle": handle, "binding_revision": revision,
-            "catalog": catalog, "model_choice": model}
+            "catalog": catalog, "model_choice": model, "gateway_head": gateway,
+            "models": models, "chosen_model": chosen}
 
 
 def unknown_store(spy):

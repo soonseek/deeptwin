@@ -19,6 +19,13 @@ lists each provider connection's binding head (binding revision, and whether a
 catalog snapshot/model choice is current for that revision) and the unfinished or
 fenced acts, all from the committed ledger.
 
+``POST /api/v1/credentials/connections/{provider}/catalog-refresh``
+(``credential_catalog_refresh``) is the owner's one explicit provider read: the model
+list for the connection's current binding revision, through the gateway's
+provider-send path, recorded by CAS on that revision (a rotation in between answers
+``409 catalog_stale``). ``…/model-choice`` (``credential_model_choice``) records a
+model that revision's catalog lists. Neither is called by any other route.
+
 The browser-facing ``handle`` is the record id (hex): a stable nonsecret address
 for rotate/delete. It is not a gateway resolution handle and confers no dispatch
 authority (api.md "Secrets", handle wording, 2026-09-25).
@@ -61,7 +68,7 @@ _SNAPSHOT_STATES = frozenset({
 })
 _SNAPSHOT_KEYS = frozenset({"credentials", "connections", "pending_acts"})
 _CONNECTION_FIELDS = frozenset({"provider", "state", "handle", "binding_revision", "catalog",
-                                "model_choice"})
+                                "model_choice", "gateway_head", "models", "chosen_model"})
 _CONNECTION_STATES = frozenset({"bound", "revoked_pending_erasure"})
 _PENDING_FIELDS = frozenset({"intent_id", "kind", "handle", "provider", "state",
                              "fence_available_at", "uncertain_record"})
@@ -98,7 +105,30 @@ _ACT_ERRORS = {
     "not_fenceable": (409, "conflict", "이 요청은 차단할 수 있는 상태가 아닙니다.", NOT_RETRYABLE),
     "fence_not_due": (409, "fence_not_due",
                       "아직 결과를 기다리는 중입니다. 조금 뒤에 다시 차단할 수 있습니다.", RETRYABLE),
+    "catalog_unavailable": (503, "dependency_unavailable",
+                            "모델 목록을 읽을 게이트웨이 경로가 연결되어 있지 않습니다.", RETRYABLE),
+    "catalog_unsupported": (409, "catalog_unsupported",
+                            "이 제공자의 모델 목록은 게이트웨이로 읽을 수 없습니다.", NOT_RETRYABLE),
+    "connection_unbound": (409, "connection_unbound",
+                           "이 제공자에는 연결된 키가 없습니다. 먼저 키를 저장해 주세요.", NOT_RETRYABLE),
+    "catalog_stale": (409, "catalog_stale",
+                      ("요청하는 동안 제공자 연결이 바뀌었습니다. 이 결과는 쓰지 않습니다. "
+                       "현재 연결로 모델 목록을 다시 새로 고쳐 주세요."), NOT_RETRYABLE),
+    "model_not_listed": (409, "model_not_listed",
+                         "현재 연결의 모델 목록에 없는 모델입니다.", NOT_RETRYABLE),
+    "binding_refused": (409, "binding_refused",
+                        "게이트웨이가 이 연결의 키 사용을 거부했습니다. 연결 상태를 다시 읽어 주세요.",
+                        NOT_RETRYABLE),
+    "provider_rejected": (424, "provider_rejected",
+                          "제공자가 이 키로 모델 목록을 읽는 것을 거부했습니다.", NOT_RETRYABLE),
+    "provider_unavailable": (503, "provider_unavailable",
+                             "제공자의 모델 목록을 읽지 못했습니다. 잠시 뒤 다시 시도해 주세요.",
+                             RETRYABLE),
 }
+_PROVIDERS = frozenset({"claude", "codex"})
+_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
+_CATALOG_FIELDS = frozenset({"provider", "binding_revision", "catalog", "models", "chosen_model"})
+_CHOICE_FIELDS = frozenset({"provider", "binding_revision", "model"})
 
 
 def _act_failure(error: CredentialCommandError):
@@ -148,9 +178,41 @@ def _redacted_connection(entry: object) -> dict:
         or type(entry["binding_revision"]) is not int or entry["binding_revision"] < 1
         or entry["catalog"] not in ("current", "absent")
         or entry["model_choice"] not in ("current", "absent")
+        or entry["gateway_head"] not in ("applied", "pending")
+        or not _model_list(entry["models"], empty=entry["catalog"] == "absent")
+        or not (entry["chosen_model"] is None if entry["model_choice"] == "absent"
+                else entry["chosen_model"] in entry["models"])
     ):
         raise _invalid_snapshot()
     return {name: entry[name] for name in sorted(_CONNECTION_FIELDS)}
+
+
+def _model_list(value, *, empty):
+    if type(value) is not list:
+        return False
+    if empty:
+        return value == []
+    return (1 <= len(value) <= 200 and len(set(value)) == len(value)
+            and all(type(model) is str and _MODEL.fullmatch(model) for model in value))
+
+
+def _redacted_catalog(receipt: object) -> dict:
+    if (type(receipt) is not dict or set(receipt) != _CATALOG_FIELDS
+            or receipt["provider"] not in _PROVIDERS
+            or type(receipt["binding_revision"]) is not int or receipt["binding_revision"] < 1
+            or receipt["catalog"] != "current" or not _model_list(receipt["models"], empty=False)
+            or not (receipt["chosen_model"] is None or receipt["chosen_model"] in receipt["models"])):
+        raise ApiDependencyUnavailable("credential catalog receipt is invalid")
+    return {name: receipt[name] for name in sorted(_CATALOG_FIELDS)}
+
+
+def _redacted_choice(receipt: object) -> dict:
+    if (type(receipt) is not dict or set(receipt) != _CHOICE_FIELDS
+            or receipt["provider"] not in _PROVIDERS
+            or type(receipt["binding_revision"]) is not int or receipt["binding_revision"] < 1
+            or type(receipt["model"]) is not str or _MODEL.fullmatch(receipt["model"]) is None):
+        raise ApiDependencyUnavailable("credential model choice receipt is invalid")
+    return {name: receipt[name] for name in sorted(_CHOICE_FIELDS)}
 
 
 def _redacted_pending(entry: object) -> dict:
@@ -215,13 +277,13 @@ def _redacted_snapshot(entries: object) -> list[dict]:
     return redacted
 
 
-def _delete_intent(request: Request, body: bytes) -> str:
-    """The exact `{"intent_id": uuid}` body of an owner delete act."""
+def _exact_json(request: Request, body: bytes, fields: set) -> dict:
+    """An exact small JSON object body with exactly ``fields`` (no query, one JSON type)."""
     types = [value for name, value in request.scope.get("headers", ())
              if bytes(name).lower() == b"content-type"]
     if (len(types) != 1 or bytes(types[0]).split(b";", 1)[0].strip().lower() != b"application/json"
             or request.query_params or not 1 <= len(body) <= _MAX_DELETE_BODY):
-        raise ValueError("delete intent framing")
+        raise ValueError("body framing")
 
     def unique(pairs):
         value = {}
@@ -232,8 +294,23 @@ def _delete_intent(request: Request, body: bytes) -> str:
         return value
 
     value = json.loads(body.decode("utf-8"), object_pairs_hook=unique)
-    if type(value) is not dict or set(value) != {"intent_id"}:
-        raise ValueError("delete intent shape")
+    if type(value) is not dict or set(value) != fields:
+        raise ValueError("body shape")
+    return value
+
+
+def _model_choice_body(request: Request, body: bytes) -> tuple[int, str]:
+    value = _exact_json(request, body, {"binding_revision", "model"})
+    revision, model = value["binding_revision"], value["model"]
+    if (type(revision) is not int or not 1 <= revision <= 2**31
+            or type(model) is not str or _MODEL.fullmatch(model) is None):
+        raise ValueError("model choice")
+    return revision, model
+
+
+def _delete_intent(request: Request, body: bytes) -> str:
+    """The exact `{"intent_id": uuid}` body of an owner act (delete, fence, refresh)."""
+    value = _exact_json(request, body, {"intent_id"})
     intent = value["intent_id"]
     if type(intent) is not str or _UUID.fullmatch(intent) is None:
         raise ValueError("delete intent id")
@@ -245,29 +322,37 @@ class CredentialSeams:
 
     ``None`` in a seam keeps that route honestly unavailable."""
 
-    __slots__ = ("credential_act_fence", "credential_gateway_retire", "credential_gateway_submit",
-                 "credential_status_snapshot")
+    __slots__ = ("credential_act_fence", "credential_catalog_refresh", "credential_gateway_retire",
+                 "credential_gateway_submit", "credential_model_choice", "credential_status_snapshot")
 
-    def __init__(self, *, submit=None, retire=None, snapshot=None, fence=None):
-        for value in (submit, retire, snapshot, fence):
+    def __init__(self, *, submit=None, retire=None, snapshot=None, fence=None, refresh=None,
+                 choose=None):
+        for value in (submit, retire, snapshot, fence, refresh, choose):
             if value is not None and not callable(value):
                 raise TypeError("a credential seam must be callable")
         self.credential_gateway_submit = submit
         self.credential_gateway_retire = retire
         self.credential_status_snapshot = snapshot
         self.credential_act_fence = fence
+        self.credential_catalog_refresh = refresh
+        self.credential_model_choice = choose
 
 
-def credential_seams(client, ledger) -> CredentialSeams:
-    """Bind a frame-only gateway client and the control-plane ledger to the seams."""
+def credential_seams(client, ledger, *, catalog_lister=None) -> CredentialSeams:
+    """Bind a frame-only gateway client, the control-plane ledger and (optionally) the
+    gateway catalog lister to the seams."""
     from .credential_commands import CredentialActs
 
-    acts = CredentialActs(client, ledger)
+    acts = CredentialActs(client, ledger, catalog_lister=catalog_lister)
     return CredentialSeams(
         submit=acts.store,
         retire=lambda intent_id, handle: acts.delete(intent_id=intent_id, handle=handle),
         snapshot=ledger.snapshot,
         fence=lambda intent_id: acts.fence(intent_id=intent_id),
+        refresh=lambda intent_id, provider: acts.refresh_catalog(intent_id=intent_id,
+                                                                 provider=provider),
+        choose=lambda provider, revision, model: acts.choose_model(
+            provider=provider, binding_revision=revision, model=model),
     )
 
 
@@ -381,6 +466,60 @@ def install_credential_ingress(app, *, seams=None) -> None:
         except Exception as exc:  # noqa: BLE001 - sanitize the public boundary
             return _failure(exc)
 
+    @app.api_route("/api/v1/credentials/connections/{provider}/catalog-refresh", methods=["POST"])
+    async def credential_catalog_refresh_v1(provider: str, request: Request):
+        # The owner's one explicit provider read: the model list for the connection's
+        # CURRENT binding revision, through the gateway's provider-send path (the gateway
+        # resolves the key; it never reaches this process). The result is recorded by CAS
+        # on the revision read before the request; a rotation in between refuses it.
+        try:
+            _authenticated(request, read=False)
+            body = await request.body()
+            try:
+                if provider not in _PROVIDERS:
+                    raise ValueError("provider")
+                intent_id = _delete_intent(request, bytes(body))
+            except (ValueError, UnicodeDecodeError, RecursionError):
+                return api_error(status=400, code="invalid_input",
+                                 message="모델 목록 새로 고침 요청 형식을 확인해 주세요.",
+                                 retryability=NOT_RETRYABLE)
+            refresh = getattr(bound(request), "credential_catalog_refresh", None)
+            if refresh is None:
+                raise ApiDependencyUnavailable("credential catalog refresh is not attached")
+            try:
+                receipt = await run_in_threadpool(refresh, intent_id, provider)
+            except CredentialCommandError as exc:
+                return _act_failure(exc)
+            return JSONResponse(status_code=200, content=_redacted_catalog(receipt))
+        except Exception as exc:  # noqa: BLE001 - sanitize the public boundary
+            return _failure(exc)
+
+    @app.api_route("/api/v1/credentials/connections/{provider}/model-choice", methods=["POST"])
+    async def credential_model_choice_v1(provider: str, request: Request):
+        # The owner's model choice, validated against the catalog of the named binding
+        # revision, which must be the current one. No provider call.
+        try:
+            _authenticated(request, read=False)
+            body = await request.body()
+            try:
+                if provider not in _PROVIDERS:
+                    raise ValueError("provider")
+                revision, model = _model_choice_body(request, bytes(body))
+            except (ValueError, UnicodeDecodeError, RecursionError):
+                return api_error(status=400, code="invalid_input",
+                                 message="모델 선택 요청 형식을 확인해 주세요.",
+                                 retryability=NOT_RETRYABLE)
+            choose = getattr(bound(request), "credential_model_choice", None)
+            if choose is None:
+                raise ApiDependencyUnavailable("credential model choice is not attached")
+            try:
+                receipt = await run_in_threadpool(choose, provider, revision, model)
+            except CredentialCommandError as exc:
+                return _act_failure(exc)
+            return JSONResponse(status_code=200, content=_redacted_choice(receipt))
+        except Exception as exc:  # noqa: BLE001 - sanitize the public boundary
+            return _failure(exc)
+
     @app.api_route("/api/v1/credentials", methods=["GET"])
     async def credential_status_v1(request: Request):
         try:
@@ -406,15 +545,17 @@ __all__ = ["CredentialSeams", "attach_credential_gateway", "credential_seams",
            "install_credential_ingress"]
 
 
-def attach_credential_gateway(app, client, ledger) -> None:
+def attach_credential_gateway(app, client, ledger, *, catalog_lister=None) -> None:
     """Bind a frame-only gateway client and the control-plane command ledger to the
     route state seams.
 
     The client comes from :mod:`app.workers.credential_channel`, which imports no
     vault code. The status snapshot reads the ledger only — never the gateway.
     """
-    seams = credential_seams(client, ledger)
+    seams = credential_seams(client, ledger, catalog_lister=catalog_lister)
     app.state.credential_gateway_submit = seams.credential_gateway_submit
     app.state.credential_gateway_retire = seams.credential_gateway_retire
     app.state.credential_status_snapshot = seams.credential_status_snapshot
     app.state.credential_act_fence = seams.credential_act_fence
+    app.state.credential_catalog_refresh = seams.credential_catalog_refresh
+    app.state.credential_model_choice = seams.credential_model_choice

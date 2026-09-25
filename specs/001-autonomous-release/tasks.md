@@ -436,6 +436,25 @@ understanding; failure/restart preserves input. Fixture and live proofs remain s
   (a no-reply gateway and an unadmitted store; fixture fence delay 3 s, production 300 s)
   (evidence/credential-vault-t090.md §2026-09-25 credentials panel). Still open: no
   `refresh_catalog` route (the browser catalog comes from a test route), plus everything above.
+  2026-09-25 (open, catalog refresh + claim-time binding): the owner's explicit
+  `POST /api/v1/credentials/connections/{provider}/catalog-refresh` lists the provider's models for
+  the current binding revision through the gateway's provider-send path (`models` dialogue per
+  page; the gateway resolves and injects the key, the control plane never sees it) and records them
+  with `record_catalog_refresh` by CAS on that revision (a rotation in between answers terminal
+  `409 catalog_stale`); `…/model-choice` accepts only a model of the current revision's catalog.
+  Every head change is published to the gateway (`bind_head`, revision-monotone, idempotent) before
+  anything is retired, and the act completes only once acknowledged (`gateway_head` in GET). The
+  gateway's send path now delivers custody, at claim time under the vault exclusion, only for the
+  record its current head binds: a rotation racing a send, a revoked/orphaned/never-bound record or
+  an unacknowledged successor is refused before any provider byte (tested with a rotation between
+  commit and claim, a send claimed first, and a lost publication). The gateway process now composes
+  the send engine with a fixed Claude API binding. The direct-adapter `ClaudeConnection` key is
+  independent by design (api.md, both screens). The panel gains refresh and model choice; the
+  browser case now uses the product routes over a loopback mock provider (evidence/
+  credential-vault-t090.md §2026-09-25 catalog refresh). Still open: T087 manifest/budget binding
+  (the fixed binding is not a qualified manifest), runtime dispatch through the gateway (runs still
+  use the direct adapter), a gateway-side fence, compose/image wiring and egress for the gateway,
+  erasure/`erasure_completed`, and an independent audit.
 - [ ] T024 [US1] Migrate browser MediaDevices/AudioWorklet capture and the existing cumulative
   whisper.cpp POST path to ADR-011's versioned non-overlapping one-second PCM PUT/SSE sessions in
   app/speech.py, app/speech_sessions.py, app/api/speech_routes.py, app/workers/speech.py and

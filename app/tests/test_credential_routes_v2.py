@@ -41,7 +41,9 @@ class Spy:
     def __init__(self, client):
         self.client = client
         self.calls = []
+        self.heads = []
         self.store_hook = None
+        self.head_hook = None
 
     def store_at(self, *, metadata, secret):
         self.calls.append("store_at")
@@ -57,6 +59,19 @@ class Spy:
         self.calls.append("retire")
         return self.client.retire(**kwargs)
 
+    def bind_head(self, **kwargs):
+        # the nonsecret binding-head publication, counted apart from the custody calls
+        self.heads.append((kwargs["provider"], kwargs["revision"], kwargs["state"]))
+        if self.head_hook is not None:
+            return self.head_hook(kwargs)
+        return self.client.bind_head(**kwargs)
+
+
+def is_head_reply(payload):
+    """A gateway reply to `bind_head` (the head publication). The lost-reply arms target
+    the custody operations; a head's reply is lost only when a test arms it by name."""
+    return b'"revision":' in payload and b'"record":' in payload
+
 
 @pytest.fixture
 def stack(tmp_path, monkeypatch, caplog):
@@ -71,7 +86,7 @@ def stack(tmp_path, monkeypatch, caplog):
     armed = []
 
     def reply(connection, **kwargs):
-        if armed:
+        if armed and not is_head_reply(kwargs["payload"]):
             armed.pop()
             connection.close()  # the committed result never reaches the control plane
             return None

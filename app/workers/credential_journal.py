@@ -23,6 +23,15 @@ CREATE TABLE receipts (command_id TEXT PRIMARY KEY REFERENCES commands(command_i
 CREATE TABLE retirements (command_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, body BLOB NOT NULL,
  target_command TEXT NOT NULL REFERENCES receipts(command_id));
 """
+# The gateway's copy of each provider connection's binding head (T090): the control-plane
+# ledger decides a binding by compare-and-swap and then publishes the head here with
+# `bind_head`; the send path delivers custody only for the record the head binds. A journal
+# of the first layout gains this table on open (additive; no existing row is rewritten).
+HEADS_SCHEMA = """
+CREATE TABLE heads (provider TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision >= 1),
+ fingerprint TEXT NOT NULL, body BLOB NOT NULL);
+"""
+HEAD_STATES = ("bound", "revoked_pending_erasure")
 
 
 def checked_files(directory, *, custody_budget=None):
@@ -71,15 +80,23 @@ class Journal:
                 custody_budget.checkpoint()
             # DELETE journaling retains no long-lived WAL and creates sidecars with DB mode.
             if initialize:
-                self.connection.executescript("BEGIN IMMEDIATE;" + SCHEMA)
+                self.connection.executescript("BEGIN IMMEDIATE;" + SCHEMA + HEADS_SCHEMA)
                 self.connection.execute("INSERT INTO binding VALUES(1,?)", (canonical(layout),))
                 self.connection.execute("COMMIT")
                 os.fsync(directory.fd)
             if self.checked_read("PRAGMA journal_mode")[0][0] != "delete":
                 raise CredentialVaultError("maintenance_required")
-            expected_schema = sorted(part.strip() for part in SCHEMA.split(";") if part.strip())
+            first_layout = sorted(part.strip() for part in SCHEMA.split(";") if part.strip())
+            expected_schema = sorted(first_layout + [HEADS_SCHEMA.strip().rstrip(";")])
             actual_schema = sorted(row[0] for row in self.checked_read(
                 "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL"))
+            if actual_schema == first_layout:
+                # additive migration of a first-layout journal, under the caller's flock
+                self.connection.execute("BEGIN IMMEDIATE")
+                self.connection.execute(HEADS_SCHEMA.strip().rstrip(";"))
+                self.connection.execute("COMMIT")
+                actual_schema = sorted(row[0] for row in self.checked_read(
+                    "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL"))
             if actual_schema != expected_schema:
                 raise CredentialVaultError("maintenance_required")
             if self.checked_read("PRAGMA integrity_check")[0][0] != "ok" or self.checked_read(
@@ -193,6 +210,23 @@ class Journal:
             if body["command_id"] in commands or ref != {k: receipts[row["target_command"]][k] for k in ref}:
                 raise CredentialVaultError("maintenance_required")
             if row["fingerprint"] != sha256(canonical({k: v for k, v in body.items() if k != "state"})).hexdigest():
+                raise CredentialVaultError("maintenance_required")
+        by_record = {(receipt["record_id"], receipt["record_version"]): receipt
+                     for receipt in receipts.values()}
+        for row in self.checked_read("SELECT * FROM heads"):
+            if custody_budget is not None:
+                custody_budget.checkpoint()
+            head = strict_json(row["body"], 4096)
+            if (type(head) is not dict or set(head) != {"provider", "revision", "state", "record"}
+                    or head["provider"] != row["provider"] or head["revision"] != row["revision"]
+                    or type(head["revision"]) is not int or head["revision"] < 1
+                    or head["state"] not in HEAD_STATES
+                    or row["fingerprint"] != sha256(canonical(head)).hexdigest()):
+                raise CredentialVaultError("maintenance_required")
+            ref = reference(head["record"])
+            receipt = by_record.get((ref["record_id"], ref["record_version"]))
+            if (receipt is None or receipt["ciphertext_sha256"] != ref["ciphertext_sha256"]
+                    or receipt["provider"] != head["provider"]):
                 raise CredentialVaultError("maintenance_required")
 
     def count(self, table):

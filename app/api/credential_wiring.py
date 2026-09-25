@@ -26,6 +26,7 @@ from pathlib import Path
 from fastapi import APIRouter
 
 from ..workers.credential_attachment import SCHEMA, CredentialGatewayConfiguration
+from .credential_catalog import GatewayCatalogLister
 from .credential_commands import CredentialCommandLedger
 from .credential_routes import (
     CredentialSeams,
@@ -39,12 +40,15 @@ LEDGER_NAME = "credential-commands.sqlite3"
 class CredentialAttachment:
     """The live client and ledger the supported factory composed."""
 
-    __slots__ = ("client", "ledger", "ledger_path")
+    __slots__ = ("catalog_lister", "client", "ledger", "ledger_path")
 
-    def __init__(self, *, client, ledger, ledger_path):
+    def __init__(self, *, client, ledger, ledger_path, catalog_lister=None):
         if type(ledger) is not CredentialCommandLedger:
             raise TypeError("an exact credential command ledger is required")
+        if catalog_lister is not None and type(catalog_lister) is not GatewayCatalogLister:
+            raise TypeError("an exact gateway catalog lister is required")
         self.client, self.ledger, self.ledger_path = client, ledger, ledger_path
+        self.catalog_lister = catalog_lister
 
 
 def open_credential_attachment(configuration, *, state_directory) -> CredentialAttachment:
@@ -63,9 +67,15 @@ def open_credential_attachment(configuration, *, state_directory) -> CredentialA
     if not directory.is_absolute() or directory.is_symlink() or not directory.is_dir():
         raise ValueError("credential ledger directory is invalid")
     path = directory / LEDGER_NAME
+    from ..workers.provider_send_client import ProviderSendClient
+
     ledger = CredentialCommandLedger(path)
     client = CredentialGatewayClient.for_gateway(requester_boot_id=configuration.requester_boot_id)
-    return CredentialAttachment(client=client, ledger=ledger, ledger_path=path)
+    boot = configuration.requester_boot_id
+    # the owner's explicit catalog refresh: one provider-send dialogue per page on the same
+    # verified gateway endpoint (the gateway resolves the key; this process never sees it)
+    lister = GatewayCatalogLister(lambda: ProviderSendClient.for_gateway(requester_boot_id=boot))
+    return CredentialAttachment(client=client, ledger=ledger, ledger_path=path, catalog_lister=lister)
 
 
 def credential_services(context):
@@ -73,7 +83,8 @@ def credential_services(context):
 
     attachment = context.credential_gateway
     seams = (CredentialSeams() if attachment is None
-             else credential_seams(attachment.client, attachment.ledger))
+             else credential_seams(attachment.client, attachment.ledger,
+                                   catalog_lister=attachment.catalog_lister))
     return ContributionServices(create_router(seams=seams), {})
 
 

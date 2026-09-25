@@ -86,6 +86,57 @@ class Gateway:
     def client(self):
         return CredentialGatewayClient(self._transport, deadline_ms=10_000)
 
+    def send_client(self, port, *, on_serve=None):
+        """A provider-send client whose every dialogue is served, over real authenticated
+        frames on a socket pair, by a `ProviderSendService` over this same vault, bound to a
+        loopback upstream on `port` (the gateway's send path; test transport only)."""
+        from app.workers.provider_gateway import (
+            CredentialedProviderTransport,
+            ProviderBinding,
+        )
+        from app.workers.provider_send_client import ProviderSendClient
+        from app.workers.provider_send_service import ProviderSendService
+
+        binding = ProviderBinding(provider="claude", scheme="http", host="127.0.0.1", port=port,
+                                  allowed_methods=("GET", "POST"), allowed_path_prefixes=("/v1",),
+                                  allowed_request_headers=("anthropic-version", "content-type"),
+                                  auth_header="x-api-key", max_request_bytes=1_048_576,
+                                  max_response_bytes=1_048_576, timeout_seconds=5)
+
+        def factory():
+            left, right = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+            service = ProviderSendService(CredentialedProviderTransport(self.vault, binding))
+            if on_serve is not None:
+                on_serve(service)
+            errors = []
+
+            def serve():
+                try:
+                    session = broker._server_handshake_impl(
+                        right, self.spec, BOOT_SECRET, requester_boot_id=REQUESTER_BOOT,
+                        responder_boot_id=RESPONDER_BOOT, deadline=broker.Deadline.after_ms(10_000),
+                        verify_peer=False)
+                    codec = broker.FrameCodec(self.spec, session, local_service=self.spec.responder_service)
+                    try:
+                        service.serve_authenticated(right, codec, deadline=broker.Deadline.after_ms(10_000))
+                    finally:
+                        codec.close()
+                except BaseException as exc:  # noqa: BLE001 - surfaced at teardown
+                    errors.append(exc)
+                finally:
+                    right.close()
+
+            thread = threading.Thread(target=serve, daemon=True)
+            thread.start()
+            self.threads.append((thread, errors))
+            session = broker._client_handshake_impl(
+                left, self.spec, BOOT_SECRET, requester_boot_id=REQUESTER_BOOT,
+                responder_boot_id=RESPONDER_BOOT, deadline=broker.Deadline.after_ms(10_000),
+                verify_peer=False)
+            return left, broker.FrameCodec(self.spec, session, local_service=self.spec.requester_service)
+
+        return ProviderSendClient(transport_factory=factory, deadline_ms=10_000)
+
     def counts(self):
         path = self.args["records_directory"] / "journal.sqlite"
         with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as db:

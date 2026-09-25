@@ -15,12 +15,15 @@ test_credential_gateway_persistence, in this process). Test-owned substitutions 
   recovery query's reply are dropped (a gateway that commits without replying);
   `sk-fixture-unadmitted-…` fails ambiguously before the gateway admits it, so every later
   query answers `unknown`. Any other secret passes through unchanged;
-- `POST /__test__/catalog` (a wrapper route in front of the app, not a product route)
-  records an explicit catalog refresh result and a model choice for the provider's
-  current binding revision through the ledger's own API, standing in for the
-  `refresh_catalog` act that does not exist yet.
+- the gateway's provider-send path (`ProviderSendService` over the same vault, reached by a
+  `ProviderSendClient` on socket pairs) is bound to a loopback mock of the provider's
+  models endpoint in this process (`MockModels`), never a real provider;
+- `GET /__test__/upstream` (a wrapper route in front of the app, not a product route) only
+  reports how many requests the mock provider received and how many carried the key the
+  gateway currently binds (counts, never the key).
 
-No provider, model or network call; every secret is synthetic test-actor data."""
+The catalog refresh and model choice are the product routes. No real provider, model or
+outbound network call; every secret is synthetic test-actor data."""
 import argparse
 import base64
 import json
@@ -28,13 +31,14 @@ import os
 import socket
 import sys
 import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from uuid import uuid4
 
 import uvicorn
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from app.api import credential_wiring
+from app.api.credential_catalog import GatewayCatalogLister
 from app.api.credential_commands import CredentialCommandLedger
 from app.operations.session_root import initialize_session_root
 from app.operations.setup import (
@@ -88,31 +92,56 @@ class ScriptedClient:
     def retire(self, **kwargs):
         return self._client.retire(**kwargs)
 
+    def bind_head(self, **kwargs):
+        return self._client.bind_head(**kwargs)
 
-def with_catalog_route(app, ledger):
-    """The app, with one test-owned route in front of it (never part of the product)."""
+
+class MockModels:
+    """A loopback mock of the provider's models endpoint: one page of synthetic models."""
+
+    def __init__(self):
+        self.keys = []  # the key of each request, held in memory only, never written out
+        owner = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                owner.keys.append(self.headers.get("x-api-key"))
+                body = json.dumps({"data": [
+                    {"type": "model", "id": MODELS[0], "display_name": MODELS[0],
+                     "created_at": "2026-01-02T00:00:00Z"},
+                    {"type": "model", "id": MODELS[1], "display_name": MODELS[1],
+                     "created_at": "2026-01-01T00:00:00Z"}],
+                    "first_id": MODELS[0], "last_id": MODELS[1], "has_more": False}).encode()
+                self.send_response(200)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_args):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def with_upstream_route(app, upstream):
+    """The app, with one observation-only test route in front of it (never the product):
+    how many requests the mock provider received, and how many distinct keys they carried
+    (counts only, never a key)."""
 
     async def wrapper(scope, receive, send):
-        if scope["type"] != "http" or scope["path"] != "/__test__/catalog" or scope["method"] != "POST":
+        if scope["type"] != "http" or scope["path"] != "/__test__/upstream" or scope["method"] != "GET":
             return await app(scope, receive, send)
-        body = b""
-        while True:
-            message = await receive()
-            body += message.get("body", b"")
-            if not message.get("more_body"):
-                break
-        try:
-            provider = json.loads(body)["provider"]
-            head = ledger.connection(provider)
-            revision = head["revision"]
-            ledger.record_catalog_refresh(provider, refresh_command=str(uuid4()),
-                                          expected_binding_revision=revision, models=MODELS)
-            ledger.choose_model(provider, expected_binding_revision=revision, model=MODELS[0])
-            status, payload = 200, {"binding_revision": revision}
-        except Exception as error:  # noqa: BLE001 - the test reads the failure class
-            status, payload = 500, {"error": type(error).__name__}
+        payload = {"requests": len(upstream.keys),
+                   "distinct_keys": len({key for key in upstream.keys if key is not None})}
         data = json.dumps(payload).encode()
-        await send({"type": "http.response.start", "status": status,
+        await send({"type": "http.response.start", "status": 200,
                     "headers": [(b"content-type", b"application/json")]})
         await send({"type": "http.response.body", "body": data})
 
@@ -134,9 +163,12 @@ def main():
     ledger = CredentialCommandLedger(ledger_path, fence_after_seconds=args.fence_delay_seconds)
     credential_gateway_service._write_logical_connection = _reply
 
+    upstream = MockModels()
+    lister = GatewayCatalogLister(lambda: gateway.send_client(upstream.port))
+
     def attachment(configuration, *, state_directory):
         return credential_wiring.CredentialAttachment(client=ScriptedClient(gateway.client()), ledger=ledger,
-                                                      ledger_path=ledger_path)
+                                                      ledger_path=ledger_path, catalog_lister=lister)
 
     credential_wiring.open_credential_attachment = attachment  # test-owned endpoint substitution
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -153,10 +185,11 @@ def main():
                          pair_root=str(owned / "gateway" / "pair"), requester_boot_id="fixture-control-boot"))
     print(f"CREDENTIALS_URL={profile.http_origin}{profile.base_path}", flush=True)
     try:
-        uvicorn.Server(uvicorn.Config(with_catalog_route(app, ledger), log_level="warning", access_log=False,
-                                      timeout_graceful_shutdown=3)).run(sockets=[sock])
+        uvicorn.Server(uvicorn.Config(with_upstream_route(app, upstream), log_level="warning",
+                                      access_log=False, timeout_graceful_shutdown=3)).run(sockets=[sock])
     finally:
         sock.close()
+        upstream.close()
         gateway.close()
 
 

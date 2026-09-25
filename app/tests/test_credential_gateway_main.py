@@ -60,7 +60,8 @@ real_uds = pytest.mark.skipif(
 def connection(handle, state, revision):
     """The GET projection of a provider connection's binding head (no catalog yet)."""
     return {"provider": "claude", "state": state, "handle": handle, "binding_revision": revision,
-            "catalog": "absent", "model_choice": "absent"}
+            "catalog": "absent", "model_choice": "absent", "gateway_head": "applied",
+            "models": [], "chosen_model": None}
 
 
 # --- configuration refusals (no privileges) ------------------------------------------
@@ -362,8 +363,9 @@ def test_the_entrypoint_serves_create_list_rotate_delete_to_the_supported_factor
                          "provider_revocation": "not_performed"}],
         "connections": [connection(handle, "revoked_pending_erasure", 3)], "pending_acts": []}}
     assert result["vault_modules"] == []
-    # four gateway dialogues (create; rotate store + superseded retire; delete), no GET
-    assert gateway.names() == ["gateway_ready", *(["session_accepted", "session_served"] * 4), "gateway_stopped"]
+    # seven gateway dialogues (create store + bind_head; rotate store + bind_head +
+    # superseded retire; delete bind_head of the revoked head + retire), no GET
+    assert gateway.names() == ["gateway_ready", *(["session_accepted", "session_served"] * 7), "gateway_stopped"]
     _assert_clean_stop(base, gateway, code)
     assert journal_counts(base) == (2, 2, 2, 2)
     assert_no_secret_bytes(base, FIRST.encode(), SECOND.encode())
@@ -415,7 +417,9 @@ def test_sigterm_during_a_dialogue_completes_it_then_stops_cleanly(base):  # noq
         lock.release()
         gateway.kill()
     (created,) = result["steps"]
-    assert created["status"] == 201 and created["body"]["state"] == "stored_unbound"
+    # the store dialogue completed; the gateway then stopped, so the create's binding-head
+    # publication found no gateway: the act reports command_pending (a retry publishes it)
+    assert created["status"] == 503 and created["body"]["code"] == "command_pending"
     assert gateway.names() == ["gateway_ready", "session_accepted", "session_served", "gateway_stopped"]
     _assert_clean_stop(base, gateway, code)
     assert journal_counts(base) == (1, 1, 1, 0)
@@ -474,7 +478,9 @@ def test_a_command_pending_across_a_gateway_restart_resolves_by_query(base):  # 
         "credentials": [{"handle": handle, "provider": "claude", "state": "stored_unbound",
                          "provider_revocation": "not_performed"}],
         "connections": [connection(handle, "bound", 1)], "pending_acts": []}}
-    assert second.names() == ["gateway_ready", "session_accepted", "session_served", "gateway_stopped"]
+    # the retry's query, then the binding-head publication
+    assert second.names() == ["gateway_ready", *(["session_accepted", "session_served"] * 2),
+                              "gateway_stopped"]
     _assert_clean_stop(base, second, second_code)
     assert journal_counts(base) == (1, 1, 1, 0)
     assert_no_secret_bytes(base, FIRST.encode(), SECOND.encode())

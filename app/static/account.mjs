@@ -166,8 +166,21 @@ export const CONNECTION_MESSAGES = Object.freeze({
   revision: revision => `바인딩 수정본 ${revision}`,
   catalog: Object.freeze({ current: '이 바인딩의 모델 목록: 있음', absent: '이 바인딩의 모델 목록: 없음' }),
   model_choice: Object.freeze({ current: '이 바인딩의 모델 선택: 있음', absent: '이 바인딩의 모델 선택: 없음' }),
-  voids: '키를 교체하거나 삭제하면 그 전 바인딩의 모델 목록과 모델 선택은 무효가 됩니다. 새 바인딩의 목록은 명시적으로 새로 고친 뒤에만 생기며, 이 화면은 목록을 새로 고치거나 모델을 부르지 않습니다.',
+  voids: '키를 교체하거나 삭제하면 그 전 바인딩의 모델 목록과 모델 선택은 무효가 됩니다. 새 바인딩의 목록은 "모델 목록 새로 고침"을 누를 때만 생깁니다. 그때만 게이트웨이가 보관한 키로 제공자의 모델 목록을 읽습니다(과금되는 모델 호출은 아님). 키 저장·교체·삭제와 상태 읽기는 목록을 새로 고치지 않습니다.',
+  independent: '이 게이트웨이 키와 모델 선택은 "Claude 연결"(서버 메모리에만 두는 키)과 별개입니다. 여기서 키를 교체하거나 삭제해도 그쪽 키는 바뀌지 않고, 그쪽에서 잊어도 여기는 바뀌지 않습니다. 지금 런(run) 실행은 이 게이트웨이 키가 아니라 그쪽 키를 씁니다.',
+  gatewayPending: '게이트웨이 반영 대기: 게이트웨이가 이 바인딩을 확인하기 전까지 이 키로는 요청을 보내지 않습니다.',
+  chosen: model => `선택된 모델: ${model}`,
+  notListable: '이 제공자의 모델 목록은 게이트웨이로 읽을 수 없습니다.',
 });
+
+export const CATALOG_RESULTS = Object.freeze({
+  refreshed: (revision, count) => `바인딩 수정본 ${revision}의 모델 목록을 새로 고쳤습니다 (${count}개).`,
+  chosen: model => `모델을 선택했습니다: ${model}`,
+});
+
+// providers whose model list the gateway's send path can read
+const LISTABLE_PROVIDERS = new Set(['claude']);
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 export const ACT_KINDS = Object.freeze({ create: '새 키 저장', rotate: '키 교체', delete: '삭제' });
 
@@ -219,6 +232,13 @@ export const CREDENTIAL_ERRORS = Object.freeze({
   connection_conflict: '저장하는 동안 제공자 연결이 바뀌었습니다. 이번 키는 연결하지 않고 정리합니다.',
   fenced: '이 요청은 결과를 확인하지 못해 차단됐습니다. 새 요청으로 다시 시도해 주세요.',
   fence_not_due: FENCE_RESULTS.fence_not_due,
+  catalog_stale: '요청하는 동안 제공자 연결이 바뀌어 이 결과는 쓰지 않았습니다. 현재 연결로 다시 새로 고쳐 주세요.',
+  model_not_listed: '현재 바인딩의 모델 목록에 없는 모델입니다.',
+  binding_refused: '게이트웨이가 이 연결의 키 사용을 거부했습니다. 상태를 다시 읽어 주세요.',
+  provider_rejected: '제공자가 이 키로 모델 목록을 읽는 것을 거부했습니다.',
+  provider_unavailable: '제공자의 모델 목록을 읽지 못했습니다. 잠시 뒤 다시 시도해 주세요.',
+  connection_unbound: '이 제공자에는 연결된 키가 없습니다.',
+  catalog_unsupported: '이 제공자의 모델 목록은 게이트웨이로 읽을 수 없습니다.',
   dependency_unavailable: '자격증명 게이트웨이를 쓸 수 없습니다. 이 배포에 연결되어 있지 않거나 응답하지 않습니다.',
   unauthenticated: '세션이 끝났습니다. 시작 화면(./)에서 다시 로그인해 주세요.',
   access_denied: '이 요청은 허용되지 않았습니다.',
@@ -236,11 +256,22 @@ const MAX_TIMER_MS = 2 ** 31 - 1;
 function stampMillis(stamp) { return Date.parse(`${stamp.slice(0, 23)}Z`); }
 function stampText(stamp) { return `${stamp.slice(0, 19).replace('T', ' ')} UTC`; }
 
+function validModels(value, catalog) {
+  if (value === undefined) return true;
+  return Array.isArray(value) && (catalog === 'absent' ? value.length === 0
+    : value.length >= 1 && value.length <= 200 && new Set(value).size === value.length
+      && value.every(model => typeof model === 'string' && MODEL_ID.test(model)));
+}
+
 function validConnection(entry) {
   return entry !== null && typeof entry === 'object' && CREDENTIAL_PROVIDERS.includes(entry.provider)
     && Object.hasOwn(CONNECTION_STATES, entry.state) && CREDENTIAL_HANDLE.test(entry.handle)
     && Number.isInteger(entry.binding_revision) && entry.binding_revision >= 1
-    && PRESENCE.has(entry.catalog) && PRESENCE.has(entry.model_choice);
+    && PRESENCE.has(entry.catalog) && PRESENCE.has(entry.model_choice)
+    && (entry.gateway_head === undefined || ['applied', 'pending'].includes(entry.gateway_head))
+    && validModels(entry.models, entry.catalog)
+    && (entry.chosen_model === undefined || entry.chosen_model === null
+      || (entry.model_choice === 'current' && (entry.models ?? []).includes(entry.chosen_model)));
 }
 
 function validPending(entry) {
@@ -293,7 +324,8 @@ export function createCredentialsPanel({ root, document, fetch, basePath = '/', 
   const confirmBox = element('div');
   root.replaceChildren(element('h2', 'API 자격증명'), element('p', CREDENTIAL_MESSAGES.intro),
     element('p', CREDENTIAL_MESSAGES.revocation), status, list,
-    element('h3', '제공자 연결'), element('p', CONNECTION_MESSAGES.voids), connectionList,
+    element('h3', '제공자 연결'), element('p', CONNECTION_MESSAGES.voids),
+    element('p', CONNECTION_MESSAGES.independent), connectionList,
     element('h3', '끝나지 않은 요청'), actList, refresh,
     element('label', '제공자', { for: 'credential-provider' }), provider,
     element('label', 'API 키', { for: 'credential-secret' }), secret, mode, submit, reset, confirmBox);
@@ -376,7 +408,8 @@ export function createCredentialsPanel({ root, document, fetch, basePath = '/', 
     }));
   }
 
-  // read-only: the binding head is ledger authority, never changed from here directly
+  // the binding head is ledger authority and never changed from here; the only acts on a
+  // bound head are the owner's explicit catalog refresh and a model choice from that catalog
   function renderConnections() {
     if (!connections.length) {
       connectionList.replaceChildren(element('li', CONNECTION_MESSAGES.empty));
@@ -384,12 +417,33 @@ export function createCredentialsPanel({ root, document, fetch, basePath = '/', 
     }
     connectionList.replaceChildren(...connections.map(head => {
       const item = element('li', undefined, { 'data-provider': head.provider, 'data-state': head.state,
-        'data-binding-revision': String(head.binding_revision) });
+        'data-binding-revision': String(head.binding_revision), 'data-gateway-head': head.gateway_head });
       item.append(element('span', [head.provider, CONNECTION_STATES[head.state], `키 ${head.handle}`,
         CONNECTION_MESSAGES.revision(head.binding_revision)].join(' · ')));
-      if (head.state === 'bound') {
-        item.append(element('span', ` · ${CONNECTION_MESSAGES.catalog[head.catalog]}`, { 'data-catalog': head.catalog }),
-          element('span', ` · ${CONNECTION_MESSAGES.model_choice[head.model_choice]}`, { 'data-model-choice': head.model_choice }));
+      if (head.state !== 'bound') return item;
+      item.append(element('span', ` · ${CONNECTION_MESSAGES.catalog[head.catalog]}`, { 'data-catalog': head.catalog }),
+        element('span', ` · ${CONNECTION_MESSAGES.model_choice[head.model_choice]}`, { 'data-model-choice': head.model_choice }));
+      if (head.gateway_head === 'pending') item.append(element('span', ` · ${CONNECTION_MESSAGES.gatewayPending}`));
+      if (head.chosen_model !== null) {
+        item.append(element('span', ` · ${CONNECTION_MESSAGES.chosen(head.chosen_model)}`,
+          { 'data-chosen-model': head.chosen_model }));
+      }
+      if (!LISTABLE_PROVIDERS.has(head.provider)) {
+        item.append(element('span', ` · ${CONNECTION_MESSAGES.notListable}`));
+        return item;
+      }
+      const refreshButton = element('button', '모델 목록 새로 고침', { type: 'button', 'data-act': 'catalog-refresh' });
+      refreshButton.addEventListener('click', () => refreshCatalog(head.provider).catch(() => {}));
+      item.append(refreshButton);
+      if (head.catalog === 'current' && head.models.length) {
+        const selectId = `credential-model-${head.provider}`;
+        const select = element('select', undefined, { id: selectId, 'data-models-for': head.provider });
+        for (const model of head.models) select.append(element('option', model, { value: model }));
+        select.value = head.chosen_model ?? head.models[0];
+        const chooseButton = element('button', '이 모델 선택', { type: 'button', 'data-act': 'model-choice' });
+        chooseButton.addEventListener('click', () =>
+          chooseModel(head.provider, head.binding_revision, select.value).catch(() => {}));
+        item.append(element('label', ' 모델 ', { for: selectId }), select, chooseButton);
       }
       return item;
     }));
@@ -467,8 +521,10 @@ export function createCredentialsPanel({ root, document, fetch, basePath = '/', 
       const value = await call('GET', path);
       if (!valid(value)) throw Object.assign(new Error('refused'), { code: 'unavailable' });
       credentials = value.credentials.map(({ handle, provider: name, state }) => ({ handle, provider: name, state }));
-      connections = (value.connections ?? []).map(({ provider: name, state, handle, binding_revision, catalog, model_choice }) =>
-        ({ provider: name, state, handle, binding_revision, catalog, model_choice }));
+      connections = (value.connections ?? []).map(({ provider: name, state, handle, binding_revision, catalog,
+        model_choice, gateway_head = 'applied', models = [], chosen_model = null }) =>
+        ({ provider: name, state, handle, binding_revision, catalog, model_choice, gateway_head,
+          models: [...models], chosen_model }));
       pendingActs = (value.pending_acts ?? []).map(({ intent_id, kind, handle, provider: name, state,
         fence_available_at, uncertain_record }) =>
         ({ intent_id, kind, handle, provider: name, state, fence_available_at, uncertain_record }));
@@ -570,6 +626,49 @@ export function createCredentialsPanel({ root, document, fetch, basePath = '/', 
     }
   }
 
+  // the owner's explicit catalog refresh for the connection's current binding: the gateway
+  // reads the provider's model list with the key it holds; only a fresh intent is sent
+  async function refreshCatalog(name) {
+    if (!LISTABLE_PROVIDERS.has(name)) fail('provider');
+    say(CREDENTIAL_MESSAGES.working, 'working');
+    try {
+      const answer = await call('POST', `${path}/connections/${name}/catalog-refresh`, { intent_id: randomUUID() });
+      if (answer?.provider !== name || !Number.isInteger(answer?.binding_revision) || answer.binding_revision < 1
+          || answer?.catalog !== 'current' || !validModels(answer?.models, 'current')) {
+        throw Object.assign(new Error('refused'), { code: 'unavailable' });
+      }
+      say(CATALOG_RESULTS.refreshed(answer.binding_revision, answer.models.length), 'catalog_refreshed');
+      return { binding_revision: answer.binding_revision, models: [...answer.models] };
+    } catch (error) {
+      refusal(error);
+      throw error;
+    } finally {
+      await load().catch(() => {});
+    }
+  }
+
+  // a model choice names the binding revision whose catalog listed it
+  async function chooseModel(name, revision, model) {
+    if (!CREDENTIAL_PROVIDERS.includes(name) || !Number.isInteger(revision) || !MODEL_ID.test(String(model))) {
+      fail('model choice');
+    }
+    say(CREDENTIAL_MESSAGES.working, 'working');
+    try {
+      const answer = await call('POST', `${path}/connections/${name}/model-choice`,
+        { binding_revision: revision, model });
+      if (answer?.provider !== name || answer?.binding_revision !== revision || answer?.model !== model) {
+        throw Object.assign(new Error('refused'), { code: 'unavailable' });
+      }
+      say(CATALOG_RESULTS.chosen(model), 'model_chosen');
+      return { binding_revision: revision, model };
+    } catch (error) {
+      refusal(error);
+      throw error;
+    } finally {
+      await load().catch(() => {});
+    }
+  }
+
   function startOver() {
     pendingStore = null;
     rotateFrom = null;
@@ -582,8 +681,8 @@ export function createCredentialsPanel({ root, document, fetch, basePath = '/', 
   reset.addEventListener('click', startOver);
   refresh.addEventListener('click', () => load().catch(() => {}));
   renderMode();
-  return Object.freeze({ load, store, remove, fence, startOver,
+  return Object.freeze({ load, store, remove, fence, refreshCatalog, chooseModel, startOver,
     get credentials() { return credentials.map(entry => ({ ...entry })); },
-    get connections() { return connections.map(entry => ({ ...entry })); },
+    get connections() { return connections.map(entry => ({ ...entry, models: [...entry.models] })); },
     get pendingActs() { return pendingActs.map(entry => ({ ...entry })); } });
 }

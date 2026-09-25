@@ -331,6 +331,53 @@ class CredentialVault:
                 tx.execute("INSERT INTO retirements VALUES(?,?,?,?)", (command_id, digest, canonical(body), target["command_id"]))
             return body
 
+    def bind_head(self, *, provider, revision, state, record):
+        """Adopt the control plane's provider connection binding head (T090).
+
+        The ledger decides the binding by compare-and-swap; this is the gateway's copy
+        the send path checks at claim time. Revisions only move forward: a lower
+        revision, or the same revision with a different body, is refused ``conflict``
+        (a stale publisher never rolls the head back); the identical head is an
+        idempotent replay. A ``bound`` head must name a receipted, unretired record of
+        that provider; a ``revoked_pending_erasure`` head names the record it revoked."""
+        if (type(provider) is not str or provider not in ("claude", "codex")
+                or type(revision) is not int or not 1 <= revision <= 2**31
+                or state not in ("bound", "revoked_pending_erasure")):
+            raise CredentialVaultError("invalid_metadata")
+        record = reference(record)
+        head = {"provider": provider, "revision": revision, "state": state, "record": record}
+        digest = sha256(canonical(head)).hexdigest()
+        with self._operation() as journal:
+            prior = journal.checked_read("SELECT revision, fingerprint FROM heads WHERE provider=?",
+                                         (provider,))
+            if prior:
+                if prior[0]["revision"] > revision or (
+                        prior[0]["revision"] == revision and prior[0]["fingerprint"] != digest):
+                    raise CredentialVaultError("conflict")
+                if prior[0]["revision"] == revision:
+                    return head
+            rows = journal.checked_read(
+                "SELECT metadata FROM commands WHERE record_id=? AND version=?",
+                (record["record_id"], record["record_version"]))
+            if len(rows) != 1:
+                raise CredentialVaultError("conflict")
+            receipt = self._query(journal, strict_json(rows[0][0], 4096))
+            if (receipt.get("ciphertext_sha256") != record["ciphertext_sha256"]
+                    or receipt.get("provider") != provider
+                    or receipt.get("state") not in ("stored_unbound", "cleanup_pending")
+                    or (state == "bound" and receipt["state"] != "stored_unbound")):
+                raise CredentialVaultError("conflict")
+            with journal.transaction() as db:
+                db.execute("INSERT OR REPLACE INTO heads VALUES(?,?,?,?)",
+                           (provider, revision, digest, canonical(head)))
+            return head
+
+    def heads(self):
+        """The adopted binding heads (nonsecret)."""
+        with self._operation() as journal:
+            return [strict_json(row[0], 4096) for row in
+                    journal.checked_read("SELECT body FROM heads ORDER BY provider")]
+
     def snapshot(self):
         with self._operation() as journal:
             return [self._query(journal, strict_json(row[0], 4096)) for row in journal.connection.execute("SELECT metadata FROM commands ORDER BY command_id")]
@@ -349,7 +396,7 @@ class CredentialVault:
                 ("stored_unbound", "cleanup_pending", "secret_input_lost", "pending")} | {"quarantined": self._quarantined}
 
     def capabilities(self):
-        return {"port": "credential-op-v2", "operations": ["store_at", "query_record", "retire", "snapshot", "health", "capabilities"],
+        return {"port": "credential-op-v2", "operations": ["store_at", "query_record", "retire", "bind_head", "snapshot", "health", "capabilities"],
                 "root_rotation": False, "erasure": False, "provider_resolution": False}
 
     def resolve_for_gateway(self, handle):
@@ -381,6 +428,18 @@ class CredentialVault:
                 receipt = self._query(journal, metadata)
                 if (receipt.get("state") != "stored_unbound"
                         or any(receipt.get(name) != record[name] for name in record)):
+                    raise CredentialVaultError("provider_binding_unavailable")
+                # Claim-time binding check (T090): only the record the provider connection's
+                # current binding head binds may be delivered. A rotated predecessor, a
+                # revoked or orphaned record, a fenced command's late commit or a record
+                # never bound is refused here, before any provider byte. `bind_head` takes
+                # the same vault exclusion, so a rotation either lands before this read
+                # (the send is refused) or after the request is written (the send was
+                # already claimed under the previous head).
+                heads = journal.checked_read("SELECT body FROM heads WHERE provider=?",
+                                             (metadata["provider"],))
+                head = strict_json(heads[0][0], 4096) if len(heads) == 1 else None
+                if head is None or head["state"] != "bound" or head["record"] != record:
                     raise CredentialVaultError("provider_binding_unavailable")
                 payload = self._published(metadata)
                 if payload is None:
