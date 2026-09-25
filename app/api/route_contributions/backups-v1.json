@@ -1,0 +1,23 @@
+{
+  "schema_version": "deeptwin-first-party-route-contribution-v1",
+  "contribution_id": "backups-v1",
+  "factory": "app.api.backups:create_router",
+  "routes": [
+    {"route_id": "backups.read", "methods": ["GET", "HEAD"], "path": "/api/v1/backups",
+     "auth_policy": "browser_session", "required_scope": "work.read"},
+    {"route_id": "backups.preview", "methods": ["POST"], "path": "/api/v1/backups/preview",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "backups.create", "methods": ["POST"], "path": "/api/v1/backups",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "backups.ciphertext", "methods": ["GET", "HEAD"], "path": "/api/v1/backups/{backup_id}/ciphertext",
+     "auth_policy": "browser_session", "required_scope": "work.read"},
+    {"route_id": "backups.receipt", "methods": ["GET", "HEAD"], "path": "/api/v1/backups/{backup_id}/receipt",
+     "auth_policy": "browser_session", "required_scope": "work.read"},
+    {"route_id": "backups.restore_begin", "methods": ["POST"], "path": "/api/v1/backups/restores",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "backups.restore_read", "methods": ["GET", "HEAD"], "path": "/api/v1/backups/restores/{restore_id}",
+     "auth_policy": "browser_session", "required_scope": "work.read"},
+    {"route_id": "backups.restore_upload", "methods": ["POST"], "path": "/api/v1/backups/restores/{restore_id}/bundle",
+     "auth_policy": "browser_session", "required_scope": "work.command"}
+  ]
+}

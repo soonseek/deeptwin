@@ -6,9 +6,14 @@
 // screen, where its preview and consent are; this page says so and links there.
 // Backup and retention state only what this server actually does: no backup is
 // claimed where no backup worker is connected, and nothing is deleted
-// automatically. All server text reaches the DOM through textContent only.
+// automatically. With a session, the backup section is the server's own state and
+// commands (records-backup.mjs): create through the isolated backup-crypto worker with
+// an actual-content preview and bound consent, downloads of the encrypted bundle and
+// its external receipt, and a restore staged as `restored_review`.
+// All server text reaches the DOM through textContent only.
 
 import { createAccountPanel, createCredentialsPanel } from './account.mjs';
+import { createBackupPanel } from './records-backup.mjs';
 import { createClaudeConnection } from './claude-connection.mjs';
 import { recordsRoutes } from './records.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
@@ -106,7 +111,7 @@ export function createEventLog({ root, document, request, basePath = '/' }) {
   return Object.freeze({ load, get shown() { return shown; } });
 }
 
-export async function boot({ document, location, fetch } = {}) {
+export async function boot({ document, location, fetch, crypto = globalThis.crypto } = {}) {
   if (typeof document?.getElementById !== 'function') fail('a document is required');
   if (typeof fetch !== 'function') fail('a fetch function is required');
   const roots = {};
@@ -151,9 +156,12 @@ export async function boot({ document, location, fetch } = {}) {
   const credentials = credentialsRoot !== null && typeof credentialsRoot?.replaceChildren === 'function'
     ? createCredentialsPanel({ root: credentialsRoot, document, fetch, basePath, session }) : null;
   if (credentials !== null) await credentials.load().catch(() => {});
+  const backup = createBackupPanel({ root: roots.backup, document, basePath, request: session.request,
+    upload: session.uploadBackupBundle, crypto });
+  await backup.load().catch(() => {});
   const log = createEventLog({ root: roots.logs, document, request: session.request, basePath });
   await log.load().catch(() => {});
-  return Object.freeze({ established: true, basePath, sections, log, account, connection, credentials });
+  return Object.freeze({ established: true, basePath, sections, log, account, connection, credentials, backup });
 }
 
 if (typeof globalThis.document === 'object' && globalThis.document !== null

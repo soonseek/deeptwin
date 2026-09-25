@@ -151,8 +151,12 @@ class ApplicationContext:
     # the credential gateway attachment (ledger + frame-only client) the host opened
     # from the deployment's named endpoint; None composes the credential routes unbound
     credential_gateway: object | None = None
+    # the backup-crypto worker client the host opened from the deployment's named
+    # `cp-backup` endpoint; None composes the backup routes with an honest unavailable
+    backup_worker: object | None = None
 
     def __post_init__(self):
+        from ..workers.backup_crypto_client import BackupCryptoClient
         from .credential_wiring import CredentialAttachment
 
         if (
@@ -173,6 +177,10 @@ class ApplicationContext:
             or (
                 self.credential_gateway is not None
                 and type(self.credential_gateway) is not CredentialAttachment
+            )
+            or (
+                self.backup_worker is not None
+                and type(self.backup_worker) is not BackupCryptoClient
             )
         ):
             raise TypeError(

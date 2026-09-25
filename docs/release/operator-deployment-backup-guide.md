@@ -151,14 +151,35 @@ ready`(실패 시 `failed`와 이유)로 진행한다. SQLite online backup으�
 없으면 실행 파일이 필요한 8개는 이유를 밝히고 건너뛴다. CI에는 age 바이너리 공급이 없어 그곳에서는
 건너뛴다. `deploy/tests/age_runtime_canary.py`는 uid 65534, 네트워크 namespace 안에서 통과했다.
 
+### 4.6 backup-crypto worker와 control-plane의 분리 (2026-09-25)
+
+- age를 부르는 쪽은 **별도 프로세스** `python -m app.workers.backup_crypto_main`이다. `cp-backup`
+  pair(요청자 `control` 20102, 응답자 `backup` 20111, pair group 21109)의 검증된 UDS·SO_PEERCRED·
+  handshake 위에서만 대화한다. argv는 `--service-config=`(`deeptwin-backup-crypto-service-v1`:
+  `key_root`, `age_root`)와 `--attachment-config=`(`deeptwin-backup-crypto-attachment-v1`:
+  `pair_root`, `requester_boot_id`) 두 개뿐이다.
+- worker는 네트워크 소켓을 열지 않는다. 시작하자마자 audit hook이 AF_UNIX 외 소켓 생성·bind·
+  connect·이름 조회와, 잠긴 `age`/`age-keygen` 외의 실행을 거절한다. Compose의 `network_mode: none`과
+  별개로 프로세스 자체에서 성립한다.
+- `key_root`는 `backup-key-init`이 만든 `identity.age`와 `manifest.json` **두 파일만** 있어야 하며,
+  읽기 전용 mount이거나 쓰기 권한이 전혀 없는 디렉터리(0500)여야 한다. 그 밖의 내용(예: provider
+  credential root나 records)이 있거나 쓸 수 있으면 시작을 거절한다(종료 코드 2). 볼륨이 없으면
+  시작은 하되 키가 필요한 모든 요청에 `key_unavailable`로 답한다.
+- control-plane(`app.server --backup-worker-config=<attachment>`)은 snapshot·미리보기·archive·
+  복원 검증만 하고, archive/암호문을 **typed stream**(요청, 32 KiB 이하 chunk, 크기·SHA-256을 묶는 end
+  frame)으로 주고받는다. 키 핸들이나 키 경로를 받지 않으며, 키 볼륨은 control 신원이 읽을 수 없다.
+- 기록 화면(`records.html`)에서 백업 만들기(실제 포함 내용 미리보기와 그 digest에 묶인 동의),
+  암호화된 백업과 외부 영수증 내려받기, 영수증+백업 올리기로 `restored_review` 스테이징 복원이
+  된다. 브라우저 경로는 `instance_backup_key`만 다루며 64 MiB까지 받는다.
+
 ## 5. 아직 연결되지 않은 것
 
-- **networkless backup-crypto worker는 아직 별도로 배포된 서비스가 아니다.** 계약은
-  control-plane이 typed archive stream만 보내고 worker만 `backup-key`를 읽기 전용으로 mount하도록
-  나누지만, 지금은 `create_backup`이 두 절반을 **한 프로세스에서** 실행한다. Compose 골격의
-  `backup` 서비스는 `network_mode: none` 자리표시자일 뿐이며 이미지가 없다.
-- 브라우저에서 백업 만들기·복원, 포함 내용 미리보기·동의 화면이 없다(기록 화면은 미연결 상태를
-  알려 줄 뿐이다).
+- **Compose 배포 연결이 남아 있다.** worker 프로세스와 채널은 구현·시험되었지만(§4.6), Compose
+  골격의 `backup` 서비스에는 아직 이미지·명령이 없고 `backup-key` 볼륨의 읽기 전용 mount와 두 설정
+  파일도 연결되지 않았다(T081). 브라우저에서 portable recovery 백업/복원(한 번만 쓰는 복구 키
+  입력)은 아직 없다.
+- 스테이징된 `restored_review` vault를 새 인스턴스로 여는 과정(새 소유자 설정, 연결 재생성, 환경
+  재활성화)은 화면에서 필요한 단계로 **표시만** 하며, 활성 vault를 바꾸는 기능은 없다.
 - 마이그레이션 전 백업 게이트(T072), 예약 백업, 업데이트 흐름이 구현되지 않았다.
 - 최종 이미지, 두 프로필의 새 호스트 시험, TLS edge, Linux UID/network 자격 검증(T079/T081/T083)이
   남아 있다.

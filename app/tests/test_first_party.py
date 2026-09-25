@@ -90,7 +90,7 @@ def test_additional_build_installed_contribution_without_server_or_composer_edit
         assert context.worker_dispatch_slot is None
         with pytest.raises(FrozenInstanceError):
             context.base_path = "/replacement/"
-        assert app.state.route_composition.route_count == 84  # 83 installed + example
+        assert app.state.route_composition.route_count == 92  # 91 installed + example
 
 
 @pytest.mark.parametrize(

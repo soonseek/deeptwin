@@ -43,3 +43,16 @@ def test_backup_key_modes_mirror_the_manifest_contract():
     assert _mjs_list("BACKUP_KEY_MODES") == {
         "instance_backup_key", "portable_recovery",
     }
+
+
+def test_backup_preview_categories_and_reasons_mirror_the_backup_contract():
+    from app.operations import backup
+
+    groups = {group for _prefix, group in backup._INCLUDED_GROUPS} | {"work_history", "other_history", "originals"}
+    assert _mjs_list("BACKUP_INCLUDED") == groups
+    assert _mjs_list("BACKUP_EXCLUDED_REASONS") == set(backup.EXCLUDED_REASONS.values())
+    # every category a backup can exclude has a stated reason
+    categories = {category for _prefix, category in backup.EXCLUDED} | set(backup.OUT_OF_SCOPE_CATEGORIES)
+    assert categories | {"deleted_originals"} == set(backup.EXCLUDED_REASONS)
+    assert _mjs_list("RESTORE_REQUIREMENTS") == {
+        "new_owner_bootstrap", "recreate_connections_and_service_clients", "review_and_activate_exact_environment"}

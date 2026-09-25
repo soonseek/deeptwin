@@ -152,3 +152,21 @@ Earlier:
   app/tests/test_backup_key_init.py`: 35 passed.
 - `node --test` over `work-export`, `records-page`, `records` and `source-deletion`: 23
   passed.
+
+## Browser backup and staged restore (2026-09-25, later)
+
+The row "Interrupted restore: browser" above was `Not exercised` because there was no backup
+worker. That gap is now closed for `instance_backup_key`. The details are in
+`evidence/backup-age-t070-2026-09-23.md` §2026-09-25.
+
+| Case | Exercised surface | Result | Label |
+|---|---|---|---|
+| Backup create through the screen | `app/tests/browser-backup.test.mjs`, real Chromium, real supported app as 20102, real backup-crypto worker process as 20111 in an empty network namespace over the verified `cp-backup` channel | **Pass.** The preview shows the included categories with row counts and the excluded categories with reasons, and no work text. Consent is off by default and bound to the preview digest. The encrypted bundle SHA-256 equals the receipt. No work-text canary, password or capability bytes appear in the bundle | synthetic, test actor |
+| Restore screen: staged review | Same case: upload the receipt and the bundle | **Pass.** `restored_review`, dispatch blocked. The new-owner bootstrap, re-created connections/service clients and explicit environment reactivation are each shown as `필요`. The active instance is unchanged | synthetic, test actor |
+| Interrupted/tampered restore: browser | Same case: a byte-flipped bundle against the true receipt | **Pass.** `복원하지 못했습니다. 스테이징 영역에 아무것도 남기지 않았습니다.` | synthetic |
+| Stream interruption across the process boundary | `test_backup_crypto_worker.py` (control child 20102, worker 20111) | **Pass.** A cut stream gives no ciphertext. A lying digest and an extra frame each give `stream_invalid`. The worker keeps serving | synthetic |
+
+Observed: `browser-backup.test.mjs` 1 passed; `browser-records.test.mjs` 4 passed;
+`test_backup_crypto_worker.py` 37 passed; `test_backups_api.py` 5 passed;
+`records-backup.test.mjs` 7 passed. Not exercised: portable-recovery restore through the browser
+(no identity input yet).

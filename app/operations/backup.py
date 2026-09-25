@@ -50,6 +50,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from ..workers.backup_crypto import (
+    CIPHERTEXT_HEADER,
     PROFILE,
     AgeRuntime,
     BackupCryptoError,
@@ -170,6 +171,7 @@ class BackupOutcome:
     receipt: dict | None
     manifest: dict | None
     failure: str | None
+    preview: dict | None = None  # what the snapshot carried and left out, with its digest
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,11 +227,13 @@ def _snapshot(source: Path, target: Path) -> tuple[dict, list[str], dict]:
         try:
             src.backup(dst)
             dst.execute("PRAGMA journal_mode=DELETE")
-            excluded = {}
+            excluded, excluded_rows = {}, {}
             for name in _tables(dst):
                 category = classify_table(name)
                 if category is not None:
                     excluded.setdefault(category, []).append(name)
+                    excluded_rows[category] = excluded_rows.get(category, 0) + dst.execute(
+                        f'SELECT count(*) FROM "{name}"').fetchone()[0]
             dst.execute("PRAGMA foreign_keys=OFF")
             for names in excluded.values():
                 for name in names:
@@ -243,7 +247,13 @@ def _snapshot(source: Path, target: Path) -> tuple[dict, list[str], dict]:
                 raise BackupError("the snapshot holds no initialized vault")
             sequence = dst.execute("SELECT count(*) FROM domain_records").fetchone()[0]
             blobs = _live_blobs(dst, vault[0])
+            registered = dst.execute("SELECT count(*) FROM domain_blobs WHERE vault_id=?",
+                                     (vault[0],)).fetchone()[0]
+            included = {name: dst.execute(f'SELECT count(*) FROM "{name}"').fetchone()[0]
+                        for name in _tables(dst) if not name.startswith("sqlite_")}
             identity = {"vault_id": vault[0], "snapshot_sequence": sequence, "blobs": blobs,
+                        "counts": {"included": included, "excluded": excluded_rows,
+                                   "deleted_originals": registered - len(blobs)},
                         "data_schema_version": [list(row) for row in dst.execute(
                             "SELECT version, sha256 FROM domain_migrations ORDER BY version")]}
         finally:
@@ -446,43 +456,207 @@ def _verify_database(path: Path, manifest: dict, originals: dict) -> tuple[str, 
             "record_lineage")
 
 
-def _decrypt(runtime: AgeRuntime, ciphertext: bytes, identity: bytes) -> bytes:
+class LocalAgeCrypto:
+    """The in-process crypto port: the verified runtime plus an optional key handle.
+
+    Only the backup-crypto worker (app/workers/backup_crypto_service.py) and the direct
+    tests use it; the control plane speaks the same port through `BackupCryptoClient`
+    over the verified `cp-backup` channel and never holds a key handle.
+    """
+
+    __slots__ = ("_key_handle", "_runtime")
+
+    def __init__(self, runtime: AgeRuntime, key_handle: BackupKeyHandle | None = None):
+        if type(runtime) is not AgeRuntime:
+            raise BackupError("the verified age runtime is required")
+        if key_handle is not None and type(key_handle) is not BackupKeyHandle:
+            raise BackupError("the backup-key handle is invalid")
+        self._runtime = runtime
+        self._key_handle = key_handle
+
+    def _handle(self) -> BackupKeyHandle:
+        if self._key_handle is None:
+            raise BackupError("the backup-key volume is missing or malformed")
+        return self._key_handle
+
+    def encrypt(self, archive: bytes, *, key_mode: str, recipient: str | None = None) -> bytes:
+        target = self._handle().recipient() if key_mode == "instance_backup_key" else recipient
+        try:
+            return self._runtime.encrypt(archive, target)
+        except BackupCryptoError:
+            raise BackupError("the archive could not be encrypted") from None
+
+    def decrypt(self, ciphertext: bytes, *, key_mode: str, identity: bytes | None = None) -> bytes:
+        secret = self._handle().identity() if key_mode == "instance_backup_key" else identity
+        try:
+            return self._runtime.decrypt(ciphertext, secret)
+        except BackupCryptoError:
+            raise BackupError("the backup does not decrypt and authenticate in full") from None
+        finally:
+            del secret
+
+
+# a worker failure code -> the closed failure text the outcome states
+WORKER_FAILURES = {
+    "key_unavailable": "the backup-key volume is missing or malformed",
+    "decrypt_failed": "the backup does not decrypt and authenticate in full",
+    "encrypt_failed": "the archive could not be encrypted",
+    "stream_invalid": "the backup stream to the backup worker was interrupted or altered",
+    "request_invalid": "the backup worker refused the request",
+    "worker_unavailable": "the backup worker is not reachable",
+}
+STALE_PREVIEW = "the vault changed after its preview; preview again"
+
+
+def _port_call(call, *args, **kwargs):
+    """One crypto-port call, every failure mapped to a closed `BackupError`."""
+
+    from ..workers.backup_crypto_client import BackupWorkerError
+
     try:
-        return runtime.decrypt(ciphertext, identity)
-    except BackupCryptoError:
-        raise BackupError("the backup does not decrypt and authenticate in full") from None
+        return call(*args, **kwargs)
+    except BackupWorkerError as error:
+        raise BackupError(WORKER_FAILURES.get(error.code, WORKER_FAILURES["worker_unavailable"])) from None
 
 
-def create_backup(vault_dir, output_dir, *, runtime: AgeRuntime, key_mode: str,
-                  server_release: str, key_handle: BackupKeyHandle | None = None,
+def _crypto_port(runtime, crypto, key_handle):
+    if (runtime is None) == (crypto is None):
+        raise BackupError("exactly one crypto port is required")
+    if runtime is not None:
+        if type(runtime) is not AgeRuntime:
+            raise BackupError("the verified age runtime is required")
+        return LocalAgeCrypto(runtime, key_handle)
+    if key_handle is not None:
+        # the control plane never holds the key: only the worker mounts the backup-key volume
+        raise BackupError("a remote crypto port never takes a key handle")
+    if not (callable(getattr(crypto, "encrypt", None)) and callable(getattr(crypto, "decrypt", None))):
+        raise BackupError("the crypto port is invalid")
+    return crypto
+
+
+# the included history, by table family, for the owner's preview
+_INCLUDED_GROUPS = (
+    ("domain_", "records_and_lineage"), ("runtime_", "run_history"), ("api_event_", "event_log"),
+    ("api_command", "event_log"), ("conversation_", "conversations"), ("speech_", "conversations"),
+    ("understanding_", "conversations"), ("permission_", "approvals_and_permissions"),
+)
+_WORK_TABLES = frozenset({"works", "files", "revisions", "events"})
+# every excluded category -> the closed reason the preview shows
+EXCLUDED_REASONS = {
+    "owner_authenticators_sessions_and_bootstrap_verifiers": "authenticator_never_restored",
+    "unconsumed_human_capabilities": "unconsumed_capability",
+    "service_client_credentials": "credential_never_restored",
+    "provider_credential_handles": "credential_never_restored",
+    "provider_account_state": "recreated_after_restore",
+    "pending_challenges": "unconsumed_capability",
+    "unconsumed_capabilities": "unconsumed_capability",
+    "deployment_receipt_private_state": "deployment_private_state",
+    "provider_credential_root": "separate_private_root",
+    "credential_command_ledger": "separate_private_root",
+    "session_root": "separate_private_root",
+    "backup_key_volume": "separate_private_root",
+    "codex_auth_volume_and_tokens": "separate_private_root",
+    "raw_audio": "not_retained",
+    "regenerable_caches": "regenerable",
+    "deleted_originals": "deleted_by_owner",
+}
+PREVIEW_SCHEMA = "deeptwin-backup-preview-v1"
+
+
+def _included_group(name: str) -> str:
+    if name in _WORK_TABLES:
+        return "work_history"
+    for prefix, group in _INCLUDED_GROUPS:
+        if name.startswith(prefix):
+            return group
+    return "other_history"
+
+
+def _preview(identity: dict, categories, originals_sizes, key_mode: str) -> dict:
+    """What a backup of this snapshot ACTUALLY carries and leaves out, with its digest."""
+
+    counts = identity["counts"]
+    groups = {}
+    for name, rows in counts["included"].items():
+        group = _included_group(name)
+        groups[group] = groups.get(group, 0) + rows
+    included = [{"category": group, "rows": rows} for group, rows in sorted(groups.items())]
+    included.append({"category": "originals", "count": len(originals_sizes),
+                     "bytes": sum(originals_sizes)})
+    excluded = [{"category": category, "reason": EXCLUDED_REASONS[category],
+                 "rows": counts["excluded"].get(category)} for category in categories]
+    if counts["deleted_originals"]:
+        excluded.append({"category": "deleted_originals", "reason": EXCLUDED_REASONS["deleted_originals"],
+                         "rows": counts["deleted_originals"]})
+    body = {
+        "schema_version": PREVIEW_SCHEMA, "vault_id": identity["vault_id"],
+        "records": identity["snapshot_sequence"], "data_schema_version": identity["data_schema_version"],
+        "key_mode": key_mode, "recoverable_after_host_or_volume_loss": key_mode == "portable_recovery",
+        "included": included, "excluded": sorted(excluded, key=lambda entry: entry["category"]),
+    }
+    return {**body, "preview_sha": _sha256(_canonical(body))}
+
+
+def backup_preview(vault_dir, *, key_mode: str = "instance_backup_key") -> dict:
+    """The owner's preview: one consistent snapshot, counted, then discarded. Stores nothing."""
+
+    if key_mode not in KEY_MODES:
+        raise BackupError("an exact key mode is required")
+    with tempfile.TemporaryDirectory(prefix="backup-preview-") as scratch:
+        identity, categories, _consistency_ref = _snapshot(Path(vault_dir) / DATABASE_NAME,
+                                                           Path(scratch) / DATABASE_NAME)
+    return _preview(identity, categories, [size for _p, _d, size in identity["blobs"]], key_mode)
+
+
+def create_backup(vault_dir, output_dir, *, key_mode: str, server_release: str,
+                  runtime: AgeRuntime | None = None, crypto=None,
+                  key_handle: BackupKeyHandle | None = None,
                   recipient: str | None = None, recovery_identity: OneShotIdentity | None = None,
-                  clock=_now) -> BackupOutcome:
-    """snapshot → encrypt → verify_restore → ready, or a stated failure."""
+                  expected_preview_sha: str | None = None, clock=_now) -> BackupOutcome:
+    """snapshot → encrypt → verify_restore → ready, or a stated failure.
+
+    `crypto` is the backup-crypto port: in production the control plane's
+    `BackupCryptoClient`, which sends the typed archive over the verified channel and
+    receives the ciphertext; only the worker holds the key. `runtime` (+ `key_handle`)
+    is the in-process port of the worker itself and of the direct tests.
+    `expected_preview_sha` binds the owner's consent: the preview is recomputed from
+    this backup's own snapshot and a different digest refuses before any encryption.
+    """
 
     states = ["backup_pending"]
 
-    def failed(reason):
-        return BackupOutcome("failed", (*states, "failed"), None, None, None, reason)
+    def failed(reason, preview=None):
+        return BackupOutcome("failed", (*states, "failed"), None, None, None, reason, preview)
 
-    if type(runtime) is not AgeRuntime:
-        return failed("the verified age runtime is required")
+    try:
+        port = _crypto_port(runtime, crypto, key_handle)
+    except BackupError as error:
+        return failed(str(error))
     if key_mode not in KEY_MODES or type(server_release) is not str or not server_release:
         return failed("an exact key mode and server release are required")
+    if expected_preview_sha is not None and (type(expected_preview_sha) is not str
+                                             or _SHA256.fullmatch(expected_preview_sha) is None):
+        return failed("the consented preview digest is malformed")
     try:
         if key_mode == "instance_backup_key":
-            if type(key_handle) is not BackupKeyHandle or recipient or recovery_identity:
-                raise BackupError("instance mode uses only the backup-key volume handle")
-            target, identity = key_handle.recipient(), None
+            if recipient or recovery_identity:
+                raise BackupError("instance mode uses only the backup-key volume")
+            if runtime is not None:
+                if type(key_handle) is not BackupKeyHandle:
+                    raise BackupError("instance mode uses only the backup-key volume handle")
+                key_handle.recipient()  # a lost volume refuses before any snapshot
+            identity = None
         else:
             if key_handle is not None or type(recovery_identity) is not OneShotIdentity:
                 raise BackupError("portable mode needs its recipient and one-shot identity")
-            target, identity = recipient, recovery_identity
+            identity = recovery_identity
         output = Path(output_dir)
         if output.is_symlink() or not output.is_dir():
             raise BackupError("the backup destination is not an existing directory")
     except BackupError as error:
         return failed(str(error))
     backup_id = str(uuid4())
+    preview = None
     with tempfile.TemporaryDirectory(prefix="backup-") as scratch:
         scratch = Path(scratch)
         try:
@@ -491,8 +665,12 @@ def create_backup(vault_dir, output_dir, *, runtime: AgeRuntime, key_mode: str,
             identity_fields, categories, consistency = _snapshot(
                 Path(vault_dir) / DATABASE_NAME, snapshot)
             database = snapshot.read_bytes()
+            blobs = identity_fields["blobs"]
+            preview = _preview(identity_fields, categories, [size for _p, _d, size in blobs], key_mode)
+            if expected_preview_sha is not None and preview["preview_sha"] != expected_preview_sha:
+                raise BackupError(STALE_PREVIEW)
             originals = {_cas_name(purpose, digest): _read_original(Path(vault_dir), purpose, digest, size)
-                         for purpose, digest, size in identity_fields.pop("blobs")}
+                         for purpose, digest, size in blobs}
             manifest = {
                 "schema_version": SCHEMA_VERSION, "backup_id": backup_id,
                 "vault_id": identity_fields["vault_id"], "server_release": server_release,
@@ -504,15 +682,19 @@ def create_backup(vault_dir, output_dir, *, runtime: AgeRuntime, key_mode: str,
                 "excluded_categories": categories, "consistency_evidence_ref": consistency,
             }
             archive = _archive(manifest, database, originals)
+            del database
             states.append("encrypting")
-            try:
-                ciphertext = runtime.encrypt(archive, target)
-            except BackupCryptoError:
-                raise BackupError("the archive could not be encrypted") from None
+            ciphertext = _port_call(port.encrypt, archive, key_mode=key_mode, recipient=recipient)
+            if type(ciphertext) is not bytes or not ciphertext.startswith(CIPHERTEXT_HEADER):
+                raise BackupError("the archive could not be encrypted")
             states.append("verify_restore")
-            proof = identity.take() if identity is not None else key_handle.identity()
-            restored_manifest, restored_db, restored_originals = _unarchive(_decrypt(runtime, ciphertext, proof))
+            proof = identity.take() if identity is not None else None
+            restored = _port_call(port.decrypt, ciphertext, key_mode=key_mode, identity=proof)
             del proof
+            if type(restored) is not bytes or restored != archive:
+                raise BackupError("the decrypted archive differs from the sealed one")
+            restored_manifest, restored_db, restored_originals = _unarchive(restored)
+            del restored, archive
             _check_manifest(restored_manifest, restored_db, restored_originals)
             if restored_manifest != manifest:
                 raise BackupError("the restored manifest differs from the sealed one")
@@ -522,7 +704,7 @@ def create_backup(vault_dir, output_dir, *, runtime: AgeRuntime, key_mode: str,
             _write_originals(check_dir, restored_originals)
             scope = _verify_database(check_dir / DATABASE_NAME, manifest, restored_originals)
         except BackupError as error:
-            return failed(str(error))
+            return failed(str(error), preview)
     path = output / f"{backup_id}.age"
     receipt = {
         "backup_id": backup_id, "ciphertext_sha256": _sha256(ciphertext),
@@ -538,36 +720,55 @@ def create_backup(vault_dir, output_dir, *, runtime: AgeRuntime, key_mode: str,
         _write_excl(output / f"{backup_id}.receipt.json", _canonical(receipt))
         _fsync_directory(output)
     except OSError:
-        return failed("the backup could not be written to its destination")
+        return failed("the backup could not be written to its destination", preview)
     states.append("ready")
-    return BackupOutcome("ready", tuple(states), path, receipt, manifest, None)
+    return BackupOutcome("ready", tuple(states), path, receipt, manifest, None, preview)
 
 
-def restore_backup(ciphertext_path, receipt, staging_dir, *, runtime: AgeRuntime,
-                   key_handle: BackupKeyHandle | None = None,
+def check_receipt(receipt) -> dict:
+    """The external receipt's identifying fields (checked before any ciphertext is read)."""
+
+    if (type(receipt) is not dict or type(receipt.get("backup_id")) is not str
+            or _UUID.fullmatch(receipt["backup_id"]) is None
+            or type(receipt.get("ciphertext_sha256")) is not str
+            or _SHA256.fullmatch(receipt["ciphertext_sha256"]) is None
+            or receipt.get("encryption_profile_ref") != PROFILE):
+        raise BackupError("the external backup receipt is malformed")
+    return receipt
+
+
+def restore_backup(ciphertext_path, receipt, staging_dir, *, runtime: AgeRuntime | None = None,
+                   crypto=None, key_handle: BackupKeyHandle | None = None,
                    recovery_identity: OneShotIdentity | None = None,
                    active_vault_dir=None) -> RestoreOutcome:
-    """Restore into an empty staging directory as `restored_review`, or fail stating why."""
+    """Restore into an empty staging directory as `restored_review`, or fail stating why.
+
+    With `crypto` (the control plane's worker client) the key mode is the receipt's:
+    `instance_backup_key` is decrypted by the worker with its own key, and
+    `portable_recovery` needs the owner's one-shot identity, handed to the worker once.
+    """
 
     def failed(reason):
         return RestoreOutcome("failed", None, None, (), reason)
 
     staging = Path(staging_dir)
     try:
-        if type(runtime) is not AgeRuntime:
-            raise BackupError("the verified age runtime is required")
-        if (key_handle is None) == (recovery_identity is None):
+        port = _crypto_port(runtime, crypto, key_handle)
+        if runtime is not None and (key_handle is None) == (recovery_identity is None):
             raise BackupError("exactly one key source is required")
         if staging.is_symlink() or not staging.is_dir() or any(staging.iterdir()):
             raise BackupError("the restore staging directory must exist and be empty")
         if active_vault_dir is not None and staging.resolve() == Path(active_vault_dir).resolve():
             raise BackupError("a restore never overwrites the active vault")
-        if (type(receipt) is not dict or type(receipt.get("backup_id")) is not str
-                or _UUID.fullmatch(receipt["backup_id"]) is None
-                or type(receipt.get("ciphertext_sha256")) is not str
-                or _SHA256.fullmatch(receipt["ciphertext_sha256"]) is None
-                or receipt.get("encryption_profile_ref") != PROFILE):
-            raise BackupError("the external backup receipt is malformed")
+        check_receipt(receipt)
+        if runtime is not None:
+            key_mode = "instance_backup_key" if key_handle is not None else "portable_recovery"
+        else:
+            key_mode = receipt.get("key_mode")
+            if key_mode not in KEY_MODES:
+                raise BackupError("the external backup receipt is malformed")
+            if (key_mode == "portable_recovery") != (recovery_identity is not None):
+                raise BackupError("exactly one key source is required")
         source = Path(ciphertext_path)
         if source.is_symlink() or not source.is_file():
             raise BackupError("the backup file is missing")
@@ -575,10 +776,13 @@ def restore_backup(ciphertext_path, receipt, staging_dir, *, runtime: AgeRuntime
         if (len(ciphertext) != receipt.get("ciphertext_size")
                 or _sha256(ciphertext) != receipt["ciphertext_sha256"]):
             raise BackupError("the backup file differs from its external receipt")
-        identity = (recovery_identity.take() if recovery_identity is not None
-                    else key_handle.identity())
-        manifest, database, originals = _unarchive(_decrypt(runtime, ciphertext, identity))
-        del identity
+        if not ciphertext.startswith(CIPHERTEXT_HEADER):
+            raise BackupError("the backup does not decrypt and authenticate in full")
+        identity = recovery_identity.take() if recovery_identity is not None else None
+        archive = _port_call(port.decrypt, ciphertext, key_mode=key_mode, identity=identity)
+        del identity, ciphertext
+        manifest, database, originals = _unarchive(archive)
+        del archive
         _check_manifest(manifest, database, originals)
         if manifest["backup_id"] != receipt["backup_id"]:
             raise BackupError("the backup manifest belongs to another receipt")
@@ -629,13 +833,19 @@ def age_keygen(runtime: AgeRuntime):
 
 
 __all__ = [
+    "EXCLUDED_REASONS",
     "KEY_MODES",
+    "STALE_PREVIEW",
+    "WORKER_FAILURES",
     "BackupError",
     "BackupKeyHandle",
     "BackupOutcome",
+    "LocalAgeCrypto",
     "OneShotIdentity",
     "RestoreOutcome",
     "age_keygen",
+    "backup_preview",
+    "check_receipt",
     "classify_table",
     "create_backup",
     "is_restored_review",

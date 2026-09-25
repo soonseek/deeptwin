@@ -188,10 +188,30 @@ export function createSupportedSession({ fetch, basePath = '/' } = {}) {
     return payload;
   }
 
+  // T073: the one encrypted backup bundle of a staged restore, as octet-stream bytes to
+  // exactly `{base}api/v1/backups/restores/{restore_id}/bundle`; the answer is JSON
+  async function uploadBackupBundle(path, bytes) {
+    const target = requirePath(path);
+    const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
+    if (!new RegExp(`^/api/v1/backups/restores/${uuid}/bundle$`).test(target.slice(prefix.length))
+        || !(bytes instanceof Uint8Array) || bytes.byteLength < 1) fail('invalid backup bundle upload');
+    if (token === null) fail('브라우저 세션이 아직 없습니다.', 'unauthenticated');
+    const response = await send(target, { method: 'POST', credentials: 'same-origin',
+      headers: { [CSRF_HEADER]: token, 'Content-Type': 'application/octet-stream' }, body: bytes });
+    const payload = await readJson(response);
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) token = null;
+      throw refusal(payload, response.status);
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) fail('서버 응답을 읽지 못했습니다.', 'unavailable', response.status);
+    return payload;
+  }
+
   return Object.freeze({
     establish,
     request,
     uploadSource,
+    uploadBackupBundle,
     snapshot() {
       return Object.freeze({ established: token !== null, basePath });
     },
