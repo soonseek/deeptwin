@@ -752,6 +752,18 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   committed manifest. 203 tests on developer-authored synthetic dev data only
   (evidence/sealed-verifier-t076-2026-09-25.md). Still open: no sealed set, author or reviewer, no independent
   judge, V3 unverified, harness case-order/spend/single-use/ledger enforcement, and an independent audit of the verifier.
+  2026-09-25 audit 3 of v3: AUDIT FAIL (BF1 forged V3/record hash could reach `qualified`, BF2 degenerate,
+  reused or cherry-picked results not bound to the manifest, BF3 lens pack treated as dataset material).
+  release-v4 (`release-v4/`, `lens-effects-v4.json`, pre-dispatch manifest schema v2, suite record v3,
+  `release-v4/FROZEN.json` pinning v1..v4, all manifests, the gate, the verifier modules and the harness)
+  answers them without editing v1..v3: the gate reads only `q01-release-v4`, recomputes `record_sha256`,
+  caps every v4 pass at `scoped_pass` (`V3_VERIFYING_DESIGN_IDS` is empty; approval tests use a
+  test-actor hook); `q01-sealed-verifier-2` fixes 3 repetitions, accepts only issued, unaltered, distinct-trial
+  results bound to the manifest, configuration and judge, always re-checks the manifest and derives judge
+  separation and V3 from the pinned profile; the harness takes the lens pack from the configuration and checks
+  it at every call (evidence/release-designs-t076-2026-09-25.md). Still open: verdict-to-configuration binding in
+  design approval, a multi-arm effect dispatcher, no sealed set, author, reviewer or independent judge, V3
+  unverifiable under v4, and an independent audit of v4.
 - [ ] T077 Execute authorized bounded actual-provider/critic/multimodal/lens-controlled comparisons and audit all failures/suspicious passes in specs/001-autonomous-release/evidence/live-qualification.md; lack of applicable authority remains explicit, not waived (SC-001/005/006).
 - [ ] T078 After T087's extension UI and the frozen T081 candidate exist, perform final visual/
   keyboard/screen-reader/360px/1024px/

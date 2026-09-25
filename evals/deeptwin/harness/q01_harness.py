@@ -32,6 +32,8 @@ from uuid import uuid4
 
 from app.critic_audit import Ledger
 from app.critic_contract import (
+    CONTRACT_VERSION,
+    PARSER_VERSION,
     InputContractError,
     PreparedInput,
     ValidityEvidence,
@@ -40,7 +42,14 @@ from app.critic_contract import (
 from app.critic_trial import OfflineRunner, OfflineTransport, freeze_call
 from app.generation_profiles import GenerationPurpose, profile_for
 from app.services.design_criticism_live import _CITATION_RULE, render_criticism_prompt
-from evals.deeptwin.q01_release_manifest import check_pre_dispatch_manifest
+from evals.deeptwin.q01_release_manifest import (
+    canonical_bytes,
+    check_pre_dispatch_manifest,
+    file_set_sha256,
+    lens_refs_and_digests,
+    prepared_lens_refs,
+    schema_valid,
+)
 
 from . import q01_cases
 from .q01_cases import (
@@ -84,6 +93,26 @@ _CODE_FILES = (
     "evals/deeptwin/q01_materials.py", "evals/deeptwin/q01_lenses.json",
     "evals/deeptwin/harness/q01_cases.py", "evals/deeptwin/harness/q01_harness.py",
 )
+HARNESS_VERSION = "q01-harness-2"
+# The harness's source files; their file-set sha256 is the harness sha256 that a
+# pre-dispatch manifest fixes (``run_identity.harness``).
+HARNESS_FILES = (*_CODE_FILES, "evals/deeptwin/q01_release_manifest.py")
+# Critic-configuration fields the offline transport cannot observe at dispatch.
+UNCHECKABLE_FIELDS = ("max_tokens",)
+
+
+def harness_identity() -> dict:
+    """``{"version", "sha256"}`` of this harness, as a pre-dispatch manifest must fix it."""
+    return {"version": HARNESS_VERSION, "sha256": file_set_sha256(REPO_ROOT, HARNESS_FILES)}
+
+
+def critic_prompt_digest(task_dir: Path = TASK_DIR) -> str:
+    """``critic_configuration.critic_prompt_digest``: the pinned stage instruction plus the
+    product renderer and generation profiles that compose each call's system prompt."""
+    parts = {INSTRUCTION_FILE: digest((Path(task_dir) / INSTRUCTION_FILE).read_bytes())}
+    parts.update({relative: digest((REPO_ROOT / relative).read_bytes()) for relative in (
+        "app/services/design_criticism_live.py", "app/generation_profiles.py")})
+    return sha256(canonical_bytes(parts)).hexdigest()
 
 
 class ReaderRefusal(PermissionError):
@@ -302,49 +331,79 @@ class TrialConfig:
 
 @dataclass(frozen=True)
 class PreDispatch:
-    """A release run's committed pre-dispatch manifest (release-v3 ``pre_dispatch.freeze``).
+    """A release run's committed pre-dispatch manifest (release-v4 ``pre_dispatch.freeze``).
 
     ``committed_sha256`` is the value committed to the repository (or externally
-    timestamped) before the first dispatch; ``harness`` is the ``{"version", "sha256"}``
-    of the harness about to run, compared with ``run_identity.harness`` when given.
+    timestamped) before the first dispatch. ``harness`` (mandatory) is the
+    ``{"version", "sha256"}`` the operator expects to run; it must equal both
+    ``run_identity.harness`` and ``harness_identity()`` of the code actually running.
+    ``lens_pack`` is the critic configuration's lens pack (never read from the sealed
+    bundle): it must hash to ``critic_configuration.lens_refs_and_digests``.
     """
 
     manifest_path: Path
     committed_sha256: str
-    harness: dict | None = None
+    harness: dict
+    lens_pack: dict
 
 
 def pre_dispatch_errors(pre_dispatch: PreDispatch, case_id: str, config: TrialConfig,
-                        task_dir: Path = TASK_DIR) -> tuple[dict, list[str]]:
+                        task_dir: Path = TASK_DIR) -> tuple[dict, list[str], dict | None]:
     """Why dispatch must be refused (empty when the manifest verifies and binds this trial).
 
-    Besides the manifest itself, the trial must match it: the environment manifest the
-    harness is about to read hashes to ``run_identity.sealed_dataset_sha256``, the case is
-    in ``case_order``, and the chain limit and any fixed call/run deadline equal the config.
+    Besides the manifest itself, the trial must match it: the harness identity is the
+    running code's, the environment manifest the harness is about to read hashes to
+    ``run_identity.sealed_dataset_sha256``, the case is in ``case_order``, and every
+    critic-configuration field observable before dispatch equals the running
+    configuration (contract and parser version, prompt digest, chain limit, call and run
+    deadlines, lens pack digests). Provider, mode, model and effort are checked per call
+    against the frozen selection; ``max_tokens`` is not observable offline and is listed
+    as unchecked.
     """
     try:
         environment_sha = digest((Path(task_dir) / ENVIRONMENT_MANIFEST).read_bytes())
     except OSError:
         environment_sha = None
+    errors = []
+    running = harness_identity()
+    if type(pre_dispatch.harness) is not dict or pre_dispatch.harness != running:
+        errors.append("harness_is_not_the_running_code")
     check = check_pre_dispatch_manifest(Path(pre_dispatch.manifest_path),
-                                        committed_sha256=pre_dispatch.committed_sha256,
-                                        harness=pre_dispatch.harness)
-    errors = list(check.errors)
-    manifest = check.manifest
-    if manifest is not None and not any(error.startswith("manifest_schema") for error in errors):
+                                        committed_sha256=pre_dispatch.committed_sha256, harness=running)
+    errors += list(check.errors)
+    configuration = None
+    if schema_valid(check):
+        manifest = check.manifest
         configuration = manifest["critic_configuration"]
+        if (configuration["contract_version"], configuration["parser_version"]) != (CONTRACT_VERSION,
+                                                                                    PARSER_VERSION):
+            errors.append("contract_or_parser_version_differs_from_manifest")
+        try:
+            prompt_digest = critic_prompt_digest(task_dir)
+        except OSError:
+            prompt_digest = None
+        if configuration["critic_prompt_digest"] != prompt_digest:
+            errors.append("critic_prompt_digest_differs_from_manifest")
         if configuration["max_proposed_chains"] != config.max_proposed_chains:
             errors.append("max_proposed_chains_differs_from_manifest")
         deadlines = configuration["call_and_run_deadlines"]
         for name in ("call_seconds", "run_seconds"):
-            if name in deadlines and deadlines[name] != getattr(config, name):
+            if deadlines[name] != getattr(config, name):
                 errors.append(f"{name}_differs_from_manifest")
+        try:
+            lens_refs = lens_refs_and_digests(pre_dispatch.lens_pack)
+        except (ValueError, KeyError, TypeError):
+            lens_refs = None
+        if lens_refs != configuration["lens_refs_and_digests"]:
+            errors.append("lens_pack_differs_from_configuration")
         if case_id not in manifest["run_identity"]["case_order"]["order"]:
             errors.append("case_not_in_manifest_case_order")
         if environment_sha != manifest["run_identity"]["sealed_dataset_sha256"]:
             errors.append("environment_differs_from_sealed_dataset_sha256")
-    return {"manifest_sha256": check.manifest_sha256, "committed_sha256": pre_dispatch.committed_sha256,
-            "environment_manifest_sha256": environment_sha, "errors": errors}, errors
+    return ({"manifest_sha256": check.manifest_sha256, "committed_sha256": pre_dispatch.committed_sha256,
+             "environment_manifest_sha256": environment_sha, "harness": running,
+             "unchecked_configuration_fields": list(UNCHECKABLE_FIELDS), "errors": errors},
+            errors, configuration)
 
 
 class _Stop(Exception):
@@ -367,10 +426,13 @@ class Q01Trial:
             raise ValueError("an explicit TrialConfig is required")
         if type(config.max_proposed_chains) is not int or not 0 <= config.max_proposed_chains <= 16:
             raise ValueError("max_proposed_chains must be an integer from 0 to 16")
-        if pre_dispatch is not None and type(pre_dispatch) is not PreDispatch:
-            raise TypeError("pre_dispatch must be a PreDispatch")
+        if pre_dispatch is not None and (type(pre_dispatch) is not PreDispatch
+                                         or type(pre_dispatch.harness) is not dict
+                                         or type(pre_dispatch.lens_pack) is not dict):
+            raise TypeError("pre_dispatch must be a PreDispatch with a harness identity and a lens pack")
         self.case_id, self.turn, self.config = case_id, turn, config
         self.pre_dispatch = pre_dispatch
+        self._configuration = None  # the manifest's critic configuration (release trials)
         self.task_dir = Path(task_dir)
         self.trial_id = "t" + uuid4().hex
         base = Path(base_dir)
@@ -407,14 +469,19 @@ class Q01Trial:
                   "access_log": reader.log}
         if self.pre_dispatch is not None:
             # release runs: no read and no dispatch unless the committed manifest verifies
-            record["pre_dispatch"], errors = pre_dispatch_errors(self.pre_dispatch, self.case_id, self.config,
-                                                                 self.task_dir)
+            record["pre_dispatch"], errors, self._configuration = pre_dispatch_errors(
+                self.pre_dispatch, self.case_id, self.config, self.task_dir)
             if errors:
                 record["status"], record["cause"] = "invalid", "pre_dispatch_manifest_unverified"
                 (self.trial_dir / "trial-record.json").write_text(canonical(record), encoding="utf-8")
                 return record
         try:
             case, case_sha = reader.case(self.case_id)
+            if self.pre_dispatch is not None:
+                if type(case["source"]) is not dict or "lens_pack" in case["source"]:
+                    # the lens pack is critic configuration, never sealed dataset material
+                    raise _Stop("invalid", "sealed_case_carries_a_lens_pack")
+                case = {**case, "source": {**case["source"], "lens_pack": deepcopy(self.pre_dispatch.lens_pack)}}
             instructions = reader.instructions()
             manifest = reader.manifest()
             record["case_sha256"] = case_sha
@@ -494,6 +561,21 @@ class Q01Trial:
             for counterexample, sha in zip(proposed, shas):
                 record["stages"]["proposed_chains"].append(chain(counterexample, (proposal_request, sha)))
 
+    def _check_call_configuration(self, prepared, frozen):
+        """Release trials: this exact call runs the manifest's critic configuration."""
+        configuration = self._configuration
+        manifest = json.loads(prepared.manifest_json)
+        if (manifest["contract_version"], manifest["parser_version"]) != (configuration["contract_version"],
+                                                                          configuration["parser_version"]):
+            raise _Stop("invalid", "contract_differs_from_configuration")
+        if (prepared.purpose is P.COUNTEREXAMPLE_PROPOSAL
+                and prepared_lens_refs(manifest) != configuration["lens_refs_and_digests"]):
+            # the lens pack actually sent must hash to critic_configuration.lens_refs_and_digests
+            raise _Stop("invalid", "lens_pack_differs_from_configuration")
+        selection = json.loads(frozen.selection_json)
+        if any(selection.get(name) != configuration[name] for name in ("provider", "mode", "model", "effort")):
+            raise _Stop("invalid", "selection_differs_from_configuration")
+
     def _call(self, ledger, runner, prepared, lineage, instructions, scanner, hashes, case_sha, index, record):
         system, user = render_stage(prepared, instructions)
         request_id = f"{self.trial_id}-s{index:02d}-{prepared.purpose.value.replace('_', '-')}"
@@ -525,6 +607,8 @@ class Q01Trial:
             raise _Stop("invalid", "input_contract") from None
         except (ValueError, RuntimeError, KeyError):
             raise _Stop("invalid", "selection_or_freeze_refused") from None
+        if self._configuration is not None:
+            self._check_call_configuration(prepared, frozen)
         with self._lock:
             self._active_request = request_id
         try:
@@ -556,9 +640,11 @@ def run_trial(case_id: str, turn, *, base_dir: Path, config: TrialConfig, task_d
 
 def run_release_trial(case_id: str, turn, *, base_dir: Path, config: TrialConfig, pre_dispatch: PreDispatch,
                       task_dir: Path = TASK_DIR) -> dict:
-    """A release-v3 trial: refuses to dispatch without a verifying committed pre-dispatch manifest."""
+    """A release-v4 trial: refuses to dispatch without a verifying committed pre-dispatch manifest."""
     if type(pre_dispatch) is not PreDispatch:
         raise TypeError("a release trial requires its committed pre-dispatch manifest")
+    if type(pre_dispatch.harness) is not dict or type(pre_dispatch.lens_pack) is not dict:
+        raise TypeError("a release trial requires the expected harness identity and the configuration's lens pack")
     return Q01Trial(case_id, turn, base_dir=base_dir, config=config, task_dir=task_dir,
                     pre_dispatch=pre_dispatch).run()
 

@@ -13,9 +13,18 @@ is status "prepared" — never active, with no activation path in this module
 """
 
 import dataclasses
+from contextlib import contextmanager
 
 import pytest
 
+from app.services import critic_qualification as gate
+from app.services.critic_qualification import (
+    SUITE_RECORD_SCHEMA_VERSION,
+    CriticQualificationError,
+    critic_qualification_from_suite,
+    suite_record_sha256,
+    unknown_critic_qualification,
+)
 from app.services.environments import (
     DesignApproval,
     EnvironmentContractError,
@@ -25,11 +34,6 @@ from app.services.environments import (
     prepare_environment_version,
     record_design_approval,
 )
-from app.services.critic_qualification import (
-    SUITE_RECORD_SCHEMA_VERSION,
-    critic_qualification_from_suite,
-    unknown_critic_qualification,
-)
 from app.services.owner_decisions import OwnerDecision
 from app.tests.owner_session import OwnerSession
 from app.tests.test_alternatives import ref
@@ -37,12 +41,28 @@ from app.tests.test_design_review import pool_inputs, verdict
 
 ENV_ID = "00000000-0000-4000-8000-00000000e001"
 CRITIC_DIGEST = "c" * 64
+# TEST-ACTOR design id: no frozen design uses it, and production code never
+# admits it (critic_qualification._TEST_ACTOR_V3_DESIGN_IDS is empty outside
+# ``actor_v3_design``). No production record can be ``qualified``:
+# V3_VERIFYING_DESIGN_IDS is empty and release-v4 cannot verify V3 (audit 3).
+TEST_ACTOR_DESIGN = "test-actor-v3-verifying-design"
+
+
+@contextmanager
+def actor_v3_design():
+    """Admit the test-only V3-verifying design id for the duration of a block."""
+    previous = gate._TEST_ACTOR_V3_DESIGN_IDS
+    gate._TEST_ACTOR_V3_DESIGN_IDS = frozenset({TEST_ACTOR_DESIGN})
+    try:
+        yield
+    finally:
+        gate._TEST_ACTOR_V3_DESIGN_IDS = previous
 
 
 def suite_record(**overrides):
     record = {
         "schema_version": SUITE_RECORD_SCHEMA_VERSION,
-        "design_id": "q01-release-v3",
+        "design_id": "q01-release-v4",
         "critic_configuration_digest": CRITIC_DIGEST,
         "pre_dispatch_manifest_sha256": "a" * 64,
         "sealed_set_sha256": "d" * 64,
@@ -51,17 +71,24 @@ def suite_record(**overrides):
         "suite_outcome": "pass",
         "independence_profile_sha256": "b" * 64,
         "judge_separation_established": True,
-        "v3_error_independence": "verified",
-        "record_sha256": "e" * 64,
+        "v3_error_independence": "unverified",
     }
     record.update(overrides)
+    if "record_sha256" not in overrides:
+        record["record_sha256"] = suite_record_sha256(record)
     return record
 
 
+def actor_record(**overrides):
+    return suite_record(**{"design_id": TEST_ACTOR_DESIGN, "v3_error_independence": "verified", **overrides})
+
+
 def qualified_critic():
-    # A test-actor suite record (pass, judge separated, V3 verified): no real
-    # release suite has passed and V3 is unverified (T077).
-    return critic_qualification_from_suite(suite_record(), CRITIC_DIGEST)
+    # A TEST-ACTOR qualification: a record of the test-only V3-verifying design
+    # id, admitted only inside ``actor_v3_design``. No real release suite
+    # has passed, no design can verify V3, and V3 is unverified (T077).
+    with actor_v3_design():
+        return critic_qualification_from_suite(actor_record(), CRITIC_DIGEST)
 
 # One real owner session per test module records every design approval in
 # the value-level design suites (modules calling approval_value import
@@ -239,8 +266,16 @@ def test_prepared_versions_and_states_are_issued_values():
      "unqualified: not_a_frozen_release_design"),
     (lambda: critic_qualification_from_suite(suite_record(design_id="q01-release-v2"), CRITIC_DIGEST),
      "unqualified: not_a_frozen_release_design"),
-    (lambda: critic_qualification_from_suite(suite_record(v3_error_independence="unverified"), CRITIC_DIGEST),
-     "scoped_pass: v3_error_independence_unverified"),
+    (lambda: critic_qualification_from_suite(suite_record(design_id="q01-release-v3"), CRITIC_DIGEST),
+     "unqualified: not_a_frozen_release_design"),
+    (lambda: critic_qualification_from_suite(suite_record(), CRITIC_DIGEST),
+     "scoped_pass: design_cannot_verify_v3"),
+    # BF1 probe: a v4 record claiming V3 verified is capped (v4 cannot verify V3)
+    (lambda: critic_qualification_from_suite(suite_record(v3_error_independence="verified"), CRITIC_DIGEST),
+     "scoped_pass: design_cannot_verify_v3"),
+    # the test-actor design id is refused outside the test-actor hook
+    (lambda: critic_qualification_from_suite(actor_record(), CRITIC_DIGEST),
+     "unqualified: not_a_frozen_release_design"),
     (lambda: critic_qualification_from_suite(suite_record(suite_outcome="not_judged"), CRITIC_DIGEST),
      "unqualified: suite_not_judged"),
     (lambda: critic_qualification_from_suite(suite_record(suite_outcome="fail"), CRITIC_DIGEST),
@@ -260,6 +295,35 @@ def test_a_passed_verdict_from_an_unqualified_critic_is_never_approvable(critic,
         record_design_approval(approval_value(two, verdict(two), critic_qualification=critic()))
 
 
+def test_the_production_gate_can_never_yield_qualified():
+    # BF1: no design is declared able to verify V3, and the test-actor hook is
+    # empty outside tests; every production-shaped pass is at most scoped.
+    assert gate.V3_VERIFYING_DESIGN_IDS == frozenset()
+    assert gate._TEST_ACTOR_V3_DESIGN_IDS == frozenset()
+    assert gate.RELEASE_DESIGN_IDS == {"q01-release-v4"}
+    for v3 in ("unverified", "verified"):
+        state = critic_qualification_from_suite(suite_record(v3_error_independence=v3), CRITIC_DIGEST)
+        assert state.status == "scoped_pass"
+    with actor_v3_design():
+        # even under the hook a record of the test-actor design must say V3 verified
+        state = critic_qualification_from_suite(actor_record(v3_error_independence="unverified"),
+                                                CRITIC_DIGEST)
+        assert (state.status, state.reason) == ("scoped_pass", "v3_error_independence_unverified")
+    assert gate._TEST_ACTOR_V3_DESIGN_IDS == frozenset()
+
+
+def test_a_forged_record_sha256_is_refused():
+    # BF1 probe: record_sha256 is recomputed from the record, never trusted
+    with pytest.raises(CriticQualificationError, match="record sha256"):
+        critic_qualification_from_suite(suite_record(record_sha256="e" * 64), CRITIC_DIGEST)
+    edited = suite_record(judge_separation_established=False)
+    edited["judge_separation_established"] = True
+    with pytest.raises(CriticQualificationError, match="record sha256"):
+        critic_qualification_from_suite(edited, CRITIC_DIGEST)
+    with actor_v3_design(), pytest.raises(CriticQualificationError, match="record sha256"):
+        critic_qualification_from_suite(actor_record(record_sha256="e" * 64), CRITIC_DIGEST)
+
+
 def test_a_look_alike_qualification_is_refused_and_the_approval_binds_the_record():
     _request, two, _three, _duplicate = pool_inputs()
     fake = object.__new__(type(qualified_critic()))
@@ -269,14 +333,15 @@ def test_a_look_alike_qualification_is_refused_and_the_approval_binds_the_record
     with pytest.raises(EnvironmentContractError, match="qualification state is required"):
         design_approval_subject(approval_value(two, verdict(two), critic_qualification=fake))
     approval = record_design_approval(approval_value(two, verdict(two)))
-    assert approval.critic_qualification["record_sha256"] == "e" * 64
+    assert approval.critic_qualification["record_sha256"] == actor_record()["record_sha256"]
+    assert approval.critic_qualification["design_id"] == TEST_ACTOR_DESIGN
     assert approval.as_dict()["critic_qualification"]["status"] == "qualified"
 
 
 def test_a_suite_record_must_list_every_prior_attempt():
-    from app.services.critic_qualification import CriticQualificationError
-
-    with pytest.raises(CriticQualificationError, match="prior outcomes"):
-        critic_qualification_from_suite(suite_record(attempt=2), CRITIC_DIGEST)
-    later = critic_qualification_from_suite(suite_record(attempt=2, prior_outcomes=["fail"]), CRITIC_DIGEST)
+    with actor_v3_design():
+        with pytest.raises(CriticQualificationError, match="prior outcomes"):
+            critic_qualification_from_suite(actor_record(attempt=2), CRITIC_DIGEST)
+        later = critic_qualification_from_suite(actor_record(attempt=2, prior_outcomes=["fail"]),
+                                                CRITIC_DIGEST)
     assert later.status == "qualified"
