@@ -113,6 +113,11 @@ class CriticismRunResult:
     review: dict = field(repr=False)
     chains: tuple[dict, ...] = field(repr=False)
     call_records: tuple[CriticismCallRecord, ...] = field(repr=False)
+    # The contract-validated proposal outcome: whether the proposal abstained,
+    # and per lens rule whether it contributed (with the exact counterexample
+    # ids), was excluded or abstained, and why.
+    proposal_status: str
+    lens_use: tuple[dict, ...]
     _issuer_token: object = field(repr=False, compare=False)
 
 
@@ -134,6 +139,23 @@ def is_issued_criticism_run(value: object) -> bool:
     )
 
 
+# The contract admits a citation only when it names a location the input actually shows,
+# and a response only in the transitions its validity allows; a model cannot guess these
+# rules, so the prompt states them (both were the causes of the first live calibration's
+# contract failures).
+_CITATION_RULE = (
+    "Cite evidence only as {document_id, version, location} of an original document, the "
+    "criteria document or the candidate document; never cite a counterexample or validity "
+    "document, which are claims under test, not evidence. For an original, location is exactly "
+    "one of its sections' location values. For the criteria or the candidate, location is a JSON "
+    "Pointer (RFC 6901) to an existing value inside that document as given, for example "
+    "/roles/0/responsibility or /items/2; never a prose description or a path of another form. "
+    "An original whose availability is not text has no sections and is never cited; cite the "
+    "text document that states the fact instead. In a candidate response, when the given "
+    "validity status is not valid, your status must be unresolved."
+)
+
+
 def render_criticism_prompt(prepared: PreparedInput) -> tuple[str, str]:
     """Render the deterministic (system, user) prompt pair for one stage."""
 
@@ -142,7 +164,7 @@ def render_criticism_prompt(prepared: PreparedInput) -> tuple[str, str]:
     profile = profile_for(prepared.purpose)
     system = (
         f"{profile.base_instructions}\n{profile.developer_instructions}\n"
-        f"{prepared.schema_json}"
+        f"{_CITATION_RULE}\n{prepared.schema_json}"
     )
     return system, prepared.prompt
 
@@ -237,6 +259,17 @@ def run_candidate_criticism(
         review=review,
         chains=tuple(chains),
         call_records=tuple(records),
+        proposal_status=proposal["status"],
+        lens_use=tuple(
+            {
+                "rule_id": use["rule_id"],
+                "rule_version": use["rule_version"],
+                "status": use["status"],
+                "reason": use["reason"],
+                "counterexample_ids": tuple(use["counterexample_ids"]),
+            }
+            for use in proposal["lens_use"]
+        ),
         _issuer_token=_ISSUE_TOKEN,
     )
 

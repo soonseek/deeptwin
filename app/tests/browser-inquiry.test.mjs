@@ -19,7 +19,7 @@ test('a frozen alternative shows its observed difference and no invented explana
   assert.match(text, /원본 2–2행이 대안 2–2행으로 바뀌었다/);
   assert.match(text, /내가 바꾼 1곳이 근거입니다/);
   assert.match(text, /검토하지 않은 영역으로 남고, 영향 범위는 따로 조사합니다/);
-  assert.match(text, /생성기가 이 서버에 연결되어 있지 않다/);
+  assert.match(text, /소유자가 요청할 때만 Claude 연결로 만든다/);
   assert.match(text, /새로운 조건부 판단: 검토되지 않음/);
   assert.match(text, /질문에 답하도록 요구하지 않습니다/);
   assert.match(text, /변경 후보를 만들지 않았다/);

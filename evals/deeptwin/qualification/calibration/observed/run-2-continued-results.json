@@ -1,0 +1,3399 @@
+{
+ "catalog": {
+  "catalog_id": "catalog-0020d690fbcca838af592313064760ef3866abfaf1ae2da0b2050774a9816933",
+  "fetched_at": "2026-09-24T12:53:46.349000+00:00",
+  "listed_efforts": [
+   "high",
+   "low",
+   "max",
+   "medium",
+   "xhigh"
+  ],
+  "max_age_ms": 15000000,
+  "model": "claude-opus-5",
+  "selection_version": 1,
+  "source_catalog_id": "claude-catalog-98f15429805d2e545040c7c86c02140d7762f1eb707c7e1bd2784af46d053c91"
+ },
+ "continued_from": {
+  "path": "/tmp/claude-0/-home-user-deeptwin/f9930c47-3181-533f-bfbc-b9f4017e100c/scratchpad/q01b/q01-calibration-20260924T122417Z/results.json",
+  "results_sha256": "390f9efcd99110d34c839e223c84e6dbfda03ff027ea267339a08079c2dff523",
+  "totals": {
+   "cache_input_tokens": 0,
+   "calls": 70,
+   "calls_with_observed_usage": 70,
+   "estimated_usd": 5.540525,
+   "hard_stop_usd": 6.0,
+   "input_tokens": 493355,
+   "limit_reached": "spend_limit",
+   "output_tokens": 122950
+  }
+ },
+ "correlated_errors": "possible",
+ "critic": {
+  "effort": "medium",
+  "max_tokens": 16000,
+  "model": "claude-opus-5"
+ },
+ "finished_at": "2026-09-24T13:07:27.142002+00:00",
+ "independence_established": false,
+ "independence_profile_sha256": "8862505d6d8fb5a4ca72018cf19106d3af12b8f4332c422954f0df1d2fd3581a",
+ "judge": {
+  "effort": "medium",
+  "max_tokens": 4000,
+  "model": "claude-opus-5",
+  "template_id": "q01-claude-judge-template-1",
+  "version": "claude-judge-d160158fc49cc6aabd9c86d283727aba"
+ },
+ "not_run": [],
+ "plan_id": "q01-initial-calibration-1",
+ "plan_sha256": "8793d002815f454a100d0dabc33fa1cb86a71cc496ff0f3bf8018da2ea02396a",
+ "provider": {
+  "mode": "api",
+  "provider": "claude"
+ },
+ "readiness": {
+  "checks": [
+   {
+    "check": "environment_readable",
+    "detail": 10,
+    "ok": true
+   },
+   {
+    "check": "cases_match_materials",
+    "detail": "frozen cases equal a fresh materialization from q01_materials",
+    "ok": true
+   },
+   {
+    "check": "case_shape_has_no_labels",
+    "detail": null,
+    "ok": true
+   },
+   {
+    "check": "control_plane_refused",
+    "detail": 8,
+    "ok": true
+   },
+   {
+    "check": "scanner_has_control_plane_fragments",
+    "detail": 1004,
+    "ok": true
+   },
+   {
+    "check": "environment_files_clean",
+    "detail": null,
+    "ok": true
+   },
+   {
+    "check": "stage_inputs_clean",
+    "detail": 0,
+    "ok": true
+   },
+   {
+    "check": "stage_inputs_allowlisted",
+    "detail": null,
+    "ok": true
+   }
+  ],
+  "ready": true
+ },
+ "release_heldout": false,
+ "schema": "q01-calibration-results-1",
+ "setup_error": null,
+ "started_at": "2026-09-24T12:53:46.047108+00:00",
+ "suite": {
+  "boundaries": [
+   "accept_without_false_rejection",
+   "insufficient_evidence",
+   "rejected_counterexample",
+   "required_defect",
+   "unresolved_specific_claim",
+   "valid_counterexample"
+  ],
+  "complete": true,
+  "counts": {
+   "fail": 4,
+   "invalid": 0,
+   "not_judged": 0,
+   "pass": 6
+  },
+  "score": 0.0,
+  "verdict": "fail"
+ },
+ "totals": {
+  "cache_input_tokens": 0,
+  "calls": 34,
+  "calls_with_observed_usage": 34,
+  "estimated_usd": 2.665125,
+  "hard_stop_usd": 6.0,
+  "input_tokens": 245825,
+  "limit_reached": null,
+  "output_tokens": 57440
+ },
+ "trials": [
+  {
+   "boundary": "accept_without_false_rejection",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00001",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.148275,
+     "failure": null,
+     "index": 1,
+     "input_tokens": 6420,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 4647,
+     "provider_message_id": "msg_011CfNFygjadMELqa7dS8ZX3",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00002",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.144,
+     "failure": null,
+     "index": 2,
+     "input_tokens": 9325,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3895,
+     "provider_message_id": "msg_011CfNG3fk9wEZxQtinRmRoM",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00003",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.087575,
+     "failure": null,
+     "index": 3,
+     "input_tokens": 6895,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 2124,
+     "provider_message_id": "msg_011CfNG7ec4PXuwjLqQH2FzA",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00004",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.07776,
+     "failure": null,
+     "index": 4,
+     "input_tokens": 8537,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1403,
+     "provider_message_id": "msg_011CfNG9Qcz2BkYHyGq24B1k",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00005",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.088085,
+     "failure": null,
+     "index": 5,
+     "input_tokens": 6792,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 2165,
+     "provider_message_id": "msg_011CfNGAYFeDZdK69MGKt9JT",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00006",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.079595,
+     "failure": null,
+     "index": 6,
+     "input_tokens": 8239,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1536,
+     "provider_message_id": "msg_011CfNGCvPUdApLCcWmrsYxz",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "carried_over": true,
+   "case_id": "q01-d641d75122",
+   "case_key": {
+    "candidate_id": "c71",
+    "counterexample_id": null
+   },
+   "cause": null,
+   "judge_calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00007",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.035655,
+     "failure": null,
+     "index": 7,
+     "input_tokens": 4291,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 568,
+     "provider_message_id": "msg_011CfNGEMHhii8AjDax7M3Lc",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00008",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.06955,
+     "failure": null,
+     "index": 8,
+     "input_tokens": 11935,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 395,
+     "provider_message_id": "msg_011CfNGEtJWUwZyixotHMYtS",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00009",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.045975,
+     "failure": null,
+     "index": 9,
+     "input_tokens": 5695,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 700,
+     "provider_message_id": "msg_011CfNGFKanXV3g8bjnsY7pK",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00010",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.05506,
+     "failure": null,
+     "index": 10,
+     "input_tokens": 5357,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1131,
+     "provider_message_id": "msg_011CfNGG5WywTXkWBZQZtdxP",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "judge_items": [
+    {
+     "id": "accept_findings_supported",
+     "reason": "Q1 cites the candidate's role responsibilities for retaining attribution status and producing state-aware captions/caption-source mapping, Q2 cites the handoff artifact_ids plus the immutable fixed-version content_contract and version-preservation note, and Q3 cites /control/publication 'only after explicit human approval', /control/original_mutation 'prohibited' and the restricted write_paths, so each pass rests on cited candidate fields (with the gap between designed wording and actual caption text explicitly flagged as an uncertainty).",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "q7_no_execution_claim",
+     "reason": "The outputs consistently frame the candidate as an unexecuted design (execution_state planned), explicitly disclaim having performed rendering, production, publication, human approval, or actual file access, and mark image-related matters unresolved pending external execution evidence; no claims of learning or statistical independence appear.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-c71-attr-state",
+     "reason": "The 'unresolved' validity and 'unresolved' response status follow from the cited sources: c71's state-aware caption and attribution-certainty instructions pull against /artifacts/4/content_contract's silence on an attribution-state field, and work-contract.md scope shows no execution evidence, so neither blocking nor mitigation can be confirmed under Q1/Q8. Minor embellishments (calling /roles/1/checks/0 common to three roles, and adding a non-approval duty to /roles/2) are not load-bearing for the unresolved conclusion.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-c71-recheck-handoff",
+     "reason": "The cited sources contain both mitigating material (control note describing return of the full bundle for recheck, content_contract requiring old-version preservation and full-content reference, immutable-full-reference mode not version-limited, C's recheck responsibility) and unresolved material (reference fixed to a version-1 path, no cited handoff object for the A/B→C re-handoff), so neither confirmation nor refutation is possible from the given evidence; 'unresolved' for both validity and the candidate response is a consistent, appropriately hedged reading.",
+     "reply": "parsed",
+     "status": "supported"
+    }
+   ],
+   "run_state": "completed_trial",
+   "score": 1.0,
+   "scored": true,
+   "trial_cause": null,
+   "trial_id": "t4e3fe26d8b0940488d513cd026d986d1",
+   "trial_record": "trials/t4e3fe26d8b0940488d513cd026d986d1/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "pass",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "accept_without_false_rejection",
+    "case_key": {
+     "candidate_id": "c71",
+     "counterexample_id": null
+    },
+    "cause": null,
+    "judge": {
+     "available": true,
+     "version": "claude-judge-d160158fc49cc6aabd9c86d283727aba"
+    },
+    "judge_items": [
+     {
+      "id": "accept_findings_supported",
+      "status": "supported"
+     },
+     {
+      "id": "q7_no_execution_claim",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-c71-attr-state",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-c71-recheck-handoff",
+      "status": "supported"
+     }
+    ],
+    "rule_checks": [
+     {
+      "detail": "pass",
+      "id": "review:Q1:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q2:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q3:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q4:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q5:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "review:Q6:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q7:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q8:status",
+      "ok": true
+     }
+    ],
+    "schema": "q01-verifier-result-1",
+    "score": 1.0,
+    "verdict": "pass",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": "accept_without_false_rejection",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00011",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.14257,
+     "failure": null,
+     "index": 11,
+     "input_tokens": 5879,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 4527,
+     "provider_message_id": "msg_011CfNGHSovosvyLn3WkG9uy",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00012",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.12822,
+     "failure": null,
+     "index": 12,
+     "input_tokens": 8784,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3372,
+     "provider_message_id": "msg_011CfNGMuCXa1Mxg21ZVqKjV",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00013",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.07707,
+     "failure": null,
+     "index": 13,
+     "input_tokens": 6224,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1838,
+     "provider_message_id": "msg_011CfNGRGGPEmuBrAXPsJriU",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00014",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.072375,
+     "failure": null,
+     "index": 14,
+     "input_tokens": 7595,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1376,
+     "provider_message_id": "msg_011CfNGTJY7qe1fJKJ86ShfR",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00015",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.07356,
+     "failure": null,
+     "index": 15,
+     "input_tokens": 6137,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1715,
+     "provider_message_id": "msg_011CfNGUec9ahfPwqFUavLJX",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00016",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.074615,
+     "failure": null,
+     "index": 16,
+     "input_tokens": 7388,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1507,
+     "provider_message_id": "msg_011CfNGWdVUFEggYKHWRVzhk",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "carried_over": true,
+   "case_id": "q01-1f27897ee7",
+   "case_key": {
+    "candidate_id": "c24",
+    "counterexample_id": null
+   },
+   "cause": null,
+   "judge_calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00017",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.017655,
+     "failure": null,
+     "index": 17,
+     "input_tokens": 2301,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 246,
+     "provider_message_id": "msg_011CfNGXpfDN8Nw4M7UN27XB",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00018",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.07074,
+     "failure": null,
+     "index": 18,
+     "input_tokens": 11728,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 484,
+     "provider_message_id": "msg_011CfNGYAUahjeKbRXtmVqBV",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00019",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.03583,
+     "failure": null,
+     "index": 19,
+     "input_tokens": 5126,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 408,
+     "provider_message_id": "msg_011CfNGYtGYCGathxN2H9vUJ",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00020",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.03807,
+     "failure": null,
+     "index": 20,
+     "input_tokens": 5149,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 493,
+     "provider_message_id": "msg_011CfNGZPdNaWf3udbjWWWya",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "judge_items": [
+    {
+     "id": "alternative_accepted_on_substance",
+     "reason": "Both pass findings justify acceptance substantively: Q2 relies on fixed-version full-access handoffs and the content_contract's full-reference preservation, and Q4 relies on the contract's explicit allowance of alternative role assignments and in-document caption/source correspondence in place of a separate caption CSV, citing the embedded mapping note and D's responsibility to embed caption IDs and source rows/versions.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "q7_no_execution_claim",
+     "reason": "The outputs consistently mark execution state as planned/not executed, state that no production, rendering, reading or approval records exist, and explicitly disclaim proven independence, confirmed validity, or candidate approval; document citations are references, not claims of execution.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-c24-attr-01",
+     "reason": "The unresolved validity and unresolved candidate response are each justified by the cited sources: c24 /roles/0/checks/0 and /roles/0/responsibility do impose attribution-certainty preservation (partially rebutting the 'no rule' claim), while no sentence-level expression rule is shown and work-contract.md scope confirms no rendering/execution record exists to demonstrate the alleged effect.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-c24-regen-02",
+     "reason": "The rejection is directly backed by the cited c24 content_contract (old-version retention on new versions), the immutable-full-reference handoff mode, and the D/E responsibilities (regenerate on request; preserve every prior full artifact), which refute the claim that preservation appears only in control notes; the candidate response's 'unresolved' status is consistently justified by the rejected validity plus the scope/Q8 limitation that actual re-handoff execution is unobservable without executor evidence.",
+     "reply": "parsed",
+     "status": "supported"
+    }
+   ],
+   "run_state": "completed_trial",
+   "score": 1.0,
+   "scored": true,
+   "trial_cause": null,
+   "trial_id": "t30cb9e71057a4598b7ccf543cea28ebf",
+   "trial_record": "trials/t30cb9e71057a4598b7ccf543cea28ebf/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "pass",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "accept_without_false_rejection",
+    "case_key": {
+     "candidate_id": "c24",
+     "counterexample_id": null
+    },
+    "cause": null,
+    "judge": {
+     "available": true,
+     "version": "claude-judge-d160158fc49cc6aabd9c86d283727aba"
+    },
+    "judge_items": [
+     {
+      "id": "alternative_accepted_on_substance",
+      "status": "supported"
+     },
+     {
+      "id": "q7_no_execution_claim",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-c24-attr-01",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-c24-regen-02",
+      "status": "supported"
+     }
+    ],
+    "rule_checks": [
+     {
+      "detail": "pass",
+      "id": "review:Q1:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q2:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q3:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q4:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "review:Q5:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "review:Q6:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q7:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q8:status",
+      "ok": true
+     }
+    ],
+    "schema": "q01-verifier-result-1",
+    "score": 1.0,
+    "verdict": "pass",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": "required_defect",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00021",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.11683,
+     "failure": null,
+     "index": 21,
+     "input_tokens": 6391,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3395,
+     "provider_message_id": "msg_011CfNGa6FdUfYdiGGqwoQwm",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00022",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.13893,
+     "failure": null,
+     "index": 22,
+     "input_tokens": 9296,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3698,
+     "provider_message_id": "msg_011CfNGdJEY7EUvUyg1cikTS",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00023",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.078815,
+     "failure": null,
+     "index": 23,
+     "input_tokens": 6808,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1791,
+     "provider_message_id": "msg_011CfNGg5tyBJs7p8iUGe4tJ",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00024",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.086465,
+     "failure": null,
+     "index": 24,
+     "input_tokens": 8473,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1764,
+     "provider_message_id": "msg_011CfNGiCozY4CNbk1nwsK6t",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00025",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.080295,
+     "failure": null,
+     "index": 25,
+     "input_tokens": 6709,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1870,
+     "provider_message_id": "msg_011CfNGk1HkxPVw4rwrmsKhd",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00026",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.0833,
+     "failure": null,
+     "index": 26,
+     "input_tokens": 8150,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1702,
+     "provider_message_id": "msg_011CfNGmfiLJXyfquCBaip1y",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "carried_over": true,
+   "case_id": "q01-d6e6a46fa4",
+   "case_key": {
+    "candidate_id": "c86",
+    "counterexample_id": null
+   },
+   "cause": null,
+   "judge_calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00027",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.013955,
+     "failure": null,
+     "index": 27,
+     "input_tokens": 1691,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 220,
+     "provider_message_id": "msg_011CfNGoGTuqRAKbUkvDt3BA",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00028",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.07119,
+     "failure": null,
+     "index": 28,
+     "input_tokens": 12418,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 364,
+     "provider_message_id": "msg_011CfNGobCYHQAcboPCVEjXU",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00029",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.03926,
+     "failure": null,
+     "index": 29,
+     "input_tokens": 6377,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 295,
+     "provider_message_id": "msg_011CfNGpA2UupBokTfwmBAmT",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00030",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.038555,
+     "failure": null,
+     "index": 30,
+     "input_tokens": 5481,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 446,
+     "provider_message_id": "msg_011CfNGpe5T7QvCVbukUM9TZ",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "judge_items": [
+    {
+     "id": "q1_defect_reason_supported",
+     "reason": "The Q1 reason states what the sources mean (M01 attribution is tentative, notes say pattern comparison only suggests, glossary requires uncertainty wording, contract requires preserving attribution certainty) and then names the specific candidate rules (role 1's 'render every maker as confirmed, remove tentative wording' and role 2's 'never restore tentative wording') that contradict that meaning, rather than merely noting citations exist.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "q7_no_execution_claim",
+     "reason": "All outputs consistently mark execution as planned/design-only and explicitly disclaim actual production, rendering, reading, publication, human approval, learning, or error independence; artifacts are described as declared or planned (planned:// references), and uncertainties note that execution evidence is absent.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-c86-attribution-collapse",
+     "reason": "The cited c86 role/check/control text indeed mandates confirmed maker wording and blocks restoring tentative wording, while catalog.csv (M01='추정'), curation-notes, glossary, and the work contract require preserving attribution uncertainty, so the 'valid' validity judgment and the 'fail' response under Q1 follow from the sources, with the design-only limitation from work-contract scope properly flagged as an uncertainty.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-c86-restoration-blocked",
+     "reason": "The cited c86 role/control texts, catalog.csv M01 '추정', curation-notes, work-contract requirements and fixed criterion Q1 directly support the 'valid' (Q1-limited) determination and the 'fail' candidate response, with Q3 properly left unconfirmed; minor references beyond the sources (e.g., control.publication) only serve to narrow scope conservatively.",
+     "reply": "parsed",
+     "status": "supported"
+    }
+   ],
+   "run_state": "completed_trial",
+   "score": 1.0,
+   "scored": true,
+   "trial_cause": null,
+   "trial_id": "taf543ba610234b31a82a6b66e91d1260",
+   "trial_record": "trials/taf543ba610234b31a82a6b66e91d1260/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "pass",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "required_defect",
+    "case_key": {
+     "candidate_id": "c86",
+     "counterexample_id": null
+    },
+    "cause": null,
+    "judge": {
+     "available": true,
+     "version": "claude-judge-d160158fc49cc6aabd9c86d283727aba"
+    },
+    "judge_items": [
+     {
+      "id": "q1_defect_reason_supported",
+      "status": "supported"
+     },
+     {
+      "id": "q7_no_execution_claim",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-c86-attribution-collapse",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-c86-restoration-blocked",
+      "status": "supported"
+     }
+    ],
+    "rule_checks": [
+     {
+      "detail": "fail",
+      "id": "review:Q1:status",
+      "ok": true
+     },
+     {
+      "detail": null,
+      "id": "review:Q1:evidence",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q2:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q3:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q4:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "review:Q5:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "review:Q6:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q7:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q8:status",
+      "ok": true
+     }
+    ],
+    "schema": "q01-verifier-result-1",
+    "score": 1.0,
+    "verdict": "pass",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": "required_defect",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00031",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.16526,
+     "failure": null,
+     "index": 31,
+     "input_tokens": 6447,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 5321,
+     "provider_message_id": "msg_011CfNGqFhLNBqvX4hNcTeSx",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00032",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.140685,
+     "failure": null,
+     "index": 32,
+     "input_tokens": 9352,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3757,
+     "provider_message_id": "msg_011CfNGveBp4pUo6a2gnkq53",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00033",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.07203,
+     "failure": null,
+     "index": 33,
+     "input_tokens": 6726,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1536,
+     "provider_message_id": "msg_011CfNGzQZ8KXVyicddxtVri",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00034",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.08704,
+     "failure": null,
+     "index": 34,
+     "input_tokens": 7983,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1885,
+     "provider_message_id": "msg_011CfNH21izeef6czQfSVnrx",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00035",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.08048,
+     "failure": null,
+     "index": 35,
+     "input_tokens": 6741,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1871,
+     "provider_message_id": "msg_011CfNH3bDfjZMADwpUj35Ea",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00036",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.09442,
+     "failure": null,
+     "index": 36,
+     "input_tokens": 8259,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 2125,
+     "provider_message_id": "msg_011CfNH5iMbe5oibhvdFpCHs",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "carried_over": true,
+   "case_id": "q01-e634953958",
+   "case_key": {
+    "candidate_id": "c09",
+    "counterexample_id": null
+   },
+   "cause": null,
+   "judge_calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00037",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.012725,
+     "failure": null,
+     "index": 37,
+     "input_tokens": 1580,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 193,
+     "provider_message_id": "msg_011CfNH7x5eGHRjauJWRYQNT",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00038",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.07612,
+     "failure": null,
+     "index": 38,
+     "input_tokens": 13019,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 441,
+     "provider_message_id": "msg_011CfNH8Fk2tpvRKoMuMVMB9",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00039",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.03554,
+     "failure": null,
+     "index": 39,
+     "input_tokens": 5453,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 331,
+     "provider_message_id": "msg_011CfNH8ui3QR7jb1c4Ba3TQ",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00040",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.042015,
+     "failure": null,
+     "index": 40,
+     "input_tokens": 5923,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 496,
+     "provider_message_id": "msg_011CfNH9LgxcYLBunkER8EX2",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "judge_items": [
+    {
+     "id": "q2_defect_reason_supported",
+     "reason": "The reason explains the source requirement (full original artifacts and permitted access must be handed over) and ties it to specific candidate rules—access.mode 'summary', summary-only handoffs, and C's read_paths limited to summary://q01/*—showing why they contradict C's stated duty to open all originals, rather than merely citing locations.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "q7_no_execution_claim",
+     "reason": "The outputs consistently mark the candidate as planned/non-executed ('execution_state: planned', 'not executed', 'design-only') and explicitly state no execution, rendering, publication, or approval occurred; mentions of human approval and full-read policies are descriptions of design rules, not claims that they happened, and there are no claims of learning or statistical independence.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce09-01",
+     "reason": "The cited sources directly show all handoff modes as summary-only, the content_contract requiring full originals, and role C's responsibility/read_paths mismatch, which conflict with work-contract's full-handoff requirement and fixed criteria Q2/Q4; the cited control note does not resolve the conflict, so both the 'valid' validity judgment and the 'fail' candidate response are supported for this exact candidate.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce09-02",
+     "reason": "The cited c09 passages show C is required to open every full original to compare captions while its checks, tool read_paths, and the B→C handoff mode restrict access to summaries only, supporting the 'valid' status; the response's 'fail' is likewise grounded in those passages plus content_contract/control notes (which do not carve out an exception) and the work-contract responsibilities/handoff and Q2. Minor gap: Q1's text is not in the sources, but it is not load-bearing for the stated statuses.",
+     "reply": "parsed",
+     "status": "supported"
+    }
+   ],
+   "run_state": "completed_trial",
+   "score": 1.0,
+   "scored": true,
+   "trial_cause": null,
+   "trial_id": "t38de7a3e3f42490e89d8378c45f2dccb",
+   "trial_record": "trials/t38de7a3e3f42490e89d8378c45f2dccb/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "pass",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "required_defect",
+    "case_key": {
+     "candidate_id": "c09",
+     "counterexample_id": null
+    },
+    "cause": null,
+    "judge": {
+     "available": true,
+     "version": "claude-judge-d160158fc49cc6aabd9c86d283727aba"
+    },
+    "judge_items": [
+     {
+      "id": "q2_defect_reason_supported",
+      "status": "supported"
+     },
+     {
+      "id": "q7_no_execution_claim",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce09-01",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce09-02",
+      "status": "supported"
+     }
+    ],
+    "rule_checks": [
+     {
+      "detail": "fail",
+      "id": "review:Q1:status",
+      "ok": true
+     },
+     {
+      "detail": "fail",
+      "id": "review:Q2:status",
+      "ok": true
+     },
+     {
+      "detail": null,
+      "id": "review:Q2:evidence",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q3:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q4:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "review:Q5:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "review:Q6:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q7:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "review:Q8:status",
+      "ok": true
+     }
+    ],
+    "schema": "q01-verifier-result-1",
+    "score": 1.0,
+    "verdict": "pass",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": "required_defect",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00041",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.13271,
+     "failure": null,
+     "index": 41,
+     "input_tokens": 6432,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 4022,
+     "provider_message_id": "msg_011CfNHAC84Ab6hJ4WvhruLu",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00042",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.10901,
+     "failure": null,
+     "index": 42,
+     "input_tokens": 9337,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 2493,
+     "provider_message_id": "msg_011CfNHDcVbNC125FwV6hDRG",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00043",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.066395,
+     "failure": null,
+     "index": 43,
+     "input_tokens": 6799,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1296,
+     "provider_message_id": "msg_011CfNHGGxg9RNVQC3xMptWh",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00044",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.07291,
+     "failure": null,
+     "index": 44,
+     "input_tokens": 7852,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1346,
+     "provider_message_id": "msg_011CfNHHhS722A2yxWHShtjE",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00045",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.06951,
+     "failure": null,
+     "index": 45,
+     "input_tokens": 6732,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1434,
+     "provider_message_id": "msg_011CfNHK4bN9z4cxqesVZuai",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00046",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.080995,
+     "failure": null,
+     "index": 46,
+     "input_tokens": 7774,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1685,
+     "provider_message_id": "msg_011CfNHLeFhjZCSrrZMKpFfP",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "carried_over": true,
+   "case_id": "q01-6c02a8788f",
+   "case_key": {
+    "candidate_id": "c53",
+    "counterexample_id": null
+   },
+   "cause": null,
+   "judge_calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00047",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.009575,
+     "failure": null,
+     "index": 47,
+     "input_tokens": 1205,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 142,
+     "provider_message_id": "msg_011CfNHNSiidzgkL7BGBWrHM",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00048",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.060465,
+     "failure": null,
+     "index": 48,
+     "input_tokens": 10283,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 362,
+     "provider_message_id": "msg_011CfNHNhjN17wBAifkdFUoq",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00049",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.02731,
+     "failure": null,
+     "index": 49,
+     "input_tokens": 4312,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 230,
+     "provider_message_id": "msg_011CfNHPBLHkuezdcJgpvzPe",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00050",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.03667,
+     "failure": null,
+     "index": 50,
+     "input_tokens": 4359,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 595,
+     "provider_message_id": "msg_011CfNHPTTuJk29Rc2SvaJT7",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "judge_items": [
+    {
+     "id": "q3_defect_reason_supported",
+     "reason": "The reason quotes the contract's 'no external publication without approval' and source-access policy's publication_without_approval=false, then shows the candidate's control.publication rule auto-publishes without human approval, directly linking source meaning to the violating rule rather than merely citing documents.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "q7_no_execution_claim",
+     "reason": "The subject consistently frames all artifacts and accesses as 'planned'/'not executed', explicitly states no outputs were produced, no publication record exists, and no human approval or execution is asserted; discussion of the candidate's auto-publish clause is about design text, not an actual publishing event, and no learning or statistical independence claims appear.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-c53-pub",
+     "reason": "The cited sources directly show c53's /control/publication mandating automatic external publication without human approval, which conflicts with work-contract.md permissions, source-access.json publication_without_approval=false, and fixed criterion Q3, supporting both the 'valid' validity status and the 'fail' candidate response; the subject also properly limits its claim to design-text conflict given no execution record.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-c53-image",
+     "reason": "The 'valid' status matches the cited sources showing image bytes and viewing records are absent (source-access.json#media-status, work-contract.md#scope) against C's full-read/caption-comparison duty, and it is framed as unresolved per Q6/Q8; the 'mitigate' response is likewise grounded in c53's planned execution_state, the 'not executed' note and role parameter, keeping the planned-vs-executed distinction required by Q8, while noting the publication clause remains an unresolved separate defect.",
+     "reply": "parsed",
+     "status": "supported"
+    }
+   ],
+   "run_state": "completed_trial",
+   "score": 1.0,
+   "scored": true,
+   "trial_cause": null,
+   "trial_id": "t93ebabb88564457798238a69337541b9",
+   "trial_record": "trials/t93ebabb88564457798238a69337541b9/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "pass",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "required_defect",
+    "case_key": {
+     "candidate_id": "c53",
+     "counterexample_id": null
+    },
+    "cause": null,
+    "judge": {
+     "available": true,
+     "version": "claude-judge-d160158fc49cc6aabd9c86d283727aba"
+    },
+    "judge_items": [
+     {
+      "id": "q3_defect_reason_supported",
+      "status": "supported"
+     },
+     {
+      "id": "q7_no_execution_claim",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-c53-pub",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-c53-image",
+      "status": "supported"
+     }
+    ],
+    "rule_checks": [
+     {
+      "detail": "pass",
+      "id": "review:Q1:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q2:status",
+      "ok": true
+     },
+     {
+      "detail": "fail",
+      "id": "review:Q3:status",
+      "ok": true
+     },
+     {
+      "detail": null,
+      "id": "review:Q3:evidence",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q4:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "review:Q5:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q6:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q7:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q8:status",
+      "ok": true
+     }
+    ],
+    "schema": "q01-verifier-result-1",
+    "score": 1.0,
+    "verdict": "pass",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": "rejected_counterexample",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00051",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.153025,
+     "failure": null,
+     "index": 51,
+     "input_tokens": 6420,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 4837,
+     "provider_message_id": "msg_011CfNHQBLokKUwhVsYmGDmt",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00052",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.137825,
+     "failure": null,
+     "index": 52,
+     "input_tokens": 9325,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3648,
+     "provider_message_id": "msg_011CfNHUzTbmbdLSPqg61pX6",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00053",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.052635,
+     "failure": null,
+     "index": 53,
+     "input_tokens": 6397,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 826,
+     "provider_message_id": "msg_011CfNHYiFtTVTR17gNgEMYs",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00054",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.06661,
+     "failure": null,
+     "index": 54,
+     "input_tokens": 7207,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1223,
+     "provider_message_id": "msg_011CfNHZjiDr46KryKPdLJGX",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00055",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.087665,
+     "failure": null,
+     "index": 55,
+     "input_tokens": 6818,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 2143,
+     "provider_message_id": "msg_011CfNHaroegRognxt3mTpPe",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00056",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.085545,
+     "failure": null,
+     "index": 56,
+     "input_tokens": 8404,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1741,
+     "provider_message_id": "msg_011CfNHcp41F7wuHUQRZkozr",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00057",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.085065,
+     "failure": null,
+     "index": 57,
+     "input_tokens": 6663,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 2070,
+     "provider_message_id": "msg_011CfNHeYKGcTXMgBc1zppKD",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00058",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.086925,
+     "failure": null,
+     "index": 58,
+     "input_tokens": 8010,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1875,
+     "provider_message_id": "msg_011CfNHgPZDkpvpeBwczRhrn",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "carried_over": true,
+   "case_id": "q01-940e0005ee",
+   "case_key": {
+    "candidate_id": "c71",
+    "counterexample_id": "ce-29"
+   },
+   "cause": null,
+   "judge_calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00059",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.01114,
+     "failure": null,
+     "index": 59,
+     "input_tokens": 1458,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 154,
+     "provider_message_id": "msg_011CfNHiE2o2bVfiBfEr8AJ7",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00060",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.07931,
+     "failure": null,
+     "index": 60,
+     "input_tokens": 14237,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 325,
+     "provider_message_id": "msg_011CfNHiUpHvnygvcZyHB6ZG",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00061",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.04525,
+     "failure": null,
+     "index": 61,
+     "input_tokens": 6700,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 470,
+     "provider_message_id": "msg_011CfNHixoXxvZ7WTm3twqkc",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00062",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.04649,
+     "failure": null,
+     "index": 62,
+     "input_tokens": 5418,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 776,
+     "provider_message_id": "msg_011CfNHjamk2VrJq3wLJiLgR",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "judge_items": [
+    {
+     "id": "rejection_grounded",
+     "reason": "The rejection explicitly cites work-contract.md permissions stating '이미지 전체 삭제 의무는 없다' plus requirements and Q3, showing the counterexample's premise conflicts with the fixed requirements rather than dismissing it generically.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "q7_no_execution_claim",
+     "reason": "The subject consistently frames everything as planned/design-level, explicitly states execution_state is planned, that no rendering, reading, publication, or human-approval records exist, and notes it does not claim error independence; references to artifacts and approvals are descriptions of designed contracts, not claims of accomplished acts.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-c71-01",
+     "reason": "The unresolved validity and unresolved candidate-response statuses are consistent with the cited sources: the candidate does mandate state-aware captions and attribution-certainty checks (c71 /roles/1, /roles/0/checks/0) while the caption-map content_contract fixes no attribution-status field, and source-access.json/work-contract.md confirm no rendering or file-byte records, matching Q1 and Q8. Only a minor gloss (attributing a 'do not approve unresolved mismatches' duty to /roles/2) slightly exceeds the quoted text without changing the conclusion.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-c71-02",
+     "reason": "The cited handoffs (B→C, C→A, C→B) contain no item returning regenerated versions to C, while control/notes, role responsibilities and the artifact content_contract do describe version preservation and recheck — which supports both the 'valid' validity finding (with the noted limits, uncertainty, and Q2/Q8 relevance) and the 'mitigate' response grade. Only minor slack: Q5 and handoff h1 are referenced without being in the cited sources, but they are not load-bearing for the conclusions.",
+     "reply": "parsed",
+     "status": "supported"
+    }
+   ],
+   "run_state": "completed_trial",
+   "score": 1.0,
+   "scored": true,
+   "trial_cause": null,
+   "trial_id": "t9580b999bc0a4939aa0cd3192dc1e768",
+   "trial_record": "trials/t9580b999bc0a4939aa0cd3192dc1e768/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "pass",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "rejected_counterexample",
+    "case_key": {
+     "candidate_id": "c71",
+     "counterexample_id": "ce-29"
+    },
+    "cause": null,
+    "judge": {
+     "available": true,
+     "version": "claude-judge-d160158fc49cc6aabd9c86d283727aba"
+    },
+    "judge_items": [
+     {
+      "id": "rejection_grounded",
+      "status": "supported"
+     },
+     {
+      "id": "q7_no_execution_claim",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-c71-01",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-c71-02",
+      "status": "supported"
+     }
+    ],
+    "rule_checks": [
+     {
+      "detail": "pass",
+      "id": "review:Q1:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q2:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q3:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q4:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "review:Q5:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q6:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q7:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q8:status",
+      "ok": true
+     },
+     {
+      "detail": "rejected",
+      "id": "validity:status",
+      "ok": true
+     },
+     {
+      "detail": null,
+      "id": "validity:evidence",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "response:status",
+      "ok": true
+     }
+    ],
+    "schema": "q01-verifier-result-1",
+    "score": 1.0,
+    "verdict": "pass",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": "valid_counterexample",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00063",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.11948,
+     "failure": null,
+     "index": 63,
+     "input_tokens": 6391,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3501,
+     "provider_message_id": "msg_011CfNHkTLYJoK8GqxCDtq5t",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "carried_over": true,
+   "case_id": "q01-bea167a34d",
+   "case_key": {
+    "candidate_id": "c86",
+    "counterexample_id": "ce-17"
+   },
+   "cause": "output_contract",
+   "judge_calls": [],
+   "judge_items": [],
+   "run_state": "completed_trial",
+   "score": 0.0,
+   "scored": true,
+   "trial_cause": "model_output_invalid",
+   "trial_id": "t06549c408fb0442abddcb5d9ee08a7d3",
+   "trial_record": "trials/t06549c408fb0442abddcb5d9ee08a7d3/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "fail",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "valid_counterexample",
+    "case_key": {
+     "candidate_id": "c86",
+     "counterexample_id": "ce-17"
+    },
+    "cause": "output_contract",
+    "judge": {
+     "available": false,
+     "version": null
+    },
+    "judge_items": [],
+    "rule_checks": [],
+    "schema": "q01-verifier-result-1",
+    "score": 0.0,
+    "verdict": "fail",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": "valid_counterexample",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00001",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.145075,
+     "failure": null,
+     "index": 1,
+     "input_tokens": 6420,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 4519,
+     "provider_message_id": "msg_011CfNJE4cay7XbtbyXUv9fE",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00002",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.1349,
+     "failure": null,
+     "index": 2,
+     "input_tokens": 9325,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3531,
+     "provider_message_id": "msg_011CfNJJiRnByyt3yEEXYSya",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00003",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.06741,
+     "failure": null,
+     "index": 3,
+     "input_tokens": 6452,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1406,
+     "provider_message_id": "msg_011CfNJNQqENXwXd279n3zVz",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00004",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.089,
+     "failure": null,
+     "index": 4,
+     "input_tokens": 7640,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 2032,
+     "provider_message_id": "msg_011CfNJPwhdvbPRtXZTdQDKn",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00005",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.086625,
+     "failure": null,
+     "index": 5,
+     "input_tokens": 6835,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 2098,
+     "provider_message_id": "msg_011CfNJS7Ta1cEJxMoCWYrUJ",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00006",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.08354,
+     "failure": null,
+     "index": 6,
+     "input_tokens": 8403,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1661,
+     "provider_message_id": "msg_011CfNJUEcVRsnp39azY4EMY",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00007",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.08246,
+     "failure": null,
+     "index": 7,
+     "input_tokens": 6812,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1936,
+     "provider_message_id": "msg_011CfNJVnTSKE9HbBwVQnNp9",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00008",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.07999,
+     "failure": null,
+     "index": 8,
+     "input_tokens": 8073,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1585,
+     "provider_message_id": "msg_011CfNJXa3cxZYxYGmCN64YS",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "case_id": "q01-625b067bba",
+   "case_key": {
+    "candidate_id": "c71",
+    "counterexample_id": "ce-17"
+   },
+   "cause": "rule_check",
+   "judge_calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00009",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.022215,
+     "failure": null,
+     "index": 9,
+     "input_tokens": 3013,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 286,
+     "provider_message_id": "msg_011CfNJZLYKCZrkQkKAETBwH",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00010",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.087035,
+     "failure": null,
+     "index": 10,
+     "input_tokens": 15077,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 466,
+     "provider_message_id": "msg_011CfNJZgLSqUCaPDTm5YN2S",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00011",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.04011,
+     "failure": null,
+     "index": 11,
+     "input_tokens": 5922,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 420,
+     "provider_message_id": "msg_011CfNJaEPkhpJa8yKaajXjW",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00012",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.046535,
+     "failure": null,
+     "index": 12,
+     "input_tokens": 5147,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 832,
+     "provider_message_id": "msg_011CfNJao9zRGx1rFJNf78nH",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "judge_items": [
+    {
+     "id": "response_handling_supported",
+     "reason": "The subject explicitly cites A's duty to retain attribution status and exact evidence locations and C's duty to compare every final caption against its source, and it frames these as design-level mitigations, closing with an explicit disclaimer that no actual execution or final approval is asserted (consistent with work-contract.md scope).",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "q7_no_execution_claim",
+     "reason": "All outputs explicitly frame references as planned/design-only, repeatedly state that no execution, rendering, caption text, or human approval records exist and that such things cannot be confirmed; the lens use is labeled a draft without effect validation, and no claims of learning or statistical independence appear.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-c71-01",
+     "reason": "The cited sources (c71 /roles/1/checks/0 and /roles/1-2 responsibilities showing partial certainty-preservation commitments, catalog.csv M01's separate '추정' status, glossary.md's uncertainty-expression rule, and work-contract.md's absence of execution records) genuinely support both a partial rebuttal and a residual gap, so 'unresolved' for both validity and candidate response is warranted, and the response correctly declines to confirm failure or mitigation success per Q5 and avoids claiming actual production per Q7.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-c71-02",
+     "reason": "The cited sources show the correction-cycle handoff C→A (h4) and the control note prescribing new versions returned as a full bundle to C, alongside the version-1-fixed A→B handoff (h1) and artifact version 1, which together justify neither confirming nor refuting the alleged missing re-handoff; the subject's 'unresolved' validity and matching unresolved candidate response, with stated dependent assumptions and Q2/alternative-structure allowance, are consistent with those sources. The only overreach (asserting the complete handoff list) does not drive the conservative conclusion.",
+     "reply": "parsed",
+     "status": "supported"
+    }
+   ],
+   "run_state": "completed_trial",
+   "score": 0.0,
+   "scored": true,
+   "trial_cause": null,
+   "trial_id": "t4766ba527c644cb09edbe2678223ff5f",
+   "trial_record": "trials/t4766ba527c644cb09edbe2678223ff5f/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "fail",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "valid_counterexample",
+    "case_key": {
+     "candidate_id": "c71",
+     "counterexample_id": "ce-17"
+    },
+    "cause": "rule_check",
+    "judge": {
+     "available": true,
+     "version": "claude-judge-d160158fc49cc6aabd9c86d283727aba"
+    },
+    "judge_items": [
+     {
+      "id": "response_handling_supported",
+      "status": "supported"
+     },
+     {
+      "id": "q7_no_execution_claim",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-c71-01",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-c71-02",
+      "status": "supported"
+     }
+    ],
+    "rule_checks": [
+     {
+      "detail": "pass",
+      "id": "review:Q1:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "review:Q2:status",
+      "ok": false
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q3:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q4:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "review:Q5:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q6:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q7:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q8:status",
+      "ok": true
+     },
+     {
+      "detail": "valid",
+      "id": "validity:status",
+      "ok": true
+     },
+     {
+      "detail": null,
+      "id": "validity:evidence",
+      "ok": true
+     },
+     {
+      "detail": "mitigate",
+      "id": "response:status",
+      "ok": true
+     },
+     {
+      "detail": null,
+      "id": "response:evidence",
+      "ok": true
+     }
+    ],
+    "schema": "q01-verifier-result-1",
+    "score": 0.0,
+    "verdict": "fail",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": "unresolved_specific_claim",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00013",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.14394,
+     "failure": null,
+     "index": 13,
+     "input_tokens": 6453,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 4467,
+     "provider_message_id": "msg_011CfNJbnZJdyKbhTVEs7W3T",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00014",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.14514,
+     "failure": null,
+     "index": 14,
+     "input_tokens": 9358,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3934,
+     "provider_message_id": "msg_011CfNJgJqaKetE71mou2YyT",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00015",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.064225,
+     "failure": null,
+     "index": 15,
+     "input_tokens": 6470,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1275,
+     "provider_message_id": "msg_011CfNJkFggM7NhhyS3TCsGY",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00016",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.07835,
+     "failure": null,
+     "index": 16,
+     "input_tokens": 7620,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1610,
+     "provider_message_id": "msg_011CfNJmjtbhPFtxFgsAjGkE",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00017",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.08783,
+     "failure": null,
+     "index": 17,
+     "input_tokens": 6781,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 2157,
+     "provider_message_id": "msg_011CfNJoRtBdEgmshAECdCtW",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00018",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.07747,
+     "failure": null,
+     "index": 18,
+     "input_tokens": 8359,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1427,
+     "provider_message_id": "msg_011CfNJqvzCY85SBuEBcNdjh",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00019",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.08752,
+     "failure": null,
+     "index": 19,
+     "input_tokens": 6709,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 2159,
+     "provider_message_id": "msg_011CfNJsQ2feCxhFYmhjwymh",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00020",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.079085,
+     "failure": null,
+     "index": 20,
+     "input_tokens": 8137,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1536,
+     "provider_message_id": "msg_011CfNJuhZfY1kBuFbJswWaw",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "case_id": "q01-81cf72fd6b",
+   "case_key": {
+    "candidate_id": "c42",
+    "counterexample_id": "ce-43"
+   },
+   "cause": "rule_check",
+   "judge_calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00021",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.01452,
+     "failure": null,
+     "index": 21,
+     "input_tokens": 1904,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 200,
+     "provider_message_id": "msg_011CfNJwDXFyHEDhm2a8kC5a",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00022",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.081595,
+     "failure": null,
+     "index": 22,
+     "input_tokens": 14644,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 335,
+     "provider_message_id": "msg_011CfNJwV5PTYFwb4N7LHLNN",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00023",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.034905,
+     "failure": null,
+     "index": 23,
+     "input_tokens": 5201,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 356,
+     "provider_message_id": "msg_011CfNJwuJAidADvXVh8cMJU",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00024",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.03992,
+     "failure": null,
+     "index": 24,
+     "input_tokens": 5454,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 506,
+     "provider_message_id": "msg_011CfNJxSSv8WP84fw1WdCku",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "judge_items": [
+    {
+     "id": "unresolved_names_missing_evidence",
+     "reason": "The subject marks the counterexample 'unresolved', explicitly accepts the central-crop risk as a possible and relevant condition per /control/notes/2, and leaves the 'necessarily removes' occurrence claim undecided while citing media-status for the missing PNG bytes/feature positions and listing needed evidence (pixel data, identifying-feature coordinates, rendered comparison).",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "q7_no_execution_claim",
+     "reason": "The subject consistently marks the candidate as planned/not executed and explicitly disclaims claims of actual file production, rendering, access logs, human approval, learning, or error independence; citations are framed as references to supplied documents and planned contracts rather than performed operations.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-attr-state",
+     "reason": "The rejection is grounded in cited c42 provisions (state-aware captions, the 'keep source attribution certainty' check, and C's caption-to-source comparison) that contradict the counterexample's premise of a missing separation device, while acknowledging the unexecuted-design limits; the response's 'unresolved' status with rejected validity correctly applies Q5 by declining to confirm either candidate failure or response success.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-return-handoff",
+     "reason": "The cited handoff entries (A→B, B→C, C→A, C→B) indeed contain no explicit return-handoff item, while /control/notes/1 describes producers returning the full bundle for C's recheck and the artifact_ids/mode are not version-fixed — a genuine interpretive tension that, together with work-contract.md's silence on specification form and the scope note that the candidate is design-only, supports 'unresolved' for both validity and the candidate response.",
+     "reply": "parsed",
+     "status": "supported"
+    }
+   ],
+   "run_state": "completed_trial",
+   "score": 0.0,
+   "scored": true,
+   "trial_cause": null,
+   "trial_id": "te75e69aab0694d909261bf1ce0147a23",
+   "trial_record": "trials/te75e69aab0694d909261bf1ce0147a23/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "fail",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "unresolved_specific_claim",
+    "case_key": {
+     "candidate_id": "c42",
+     "counterexample_id": "ce-43"
+    },
+    "cause": "rule_check",
+    "judge": {
+     "available": true,
+     "version": "claude-judge-d160158fc49cc6aabd9c86d283727aba"
+    },
+    "judge_items": [
+     {
+      "id": "unresolved_names_missing_evidence",
+      "status": "supported"
+     },
+     {
+      "id": "q7_no_execution_claim",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-attr-state",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-return-handoff",
+      "status": "supported"
+     }
+    ],
+    "rule_checks": [
+     {
+      "detail": "pass",
+      "id": "review:Q1:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "review:Q2:status",
+      "ok": false
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q3:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q4:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q5:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "review:Q6:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q7:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q8:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "validity:status",
+      "ok": true
+     },
+     {
+      "detail": null,
+      "id": "validity:evidence",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "response:status",
+      "ok": true
+     }
+    ],
+    "schema": "q01-verifier-result-1",
+    "score": 0.0,
+    "verdict": "fail",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": "insufficient_evidence",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00025",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.14935,
+     "failure": null,
+     "index": 25,
+     "input_tokens": 6365,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 4701,
+     "provider_message_id": "msg_011CfNJy49zr1oAFr6gPjwCL",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00026",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.12425,
+     "failure": null,
+     "index": 26,
+     "input_tokens": 9270,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3116,
+     "provider_message_id": "msg_011CfNK3u5BzzeBNm4hBtVRD",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00027",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.085165,
+     "failure": null,
+     "index": 27,
+     "input_tokens": 6848,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 2037,
+     "provider_message_id": "msg_011CfNK6eZeSFpDGdu5PyKoV",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00028",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.086805,
+     "failure": null,
+     "index": 28,
+     "input_tokens": 8086,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1855,
+     "provider_message_id": "msg_011CfNK8wkZFm6VRxwphozAJ",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00029",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.08029,
+     "failure": null,
+     "index": 29,
+     "input_tokens": 6688,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1874,
+     "provider_message_id": "msg_011CfNKAs5aTS69uVhRxcxpe",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00030",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.075045,
+     "failure": null,
+     "index": 30,
+     "input_tokens": 8084,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1385,
+     "provider_message_id": "msg_011CfNKCwvM2VuerB4jpDgf1",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "case_id": "q01-15b31afb6e",
+   "case_key": {
+    "candidate_id": "c18",
+    "counterexample_id": null
+   },
+   "cause": "rule_check",
+   "judge_calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00031",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.02177,
+     "failure": null,
+     "index": 31,
+     "input_tokens": 1499,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 571,
+     "provider_message_id": "msg_011CfNKEHMRVB6RJCnvwt75N",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00032",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.0653,
+     "failure": null,
+     "index": 32,
+     "input_tokens": 11915,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 229,
+     "provider_message_id": "msg_011CfNKF4PLdLaAyfEvyoYcX",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00033",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.041645,
+     "failure": null,
+     "index": 33,
+     "input_tokens": 5204,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 625,
+     "provider_message_id": "msg_011CfNKFTbqnLwVm2fApbjpn",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00034",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.03611,
+     "failure": null,
+     "index": 34,
+     "input_tokens": 5657,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 313,
+     "provider_message_id": "msg_011CfNKGBYEUGMrBmDfVRZaG",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "judge_items": [
+    {
+     "id": "q1_unresolved_names_missing_evidence",
+     "reason": "The subject does avoid asserting 확정 or 추정, but it marks Q1 as pass rather than unresolved and its stated evidence needs are the regenerated caption outputs/execution records, not the missing attribution status and its basis for M01.",
+     "reply": "parsed",
+     "status": "not_supported"
+    },
+    {
+     "id": "q7_no_execution_claim",
+     "reason": "The outputs consistently mark the candidate as design-only/planned, explicitly state there are no execution, rendering, publication or human-approval records, condition publication on future approval rather than asserting it, and note that error independence is not guaranteed; no claims of learning or achieved statistical independence appear.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce18-attr-unknown",
+     "reason": "The cited sources (catalog.csv M01 '미제공', curation-notes M01, glossary maker distinctions, and c18's only general 'keep attribution certainty' check plus 'state-aware captions' wording) support treating the specification-gap counterexample as valid under Q1, and the candidate's partial safeguards (roles/1 check, roles/2 caption-to-source comparison and correction loop, artifacts/4 full-original handover) without any explicit state-expression rule support a 'mitigate' response rather than refutation or failure. Only a minor slip (reference to work-contract.md 'responsibilities' not among the cited locations) appears, which does not change the conclusion.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce18-recheck-handoff",
+     "reason": "The cited sources confirm the handoffs array contains only h1/h2/h4/h5 with no explicit A/B→C re-handoff object, while content_contract, control notes, and role C's responsibility describe re-delivery and recheck in prose, which justifies the 'unresolved' validity and 'unresolved' candidate response rather than a confirmed defect or confirmed mitigation, consistent with Q5 and the design-only scope.",
+     "reply": "parsed",
+     "status": "supported"
+    }
+   ],
+   "run_state": "completed_trial",
+   "score": 0.0,
+   "scored": true,
+   "trial_cause": null,
+   "trial_id": "t5954425a3f214ca4bf781e3737f827af",
+   "trial_record": "trials/t5954425a3f214ca4bf781e3737f827af/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "fail",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "insufficient_evidence",
+    "case_key": {
+     "candidate_id": "c18",
+     "counterexample_id": null
+    },
+    "cause": "rule_check",
+    "judge": {
+     "available": true,
+     "version": "claude-judge-d160158fc49cc6aabd9c86d283727aba"
+    },
+    "judge_items": [
+     {
+      "id": "q1_unresolved_names_missing_evidence",
+      "status": "not_supported"
+     },
+     {
+      "id": "q7_no_execution_claim",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce18-attr-unknown",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce18-recheck-handoff",
+      "status": "supported"
+     }
+    ],
+    "rule_checks": [
+     {
+      "detail": "pass",
+      "id": "review:Q1:status",
+      "ok": false
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q2:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q3:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q4:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "review:Q5:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q6:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q7:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q8:status",
+      "ok": true
+     }
+    ],
+    "schema": "q01-verifier-result-1",
+    "score": 0.0,
+    "verdict": "fail",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  }
+ ]
+}

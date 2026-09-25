@@ -1,0 +1,10 @@
+{
+ "schema": "deeptwin-frozen-design-manifest-1",
+ "frozen_on": "2026-09-25",
+ "files": {
+  "evals/deeptwin/qualification/release-v1/qualification_design.json": "6cb2831af7f95fc053737c753ee175ad3d28220c3a7c20164c561736091c8afa",
+  "evals/deeptwin/qualification/release-v1/independence_profile.json": "3097c30f8cea6d5714ee15127309488990bd623426c7819f561b501267d82ed1",
+  "evals/deeptwin/effects/lens-effects-v1.json": "ad8622ac410def4fa97046e66891c52ef1b8e01a6241460c7f3797c65ac69d55"
+ },
+ "rule": "A change to any listed file is a new design version (release-v2 / lens-effects-v2); both versions are kept."
+}

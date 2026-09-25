@@ -1,0 +1,30 @@
+# DeepTwin Q01 task package (schema "deeptwin-q01-task-1").
+# Plain project-owned description read by evals/deeptwin/harness/q01_harness.py.
+# This is NOT a Harbor task.toml: Harbor is not installed or adopted here.
+
+schema = "deeptwin-q01-task-1"
+id = "v01-q01"
+status = "development-boundary-cases"
+
+[control_plane]
+# Never agent-visible; refused by the harness environment reader.
+spec = "Task.md"
+verifier = "../../verifiers/critic.py"
+world_skill = "../../../../.agents/skills/deeptwin-eval-world/SKILL.md"
+
+[agent]
+instruction = "instruction.md"
+stages = ["review", "counterexample_proposal", "counterexample_validity", "candidate_response"]
+transport = "caller-supplied callable (system, user) -> str"
+prompt_rendering = "app/services/design_criticism_live.py:render_criticism_prompt + instruction.md section"
+execution = "app/critic_trial.py:OfflineRunner with app/critic_audit.py:Ledger lineage"
+
+[environment]
+root = "environment"
+manifest = "environment/manifest.json"
+network = "none"
+fresh_state = "new trial directory, ledger, run id and runtime tree per trial"
+
+[scoring]
+harness = "never scores: completed outputs are semantic=not_checked, score=null"
+verifier = "evals/deeptwin/verifiers/critic.py (independent; not agent-visible)"

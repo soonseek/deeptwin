@@ -1,0 +1,15 @@
+{
+ "schema": "deeptwin-frozen-design-manifest-2",
+ "frozen_on": "2026-09-25",
+ "release_v1_frozen_in_commit": "3508883",
+ "files": {
+  "evals/deeptwin/qualification/release-v2/qualification_design.json": "304a9606a11c84ce4c84092a645726a0c6e0ee0cb16a9f36a838cd4146e50f04",
+  "evals/deeptwin/qualification/release-v2/independence_profile.json": "7457ed2ad851edca5c00acdb6ed271f9e5fe035eabc3f840a41aba2c2b900f73",
+  "evals/deeptwin/effects/lens-effects-v2.json": "30eb1c0ae8e61ebafcd73fd8eb7feab37a6b57b0866369dfac1ee99edf93ee5c",
+  "evals/deeptwin/qualification/release-v1/qualification_design.json": "6cb2831af7f95fc053737c753ee175ad3d28220c3a7c20164c561736091c8afa",
+  "evals/deeptwin/qualification/release-v1/independence_profile.json": "3097c30f8cea6d5714ee15127309488990bd623426c7819f561b501267d82ed1",
+  "evals/deeptwin/effects/lens-effects-v1.json": "ad8622ac410def4fa97046e66891c52ef1b8e01a6241460c7f3797c65ac69d55",
+  "evals/deeptwin/qualification/release-v1/FROZEN.json": "df611ba551d580c8952c8f2c3db1f66fb24907906d1b58fbe3f5c2828f71c97e"
+ },
+ "rule": "A change to any listed file is a new design version; every version is kept. This manifest pins the v1 files and v1 manifest too."
+}

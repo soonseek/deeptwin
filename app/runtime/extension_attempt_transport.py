@@ -32,7 +32,12 @@ from ..domain.refs import DomainContractError, EntityRef, canonical_json, uuid_s
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore
 from ..extensions.port_contracts import OPERATION_CONTRACTS
-from ..services.run_approvals import PersistentRunApprovals
+from ..extensions.tool_input_contracts import (
+    ToolArtifactInputContract,
+    ToolInputMismatch,
+    check_tool_inputs,
+)
+from ..services.run_approvals import PersistentRunApprovals, RunApprovalError
 from ..workers import broker, ipc_root, listener
 from ..workers.artifact_stream import (
     ArtifactStreamError,
@@ -124,8 +129,39 @@ def sealed_artifact_identity(send_command_id) -> str:
     return str(uuid5(NAMESPACE_URL, f"deeptwin:artifact:execute:{send_command_id}"))
 
 
-# V1 run/node/scope decisions remain historical gate evidence. They cannot
-# authorize an exact prepared action/input/use; external effects are unavailable.
+# V1 run/node/scope decisions remain historical gate evidence: they name no
+# execution, so they never authorize a dispatch. An external-family tool call is
+# admitted only under a v2 decision bound to the exact execution (the node visit)
+# and attempt it is sent for, verified at build and again before the send.
+_UNAVAILABLE = "external effects unavailable: an execution-bound approval is required"
+
+
+def _check_declared_inputs(contract, artifact_inputs) -> None:
+    """The dispatcher's input check: the supplied inputs are exactly what the tool
+    declares (the execute wire names no selector, so each selector is None)."""
+
+    try:
+        check_tool_inputs(contract, tuple(
+            (item.role, item.media_type, None) for item in artifact_inputs))
+    except ToolInputMismatch as mismatch:
+        raise ValueError(str(mismatch)) from None
+
+
+def _require_execution_bound_approval(approvals, approval_ref, binding) -> None:
+    """At build: the named approval must be the owner's approved v2 decision for the
+    compiled gate and the tool's scope. Which execution and attempt it binds is
+    checked at the call, against the ledger's own records of the request."""
+
+    if approvals is None or approval_ref is None or binding.approval_gate_node_id is None:
+        raise ValueError(_UNAVAILABLE)
+    try:
+        found = approvals.resolve(approval_ref)
+    except RunApprovalError:
+        raise ValueError(_UNAVAILABLE) from None
+    if (found is None or not found.execution_bound or found.decision != "approved"
+            or found.node_id != binding.approval_gate_node_id
+            or found.approval_scope != tool_approval_scope(binding.tool_id, binding.version)):
+        raise ValueError(_UNAVAILABLE)
 
 
 def _unsent(deadline, code_if_open="transport_unavailable"):
@@ -144,12 +180,19 @@ _EXPECTED_TOOL_CALLS = {"status": 0, "describe_tools": 0, "invoke_tool": 1}
 _REFUSED_BEFORE_THE_CALL = frozenset({"validation_failed", "permission_denied"})
 # the worker's tool table, mirrored statically on control until ToolDefinition
 # records exist (pinned equal to the worker's entries by test): what each tool
-# takes — so a call declaring other inputs is refused at build, never streamed
-# into a worker that would refuse it before reading a byte (control would only
-# see the reply mid-stream as an unknown outcome) — and its effect class
+# takes — its declared ToolArtifactInputContractV1 (extension-ports.md §3.9
+# T-tool: count interval, the literal role, the allowed media, the selector
+# policy), so a call supplying other inputs (missing, extra, wrong role, wrong
+# media) is refused by the dispatcher before any send, never streamed into a
+# worker that would refuse it before reading a byte (control would only see the
+# reply mid-stream as an unknown outcome) — and its effect class
+_TEXT_DOCUMENT_INPUT = ToolArtifactInputContract.bounded(
+    min_items=1, max_items=1, role="document_source", allowed_media_types=("text/plain",),
+    selector_policy="forbidden",
+)
 TOOL_INPUT_CONTRACTS = MappingProxyType({
-    ("text_profile", "1.0.0"): (("document_source", "text/plain"),),
-    ("text_normalize", "1.0.0"): (("document_source", "text/plain"),),
+    ("text_profile", "1.0.0"): _TEXT_DOCUMENT_INPUT,
+    ("text_normalize", "1.0.0"): _TEXT_DOCUMENT_INPUT,
 })
 # what each tool returns over the reverse leg: exactly these (role, media)
 # output artifacts, in order; an offered batch for a tool that returns none, or
@@ -231,6 +274,8 @@ class ExtensionAttemptTransport(CompiledToolTransport):
     """Built only by `build`; one bound operation over one extension slot."""
 
     __slots__ = (
+        "_approval_ref",
+        "_approvals",
         "_artifact_inputs",
         "_attempt_ms",
         "_compiled",
@@ -307,22 +352,21 @@ class ExtensionAttemptTransport(CompiledToolTransport):
                     and approval_gate_node_id != compiled_binding.approval_gate_node_id):
                 raise ValueError("explicit approval gate disagrees with compiled binding")
             tool, effect_class = selected, compiled_binding.effect_class
-            if effect_class in APPROVAL_EFFECTS:
-                raise ValueError("external effects unavailable: exact prepared action approval required")
         elif any(value is not None for value in (tool, compiled, node_id, binding_id)):
             raise ValueError("a query carries no compiled tool binding or tool selection")
         if tool is not None:
             key = (tool.get("tool_id"), tool.get("version")) if type(tool) is dict else None
             if key not in TOOL_INPUT_CONTRACTS:
                 raise ValueError("the named tool is not in the worker's table mirror")
-            declared = tuple((item.role, item.media_type) for item in artifact_inputs
-                             if type(item) is ExtensionArtifactInput)
-            if declared != TOOL_INPUT_CONTRACTS[key]:
-                raise ValueError("the declared inputs are not the tool's input contract")
+            # the tool's declared input contract, exactly: missing, extra, wrong role or
+            # wrong media is refused here, before any row, reservation or send
+            _check_declared_inputs(TOOL_INPUT_CONTRACTS[key], artifact_inputs)
             # The installed mirror must agree with the compiler-resolved definition.
             if TOOL_EFFECTS[key] != effect_class:
                 raise ValueError("the worker's claimed effect disagrees with the tool's definition")
-            if effect_approval_ref is not None:
+            if effect_class in APPROVAL_EFFECTS:
+                _require_execution_bound_approval(approvals, effect_approval_ref, compiled_binding)
+            elif effect_approval_ref is not None:
                 raise ValueError("a supported read invocation carries no effect approval")
         elif effect_approval_ref is not None:
             raise ValueError("a query carries no effect approval")
@@ -349,6 +393,9 @@ class ExtensionAttemptTransport(CompiledToolTransport):
         transport._ledger = ledger
         transport._compiled = compiled
         transport._compiled_binding = compiled_binding
+        approval_bound = compiled_binding is not None and compiled_binding.effect_class in APPROVAL_EFFECTS
+        transport._approval_ref = effect_approval_ref if approval_bound else None
+        transport._approvals = approvals if approval_bound else None
         return transport
 
     @property
@@ -413,13 +460,18 @@ class ExtensionAttemptTransport(CompiledToolTransport):
                         or execution["run_id"] != request.run_id
                         or execution["node_id"] != request.node_id
                         or attempt["execution_id"] != request.execution_id
-                        or self.effect_class in APPROVAL_EFFECTS
+                        or (self.effect_class in APPROVAL_EFFECTS) != (self._approval_ref is not None)
                         or self._tool.tool_id != self._compiled_binding.tool_id
                         or self._tool.version != self._compiled_binding.version
                         or TOOL_EFFECTS[(self._tool.tool_id, self._tool.version)] != self.effect_class):
                     raise ValueError("invocation binding mismatch")
+                # the supplied inputs are rechecked against the tool's declaration
+                _check_declared_inputs(
+                    TOOL_INPUT_CONTRACTS[(self._tool.tool_id, self._tool.version)], self._artifact_inputs)
             except (TypeError, ValueError, KeyError, LedgerError):
                 raise ExtensionTransportError("transport_mismatch", dispatch_effect="definitely_not_sent") from None
+            if self._approval_ref is not None:
+                self._verify_execution_approval(request, execution, attempt)
         if type(window) is not ConsumedDispatchWindow or window.permit is not permit:
             raise TypeError("The consumed window of this exact permit is required")
         if (permit.attempt_id != request.attempt_id
@@ -501,6 +553,31 @@ class ExtensionAttemptTransport(CompiledToolTransport):
             except OSError:
                 pass  # a close fault cannot unmake the original result or failure
 
+    def _verify_execution_approval(self, request, execution, attempt):
+        """Before the channel, the connection and the ToolCall intent: the named
+        approval must be the owner's approved v2 decision under the compiled gate
+        and the tool's scope for exactly this request's execution — its run, its
+        node, its visit (the ledger's execution id) and the attempt number the
+        ledger holds for this attempt. An approval of another visit, another
+        node's execution or another attempt of this visit (a retry) is refused
+        `definitely_not_sent`; the same attempt again verifies the same decision."""
+
+        binding = self._compiled_binding
+        try:
+            found = self._approvals.lookup_execution(
+                request.run_id, binding.approval_gate_node_id,
+                tool_approval_scope(binding.tool_id, binding.version),
+                execution_id=execution["execution_id"], execution_node_id=execution["node_id"],
+                attempt_no=attempt["attempt_no"],
+            )
+        except RunApprovalError as error:
+            code = "transport_unavailable" if str(error) == "unavailable" else "transport_invalid"
+            raise ExtensionTransportError(code, dispatch_effect="definitely_not_sent") from None
+        if (found is None or found.decision != "approved" or found.approval_ref != self._approval_ref
+                or execution["execution_id"] != request.execution_id
+                or execution["node_id"] != request.node_id or execution["run_id"] != request.run_id):
+            raise ExtensionTransportError("transport_invalid", dispatch_effect="definitely_not_sent")
+
     def _record_tool_call_intent(self, permit, request, declarations):
         """The ToolCall's write-ahead intent, recorded in the ledger before the request
         frame leaves (a failure here is `definitely_not_sent`); queries have no call."""
@@ -513,7 +590,7 @@ class ExtensionAttemptTransport(CompiledToolTransport):
                 tool_id=self._tool.tool_id, version=self._tool.version,
                 effect_class=self.effect_class,
                 artifact_inputs=tuple(item.as_dict() for item in declarations),
-                approval_ref=None,
+                approval_ref=self._approval_ref,
             )
             self._ledger.record_tool_call(str(uuid5(NAMESPACE_URL, f"deeptwin:command:tool-call:{permit.command_id}")), spec)
         except Exception:  # noqa: BLE001 - the ledger's detail stays private

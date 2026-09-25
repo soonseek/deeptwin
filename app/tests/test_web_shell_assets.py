@@ -47,6 +47,8 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "records-page.mjs": "application/javascript",
         "account.mjs": "application/javascript",
         "claude-connection.mjs": "application/javascript",
+        "work-model.mjs": "application/javascript",
+        "graph.mjs": "application/javascript",
         "records.html": "text/html",
         "versions.mjs": "application/javascript",
         "experiments.mjs": "application/javascript",

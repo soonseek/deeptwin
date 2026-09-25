@@ -8,8 +8,8 @@ in [third-party-notices.md](third-party-notices.md).
 
 | Item | Present? |
 | --- | --- |
-| `LICENSE` / `LICENSES/` / `NOTICE` | **no** — intentionally not added; awaiting owner approval ([license-recommendation.md](license-recommendation.md)) |
-| `license` field in `pyproject.toml` | no |
+| `LICENSE` / `LICENSES/` / `NOTICE` | **yes** — Apache-2.0, approved by the owner on 2026-09-24 ([license-recommendation.md](license-recommendation.md)); `LICENSES/Apache-2.0.txt` is the same canonical text |
+| `license` field in `pyproject.toml` | `license = "Apache-2.0"`, `license-files = ["LICENSE", "NOTICE"]` |
 | SPDX-License-Identifier headers in tracked source | none found (checked with `git grep`, excluding lock/manifest data) |
 | Copyright notices in first-party source | none found in `app/`, `sdk/`, `examples/`, `schemas/`, `deploy/` scripts, prototypes, `evals/`, `docs/` |
 
@@ -55,5 +55,7 @@ scrub. The files under `docs/release/` were written with repository-relative pat
 
 1. Owner approves a license (and a documentation license if different).
 2. Confirm ownership of all first-party areas above and decide which historical areas to publish.
-3. Add license files and SPDX headers; run `reuse lint` (pinned in the dev group) to check coverage.
+3. Done 2026-09-25: `LICENSE`, `LICENSES/` and `REUSE.toml` (Apache-2.0 default; the §3 upstream
+   files annotated `LicenseRef-Upstream-Terms`, never relicensed); `reuse lint` passes, 1671/1671 files,
+   guarded by `app/tests/test_reuse_compliance.py`. Rights to text quoted in `docs/lenses/` remain unverified.
 4. Verify the scrub and that fixtures and evidence contain no user private data or keys.

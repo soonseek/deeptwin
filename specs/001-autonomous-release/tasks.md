@@ -187,7 +187,7 @@ phase. Web session and isolated-worker feasibility are tested here before extens
   closed failure classes); three independent adversarial reviews and one re-review folded in
   RED first (evidence/owned-shared-gateway-task51.md). Still no launcher, route, deployment or
   live provider activation from it.
-- [ ] T087 Implement ADR-014's versioned semantic extension framework in app/extensions/, the domain 2026-09-18 slice: the worker's code-owned operation registry now carries `status` (an actual metadata reading) behind the closed `extension-execute-v1` grammar, with the control-side transport sealing the output (evidence/worker-execute-transport-t087.md); `describe_tools` landed the same day over the worker's empty code-owned tool table (evidence/worker-describe-tools-t087.md), and the artifact input leg of the execute exchange landed over T018's bounded stream (evidence/worker-artifact-input-leg-t018-t087.md: declared inputs, profile-gated admission, no registered consumer yet); the first real tool `text_profile` and `invoke_tool` landed over the leg (evidence/worker-text-profile-tool-t087.md: control mirrors the table, verifies the reply's tool, digest, size and usage); the reverse leg landed with the second tool `text_normalize` (evidence/worker-output-artifacts-t018-t087.md: output artifacts offered before the reply, admitted under the mirrored output contract, verified, imported as registered content and sealed); the `ToolCall` record and the effect gate landed (evidence/tool-call-record-effect-gate-t087.md: a ledger row per attempt, write-ahead intent, settled from what control observed, the approval recorded for external effects); the `output_bytes` reservation from the tool's bound landed (evidence/output-bytes-reservation-t087.md: the transport states and enforces its output bound, the dispatcher refuses a binding under it); the approval's verification landed (evidence/tool-call-approval-verification-t087.md: the recorded decision for the run, node and tool scope, exact record, before the send); `cancel`, tool arguments, the vouched dispatch effect is journaled by the dispatcher (evidence/vouched-transport-effect-journal.md; a free retry after a committed send intent stays open as a ledger trust-model change); the tool boundary's effect vocabulary is the ports contract's (evidence/tool-effect-vocabulary-t047-t087.md; the `tool.requested` event's own vocabulary now is the ports contract's seven classes too — 2026-09-23, pinned by test_domain_events, event-metadata export regenerated); the ToolDefinition-backed gate landed (evidence/tooldefinition-effect-gate-t087.md: the authority's definition carries the class, a bound external tool requires its derived scope through a human gate, the transport refuses a disagreeing mirror); per-execution approval binding, a production graph that binds a tool gate, the ports contract's per-tool input count/role binding and every other port remain open.
+- [ ] T087 Implement ADR-014's versioned semantic extension framework in app/extensions/, the domain 2026-09-18 slice: the worker's code-owned operation registry now carries `status` (an actual metadata reading) behind the closed `extension-execute-v1` grammar, with the control-side transport sealing the output (evidence/worker-execute-transport-t087.md); `describe_tools` landed the same day over the worker's empty code-owned tool table (evidence/worker-describe-tools-t087.md), and the artifact input leg of the execute exchange landed over T018's bounded stream (evidence/worker-artifact-input-leg-t018-t087.md: declared inputs, profile-gated admission, no registered consumer yet); the first real tool `text_profile` and `invoke_tool` landed over the leg (evidence/worker-text-profile-tool-t087.md: control mirrors the table, verifies the reply's tool, digest, size and usage); the reverse leg landed with the second tool `text_normalize` (evidence/worker-output-artifacts-t018-t087.md: output artifacts offered before the reply, admitted under the mirrored output contract, verified, imported as registered content and sealed); the `ToolCall` record and the effect gate landed (evidence/tool-call-record-effect-gate-t087.md: a ledger row per attempt, write-ahead intent, settled from what control observed, the approval recorded for external effects); the `output_bytes` reservation from the tool's bound landed (evidence/output-bytes-reservation-t087.md: the transport states and enforces its output bound, the dispatcher refuses a binding under it); the approval's verification landed (evidence/tool-call-approval-verification-t087.md: the recorded decision for the run, node and tool scope, exact record, before the send); `cancel`, tool arguments, the vouched dispatch effect is journaled by the dispatcher (evidence/vouched-transport-effect-journal.md; a free retry after a committed send intent stays open as a ledger trust-model change); the tool boundary's effect vocabulary is the ports contract's (evidence/tool-effect-vocabulary-t047-t087.md; the `tool.requested` event's own vocabulary now is the ports contract's seven classes too — 2026-09-23, pinned by test_domain_events, event-metadata export regenerated); the ToolDefinition-backed gate landed (evidence/tooldefinition-effect-gate-t087.md: the authority's definition carries the class, a bound external tool requires its derived scope through a human gate, the transport refuses a disagreeing mirror); per-execution approval binding, a production graph that binds a tool gate, the ports contract's per-tool input count/role binding and every other port remain open. 2026-09-25 slice: the per-execution approval binding and the per-tool input declaration landed (evidence/tool-execution-binding-t087-2026-09-25.md: a `run-approval-v2` decision binds the gate's run/node/scope plus the execution id, executing node and attempt number, v1 stays readable and is refused for dispatch; the transport verifies the exact attempt before the channel and the ledger admits one approval for one attempt's call; each tool declares a `ToolArtifactInputContractV1` checked by the dispatcher at build and before the connection and re-checked by the worker); a production graph that binds a tool gate, the scheduler consuming v2 decisions, an HTTP route for v2 decisions, the atomic approval-use/budget/send claim, the compiled ToolDefinition carrying the input declaration, selectors on the wire and every other port remain open.
   store/migrations, schemas/v1/extensions/, app/api/extension_routes.py,
   app/api/route_contributions/extensions-v1.json,
   app/operations/extension_deployment.py, app/static/extensions.mjs,
@@ -497,10 +497,24 @@ Independent test: fixed synthetic work → real design decisions/candidates → 
   (FR-003–005).
 - [x] T031 [US2] Complete B4 lifecycle deadline/cancel from preflight through actual owned process termination in app/codex_understanding.py, app/codex_rpc.py and app/tests/test_provider_lifecycle.py; retain B1 prepared-input contract (verification §5).
 - [x] T032 [US2] Bind counterexample/validity/candidate-response exact hashes and parent provenance in app/critic_audit.py and app/tests/test_critic_lineage.py; reject forged cross-call evidence (B4).
-- [ ] T033 [US2] Build the real isolated Q01 harness adapter/environment under evals/deeptwin/tasks/v01-q01/ and evals/deeptwin/harness/ after reading eval-engineering implementation/environment references; preserve exact Task truth and keep verifier/World Skill/secrets out of agent inputs (B4).
-- [ ] T034 [US2] Implement independent semantic verifier and six boundary outcome classes in evals/deeptwin/verifiers/critic.py and evals/deeptwin/tests/test_critic_verifier.py; invalid/no-score is not an agent capability zero (B4).
-- [ ] T035 [US2] Freeze initial calibration/scoped qualification/IndependenceProfile and bounded proposed live RunPlan in evals/deeptwin/qualification/calibration/; seek only genuinely missing live authority, execute authorized trials, record joint errors/abstention/valid alternatives without inventing guarantees; any observed/tuned cases cannot be release heldout (FR-006/031, V2/V3).
+- [ ] T033 [US2] Build the real isolated Q01 harness adapter/environment under evals/deeptwin/tasks/v01-q01/ and evals/deeptwin/harness/ after reading eval-engineering implementation/environment references; preserve exact Task truth and keep verifier/World Skill/secrets out of agent inputs (B4). 2026-09-24 (open): project-owned task.toml/instruction.md/environment (10 frozen, label-free development cases) and evals/deeptwin/harness/ drive review→proposal→validity→response through a caller `(system, user) -> str` transport over the product render_criticism_prompt + OfflineRunner/Ledger (authored-counterexample lineage added to app/critic_audit.py), with per-call hash manifests, fresh per-trial state, pre-dispatch leak scan and a readiness check on the same read path; offline tests only (evidence/q01-harness-verifier-t033-t034-2026-09-24.md). Stays open: the eval-engineering references are not present in this checkout, isolation is accidental-use prevention (not an OS sandbox), Harbor is not adopted and no live trial ran.
+- [ ] T034 [US2] Implement independent semantic verifier and six boundary outcome classes in evals/deeptwin/verifiers/critic.py and evals/deeptwin/tests/test_critic_verifier.py; invalid/no-score is not an agent capability zero (B4). 2026-09-24 (open): verifier with six boundary classes (accept, required defect, rejected counterexample, valid counterexample, unresolved specific claim, insufficient evidence), independent source-derived expectations, Q8 evidence re-derivation from the durable ledger, rule checks first and an explicit SemanticJudge interface; no judge/undetermined → not_judged (score null), invalid → no score (evidence/q01-harness-verifier-t033-t034-2026-09-24.md). Stays open: no semantic judge (human or model) is implemented or qualified, so no trial can yet reach a scored semantic pass outside synthetic fixtures.
+- [ ] T035 [US2] Freeze initial calibration/scoped qualification/IndependenceProfile and bounded proposed live RunPlan in evals/deeptwin/qualification/calibration/; seek only genuinely missing live authority, execute authorized trials, record joint errors/abstention/valid alternatives without inventing guarantees; any observed/tuned cases cannot be release heldout (FR-006/031, V2/V3). 2026-09-24 (open): prepared offline, live calibration not yet run — frozen evals/deeptwin/qualification/calibration/run_plan.json (claude/api critic and same-model judge, the 10 development cases once each, max 2 proposed chains, per-call max tokens, call/trial/run deadlines, concurrency 1, no automatic retry or model fallback, hard spend stop USD 6.00 at $5/$25 per million input/output tokens) and independence_profile.json (shared provider and model: correlated errors possible, independence not established; observed development cases, never release heldout), both hash-pinned by run_calibration.py; Claude API rig (evals/deeptwin/harness/claude_rig.py) and judge (evals/deeptwin/verifiers/claude_judge.py) with mock-transport tests only; gated entry evals/deeptwin/tests/test_q01_live_calibration.py. No scored live call has been made.
+  2026-09-24: the initial calibration was executed live under the frozen, pinned plan and
+  independence profile (critic and judge share a model; independence not established). The
+  complete tuned result is 6/10, suite `fail`, so nothing qualifies. Run 1 exposed two unstated
+  critic-contract rules and a verifier case-key bug, both fixed. All cases are observed/tuned
+  development data and never heldout — evidence/q01-live-calibration-t035-2026-09-24.md.
 - [ ] T036 [US2] Implement independent candidate reviews, hard gates/ranking/diversity and bounded supplementation in app/services/design_review.py and app/tests/test_design_selection.py; explicitly connect production critic qualified lens routing/composition→LensPack→counterexample→independent validity/response, record contribution/abstention and test input isolation in app/tests/test_critic_lens_pipeline.py. Add immutable select/merge/edit versions, mandatory re-review, exact `DesignApproval`, and preparation of the same `EnvironmentVersion` by CAS in app/services/environments.py with stale/hash/run-binding tests; this prepares a design but does not operationally promote it. Q01 fixtures are not this production implementation and unknown critical qualification cannot pass (FR-004/FR-006/FR-007/FR-008, Constitution VI). 2026-09-17: the environments.py approval now accepts only owner-session-recorded decisions over the exact design subject (app/services/owner_decisions.py; evidence/owner-decisions-design-approval.md); design_review/critic-lens production routing remains open.
+  2026-09-25: critic qualification gate — `app/services/critic_qualification.py` derives an issued
+  state from a release suite record (frozen release design, suite `pass`, judge separation established,
+  exact configuration digest); calibration, fail/incomplete, unestablished judge, another configuration
+  or no record are not qualified, and `design_approval_subject` (v2) refuses a passed verdict unless the
+  critic is qualified and binds the qualification into the approval. No real release suite has passed
+  (T077), so no design is approvable in production today; storing suite records remains T077.
+  2026-09-25: each criticism run records the contract-validated proposal status and per-lens
+  contribution (exact counterexample ids) / exclusion / abstention with reasons, persisted in the
+  criticism record (`lens_use`).
 - [ ] T037 [US2] Implement large readable graph comparison, same-focus differences, model/tool details and edit/merge/review/prepare commands in app/static/graph.mjs and app/static/workspace.mjs (UX-AC01, FR-005/FR-008/FR-009).
 - [ ] T038 [US2] Exercise real generation→critique→selection and 0/1/2/3 valid-candidate/revision/cancel paths in app/tests/browser-design.test.mjs and specs/001-autonomous-release/evidence/us2.md; no fixture scores presented as live (SC-003/SC-005).
 
@@ -564,6 +578,12 @@ eligible lens questions frozen before new evidence → typed candidate or justif
   hypotheses `not_generated`, inquiry `not_opened`, no change candidate and no input control
   (real-browser case); real hypothesis/inquiry/candidate display waits on a connected generator —
   evidence/inquiry-observation-t060-2026-09-23.md.
+  2026-09-24: the hypothesis generator is connected — on the owner's explicit request one model
+  turn over the owner's Claude connection proposes competing explanations of a sealed difference,
+  admitted only through `propose_hypotheses` (a lone causal family refused), sealed once per
+  difference, all `proposed` (`hypotheses-v1`, observe-page panel; a live set proposed all five
+  families) — evidence/hypotheses-generator-t060-2026-09-24.md. Inquiry opening and confirmation
+  still need real evidence.
 
 ## Phase 8: US6 — Previous queues, product plateau and human promotion (P1)
 
@@ -589,7 +609,21 @@ heldout validation and exact authenticated human promotion; no automatic operati
   candidate run, validity/reasons, score only on valid rounds, unreadable listed) in
   `experiments.mjs`. A side-by-side artifact reading remains: round runs are design
   run_manifest refs with no path to runs-v1 artifacts.
+  2026-09-25 side-by-side: a round keeps what each side produced before its isolated vaults are
+  removed (`persist_round_outputs`: per item both sides' node results, bounded with truncation
+  stated, and the changed / out-of-scope nodes), `versions-v1` rounds carry it, and
+  `experiments.mjs` shows the two side by side with changes marked (browser G-06 case, E2E and
+  unit tests). A round without kept outputs says so. No production path executes rounds yet.
 - [ ] T067 [US6] Run G-06–G-15 end-to-end recovery/loop/heldout/approval cases in app/tests/browser-growth.test.mjs and specs/001-autonomous-release/evidence/us6.md; label test-actor/synthetic vs actual user evidence (SC-007/SC-008).
+  2026-09-25: G-06–G-13 and rollback exercised end to end in real Chromium against the
+  supported server, over a durable chain seeded through the real services. The rounds come
+  from isolated paired execution; the server is restarted over the same store.
+  Service-only parts are in app/tests/test_growth_e2e.py. All evidence is
+  synthetic/test-actor; there is no actual user evidence.
+  G-13 bug fixed: after apply and rollback, a stale approval applied again. An approval
+  decided before the newest promotion revision is now refused.
+  G-14 (replay of past external effects) and G-15 (lens on/off comparison) have no product
+  surface and are recorded as not exercised, so T067 stays open (evidence/us6.md).
 
 ## Phase 9: US7 — Complete records and optional creator feedback (P1)
 
@@ -651,7 +685,22 @@ All US phases are required. This is not permission to stop at an onboarding MVP 
 unmet features to out-of-scope. Empirical user/effect/signing evidence stays separate.
 
 - [ ] T075 Produce the complete requirement→task→test→observed-result matrix and all invalid/failed/missing evidence in specs/001-autonomous-release/evidence/implementation.md; refresh source hashes/supersession map after final design edits and audit the stable-weight progress numerator, uncertainty and ETA-support state (FR-034, SC-002).
+  2026-09-25 draft: generated matrix (`tools/implementation_matrix.py` → evidence/implementation-matrix.md,
+  44 requirements, 52/90 tasks done) and evidence/implementation.md listing every failed/invalid/missing
+  evidence area, the equal-weight checked-task numerator and why no ETA is supported for blocked tasks.
+  Final refresh after T085.
 - [ ] T076 Freeze and audit final release qualification version/IndependenceProfile/effect evaluation designs in evals/deeptwin/qualification/release-v1/ and evals/deeptwin/effects/ before any release-heldout access; use new datasets not exposed in T035 calibration, preserve both versions, and do not invent actual user alternatives or universal independence thresholds (V3/V6).
+  2026-09-25: release-v1 designs frozen before any heldout material exists
+  (`evals/deeptwin/qualification/release-v1/{qualification_design,independence_profile}.json`,
+  `evals/deeptwin/effects/lens-effects-v1.json`, hash manifest `FROZEN.json`, guarded by
+  `evals/deeptwin/tests/test_release_design_frozen.py`): a new sealed set authored by someone
+  other than the verifier's developer, 2+ cases per boundary class (a scoped choice, no rate),
+  3 repetitions, every case must pass, an independent judge (human or another provider) required
+  — neither available now, so release-v1 cannot execute yet; the lens-effect comparison keeps
+  the no-lens baseline whole and claims no superiority. Independent audit of v1 found
+  identity, single-use, storage, coverage, contract-error, reporting, V3 and §8-arm gaps; release-v2
+  (`release-v2/`, `lens-effects-v2.json`, manifest pinning v1 too) addresses them without editing v1
+  (evidence/release-designs-t076-2026-09-25.md). Still open: no sealed set, no independent judge, V3 unverified.
 - [ ] T077 Execute authorized bounded actual-provider/critic/multimodal/lens-controlled comparisons and audit all failures/suspicious passes in specs/001-autonomous-release/evidence/live-qualification.md; lack of applicable authority remains explicit, not waived (SC-001/005/006).
 - [ ] T078 After T087's extension UI and the frozen T081 candidate exist, perform final visual/
   keyboard/screen-reader/360px/1024px/
@@ -676,6 +725,11 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   For STT freeze Korean fixture length/transcript, speech/silence/noise, cold vs warm model, CPU/
   thread/concurrent load and sample count; report recognition error separately from provisional/final
   latency, fix material UI stalls and disclose every unmeasured quality claim (FR-002/013/031).
+  2026-09-25: browser responsiveness measured under the declared workload (20-node/40-edge run,
+  1,000+ events) in real Chromium against the real server — command ack p95 127 ms, event visible
+  after commit p95 60 ms, no long task while typing or opening the run, records log pages p95
+  99 ms (evidence/performance.md). STT unmeasured (no engine; no microphone input); there is no
+  push event view or graph canvas to measure; clean hosts (T083) not measured.
 - [ ] T081 Build the reproducible open-source web distribution and versioned service images under
   deploy/ for both ADR-010 profiles. The Portainer CE no-terminal descriptor/workflow must verify an
   immutable source commit plus exact Compose digest (tag is display-only) and service-keyed OCI
@@ -758,6 +812,14 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   2026-09-23 scrub: workstation paths replaced with placeholders in 40 tracked documents (test
   canaries kept); `docs/lenses/source-map.md` is pinned by the reviewed lens bundle and awaits a
   re-review — evidence/publishable-scrub-t084-2026-09-23.md.
+  2026-09-24: the owner approved Apache-2.0; `LICENSE`, `LICENSES/Apache-2.0.txt`, `NOTICE` and
+  the `pyproject.toml` license metadata landed (evidence/license-approval-apache-2.0-2026-09-24.md).
+  SPDX headers, per-image notices/source offers, the inbound-contribution mechanism, the Compose
+  gaps and the pinned lens file remain open.
+  2026-09-25: SPDX coverage via `REUSE.toml` (Apache-2.0 default, upstream files under
+  `LicenseRef-Upstream-Terms`); `reuse lint` compliant 1671/1671, guarded by
+  `app/tests/test_reuse_compliance.py`. Per-image notices/source offers, inbound-contribution
+  mechanism, Compose gaps, pinned lens file and quoted-text rights remain open.
 - [ ] T085 Run full regression plus quickstart.md acceptance, reconcile every checkbox/result and produce specs/001-autonomous-release/evidence/release-report.md separating engineering/live/effect/human/signing readiness and checking final progress/ETA claims against actual task evidence; mark the goal complete only if the latest required delivery is genuinely achieved (FR-034, SC-010).
 
 ## Dependencies and parallel work

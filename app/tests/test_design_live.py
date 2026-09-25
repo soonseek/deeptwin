@@ -154,3 +154,36 @@ def test_request_and_model_identity_are_validated():
             )
     with pytest.raises(DesignGenerationError):
         run_candidate_generation(request, model_turn=object(), model_id=MODEL_ID)
+
+
+FRAMEWORK_FIELDS = ("schema_version", "graph_id", "version", "work_model_ref", "decision_refs",
+                    "observation_contract_ref", "budget_policy_ref")
+
+
+def test_the_framework_fills_identities_and_record_refs_the_model_omits():
+    target, _lens, _decision, request, graph = prepared()
+    authored = {key: value for key, value in graph.items() if key not in FRAMEWORK_FIELDS}
+    model_turn, calls = scripted_model(model_json(authored))
+
+    [candidate] = run_candidate_generation(request, model_turn=model_turn, model_id=MODEL_ID).candidates
+
+    assert candidate.graph.work_model_ref == target.work_model_ref
+    assert candidate.graph.decision_refs == tuple(item.decision_ref for item in request.decisions)
+    assert candidate.graph.observation_contract_ref.as_dict() == graph["observation_contract_ref"]
+    assert candidate.graph.budget_policy_ref.as_dict() == graph["budget_policy_ref"]
+    assert candidate.graph.version == 1 and candidate.graph.graph_id != graph["graph_id"]
+    system, user = calls[0]
+    # the model sees what it may reference, and is told the framework owns the rest
+    assert json.loads(user)["compilation_authority"] == json.loads(
+        canonical_json(request.compilation_authority.as_dict()))
+    assert "Omit schema_version, graph_id" in system
+
+
+def test_a_model_supplied_reference_is_still_admitted_strictly():
+    _target, _lens, _decision, request, graph = prepared()
+    forged = {key: value for key, value in graph.items() if key not in FRAMEWORK_FIELDS}
+    forged["work_model_ref"] = {**graph["work_model_ref"], "sha256": "0" * 64}
+    model_turn, _calls = scripted_model(model_json(forged))
+
+    with pytest.raises(DesignContractError):
+        run_candidate_generation(request, model_turn=model_turn, model_id=MODEL_ID)

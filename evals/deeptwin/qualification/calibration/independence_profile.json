@@ -1,0 +1,33 @@
+{
+ "schema": "q01-independence-profile-1",
+ "profile_id": "q01-initial-calibration-independence-1",
+ "frozen_on": "2026-09-24",
+ "run_plan": {"path": "run_plan.json", "sha256": "8793d002815f454a100d0dabc33fa1cb86a71cc496ff0f3bf8018da2ea02396a"},
+ "critic": {"provider": "claude", "mode": "api", "model": "claude-opus-5"},
+ "judge": {"provider": "claude", "mode": "api", "model": "claude-opus-5"},
+ "shared": {
+  "provider": true,
+  "model": true,
+  "credential_and_account": true,
+  "task_and_rubric_authoring": "same project"
+ },
+ "correlated_errors": "possible",
+ "independence_established": false,
+ "consequences": [
+  "A judge 'supported' item is a same-model agreement observation, not independent evidence of semantic correctness.",
+  "Joint critic/judge errors cannot be detected by this run; rule checks remain the only judge-independent part of a verdict.",
+  "No error-independence, false-rejection or missed-defect rate may be claimed from this run."
+ ],
+ "cases": {
+  "kind": "observed_development",
+  "count": 10,
+  "release_heldout_eligible": false,
+  "reason": "These development cases are authored, visible to the project and observed (and possibly tuned against) during calibration; they can never serve as release heldout."
+ },
+ "not_claimed": [
+  "statistical independence of critic and judge",
+  "release qualification",
+  "lens effect",
+  "generalization beyond the ten development cases"
+ ]
+}

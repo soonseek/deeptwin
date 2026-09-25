@@ -19,12 +19,15 @@
 import { basePathFrom, createSupportedSession } from './session.mjs';
 import { createSourceDeletion } from './source-deletion.mjs';
 import { createWorkExport } from './work-export.mjs';
+import { createWorkModel } from './work-model.mjs';
 
 export const MOUNT_IDS = Object.freeze({ session: 'session-status', notice: 'intake-notice', form: 'work-form',
   save: 'save-status', materials: 'materials', link: 'observe-link' });
 // the export panel's mount is optional: a page without it still boots (T073)
 export const RECORDS_MOUNT_ID = 'work-records';
 export const DELETION_MOUNT_ID = 'work-deletion';
+// the work-model panel's mount is optional too (T030)
+export const WORK_MODEL_MOUNT_ID = 'work-model';
 export const MAX_TEXT_CHARS = 20_000;  // app/services/works.py MAX_TEXT_CHARS
 export const MAX_TEXT_BYTES = 65_536;  // app/services/works.py MAX_TEXT_BYTES (raw UTF-8)
 const CREATE_SCHEMA = 'work-create-command-v1';
@@ -249,6 +252,11 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   const selections = [];
   const originals = new Map();
   let savedSources = [];
+  const workModelRoot = document.getElementById(WORK_MODEL_MOUNT_ID);
+  const workModel = workModelRoot !== null && typeof workModelRoot?.replaceChildren === 'function'
+    ? createWorkModel({ root: workModelRoot, document, basePath, request: session.request, crypto,
+      work: () => ({ work_id: state.work_id ?? null, revision: state.revision ?? null, sources: savedSources.length }) })
+    : null;
   let activeUpload = null;
 
   function renderMaterials() {
@@ -295,6 +303,7 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
     savedSources = saved.source_refs ?? [];
     renderMaterials();
     if (deletion !== null) deletion.load().catch(() => {});
+    if (workModel !== null) workModel.load().catch(() => {});
     for (const ref of savedSources) {
       if (!originals.has(ref.id)) {
         try {
@@ -671,7 +680,8 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   });
 
   if (deletion !== null) deletion.load().catch(() => {});
-  return Object.freeze({ mode, basePath, session, exporter, deletion });
+  if (workModel !== null) workModel.load().catch(() => {});
+  return Object.freeze({ mode, basePath, session, exporter, deletion, workModel });
 }
 
 // the page's entry: a boot that fails before the exchange still reaches the status line

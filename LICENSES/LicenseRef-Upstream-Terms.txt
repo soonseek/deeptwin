@@ -1,0 +1,5 @@
+This file is an upstream artifact kept in the DeepTwin repository for verification or notice
+purposes. It is not licensed by The DeepTwin Authors and is not relicensed under Apache-2.0.
+It remains under the terms of its upstream project, which are the license text itself for files
+under deploy/locks/licenses/ and are otherwise listed (or recorded as not recorded) in
+docs/release/source-license-inventory.md section 3.

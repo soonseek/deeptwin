@@ -1,0 +1,23 @@
+{
+ "schema": "deeptwin-lens-effect-design-1",
+ "design_id": "lens-effects-v1",
+ "frozen_on": "2026-09-25",
+ "status": "frozen_design_not_executed",
+ "purpose": "G-15: compare the critic with no lens, each single lens, and the lens mix under identical conditions, to observe whether lenses change defect detection or false rejection on sealed cases.",
+ "precondition": "The critic configuration has passed release-v1 qualification (qualification_design.json); before that no effect comparison is run.",
+ "conditions": [
+  {"id": "no_lens", "lenses": [], "note": "keeps every default critic function; nothing is removed to make lenses look better"},
+  {"id": "single_L-P050-01", "lenses": ["L-P050-01"]},
+  {"id": "single_L-P033-02", "lenses": ["L-P033-02"]},
+  {"id": "mix", "lenses": ["L-P050-01", "L-P033-02"]}
+ ],
+ "held_equal": ["model", "effort", "max_tokens", "materials and access", "budget", "harness", "verifier", "judge and independence profile", "case order (randomized once, recorded)"],
+ "dataset": "a sealed set authored under the release-v1 rules and not used for qualification",
+ "measurements": [
+  "per case and condition: verifier verdict and boundary class",
+  "paired differences between each lens condition and no_lens on the same case",
+  "cost and call counts per condition"
+ ],
+ "reporting": "observed counts and paired differences only, with every invalid trial listed; no superiority claim is made in v1",
+ "never_claimed": ["that a lens improves the critic in general", "philosophical authority as evidence", "effects beyond the sealed set"]
+}

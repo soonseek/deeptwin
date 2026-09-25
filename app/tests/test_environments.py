@@ -25,12 +25,37 @@ from app.services.environments import (
     prepare_environment_version,
     record_design_approval,
 )
+from app.services.critic_qualification import (
+    SUITE_RECORD_SCHEMA_VERSION,
+    critic_qualification_from_suite,
+    unknown_critic_qualification,
+)
 from app.services.owner_decisions import OwnerDecision
 from app.tests.owner_session import OwnerSession
 from app.tests.test_alternatives import ref
 from app.tests.test_design_review import pool_inputs, verdict
 
 ENV_ID = "00000000-0000-4000-8000-00000000e001"
+CRITIC_DIGEST = "c" * 64
+
+
+def suite_record(**overrides):
+    record = {
+        "schema_version": SUITE_RECORD_SCHEMA_VERSION,
+        "design_id": "q01-release-v2",
+        "configuration_digest": CRITIC_DIGEST,
+        "sealed_set_sha256": "d" * 64,
+        "suite_verdict": "pass",
+        "judge_separation_established": True,
+        "record_sha256": "e" * 64,
+    }
+    record.update(overrides)
+    return record
+
+
+def qualified_critic():
+    # A test-actor suite record: no real release suite has passed (T077).
+    return critic_qualification_from_suite(suite_record(), CRITIC_DIGEST)
 
 # One real owner session per test module records every design approval in
 # the value-level design suites (modules calling approval_value import
@@ -51,6 +76,7 @@ def approval_value(candidate, candidate_verdict, **overrides):
         "model_bindings": ref("model_choice", 1102),
         "tool_permissions": ref("grant", 1103),
         "observation_contract": ref("observation_contract", 1104),
+        "critic_qualification": qualified_critic(),
     }
     decision = overrides.pop("decision", "approve")
     value.update(overrides)
@@ -199,3 +225,37 @@ def test_prepared_versions_and_states_are_issued_values():
     from app.services import environments
 
     assert not hasattr(environments, "activate_environment_version")
+
+
+@pytest.mark.parametrize("critic, reason", [
+    (lambda: unknown_critic_qualification(CRITIC_DIGEST), "unknown: no_suite_record"),
+    (lambda: critic_qualification_from_suite(suite_record(design_id="q01-calibration-v1"), CRITIC_DIGEST),
+     "unqualified: not_a_frozen_release_design"),
+    (lambda: critic_qualification_from_suite(suite_record(suite_verdict="fail"), CRITIC_DIGEST),
+     "unqualified: suite_fail"),
+    (lambda: critic_qualification_from_suite(suite_record(suite_verdict="incomplete"), CRITIC_DIGEST),
+     "unqualified: suite_incomplete"),
+    (lambda: critic_qualification_from_suite(suite_record(judge_separation_established=False), CRITIC_DIGEST),
+     "unqualified: judge_separation_not_established"),
+    (lambda: critic_qualification_from_suite(suite_record(configuration_digest="f" * 64), CRITIC_DIGEST),
+     "unknown: suite_is_for_another_configuration"),
+])
+def test_a_passed_verdict_from_an_unqualified_critic_is_never_approvable(critic, reason):
+    _request, two, _three, _duplicate = pool_inputs()
+    with pytest.raises(EnvironmentContractError, match=reason):
+        design_approval_subject(approval_value(two, verdict(two), critic_qualification=critic()))
+    with pytest.raises(EnvironmentContractError, match=reason):
+        record_design_approval(approval_value(two, verdict(two), critic_qualification=critic()))
+
+
+def test_a_look_alike_qualification_is_refused_and_the_approval_binds_the_record():
+    _request, two, _three, _duplicate = pool_inputs()
+    fake = object.__new__(type(qualified_critic()))
+    for name, item in qualified_critic().as_dict().items():
+        if name != "schema_version":
+            object.__setattr__(fake, name, item)
+    with pytest.raises(EnvironmentContractError, match="qualification state is required"):
+        design_approval_subject(approval_value(two, verdict(two), critic_qualification=fake))
+    approval = record_design_approval(approval_value(two, verdict(two)))
+    assert approval.critic_qualification["record_sha256"] == "e" * 64
+    assert approval.as_dict()["critic_qualification"]["status"] == "qualified"

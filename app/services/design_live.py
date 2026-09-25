@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from uuid import uuid4
 
+from ..domain.graph_schema import GRAPH_SCHEMA_VERSION
 from ..domain.refs import EntityRef, canonical_json
 from ..generation_profiles import DesignGenerationPurpose, design_profile_for
 from .design import (
@@ -32,12 +33,128 @@ _UUID = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z"
 )
 
+# The framework owns every identity and record reference of a candidate graph: it
+# fills the top-level fields in _FRAMEWORK_FIELDS itself, and the model may only
+# copy references that the payload's compilation authority lists.
+_FRAMEWORK_FIELDS = (
+    "schema_version", "graph_id", "version", "work_model_ref", "decision_refs",
+    "observation_contract_ref", "budget_policy_ref",
+)
+_EXAMPLE_GRAPH = {
+    "entry_node_ids": ["intake"],
+    "nodes": [
+        {"node_id": "intake", "kind": "deterministic", "responsibility": "Normalize the source",
+         "input_slots": [],
+         "output_slots": [{"slot_id": "out", "artifact_contract_id": "text-document",
+                           "multiplicity": "one"}],
+         "grant_refs": [], "required_approval_scopes": [], "failure_policy": "block_dependants",
+         "config": {"handler_id": "artifact-normalizer-v1"}},
+        {"node_id": "writer", "kind": "agent", "responsibility": "Write the draft",
+         "input_slots": [{"slot_id": "source", "artifact_contract_id": "text-document",
+                          "required": True, "multiplicity": "one"}],
+         "output_slots": [{"slot_id": "draft", "artifact_contract_id": "text-document",
+                           "multiplicity": "one"}],
+         "grant_refs": [], "required_approval_scopes": [], "failure_policy": "block_dependants",
+         "config": {"model_binding_id": "writer-model", "required_model_capabilities": ["text"],
+                    "tool_binding_ids": [], "memory_policy_id": "work-memory"}},
+    ],
+    "edges": [
+        {"edge_id": "e1", "kind": "artifact", "source_node_id": "intake",
+         "target_node_id": "writer", "loop_id": None, "source_output_slot": "out",
+         "target_input_slot": "source", "artifact_contract_id": "text-document",
+         "mandatory": True, "multiplicity": "one"},
+    ],
+    "artifact_contracts": [
+        {"artifact_contract_id": "text-document", "media_types": ["text/markdown"],
+         "schema_ref": None, "min_items": 1, "max_items": 1, "max_total_bytes": 1048576},
+    ],
+    "model_bindings": [
+        {"binding_id": "writer-model", "model_choice_ref": "<one compilation_authority model "
+         "choice ref object, copied exactly>", "capabilities": ["text"]},
+    ],
+    "tool_bindings": [],
+    "memory_policies": [
+        {"policy_id": "work-memory", "purpose": "operational", "read_grant_refs": [],
+         "write_grant_refs": []},
+    ],
+    "grant_refs": [],
+    "fact_names": [],
+    "completion_criteria": [
+        {"criterion_id": "final-draft", "node_id": "writer", "output_slot": "draft",
+         "artifact_contract_id": "text-document", "min_items": 1},
+    ],
+}
 _OUTPUT_SCHEMA = (
     'Return exactly one JSON object of the form {"candidates": [{"graph": '
     "<functional-graph-object>}, ...]} with between one and the requested number of "
-    "candidates. Provide nothing except each candidate's graph: no identifiers, no "
-    "references, no commentary, no markdown."
+    "candidates, no commentary and no markdown. Each graph has exactly the fields of this "
+    "illustrative two-node graph (its topology is an example, not a template): "
+    + json.dumps(_EXAMPLE_GRAPH, ensure_ascii=False, separators=(",", ":"))
+    + " Grammar (exact field sets, no extra keys): node kind is one of agent, deterministic, "
+    "router, join, human_gate, bounded_loop; node failure_policy is one of fail_run, "
+    "block_dependants, continue_optional; slot and edge multiplicity is one or many. Node "
+    "config by kind: agent {model_binding_id, required_model_capabilities, tool_binding_ids, "
+    "memory_policy_id (a memory policy id or null)}; deterministic {handler_id}; router "
+    "{decision_fact (declared in fact_names), allowed_values}; join {mode: all_selected, "
+    "failure_handling} or {mode: any_success, failure_handling, tie_break: branch_id_lexical} "
+    "or {mode: collect, min_selected, max_selected, failure_handling}, with failure_handling "
+    "block or collect_failures; human_gate {approval_scopes (from the authority)}; "
+    "bounded_loop {loop_id, termination (an expression), hard_iteration_cap 1..100}. Edge "
+    "kinds, each with edge_id, kind, source_node_id, target_node_id, loop_id (null unless "
+    "inside a loop): artifact {source_output_slot, target_input_slot, artifact_contract_id, "
+    "mandatory, multiplicity}; control {condition (an expression or null)}; approval "
+    "{approval_scope}; observation {observation_name}. Expressions: {op: eq|neq, fact, value}, "
+    "{op: in, fact, values}, {op: exists, fact}, {op: not, arg}, {op: and|or, args}, over "
+    "declared fact_names. Bindings: model binding {binding_id, model_choice_ref, "
+    "capabilities}; tool binding {binding_id, tool_definition_ref (a tool definition's "
+    "definition_ref), grant_ref (that definition's required_grant_ref), capabilities}; memory "
+    "policy {policy_id, purpose, read_grant_refs, write_grant_refs}; artifact contract "
+    "{artifact_contract_id, media_types, schema_ref (null), min_items, max_items, "
+    "max_total_bytes}; completion criterion {criterion_id, node_id, output_slot, "
+    "artifact_contract_id, min_items}; capabilities are a subset of the authority's. "
+    "Structure: every edge except an observation edge triggers its target; a node with more "
+    "than one triggering predecessor must be a join, and a join needs at least two; entry "
+    "nodes have none; every node is reachable from an entry; each required input slot has "
+    "exactly one mandatory producing artifact edge, from an existing output slot under the "
+    "same artifact contract. Each binding, memory policy and graph grant is used; an agent's "
+    "grant_refs include the grants of its tool bindings and memory policy; graph grant_refs "
+    "are exactly the grants used. A node with required_approval_scopes receives exactly one "
+    "approval edge per scope, from a human_gate whose approval_scopes contain it, and approval "
+    "edges go nowhere else; a node bound to a tool listed in tool_approval_scopes requires that "
+    "scope. A router's triggering out-edges are control edges whose conditions are {op: eq, "
+    "fact: its decision_fact, value} covering allowed_values exactly once. Avoid cycles "
+    "unless revision needs one; then every edge of the cycle carries the loop's loop_id, the "
+    "cycle contains exactly one bounded_loop node with that loop_id, and its termination "
+    "controls the cycle's one exit. Omit "
+    + ", ".join(_FRAMEWORK_FIELDS)
+    + ": the framework sets them. Every candidate must realize every entry of "
+    "required_effects verbatim: the graph element named by target (a node, edge, binding "
+    "or contract with exactly that id) exists, and its field holds exactly expected_value, "
+    "character for character; never paraphrase it. Copy model choice, tool definition and grant references "
+    "only from the payload's compilation_authority, exactly; invent no reference, identity "
+    "or approval scope."
 )
+
+
+def _complete_graph(request: DesignGenerationRequest, graph: object) -> object:
+    """Fill the framework-owned top-level fields the model omitted. A value the model
+    did supply is kept and must pass the same strict admission as any other field."""
+
+    if type(graph) is not dict:
+        return graph
+    authority = request.compilation_authority
+    owned = {
+        "schema_version": GRAPH_SCHEMA_VERSION,
+        "graph_id": str(uuid4()),
+        "version": 1,
+        "work_model_ref": request.work_target.work_model_ref.as_dict(),
+        "decision_refs": [item.decision_ref.as_dict() for item in request.decisions],
+    }
+    for name, refs in (("observation_contract_ref", authority.observation_contract_refs),
+                       ("budget_policy_ref", authority.budget_policy_refs)):
+        if len(refs) == 1:
+            owned[name] = refs[0].as_dict()
+    return {**{name: value for name, value in owned.items() if name not in graph}, **graph}
 
 
 class DesignGenerationError(ValueError):
@@ -119,6 +236,21 @@ def render_candidate_prompt(request: DesignGenerationRequest) -> tuple[str, str]
         "design_decisions": [item.as_dict() for item in request.decisions],
         "design_disposition": request.design_disposition,
         "requested_candidate_count": request.requested_candidate_count,
+        # the lens effects every candidate must realize exactly, lifted out of the
+        # decisions so they cannot be missed; hash-only effects appear without a value
+        "required_effects": [
+            {key: value for key, value in effect.as_dict().items()
+             if key in ("effect_id", "target", "expected_value")}
+            for decision in request.decisions for effect in decision.proposed_effects
+        ],
+        "compilation_authority": request.compilation_authority.as_dict(),
+        # derived from the authority: the approval scope a node bound to each such tool
+        # must require (the compiler enforces it; the model cannot compute it)
+        "tool_approval_scopes": [
+            {"definition_ref": item.definition_ref.as_dict(), "approval_scope": item.approval_scope}
+            for item in request.compilation_authority.tool_definitions
+            if item.approval_scope is not None
+        ],
     }
     return system, canonical_json(payload).decode("utf-8")
 
@@ -195,7 +327,7 @@ def run_candidate_generation(
             "generation_request_ref": request.request_ref.as_dict(),
             "parent_candidate_refs": [],
             "generation_call_refs": [record.call_ref.as_dict()],
-            "graph": graph,
+            "graph": _complete_graph(request, graph),
         }
         for graph in graphs
     ]

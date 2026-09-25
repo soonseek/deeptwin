@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from uuid import NAMESPACE_URL, uuid5
 
-from ..domain.refs import DomainContractError, EntityRef
+from ..domain.refs import DomainContractError, EntityRef, canonical_json
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore, StorageError
 from .design_persistence import decode_design_refs, encode_design_refs
@@ -47,6 +47,8 @@ _PROMOTION_KIND = "growth_promotion_state"
 _PLAN_KIND = "growth_comparison_plan"
 _ROUND_KIND = "growth_comparison_round"
 _CANDIDATE_KIND = "growth_frozen_candidate"
+_OUTPUTS_KIND = "growth_round_outputs"
+MAX_SIDE_RESULT_BYTES = 8_192
 _UUID_RE = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z"
 )
@@ -412,6 +414,61 @@ def _reissue_round(domain_store, stored, result_ref):
     return plan, result
 
 
+def _outputs_record_id(round_record_id: str) -> str:
+    return str(uuid5(NAMESPACE_URL, f"deeptwin:growth-round-outputs:{round_record_id}"))
+
+
+def _side_results(run) -> list:
+    # each node's durable result as bounded canonical text: its refs point into the run's
+    # own isolated vault, which is discarded after the round, so they are kept as text
+    results = []
+    for node_id, content in run.results:
+        text = canonical_json(content).decode("utf-8")
+        data = text.encode("utf-8")
+        truncated = len(data) > MAX_SIDE_RESULT_BYTES
+        if truncated:
+            text = data[:MAX_SIDE_RESULT_BYTES].decode("utf-8", errors="ignore")
+        results.append({"node_id": node_id, "result_text": text, "truncated": truncated,
+                        "result_bytes": len(data)})
+    return results
+
+
+def persist_round_outputs(domain_store, round_record_ref: EntityRef, paired_round, **headers) -> EntityRef:
+    """Persist what each side of a recorded round produced, before its isolated vaults are
+    removed, so the two can be read side by side: per item, both sides' node results
+    (bounded; a longer one says so) and the nodes whose results differ, inside and outside
+    the declared change scope. The round record must be the one this execution recorded."""
+
+    from .comparisons import is_recorded_round
+
+    if not is_recorded_round(getattr(paired_round, "result", None)):
+        raise GrowthStoreError("a recorded paired round is required")
+    _plan, result = resume_comparison_round_record(domain_store, round_record_ref)
+    if result.as_dict() != paired_round.result.as_dict():
+        raise GrowthStoreError("the outputs belong to another round")
+    items = []
+    for index, ((left, right), changed, unexplained) in enumerate(zip(
+            paired_round.runs, paired_round.changed_nodes, paired_round.unexplained_nodes, strict=True)):
+        items.append({"item_index": index, "changed_nodes": list(changed), "unexplained_nodes": list(unexplained),
+                      "baseline": _side_results(left), "candidate": _side_results(right)})
+    return _once(domain_store, _outputs_record_id(round_record_ref.id), {
+        "growth_kind": _OUTPUTS_KIND, "round_record": round_record_ref.id,
+        "round_record_sha256": round_record_ref.sha256, "items": items}, **headers)
+
+
+def resume_round_outputs(domain_store, round_record_ref: EntityRef):
+    """The persisted side-by-side outputs of one round, or None when none were kept."""
+
+    stored = _existing(domain_store, _outputs_record_id(round_record_ref.id))
+    if stored is None:
+        return None
+    content = stored.body["content"]
+    if (content.get("growth_kind") != _OUTPUTS_KIND or content.get("round_record") != round_record_ref.id
+            or content.get("round_record_sha256") != round_record_ref.sha256):
+        raise GrowthStoreError("the stored round outputs belong to another round")
+    return content["items"]
+
+
 def persist_frozen_candidate(domain_store, candidate, **headers) -> EntityRef:
     from .validation import is_frozen_candidate
 
@@ -489,6 +546,8 @@ __all__ = [
     "resume_comparison_plan",
     "resume_comparison_round",
     "resume_comparison_round_record",
+    "persist_round_outputs",
+    "resume_round_outputs",
     "resume_dataset_ledger",
     "resume_frozen_candidate",
     "resume_loop",

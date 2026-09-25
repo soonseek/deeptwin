@@ -307,6 +307,18 @@ def preflight_api_v1(scope, body):
     from .claude_connection import preflight as claude_connection_preflight
     if is_claude_connection_path(path):
         claude_connection_preflight(scope, body)
+    from .graphs import is_graphs_path
+    from .graphs import preflight as graphs_preflight
+    if is_graphs_path(path):
+        graphs_preflight(scope, body)
+    from .hypotheses import is_hypotheses_path
+    from .hypotheses import preflight as hypotheses_preflight
+    if is_hypotheses_path(path):
+        hypotheses_preflight(scope, body)
+    from .work_models import is_work_models_path
+    from .work_models import preflight as work_models_preflight
+    if is_work_models_path(path):
+        work_models_preflight(scope, body)
     if path == '/api/v1/commands' and scope['method'] == 'POST':
         fields = ('schema_version', 'command_id', 'command_type', 'target', 'expected_revision', 'target_hash', 'args')
         value = parse_json_object(body, required=fields, limits=WireLimits(max_bytes=131072))

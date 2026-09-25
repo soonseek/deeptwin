@@ -155,6 +155,11 @@ def test_the_four_stage_chain_drives_and_folds_to_a_verdict():
     assert type(result.verdict) is CandidateVerdict
     assert result.verdict.status == "passed"
     assert len(result.call_records) == 4
+    # the lens's contribution is recorded with the exact counterexample it named
+    assert result.proposal_status == "proposed"
+    assert [(use["status"], use["counterexample_ids"]) for use in result.lens_use] == [
+        ("used", ("ce-unsupported-claim",)),
+    ]
     purposes = [record.purpose for record in result.call_records]
     assert purposes == [
         "review", "counterexample_proposal",
@@ -202,6 +207,9 @@ def test_an_abstaining_proposal_ends_with_two_calls():
     )
     assert len(result.call_records) == 2
     assert result.chains == ()
+    # abstention is recorded as such, never as a silent absence
+    assert result.proposal_status == "abstain"
+    assert [(use["status"], use["counterexample_ids"]) for use in result.lens_use] == [("abstain", ())]
     assert result.verdict.status == "passed"
 
 

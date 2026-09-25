@@ -13,8 +13,8 @@ authority, artifact, evidence and growth contracts that are independent of the b
 adapter. Deployment tooling (Docker, Compose, Portainer) and server-internal workers are not
 product surfaces; see [surface-boundaries.md](surface-boundaries.md).
 
-The repository has **no project license yet**, so it is not a legally open-source release
-([license-recommendation.md](license-recommendation.md)).
+The repository is licensed under the **Apache License 2.0** (`LICENSE`, `NOTICE`), approved by
+the owner on 2026-09-24 ([license-recommendation.md](license-recommendation.md)).
 
 ## 2. Repository map
 

@@ -26,6 +26,7 @@ from .growth_store import (
     GrowthStoreError,
     persist_promotion_state,
     resume_comparison_round_record,
+    resume_round_outputs,
     resume_loop,
     resume_promotion_state,
     resume_validation_report,
@@ -209,10 +210,18 @@ class PersistentVersions:
                 "validity": value["validity"], "validity_reasons": value["validity_reasons"],
                 "metric_vector": value["metric_vector"], "utility": value["utility"],
                 "evidence_refs": value["evidence_refs"],
+                # what each side produced, when the round kept it (its isolated runs are gone)
+                "outputs": self._round_outputs(ref),
             })
         found.sort(key=lambda item: (item.get("lineage_id", ""), item.get("round_index", -1),
                                      item["round_record"]["id"]))
         return found
+
+    def _round_outputs(self, ref):
+        try:
+            return resume_round_outputs(self._domain, ref)
+        except GrowthStoreError:
+            return "unreadable"
 
     @staticmethod
     def _state_view(state):
@@ -294,6 +303,12 @@ class PersistentVersions:
         approval = self._approvals.resolve(EntityRef.from_dict(payload["approval_ref"]))
         state, head_ref, scope, roots = self._head()
         if state is None or state.revision != payload["expected_revision"]:
+            raise VersionError("conflict")
+        if self._domain.get(head_ref).body["created_at_utc"] > approval.decided_at_utc:
+            # The operating version moved after the owner decided (G-13). Matching the
+            # expected environment is not enough: after an apply and a rollback the same
+            # environment is current again, but the owner decided over a state that no
+            # longer holds, so the approval is never revived — it is given again.
             raise VersionError("conflict")
         candidate_item = self._candidate_for(approval.validation_report.as_dict())
         candidate, report = resume_validation_report(

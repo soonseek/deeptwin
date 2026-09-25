@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Trace-grounded framework for diagnosing, validating, and governing expert-judgment knowledge."
 readme = "README.md"
 requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 # Single source of dependency truth. Every entry is an exact pin verified in
 # the development environment; app/requirements.txt is a generated projection
 # of this list and app/tests/test_dependency_manifest_parity.py fails on drift.

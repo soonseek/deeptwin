@@ -493,8 +493,9 @@ class PersistentAlternativeDrafts:
 
         return {
             "hypotheses": {"state": "not_generated", "families": sorted(HYPOTHESIS_FAMILIES),
-                           "reason": "경쟁 설명(시스템 결손·전문가 판단·예외·대안 오류·일반화 불가)을 만드는 "
-                                     "생성기가 이 서버에 연결되어 있지 않다. 어느 설명도 확인되지 않았다."},
+                           "reason": "경쟁 설명(시스템 결손·전문가 판단·예외·대안 오류·일반화 불가)은 소유자가 "
+                                     "요청할 때만 Claude 연결로 만든다. 아직 만들지 않았고, 어느 설명도 "
+                                     "확인되지 않았다."},
             "inquiry": {"state": "not_opened",
                         "reason": "확인된 판단 가설과 서로 갈리는 설명이 있을 때만 질문·반대 예측을 먼저 "
                                   "고정한다. 지금은 그 전제가 없어 질문하지 않는다."},
@@ -548,15 +549,15 @@ class PersistentAlternativeDrafts:
             record = self._domain._load(db, EntityRef("difference", difference_id, 1, row["sha256"]), roots)[0]
         return self._difference_view(record, alternative_id)
 
-    @_closed
-    def observe_difference(self, request, run_id, artifact_id, alternative_id, *, base_path) -> dict:
-        """Observe and seal what differs between the original and one frozen alternative."""
+    def _reissue_difference(self, run_id, artifact_id, alternative_id, *, base_path):
+        """Re-issue the accepted alternative from the store's own record and observe its
+        difference from the original afresh: (stored alternative, difference, original
+        bytes, alternative bytes, media type). Observation is deterministic, so the result
+        is the difference a sealed record was made from."""
 
         from .diagnosis import DiagnosisError, record_difference
         from .difference_observer import DifferenceObservationError, observe_differences
 
-        _authenticate_owner(self._owner, request)
-        run_id, artifact_id, alternative_id = _uuid(run_id), _uuid(artifact_id), _uuid(alternative_id)
         _run, items = self._artifacts._catalog(run_id, base_path=base_path)
         item = self._artifacts._find(items, artifact_id)
         original = self._artifacts._bytes(item)
@@ -597,6 +598,30 @@ class PersistentAlternativeDrafts:
                                            uncertainties=list(observed.uncertainties))
         except (DifferenceObservationError, DiagnosisError):
             raise DraftError("invalid_input") from None
+        return stored, difference, original, data, item["media_type"]
+
+    def issued_difference(self, difference_ref, *, base_path):
+        """The issued difference behind one sealed difference record, re-observed and checked
+        against it exactly, with both texts for a text format: (record, difference, original,
+        alternative, media type). Anything else is `conflict`/`not_found`, never a guess."""
+
+        record = self._domain.get(difference_ref)
+        stored = self._domain.get(EntityRef.from_dict(record.body["content"]["own_alternative_ref"]))
+        content = stored.body["content"]
+        _stored, difference, original, data, media_type = self._reissue_difference(
+            content["run_id"], content["original_artifact_id"], stored.body["id"], base_path=base_path)
+        if {**difference.as_dict(), "own_alternative_ref": stored.ref.as_dict()} != record.body["content"]:
+            raise DraftError("conflict")
+        return record, difference, original, data, media_type
+
+    @_closed
+    def observe_difference(self, request, run_id, artifact_id, alternative_id, *, base_path) -> dict:
+        """Observe and seal what differs between the original and one frozen alternative."""
+
+        _authenticate_owner(self._owner, request)
+        run_id, artifact_id, alternative_id = _uuid(run_id), _uuid(artifact_id), _uuid(alternative_id)
+        stored, difference, _original, _data, _media = self._reissue_difference(
+            run_id, artifact_id, alternative_id, base_path=base_path)
         difference_id = self._difference_id(alternative_id)
         with _writer(), self._domain._connection(write=True) as db:
             actor = _authenticate_owner(self._owner, request, db)

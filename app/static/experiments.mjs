@@ -16,7 +16,9 @@ export const MESSAGES = Object.freeze({
   unreadable: '이 라운드 기록을 정확히 다시 읽지 못했습니다. 비교 근거로 쓰지 않습니다.',
   noScore: '유효한 라운드가 아니므로 측정값과 효용을 표시하지 않습니다.',
   noMetrics: '측정값이 기록되지 않았습니다.',
-  artifacts: '짝지은 실행의 산출물은 여기에서 펼쳐 보이지 않습니다. 실행 참조로만 표시하며, 산출물을 나란히 읽었다고 간주하지 않습니다.',
+  artifacts: '각 라운드는 항목별로 기준과 후보가 만든 노드 결과를 나란히 보여 줍니다. 결과를 보존하지 않은 라운드는 그렇다고 밝힙니다.',
+  noOutputs: '이 라운드는 두 쪽의 산출물을 보존하지 않았습니다. 실행 참조만 있습니다.',
+  outputsUnreadable: '이 라운드의 보존된 산출물을 정확히 다시 읽지 못했습니다.',
 });
 
 const short = ref => (ref && typeof ref.id === 'string' && typeof ref.sha256 === 'string'
@@ -54,6 +56,37 @@ export function outcomeText(item) {
   return `${validity}${reasons} · ${metrics} · ${utility}`;
 }
 
+// what each side produced, per item, side by side: every node's result on both sides, the
+// nodes whose results differ marked, and those outside the declared change scope named
+export function outputsView(element, outputs) {
+  if (outputs === undefined || outputs === null) return [element('p', MESSAGES.noOutputs)];
+  if (!Array.isArray(outputs)) return [element('p', MESSAGES.outputsUnreadable)];
+  const parts = [];
+  for (const item of outputs) {
+    const changed = new Set(item.changed_nodes);
+    const outside = new Set(item.unexplained_nodes);
+    const table = element('table', undefined, { 'aria-label': `항목 ${item.item_index} 산출물 비교` });
+    const head = element('tr');
+    head.append(element('th', '노드', { scope: 'col' }), element('th', '기준 결과', { scope: 'col' }),
+      element('th', '후보 결과', { scope: 'col' }));
+    table.append(element('caption', `항목 ${item.item_index}: 달라진 노드 ${item.changed_nodes.length}개`
+      + (item.unexplained_nodes.length ? ` · 변경 범위 밖 ${item.unexplained_nodes.join(', ')}` : '')), head);
+    const byNode = side => new Map(side.map(entry => [entry.node_id, entry]));
+    const left = byNode(item.baseline);
+    const right = byNode(item.candidate);
+    for (const node of [...new Set([...left.keys(), ...right.keys()])].sort()) {
+      const text = entry => (entry ? `${entry.result_text}${entry.truncated ? ` … (${entry.result_bytes}바이트 중 일부)` : ''}` : '결과 없음');
+      const row = element('tr', undefined, { 'data-changed': changed.has(node) ? 'true' : 'false',
+        ...(outside.has(node) ? { 'data-outside-scope': 'true' } : {}) });
+      row.append(element('th', `${node}${changed.has(node) ? ' · 다름' : ''}`, { scope: 'row' }),
+        element('td', text(left.get(node))), element('td', text(right.get(node))));
+      table.append(row);
+    }
+    parts.push(table);
+  }
+  return parts;
+}
+
 export function renderRounds({ root, document, rounds }) {
   if (typeof root?.replaceChildren !== 'function') fail('a root is required');
   const element = (tag, text, attributes = {}) => {
@@ -81,7 +114,7 @@ export function renderRounds({ root, document, rounds }) {
         row.append(element('td', short(pair.baseline_run_ref)), element('td', short(pair.candidate_run_ref)));
         table.append(row);
       }
-      entry.append(table, element('p', outcomeText(item)));
+      entry.append(table, element('p', outcomeText(item)), ...outputsView(element, item.outputs));
       entry.append(element('p', item.evidence_refs.length
         ? `근거 ${item.evidence_refs.length}건: ${item.evidence_refs.map(short).join(', ')}` : '근거 참조 없음'));
       group.append(entry);

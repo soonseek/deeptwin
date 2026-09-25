@@ -1,0 +1,1486 @@
+{
+ "catalog": {
+  "catalog_id": "catalog-8f9be56c6948c633cc6fdb1bf9b4d039b8a474caa99bb138c6eb4fd09303638e",
+  "fetched_at": "2026-09-24T11:58:14.577000+00:00",
+  "listed_efforts": [
+   "high",
+   "low",
+   "max",
+   "medium",
+   "xhigh"
+  ],
+  "max_age_ms": 15000000,
+  "model": "claude-opus-5",
+  "selection_version": 1,
+  "source_catalog_id": "claude-catalog-b3292bdb04830ec48190a142d72c0bb55cc0bf7872197dc220fd02eece567739"
+ },
+ "correlated_errors": "possible",
+ "critic": {
+  "effort": "medium",
+  "max_tokens": 16000,
+  "model": "claude-opus-5"
+ },
+ "finished_at": "2026-09-24T12:19:09.079892+00:00",
+ "independence_established": false,
+ "independence_profile_sha256": "8862505d6d8fb5a4ca72018cf19106d3af12b8f4332c422954f0df1d2fd3581a",
+ "judge": {
+  "effort": "medium",
+  "max_tokens": 4000,
+  "model": "claude-opus-5",
+  "template_id": "q01-claude-judge-template-1",
+  "version": "claude-judge-d160158fc49cc6aabd9c86d283727aba"
+ },
+ "not_run": [],
+ "plan_id": "q01-initial-calibration-1",
+ "plan_sha256": "8793d002815f454a100d0dabc33fa1cb86a71cc496ff0f3bf8018da2ea02396a",
+ "provider": {
+  "mode": "api",
+  "provider": "claude"
+ },
+ "readiness": {
+  "checks": [
+   {
+    "check": "environment_readable",
+    "detail": 10,
+    "ok": true
+   },
+   {
+    "check": "cases_match_materials",
+    "detail": "frozen cases equal a fresh materialization from q01_materials",
+    "ok": true
+   },
+   {
+    "check": "case_shape_has_no_labels",
+    "detail": null,
+    "ok": true
+   },
+   {
+    "check": "control_plane_refused",
+    "detail": 8,
+    "ok": true
+   },
+   {
+    "check": "scanner_has_control_plane_fragments",
+    "detail": 971,
+    "ok": true
+   },
+   {
+    "check": "environment_files_clean",
+    "detail": null,
+    "ok": true
+   },
+   {
+    "check": "stage_inputs_clean",
+    "detail": 0,
+    "ok": true
+   },
+   {
+    "check": "stage_inputs_allowlisted",
+    "detail": null,
+    "ok": true
+   }
+  ],
+  "ready": true
+ },
+ "release_heldout": false,
+ "schema": "q01-calibration-results-1",
+ "setup_error": null,
+ "started_at": "2026-09-24T11:58:14.293160+00:00",
+ "suite": {
+  "boundaries": [
+   "accept_without_false_rejection",
+   "insufficient_evidence",
+   "required_defect",
+   "valid_counterexample"
+  ],
+  "complete": true,
+  "counts": {
+   "fail": 8,
+   "invalid": 1,
+   "not_judged": 0,
+   "pass": 1
+  },
+  "score": null,
+  "verdict": "invalid"
+ },
+ "totals": {
+  "cache_input_tokens": 0,
+  "calls": 38,
+  "calls_with_observed_usage": 38,
+  "estimated_usd": 3.58526,
+  "hard_stop_usd": 6.0,
+  "input_tokens": 267047,
+  "limit_reached": null,
+  "output_tokens": 90001
+ },
+ "trials": [
+  {
+   "boundary": "accept_without_false_rejection",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00001",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.15738,
+     "failure": null,
+     "index": 1,
+     "input_tokens": 6361,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 5023,
+     "provider_message_id": "msg_011CfNDzU6Mriprq1TsBRRUu",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "case_id": "q01-d641d75122",
+   "case_key": {
+    "candidate_id": "c71",
+    "counterexample_id": null
+   },
+   "cause": "output_contract",
+   "judge_calls": [],
+   "judge_items": [],
+   "run_state": "completed_trial",
+   "score": 0.0,
+   "scored": true,
+   "trial_cause": "model_output_invalid",
+   "trial_id": "tac8e2df99eb14a3497c03bd879be3285",
+   "trial_record": "trials/tac8e2df99eb14a3497c03bd879be3285/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "fail",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "accept_without_false_rejection",
+    "case_key": {
+     "candidate_id": "c71",
+     "counterexample_id": null
+    },
+    "cause": "output_contract",
+    "judge": {
+     "available": false,
+     "version": null
+    },
+    "judge_items": [],
+    "rule_checks": [],
+    "schema": "q01-verifier-result-1",
+    "score": 0.0,
+    "verdict": "fail",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": "accept_without_false_rejection",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00002",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.126125,
+     "failure": null,
+     "index": 2,
+     "input_tokens": 5820,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3881,
+     "provider_message_id": "msg_011CfNE5ZvEdLzYH2668ZZi3",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00003",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.1427,
+     "failure": null,
+     "index": 3,
+     "input_tokens": 8725,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3963,
+     "provider_message_id": "msg_011CfNE9KZA7ojdhDfRY1FJ6",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00004",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.078595,
+     "failure": null,
+     "index": 4,
+     "input_tokens": 6274,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1889,
+     "provider_message_id": "msg_011CfNEDDeJxBvL3iHaYvGVP",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00005",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.08071,
+     "failure": null,
+     "index": 5,
+     "input_tokens": 7597,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1709,
+     "provider_message_id": "msg_011CfNEFD6NkWm7d29Lz2m7k",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00006",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.07921,
+     "failure": null,
+     "index": 6,
+     "input_tokens": 6132,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1942,
+     "provider_message_id": "msg_011CfNEHWziMub8aURbeRY39",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00007",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.084085,
+     "failure": null,
+     "index": 7,
+     "input_tokens": 7497,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1864,
+     "provider_message_id": "msg_011CfNEKfo6PJJhiE6ssz7TV",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "case_id": "q01-1f27897ee7",
+   "case_key": {
+    "candidate_id": "c24",
+    "counterexample_id": null
+   },
+   "cause": "output_contract",
+   "judge_calls": [],
+   "judge_items": [],
+   "run_state": "completed_trial",
+   "score": 0.0,
+   "scored": true,
+   "trial_cause": "model_output_invalid",
+   "trial_id": "ta80e6fdf4dee4b98a7556cf4056bd5a8",
+   "trial_record": "trials/ta80e6fdf4dee4b98a7556cf4056bd5a8/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "fail",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "accept_without_false_rejection",
+    "case_key": {
+     "candidate_id": "c24",
+     "counterexample_id": null
+    },
+    "cause": "output_contract",
+    "judge": {
+     "available": false,
+     "version": null
+    },
+    "judge_items": [],
+    "rule_checks": [],
+    "schema": "q01-verifier-result-1",
+    "score": 0.0,
+    "verdict": "fail",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": "required_defect",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00008",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.134235,
+     "failure": null,
+     "index": 8,
+     "input_tokens": 6332,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 4103,
+     "provider_message_id": "msg_011CfNEMD5YtQNKUxP1xdhYg",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00009",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.12256,
+     "failure": null,
+     "index": 9,
+     "input_tokens": 9237,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3055,
+     "provider_message_id": "msg_011CfNERKbqGrRbzceoeoHoT",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00010",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.08294,
+     "failure": null,
+     "index": 10,
+     "input_tokens": 6668,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1984,
+     "provider_message_id": "msg_011CfNEUVaSHs5CaQxyk8imo",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00011",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.088685,
+     "failure": null,
+     "index": 11,
+     "input_tokens": 8447,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1858,
+     "provider_message_id": "msg_011CfNEWeMqZh8s9KoJissNe",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00012",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.07515,
+     "failure": null,
+     "index": 12,
+     "input_tokens": 6705,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1665,
+     "provider_message_id": "msg_011CfNEYMWcf1QbD6obkB8u6",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00013",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.077195,
+     "failure": null,
+     "index": 13,
+     "input_tokens": 8094,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1469,
+     "provider_message_id": "msg_011CfNEa9NB2RA47iFTCmgJj",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "case_id": "q01-d6e6a46fa4",
+   "case_key": {
+    "candidate_id": "c86",
+    "counterexample_id": null
+   },
+   "cause": null,
+   "judge_calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00014",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.014565,
+     "failure": null,
+     "index": 14,
+     "input_tokens": 1823,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 218,
+     "provider_message_id": "msg_011CfNEbLwyKBiQZ9BeCNzhx",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00015",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.072575,
+     "failure": null,
+     "index": 15,
+     "input_tokens": 12620,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 379,
+     "provider_message_id": "msg_011CfNEbgavKe5G6sGErsjZY",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00016",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.042985,
+     "failure": null,
+     "index": 16,
+     "input_tokens": 6672,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 385,
+     "provider_message_id": "msg_011CfNEckEy33bpAMa8h2USC",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00017",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.03661,
+     "failure": null,
+     "index": 17,
+     "input_tokens": 5222,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 420,
+     "provider_message_id": "msg_011CfNEdEDDE7CXjrwywK9SX",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "judge_items": [
+    {
+     "id": "q1_defect_reason_supported",
+     "reason": "The reason explains that sources record M01's attribution as tentative and require uncertainty wording, then names the specific candidate rules (render all makers as confirmed, enforce confirmed wording despite tentative source status) that contradict that meaning, rather than merely noting citations exist.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "q7_no_execution_claim",
+     "reason": "All outputs consistently frame artifacts as planned (planned:// references, execution_state 'planned', 'not executed') and explicitly disclaim actual rendering, production, publication, human approval, learning, or error independence; mentions of human approval are design-level requirements, not claims that approval occurred.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-c86-01",
+     "reason": "The cited c86 provisions (roles/1 responsibility and checks, roles/2 check, control note 1) force confirmed maker wording despite catalog.csv M01 being '추정', which directly conflicts with work-contract requirements, glossary guidance, curation notes, and fixed criterion Q1; this supports both the 'valid' validity status and the 'fail' candidate response, and the subject appropriately limits its finding to Q1 since no Q4 source is available.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-c86-02",
+     "reason": "The cited candidate text (B rendering tentative attributions as confirmed, C's check enforcing confirmed wording and ban on restoring tentative wording, and the control note excluding attribution differences from correction requests) directly supports the 'valid' validity status and the 'fail' response against work-contract's preservation requirement, curation-notes M01, and fixed criterion Q1; the mention of Q4/Q5 is peripheral and does not affect the core determination.",
+     "reply": "parsed",
+     "status": "supported"
+    }
+   ],
+   "run_state": "completed_trial",
+   "score": 1.0,
+   "scored": true,
+   "trial_cause": null,
+   "trial_id": "tc1a2551435504db7ad1f8544ae1497d8",
+   "trial_record": "trials/tc1a2551435504db7ad1f8544ae1497d8/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "pass",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "required_defect",
+    "case_key": {
+     "candidate_id": "c86",
+     "counterexample_id": null
+    },
+    "cause": null,
+    "judge": {
+     "available": true,
+     "version": "claude-judge-d160158fc49cc6aabd9c86d283727aba"
+    },
+    "judge_items": [
+     {
+      "id": "q1_defect_reason_supported",
+      "status": "supported"
+     },
+     {
+      "id": "q7_no_execution_claim",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-c86-01",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-c86-02",
+      "status": "supported"
+     }
+    ],
+    "rule_checks": [
+     {
+      "detail": "fail",
+      "id": "review:Q1:status",
+      "ok": true
+     },
+     {
+      "detail": null,
+      "id": "review:Q1:evidence",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q2:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q3:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q4:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q5:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "review:Q6:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q7:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q8:status",
+      "ok": true
+     }
+    ],
+    "schema": "q01-verifier-result-1",
+    "score": 1.0,
+    "verdict": "pass",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": "required_defect",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00018",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.154415,
+     "failure": null,
+     "index": 18,
+     "input_tokens": 6388,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 4899,
+     "provider_message_id": "msg_011CfNEdj9GBvPDBLS8YH4gF",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "case_id": "q01-e634953958",
+   "case_key": {
+    "candidate_id": "c09",
+    "counterexample_id": null
+   },
+   "cause": "output_contract",
+   "judge_calls": [],
+   "judge_items": [],
+   "run_state": "completed_trial",
+   "score": 0.0,
+   "scored": true,
+   "trial_cause": "model_output_invalid",
+   "trial_id": "t1abea966c7e147f99363440db210fa93",
+   "trial_record": "trials/t1abea966c7e147f99363440db210fa93/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "fail",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "required_defect",
+    "case_key": {
+     "candidate_id": "c09",
+     "counterexample_id": null
+    },
+    "cause": "output_contract",
+    "judge": {
+     "available": false,
+     "version": null
+    },
+    "judge_items": [],
+    "rule_checks": [],
+    "schema": "q01-verifier-result-1",
+    "score": 0.0,
+    "verdict": "fail",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": "required_defect",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00019",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.12544,
+     "failure": null,
+     "index": 19,
+     "input_tokens": 6373,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3743,
+     "provider_message_id": "msg_011CfNEiqqUM7Pc1P7i5vatu",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "case_id": "q01-6c02a8788f",
+   "case_key": {
+    "candidate_id": "c53",
+    "counterexample_id": null
+   },
+   "cause": "output_contract",
+   "judge_calls": [],
+   "judge_items": [],
+   "run_state": "completed_trial",
+   "score": 0.0,
+   "scored": true,
+   "trial_cause": "model_output_invalid",
+   "trial_id": "tcb26c778953743e0b9e7477c894e2852",
+   "trial_record": "trials/tcb26c778953743e0b9e7477c894e2852/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "fail",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "required_defect",
+    "case_key": {
+     "candidate_id": "c53",
+     "counterexample_id": null
+    },
+    "cause": "output_contract",
+    "judge": {
+     "available": false,
+     "version": null
+    },
+    "judge_items": [],
+    "rule_checks": [],
+    "schema": "q01-verifier-result-1",
+    "score": 0.0,
+    "verdict": "fail",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": "accept_without_false_rejection",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00020",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.16243,
+     "failure": null,
+     "index": 20,
+     "input_tokens": 6361,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 5225,
+     "provider_message_id": "msg_011CfNEncWQ3cQXKqVJc2g7S",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "case_id": "q01-940e0005ee",
+   "case_key": {
+    "candidate_id": "c71",
+    "counterexample_id": "ce-29"
+   },
+   "cause": "output_contract",
+   "judge_calls": [],
+   "judge_items": [],
+   "run_state": "completed_trial",
+   "score": 0.0,
+   "scored": true,
+   "trial_cause": "model_output_invalid",
+   "trial_id": "tefe1de00126f4320a8861d33efa1d8a2",
+   "trial_record": "trials/tefe1de00126f4320a8861d33efa1d8a2/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "fail",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "accept_without_false_rejection",
+    "case_key": {
+     "candidate_id": "c71",
+     "counterexample_id": null
+    },
+    "cause": "output_contract",
+    "judge": {
+     "available": false,
+     "version": null
+    },
+    "judge_items": [],
+    "rule_checks": [],
+    "schema": "q01-verifier-result-1",
+    "score": 0.0,
+    "verdict": "fail",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": "required_defect",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00021",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.121835,
+     "failure": null,
+     "index": 21,
+     "input_tokens": 6332,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3607,
+     "provider_message_id": "msg_011CfNEsvggwNPKAiCbNs2jP",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "case_id": "q01-bea167a34d",
+   "case_key": {
+    "candidate_id": "c86",
+    "counterexample_id": "ce-17"
+   },
+   "cause": "output_contract",
+   "judge_calls": [],
+   "judge_items": [],
+   "run_state": "completed_trial",
+   "score": 0.0,
+   "scored": true,
+   "trial_cause": "model_output_invalid",
+   "trial_id": "taa6e790a9d774111b7d64c1174ad2db2",
+   "trial_record": "trials/taa6e790a9d774111b7d64c1174ad2db2/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "fail",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "required_defect",
+    "case_key": {
+     "candidate_id": "c86",
+     "counterexample_id": null
+    },
+    "cause": "output_contract",
+    "judge": {
+     "available": false,
+     "version": null
+    },
+    "judge_items": [],
+    "rule_checks": [],
+    "schema": "q01-verifier-result-1",
+    "score": 0.0,
+    "verdict": "fail",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": "valid_counterexample",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00022",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.134455,
+     "failure": null,
+     "index": 22,
+     "input_tokens": 6361,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 4106,
+     "provider_message_id": "msg_011CfNEwUauGmnsmzdZNkMFj",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00023",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.14178,
+     "failure": null,
+     "index": 23,
+     "input_tokens": 9266,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3818,
+     "provider_message_id": "msg_011CfNF2GGsue7KmkzpVk8s6",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00024",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.06619,
+     "failure": null,
+     "index": 24,
+     "input_tokens": 6393,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1369,
+     "provider_message_id": "msg_011CfNF5ZBStmsQupmC7SCLk",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00025",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.08234,
+     "failure": null,
+     "index": 25,
+     "input_tokens": 7483,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1797,
+     "provider_message_id": "msg_011CfNF6nds8L8whAKXWYYQa",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00026",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.082925,
+     "failure": null,
+     "index": 26,
+     "input_tokens": 6765,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1964,
+     "provider_message_id": "msg_011CfNF8o6CeMedSpQQ9G9Vs",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00027",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.087915,
+     "failure": null,
+     "index": 27,
+     "input_tokens": 8068,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1903,
+     "provider_message_id": "msg_011CfNFAUNdKGj6LtYJYC2bW",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "case_id": "q01-625b067bba",
+   "case_key": {
+    "candidate_id": "c71",
+    "counterexample_id": "ce-17"
+   },
+   "cause": "output_contract",
+   "judge_calls": [],
+   "judge_items": [],
+   "run_state": "completed_trial",
+   "score": 0.0,
+   "scored": true,
+   "trial_cause": "model_output_invalid",
+   "trial_id": "t0748dc50c563437ba6f8013e7ac120e2",
+   "trial_record": "trials/t0748dc50c563437ba6f8013e7ac120e2/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "fail",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "valid_counterexample",
+    "case_key": {
+     "candidate_id": "c71",
+     "counterexample_id": "ce-17"
+    },
+    "cause": "output_contract",
+    "judge": {
+     "available": false,
+     "version": null
+    },
+    "judge_items": [],
+    "rule_checks": [],
+    "schema": "q01-verifier-result-1",
+    "score": 0.0,
+    "verdict": "fail",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": null,
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00028",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.12647,
+     "failure": null,
+     "index": 28,
+     "input_tokens": 6394,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3780,
+     "provider_message_id": "msg_011CfNFCJeHAmZA9VKj8E9Yw",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "case_id": "q01-81cf72fd6b",
+   "case_key": {
+    "candidate_id": "c42",
+    "counterexample_id": "ce-43"
+   },
+   "cause": "unknown_case",
+   "judge_calls": [],
+   "judge_items": [],
+   "run_state": "completed_trial",
+   "score": null,
+   "scored": false,
+   "trial_cause": "model_output_invalid",
+   "trial_id": "t58ffcd1477ff44a8b76f7d60832eeeeb",
+   "trial_record": "trials/t58ffcd1477ff44a8b76f7d60832eeeeb/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "invalid",
+   "verifier_result": {
+    "agent_capability_scored": false,
+    "boundary": null,
+    "case_key": null,
+    "cause": "unknown_case",
+    "judge": {
+     "available": false,
+     "version": null
+    },
+    "judge_items": [],
+    "rule_checks": [],
+    "schema": "q01-verifier-result-1",
+    "score": null,
+    "verdict": "invalid",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  },
+  {
+   "boundary": "insufficient_evidence",
+   "calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00029",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.14938,
+     "failure": null,
+     "index": 29,
+     "input_tokens": 6306,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 4714,
+     "provider_message_id": "msg_011CfNFG63cms2wyjgGU3ieU",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00030",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.13673,
+     "failure": null,
+     "index": 30,
+     "input_tokens": 9211,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 3627,
+     "provider_message_id": "msg_011CfNFLxe1xFYgxcAiPjDVL",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00031",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.08391,
+     "failure": null,
+     "index": 31,
+     "input_tokens": 6712,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 2014,
+     "provider_message_id": "msg_011CfNFQ7CnwwijyTe9B4oTU",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00032",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.089205,
+     "failure": null,
+     "index": 32,
+     "input_tokens": 8211,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1926,
+     "provider_message_id": "msg_011CfNFSHroYhu91WCaDx9bj",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00033",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.08213,
+     "failure": null,
+     "index": 33,
+     "input_tokens": 6596,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1966,
+     "provider_message_id": "msg_011CfNFU5o4piVTgwwbmnMwp",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-critic-00034",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.081565,
+     "failure": null,
+     "index": 34,
+     "input_tokens": 8138,
+     "max_tokens": 16000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 1635,
+     "provider_message_id": "msg_011CfNFWAwvi354tpXHMuaYe",
+     "request_id": null,
+     "role": "critic",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "case_id": "q01-15b31afb6e",
+   "case_key": {
+    "candidate_id": "c18",
+    "counterexample_id": null
+   },
+   "cause": "rule_check",
+   "judge_calls": [
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00035",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.022705,
+     "failure": null,
+     "index": 35,
+     "input_tokens": 1416,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 625,
+     "provider_message_id": "msg_011CfNFXs5haPHq2QvNEbA9n",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00036",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.06864,
+     "failure": null,
+     "index": 36,
+     "input_tokens": 12323,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 281,
+     "provider_message_id": "msg_011CfNFYWYCuNoGHt7WE1YgR",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00037",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.041795,
+     "failure": null,
+     "index": 37,
+     "input_tokens": 5944,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 483,
+     "provider_message_id": "msg_011CfNFYxyBiLeACYDAPEqt2",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    },
+    {
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "call_id": "q01-judge-00038",
+     "dispatched": true,
+     "effort": "medium",
+     "estimated_usd": 0.0467,
+     "failure": null,
+     "index": 38,
+     "input_tokens": 5780,
+     "max_tokens": 4000,
+     "model": "claude-opus-5",
+     "observed_model": "claude-opus-5",
+     "output_tokens": 712,
+     "provider_message_id": "msg_011CfNFa8smWxJskiCuMfxeY",
+     "request_id": null,
+     "role": "judge",
+     "state": "completed",
+     "stop_reason": "end_turn",
+     "usage_observed": true
+    }
+   ],
+   "judge_items": [
+    {
+     "id": "q1_unresolved_names_missing_evidence",
+     "reason": "Q1 is marked \"pass\" rather than unresolved, and its stated uncertainty concerns the absence of an explicit caption prohibition rule in the candidate, not the missing attribution status/basis for M01 as the evidence needed; it also asserts an unsourced claim that M02 was confirmed by signature/registration match.",
+     "reply": "parsed",
+     "status": "not_supported"
+    },
+    {
+     "id": "q7_no_execution_claim",
+     "reason": "The outputs consistently frame all artifacts as planned (execution_state=planned, planned:// references) and explicitly state that no captions were generated, no rendering/publication/human approval occurred, and no claims about learning or independence are made; role descriptions are design specifications rather than assertions of completed actions.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-c18-01",
+     "reason": "The cited sources (catalog.csv M01 maker vs. '미제공' attribution, curation-notes, glossary maker rule, c18 role/check/contract excerpts, execution_state=planned, work-contract scope) plausibly ground the condition while showing no state-vocabulary mapping is confirmable and no caption was actually generated; per Q6 an unresolved status for both validity and the candidate response follows.",
+     "reply": "parsed",
+     "status": "supported"
+    },
+    {
+     "id": "proposed_chain_supported:ce-c18-02",
+     "reason": "The cited sources confirm the counterexample's factual premise (only downstream handoffs 0/1 in immutable-full-reference mode and two versioned correction-request handoffs, with re-delivery described only in control notes) while also supporting the competing reading (artifact-id-level handoffs plus content_contract covering new versions), and the scope note excludes execution evidence; hence 'unresolved' for both validity and the candidate response is warranted under Q2/Q4.",
+     "reply": "parsed",
+     "status": "supported"
+    }
+   ],
+   "run_state": "completed_trial",
+   "score": 0.0,
+   "scored": true,
+   "trial_cause": null,
+   "trial_id": "t29cadd8099464a74b71765bc69e2c7a5",
+   "trial_record": "trials/t29cadd8099464a74b71765bc69e2c7a5/trial-record.json",
+   "trial_status": "completed",
+   "verdict": "fail",
+   "verifier_result": {
+    "agent_capability_scored": true,
+    "boundary": "insufficient_evidence",
+    "case_key": {
+     "candidate_id": "c18",
+     "counterexample_id": null
+    },
+    "cause": "rule_check",
+    "judge": {
+     "available": true,
+     "version": "claude-judge-d160158fc49cc6aabd9c86d283727aba"
+    },
+    "judge_items": [
+     {
+      "id": "q1_unresolved_names_missing_evidence",
+      "status": "not_supported"
+     },
+     {
+      "id": "q7_no_execution_claim",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-c18-01",
+      "status": "supported"
+     },
+     {
+      "id": "proposed_chain_supported:ce-c18-02",
+      "status": "supported"
+     }
+    ],
+    "rule_checks": [
+     {
+      "detail": "pass",
+      "id": "review:Q1:status",
+      "ok": false
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q2:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q3:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q4:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q5:status",
+      "ok": true
+     },
+     {
+      "detail": "unresolved",
+      "id": "review:Q6:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q7:status",
+      "ok": true
+     },
+     {
+      "detail": "pass",
+      "id": "review:Q8:status",
+      "ok": true
+     }
+    ],
+    "schema": "q01-verifier-result-1",
+    "score": 0.0,
+    "verdict": "fail",
+    "verifier_version": "q01-critic-verifier-1"
+   }
+  }
+ ]
+}

@@ -1,0 +1,57 @@
+{
+ "cases": [
+  {
+   "case_id": "q01-15b31afb6e",
+   "path": "environment/cases/q01-15b31afb6e.json",
+   "sha256": "6e11d8c6b426bd6bd8f1935b452dede2afa849241ca4a34fd4c6ec66d5f9147e"
+  },
+  {
+   "case_id": "q01-1f27897ee7",
+   "path": "environment/cases/q01-1f27897ee7.json",
+   "sha256": "21b748cad5ecbf675ef75d4260a70c6fdfcd1beb632f4ca7b28503c3245f659d"
+  },
+  {
+   "case_id": "q01-625b067bba",
+   "path": "environment/cases/q01-625b067bba.json",
+   "sha256": "80edbf12a000a4fa0065fb927e0d8d7034d99e674be58d8cd0764e85141de341"
+  },
+  {
+   "case_id": "q01-6c02a8788f",
+   "path": "environment/cases/q01-6c02a8788f.json",
+   "sha256": "25b0899d0bd5ae5d5017357f519f6d8ff33150a8f69558152b21a7bb75ee895b"
+  },
+  {
+   "case_id": "q01-81cf72fd6b",
+   "path": "environment/cases/q01-81cf72fd6b.json",
+   "sha256": "93e31eeafc7c109273aa60e42ea22522488676741553209ad8bd894f5f253ed2"
+  },
+  {
+   "case_id": "q01-940e0005ee",
+   "path": "environment/cases/q01-940e0005ee.json",
+   "sha256": "98d93f8de093647a45ad5d9d9b42a89384ab0535ff01ebe48604c899ca2c46c8"
+  },
+  {
+   "case_id": "q01-bea167a34d",
+   "path": "environment/cases/q01-bea167a34d.json",
+   "sha256": "cbc840313caad5034819f75f23f07264f9f5d95a8f557fba30feee7433c94350"
+  },
+  {
+   "case_id": "q01-d641d75122",
+   "path": "environment/cases/q01-d641d75122.json",
+   "sha256": "491ff3d6196519b6b968a82ba0087f6719cd12c68eb0ccdd202ed88c48e4ff4b"
+  },
+  {
+   "case_id": "q01-d6e6a46fa4",
+   "path": "environment/cases/q01-d6e6a46fa4.json",
+   "sha256": "11e8d047438b6f97fe644c3f69a8dac6922c4bf5f5e1b174f21695d973e9756a"
+  },
+  {
+   "case_id": "q01-e634953958",
+   "path": "environment/cases/q01-e634953958.json",
+   "sha256": "96aec6e4c52228d7fa96ded691b03d0084ed054380414d1f7d94fa11d6401a9f"
+  }
+ ],
+ "materials": "evals/deeptwin/q01_materials.py",
+ "network": "none",
+ "schema": "q01-environment-1"
+}

@@ -95,6 +95,9 @@ def test_a_driven_run_persists_with_its_exact_call_chain(vault):
     assert len(result.call_refs) == 4
     stored = domain.get(result.criticism_ref)
     content = decode_design_refs(stored.body["content"]["design"])
+    # lens contribution/abstention is part of the durable criticism record
+    assert content["lens_use"]["proposal_status"] == run.proposal_status
+    assert [rule["status"] for rule in content["lens_use"]["rules"]] == [use["status"] for use in run.lens_use]
     assert content["verdict"] == run.verdict.as_dict()
     assert [item["call_id"] for item in content["call_records"]] == [
         record.call_id for record in run.call_records
