@@ -259,6 +259,85 @@ export function backupConsent(summary, ack) {
   };
 }
 
+// T073: what this instance keeps and the owner's explicit cleanup. The lists mirror
+// app/services/retention_cleanup.py (drift test: app/tests/test_records_contract_mirror.py).
+export const RETENTION_CATEGORIES = Object.freeze([
+  'backups', 'core_records', 'deletion_tombstones', 'originals', 'raw_audio', 'regenerable_caches',
+  'staged_restores',
+]);
+
+export const RETENTION_KEPT = Object.freeze([
+  'forever', 'not_stored', 'until_owner_cleanup', 'until_owner_deletes',
+]);
+
+export const RETENTION_OWNER_CLEANUP = Object.freeze([
+  'not_offered', 'nothing_stored', 'this_screen', 'work_screen',
+]);
+
+export const CLEANUP_REASONS = Object.freeze(['policy_cleanup', 'user_requested']);
+
+const CLEANUP_ITEM = /^(?:backup|restore):[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+export function retentionState(value) {
+  if (typeof value !== 'object' || value === null || value.policy?.core_mode !== 'manual_only'
+      || value.policy?.automatic_deletion !== 'none' || !Array.isArray(value.categories)
+      || !Array.isArray(value.items)) {
+    fail('the retention state is malformed');
+  }
+  const categories = value.categories.map(entry => {
+    if (!RETENTION_CATEGORIES.includes(entry?.category) || !RETENTION_KEPT.includes(entry.kept)
+        || !RETENTION_OWNER_CLEANUP.includes(entry.owner_cleanup) || entry.automatic_deletion !== 'never') {
+      fail('a retention category is outside the closed set');
+    }
+    return { ...entry };
+  });
+  const core = categories.find(entry => entry.category === 'core_records');
+  if (!core || core.owner_cleanup !== 'not_offered' || core.kept !== 'forever') {
+    fail('core records are kept and never offered for cleanup');
+  }
+  const items = value.items.map(item => {
+    if (typeof item?.item_id !== 'string' || !CLEANUP_ITEM.test(item.item_id)
+        || typeof item.eligible !== 'boolean' || !Number.isInteger(item.bytes) || item.bytes < 0) {
+      fail('a cleanup item is malformed');
+    }
+    return { ...item };
+  });
+  return { policy: { ...value.policy }, categories, items,
+    cleanups: Array.isArray(value.cleanups) ? value.cleanups.map(entry => ({ ...entry })) : [] };
+}
+
+export function cleanupPreviewSummary(view) {
+  if (typeof view !== 'object' || view === null || typeof view.preview_sha256 !== 'string'
+      || !SHA256.test(view.preview_sha256) || typeof view.request_id !== 'string' || !UUID.test(view.request_id)
+      || !CLEANUP_REASONS.includes(view.reason_code) || !Array.isArray(view.items) || view.items.length < 1
+      || view.items.some(item => typeof item?.item_id !== 'string' || !CLEANUP_ITEM.test(item.item_id))
+      || !Number.isInteger(view.byte_count)) {
+    fail('a full cleanup preview is required before consent');
+  }
+  return {
+    requestId: view.request_id, previewSha: view.preview_sha256, reasonCode: view.reason_code,
+    itemIds: view.items.map(item => item.item_id), items: view.items.map(item => ({ ...item })),
+    byteCount: view.byte_count, notReached: Array.isArray(view.not_reached) ? [...view.not_reached] : [],
+    neverDeleted: Array.isArray(view.never_deleted) ? [...view.never_deleted] : [],
+  };
+}
+
+export function cleanupConsent(summary, ack) {
+  if (typeof summary !== 'object' || summary === null || typeof summary.previewSha !== 'string') {
+    fail('consent requires the shown cleanup preview');
+  }
+  if (typeof ack !== 'object' || ack === null || ack.confirmed !== true) {
+    fail('consent is never implicit');
+  }
+  if (ack.previewSha !== summary.previewSha) {
+    fail('consent must bind the exact previewed scope');
+  }
+  return {
+    schema_version: 'retention-cleanup-v1', request_id: summary.requestId, item_ids: [...summary.itemIds],
+    reason_code: summary.reasonCode, preview_sha256: summary.previewSha, confirmed: true,
+  };
+}
+
 export function restoreReview(view) {
   const review = view?.review;
   if (view?.state !== 'restored_review' || typeof review !== 'object' || review === null

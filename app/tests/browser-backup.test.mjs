@@ -8,58 +8,19 @@
 // preview, creates the backup, downloads the encrypted bundle and its external receipt,
 // then restores them through the restore screen and sees the staged `restored_review`
 // state with the new-owner bootstrap and explicit environment reactivation shown as
-// required. The owner is a scripted test actor: synthetic evidence of the mechanism,
+// required. A second case restores a `portable_recovery` backup made elsewhere with the
+// identity the owner kept, typed once into a masked input (never stored or echoed). The
+// fixture start-up lives in helpers/backup-fixture.mjs. The owner is a scripted test actor: synthetic evidence of the mechanism,
 // never user evidence. Needs Linux and root for the fixture's identities; otherwise the
 // fixture reports why and this case is skipped with that reason.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { spawn } from 'node:child_process';
-import { closeOwnedFixture, waitForOwnedChildOutput } from './helpers/owned-fixture-lifecycle.mjs';
+import { readFile } from 'node:fs/promises';
+import { CAPABILITY, PASSWORD, base, bytesOf, openBackup, unavailable } from './helpers/backup-fixture.mjs';
 
-const root = fileURLToPath(new URL('../../', import.meta.url));
-const base = `/${'2'.repeat(32)}/`;
-const READY = /BACKUP_WORKER_NETWORKLESS=(true|false)\n(?:[^\n]*\n)*?BACKUP_URL=(http:\/\/[0-9a-f]{32}\.localhost:\d+\/[0-9a-f]{32}\/)/;
-const PASSWORD = 'synthetic owner passphrase';
-const CAPABILITY = Buffer.alloc(32, 'T').toString('base64url');
 const CANARY = 'CANARY-백업-원문-5e1d';
-const unavailable = process.platform !== 'linux' || process.getuid?.() !== 0 || !process.env.DEEPTWIN_AGE_RUNTIME_ROOT
-  ? 'the real backup worker fixture needs Linux, root and DEEPTWIN_AGE_RUNTIME_ROOT' : false;
-
-async function openBackup(t) {
-  assert.ok(process.env.CONTROL_PYTHON && process.env.CONTROL_PLAYWRIGHT_MODULE, 'Controlled installed runtimes required; never skip');
-  const dir = await mkdtemp(join(tmpdir(), 'deeptwin-backup-'));
-  let server, browser;
-  t.after(() => closeOwnedFixture({ browser, server, removeTemp: () => rm(dir, { recursive: true, force: true }) },
-    { serverGraceMs: 8000, serverForceMs: 3000, label: 'Backup fixture' }));
-  server = spawn(process.env.CONTROL_PYTHON, ['-B', 'app/tests/fixtures/backup_server.py', '--owned-dir', dir],
-    { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, LANGSMITH_TRACING: 'false', LANGCHAIN_TRACING_V2: 'false' } });
-  const announced = await waitForOwnedChildOutput(server, { pattern: READY, timeoutMs: 60000, label: 'Backup fixture' });
-  const [, networkless, url] = READY.exec(announced);
-  const { chromium } = await import(pathToFileURL(process.env.CONTROL_PLAYWRIGHT_MODULE).href);
-  browser = await chromium.launch({ channel: 'chrome', headless: true });
-  const context = await browser.newContext({ viewport: { width: 1200, height: 1400 }, acceptDownloads: true });
-  const page = await context.newPage();
-  page.setDefaultTimeout(20000);
-  const errors = [];
-  page.on('pageerror', error => errors.push(error.message));
-  await page.goto(url);
-  const bootstrapped = await page.evaluate(async ({ base, capability, password }) => (await fetch(base + 'session/bootstrap', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ login_name: 'owner', password, raw_capability_b64u: capability }),
-  })).status, { base, capability: CAPABILITY, password: PASSWORD });
-  assert.equal(bootstrapped, 201);
-  return { page, url, errors, networkless: networkless === 'true' };
-}
-
-async function bytesOf(page, href) {
-  return Buffer.from(await page.evaluate(async target => [...new Uint8Array(await (await fetch(target)).arrayBuffer())], href));
-}
 
 test('backup: actual preview, bound consent, encrypted bundle + receipt, restore staged for review',
   { timeout: 180000, skip: unavailable }, async t => {
@@ -137,5 +98,73 @@ test('backup: actual preview, bound consent, encrypted bundle + receipt, restore
     await panel.locator('#restore-bundle').setInputFiles({ name: 'backup.age', mimeType: 'application/octet-stream', buffer: tampered });
     await panel.getByRole('button', { name: '스테이징 영역에 복원' }).click();
     await panel.getByText('복원하지 못했습니다. 스테이징 영역에 아무것도 남기지 않았습니다.').waitFor();
+    assert.deepEqual(errors, []);
+  });
+
+// Portable recovery through the browser: a `portable_recovery` backup made elsewhere (the
+// fixture's separate synthetic vault) is restored here with the identity the owner kept.
+// The identity is typed into a masked input that is cleared at once, reaches the worker
+// once through the portable route, and is found nowhere afterwards: not in the DOM, not
+// in localStorage/sessionStorage, not in any response the page saw. Without it, nothing
+// is asked of the server; a wrong one stages nothing.
+test('portable recovery: the kept identity restores once into staged review and is stored nowhere',
+  { timeout: 180000, skip: unavailable }, async t => {
+    const { page, url, errors, portableDir } = await openBackup(t);
+    const identity = (await readFile(`${portableDir}/identity.txt`, 'utf8')).trim();
+    const receiptBytes = await readFile(`${portableDir}/receipt.json`);
+    const bundle = await readFile(`${portableDir}/bundle.age`);
+    assert.equal(JSON.parse(receiptBytes).key_mode, 'portable_recovery');
+    const seen = [];
+    page.on('response', async response => {
+      try { seen.push(await response.text()); } catch { /* a download body is not text */ }
+    });
+    await page.goto(url + 'records.html');
+    const panel = page.locator('#records-backup');
+    await panel.locator('.backup-worker[data-state="ready"]').waitFor();
+    const input = panel.locator('#restore-recovery-identity');
+    assert.equal(await input.getAttribute('type'), 'password');
+    const pick = async () => {
+      await panel.locator('#restore-receipt').setInputFiles({ name: 'portable.receipt.json', mimeType: 'application/json', buffer: receiptBytes });
+      await panel.locator('#restore-bundle').setInputFiles({ name: 'portable.age', mimeType: 'application/octet-stream', buffer: bundle });
+    };
+    // without the kept identity nothing is sent
+    await pick();
+    await panel.getByRole('button', { name: '스테이징 영역에 복원' }).click();
+    await panel.getByText('이 백업은 휴대용 복구 백업입니다.', { exact: false }).waitFor();
+    const before = await page.evaluate(async base => (await (await fetch(base + 'api/v1/backups')).json()).restores.length, base);
+    assert.equal(before, 0);
+    // a wrong identity (a valid-looking native identity of nobody): the worker cannot decrypt
+    const wrong = `AGE-SECRET-KEY-1${'Q'.repeat(58)}`;
+    await pick();
+    await input.fill(wrong);
+    await panel.getByRole('button', { name: '스테이징 영역에 복원' }).click();
+    await panel.getByText(/복원하지 못했습니다|요청 형식이 맞지 않습니다/).first().waitFor();
+    assert.equal(await input.inputValue(), '');
+    // the kept identity: staged for review, blocked, the active instance unchanged
+    await pick();
+    await input.fill(identity);
+    await panel.getByRole('button', { name: '스테이징 영역에 복원' }).click();
+    const review = panel.locator('.restore-review[data-state="restored_review"]');
+    await review.waitFor();
+    assert.equal(await input.inputValue(), '', 'the masked input is cleared once read');
+    assert.match(await review.textContent(), /검토 대기\(restored_review\) 상태이고 실행은 막혀 있습니다/);
+    const steps = await review.locator('[data-required="true"][data-step]').evaluateAll(nodes => nodes.map(node => node.dataset.step));
+    assert.deepEqual(steps, ['new_owner_bootstrap', 'recreate_connections_and_service_clients', 'review_and_activate_exact_environment']);
+    assert.match(await panel.textContent(), /따로 보관한 복구 키로 복호화해 스테이징 영역에 만들었습니다/);
+    assert.match(await panel.textContent(), /활성 인스턴스는 바뀌지 않았습니다/);
+    const receipt = JSON.parse(receiptBytes);
+    assert.match(await review.textContent(), new RegExp(receipt.backup_id));
+    // the identity is nowhere the page can reach
+    const html = await page.content();
+    assert.ok(!html.includes(identity) && !html.includes('AGE-SECRET-KEY'), 'not in the DOM');
+    const stored = await page.evaluate(() => JSON.stringify([{ ...localStorage }, { ...sessionStorage }]));
+    assert.ok(!stored.includes('AGE-SECRET-KEY'), 'not in browser storage');
+    const state = await page.evaluate(async base => (await fetch(base + 'api/v1/backups')).text(), base);
+    for (const text of [...seen, state]) assert.ok(!text.includes(identity), 'no response carries the identity');
+    const views = JSON.parse(state).restores;
+    assert.ok(views.some(view => view.state === 'restored_review' && view.key_mode === 'portable_recovery'));
+    // the active instance keeps serving the same owner
+    assert.equal(await page.evaluate(async base => (await fetch(base + 'session')).status, base), 200);
+    for (const secret of [PASSWORD, CAPABILITY]) assert.ok(!state.includes(secret));
     assert.deepEqual(errors, []);
   });

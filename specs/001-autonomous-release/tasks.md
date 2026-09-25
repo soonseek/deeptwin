@@ -779,7 +779,7 @@ preview, missing evidence and no network send; backup/restore without original d
   lock/epoch request, lifecycle CAS and unique receipt consumption to the same migration/recovery
   transaction; test cancel-vs-receipt, replay/restart, missing component handshake and backup gate.
   No runtime pip/npm, browser-uploaded recovery receipt or silent new-data loss (FR-030).
-- [ ] T073 [US7] Implement anywhere-accessible log/export/backup/retention GUI with actual included-content preview and consent in app/static/records.mjs and app/static/settings.mjs; no mandatory final export step (UX-AC08).
+- [x] T073 [US7] Implement anywhere-accessible log/export/backup/retention GUI with actual included-content preview and consent in app/static/records.mjs and app/static/settings.mjs; no mandatory final export step (UX-AC08).
   2026-09-23 slice: work export end to end — actual-content preview (stores nothing, digest over
   exact bytes), explicit consent bound to that digest, stale-preview refusal, sealed consent/
   manifest/bundle records and receipt, owner download; work-page panel `work-export.mjs`. Logs/
@@ -803,6 +803,25 @@ preview, missing evidence and no network send; backup/restore without original d
   the `backups-v1` contribution. Tests: real browser, route and node unit tests —
   evidence/us7.md. Remaining: retention/settings screens, portable-recovery input, and deleting
   other records.
+  2026-09-25 retention/settings/portable (done):
+  - Retention screen. The records page shows, from the server's own state
+    (`GET /api/v1/retention`, the new `retention-v1` contribution), what each category keeps,
+    for how long, that nothing is deleted automatically, and what is never offered and why.
+    Core records, tombstones and originals are never offered here (originals are deleted on
+    the work screen), and the newest backup is always kept.
+  - Owner cleanup of older backups and staged, failed or stale restores. The server computes
+    the preview, consent is bound to its digest and recomputed under the backup lock, the
+    tombstone is written first, then the `retention.deleted` event, then the bytes are
+    removed. The cleanup receipt is kept.
+  - Settings hub (`settings.html`/`settings.mjs`), linked from every page header. It lists
+    the log, export, backup, retention, account, connection and credentials entries. None is
+    required, and there is no final export step.
+  - Portable-recovery restore on the restore screen. A masked one-shot identity is sent once
+    with the bundle to `…/portable-bundle`, and it is never stored or echoed.
+  - 98 installed routes. Tests: service/API, node unit and real-browser (retention
+    preview→consent→cleanup, settings navigation, portable staged review) — evidence/us7.md.
+  - Not in T073's text and not done: deleting core records other than originals (the store is
+    append-only), cache cleanup (no cache is stored), and portable backup creation on screen.
 - [ ] T074 [US7] Run setup/source/candidate/lens/failed-run/alternative/round/approval export, secret canaries, PDF redaction and interrupted restore cases in app/tests/browser-records.test.mjs and specs/001-autonomous-release/evidence/us7.md (SC-009).
   2026-09-23 partial: work export (actual preview, bound consent, raw only by choice, secret
   canaries absent, stale preview refused) and the records page in real Chromium; fixed the log

@@ -219,3 +219,64 @@ test('a failed restore is stated and stages nothing', async () => {
   await button(root, '스테이징 영역에 복원').dispatch('click');
   assert.ok(root.textContent.includes(MESSAGES.pickFiles));
 });
+
+const IDENTITY = `AGE-SECRET-KEY-1${'QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L'.repeat(2).slice(0, 58)}`;
+const PORTABLE = { ...RECEIPT, key_mode: 'portable_recovery', recoverable_after_host_or_volume_loss: true };
+
+function attributesAndText(root) {
+  const all = [root, ...find(root, () => true)];
+  return all.map(el => `${el._text} ${[...el.attributes.values()].join(' ')} ${JSON.stringify(el.dataset)}`).join('\n');
+}
+
+test('a portable restore takes the kept identity once: masked, cleared, framed, zeroed, never shown', async () => {
+  const { root, asked, uploads, panel: backup } = panel([{ restore_id: RESTORE_ID, state: 'awaiting_bundle' },
+    { ...reviewView(), key_mode: 'portable_recovery' }]);
+  await backup.load();
+  const input = byId(root, 'restore-recovery-identity');
+  assert.equal(input.getAttribute('type'), 'password');
+  assert.equal(input.getAttribute('autocomplete'), 'off');
+  byId(root, 'restore-receipt').files = [{ text: async () => JSON.stringify(PORTABLE) }];
+  byId(root, 'restore-bundle').files = [{ arrayBuffer: async () => new Uint8Array([7, 8]).buffer }];
+  // without the identity nothing is asked of the server
+  input.value = '';
+  await button(root, '스테이징 영역에 복원').dispatch('click');
+  assert.equal(asked.length, 1);
+  assert.match(root.textContent, /휴대용 복구 백업입니다/);
+  input.value = `  ${IDENTITY}  `;
+  const sent = [];
+  const original = uploads.push.bind(uploads);
+  uploads.push = entry => { sent.push(new Uint8Array(entry[1])); return original(entry); };
+  await button(root, '스테이징 영역에 복원').dispatch('click');
+  assert.equal(input.value, '');  // cleared as soon as it was read
+  assert.equal(uploads[0][0], `${BASE}api/v1/backups/restores/${RESTORE_ID}/portable-bundle`);
+  const framed = new TextDecoder().decode(sent[0]);
+  assert.equal(framed, `${IDENTITY}\n\u0007\u0008`);  // the identity line, then the bundle bytes
+  assert.ok(uploads[0][1].every(byte => byte === 0), 'the sent buffer is zeroed afterwards');
+  assert.ok(!attributesAndText(root).includes('AGE-SECRET-KEY'), 'the identity never reaches the DOM');
+  assert.match(root.textContent, new RegExp(MESSAGES.portableStaged));
+  assert.equal(find(root, el => el.getAttribute('data-step')).length, 3);
+});
+
+test('an instance-key restore never sends a typed identity; a removed backup offers only its receipt', async () => {
+  const { root, uploads, panel: backup } = panel([{ restore_id: RESTORE_ID, state: 'awaiting_bundle' }, reviewView()]);
+  await backup.load();
+  byId(root, 'restore-recovery-identity').value = IDENTITY;
+  byId(root, 'restore-receipt').files = [{ text: async () => JSON.stringify(RECEIPT) }];
+  byId(root, 'restore-bundle').files = [{ arrayBuffer: async () => new Uint8Array([1]).buffer }];
+  await button(root, '스테이징 영역에 복원').dispatch('click');
+  assert.equal(uploads[0][0], `${BASE}api/v1/backups/restores/${RESTORE_ID}/bundle`);
+  assert.deepEqual([...uploads[0][1]], [1]);
+  assert.equal(byId(root, 'restore-recovery-identity').value, '');
+  assert.match(root.textContent, new RegExp(MESSAGES.identityNotUsed));
+
+  const listed = new FakeElement('section');
+  const deleted = createBackupPanel({ root: listed, document: { createElement: tag => new FakeElement(tag) },
+    basePath: BASE, upload: async () => ({}), crypto: { randomUUID: () => REQUEST_ID },
+    request: async () => ({ worker: 'ready', restores: [], backups: [
+      { backup_id: BACKUP_ID, completed_at: 't', ciphertext_size: 10, ciphertext_sha256: 'c'.repeat(64),
+        ciphertext_state: 'deleted' }] }) });
+  await deleted.load();
+  const links = find(listed, el => el.tagName === 'A').map(el => el.getAttribute('href'));
+  assert.deepEqual(links, [`${BASE}api/v1/backups/${BACKUP_ID}/receipt`]);
+  assert.match(listed.textContent, new RegExp(MESSAGES.deleted));
+});

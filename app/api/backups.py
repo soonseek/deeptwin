@@ -8,6 +8,10 @@ contribution (T073; app/services/backups.py).
 - `GET …/{backup_id}/ciphertext|receipt`: the encrypted bundle and its external receipt.
 - `POST …/restores`: begin a staged restore from an external receipt.
 - `POST …/restores/{restore_id}/bundle`: the encrypted bundle as `application/octet-stream`.
+- `POST …/restores/{restore_id}/portable-bundle`: a `portable_recovery` restore — the
+  owner's separately kept age identity as the first line (LF-terminated), then the
+  encrypted bundle, as one `application/octet-stream` body. The identity is used once
+  by the worker and wiped; it is never stored, echoed or logged.
 - `GET …/restores/{restore_id}`: the staged `restored_review` state.
 
 The shared `/api/v1` preflight admits every body exactly before auth (`preflight`).
@@ -25,7 +29,12 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
-from ..services.backups import MAX_BUNDLE_BYTES, BackupService, BackupServiceError
+from ..services.backups import (
+    MAX_BUNDLE_BYTES,
+    MAX_IDENTITY_LINE,
+    BackupService,
+    BackupServiceError,
+)
 from .wire import WireInputError, WireLimits, parse_json_object, parse_query
 
 PATH = "/api/v1/backups"
@@ -35,7 +44,7 @@ STATUS = {"invalid_input": 400, "unauthenticated": 401, "access_denied": 403, "n
 _UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 _BUNDLE = re.compile(rf"/api/v1/backups/({_UUID})/(ciphertext|receipt)\Z")
 _RESTORE = re.compile(rf"/api/v1/backups/restores/({_UUID})\Z")
-_UPLOAD = re.compile(rf"/api/v1/backups/restores/({_UUID})/bundle\Z")
+_UPLOAD = re.compile(rf"/api/v1/backups/restores/({_UUID})/(bundle|portable-bundle)\Z")
 BODIES = {
     "preview": (("schema_version", "request_id"), {"schema_version": str, "request_id": str},
                 WireLimits(max_bytes=256, max_depth=2, max_items=4, max_members=4, max_string_bytes=64)),
@@ -51,7 +60,7 @@ SCHEMAS = {"preview": "backup-preview-request-v1", "create": "backup-create-v1",
 
 __all__ = ["MAX_UPLOAD_BYTES", "backup_services", "create_router", "is_backup_path", "is_bundle_upload",
            "preflight"]
-MAX_UPLOAD_BYTES = MAX_BUNDLE_BYTES
+MAX_UPLOAD_BYTES = MAX_BUNDLE_BYTES + MAX_IDENTITY_LINE
 
 
 def is_backup_path(path: str) -> bool:
@@ -190,6 +199,11 @@ def create_router(*, service):
     @router.post(PATH + "/restores/{restore_id}/bundle")
     async def restore_upload(request: Request, restore_id: str):
         return await call(service.restore_upload, request.state.authenticated_request, restore_id,
+                          await request.body())
+
+    @router.post(PATH + "/restores/{restore_id}/portable-bundle")
+    async def restore_upload_portable(request: Request, restore_id: str):
+        return await call(service.restore_upload_portable, request.state.authenticated_request, restore_id,
                           await request.body())
 
     return router

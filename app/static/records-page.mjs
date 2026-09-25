@@ -9,11 +9,15 @@
 // automatically. With a session, the backup section is the server's own state and
 // commands (records-backup.mjs): create through the isolated backup-crypto worker with
 // an actual-content preview and bound consent, downloads of the encrypted bundle and
-// its external receipt, and a restore staged as `restored_review`.
+// its external receipt, and a restore staged as `restored_review` (instance key, or a
+// portable backup with the owner's one-shot recovery identity). The retention section
+// is the server's own per-category state and the owner's cleanup with an actual
+// preview and bound consent (records-retention.mjs).
 // All server text reaches the DOM through textContent only.
 
 import { createAccountPanel, createCredentialsPanel } from './account.mjs';
 import { createBackupPanel } from './records-backup.mjs';
+import { createRetentionPanel } from './records-retention.mjs';
 import { createClaudeConnection } from './claude-connection.mjs';
 import { recordsRoutes } from './records.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
@@ -42,7 +46,7 @@ export const MESSAGES = Object.freeze({
   backupState: '이 서버에는 백업 워커가 아직 연결되어 있지 않습니다. 그래서 이 화면에서 백업을 만들거나 복원하지 않으며, 백업이 있다고 표시하지도 않습니다.',
   backupHow: '백업은 배포 관리자가 격리된 백업 워커와 별도 backup-key 볼륨을 연결해야 만들 수 있습니다. 같은 배포용 키로 만든 백업은 그 볼륨을 잃으면 복구할 수 없고, 다른 곳에서 복원하려면 따로 보관한 복구 키가 필요합니다.',
   retentionState: '자동 삭제는 없습니다. 기록과 원본은 명시적으로 지우기 전까지 보존됩니다.',
-  retentionHow: '저장한 원본은 작업 화면의 "원본 삭제"에서 미리보기와 동의를 거쳐 지울 수 있습니다. 지운 자리에는 삭제 표시(tombstone)가 남고, 이전 백업과 이미 보낸 사본에는 닿지 않습니다. 원본 외의 기록을 지우는 화면은 아직 없습니다.',
+  retentionHow: '저장한 원본은 작업 화면의 "원본 삭제"에서 미리보기와 동의를 거쳐 지울 수 있습니다. 지운 자리에는 삭제 표시(tombstone)가 남고, 이전 백업과 이미 보낸 사본에는 닿지 않습니다. 오래된 백업과 스테이징된 복원본은 로그인한 뒤 이 화면에서 미리보기와 동의를 거쳐 정리할 수 있습니다. 핵심 기록은 지우지 않습니다.',
 });
 
 function fail(message) {
@@ -159,9 +163,14 @@ export async function boot({ document, location, fetch, crypto = globalThis.cryp
   const backup = createBackupPanel({ root: roots.backup, document, basePath, request: session.request,
     upload: session.uploadBackupBundle, crypto });
   await backup.load().catch(() => {});
+  // a cleanup changes what the backup section lists: it re-reads the server's state
+  const retention = createRetentionPanel({ root: roots.retention, document, basePath, request: session.request, crypto,
+    onCleaned: () => backup.load() });
+  await retention.load().catch(() => {});
   const log = createEventLog({ root: roots.logs, document, request: session.request, basePath });
   await log.load().catch(() => {});
-  return Object.freeze({ established: true, basePath, sections, log, account, connection, credentials, backup });
+  return Object.freeze({ established: true, basePath, sections, log, account, connection, credentials, backup,
+    retention });
 }
 
 if (typeof globalThis.document === 'object' && globalThis.document !== null
