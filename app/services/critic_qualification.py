@@ -2,26 +2,51 @@
 
 A criticism verdict says what one critic configuration concluded about one
 design; it never says whether that configuration may be trusted. Trust comes
-only from a suite record of the frozen release-v3 design
-(evals/deeptwin/qualification/release-v3/suite_record.schema.json): its pass is
-a *scoped pass* for one exact critic configuration digest, and it becomes a
-qualification only when judge separation was established AND V3 error
-independence is verified. Calibration runs, a failed, incomplete or not_judged
-suite, a suite without established judge separation, a scoped pass while V3 is
-unverified, and the absence of any record are all NOT qualified: none of them
-lets a passed verdict be approved. The state is an issued value, never constructed.
+only from a suite record of a frozen release design
+(evals/deeptwin/qualification/release-v4/suite_record.schema.json): its pass is
+a *scoped pass* for one exact critic configuration digest. It could become a
+qualification only under a design that is able to verify V3 error independence
+(a generation path and an owner-set tolerance), and no such design exists:
+``V3_VERIFYING_DESIGN_IDS`` is empty, so no production record reaches
+``qualified`` (audit 3, BF1). A record's V3 field is never trusted on its own:
+a design that cannot verify V3 is capped at ``scoped_pass`` whatever the record
+says, and ``record_sha256`` is recomputed and a mismatch refused.
+
+Calibration runs, a failed, incomplete or not_judged suite, a suite without
+established judge separation, a scoped pass, and the absence of any record are
+all NOT qualified: none of them lets a passed verdict be approved. The state is
+an issued value, never constructed.
+
+Open (audit 3): criticism verdicts do not yet carry the critic configuration
+digest that produced them, so design approval cannot bind the qualification's
+configuration digest to the verdict's critic; that binding is required before
+any design that can verify V3 is admitted.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
+from hashlib import sha256
 
 CRITIC_QUALIFICATION_SCHEMA_VERSION = "critic-qualification-v1"
-SUITE_RECORD_SCHEMA_VERSION = "q01-release-suite-verdict-v2"
-# Only frozen release designs can qualify; calibration designs never do.
-# release-v2 was audited as unable to pass (audit 2, B3), so only v3 counts.
-RELEASE_DESIGN_IDS = frozenset({"q01-release-v3"})
+SUITE_RECORD_SCHEMA_VERSION = "q01-release-suite-verdict-v3"
+# Only frozen release designs count; calibration designs never do. release-v2
+# could not pass (audit 2, B3) and release-v3 trusted forged records (audit 3),
+# so only release-v4 suite records are read.
+RELEASE_DESIGN_IDS = frozenset({"q01-release-v4"})
+# Designs able to verify V3 error independence. None exists: release-v4 (like
+# v3) has no generation path, so it can never verify V3 and a pass under it is
+# at most a scoped pass. Keep this empty until a frozen design with a
+# generation path, an owner-set tolerance and verdict-to-configuration binding
+# is audited.
+V3_VERIFYING_DESIGN_IDS = frozenset()
+# TEST-ACTOR HOOK. Never set by production code. Tests replace it (see
+# app/tests/test_environments.py ``actor_v3_design``) with a test-only
+# design id that no frozen design uses, so the approval path can be exercised
+# without any production record ever yielding ``qualified``.
+_TEST_ACTOR_V3_DESIGN_IDS: frozenset = frozenset()
 STATUSES = frozenset({"qualified", "scoped_pass", "unqualified", "unknown"})
 SUITE_OUTCOMES = frozenset({"pass", "fail", "incomplete", "not_judged"})
 _SUITE_KEYS = frozenset({
@@ -80,6 +105,21 @@ def _issue(configuration_digest, status, reason, design_id=None, record_sha256=N
     return value
 
 
+def suite_record_sha256(record: dict) -> str:
+    """sha256 of the canonical JSON of ``record`` without its ``record_sha256`` key.
+
+    Canonical JSON: sorted keys, separators (",", ":"), ensure_ascii False,
+    allow_nan False, UTF-8 (the same encoding the release verifier uses).
+    """
+    body = {key: value for key, value in record.items() if key != "record_sha256"}
+    try:
+        data = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+                          allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError):
+        raise CriticQualificationError("the suite record is not canonical JSON") from None
+    return sha256(data).hexdigest()
+
+
 def unknown_critic_qualification(configuration_digest) -> CriticQualification:
     """No suite record exists for this configuration: never qualified."""
 
@@ -95,6 +135,10 @@ def critic_qualification_from_suite(record, configuration_digest) -> CriticQuali
     if record["schema_version"] != SUITE_RECORD_SCHEMA_VERSION:
         raise CriticQualificationError("unknown suite verdict record schema")
     record_sha = _hex(record["record_sha256"], "record sha256")
+    if suite_record_sha256(record) != record_sha:
+        # A record whose content does not hash to its own record_sha256 was
+        # edited or fabricated after it was built (audit 3, BF1).
+        raise CriticQualificationError("record sha256 does not match the record")
     for name in ("sealed_set_sha256", "pre_dispatch_manifest_sha256", "independence_profile_sha256"):
         _hex(record[name], name.replace("_", " "))
     attempt, prior = record["attempt"], record["prior_outcomes"]
@@ -117,15 +161,18 @@ def critic_qualification_from_suite(record, configuration_digest) -> CriticQuali
         raise CriticQualificationError("judge separation must be a boolean")
     if record["v3_error_independence"] not in {"unverified", "verified"}:
         raise CriticQualificationError("unknown V3 status")
-    if design_id not in RELEASE_DESIGN_IDS:
+    v3_capable = V3_VERIFYING_DESIGN_IDS | _TEST_ACTOR_V3_DESIGN_IDS
+    if design_id not in RELEASE_DESIGN_IDS | v3_capable:
         return _issue(configuration_digest, "unqualified", "not_a_frozen_release_design", design_id, record_sha)
     if outcome != "pass":
         return _issue(configuration_digest, "unqualified", f"suite_{outcome}", design_id, record_sha)
     if not record["judge_separation_established"]:
         return _issue(configuration_digest, "unqualified", "judge_separation_not_established", design_id, record_sha)
+    if design_id not in v3_capable:
+        # The design has no generation path, so it cannot verify V3: whatever
+        # the record's V3 field says, a pass is at most a scoped pass.
+        return _issue(configuration_digest, "scoped_pass", "design_cannot_verify_v3", design_id, record_sha)
     if record["v3_error_independence"] != "verified":
-        # release-v3 acceptance.what_a_pass_confers: a scoped pass, never a
-        # qualification, while V3 is unverified.
         return _issue(configuration_digest, "scoped_pass", "v3_error_independence_unverified", design_id, record_sha)
     return _issue(configuration_digest, "qualified", "release_suite_passed_v3_verified", design_id, record_sha)
 
@@ -142,9 +189,11 @@ __all__ = [
     "RELEASE_DESIGN_IDS",
     "SUITE_OUTCOMES",
     "SUITE_RECORD_SCHEMA_VERSION",
+    "V3_VERIFYING_DESIGN_IDS",
     "CriticQualification",
     "CriticQualificationError",
     "critic_qualification_from_suite",
     "is_issued_critic_qualification",
+    "suite_record_sha256",
     "unknown_critic_qualification",
 ]

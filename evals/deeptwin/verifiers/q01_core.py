@@ -108,7 +108,12 @@ class JudgeItem:
 
 
 class SemanticJudge(Protocol):
-    """Explicit semantic judgement boundary. No live implementation exists here."""
+    """Explicit semantic judgement boundary. No live implementation exists here.
+
+    A release verifier also reads ``identity`` and ``prompt_digest`` (when present) and
+    binds them to the pre-dispatch manifest's ``run_identity.judge_identity`` and
+    ``judge_prompt_digest``.
+    """
 
     version: str
 
@@ -224,7 +229,9 @@ class _Trial:
         return {"manifest": manifest, "purpose": purpose, "visible": visible, "parsed": parsed,
                 "contract": details["output_contract"], "request_id": call["request_id"],
                 "system": system, "user": call["prompt"],
-                "reserved": lineage_events[0] if lineage_events else None}
+                "reserved": lineage_events[0] if lineage_events else None,
+                "ledger_digest": durable["digest"], "ledger_state": durable["state"],
+                "ledger_event_seqs": [event["seq"] for event in durable["events"]]}
 
 
 def _check_journal_coverage(trial, record, path):

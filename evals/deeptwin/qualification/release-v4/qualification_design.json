@@ -1,0 +1,192 @@
+{
+ "schema": "q01-release-qualification-design-4",
+ "design_id": "q01-release-v4",
+ "frozen_on": "2026-09-25",
+ "supersedes": {
+  "design": "../release-v3/qualification_design.json",
+  "reason": "independent audit 3 of release-v3 (evidence/release-designs-t076-2026-09-25.md): BF1 a pass could become qualified from a forged V3 or record hash; BF2 acceptance could be met by degenerate, reused or cherry-picked results not bound to the manifest; BF3 the lens pack was treated as dataset material. release-v1, v2 and v3 are kept unchanged."
+ },
+ "purpose": "The release qualification design for the Q01-family critic configuration: a scoped acceptance rule for one exact critic configuration on one sealed set, frozen before any heldout material exists. A pass is a scoped pass and never a qualification: this design has no generation path and cannot verify V3 error independence.",
+ "execution_state": "kept outside this pinned file in a run record whose pre-dispatch part is frozen by sha256 before the first dispatch (see pre_dispatch)",
+ "critic_configuration": {
+  "fields": [
+   "provider",
+   "mode",
+   "model",
+   "effort",
+   "max_tokens",
+   "critic_prompt_digest",
+   "contract_version",
+   "parser_version",
+   "max_proposed_chains",
+   "call_and_run_deadlines",
+   "lens_refs_and_digests"
+  ],
+  "digest": "critic_configuration_digest = sha256 of the canonical JSON (sorted keys, separators (',', ':'), ensure_ascii False, allow_nan False, UTF-8) of exactly these fields; a scoped pass is bound to this digest, and the product computes the same digest for a deployed critic",
+  "call_and_run_deadlines": "an object with both call_seconds and run_seconds (required)",
+  "critic_prompt_digest": "sha256 of the canonical JSON {instruction.md, app/services/design_criticism_live.py, app/generation_profiles.py: file sha256}, i.e. every source of each call's system prompt (q01_harness.critic_prompt_digest)",
+  "lens_refs_and_digests": "{pack_id, pack_version, pack_sha256, rules: [{lens_id, version, sha256}]} of the lens pack sent at every counterexample-proposal call (canonical sha256 of the pack and of each rule, equal to the product's prepared-input manifest). The lens pack is critic configuration: it is supplied to the harness with the configuration, never read from the sealed bundle, and a sealed case that carries a lens pack is refused by the harness and the verifier. A configuration with no lens set uses a pack with no rules.",
+  "checked_at_dispatch": "contract_version, parser_version, critic_prompt_digest, max_proposed_chains, call_seconds, run_seconds and lens_refs_and_digests before any read; provider, mode, model and effort against the frozen selection of every call; the lens pack digests again at every proposal call. max_tokens is not observable by the offline transport and is recorded as unchecked in each trial record.",
+  "lens_arm": "The configuration names its lens set explicitly (possibly empty); a pass never carries over between a lens and a no-lens configuration."
+ },
+ "run_identity": {
+  "fields": [
+   "sealed_dataset_sha256",
+   "sealed_expectations_sha256",
+   "judge_identity",
+   "judge_prompt_digest",
+   "independence_profile_path_and_sha256",
+   "harness_version_and_sha256",
+   "verifier_version_and_sha256",
+   "case_order_seed_and_order",
+   "authority_ref",
+   "usd_hard_stop"
+  ],
+  "rule": "Run identity describes one attempt and is never part of the critic configuration; every field is fixed in the pre-dispatch manifest. Every verifier result binds to the manifest sha256, the critic configuration digest and the judge identity and prompt digest of this run identity; a result that does not is not part of the suite."
+ },
+ "pre_dispatch": {
+  "manifest_schema": "pre_dispatch_manifest.schema.json (schema q01-pre-dispatch-manifest-2)",
+  "content": "the critic configuration and its digest, the full run identity, the attempt number and every prior attempt's verdict for this critic configuration digest, the author, reviewer and sealing attestations (name, statement, date; author, reviewer and judge must differ), and, when the lens-effect design runs, the lens_effect section of lens-effects-v4 (per-arm critic configurations and digests, per-arm attempt entries, non-null text digests for general_multi_perspective and every lens arm, the arm x case order, predictions sha256)",
+  "freeze": "The manifest's sha256 is committed to the repository (or recorded with an external timestamp) before the first dispatch. The harness refuses to dispatch unless the manifest it loads hashes to the committed value, its harness identity equals the running harness, and every observable critic-configuration field equals the running configuration; the suite record carries that sha256 and the verifier re-checks the full manifest (there is no hash-values-only path).",
+  "harness": "PreDispatch.harness (the expected harness identity) and PreDispatch.lens_pack (the configuration's lens pack) are mandatory for every release trial.",
+  "edits": "Any change after the freeze voids the attempt as incomplete; the sealed set is still spent."
+ },
+ "dataset": {
+  "dataset_id": "q01-release-v4-sealed",
+  "must_be_new": "No case, material, candidate, counterexample or wording from evals/deeptwin/q01_materials.py, q01_lenses.json, the ten calibration cases, or ANY previously dispatched sealed set (qualification or lens-effect, any design version), nor paraphrases of them. The lens pack is critic configuration, not dataset material: the sealed bundle never carries it, and the materials are not written to suit a lens.",
+  "authoring": {
+   "author": "A named person who has not seen the verifier's calibration expectations and does not tune the critic configuration.",
+   "excluded_as_author_reviewer_or_judge": [
+    "the developer who built the Q01 harness and verifiers",
+    "anyone who tuned the critic configuration",
+    "any model or session with repository access"
+   ],
+   "expectations": "Written by the author from the new materials alone as data conforming to sealed_expectation.schema.json (allowed statuses per criterion, evidence rules, validity and response expectations, judge items with rubrics), before any trial, and sealed (content sha256 in the pre-dispatch manifest).",
+   "judge_rubrics": "Written by the author as part of the sealed expectations and checked by the reviewer; the judge never edits them.",
+   "task_package": "The agent sees the Q01 instruction.md and a fixed-criteria document written by the author for the new materials; Task.md's M01/catalog-specific wording is replaced by the author's criteria text, frozen with the set.",
+   "review": "A second named person, not the author and not the judge, checks each expectation and rubric against the materials before sealing; a disagreement is resolved or the case is dropped before sealing, never after.",
+   "attestations": "The author, the reviewer and the sealing step each record an attestation (name, statement, date) in the pre-dispatch manifest."
+  },
+  "composition": {
+   "boundary_classes": [
+    "accept_without_false_rejection",
+    "required_defect",
+    "rejected_counterexample",
+    "valid_counterexample",
+    "unresolved_specific_claim",
+    "insufficient_evidence"
+   ],
+   "minimum_cases_per_class": 2,
+   "required_coverage": [
+    "at least one required_defect for each of Q1 (meaning), Q2 (hand-off), Q3 (authority)",
+    "at least one valid alternative candidate under Q4",
+    "at least one Q5 pair (a valid counterexample handled and one not handled)"
+   ],
+   "checked": "The verifier checks every coverage rule decidable from the expectations when it loads them and records whether it did; a suite over expectations loaded without that check is incomplete. The Q4 alternative stays a reviewer check.",
+   "exclusions": "Only before the first dispatch, with the reason recorded; composition and coverage are re-checked after any exclusion. Nothing is excluded after the first dispatch: a disputed case then makes the suite incomplete.",
+   "note": "A scoped design choice so every class and criterion has instances; it is not a statistical sample size and supports no rate estimate."
+  },
+  "storage_and_access": {
+   "location": "outside the git repository, in an owner-controlled location recorded by path and sha256 in the pre-dispatch manifest",
+   "readers_before_run": [
+    "the author",
+    "the reviewer",
+    "the sealing step"
+   ],
+   "during_run": "agent inputs come only from the harness's allowlisted reader; expectations are read only by the verifier at verify time; every read is logged in the run record",
+   "results": "the developer reads trial outputs and verdicts only after the suite verdict is recorded",
+   "single_use": "The first dispatched trial marks the set observed and spent forever (it becomes development data). Exactly one run per sealed set: no continuation, merge or rerun.",
+   "attempt_ledger": "Every attempt for one critic configuration digest is numbered across sets and design versions; each pre-dispatch manifest lists all prior attempts and their verdicts, and any claim cites 'attempt k' with every prior verdict."
+  }
+ },
+ "verifier": {
+  "requirement": "A data-driven verifier, not evals/deeptwin/verifiers/critic.py (whose expectations are the calibration cases), that loads the sealed expectations only at verify time, derives material checks and leak markers from the sealed set, takes the lens pack only from the critic configuration, and implements the same outcome classes (pass, fail, not_judged, invalid) and the six boundary classes.",
+  "freeze": "Its version and file-set sha256 are fixed in the pre-dispatch manifest before sealing; it is written by the harness developer without access to the sealed set and tested only on development data.",
+  "identity_covers": [
+   "evals/deeptwin/verifiers/sealed_critic.py",
+   "evals/deeptwin/verifiers/q01_core.py",
+   "evals/deeptwin/q01_release_manifest.py",
+   "app/critic_contract.py",
+   "app/critic_audit.py"
+  ],
+  "state_at_freeze": {
+   "exists": true,
+   "statement": "The data-driven verifier exists at this freeze (evals/deeptwin/verifiers/sealed_critic.py); its identity is below and every file it covers is also pinned in FROZEN.json.",
+   "version": "q01-sealed-verifier-2",
+   "file_set_sha256": "7a7bd951427132894bdd1bb272505d1c1701ad7682951453dde60d444da85fa9",
+   "files": {
+    "evals/deeptwin/verifiers/sealed_critic.py": "67524ca97c759b42a5d36c8c384fc13749476550db4d59a61891541aaaa3f51f",
+    "evals/deeptwin/verifiers/q01_core.py": "89ee5c052bca4629189c5a051cac5d63d0737b20f8d8735afe8f563a65ca4e20",
+    "evals/deeptwin/q01_release_manifest.py": "35a11f4a28e40e62fc623c21c7725b11a5536f0185d34afa27429d324750480b",
+    "app/critic_contract.py": "fd5179f08fc5f33269dae0aeecd76a9c43e6f4ea356dbda6502cd8f83b09df0d",
+    "app/critic_audit.py": "bb9385df9ce81c6910fa905fcb69303d7afc69570840a4140bce6ea6e901d538"
+   }
+  },
+  "harness_at_freeze": {
+   "version": "q01-harness-2",
+   "file_set_sha256": "1a66e68586dd0ab92f9a79e499ad75d1ba278930410579523916ba63361682a1",
+   "files": {
+    "app/critic_contract.py": "fd5179f08fc5f33269dae0aeecd76a9c43e6f4ea356dbda6502cd8f83b09df0d",
+    "app/critic_trial.py": "a8b1a2edcb140925c330ed0c4863e2fb675cd4ccfc583835559782c3546653d2",
+    "app/critic_audit.py": "bb9385df9ce81c6910fa905fcb69303d7afc69570840a4140bce6ea6e901d538",
+    "app/services/design_criticism_live.py": "b603f791ba3494d137e78d6c6524b415c60960d68e5b21c7a59037a9ffd8dd28",
+    "app/generation_profiles.py": "76d132c71d64e03c723a914e6f66e027e9fb02c79aced8bbe9eee9f10368b6f2",
+    "evals/deeptwin/q01_materials.py": "65dca348bdaca2b174c591723d9a69bee359fb0f3e1bbb51abd8c7ddaff7f374",
+    "evals/deeptwin/q01_lenses.json": "d6b36c5c9f74459472ece18248164dcd35d2ec8cf12c482ca1eedd9db74226e1",
+    "evals/deeptwin/harness/q01_cases.py": "5e5f27b3f8a19472fc40d9f496f60bbb31eb5da433105511050b162a41cce1e4",
+    "evals/deeptwin/harness/q01_harness.py": "7e4b1828ce6949e73a74a87e66f75052270c9de8308e91e79715a50dff2177eb",
+    "evals/deeptwin/q01_release_manifest.py": "35a11f4a28e40e62fc623c21c7725b11a5536f0185d34afa27429d324750480b"
+   }
+  },
+  "results": "Each trial result carries the trial id, the trial record sha256, the ledger head, the manifest sha256, the critic configuration digest, the judge identity and prompt digest, and its own result_sha256; a suite accepts only results issued by verify_trial in the same process and unaltered, one distinct trial per (case, repetition) slot."
+ },
+ "execution": {
+  "repetitions_per_case": 3,
+  "repetitions_fixed": "fixed by this design and by the verifier (REPETITIONS_PER_CASE = 3); never supplied by the caller",
+  "repetition_meaning": "three calls on one case are one task sample, never three independent samples",
+  "retry": "none",
+  "model_fallback": "none",
+  "concurrency": 1,
+  "output_contract_error": "a completed trial whose output breaks the contract is a fail of that repetition (Task.md), never an invalid trial",
+  "invalid_trials": "only harness, evidence, isolation, configuration or judge failures; reported with cause, never scored, never replaced within the run",
+  "authority": "The pre-dispatch manifest names who authorized the run, the authority reference and the budget; without it the run is not executed and there is no verdict",
+  "spend": "a hard USD stop fixed before any call; a stopped run is incomplete"
+ },
+ "judge": {
+  "independence_profile": "The profile in force is the one whose path and sha256 the pre-dispatch manifest records. independence_profile.json here fixes the rules (judge separation not established); a successor profile that records an established judge is frozen and committed before sealing, has schema q01-independence-profile-4, names this design id, and records the judge identity, prompt digest and option. The verifier loads the profile bytes, checks the sha256 and design id and derives judge separation from them; no caller flag exists.",
+  "judge_binding": "the profile's judge, run_identity.judge_identity and judge_prompt_digest, and every judged result's judge must be the same",
+  "judge_errors": "every judge verdict is recorded beside the sealed expectation; a judge failure makes that trial invalid (Task.md Q8); judge-versus-expectation disagreements are listed, never folded into the critic's score"
+ },
+ "acceptance": {
+  "case_pass": "a case passes only if every one of its 3 repetitions is a distinct valid trial that passes under the frozen data-driven verifier",
+  "suite_outcome": {
+   "fail": "any valid repetition failed; takes precedence over invalid, not_judged and incomplete",
+   "incomplete": "no fail, and any of: an invalid, missing, duplicated or stopped repetition; a result not issued by verify_trial or altered; one trial used for more than one slot; a result of another manifest, configuration or judge; expectations loaded without the composition check; a pre-dispatch manifest or profile that does not verify or does not pin exactly these expectations, materials and case order",
+   "not_judged": "no fail and not incomplete, and any semantic item is not_judged (a judge answer of undetermined, or a profile without established judge separation)",
+   "pass": "every case passes"
+  },
+  "suite_record": "conforms to suite_record.schema.json (q01-release-suite-verdict-v3): the critic configuration digest, the pre-dispatch manifest sha256, the attempt number with prior verdicts, the profile sha256, judge separation (from the profile) and the V3 status (always unverified under this design, derived by the verifier, never from the caller); built only from an issued suite result and the same re-checked run",
+  "what_a_pass_confers": "status scoped_pass for exactly this critic configuration digest. This design cannot verify V3 (no generation path), so a scoped pass is NOT a critic qualification and approves no design; the product gate caps every q01-release-v4 record at scoped_pass whatever its V3 field says, recomputes record_sha256 and refuses a mismatch. Qualification is reachable only from a design declared able to verify V3 in the gate's V3_VERIFYING_DESIGN_IDS, which is empty.",
+  "open": "criticism verdicts do not yet carry the critic configuration digest that produced them, so design approval cannot yet bind the qualification's digest to the verdict's critic; this is required before any V3-verifying design is admitted",
+  "post_verdict": "Every pass and any suspicious result is audited after the verdict (verification.md section 4). A verifier or harness defect found after the verdict voids it to incomplete; it never upgrades a fail."
+ },
+ "reporting": [
+  "per case and boundary class: passes, misses (a required defect not found), false rejections (a valid candidate or alternative rejected), abstentions, and not_judged items, each with its real denominator",
+  "judge-versus-expectation disagreements per item, labelled judge_disagreement (never a joint error)",
+  "same-item critic misses and false rejections; V3 joint-error metrics are not computed because this design has no generation path",
+  "cluster counts (cases sharing materials count as one cluster)",
+  "every invalid trial with its cause, calls, tokens, spend and wall time",
+  "attempt k and all prior verdicts for this configuration"
+ ],
+ "claims_if_passed": [
+  "Attempt k of this exact critic configuration met the frozen acceptance rule on this sealed set, in 3 repetitions per case (prior attempts and verdicts listed).",
+  "V3 (error independence) remains unmet and cannot be met under this design: no critic qualification and no design approval follow from a scoped pass."
+ ],
+ "never_claimed": [
+  "an error rate, false-rejection rate or missed-defect rate beyond the observed counts (Task.md open decision on quantitative qualification remains unmet)",
+  "V3 / FR-006 / SC-005 error independence",
+  "generalization to other tasks or materials",
+  "a lens effect (see evals/deeptwin/effects/lens-effects-v4.json)",
+  "actual user alternatives or behavior"
+ ]
+}

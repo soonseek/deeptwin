@@ -1,38 +1,58 @@
 """Data-driven Q01 release verifier over a sealed set (control plane; never agent-visible).
 
 Implements the ``verifier`` block and ``acceptance.suite_outcome`` of
-``evals/deeptwin/qualification/release-v3/qualification_design.json``. Unlike
+``evals/deeptwin/qualification/release-v4/qualification_design.json``. Unlike
 ``critic.py`` (whose expectations are the ten calibration cases), this module
-holds no expectations and no materials: both are supplied at verify time.
+holds no expectations, no materials and no lens pack: all are supplied at verify
+time, and the lens pack is critic configuration (pinned by digest in the
+pre-dispatch manifest), never sealed dataset material.
 
 * ``load_sealed_expectations`` reads a sealed expectation document, refuses it
   unless its bytes hash to the sha256 fixed in the pre-dispatch manifest, then
   validates it against ``sealed_expectation.schema.json`` and the boundary-class
   rules below, and converts it to the shared ``Expectation``/``EvidenceRule``/
-  ``Ref`` structures of ``q01_core``.
+  ``Ref`` structures of ``q01_core``. Whether composition was checked is recorded
+  on the result; a suite over expectations loaded without the check never passes.
 * ``load_sealed_materials`` reads the sealed materials bundle: a mapping of
   published path -> bytes in the harness environment layout
   (``environment/manifest.json`` plus ``environment/cases/<case id>.json``) and
   the sha256 of the manifest file bytes. Every case file must be listed with its
-  sha256 and nothing unlisted is accepted. Material checks and answer-leak
-  markers are derived from this bundle and the expectations, never from
-  ``q01_materials``, ``critic.EXPECTED`` or ``Task.md``.
-* ``verify_trial`` judges one harness trial record with the same order and
+  sha256, nothing unlisted is accepted, and a case that carries a lens pack is
+  refused. Material checks and answer-leak markers are derived from this bundle
+  and the expectations, never from ``q01_materials``, ``critic.EXPECTED`` or
+  ``Task.md``.
+* ``load_release_run`` re-checks the full pre-dispatch manifest (schema v2) and
+  loads the independence profile bytes it pins: the sha256 must match, the
+  profile must name this design id, and judge separation and the V3 status are
+  derived from it (V3 is always ``unverified``: release-v4 cannot verify it).
+  Nothing about the run is taken from the caller.
+* ``verify_trial`` judges one harness release trial record with the same order and
   outcome classes as ``critic.py`` (pass / fail / not_judged / invalid): trial
-  validity first (any failure is ``invalid`` and unscored), then an output
-  contract error (``fail``), rule checks, and semantic items only through an
-  explicit ``SemanticJudge``.
-* ``verify_suite`` applies the release-v3 precedence exactly: ``fail`` (any
-  valid repetition failed) > ``incomplete`` (an invalid, missing, duplicated or
-  stopped repetition, an unattributable result, or a pre-dispatch manifest that
-  does not verify) > ``not_judged`` (a not_judged repetition, or judge
-  separation not established) > ``pass`` (every case passes: all planned
-  repetitions valid and passing).
-* ``build_suite_record`` produces the ``suite_record.schema.json`` record.
-  ``record_sha256`` is the sha256 of the canonical JSON of the record without
-  the ``record_sha256`` key, where canonical JSON is
-  ``json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
-  allow_nan=False)`` encoded as UTF-8 (``q01_release_manifest.canonical_bytes``).
+  validity first (any failure is ``invalid`` and unscored; this includes a trial
+  not dispatched under this manifest and a lens pack that does not hash to the
+  critic configuration), then an output contract error (``fail``), rule checks,
+  and semantic items only through an explicit ``SemanticJudge``. Each result
+  carries the trial id, the trial record sha256, the ledger head and its own
+  ``result_sha256``, and is registered as issued by this process.
+* ``verify_suite`` applies the release precedence exactly: ``fail`` (any valid
+  repetition failed) > ``incomplete`` (an invalid, missing, duplicated or stopped
+  repetition, a result not issued by ``verify_trial`` or altered since, a trial
+  reused across repetitions, a result of another configuration or judge, an
+  expectation set loaded without its composition check, or a manifest/profile
+  that does not verify or does not pin these expectations, materials and case
+  order) > ``not_judged`` (a not_judged repetition, or a profile without
+  established judge separation) > ``pass``. Repetitions are fixed at the design's
+  3.
+* ``build_suite_record`` produces the ``suite_record.schema.json`` record from an
+  issued suite result and the same loaded run. ``record_sha256`` is the sha256 of
+  the canonical JSON of the record without the ``record_sha256`` key, where
+  canonical JSON is ``json.dumps(value, sort_keys=True, separators=(",", ":"),
+  ensure_ascii=False, allow_nan=False)`` encoded as UTF-8
+  (``q01_release_manifest.canonical_bytes``).
+
+Issued results and suites are recognised by digest within this process only; a
+result or suite read back from disk is not accepted, so verification happens in
+the process that verified the trials.
 
 This module was written without access to any sealed set and is tested only on
 synthetic development data. It does not import the harness.
@@ -61,6 +81,8 @@ from evals.deeptwin.q01_release_manifest import (
     critic_configuration_digest,
     file_set_sha256,
     is_sha256,
+    prepared_lens_refs,
+    schema_valid,
     strict_json,
 )
 
@@ -98,11 +120,15 @@ from .q01_core import (
     _Trial,
 )
 
-VERIFIER_VERSION = "q01-sealed-verifier-1"
-RESULT_SCHEMA = "q01-sealed-verifier-result-1"
-SUITE_SCHEMA = "q01-sealed-suite-result-1"
-SUITE_RECORD_SCHEMA_VERSION = "q01-release-suite-verdict-v2"
-REPETITIONS_PER_CASE = 3  # release-v3 execution.repetitions_per_case
+VERIFIER_VERSION = "q01-sealed-verifier-2"
+RESULT_SCHEMA = "q01-sealed-verifier-result-2"
+SUITE_SCHEMA = "q01-sealed-suite-result-2"
+SUITE_RECORD_SCHEMA_VERSION = "q01-release-suite-verdict-v3"
+REPETITIONS_PER_CASE = 3  # release-v4 execution.repetitions_per_case; never caller-supplied
+PROFILE_SCHEMA = "q01-independence-profile-4"
+JUDGE_OPTIONS = frozenset({"human_reviewer", "other_provider"})
+# Designs able to verify V3 error independence: none (release-v4 has no generation path).
+V3_VERIFYING_DESIGN_IDS = frozenset()
 EXPECTATION_SCHEMA_FILE = DESIGN_DIR / "sealed_expectation.schema.json"
 SUITE_RECORD_SCHEMA_FILE = DESIGN_DIR / "suite_record.schema.json"
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -112,6 +138,8 @@ VERIFIER_FILES = (
     "evals/deeptwin/verifiers/sealed_critic.py",
     "evals/deeptwin/verifiers/q01_core.py",
     "evals/deeptwin/q01_release_manifest.py",
+    "app/critic_contract.py",
+    "app/critic_audit.py",
 )
 ENVIRONMENT_MANIFEST = "environment/manifest.json"
 ENVIRONMENT_SCHEMA = "q01-environment-1"
@@ -164,6 +192,7 @@ class SealedExpectations:
     dataset_id: str
     sha256: str
     cases: Mapping[str, SealedCase]   # case id -> sealed case
+    composition_checked: bool = False  # a suite over unchecked composition never passes
 
     @property
     def keys(self) -> dict:
@@ -231,7 +260,7 @@ def _check_boundary(case, where):
 
 
 def composition_problems(expectations: SealedExpectations) -> list[str]:
-    """Release-v3 ``dataset.composition`` checks that are decidable from the expectations.
+    """Release-v4 ``dataset.composition`` checks that are decidable from the expectations.
 
     'At least one valid alternative candidate under Q4' is not decidable from the
     expectation data and stays a reviewer check.
@@ -293,11 +322,12 @@ def load_sealed_expectations(source: bytes | Path, expected_sha256: str, *,
             raise SealedSetError(f"{where}: duplicate case {case_id}")
         cases[case_id] = SealedCase(case_id, case["candidate_id"], counterexample, expectation)
     expectations = SealedExpectations(document["dataset_id"], digest, cases)
-    if require_composition:
-        problems = composition_problems(expectations)
-        if problems:
-            raise SealedSetError("sealed composition: " + ", ".join(problems))
-    return expectations
+    if not require_composition:
+        return expectations  # composition_checked stays False: no suite over it can pass
+    problems = composition_problems(expectations)
+    if problems:
+        raise SealedSetError("sealed composition: " + ", ".join(problems))
+    return SealedExpectations(document["dataset_id"], digest, cases, composition_checked=True)
 
 
 # ---------------------------------------------------------------- materials bundle
@@ -350,6 +380,10 @@ def load_sealed_materials(files: Mapping[str, bytes], manifest_sha256: str) -> S
                 or case["schema"] != CASE_SCHEMA or case["case_id"] != entry["case_id"]
                 or type(case["authored_counterexamples"]) is not list or len(case["authored_counterexamples"]) > 1):
             raise SealedSetError(f"frozen case shape: {entry['path']}")
+        if type(case["source"]) is not dict or "lens_pack" in case["source"]:
+            # The lens pack is critic configuration (pinned by digest in the pre-dispatch
+            # manifest and supplied by the harness), never sealed dataset material.
+            raise SealedSetError(f"a sealed case must not carry a lens pack: {entry['path']}")
         try:
             candidate_id = case["source"]["candidate"]["id"]
             authored = [item["counterexample"]["id"] for item in case["authored_counterexamples"]]
@@ -506,12 +540,26 @@ def _check_access_and_leakage(trial, record, markers):
             raise _Invalid("answer_leak")
 
 
+def _check_configuration(trial, configuration):
+    """Every call ran the critic configuration of the manifest (as far as a call records it)."""
+    lenses = configuration["lens_refs_and_digests"]
+    for call in trial.calls:
+        prepared = call["manifest"]["prepared_manifest"]  # re-derived from the ledger by _Trial
+        if (prepared.get("contract_version"), prepared.get("parser_version")) != (
+                configuration["contract_version"], configuration["parser_version"]):
+            raise _Invalid("contract_differs_from_configuration")
+        if call["purpose"] is P.COUNTEREXAMPLE_PROPOSAL and prepared_lens_refs(prepared) != lenses:
+            # the lens pack actually sent must hash to critic_configuration.lens_refs_and_digests
+            raise _Invalid("lens_pack_differs_from_configuration")
+
+
 def _check_materials(trial, record, case, case_sha):
     if record.get("case_sha256") != case_sha or any(
             call["manifest"].get("case_sha256") != case_sha for call in trial.calls):
         raise _Invalid("material_mismatch")
     source = case["source"]
-    expected = json.loads(prepare_input(P.COUNTEREXAMPLE_PROPOSAL, deepcopy(source)).prompt)["input"]
+    # the lens pack is not dataset material: materials are compared on the review input
+    expected = json.loads(prepare_input(P.REVIEW, deepcopy(source)).prompt)["input"]
     authored = {}
     for item in case["authored_counterexamples"]:
         prepared = prepare_input(P.COUNTEREXAMPLE_VALIDITY, {**deepcopy(source),
@@ -521,47 +569,180 @@ def _check_materials(trial, record, case, case_sha):
         visible = call["visible"]
         if any(visible[name] != expected[name] for name in ("originals", "criteria", "candidate")):
             raise _Invalid("material_mismatch")
-        if call["purpose"] is P.COUNTEREXAMPLE_PROPOSAL and visible["lens_pack"] != expected["lens_pack"]:
-            raise _Invalid("material_mismatch")
         if (call["purpose"] is P.COUNTEREXAMPLE_VALIDITY and call["manifest"]["lineage"]["kind"] == "authored"
                 and visible["counterexample"] != authored.get(visible["counterexample"]["id"])):
             raise _Invalid("material_mismatch")
 
 
-def _result(case_id, sealed, verdict, *, expectations, materials, repetition, cause=None, rules=(), judged=(),
-            judge=None):
-    return {"schema": RESULT_SCHEMA, "verifier_version": VERIFIER_VERSION,
-            "case_id": case_id, "repetition": repetition,
-            "case_key": None if sealed is None else {"candidate_id": sealed.candidate_id,
-                                                     "counterexample_id": sealed.counterexample_id},
-            "boundary": None if sealed is None else sealed.expectation.boundary,
-            "verdict": verdict, "score": {PASS: 1.0, FAIL: 0.0}.get(verdict), "cause": cause,
-            "agent_capability_scored": verdict in {PASS, FAIL},
-            "rule_checks": list(rules), "judge_items": list(judged),
-            "judge": {"available": judge is not None,
-                      "version": getattr(judge, "version", None) if judge is not None else None},
-            "expectations_sha256": getattr(expectations, "sha256", None),
-            "materials_manifest_sha256": getattr(materials, "manifest_sha256", None)}
+
+
+# ---------------------------------------------------------------- release run (manifest + profile)
+
+
+_RUN_TOKEN = object()
+_ISSUED_RESULTS: set[str] = set()
+_ISSUED_SUITES: set[str] = set()
+
+
+@dataclass(frozen=True, eq=False)
+class ReleaseRun:
+    """One attempt's re-checked pre-dispatch manifest and the profile it pins (``load_release_run``)."""
+
+    manifest_sha256: str | None
+    committed_sha256: str | None
+    manifest: dict | None
+    errors: tuple[str, ...]
+    profile_sha256: str | None
+    judge_separation_established: bool
+    v3_error_independence: str
+    _token: object
+
+    @property
+    def configuration(self) -> dict | None:
+        return None if self.manifest is None else self.manifest["critic_configuration"]
+
+    @property
+    def identity(self) -> dict | None:
+        return None if self.manifest is None else self.manifest["run_identity"]
+
+
+def _is_run(run) -> bool:
+    return type(run) is ReleaseRun and run._token is _RUN_TOKEN
+
+
+def _profile_problems(profile_bytes, identity):
+    """(problems, judge separation) of the profile the manifest pins."""
+    pinned = identity["independence_profile"]["sha256"]
+    if type(profile_bytes) is not bytes or sha256(profile_bytes).hexdigest() != pinned:
+        return ["profile:sha256_differs_from_manifest"], False
+    try:
+        profile = strict_json(profile_bytes)
+    except (ValueError, UnicodeDecodeError):
+        return ["profile:not_strict_json"], False
+    if type(profile) is not dict or profile.get("schema") != PROFILE_SCHEMA:
+        return ["profile:schema"], False
+    if profile.get("design_id") != DESIGN_ID:
+        return ["profile:does_not_name_this_design"], False
+    separation = profile.get("judge_separation")
+    v3 = profile.get("v3_error_independence")
+    if type(separation) is not dict or type(separation.get("established")) is not bool or type(v3) is not dict:
+        return ["profile:schema"], False
+    problems = []
+    if v3.get("status") != "unverified" and DESIGN_ID not in V3_VERIFYING_DESIGN_IDS:
+        problems.append("profile:claims_v3_verified_under_a_design_that_cannot_verify_it")
+    established = separation["established"]
+    if established:
+        judge = separation.get("judge")
+        if (type(judge) is not dict or set(judge) != {"identity", "prompt_digest", "option"}
+                or judge["option"] not in JUDGE_OPTIONS
+                or judge["identity"] != identity["judge_identity"]
+                or judge["prompt_digest"] != identity["judge_prompt_digest"]):
+            problems.append("profile:judge_differs_from_run_identity")
+    return problems, established and not problems
+
+
+def load_release_run(manifest_bytes: bytes, *, committed_sha256: str | None, profile_bytes: bytes) -> ReleaseRun:
+    """Re-check the full pre-dispatch manifest and load the independence profile it pins.
+
+    Never raises for a bad manifest or profile: every problem is recorded in ``errors``
+    (and makes a suite over this run incomplete). Judge separation is derived from the
+    profile bytes, never supplied by the caller; the V3 status is ``unverified`` because
+    this design cannot verify V3.
+    """
+    if type(manifest_bytes) is not bytes:
+        raise TypeError("the pre-dispatch manifest bytes are required")
+    check = check_pre_dispatch_manifest(manifest_bytes, committed_sha256=committed_sha256,
+                                        verifier=verifier_identity())
+    errors = [f"manifest:{error}" for error in check.errors]
+    manifest, established, profile_sha = None, False, None
+    if schema_valid(check):
+        manifest = deepcopy(check.manifest)
+        profile_sha = manifest["run_identity"]["independence_profile"]["sha256"]
+        problems, established = _profile_problems(profile_bytes, manifest["run_identity"])
+        errors += problems
+    else:
+        errors.append("profile:no_verifiable_manifest")
+    v3 = "verified" if DESIGN_ID in V3_VERIFYING_DESIGN_IDS else "unverified"
+    return ReleaseRun(check.manifest_sha256, committed_sha256, manifest, tuple(errors), profile_sha,
+                      bool(established), v3, _RUN_TOKEN)
+
+
+# ---------------------------------------------------------------- trial results
+
+
+def _digest(value):
+    try:
+        return sha256(canonical_bytes(value)).hexdigest()
+    except (TypeError, ValueError):
+        return None
+
+
+def _ledger_head(trial):
+    """Digest of the durable journal state of the trial's calls, in dispatch order."""
+    return _digest([{"request_id": call["request_id"], "digest": call["ledger_digest"],
+                     "state": call["ledger_state"], "events": call["ledger_event_seqs"]} for call in trial.calls])
+
+
+def _result(case_id, sealed, verdict, *, context, cause=None, rules=(), judged=(), judge=None):
+    expectations, materials, run = context["expectations"], context["materials"], context["run"]
+    manifest = run.manifest if _is_run(run) else None
+    result = {"schema": RESULT_SCHEMA, "verifier_version": VERIFIER_VERSION,
+              "case_id": case_id, "repetition": context["repetition"],
+              "trial_id": context["trial_id"], "trial_record_sha256": context["record_sha256"],
+              "ledger_head": context["ledger_head"],
+              "case_key": None if sealed is None else {"candidate_id": sealed.candidate_id,
+                                                       "counterexample_id": sealed.counterexample_id},
+              "boundary": None if sealed is None else sealed.expectation.boundary,
+              "verdict": verdict, "score": {PASS: 1.0, FAIL: 0.0}.get(verdict), "cause": cause,
+              "agent_capability_scored": verdict in {PASS, FAIL},
+              "rule_checks": list(rules), "judge_items": list(judged),
+              "judge": {"available": judge is not None,
+                        "version": getattr(judge, "version", None) if judge is not None else None,
+                        "identity": getattr(judge, "identity", None) if judge is not None else None,
+                        "prompt_digest": getattr(judge, "prompt_digest", None) if judge is not None else None},
+              "expectations_sha256": getattr(expectations, "sha256", None),
+              "materials_manifest_sha256": getattr(materials, "manifest_sha256", None),
+              "pre_dispatch_manifest_sha256": run.manifest_sha256 if _is_run(run) else None,
+              "critic_configuration_digest": None if manifest is None else manifest["critic_configuration_digest"]}
+    result["result_sha256"] = _digest(result)
+    _ISSUED_RESULTS.add(result["result_sha256"])
+    return result
+
+
+def _is_issued(value, registry, key):
+    if type(value) is not dict or value.get(key) not in registry:
+        return False
+    return _digest({name: item for name, item in value.items() if name != key}) == value[key]
 
 
 def verify_trial(record: dict, *, expectations: SealedExpectations, materials: SealedMaterials,
-                 judge: SemanticJudge | None = None, repetition: int | None = None,
+                 run: ReleaseRun, judge: SemanticJudge | None = None, repetition: int | None = None,
                  ledger_path: Path | None = None, task_dir: Path = TASK_DIR) -> dict:
-    """Verify one harness trial record against the sealed set. Never raises for a bad record."""
+    """Verify one harness release trial record against the sealed set. Never raises for a bad record."""
     case_id = sealed = None
-    options = {"expectations": expectations, "materials": materials, "repetition": repetition}
+    context = {"expectations": expectations, "materials": materials, "run": run, "repetition": repetition,
+               "trial_id": None, "record_sha256": None, "ledger_head": None}
     try:
         try:
             check_binding(expectations, materials)
         except SealedSetError:
             raise _Invalid("sealed_set_mismatch") from None
+        if not _is_run(run) or run.manifest is None:
+            raise _Invalid("release_run_unverified")
         if type(record) is not dict or record.get("schema") != "q01-trial-record-1":
             raise _Invalid("record_schema")
+        context["record_sha256"] = _digest(record)
+        if type(record.get("trial_id")) is str and record.get("run_id") == record["trial_id"]:
+            context["trial_id"] = record["trial_id"]
         if record.get("case_id") in expectations.cases:  # attributable even if the trial is invalid
             case_id = record["case_id"]
             sealed = expectations.cases[case_id]
         if record.get("status") != "completed":
             raise _Invalid("trial_" + str(record.get("cause") or "invalid"))
+        pre_dispatch = record.get("pre_dispatch")
+        if (context["trial_id"] is None or type(pre_dispatch) is not dict
+                or pre_dispatch.get("manifest_sha256") != run.manifest_sha256 or pre_dispatch.get("errors") != []):
+            raise _Invalid("not_a_release_trial_of_this_manifest")
         path = Path(ledger_path or record.get("ledger_path") or "")
         if not path.is_absolute() or not path.is_file():
             raise _Invalid("evidence_lost")
@@ -571,6 +752,7 @@ def verify_trial(record: dict, *, expectations: SealedExpectations, materials: S
             raise _Invalid("evidence_lost") from None
         instructions = _instructions(Path(task_dir))
         trial = _Trial(record, ledger, instructions)
+        context["ledger_head"] = _ledger_head(trial)
         _check_journal_coverage(trial, record, path)
         _check_lineage(trial, record)
         key = _case_key(trial, record, expectations.keys)
@@ -578,13 +760,14 @@ def verify_trial(record: dict, *, expectations: SealedExpectations, materials: S
         sealed = expectations.cases[case_id]
         _check_access_and_leakage(trial, record, answer_markers(expectations, materials, instructions))
         _check_materials(trial, record, materials.cases[case_id], materials.case_sha256[case_id])
+        _check_configuration(trial, run.configuration)
         _check_completeness(trial, key, record)
     except _Invalid as invalid:
-        return _result(case_id, sealed, INVALID, cause=invalid.cause, **options)
+        return _result(case_id, sealed, INVALID, cause=invalid.cause, context=context)
     except Exception:  # noqa: BLE001 - verifier fault: no score, never an agent zero
-        return _result(case_id, sealed, INVALID, cause="verifier_fault", **options)
+        return _result(case_id, sealed, INVALID, cause="verifier_fault", context=context)
     if record.get("output_contract") == "model_output_invalid":
-        return _result(case_id, sealed, FAIL, cause="output_contract", **options)
+        return _result(case_id, sealed, FAIL, cause="output_contract", context=context)
     expectation = sealed.expectation
     rules = _rules(trial, key, expectation)
     sealed_items = {item_id for item_id, _rubric, _selector in expectation.judge}
@@ -598,12 +781,12 @@ def verify_trial(record: dict, *, expectations: SealedExpectations, materials: S
             status = judge.judge(item)
         except Exception:  # noqa: BLE001 - judge fault invalidates, never scores
             return _result(case_id, sealed, INVALID, cause="judge_fault", rules=rules, judged=judged,
-                           judge=judge, **options)
+                           judge=judge, context=context)
         if status not in JUDGE_STATUSES:
             return _result(case_id, sealed, INVALID, cause="judge_fault", rules=rules, judged=judged,
-                           judge=judge, **options)
+                           judge=judge, context=context)
         judged.append({"id": item.item_id, "origin": origin, "status": status})
-    extra = {"rules": rules, "judged": judged, "judge": judge, **options}
+    extra = {"rules": rules, "judged": judged, "judge": judge, "context": context}
     if not all(item["ok"] for item in rules):
         return _result(case_id, sealed, FAIL, cause="rule_check", **extra)
     if any(item["status"] == "not_supported" for item in judged):
@@ -616,62 +799,60 @@ def verify_trial(record: dict, *, expectations: SealedExpectations, materials: S
 # ---------------------------------------------------------------- suite
 
 
-def _attributable(result, expectations):
-    return (type(result) is dict and result.get("schema") == RESULT_SCHEMA
+def _attributable(result, expectations, run):
+    return (result.get("schema") == RESULT_SCHEMA
             and result.get("verifier_version") == VERIFIER_VERSION
             and result.get("expectations_sha256") == expectations.sha256
             and result.get("verdict") in {PASS, FAIL, NOT_JUDGED, INVALID}
             and result.get("case_id") in expectations.cases
-            and type(result.get("repetition")) is int)
+            and type(result.get("repetition")) is int
+            and result.get("pre_dispatch_manifest_sha256") == run.manifest_sha256
+            and result.get("critic_configuration_digest") == run.manifest["critic_configuration_digest"])
 
 
-def _manifest_problems(manifest_bytes, *, expectations, materials_shas, pre_dispatch_manifest_sha256,
-                       committed_manifest_sha256):
-    problems = []
-    if not (is_sha256(pre_dispatch_manifest_sha256) and is_sha256(committed_manifest_sha256)):
-        problems.append("manifest_sha256_missing")
-    elif pre_dispatch_manifest_sha256 != committed_manifest_sha256:
-        problems.append("manifest_sha256_differs_from_committed")
-    if manifest_bytes is None:
+def _run_problems(run, expectations, materials_shas):
+    """The manifest must pin exactly these expectations, materials and cases."""
+    problems = list(run.errors)
+    if run.manifest is None:
         return problems
-    if type(manifest_bytes) is not bytes or sha256(manifest_bytes).hexdigest() != pre_dispatch_manifest_sha256:
-        problems.append("manifest_bytes_differ_from_recorded_sha256")
-    check = check_pre_dispatch_manifest(manifest_bytes, committed_sha256=committed_manifest_sha256,
-                                        verifier=verifier_identity())
-    problems += [f"manifest:{error}" for error in check.errors]
-    if check.manifest is not None and not any(error.startswith("manifest_schema") for error in check.errors):
-        identity = check.manifest["run_identity"]
-        if identity["sealed_expectations_sha256"] != expectations.sha256:
-            problems.append("manifest:sealed_expectations_sha256_mismatch")
-        if materials_shas != {identity["sealed_dataset_sha256"]}:
-            problems.append("manifest:sealed_dataset_sha256_mismatch")
-        order = identity["case_order"]["order"]
-        if sorted(order) != sorted(expectations.cases):
-            problems.append("manifest:case_order_does_not_list_every_case_once")
+    identity = run.identity
+    if identity["sealed_expectations_sha256"] != expectations.sha256:
+        problems.append("manifest:sealed_expectations_sha256_mismatch")
+    if materials_shas and materials_shas != {identity["sealed_dataset_sha256"]}:
+        problems.append("manifest:sealed_dataset_sha256_mismatch")
+    order = identity["case_order"]["order"]
+    if len(order) != len(expectations.cases) or set(order) != set(expectations.cases):
+        problems.append("manifest:case_order_does_not_list_every_case_once")
     return problems
 
 
-def verify_suite(results: list[dict], *, expectations: SealedExpectations, planned_repetitions: int,
-                 pre_dispatch_manifest_sha256: str | None, committed_manifest_sha256: str | None,
-                 judge_separation_established: bool = False, stopped: bool = False,
-                 manifest_bytes: bytes | None = None) -> dict:
-    """Aggregate per-repetition results into the release-v3 suite outcome.
+def verify_suite(results: list[dict], *, expectations: SealedExpectations, run: ReleaseRun,
+                 stopped: bool = False) -> dict:
+    """Aggregate per-repetition results into the release-v4 suite outcome.
 
-    ``judge_separation_established`` comes from the independence profile in force (it
-    defaults to False, which makes a would-be pass ``not_judged``); ``stopped`` marks a
-    run halted by its hard stop. When ``manifest_bytes`` is given the manifest is
-    re-checked in full (schema, digest, attempt, verifier identity, sealed hashes, case
-    order); without it only the recorded and committed sha256 values are compared.
+    ``run`` is the loaded pre-dispatch manifest and profile (``load_release_run``): the
+    manifest is always re-checked in full, and judge separation comes only from the
+    profile it pins. Repetitions are the design's 3; ``stopped`` marks a run halted by
+    its hard stop.
     """
     if type(expectations) is not SealedExpectations:
         raise SealedSetError("loaded sealed expectations are required")
-    if type(planned_repetitions) is not int or planned_repetitions < 1:
-        raise ValueError("planned_repetitions must be a positive integer")
+    if not _is_run(run):
+        raise SealedSetError("a loaded release run (load_release_run) is required")
     reasons = set()
-    slots = {(case_id, rep): [] for case_id in expectations.cases for rep in range(1, planned_repetitions + 1)}
+    if not expectations.composition_checked:
+        reasons.add("composition_not_checked")
+    repetitions = range(1, REPETITIONS_PER_CASE + 1)
+    slots = {(case_id, rep): [] for case_id in expectations.cases for rep in repetitions}
     invalid_causes, materials_shas = [], set()
+    seen = {"trial_id": set(), "trial_record_sha256": set(), "ledger_head": set()}
+    identity = run.identity
     for result in results:
-        if not _attributable(result, expectations):
+        if not _is_issued(result, _ISSUED_RESULTS, "result_sha256"):
+            reasons.add("result_not_issued_by_verify_trial")
+            continue
+        materials_shas.add(result.get("materials_manifest_sha256"))
+        if run.manifest is None or not _attributable(result, expectations, run):
             reasons.add("unattributable_result")
             continue
         slot = (result["case_id"], result["repetition"])
@@ -680,8 +861,19 @@ def verify_suite(results: list[dict], *, expectations: SealedExpectations, plann
             continue
         if slots[slot]:
             reasons.add("duplicate_repetition")
+        for name, values in seen.items():
+            value = result.get(name)
+            if value is not None:
+                if value in values:
+                    reasons.add("trial_reused")
+                values.add(value)
+        if result["verdict"] != INVALID and result.get("trial_id") is None:
+            reasons.add("unattributable_result")
+        judge = result["judge"]
+        if judge["available"] and (judge["identity"], judge["prompt_digest"]) != (
+                identity["judge_identity"], identity["judge_prompt_digest"]):
+            reasons.add("judge_differs_from_run_identity")
         slots[slot].append(result["verdict"])
-        materials_shas.add(result.get("materials_manifest_sha256"))
         if result["verdict"] == INVALID:
             invalid_causes.append({"case_id": slot[0], "repetition": slot[1], "cause": result.get("cause")})
     if len(materials_shas) > 1:
@@ -693,25 +885,22 @@ def verify_suite(results: list[dict], *, expectations: SealedExpectations, plann
         reasons.add("invalid_repetition")
     if stopped:
         reasons.add("run_stopped")
-    reasons.update(_manifest_problems(manifest_bytes, expectations=expectations, materials_shas=materials_shas,
-                                      pre_dispatch_manifest_sha256=pre_dispatch_manifest_sha256,
-                                      committed_manifest_sha256=committed_manifest_sha256))
-    if type(judge_separation_established) is not bool:
-        raise ValueError("judge_separation_established must be a boolean")
+    reasons.update(_run_problems(run, expectations, materials_shas))
+    separated = run.judge_separation_established
     if FAIL in verdicts:
         outcome = FAIL
     elif reasons:
         outcome = INCOMPLETE
-    elif NOT_JUDGED in verdicts or not judge_separation_established:
+    elif NOT_JUDGED in verdicts or not separated:
         outcome = NOT_JUDGED
-        if not judge_separation_established:
+        if not separated:
             reasons.add("judge_separation_not_established")
     else:
         outcome = PASS
     cases, boundaries = {}, {name: {"cases": 0, PASS: 0, FAIL: 0, NOT_JUDGED: 0, INVALID: 0, "missing": 0}
                              for name in BOUNDARY_CLASSES}
     for case_id, sealed in sorted(expectations.cases.items()):
-        per_rep = {rep: slots[(case_id, rep)] for rep in range(1, planned_repetitions + 1)}
+        per_rep = {rep: slots[(case_id, rep)] for rep in repetitions}
         boundary = boundaries[sealed.expectation.boundary]
         boundary["cases"] += 1
         for items in per_rep.values():
@@ -723,17 +912,22 @@ def verify_suite(results: list[dict], *, expectations: SealedExpectations, plann
                                        "counterexample_id": sealed.counterexample_id},
                           "case_pass": all(items == [PASS] for items in per_rep.values()),
                           "verdicts": {str(rep): items for rep, items in per_rep.items()}}
-    return {"schema": SUITE_SCHEMA, "verifier_version": VERIFIER_VERSION, "design_id": DESIGN_ID,
-            "suite_outcome": outcome, "reasons": sorted(reasons),
-            "planned_repetitions": planned_repetitions, "cases": cases, "boundaries": boundaries,
-            "counts": {name: verdicts.count(name) for name in (PASS, FAIL, NOT_JUDGED, INVALID)},
-            "invalid_causes": invalid_causes,
-            "dataset_id": expectations.dataset_id, "expectations_sha256": expectations.sha256,
-            "materials_manifest_sha256": next(iter(materials_shas)) if len(materials_shas) == 1 else None,
-            "pre_dispatch_manifest_sha256": pre_dispatch_manifest_sha256,
-            "committed_manifest_sha256": committed_manifest_sha256,
-            "manifest_rechecked": manifest_bytes is not None,
-            "judge_separation_established": judge_separation_established, "stopped": bool(stopped)}
+    suite = {"schema": SUITE_SCHEMA, "verifier_version": VERIFIER_VERSION, "design_id": DESIGN_ID,
+             "suite_outcome": outcome, "reasons": sorted(reasons),
+             "repetitions_per_case": REPETITIONS_PER_CASE, "cases": cases, "boundaries": boundaries,
+             "counts": {name: verdicts.count(name) for name in (PASS, FAIL, NOT_JUDGED, INVALID)},
+             "invalid_causes": invalid_causes,
+             "dataset_id": expectations.dataset_id, "expectations_sha256": expectations.sha256,
+             "composition_checked": expectations.composition_checked,
+             "materials_manifest_sha256": next(iter(materials_shas)) if len(materials_shas) == 1 else None,
+             "pre_dispatch_manifest_sha256": run.manifest_sha256,
+             "committed_manifest_sha256": run.committed_sha256,
+             "independence_profile_sha256": run.profile_sha256,
+             "case_order": None if identity is None else list(identity["case_order"]["order"]),
+             "judge_separation_established": separated, "stopped": bool(stopped)}
+    suite["suite_sha256"] = _digest(suite)
+    _ISSUED_SUITES.add(suite["suite_sha256"])
+    return suite
 
 
 # ---------------------------------------------------------------- suite record
@@ -755,42 +949,44 @@ def check_suite_record(record: dict) -> list[str]:
     return problems
 
 
-def build_suite_record(suite: dict, *, manifest_bytes: bytes, v3_error_independence: str = "unverified") -> dict:
-    """The ``suite_record.schema.json`` record of one attempt, from its suite result and manifest.
+def build_suite_record(suite: dict, *, run: ReleaseRun) -> dict:
+    """The ``suite_record.schema.json`` record of one attempt, from its issued suite result and run.
 
-    The fields come from the pre-dispatch manifest (configuration digest recomputed
-    from the configuration, sealed dataset sha256, attempt, prior outcomes, profile
-    sha256). The manifest is re-checked against the committed sha256 the suite
-    recorded; if it does not verify, a would-be pass or not_judged becomes incomplete
-    (release-v3: a fail keeps precedence).
+    The suite must be the unaltered result of ``verify_suite`` over the same loaded run.
+    The fields come from the re-checked pre-dispatch manifest (configuration digest
+    recomputed, sealed dataset sha256, attempt, prior outcomes, profile sha256); judge
+    separation and the V3 status come from the run (the profile and this design), never
+    from the caller. A manifest or profile problem, or a suite whose expectations,
+    materials or case order are not the ones the manifest pins, turns a would-be pass or
+    not_judged into incomplete (a fail keeps precedence).
     """
-    if type(suite) is not dict or suite.get("schema") != SUITE_SCHEMA or suite.get("suite_outcome") not in SUITE_OUTCOMES:
-        raise ValueError("a sealed suite result is required")
-    if v3_error_independence not in {"unverified", "verified"}:
-        raise ValueError("unknown V3 status")
-    if type(manifest_bytes) is not bytes or sha256(manifest_bytes).hexdigest() != suite["pre_dispatch_manifest_sha256"]:
-        raise ValueError("the manifest bytes are not the manifest this suite recorded")
-    check = check_pre_dispatch_manifest(manifest_bytes, committed_sha256=suite["committed_manifest_sha256"],
-                                        verifier=verifier_identity())
-    if check.manifest is None or any(error.startswith("manifest_schema") for error in check.errors):
+    if not _is_issued(suite, _ISSUED_SUITES, "suite_sha256") or suite.get("schema") != SUITE_SCHEMA:
+        raise ValueError("an unaltered suite result issued by verify_suite is required")
+    if not _is_run(run) or suite["pre_dispatch_manifest_sha256"] != run.manifest_sha256:
+        raise ValueError("the run is not the manifest this suite recorded")
+    if run.manifest is None:
         raise ValueError("a schema-valid pre-dispatch manifest is required to build a suite record")
-    manifest = check.manifest
+    manifest, identity = run.manifest, run.identity
     outcome = suite["suite_outcome"]
-    if check.errors and outcome in {PASS, NOT_JUDGED}:
+    consistent = (not run.errors and suite["composition_checked"]
+                  and suite["expectations_sha256"] == identity["sealed_expectations_sha256"]
+                  and suite["materials_manifest_sha256"] == identity["sealed_dataset_sha256"]
+                  and suite["case_order"] == identity["case_order"]["order"]
+                  and suite["independence_profile_sha256"] == identity["independence_profile"]["sha256"])
+    if not consistent and outcome in {PASS, NOT_JUDGED}:
         outcome = INCOMPLETE
-    identity = manifest["run_identity"]
     record = {
         "schema_version": SUITE_RECORD_SCHEMA_VERSION,
         "design_id": DESIGN_ID,
         "critic_configuration_digest": critic_configuration_digest(manifest["critic_configuration"]),
-        "pre_dispatch_manifest_sha256": check.manifest_sha256,
+        "pre_dispatch_manifest_sha256": run.manifest_sha256,
         "sealed_set_sha256": identity["sealed_dataset_sha256"],
         "attempt": manifest["attempt"],
         "prior_outcomes": [item["suite_outcome"] for item in manifest["prior_attempts"]],
         "suite_outcome": outcome,
         "independence_profile_sha256": identity["independence_profile"]["sha256"],
-        "judge_separation_established": bool(suite["judge_separation_established"]),
-        "v3_error_independence": v3_error_independence,
+        "judge_separation_established": run.judge_separation_established,
+        "v3_error_independence": run.v3_error_independence,
     }
     record["record_sha256"] = record_sha256(record)
     problems = check_suite_record(record)
@@ -804,8 +1000,10 @@ __all__ = [
     "REPETITIONS_PER_CASE",
     "RESULT_SCHEMA",
     "SUITE_SCHEMA",
+    "V3_VERIFYING_DESIGN_IDS",
     "VERIFIER_VERSION",
     "JudgeItem",
+    "ReleaseRun",
     "SealedCase",
     "SealedExpectations",
     "SealedMaterials",
@@ -818,6 +1016,7 @@ __all__ = [
     "check_suite_record",
     "composition_problems",
     "critic_configuration_digest",
+    "load_release_run",
     "load_sealed_expectations",
     "load_sealed_materials",
     "load_sealed_materials_dir",
