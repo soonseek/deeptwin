@@ -184,8 +184,10 @@ Also run on this branch, one file per process: every `test_extension_*.py`,
 `test_provider_transport_qualification_routes.py`, `test_web_owner_integration.py`,
 `test_first_party.py`, `test_web_shell_assets.py`, `test_deployment_prepare.py`, the domain schema
 tests and the route-count pins (`test_runs_api.py`, `test_works_api.py`,
-`test_provider_source_startup.py`); counts are in the commit report. All 37 node unit test files
-pass (298 tests).
+`test_provider_source_startup.py`), plus `test_deployment_receipt_api.py`,
+`test_provider_receipt_service.py`, `test_router_composition.py` and
+`test_product_wording_t023.py`: 49 files, 1,737 passed, 0 failed (3 skipped, pre-existing). All
+37 node unit test files pass (298 tests). Browser: `browser-extensions.test.mjs` 2/2.
 
 Consequences to know: a binding record is an `extension_binding` domain record, so the existing
 deployment first-only guards (which refuse a new stage prepare while any `extension_qualification`
