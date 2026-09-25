@@ -9,6 +9,14 @@
 // the work screen. An established session skips the page. Every
 // dependency (document, location, fetch) is injected; the page passes the
 // platform's own. Inputs are cleared after every exchange, success or not.
+//
+// After an owner recovery (T025: the deployment operator's stopped-control-plane
+// maintenance advanced the instance to a new recovery epoch) the health reading
+// carries `recovered: true`. The setup form is then the owner's re-setup with the
+// new one-time capability the operator made for the recovery, and the status line
+// says honestly what the recovery ended. While the restricted reconciliation start
+// is still running the health reading is `recovery_reconciliation`, and the page
+// offers no form at all.
 
 import { basePathFrom } from './session.mjs';
 
@@ -34,6 +42,8 @@ const STATUS_TEXT = Object.freeze({
   offline: '서버에 연결하지 못했습니다. 잠시 후 다시 열어 주세요.',
   unreadable: '이 인스턴스의 상태를 확인하지 못했습니다.',
   sending: '확인하는 중…',
+  recovered: '이 인스턴스는 배포 운영자의 소유자 복구를 거쳤습니다. 복구 전의 세션·비밀번호·capability와 서비스 클라이언트는 모두 끝났고, 기다리던 승인은 만료되었으며 열려 있던 실행 동의는 철회되었습니다. 복구 때 운영자가 새로 만든 일회용 capability를 입력해 소유자를 다시 설정해 주세요. 이전 기록은 그대로 남아 있습니다.',
+  reconciling: '배포 운영자의 소유자 복구를 정리하는 중입니다. 정리가 끝날 때까지 설정과 로그인은 열리지 않습니다. 잠시 후 이 화면을 다시 열어 주세요.',
 });
 // the codes the establishment routes answer (app/api/web_boundary.py auth_error)
 const ERROR_TEXT = Object.freeze({
@@ -54,9 +64,13 @@ function fail(message) {
 }
 
 export function setupState(health) {
+  if (typeof health === 'object' && health !== null && health.state === 'recovery_reconciliation') {
+    return Object.freeze({ reconciling: true });
+  }
   if (typeof health !== 'object' || health === null || health.state !== 'available') fail('not a health reading');
   if (typeof health.owner !== 'boolean' || !SETUP_STATES.includes(health.setup)) fail('health carries no setup state');
-  return Object.freeze({ owner: health.owner, setup: health.setup });
+  if (health.recovered !== undefined && health.recovered !== true) fail('health carries no recovery fact');
+  return Object.freeze({ owner: health.owner, setup: health.setup, recovered: health.recovered === true });
 }
 
 function nameProblem(name) {
@@ -168,6 +182,10 @@ export async function boot({ document, location, fetch } = {}) {
     status(STATUS_TEXT.unreadable, 'unavailable');
     return Object.freeze({ mode: 'unavailable', basePath });
   }
+  if (state.reconciling) {
+    status(STATUS_TEXT.reconciling, 'recovery_reconciliation');
+    return Object.freeze({ mode: 'reconciling', basePath });
+  }
   if (state.owner) {
     const form = roots.login;
     form.replaceChildren();
@@ -188,7 +206,7 @@ export async function boot({ document, location, fetch } = {}) {
       }
       await establish(`${prefix}/session/login`, body);
     });
-    return Object.freeze({ mode: 'login', basePath });
+    return Object.freeze({ mode: 'login', basePath, recovered: state.recovered });
   }
   if (state.setup !== 'available') {
     status(STATUS_TEXT[state.setup] ?? STATUS_TEXT.unreadable, state.setup);
@@ -200,9 +218,10 @@ export async function boot({ document, location, fetch } = {}) {
   const name = input(form, 'login_name', { type: 'text', label: '소유자 이름', autocomplete: 'username' });
   const password = input(form, 'password', { type: 'password', label: `비밀번호 (${MIN_PASSWORD_CHARS}자 이상)`,
     autocomplete: 'new-password' });
-  form.append(element('button', { type: 'submit' }, '최초 소유자 설정'));
+  form.append(element('button', { type: 'submit' }, state.recovered ? '소유자 다시 설정' : '최초 소유자 설정'));
   form.hidden = false;
-  status(STATUS_TEXT.setup, 'setup');
+  if (state.recovered) status(STATUS_TEXT.recovered, 'recovered');
+  else status(STATUS_TEXT.setup, 'setup');
   form.addEventListener('submit', async event => {
     event.preventDefault();
     const body = { login_name: name.value, password: password.value, raw_capability_b64u: capability.value };
@@ -223,7 +242,7 @@ export async function boot({ document, location, fetch } = {}) {
     }
     await establish(`${prefix}/session/bootstrap`, body);
   });
-  return Object.freeze({ mode: 'setup', basePath });
+  return Object.freeze({ mode: 'setup', basePath, recovered: state.recovered });
 }
 
 // the page's entry: a boot that fails before the exchange still reaches the status line

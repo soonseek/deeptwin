@@ -32,7 +32,13 @@ def create_session_router(authority):
             owner, setup = authority.setup_state()
         except OwnerAuthError as error:
             return auth_error(error)
-        return {"state": "available", "owner": owner, "setup": setup}
+        body = {"state": "available", "owner": owner, "setup": setup}
+        if authority.recovered:
+            # an owner recovery has run on this instance (epoch above the initial one): the
+            # first screen explains why earlier sessions, passwords and capabilities ended
+            # and that the operator's new one-time capability sets the owner up again
+            body["recovered"] = True
+        return body
 
     # the shell's modules are public static assets (api.md: the static shell is
     # public); the boundary blanks HEAD bodies and adds the security headers

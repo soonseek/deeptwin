@@ -85,9 +85,14 @@ function field(document, id) { return document.getElementById(id); }
 test('the setup state is read from the public health route and nothing else decides the form', async () => {
   assert.deepEqual(MOUNT_IDS, { status: 'start-status', setup: 'setup-form', login: 'login-form' });
   assert.equal(MIN_PASSWORD_CHARS, 15);
-  assert.deepEqual(setupState({ state: 'available', owner: false, setup: 'available' }), { owner: false, setup: 'available' });
+  assert.deepEqual(setupState({ state: 'available', owner: false, setup: 'available' }),
+    { owner: false, setup: 'available', recovered: false });
+  assert.deepEqual(setupState({ state: 'available', owner: false, setup: 'available', recovered: true }),
+    { owner: false, setup: 'available', recovered: true });
+  assert.deepEqual(setupState({ state: 'recovery_reconciliation' }), { reconciling: true });
   for (const bad of [{ state: 'available' }, { state: 'available', owner: 'no', setup: 'available' },
-    { state: 'available', owner: false, setup: 'weird' }, null, 'x']) {
+    { state: 'available', owner: false, setup: 'weird' },
+    { state: 'available', owner: false, setup: 'available', recovered: 'yes' }, null, 'x']) {
     assert.throws(() => setupState(bad));
   }
 });
@@ -226,4 +231,71 @@ test('the server codes of the establishment routes are text the owner can act on
     assert.equal(document.getElementById('start-status').dataset.state, code);
     assert.match(document.getElementById('start-status').textContent, pattern, code);
   }
+});
+
+test('after an owner recovery the setup form is the re-setup with the new capability, and says what ended', async () => {
+  const { promise, fetched, document, navigated } = booted([
+    jsonResponse(401, { code: 'unauthenticated' }),
+    jsonResponse(200, { state: 'available', owner: false, setup: 'available', recovered: true }),
+    jsonResponse(401, { code: 'credentials' }),
+    jsonResponse(201, { state: 'authenticated', csrf_token: 't' }),
+  ]);
+  const result = await promise;
+  assert.equal(result.mode, 'setup');
+  assert.equal(result.recovered, true);
+  const status = field(document, 'start-status');
+  assert.equal(status.dataset.state, 'recovered');
+  // honest: what the recovery ended, where the new capability comes from, that history stays
+  for (const pattern of [/소유자 복구/, /세션·비밀번호·capability/, /서비스 클라이언트/, /만료/, /철회/,
+    /운영자가 새로 만든 일회용 capability/, /이전 기록은 그대로/]) {
+    assert.match(status.textContent, pattern);
+  }
+  const setup = field(document, 'setup-form');
+  assert.equal(setup.hidden, false);
+  assert.equal(field(document, 'login-form').hidden, true);
+  const button = setup.find(el => el.tagName === 'BUTTON');
+  assert.equal(button.textContent, '소유자 다시 설정');
+  // the old capability is refused by the server, the new one sets the owner up again
+  const fill = capability => {
+    setup.find(el => el.dataset.field === 'capability').value = capability;
+    setup.find(el => el.dataset.field === 'login_name').value = 'owner';
+    setup.find(el => el.dataset.field === 'password').value = 'a passphrase of fifteen characters';
+  };
+  fill('A'.repeat(43));
+  await setup.dispatch('submit');
+  assert.equal(status.dataset.state, 'credentials');
+  assert.deepEqual(navigated, []);
+  fill('B'.repeat(43));
+  await setup.dispatch('submit');
+  assert.equal(fetched[3][0], `/${HEX}/session/bootstrap`);
+  assert.equal(JSON.parse(fetched[3][1].body).raw_capability_b64u, 'B'.repeat(43));
+  assert.deepEqual(navigated, [`/${HEX}/work.html`]);
+});
+
+test('a recovered instance whose owner set up again shows the ordinary login', async () => {
+  const { promise, document } = booted([
+    jsonResponse(401, { code: 'unauthenticated' }),
+    jsonResponse(200, { state: 'available', owner: true, setup: 'completed', recovered: true }),
+  ]);
+  const result = await promise;
+  assert.equal(result.mode, 'login');
+  assert.equal(result.recovered, true);
+  assert.equal(field(document, 'login-form').hidden, false);
+  assert.equal(field(document, 'start-status').dataset.state, 'login');
+});
+
+test('while the recovery reconciliation runs the page offers no form and says why', async () => {
+  const { promise, document, fetched } = booted([
+    jsonResponse(503, { code: 'unavailable' }),
+    jsonResponse(200, { state: 'recovery_reconciliation' }),
+  ]);
+  const result = await promise;
+  assert.equal(result.mode, 'reconciling');
+  assert.equal(fetched.length, 2);
+  assert.equal(field(document, 'setup-form').hidden, true);
+  assert.equal(field(document, 'login-form').hidden, true);
+  const status = field(document, 'start-status');
+  assert.equal(status.dataset.state, 'recovery_reconciliation');
+  assert.match(status.textContent, /복구를 정리하는 중/);
+  assert.match(status.textContent, /열리지 않습니다/);
 });

@@ -137,7 +137,8 @@ def test_every_earlier_authority_refuses_after_the_reconciliation_commits(tmp_pa
         refused = bootstrap(client, profile, state.capability)
         assert refused.status_code == 401 and refused.json()["code"] == "credentials"
         assert login(client, profile, PASSWORD).status_code == 401
-        assert client.get(path + "health").json() == {"state": "available", "owner": False, "setup": "available"}
+        assert client.get(path + "health").json() == {
+            "state": "available", "owner": False, "setup": "available", "recovered": True}
         # the new capability re-binds the same owner actor on the next authenticator
         created = bootstrap(client, profile, recovery.capability)
         assert created.status_code == 201, created.text

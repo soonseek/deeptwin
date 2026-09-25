@@ -194,3 +194,143 @@ schema-export suites:
   Revoking the run's consent is what stops such a run.
 - **The credential vault.** `CredentialVault`/`CredentialRootPort`, the typed `credential_client`
   and `test_bootstrap_delivery.py`/`test_credential_vault.py` are not part of this slice.
+
+## 2026-09-25 (later): the stopped-control-plane maintenance tool and the recovery screen
+
+Status: **still a partial slice. T025 stays open.** This section closes three of the open items
+above for offline, test-owned instances: the operator maintenance tool (with cancel-versus-import),
+the recovery screen, and a real-browser recovery. The signing stays outside the product, and no
+real deployment (Compose, Portainer or HTTPS) was recovered.
+
+### The maintenance tool (`app/operations/deployment_control.py`)
+
+`python -m app.operations.deployment_control {status,prepare,cancel,import}` is operator tooling
+(the operator side of `app/services/deployment_control.py`, the file T025 names), never an
+end-user journey. It takes the data directory's serving lock (`ServingLock`, `create=False`), so
+it refuses `busy` while a control plane runs and `unavailable` for a data directory that never
+served. It then works on the following:
+
+- **`prepare --new-verifier V`**
+  - reads the current session-root generation, which the deployment configuration and the
+    database's current `owner_auth_control` row must both name (same epoch N, generation and
+    manifest digest)
+  - refuses `reconciliation_pending` when the database is still one epoch behind (an imported
+    recovery whose start has not run yet)
+  - seals one `owner_recovery` request with a fresh 32-byte nonce and the vault's system actor
+    as `created_by`, and writes it to `W/requests/<request_id>.json` for the trust-set holder to
+    sign
+  - only the non-secret verifier of the new capability reaches the tool. The operator makes the
+    capability offline, for example on `deploy/bootstrap/index.html`. A verifier equal to the
+    current one is refused.
+- **`import --receipt R --trust-set T`**
+  - verifies the receipt against the pending request and the v2 trust set
+    (`verify_recovery_receipt`)
+  - binds `new_verifier_sha256` to the prepared verifier, and `previous_*` to the root as it is
+    now
+  - journals `importing` with the receipt digest, then advances the root to N+1
+    (`advance_session_root`)
+  - rewrites the deployment configuration with epoch N+1 and the new verifier (temporary file,
+    fsync, rename, directory fsync; the file's mode is kept), then records `imported`
+  - the next start with `--recovery-trust-set` runs the restricted reconciliation start
+- **`cancel`** ends a `prepared` request. A receipt for it is then refused (`cancelled`, and
+  `replayed` once a new request is pending). A request whose import has begun cannot be
+  cancelled (`import_in_progress`), and a completed one answers `already_imported`.
+- **Idempotency and crash safety**
+  - `W/pending.json` is the single commit pointer: `prepared → importing → imported`, or
+    `prepared → cancelled`. Every file is replaced with a temporary name, fsync, rename and a
+    directory fsync.
+  - A crash after `importing` is recorded, after the root advance or after the configuration
+    rewrite is completed by re-running `import` with the same receipt. Only the journaled receipt
+    completes it, and a different one is `import_in_progress`.
+  - Re-running `prepare` with the same verifier returns the same sealed request.
+  - Re-importing the identical receipt after completion is a no-op.
+  - A request file left by a crash before the pointer named it is inert.
+  - In the window where the root has advanced but the configuration has not, the control plane
+    fails closed (a rollback), until `import` is re-run.
+- **Refusals.** Every refusal is a closed code in one canonical JSON line with no secret, and
+  exits 2.
+
+### The recovery screen (`app/static/start.mjs`, `/health`)
+
+- After a recovery (a served epoch above 1), `/health` adds `"recovered": true`. An instance
+  that was never recovered answers exactly as before.
+- The first screen then turns its setup form into the owner's re-setup, with the button
+  "소유자 다시 설정" and status `data-state="recovered"`. The status text says what the recovery
+  ended: sessions, passwords, capabilities, service clients, pending approvals (expired) and open
+  run consents (revoked). It says that the operator's new one-time capability sets the owner up
+  again, and that earlier records stay.
+- `{"state": "recovery_reconciliation"}` renders a no-form "reconciling" state. The server never
+  actually serves it to a browser, because the reconciliation commits before any route is
+  composed.
+
+### Tests (serial, offline, `env -u DEEPTWIN_LIVE_ANTHROPIC_API_KEY`)
+
+- `app/tests/test_deployment_control_tool.py` (11 cases, in-test Ed25519 keys via
+  `recovery_fixture`, the test signing adapter). Each case is checked against a real
+  `create_app` start afterwards: the old cookie gets 401, the old capability and password are
+  refused, the new capability returns 201, and the database control epochs are `[1, 2]` (or 3).
+  - the CLI round trip `status → prepare (re-run) → import (re-run) →` start, whose
+    reconciliation actually ran
+  - `busy` while the control plane runs
+  - a second recovery 2→3, which needs the first one reconciled and refuses the first receipt as
+    `replayed`
+  - cancel versus import
+  - no-pending, old-verifier and malformed-verifier refusals
+  - wrong, forged and foreign receipts, none of which change anything: a wrong verifier binding,
+    a zero signature, a key outside the trust set, a stage-only key, another trust set, a skipped
+    epoch, a non-receipt, and a receipt for a request the tool never sealed
+  - a crash at each import step (`importing_recorded`, `root_advanced`, `config_written`),
+    completed by re-running
+  - a crash after the request file
+  - no leftover temporary files, and modes 0700/0600
+- `app/tests/start.test.mjs` adds three cases: the recovered re-setup, a recovered instance's
+  login, and the reconciling state. The health parser accepts only `recovered: true`.
+- `app/tests/browser-owner-recovery-t025.test.mjs` runs one real-Chromium case end to end:
+  1. the offline page makes capability 1
+  2. the supported server starts and the owner sets up
+  3. the tool refuses `busy`
+  4. the server stops and the offline page makes capability 2
+  5. `prepare` with its verifier, a test-only signer (`app/tests/fixtures/recovery_signer.py`)
+     signs, and `import`
+  6. the server restarts from the rewritten configuration
+     (`app/tests/fixtures/owner_recovery_server.py`)
+  7. the old browser session gets 401, and the first screen shows the recovered state
+  8. the old capability is refused and the new one sets the owner up (to `work.html`)
+  9. the old password gets 401 and the new one 200
+  10. the tool's `status` reads epoch 2 in the configuration, the root and the database
+
+  No page error occurs. The owner's cookie is carried across the restart in a fresh browser
+  context, because a half-closed keep-alive socket would otherwise hold the fixed port.
+- `test_owner_sessions.py` now expects `recovered: true` on the post-recovery health reading.
+
+Observed runs in this worktree:
+
+- **Python:** one serial `pytest -q -p no:cacheprovider` invocation over 24 files passed
+  **444**. The files were the new tool test, test_deployment_control, test_owner_sessions,
+  test_session_security, test_web_owner_integration, test_first_party, test_web_shell_assets,
+  test_session_root, the deployment/domain schema-export and receipt-session suites,
+  test_first_party_dependencies, test_local_session, test_owner_admission,
+  test_owner_password_change, test_server_session_integration, test_service_clients_persistent,
+  test_session_gui_mirror, test_run_approvals, test_run_consents, test_deployment_receipt_api,
+  test_deployment_prepare_api and test_provider_source_startup.
+- **Node unit tests:** every non-browser `app/tests/*.test.mjs` passed, **204/204**.
+- **Real browser:** browser-owner-recovery-t025, browser-owner-lifecycle-t025 and
+  browser-first-use-integration-t023 passed, **10/10**.
+
+### What remains open after this section
+
+- **The real signing adapter.** No instance-operator recovery adapter signs with a real key.
+  The tool only accepts receipts, and the signer exists only in tests.
+- **No real deployment recovery.** No Compose, Portainer or HTTPS instance was recovered, and no
+  `deploy/` step wraps the tool.
+- **The lifecycle CAS.** T025's "separate lifecycle/consumption CAS" and "separate sealed
+  request/signed receipt channels" are approximated: there is one pending pointer in the
+  operator's work directory, and the database's consumption binding (the epoch-N+1 control row
+  names the request id, nonce and receipt digest). It is not a separate CAS store or a pair of
+  channels.
+- **Items not addressed here.** The earlier open items still stand: the authorship of
+  recovery-written decisions, already-approved v1 gates, and `CredentialVault`/`credential_client`.
+- **The design's approval.** The recovery design file still says "proposal only". The repository
+  holds no record of the owner's approval other than the 2026-09-24 test docstring: nothing in
+  `decisions.md`, the tasks, the evidence or the commit messages. It was therefore left
+  unchanged, and no approval is recorded here.

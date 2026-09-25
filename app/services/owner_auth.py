@@ -133,6 +133,11 @@ class PersistentOwnerAuthority:
                 self._check(db)
 
     @property
+    def recovered(self):
+        """True once this instance serves a recovery epoch above the initial one."""
+        return self._recovery is None and self._epoch > 1
+
+    @property
     def reconciling(self):
         """True between a verified recovery start and its committed reconciliation."""
         return self._recovery is not None
