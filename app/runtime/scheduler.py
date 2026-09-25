@@ -700,10 +700,10 @@ def build_scheduler(
         _require(node_id not in loop_members, f"gated tool node {node_id} inside a bounded loop is unsupported")
         _require(
             attempts is not None and node_id in attempts.node_ids
-            and isinstance(attempts.transport, CompiledToolTransport)
-            and getattr(attempts.transport, "per_attempt_approval", False) is True
-            and attempts.transport.compiled_tool_binding is not None
-            and attempts.transport.compiled_tool_binding.node_id == node_id,
+            and isinstance(attempts.transport_for(node_id), CompiledToolTransport)
+            and getattr(attempts.transport_for(node_id), "per_attempt_approval", False) is True
+            and attempts.transport_for(node_id).compiled_tool_binding is not None
+            and attempts.transport_for(node_id).compiled_tool_binding.node_id == node_id,
             f"gated tool node {node_id} requires its attempt dispatcher with a per-attempt approval transport",
         )
     gates = {}
@@ -942,7 +942,7 @@ def build_scheduler(
             ledger.request_gate_approval(run_id, gate, scope)
             ledger.request_execution_approval(
                 run_id, gate, scope, execution_id, attempt_no,
-                inputs_digest=attempts.transport.artifact_inputs_digest)
+                inputs_digest=attempts.transport_for(node_id).artifact_inputs_digest)
             status = approvals.execution_state(run_id, gate, scope, execution_id=execution_id,
                                                attempt_no=attempt_no)
         except Exception:  # noqa: BLE001 - ledger/approval detail stays private

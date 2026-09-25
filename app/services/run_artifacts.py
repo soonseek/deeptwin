@@ -4,8 +4,11 @@ bounded ranges and derived previews (T045; runtime.md §5, FR-015).
 A run's artifacts are exactly the registered output blobs its accepted node
 results name: a result record of kind `artifact` whose content carries an
 `artifacts` list (`ordinal`, `role`, `media_type`, `blob`), as the extension
-and provider attempt transports seal them. Nothing else is an artifact — not
-a path, a filename or a caller-supplied reference. The store verifies every
+and provider attempt transports seal them — or a browser tool's sealed
+observation (`browser-tool-output-v1`), whose one imported output (the page's
+rendered text or its screenshot PNG) is listed as ordinal 0 (`page_text` /
+`screenshot`, the declared type without parameters). Nothing else is an
+artifact — not a path, a filename or a caller-supplied reference. The store verifies every
 blob a record names when it reads the record, so an original whose bytes
 vanished fails the read closed (`unavailable`) instead of being listed.
 
@@ -112,12 +115,34 @@ def artifact_identity(result_ref: EntityRef, ordinal: int) -> str:
                      f"deeptwin:run-artifact:{result_ref.id}:{result_ref.version}:{ordinal}"))
 
 
+BROWSER_OUTPUT_SCHEMA = "browser-tool-output-v1"
+_BROWSER_ROLES = {"read": "page_text", "screenshot": "screenshot"}
+
+
+def _browser_entries(content) -> list[dict]:
+    """A browser tool's sealed observation: its one imported output, if any."""
+
+    output = content.get("output")
+    if output is None:
+        return []  # a navigation imports no output
+    role = _BROWSER_ROLES.get(content.get("operation"))
+    if (role is None or type(output) is not dict or set(output) != {"media_type", "blob"}
+            or type(output["media_type"]) is not str or type(output["blob"]) is not dict):
+        raise RunArtifactError("unavailable")
+    media = output["media_type"].split(";", 1)[0].strip().lower()
+    if _MEDIA.fullmatch(media) is None:
+        raise RunArtifactError("unavailable")
+    return [{"ordinal": 0, "role": role, "media_type": media, "blob": BlobRef(**output["blob"])}]
+
+
 def _entries(record) -> list[dict]:
     """A result record's declared artifacts, validated strictly or not at all."""
 
     if record.ref.kind != "artifact":
         return []
     content = record.body["content"]
+    if type(content) is dict and content.get("schema_version") == BROWSER_OUTPUT_SCHEMA:
+        return _browser_entries(content)
     items = content.get("artifacts") if type(content) is dict else None
     if items is None:
         return []

@@ -520,6 +520,36 @@ def test_a_sent_attempt_is_retried_only_on_the_owners_recovery_and_only_after_an
         )
 
 
+def test_the_owners_recovery_in_a_restarted_process_continues_past_the_terminal_attempt(tmp_path):
+    # T049: the first attempt was reserved by the lease owner of a process that has since
+    # died; the recovery runs in a new process (a new owner identity). The terminal attempt
+    # is a proven continuation, never a replayed reserve (whose command binds the old owner)
+    subject, run = started(tmp_path)
+    transport = FailingOnce(subject)
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject, run, dispatcher(subject, transport), handlers(subject, [])).run()
+    restart(subject, tmp_path)
+    subject.owner = OwnerIdentity(identifier(), 4322, 901, identifier())
+    calls = []
+    outcome = build(subject, run, retrying(subject, transport), handlers(subject, calls)).run()
+    first, second = (na.attempt_identity(run.run_id, "writer", 0, index) for index in (0, 1))
+    assert transport.calls == [first, second]
+    assert calls == ["writer", "publish"]
+    assert dict(outcome.result_refs)[sch.execution_identity(run.run_id, "writer", 0)] == subject.refs.produced
+    assert subject.ledger.get_attempt(first)["terminal_outcome"] == "failed"  # the past stays distinct
+    assert subject.ledger.get_attempt(second)["spec"]["attempt_no"] == 2
+    # without the owner's recovery the restarted process never sends again
+    subject2, run2 = started(tmp_path / "plain")
+    transport2 = FailingOnce(subject2)
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject2, run2, dispatcher(subject2, transport2), handlers(subject2, [])).run()
+    restart(subject2, tmp_path / "plain")
+    subject2.owner = OwnerIdentity(identifier(), 4323, 902, identifier())
+    with pytest.raises(sch.SchedulerError, match="node_failed:writer"):
+        build(subject2, run2, dispatcher(subject2, transport2), handlers(subject2, [])).run()
+    assert transport2.calls == [na.attempt_identity(run2.run_id, "writer", 0, 0)]
+
+
 def retrying(subject, transport):
     return na.NodeAttemptDispatcher.build(
         ledger=subject.ledger, budget_book=subject.book, owner=subject.owner,

@@ -275,14 +275,19 @@ class VisitAttempt:
 class NodeAttemptDispatcher:
     """Binds agent nodes to ledger attempts; built only by `build`."""
 
-    __slots__ = ("_bindings", "_book", "_ledger", "_owner", "_retry", "_transport")
+    __slots__ = ("_bindings", "_book", "_ledger", "_owner", "_retry", "_transports")
 
     def __init__(self):
         raise TypeError("Use NodeAttemptDispatcher.build")
 
     @classmethod
-    def build(cls, *, ledger, budget_book, owner, bindings, transport,
-              retry_after_terminal=False):
+    def build(cls, *, ledger, budget_book, owner, bindings, transport=None,
+              retry_after_terminal=False, transports=None):
+        """One transport for every bound node (`transport`), or one code-owned transport
+        per bound node (`transports`, a closed mapping with exactly the bindings' node
+        ids) — a graph whose roles call different tools. Each compiled tool transport
+        binds exactly its own calling node either way."""
+
         if type(retry_after_terminal) is not bool:
             raise TypeError("retry_after_terminal must be a bool")
         if type(ledger) is not RuntimeLedger:
@@ -299,37 +304,47 @@ class NodeAttemptDispatcher:
             _node_id(node_id)
             if type(binding) is not AttemptBinding:
                 raise TypeError("Bindings must be exact AttemptBinding values")
-        if not callable(transport) or isinstance(transport, str):
-            raise TypeError("Transport must be callable")
-        if isinstance(transport, CompiledToolTransport):
-            transport.require_dispatch_ledger(ledger)
-            selected = transport.compiled_tool_binding
-            if selected is not None:
-                if set(bindings) != {selected.node_id}:
-                    raise ValueError("compiled transport binds exactly its calling node")
-                if bindings[selected.node_id].tool_calls != 1:
-                    raise ValueError("compiled invocation requires one tracked tool call")
-        # a code-owned transport may state the most output bytes an attempt can
-        # produce; every binding reserves at least that, or the ledger would settle
-        # the attempt as an accounting overrun that blocks the whole budget session
-        # (a present bound that fails to read propagates: it never turns the gate off)
-        stated = None
-        if inspect.getattr_static(transport, "output_bytes_bound", None) is not None:
-            stated = transport.output_bytes_bound
-        if stated is not None:
-            if type(stated) is not int:
-                raise TypeError("a transport's output bound is an exact count")
-            if stated < 0:
-                raise ValueError("a transport's output bound is never negative")
-            for node_id, binding in bindings.items():
-                if binding.output_bytes < stated:
-                    raise ValueError(f"binding for {node_id} reserves less than the transport's output bound")
+        if (transport is None) == (transports is None):
+            raise TypeError("Exactly one of transport or transports is required")
+        if transports is not None:
+            if type(transports) is not dict or set(transports) != set(bindings):
+                raise ValueError("per-node transports must name exactly the bound nodes")
+            per_node = dict(transports)
+        else:
+            per_node = dict.fromkeys(bindings, transport)
+        for current in {id(item): item for item in per_node.values()}.values():
+            if not callable(current) or isinstance(current, str):
+                raise TypeError("Transport must be callable")
+            nodes = {node_id for node_id, item in per_node.items() if item is current}
+            if isinstance(current, CompiledToolTransport):
+                current.require_dispatch_ledger(ledger)
+                selected = current.compiled_tool_binding
+                if selected is not None:
+                    if nodes != {selected.node_id}:
+                        raise ValueError("compiled transport binds exactly its calling node")
+                    if bindings[selected.node_id].tool_calls != 1:
+                        raise ValueError("compiled invocation requires one tracked tool call")
+            # a code-owned transport may state the most output bytes an attempt can
+            # produce; every binding reserves at least that, or the ledger would settle
+            # the attempt as an accounting overrun that blocks the whole budget session
+            # (a present bound that fails to read propagates: it never turns the gate off)
+            stated = None
+            if inspect.getattr_static(current, "output_bytes_bound", None) is not None:
+                stated = current.output_bytes_bound
+            if stated is not None:
+                if type(stated) is not int:
+                    raise TypeError("a transport's output bound is an exact count")
+                if stated < 0:
+                    raise ValueError("a transport's output bound is never negative")
+                for node_id in sorted(nodes):
+                    if bindings[node_id].output_bytes < stated:
+                        raise ValueError(f"binding for {node_id} reserves less than the transport's output bound")
         dispatcher = object.__new__(cls)
         dispatcher._ledger = ledger
         dispatcher._book = budget_book
         dispatcher._owner = owner
         dispatcher._bindings = dict(bindings)
-        dispatcher._transport = transport
+        dispatcher._transports = per_node
         dispatcher._retry = retry_after_terminal
         return dispatcher
 
@@ -343,7 +358,18 @@ class NodeAttemptDispatcher:
 
     @property
     def transport(self):
-        return self._transport
+        """The one transport every bound node shares; a dispatcher built with distinct
+        per-node transports has none (read `transport_for`)."""
+
+        distinct = {id(item): item for item in self._transports.values()}
+        if len(distinct) != 1:
+            raise ValueError("this dispatcher binds a transport per node; use transport_for")
+        return next(iter(distinct.values()))
+
+    def transport_for(self, node_id):
+        if node_id not in self._transports:
+            raise ValueError("node is not bound to this dispatcher")
+        return self._transports[node_id]
 
     def next_attempt_no(self, *, run_id, node_id, execution_id, loop_index, recovery=None):
         """The attempt number the next dispatch of this visit would send under, read
@@ -378,20 +404,21 @@ class NodeAttemptDispatcher:
         return None
 
     def require_compiled_context(self, compiled):
-        if isinstance(self._transport, CompiledToolTransport):
-            for node_id in self._bindings:
-                self._transport.require_compiled_context(compiled, node_id, self._ledger)
+        for node_id, transport in self._transports.items():
+            if isinstance(transport, CompiledToolTransport):
+                transport.require_compiled_context(compiled, node_id, self._ledger)
 
     def for_visit(self, *, run_id, node_id, execution_id, loop_index, compiled=None):
         self.require_compiled_context(compiled)
         binding = self._bindings[node_id]
+        transport = self._transports[node_id]
         uuid_string(run_id)
         uuid_string(execution_id)
         _count("loop index", loop_index)
 
         def require_execution():
-            if (isinstance(self._transport, CompiledToolTransport)
-                    and self._transport.compiled_tool_binding is not None):
+            if (isinstance(transport, CompiledToolTransport)
+                    and transport.compiled_tool_binding is not None):
                 execution = self._ledger.get_execution(execution_id)["spec"]
                 if execution["run_id"] != run_id or execution["node_id"] != node_id:
                     raise ValueError("compiled visit disagrees with ledger execution")
@@ -408,15 +435,23 @@ class NodeAttemptDispatcher:
     def _dispatch(self, run_id, node_id, execution_id, loop_index, binding):
         ledger = self._ledger
         budget_session_id = ledger.get_run(run_id)["spec"]["budget_session_id"]
+        transport = self._transports[node_id]
         for attempt_index in range(MAX_ATTEMPTS_PER_VISIT):
             request = AttemptDispatchRequest(
                 run_id=run_id, node_id=node_id, execution_id=execution_id,
                 attempt_id=attempt_identity(run_id, node_id, loop_index, attempt_index),
                 envelope_ref=binding.envelope_ref, profile_ref=binding.profile_ref,
                 deadline_at_ms=binding.deadline_at_ms,
-                tool_binding=(self._transport.compiled_tool_binding
-                              if isinstance(self._transport, CompiledToolTransport) else None),
+                tool_binding=(transport.compiled_tool_binding
+                              if isinstance(transport, CompiledToolTransport) else None),
             )
+            if self._proven_continuation(request):
+                # the ledger already proves this attempt is behind the visit (it definitely
+                # never sent, or — under the owner's recovery — it was observed terminal
+                # with final usage): the walk `next_attempt_no` takes, without replaying its
+                # reserve, whose command binds the lease owner of the process that made it
+                # (a restarted process is another owner and would conflict)
+                continue
             outcome = self._dispatch_attempt(request, attempt_index + 1, binding,
                                              budget_session_id)
             if outcome is not None:
@@ -452,7 +487,8 @@ class NodeAttemptDispatcher:
         )
         send_command = _command_identity(attempt_id, "send")
         claim = None
-        claiming = getattr(self._transport, "dispatch_claim", None)
+        transport = self._transports[request.node_id]
+        claiming = getattr(transport, "dispatch_claim", None)
         current = ledger.get_attempt(attempt_id) if claiming is not None else None
         if (claiming is not None and current["phase"] in {"reserved", "preflighting"}
                 and current["send_intent_at_ms"] is None and current["dispatch_gate"] == "open"):
@@ -500,7 +536,7 @@ class NodeAttemptDispatcher:
                 # against the attempt, lease, run budget session and reservation;
                 # the conservative window travels with the permit to the transport
                 window = ledger.consume_dispatch_permit_window(permit, budget_book=book)
-                result = self._transport(permit, request, window)
+                result = transport(permit, request, window)
                 if type(result) is not AttemptTransportResult:
                     raise TypeError("transport result must be an exact AttemptTransportResult")
                 if result.result_ref is not None:
@@ -579,6 +615,17 @@ class NodeAttemptDispatcher:
             return False
         return not any(item["classification"] == "late"
                        for item in self._ledger.result_observations(attempt_id))
+
+    def _proven_continuation(self, request):
+        try:
+            row = self._ledger.get_attempt(request.attempt_id)
+        except KeyError:
+            return False
+        if row["spec"]["execution_id"] != request.execution_id:
+            raise ValueError("attempt belongs to another execution")
+        if self._definitely_unsent(request.attempt_id):
+            return True
+        return self._retry and self._observed_terminal(request.attempt_id)
 
     def _definitely_unsent(self, attempt_id):
         row = self._ledger.get_attempt(attempt_id)
