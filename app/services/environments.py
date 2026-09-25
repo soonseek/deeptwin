@@ -27,6 +27,7 @@ from datetime import datetime
 from hashlib import sha256
 
 from ..domain.refs import DomainContractError, EntityRef, canonical_json
+from .critic_qualification import is_issued_critic_qualification
 from .design import is_accepted_candidate
 from .design_criticism import verdict_binds_candidate
 from .owner_decisions import is_issued_owner_decision, subject_digest
@@ -90,11 +91,12 @@ class DesignApproval:
     model_bindings: EntityRef
     tool_permissions: EntityRef
     observation_contract: EntityRef
+    critic_qualification: dict
     _issuer_token: object = field(repr=False, compare=False)
 
     def as_dict(self) -> dict:
         return {
-            "schema_version": "design-approval-v1",
+            "schema_version": "design-approval-v2",
             "environment_id": self.environment_id,
             "design_ref": self.design_ref.as_dict(),
             "verdict_sha": self.verdict_sha,
@@ -106,6 +108,7 @@ class DesignApproval:
             "model_bindings_ref": self.model_bindings.as_dict(),
             "tool_permissions_ref": self.tool_permissions.as_dict(),
             "observation_contract_ref": self.observation_contract.as_dict(),
+            "critic_qualification": dict(self.critic_qualification),
         }
 
     @property
@@ -113,10 +116,10 @@ class DesignApproval:
         return sha256(canonical_json(self.as_dict())).hexdigest()
 
 
-DESIGN_APPROVAL_SUBJECT_SCHEMA_VERSION = "design-approval-subject-v1"
+DESIGN_APPROVAL_SUBJECT_SCHEMA_VERSION = "design-approval-subject-v2"
 _SUBJECT_KEYS = frozenset({
     "environment", "candidate", "verdict", "model_bindings", "tool_permissions",
-    "observation_contract",
+    "observation_contract", "critic_qualification",
 })
 
 
@@ -159,6 +162,16 @@ def design_approval_subject(value) -> dict:
         # derived (select/edit/merge) design must complete its own
         # re-review into a passed candidate first.
         raise EnvironmentContractError("only a passed design version is approvable")
+    critic = value["critic_qualification"]
+    if not is_issued_critic_qualification(critic):
+        raise EnvironmentContractError("the critic configuration's qualification state is required")
+    if critic.status != "qualified":
+        # A verdict is only as trustworthy as the critic configuration that
+        # produced it: an unknown, calibration-only or failed critic
+        # qualification never lets a passed verdict be approved (FR-006).
+        raise EnvironmentContractError(
+            f"the critic configuration is not qualified ({critic.status}: {critic.reason})"
+        )
     return {
         "schema_version": DESIGN_APPROVAL_SUBJECT_SCHEMA_VERSION,
         "environment_id": environment_id,
@@ -176,6 +189,7 @@ def design_approval_subject(value) -> dict:
             _ref(value["observation_contract"], "observation_contract",
                  "observation contract")
         ),
+        "critic_qualification": critic.as_dict(),
     }
 
 
@@ -196,6 +210,7 @@ def design_approval_evidence_subject(approval) -> dict:
         "model_bindings": _identity(approval.model_bindings),
         "tool_permissions": _identity(approval.tool_permissions),
         "observation_contract": _identity(approval.observation_contract),
+        "critic_qualification": dict(approval.critic_qualification),
     }
 
 
@@ -247,6 +262,7 @@ def record_design_approval(value) -> DesignApproval:
             value["observation_contract"], "observation_contract",
             "observation contract",
         ),
+        critic_qualification=subject["critic_qualification"],
         _issuer_token=_ISSUE_TOKEN,
     )
 

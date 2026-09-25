@@ -506,6 +506,12 @@ Independent test: fixed synthetic work → real design decisions/candidates → 
   critic-contract rules and a verifier case-key bug, both fixed. All cases are observed/tuned
   development data and never heldout — evidence/q01-live-calibration-t035-2026-09-24.md.
 - [ ] T036 [US2] Implement independent candidate reviews, hard gates/ranking/diversity and bounded supplementation in app/services/design_review.py and app/tests/test_design_selection.py; explicitly connect production critic qualified lens routing/composition→LensPack→counterexample→independent validity/response, record contribution/abstention and test input isolation in app/tests/test_critic_lens_pipeline.py. Add immutable select/merge/edit versions, mandatory re-review, exact `DesignApproval`, and preparation of the same `EnvironmentVersion` by CAS in app/services/environments.py with stale/hash/run-binding tests; this prepares a design but does not operationally promote it. Q01 fixtures are not this production implementation and unknown critical qualification cannot pass (FR-004/FR-006/FR-007/FR-008, Constitution VI). 2026-09-17: the environments.py approval now accepts only owner-session-recorded decisions over the exact design subject (app/services/owner_decisions.py; evidence/owner-decisions-design-approval.md); design_review/critic-lens production routing remains open.
+  2026-09-25: critic qualification gate — `app/services/critic_qualification.py` derives an issued
+  state from a release suite record (frozen release design, suite `pass`, judge separation established,
+  exact configuration digest); calibration, fail/incomplete, unestablished judge, another configuration
+  or no record are not qualified, and `design_approval_subject` (v2) refuses a passed verdict unless the
+  critic is qualified and binds the qualification into the approval. No real release suite has passed
+  (T077), so no design is approvable in production today; storing suite records remains T077.
 - [ ] T037 [US2] Implement large readable graph comparison, same-focus differences, model/tool details and edit/merge/review/prepare commands in app/static/graph.mjs and app/static/workspace.mjs (UX-AC01, FR-005/FR-008/FR-009).
 - [ ] T038 [US2] Exercise real generation→critique→selection and 0/1/2/3 valid-candidate/revision/cancel paths in app/tests/browser-design.test.mjs and specs/001-autonomous-release/evidence/us2.md; no fixture scores presented as live (SC-003/SC-005).
 
