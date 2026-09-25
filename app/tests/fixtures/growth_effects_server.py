@@ -7,13 +7,18 @@ TEST-ACTOR tool `test_actor_notify`, the real dispatcher and extension transport
 a test-owned growth driver. The owner performs the original send in the browser
 (start the gated run, approve the writer's exact attempt, resume). The browser test
 then writes DIR/g14-request.json naming that run; the driver — the product has no
-growth driver of its own — reads the run's recorded ToolCall from the ledger, freezes
-a queue that names it by its record digest and runs three paired rounds on the real
-scheduler in fresh isolated vaults, each under its own plan and `tool_effect_policy`:
+growth driver of its own — reads the run's recorded ToolCall from the ledger and
+persists three comparison plans, each with its own `tool_effect_policy`, then writes
+DIR/g14-plans.json. The owner approves boundaries on the versions page (the product's
+owner route records an owner decision over each exact boundary; the test actor
+approves nothing) and the test writes DIR/g14-approved.json. The driver then freezes a
+queue that names the recorded call by its record digest and runs three paired rounds
+on the real scheduler in fresh isolated vaults, reading the approvals only through
+the owner-decision reader (2026-09-25, G-14 approvals):
 
-- REPLAY: an approved replay boundary (the recorded result, bound to the ToolCall);
-- SINK: an approved isolated sink, the candidate sending a changed notice;
-- UNAPPROVED: a replay boundary nobody approved (that item is not comparable).
+- REPLAY: a replay boundary the owner approved (the recorded result, bound to the ToolCall);
+- SINK: an isolated sink the owner approved, the candidate sending a changed notice;
+- UNAPPROVED: a replay boundary the owner left undecided (that item is not comparable).
 
 Each queue is [an item without external effects, the item with the past send]. The
 rounds and their per-item outcomes are persisted through the real growth store, so
@@ -58,6 +63,7 @@ from app.services.growth_store import (
     persist_comparison_round,
     persist_round_outputs,
 )
+from app.services.owner_decisions import PersistentOwnerDecisions
 from app.services.paired_execution import (
     PairedSide,
     execute_paired_round,
@@ -65,7 +71,6 @@ from app.services.paired_execution import (
 )
 from app.services.tool_effect_isolation import (
     ToolEffectSource,
-    record_boundary_approval,
     record_tool_effect_policy,
     recorded_effect_bindings,
 )
@@ -147,7 +152,7 @@ def boundary(kind):
     return value
 
 
-def execute(domain, source, lineage_id, boundaries, items, candidate_payload, reset):
+def prepare(domain, lineage_id, boundaries):
     policy = record_tool_effect_policy(domain, boundaries, **marks(domain))
     plan = freeze_comparison_plan({
         "lineage_id": lineage_id, "baseline_environment": ref("environment", 67901),
@@ -155,7 +160,11 @@ def execute(domain, source, lineage_id, boundaries, items, candidate_payload, re
         "evaluator_bundle": ref("rubric", 67907), "reset_manifest": ref("run_manifest", 67908),
         "allowed_changes": ref("decision_record", 67909), "tool_effect_policy": policy.as_dict(),
         "budget": ref("budget_policy", 67911), "mode": "automatic"})
-    plan_record = persist_comparison_plan(domain, plan, **marks(domain))
+    return plan, persist_comparison_plan(domain, plan, **marks(domain))
+
+
+def execute(domain, source, plan, plan_record, items, candidate_payload, reset):
+    lineage_id = plan.lineage_id
     baseline, candidate = sides(candidate_payload)
     paired = execute_paired_round(
         plan, items=items, baseline=baseline, candidate=candidate, evaluator=evaluate, reset_root=reset,
@@ -177,41 +186,62 @@ def execute(domain, source, lineage_id, boundaries, items, candidate_payload, re
             "item_outcomes": [dict(item) for item in paired.item_outcomes]}
 
 
-def run_rounds(app, owned, tool, counts, request):
+ROUNDS = (("REPLAY", "replay", gate.OK_TEXT), ("SINK", "isolated_sink", CHANGED),
+          ("UNAPPROVED", "replay", gate.OK_TEXT))
+
+
+def prepare_plans(app, tool, counts, request):
+    domain = app.state.domain_store
+    bindings = recorded_effect_bindings(RuntimeLedger(domain), request["run_id"])
+    before = {"tool_calls": tool["calls"], **counts}
+    plans = {name: prepare(domain, LINEAGES[name], [boundary(kind)]) for name, kind, _payload in ROUNDS}
+    return {"bindings": bindings, "before": before, "plans": plans}
+
+
+def run_rounds(app, owned, tool, counts, prepared):
     domain = app.state.domain_store
     ledger = RuntimeLedger(domain)
-    bindings = recorded_effect_bindings(ledger, request["run_id"])
-    before = {"tool_calls": tool["calls"], **counts}
-    source = ToolEffectSource.build(domain_store=domain, ledger=ledger)
-    past = {"text": "과거 발송이 있는 합성 업무", "label": LABEL, "notice": True, "past_tool_effects": bindings}
-    replay = boundary("replay")
-    approved_replay = {**replay, "approval_ref": record_boundary_approval(
-        domain, replay, "approved", **marks(domain)).as_dict()}
-    sink = boundary("isolated_sink")
-    approved_sink = {**sink, "approval_ref": record_boundary_approval(domain, sink, "approved", **marks(domain)).as_dict()}
+    # approvals are read only as the owner's recorded decisions over each exact boundary
+    decisions = PersistentOwnerDecisions(domain, app.state.owner_authority)
+    source = ToolEffectSource.build(domain_store=domain, ledger=ledger, decisions=decisions)
+    past = {"text": "과거 발송이 있는 합성 업무", "label": LABEL, "notice": True,
+            "past_tool_effects": prepared["bindings"]}
     rounds = {}
-    for name, boundaries, payload in (("REPLAY", [approved_replay], gate.OK_TEXT),
-                                      ("SINK", [approved_sink], CHANGED),
-                                      ("UNAPPROVED", [replay], gate.OK_TEXT)):
-        rounds[name] = execute(domain, source, LINEAGES[name], boundaries, [dict(PLAIN), dict(past)], payload,
+    for name, _kind, payload in ROUNDS:
+        plan, plan_record = prepared["plans"][name]
+        rounds[name] = execute(domain, source, plan, plan_record, [dict(PLAIN), dict(past)], payload,
                                owned / f"reset-{name.lower()}")
     after = {"tool_calls": tool["calls"], **counts}
-    return {"evidence_label": LABEL, "bindings": bindings, "before": before, "after": after,
-            "lineages": LINEAGES, "rounds": rounds}
+    return {"evidence_label": LABEL, "bindings": prepared["bindings"], "before": prepared["before"],
+            "after": after, "lineages": LINEAGES, "rounds": rounds}
+
+
+def wait_for(path):
+    while not path.is_file():
+        time.sleep(0.1)
+    time.sleep(0.1)  # the file is written whole by the test
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def publish(target, value):
+    target.with_suffix(".tmp").write_text(json.dumps(value, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+    target.with_suffix(".tmp").replace(target)
 
 
 def driver(app, owned, tool, counts):
-    requested = owned / "g14-request.json"
-    while not requested.is_file():
-        time.sleep(0.1)
-    time.sleep(0.1)  # the request file is written whole by the test
     try:
-        result = run_rounds(app, owned, tool, counts, json.loads(requested.read_text(encoding="utf-8")))
+        prepared = prepare_plans(app, tool, counts, wait_for(owned / "g14-request.json"))
+        publish(owned / "g14-plans.json", {"plans": {name: record.as_dict() for name, (_plan, record)
+                                                     in prepared["plans"].items()}})
+    except Exception:  # noqa: BLE001 - the test reads the failure instead of waiting forever
+        publish(owned / "g14-plans.json", {"error": traceback.format_exc()})
+        return
+    wait_for(owned / "g14-approved.json")
+    try:
+        result = run_rounds(app, owned, tool, counts, prepared)
     except Exception:  # noqa: BLE001 - the test reads the failure instead of waiting forever
         result = {"error": traceback.format_exc()}
-    target = owned / "g14-done.json"
-    target.with_suffix(".tmp").write_text(json.dumps(result, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-    target.with_suffix(".tmp").replace(target)
+    publish(owned / "g14-done.json", result)
 
 
 def main():

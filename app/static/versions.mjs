@@ -7,7 +7,11 @@
 // already happened outside. Growth experiments show the stop reason the loop
 // recorded, never a reconstructed one. All text reaches the DOM through textContent.
 
-import { renderRounds } from './experiments.mjs';
+// The isolation boundaries a comparison plan needs (G-14) are listed with what each
+// means and are approved or rejected here as the owner's own recorded decision over
+// the exact boundary shown (its digest travels with the command).
+
+import { renderBoundaries, renderRounds } from './experiments.mjs';
 
 const BASE_PATH = /^\/(?:[0-9a-f]{32}\/)?$/;
 
@@ -45,6 +49,12 @@ export const ERROR_MESSAGES = Object.freeze({
   unavailable: '처리하지 못했습니다.',
 });
 
+export const BOUNDARY_ERRORS = Object.freeze({
+  ...ERROR_MESSAGES,
+  not_found: '해당 비교 계획이나 경계를 찾지 못했습니다.',
+  conflict: '이 경계의 내용이 화면에 보인 것과 다르거나, 같은 명령이 다른 결정으로 이미 기록되었습니다. 다시 확인해 주세요.',
+});
+
 function fail(message) {
   throw new Error(message);
 }
@@ -77,8 +87,10 @@ export function createVersionsPanel({ root, document, request, basePath = '/', c
   const current = element('section', undefined, { 'aria-label': '운영 버전' });
   const candidates = element('section', undefined, { 'aria-label': '후보' });
   const experiments = element('section', undefined, { 'aria-label': '성장 실험' });
+  const boundaries = element('section', undefined, { 'aria-label': '도구 효과 경계' });
   const rounds = element('section', undefined, { 'aria-label': '비교 라운드' });
-  root.replaceChildren(element('h2', '버전'), status, current, candidates, experiments, rounds);
+  root.replaceChildren(element('h2', '버전'), status, current, candidates, experiments, boundaries, rounds);
+  let plans = [];
 
   function say(text, state) {
     status.textContent = text;
@@ -183,16 +195,55 @@ export function createVersionsPanel({ root, document, request, basePath = '/', c
     renderRounds({ root: rounds, document, rounds: Array.isArray(view.rounds) ? view.rounds : [] });
   }
 
+  function renderPlans() {
+    renderBoundaries({ root: boundaries, document, plans, onDecide: decideBoundary });
+  }
+
+  async function loadBoundaries() {
+    try {
+      const answer = await request(`${path}/tool-effect-boundaries`, {});
+      plans = Array.isArray(answer?.plans) ? answer.plans : null;
+    } catch {
+      plans = null;  // said plainly in the section; the rest of the page still loads
+    }
+    renderPlans();
+    return plans;
+  }
+
   async function load() {
     try {
       const next = await request(path, {});
       render(next);
+      await loadBoundaries();
       say('', 'loaded');
       return next;
     } catch (error) {
       refusal(error);
       throw error;
     }
+  }
+
+  async function decideBoundary(plan, item, decision) {
+    let answer;
+    try {
+      answer = await request(`${path}/tool-effect-boundaries/decisions`, { method: 'POST', body: {
+        command_id: crypto.randomUUID(), plan_record_ref: plan.plan_record, tool_id: item.tool_id,
+        version: item.version, boundary_sha256: item.boundary_sha256, decision } });
+    } catch (error) {
+      const code = Object.hasOwn(BOUNDARY_ERRORS, error?.code) ? error.code : 'unavailable';
+      say(BOUNDARY_ERRORS[code], code);
+      throw error;
+    }
+    const updated = answer?.boundary;
+    if (updated && Array.isArray(plans)) {
+      plans = plans.map(entry => (entry.plan_record?.sha256 !== plan.plan_record.sha256 ? entry : {
+        ...entry, boundaries: entry.boundaries.map(value => (value.tool_id === updated.tool_id
+          && value.version === updated.version ? updated : value)) }));
+    }
+    renderPlans();
+    say(decision === 'approve' ? '경계 승인을 기록했습니다. 이 경계만 쓰며 실제 서비스로는 보내지 않습니다.'
+      : '경계 거절을 기록했습니다. 이 경계가 필요한 항목은 비교하지 않습니다.', 'boundary_decided');
+    return answer;
   }
 
   async function decide(item, decision) {
@@ -224,5 +275,6 @@ export function createVersionsPanel({ root, document, request, basePath = '/', c
     return next;
   }
 
-  return Object.freeze({ load, decide, activate, get view() { return view; } });
+  return Object.freeze({ load, decide, decideBoundary, activate, get view() { return view; },
+    get plans() { return plans; } });
 }

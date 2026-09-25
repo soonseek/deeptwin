@@ -1,8 +1,11 @@
 """Fixed HTTP adapter for the owner's operating versions: the `versions-v1` route
 contribution (US6, T066). `GET /api/v1/versions` reads the operating version, its
 history and the candidates; `POST …/adopt|decisions|activate|rollback` are the
-owner's explicit acts. The shared `/api/v1` preflight admits each body exactly
-(`preflight`) before persistent auth; the handler parses the same bytes again.
+owner's explicit acts. `GET …/tool-effect-boundaries` lists the isolation boundaries
+each persisted comparison plan needs with the owner's decision over each, and
+`POST …/tool-effect-boundaries/decisions` records one approve / reject (G-14). The
+shared `/api/v1` preflight admits each body exactly (`preflight`) before persistent
+auth; the handler parses the same bytes again.
 """
 
 import json
@@ -12,7 +15,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
+from ..services.owner_decisions import PersistentOwnerDecisions
 from ..services.promotion_approvals import PersistentPromotionApprovals
+from ..services.tool_effect_approvals import PersistentToolEffectApprovals
 from ..services.versions import PersistentVersions, VersionError
 from .first_party import ContributionServices
 from .wire import WireInputError, WireLimits, parse_json_object, parse_query
@@ -27,7 +32,12 @@ COMMANDS = {
                   {"command_id": str, "decision": str, "validation_report_ref": dict}),
     "activate": (("approval_ref", "expected_revision"), {"approval_ref": dict, "expected_revision": int}),
     "rollback": (("reason", "expected_revision"), {"reason": str, "expected_revision": int}),
+    "tool-effect-boundaries/decisions": (
+        ("command_id", "plan_record_ref", "tool_id", "version", "boundary_sha256", "decision"),
+        {"command_id": str, "plan_record_ref": dict, "tool_id": str, "version": str,
+         "boundary_sha256": str, "decision": str}),
 }
+BOUNDARIES = "tool-effect-boundaries"
 _LIMITS = WireLimits(max_bytes=4096, max_depth=3, max_items=32, max_members=8, max_string_bytes=1024)
 
 
@@ -50,7 +60,7 @@ def preflight(scope, body):
 
     path, method = scope["path"], scope["method"]
     parse_query(scope.get("query_string", b""), allowed=())
-    if path == PATH:
+    if path in {PATH, f"{PATH}/{BOUNDARIES}"}:
         if method not in {"GET", "HEAD"} or body:
             raise WireInputError("invalid_input")
         return
@@ -70,10 +80,14 @@ def version_error(error):
 def version_services(context):
     approvals = PersistentPromotionApprovals(context.domain_store, context.owner_authority)
     versions = PersistentVersions(context.domain_store, context.owner_authority, approvals)
-    return ContributionServices(create_router(versions=versions), {"versions.service": versions})
+    boundaries = PersistentToolEffectApprovals(
+        context.domain_store, context.owner_authority,
+        PersistentOwnerDecisions(context.domain_store, context.owner_authority))
+    return ContributionServices(create_router(versions=versions, boundaries=boundaries),
+                                {"versions.service": versions})
 
 
-def create_router(*, versions):
+def create_router(*, versions, boundaries):
     router = APIRouter()
 
     @router.api_route(PATH, methods=["GET", "HEAD"])
@@ -83,7 +97,14 @@ def create_router(*, versions):
         except VersionError as error:
             return version_error(error)
 
-    def command(name, method):
+    @router.api_route(f"{PATH}/{BOUNDARIES}", methods=["GET", "HEAD"])
+    async def read_boundaries(request: Request):
+        try:
+            return JSONResponse(await run_in_threadpool(boundaries.read, request.state.authenticated_request))
+        except VersionError as error:
+            return version_error(error)
+
+    def command(name, service, method):
         async def handler(request: Request):
             try:
                 value = _body(await request.body(), name)
@@ -91,12 +112,13 @@ def create_router(*, versions):
                 return version_error(VersionError("invalid_input"))
             try:
                 return JSONResponse(await run_in_threadpool(
-                    getattr(versions, method), request.state.authenticated_request, value))
+                    getattr(service, method), request.state.authenticated_request, value))
             except VersionError as error:
                 return version_error(error)
         return handler
 
-    for name, method in (("adopt", "adopt"), ("decisions", "decide"), ("activate", "activate"),
-                         ("rollback", "rollback")):
-        router.add_api_route(f"{PATH}/{name}", command(name, method), methods=["POST"])
+    for name, service, method in (("adopt", versions, "adopt"), ("decisions", versions, "decide"),
+                                  ("activate", versions, "activate"), ("rollback", versions, "rollback"),
+                                  (f"{BOUNDARIES}/decisions", boundaries, "decide")):
+        router.add_api_route(f"{PATH}/{name}", command(name, service, method), methods=["POST"])
     return router

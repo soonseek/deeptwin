@@ -5,11 +5,17 @@
 //      writer's exact attempt on the observe screen and resumes; the real dispatcher and
 //      extension transport invoke the TEST-ACTOR tool `test_actor_notify` (it claims an
 //      external_irreversible effect and performs none) over the worker socket, once.
-//   2. The test-owned growth driver (the product has none) freezes a queue naming that
-//      recorded ToolCall by its record digest and runs three paired rounds in isolated
-//      vaults: an approved replay boundary, an approved isolated sink (the candidate sends
-//      a changed notice) and an unapproved replay boundary.
-//   3. The owner's versions page shows each round's per-item outcome and the boundary every
+//   2. The test-owned growth driver (the product has none) persists three comparison plans,
+//      each with its own tool effect policy. On the versions page the owner sees each tool's
+//      required boundary and what it means, and approves the REPLAY plan's replay boundary
+//      and the SINK plan's isolated sink with the screen's buttons (2026-09-25: an owner
+//      decision over the exact boundary, recorded by the product's owner route; the test
+//      actor approves nothing). The UNAPPROVED plan's boundary is left undecided.
+//   3. The driver freezes a queue naming that recorded ToolCall by its record digest and
+//      runs the three paired rounds in isolated vaults, reading approvals only through the
+//      owner-decision reader: replay, isolated sink (the candidate sends a changed notice)
+//      and the undecided replay boundary.
+//   4. The owner's versions page shows each round's per-item outcome and the boundary every
 //      isolated call used; the unapproved round is invalid with the item's stated reason.
 // Across the rounds the tool's invocation counter, the production transport factory, the
 // worker channel, the authenticated worker connection and the attempt dispatcher factory
@@ -110,8 +116,46 @@ test('G-14: a queue with a past gated send is re-evaluated without sending it ag
   const sent = await read(page, `api/v1/runs/${runId}`);
   assert.deepEqual(sent.cancellation.attempts.map(item => [item.attempt_no, item.phase]), [[1, 'terminal']]);
 
-  // --- 2. the paired rounds over a queue naming that recorded call
+  // --- 2. the plans, and the owner's boundary approvals on the versions page
   await writeFile(join(dir, 'g14-request.json'), JSON.stringify({ run_id: runId }));
+  const prepared = await waitForFile(join(dir, 'g14-plans.json'), 60000);
+  assert.equal(prepared.error, undefined, prepared.error);
+  await page.goto(url + 'versions.html');
+  await page.locator('#versions [role=status][data-state=loaded]').waitFor({ state: 'attached' });
+  const boundaries = page.locator('#versions section[aria-label="도구 효과 경계"]');
+  const plan = name => boundaries.locator(`section[aria-label="계획 ${LINEAGES[name].slice(0, 8)}"]`);
+  const needed = name => plan(name).locator('ul[aria-label="필요한 경계"] > li');
+  assert.match(await boundaries.textContent(), /어느 경계도 실제 서비스로 보내지 않습니다/);
+  for (const [name, kind] of [['REPLAY', 'replay'], ['SINK', 'isolated_sink'], ['UNAPPROVED', 'replay']]) {
+    assert.equal(await needed(name).count(), 1);
+    assert.equal(await needed(name).getAttribute('data-boundary'), kind);
+    assert.equal(await needed(name).getAttribute('data-state'), 'pending');
+  }
+  assert.match(await needed('REPLAY').textContent(),
+    /^test_actor_notify 1\.0\.0 \(external_irreversible\) · 기록 재생 · 과거 호출의 기록된 결과를 그대로 돌려줍니다\. 실제 서비스로 다시 보내지 않습니다\. · 경계 sha256 [0-9a-f]{12} · 상태: 결정 대기/);
+  assert.match(await needed('SINK').textContent(),
+    /· 격리 싱크 g14-isolated-sink · 보내려던 내용을 격리된 실행의 보관소 안에만 남깁니다\. 실제 서비스로 보내지 않습니다\./);
+  await plan('REPLAY').getByRole('button', { name: `경계 승인: ${TOOL} (기록 재생)` }).click();
+  await plan('REPLAY').locator('li[data-state=approved]').waitFor();
+  await plan('SINK').getByRole('button', { name: `경계 승인: ${TOOL} (격리 싱크 g14-isolated-sink)` }).click();
+  await plan('SINK').locator('li[data-state=approved]').waitFor();
+  assert.match(await page.locator('#versions [role=status]').textContent(), /경계 승인을 기록했습니다/);
+  // the decisions are the owner's own records, and they read back after a reload
+  await page.reload();
+  await page.locator('#versions [role=status][data-state=loaded]').waitFor({ state: 'attached' });
+  const listed = await read(page, 'api/v1/versions/tool-effect-boundaries');
+  const states = Object.fromEntries(Object.entries(LINEAGES).map(([name, lineage]) => {
+    const [entry] = listed.plans.filter(item => item.lineage_id === lineage);
+    assert.deepEqual(entry.plan_record, prepared.plans[name]);
+    return [name, entry.boundaries.map(item => [item.state, item.decisions, item.approval_ref?.kind ?? null])];
+  }));
+  assert.deepEqual(states, { REPLAY: [['approved', 1, 'action_approval']], SINK: [['approved', 1, 'action_approval']],
+    UNAPPROVED: [['pending', 0, null]] });
+  assert.match(await needed('REPLAY').textContent(), /상태: 승인됨/);
+  assert.equal(await needed('UNAPPROVED').getAttribute('data-state'), 'pending');
+
+  // --- 3. the paired rounds over a queue naming that recorded call
+  await writeFile(join(dir, 'g14-approved.json'), JSON.stringify({ approved: ['REPLAY', 'SINK'] }));
   const done = await waitForFile(join(dir, 'g14-done.json'), 120000);
   assert.equal(done.error, undefined, done.error);
   assert.equal(done.evidence_label, 'synthetic/test-actor');
@@ -129,7 +173,7 @@ test('G-14: a queue with a past gated send is re-evaluated without sending it ag
   const after = await read(page, `api/v1/runs/${runId}`);
   assert.deepEqual(after.cancellation.attempts, sent.cancellation.attempts);
 
-  // --- 3. the owner's versions page shows each item's outcome and boundary
+  // --- 4. the owner's versions page shows each item's outcome and boundary
   await page.goto(url + 'versions.html');
   await page.locator('#versions [role=status][data-state=loaded]').waitFor({ state: 'attached' });
   const rounds = page.locator('#versions section[aria-label="비교 라운드"]');

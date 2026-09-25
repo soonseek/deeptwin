@@ -12,6 +12,12 @@ same transaction. Exact replay returns the same issued value, any other
 body under the same command conflicts, nothing is overwritten. The consumer
 accepts only an issued value whose kind and subject equal what it computes
 itself; no caller-declared boolean stands in for it.
+
+A consumer that has no reference to hold (first: tool effect isolation
+boundaries, `tool_effect_isolation` / G-14) reads every owner decision over
+one exact subject with `decisions_over`, in the order they were decided; only
+records authored by the owner's human actor, with their own decided event,
+are returned.
 """
 
 from __future__ import annotations
@@ -43,7 +49,8 @@ from .run_approvals import (
     _stored_owner_actor_ref,
 )
 
-SUBJECT_KINDS = ("design_approval", "deletion")
+SUBJECT_KINDS = ("design_approval", "deletion", "tool_effect_boundary")
+MAX_DECISIONS_PER_SUBJECT = 64
 DECISIONS = ("approve", "reject")
 _EVENT_DECISION = {"approve": "approved", "reject": "rejected"}
 _SCHEMA = "owner-decision-command-v1"
@@ -253,6 +260,9 @@ class PersistentOwnerDecisions:
         return self._domain is domain_store
 
     def _load(self, db, ref: EntityRef, roots) -> OwnerDecision:
+        return self._load_sequenced(db, ref, roots)[1]
+
+    def _load_sequenced(self, db, ref: EntityRef, roots) -> tuple[int, OwnerDecision]:
         if ref.kind != "action_approval" or ref.version != 1:
             raise OwnerDecisionError("unavailable")
         body = self._domain._load(db, ref, roots)[0].body
@@ -277,7 +287,7 @@ class PersistentOwnerDecisions:
         ):
             # the named event is the decided event of this very command
             raise OwnerDecisionError("unavailable")
-        return _issue(
+        return event_sequence, _issue(
             **content,
             approval_ref=ref,
             actor_ref=EntityRef.from_dict(body["actor_ref"]),
@@ -379,3 +389,38 @@ class PersistentOwnerDecisions:
         with self._domain._connection() as db:
             roots = self._domain._read_roots(db)
             return self._load(db, ref, roots)
+
+    @_closed
+    def decisions_over(self, subject_kind, subject) -> tuple[OwnerDecision, ...]:
+        """Every owner decision over exactly this subject, oldest first.
+
+        Candidate records are found by the subject digest their canonical
+        content carries, then each is loaded and re-validated in full: a
+        record not authored by the owner's human actor, one without its own
+        decided event, or one over another kind or subject is not evidence
+        and is not returned."""
+
+        if type(subject_kind) is not str or subject_kind not in SUBJECT_KINDS:
+            raise OwnerDecisionError("invalid subject kind")
+        digest = subject_digest(_validate_subject(subject))
+        needle = canonical_json({"subject_sha256": digest})[1:-1]
+        found = []
+        with self._domain._connection() as db:
+            roots = self._domain._read_roots(db)
+            rows = db.execute(
+                "SELECT id, sha256 FROM domain_records WHERE vault_id=? AND kind=? AND version=1 "
+                "AND instr(body, ?) > 0 ORDER BY id LIMIT ?",
+                (roots.genesis.id, "action_approval", needle, MAX_DECISIONS_PER_SUBJECT + 1),
+            ).fetchall()
+            if len(rows) > MAX_DECISIONS_PER_SUBJECT:
+                raise OwnerDecisionError("unavailable")
+            for row in rows:
+                ref = EntityRef(kind="action_approval", id=row["id"], version=1, sha256=row["sha256"])
+                try:
+                    sequence, decision = self._load_sequenced(db, ref, roots)
+                except OwnerDecisionError:
+                    continue  # not an owner decision (another producer's record or a forgery)
+                if decision.subject_kind == subject_kind and decision.subject_sha256 == digest:
+                    found.append((sequence, decision))
+        found.sort(key=lambda item: item[0])
+        return tuple(decision for _sequence, decision in found)

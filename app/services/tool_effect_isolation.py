@@ -12,8 +12,15 @@ per tool and version, the only boundary an isolated run may use:
 - `isolated_sink`: the call is delivered to a sink inside the isolated run's own
   vault (the would-be inputs are kept there; nothing leaves).
 
-Every boundary must carry the approval of exactly that boundary (a
-`decision_record` whose content names the boundary's digest and `approved`).
+Every boundary must be approved by the owner (G-14 approvals, 2026-09-25): an
+owner decision (`owner_decisions`, kind `tool_effect_boundary`) recorded by the
+persistent owner session over the exact subject — the policy record's identity, the
+tool and version, the boundary kind (and sink) and the boundary's digest
+(`boundary_subject`). The latest such decision decides: approve admits the
+boundary, reject refuses it, none leaves it unapproved. A policy never carries its
+own approval, and a record authored by anyone but the owner's human actor is not a
+decision; the paired runner reads approvals only through the owner-decision reader
+bound to the same store.
 
 An item is **not comparable** — with its stated reason, never a live send — when the
 queue's claim about its past effect does not match the ledger (the ToolCall record
@@ -43,9 +50,12 @@ from ..domain.refs import DomainContractError, EntityRef, canonical_json
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore, StorageError
 from ..runtime.ledger import TOOL_APPROVAL_EFFECTS, RuntimeLedger, tool_inputs_digest
+from .owner_decisions import OwnerDecisionError, PersistentOwnerDecisions
 
 POLICY_SCHEMA = "tool-effect-policy-v1"
-APPROVAL_SCHEMA = "tool-effect-boundary-approval-v1"
+SUBJECT_SCHEMA = "tool-effect-boundary-subject-v1"
+SUBJECT_KIND = "tool_effect_boundary"
+_POLICY_KIND = "observation_contract"
 REPLAY_SCHEMA = "tool-effect-replay-v1"
 SINK_SCHEMA = "tool-effect-sink-v1"
 BOUNDARIES = frozenset({"replay", "isolated_sink"})
@@ -83,8 +93,8 @@ def tool_call_record_digest(snapshot: dict) -> str:
 
 
 def boundary_digest(boundary: dict) -> str:
-    """The digest an approval of this boundary names (the boundary without its approval)."""
-    return _digest({key: value for key, value in boundary.items() if key != "approval_ref"})
+    """The digest an owner decision over this boundary names."""
+    return _digest(_boundary(boundary))
 
 
 def _boundary(value) -> dict:
@@ -94,20 +104,15 @@ def _boundary(value) -> dict:
     expected = {"tool_id", "version", "effect_class", "boundary"}
     if kind == "isolated_sink":
         expected.add("sink_id")
-    if kind not in BOUNDARIES or set(value) - {"approval_ref"} != expected:
+    if "approval_ref" in value:
+        raise ToolEffectIsolationError("a boundary carries no approval; the owner decides it separately")
+    if kind not in BOUNDARIES or set(value) != expected:
         raise ToolEffectIsolationError("a boundary names its tool, effect and one supported boundary")
     for name in expected - {"boundary"}:
         if type(value[name]) is not str or _TOKEN.fullmatch(value[name]) is None:
             raise ToolEffectIsolationError(f"boundary {name} is out of bounds")
     if value["effect_class"] not in TOOL_APPROVAL_EFFECTS:
         raise ToolEffectIsolationError("a boundary isolates an external or instance-critical effect")
-    if "approval_ref" in value:
-        try:
-            approval = EntityRef.from_dict(value["approval_ref"])
-        except (DomainContractError, TypeError) as exc:
-            raise ToolEffectIsolationError("a boundary approval is an exact reference") from exc
-        if approval.kind != "decision_record":
-            raise ToolEffectIsolationError("a boundary approval is a decision record")
     return dict(value)
 
 
@@ -122,12 +127,78 @@ def policy_content(boundaries) -> dict:
     return {"schema_version": POLICY_SCHEMA, "boundaries": checked}
 
 
-def approval_content(boundary: dict, decision: str) -> dict:
-    """The exact content of one boundary approval decision."""
-    if decision not in {"approved", "rejected"}:
-        raise ToolEffectIsolationError("a boundary decision is approved or rejected")
-    return {"schema_version": APPROVAL_SCHEMA, "boundary_sha256": boundary_digest(_boundary(boundary)),
+def _policy_ref(value) -> EntityRef:
+    if type(value) is not EntityRef or value.kind != _POLICY_KIND:
+        raise ToolEffectIsolationError("a tool effect policy is an exact observation contract reference")
+    return value
+
+
+def boundary_subject(policy_ref, boundary: dict) -> dict:
+    """The exact subject an owner decision over one boundary of one policy names: the
+    policy record's identity (as fields, never a stored-record reference), the boundary
+    itself (tool, version, effect class, kind and sink) and the boundary's digest."""
+    policy = _policy_ref(policy_ref)
+    checked = _boundary(boundary)
+    return {"schema_version": SUBJECT_SCHEMA,
+            "policy_record": {"id": policy.id, "version": policy.version, "sha256": policy.sha256},
+            "boundary": checked, "boundary_sha256": boundary_digest(checked)}
+
+
+def boundary_decision_command(policy_ref, boundary, decision, command_id) -> dict:
+    """The owner-decision command (`owner-decision-command-v1`) over one boundary."""
+    if decision not in {"approve", "reject"}:
+        raise ToolEffectIsolationError("a boundary decision is approve or reject")
+    return {"schema_version": "owner-decision-command-v1", "command_id": command_id,
+            "subject_kind": SUBJECT_KIND, "subject": boundary_subject(policy_ref, boundary),
             "decision": decision}
+
+
+def record_boundary_approval(decisions, request, policy_ref, boundary, decision="approve", *,
+                             command_id=None):
+    """Record one owner decision on one isolation boundary through the persistent owner
+    session — the same authenticated path the owner's route takes — and return the
+    issued decision. Nothing else approves a boundary."""
+    if type(decisions) is not PersistentOwnerDecisions:
+        raise ToolEffectIsolationError("the persistent owner-decision service is required")
+    return decisions.record(request, boundary_decision_command(
+        policy_ref, boundary, decision, command_id or str(uuid4())))
+
+
+def read_policy(domain_store, policy_ref):
+    """(the policy's boundaries in order, None) or (None, why it cannot be read)."""
+    try:
+        content = domain_store.get(policy_ref).body["content"]
+    except (StorageError, DomainContractError, KeyError, TypeError):
+        return None, "the plan's tool effect policy could not be read"
+    if type(content) is not dict or content.get("schema_version") != POLICY_SCHEMA:
+        return None, "the plan's tool effect policy is not a tool effect policy"
+    try:
+        checked = policy_content(content.get("boundaries"))
+    except ToolEffectIsolationError as error:
+        return None, f"the plan's tool effect policy is invalid ({error})"
+    return checked["boundaries"], None
+
+
+def boundary_label(boundary) -> str:
+    return f"{boundary['boundary']} boundary for {boundary['tool_id']} {boundary['version']}"
+
+
+def boundary_state(decisions, policy_ref, boundary) -> dict:
+    """The owner's standing decision over one boundary of one policy: `pending` (none),
+    else `approved` / `rejected` by the latest decision, with that decision's evidence."""
+    if type(decisions) is not PersistentOwnerDecisions:
+        raise ToolEffectIsolationError("the persistent owner-decision service is required")
+    subject = boundary_subject(policy_ref, boundary)
+    found = decisions.decisions_over(SUBJECT_KIND, subject)
+    if any(item.subject_kind != SUBJECT_KIND or item.subject != subject for item in found):
+        raise OwnerDecisionError("unavailable")
+    if not found:
+        return {"state": "pending", "decisions": 0, "approval_ref": None, "decided_at_utc": None,
+                "boundary_sha256": subject["boundary_sha256"]}
+    latest = found[-1]
+    return {"state": "approved" if latest.decision == "approve" else "rejected",
+            "decisions": len(found), "approval_ref": latest.approval_ref.as_dict(),
+            "decided_at_utc": latest.decided_at_utc, "boundary_sha256": subject["boundary_sha256"]}
 
 
 def _put(domain, kind, content, *, actor_ref, access_policy_ref, retention_policy_ref, created_at_utc):
@@ -137,13 +208,6 @@ def _put(domain, kind, content, *, actor_ref, access_policy_ref, retention_polic
         retention_policy_ref=retention_policy_ref, content=content)
     domain.put(record)
     return record.ref
-
-
-def record_boundary_approval(domain_store, boundary, decision, **headers) -> EntityRef:
-    """Record one decision on one isolation boundary (its actor is the record's actor)."""
-    if type(domain_store) is not DomainStore:
-        raise ToolEffectIsolationError("an exact domain store is required")
-    return _put(domain_store, "decision_record", approval_content(boundary, decision), **headers)
 
 
 def record_tool_effect_policy(domain_store, boundaries, **headers) -> EntityRef:
@@ -185,50 +249,42 @@ class ToolEffectSource:
     runtime ledger of the original runs (where the past ToolCalls are recorded).
     Read only: nothing here writes to either."""
 
-    __slots__ = ("_domain", "_ledger")
+    __slots__ = ("_decisions", "_domain", "_ledger")
 
     def __init__(self):
         raise TypeError("Use ToolEffectSource.build")
 
     @classmethod
-    def build(cls, *, domain_store, ledger):
+    def build(cls, *, domain_store, ledger, decisions):
         if type(domain_store) is not DomainStore:
             raise ToolEffectIsolationError("an exact domain store is required")
         if type(ledger) is not RuntimeLedger or ledger._domain is not domain_store:
             raise ToolEffectIsolationError("the original runs' ledger over the same store is required")
+        if type(decisions) is not PersistentOwnerDecisions or not decisions.bound_to(domain_store):
+            raise ToolEffectIsolationError("the owner-decision reader bound to the same store is required")
         source = object.__new__(cls)
-        source._domain, source._ledger = domain_store, ledger
+        source._domain, source._ledger, source._decisions = domain_store, ledger, decisions
         return source
 
     def policy(self, plan):
         """{(tool_id, version): boundary} from the plan's frozen policy, or a reason."""
-        try:
-            content = self._domain.get(plan.tool_effect_policy).body["content"]
-        except (StorageError, DomainContractError, KeyError):
-            return None, "the plan's tool effect policy could not be read"
-        if type(content) is not dict or content.get("schema_version") != POLICY_SCHEMA:
-            return None, "the plan's tool effect policy is not a tool effect policy"
-        try:
-            checked = policy_content(content.get("boundaries"))
-        except ToolEffectIsolationError as error:
-            return None, f"the plan's tool effect policy is invalid ({error})"
-        return {(item["tool_id"], item["version"]): item for item in checked["boundaries"]}, None
+        boundaries, gap = read_policy(self._domain, plan.tool_effect_policy)
+        if boundaries is None:
+            return None, gap
+        return {(item["tool_id"], item["version"]): item for item in boundaries}, None
 
-    def approved(self, boundary) -> str | None:
-        """None when the boundary carries the approval of exactly itself, else why not."""
-        label = f"{boundary['boundary']} boundary for {boundary['tool_id']} {boundary['version']}"
-        if "approval_ref" not in boundary:
-            return f"the {label} is not approved"
+    def approved(self, policy_ref, boundary) -> str | None:
+        """None when the owner's latest decision over exactly this boundary of exactly
+        this policy approves it, else why not."""
+        label = boundary_label(boundary)
         try:
-            record = self._domain.get(EntityRef.from_dict(boundary["approval_ref"]))
-        except (StorageError, DomainContractError, KeyError, TypeError):
-            return f"the approval of the {label} could not be read"
-        content = record.body.get("content")
-        if (type(content) is not dict or content.get("schema_version") != APPROVAL_SCHEMA
-                or content.get("boundary_sha256") != boundary_digest(boundary)):
-            return f"the approval does not name the {label}"
-        if content.get("decision") != "approved":
-            return f"the {label} was not approved (decision {content.get('decision')})"
+            state = boundary_state(self._decisions, policy_ref, boundary)
+        except (OwnerDecisionError, ToolEffectIsolationError):
+            return f"the owner's decisions on the {label} could not be read"
+        if state["state"] == "pending":
+            return f"the {label} is not approved"
+        if state["state"] == "rejected":
+            return f"the {label} was rejected by the owner"
         return None
 
     def recorded(self, binding) -> _Recorded:
@@ -322,7 +378,7 @@ def prepare_item_effects(source, plan, item, policy_cache) -> ItemEffects:
     recorded = tuple(source.recorded(binding) for binding in past)
     admitted, refused = [], []
     for key, boundary in sorted(policy.items()):
-        gap = source.approved(boundary)
+        gap = source.approved(plan.tool_effect_policy, boundary)
         if gap is None:
             admitted.append((key, boundary))
             continue
@@ -434,19 +490,24 @@ class IsolatedToolEffects:
 
 
 __all__ = [
-    "APPROVAL_SCHEMA",
     "BOUNDARIES",
     "PAST_EFFECTS_KEY",
     "POLICY_SCHEMA",
+    "SUBJECT_KIND",
+    "SUBJECT_SCHEMA",
     "IsolatedToolEffects",
     "ItemEffects",
     "NotComparable",
     "ToolEffectIsolationError",
     "ToolEffectSource",
-    "approval_content",
+    "boundary_decision_command",
     "boundary_digest",
+    "boundary_label",
+    "boundary_state",
+    "boundary_subject",
     "policy_content",
     "prepare_item_effects",
+    "read_policy",
     "record_boundary_approval",
     "record_tool_effect_policy",
     "recorded_effect_bindings",

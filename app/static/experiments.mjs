@@ -178,3 +178,85 @@ export function renderRounds({ root, document, rounds }) {
   root.replaceChildren(...parts);
   return { lineages: lineages.size, unreadable: unreadable.length };
 }
+
+// G-14 approvals (2026-09-25): the isolation boundary each persisted comparison plan's
+// tool effect policy names per tool, what it means, and the owner's standing decision.
+// A boundary is used only after the owner approves it here; neither boundary sends
+// anything to a real service.
+export const BOUNDARY_MESSAGES = Object.freeze({
+  intro: '과거에 발송·게시한 업무를 다시 비교할 때, 도구마다 계획이 정한 경계 하나만 쓸 수 있고 소유자가 승인해야만 씁니다. '
+    + '어느 경계도 실제 서비스로 보내지 않습니다. 승인하지 않은 경계가 필요한 항목은 비교하지 않습니다.',
+  none: '도구 효과 경계를 정한 비교 계획이 없습니다.',
+  unreadable: '이 계획의 도구 효과 정책을 정확히 읽지 못했습니다. 과거 외부 효과가 있는 항목은 비교하지 않습니다.',
+  noBoundaries: '이 계획의 정책은 경계를 두지 않습니다. 과거 외부 효과가 있는 항목은 비교하지 않습니다.',
+  unavailable: '도구 효과 경계를 불러오지 못했습니다.',
+});
+
+export const BOUNDARY_MEANINGS = Object.freeze({
+  replay: '과거 호출의 기록된 결과를 그대로 돌려줍니다. 실제 서비스로 다시 보내지 않습니다.',
+  isolated_sink: '보내려던 내용을 격리된 실행의 보관소 안에만 남깁니다. 실제 서비스로 보내지 않습니다.',
+});
+
+export const BOUNDARY_STATES = Object.freeze({
+  pending: '결정 대기', approved: '승인됨', rejected: '거절됨', unreadable: '결정 기록을 읽지 못함',
+});
+
+const boundaryKind = item => (item.boundary === 'replay' ? '기록 재생'
+  : item.boundary === 'isolated_sink' ? `격리 싱크 ${item.sink_id}` : String(item.boundary));
+
+// one boundary: the tool, the boundary kind, what it does, its digest and decision
+export function boundaryText(item) {
+  const meaning = BOUNDARY_MEANINGS[item.boundary] ?? '알 수 없는 경계입니다. 승인할 수 없습니다.';
+  const state = BOUNDARY_STATES[item.state] ?? String(item.state);
+  const when = item.state === 'approved' || item.state === 'rejected' ? ` (${item.decided_at_utc})` : '';
+  return `${item.tool_id} ${item.version} (${item.effect_class}) · ${boundaryKind(item)} · ${meaning} `
+    + `· 경계 sha256 ${String(item.boundary_sha256).slice(0, 12)} · 상태: ${state}${when}`;
+}
+
+export function renderBoundaries({ root, document, plans, onDecide }) {
+  if (typeof root?.replaceChildren !== 'function') fail('a root is required');
+  const element = (tag, text, attributes = {}) => {
+    const node = document.createElement(tag);
+    if (text !== undefined) node.textContent = text;
+    for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
+    return node;
+  };
+  const parts = [element('h3', '도구 효과 경계 승인')];
+  if (!Array.isArray(plans)) {
+    parts.push(element('p', BOUNDARY_MESSAGES.unavailable, { 'data-state': 'unavailable' }));
+    root.replaceChildren(...parts);
+    return { plans: 0 };
+  }
+  parts.push(element('p', BOUNDARY_MESSAGES.intro));
+  if (!plans.length) parts.push(element('p', BOUNDARY_MESSAGES.none));
+  for (const plan of plans) {
+    const lineage = typeof plan.lineage_id === 'string' ? plan.lineage_id.slice(0, 8) : '알 수 없음';
+    const group = element('section', undefined, { 'aria-label': `계획 ${lineage}`, 'data-readable': String(plan.readable) });
+    group.append(element('h4', `계보 ${lineage} · 비교 계획 ${short(plan.plan_record)}`));
+    if (!plan.readable) {
+      group.append(element('p', `${BOUNDARY_MESSAGES.unreadable} (${plan.reason})`));
+      parts.push(group);
+      continue;
+    }
+    if (!plan.boundaries.length) group.append(element('p', BOUNDARY_MESSAGES.noBoundaries));
+    const list = element('ul', undefined, { 'aria-label': '필요한 경계' });
+    for (const item of plan.boundaries) {
+      const entry = element('li', undefined, { 'data-boundary': String(item.boundary), 'data-state': String(item.state),
+        'data-tool': `${item.tool_id} ${item.version}` });
+      entry.append(element('span', boundaryText(item)));
+      const known = Object.hasOwn(BOUNDARY_MEANINGS, item.boundary) && item.state !== 'unreadable';
+      for (const [decision, label, skip] of [['approve', '승인', 'approved'], ['reject', '거절', 'rejected']]) {
+        if (!known || item.state === skip || typeof onDecide !== 'function') continue;
+        const button = element('button', `경계 ${label}`, { type: 'button',
+          'aria-label': `경계 ${label}: ${item.tool_id} ${item.version} (${boundaryKind(item)})` });
+        button.addEventListener('click', () => Promise.resolve(onDecide(plan, item, decision)).catch(() => {}));
+        entry.append(button);
+      }
+      list.append(entry);
+    }
+    if (plan.boundaries.length) group.append(list);
+    parts.push(group);
+  }
+  root.replaceChildren(...parts);
+  return { plans: plans.length };
+}
