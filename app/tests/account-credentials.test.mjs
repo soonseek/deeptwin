@@ -8,7 +8,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  CREDENTIAL_ERRORS, CREDENTIAL_MESSAGES, CREDENTIAL_STATES, createCredentialsPanel,
+  CONNECTION_MESSAGES, CONNECTION_STATES, CREDENTIAL_ERRORS, CREDENTIAL_MESSAGES, CREDENTIAL_STATES,
+  FENCE_RESULTS, PENDING_MESSAGES, createCredentialsPanel,
 } from '../static/account.mjs';
 
 class FakeElement {
@@ -219,4 +220,179 @@ test('a pending delete retries under the same intent', async () => {
   assert.match(root.textContent, new RegExp(CREDENTIAL_ERRORS.command_pending));
   await panel.remove(H1);
   assert.equal(sent[1][1].body, sent[3][1].body);
+});
+
+// ---- binding heads, pending acts and the owner's fence (T090 binding slice)
+
+const INTENT = '00000000-0000-4000-8000-00000000abcd';
+const DUE = '2026-09-25T10:05:00.123456Z';
+const DUE_MS = Date.parse('2026-09-25T10:05:00.123Z');
+
+function clockedPanel(responses, start) {
+  const timers = [];
+  let at = start;
+  const root = new FakeElement('section');
+  const sent = [];
+  let counter = 0;
+  const fetch = async (path, options) => {
+    sent.push([path, { ...options, body: options.body }]);
+    const next = responses.shift();
+    if (next instanceof Error) throw next;
+    const [status, body] = next;
+    return { ok: status < 400, status, json: async () => body };
+  };
+  const panel = createCredentialsPanel({ root, document, fetch, basePath: BASE, session: { csrfToken: () => CSRF },
+    randomUUID: () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}`,
+    now: () => at, setTimer: (callback, ms) => { timers.push({ callback, ms }); return timers.length; },
+    clearTimer: handle => { timers[handle - 1].cleared = true; } });
+  const button = text => root.findAll(el => el.tagName === 'BUTTON' && el.textContent === text)[0];
+  const list = label => root.findAll(el => el.getAttribute('aria-label') === label)[0];
+  const line = () => root.findAll(el => el.getAttribute('role') === 'status')[0];
+  const field = () => root.findAll(el => el.getAttribute('id') === 'credential-secret')[0];
+  return { root, sent, panel, timers, button, list, line, field, advance: ms => { at += ms; } };
+}
+
+const snapshot = ({ credentials = [], connections = [], pending_acts = [] }) => [200, {
+  credentials: credentials.map(entry => ({ provider_revocation: 'not_performed', ...entry })), connections, pending_acts }];
+const head = (handle, state, revision, catalog = 'absent', model_choice = 'absent', provider = 'claude') =>
+  ({ provider, state, handle, binding_revision: revision, catalog, model_choice });
+const act = (overrides = {}) => ({ intent_id: INTENT, kind: 'rotate', handle: H1, provider: 'claude',
+  state: 'command_pending', fence_available_at: DUE, uncertain_record: null, ...overrides });
+const escaped = text => new RegExp(text.replace(/[()]/g, '\\$&'));
+
+test('connections are shown read-only with binding state, revision and catalog/model presence', async () => {
+  const H2 = 'b'.repeat(32);
+  const { root, panel, list } = clockedPanel([snapshot({
+    credentials: [{ handle: H1, provider: 'claude', state: 'stored_unbound' }, { handle: H2, provider: 'codex', state: 'cleanup_pending' }],
+    connections: [head(H1, 'bound', 2, 'current', 'absent'), head(H2, 'revoked_pending_erasure', 3, 'absent', 'absent', 'codex')] })], 0);
+  await panel.load();
+  assert.deepEqual(panel.connections, [head(H1, 'bound', 2, 'current', 'absent'),
+    head(H2, 'revoked_pending_erasure', 3, 'absent', 'absent', 'codex')]);
+  const rows = list('제공자 연결').children;
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].textContent, `claude · ${CONNECTION_STATES.bound} · 키 ${H1} · 바인딩 수정본 2`
+    + ` · ${CONNECTION_MESSAGES.catalog.current} · ${CONNECTION_MESSAGES.model_choice.absent}`);
+  assert.equal(rows[1].textContent, `codex · ${CONNECTION_STATES.revoked_pending_erasure} · 키 ${H2} · 바인딩 수정본 3`);
+  assert.equal(rows[0].getAttribute('data-binding-revision'), '2');
+  // no act is offered on a binding head
+  assert.equal(list('제공자 연결').findAll(el => el.tagName === 'BUTTON').length, 0);
+  // rotation voids the catalog/model choice until an explicit refresh, and the page says so
+  assert.match(root.textContent, new RegExp(CONNECTION_MESSAGES.voids));
+  // the credential row names the key the connection is bound to; the stale label is gone
+  assert.match(list('저장된 자격증명').children[0].textContent, escaped(CONNECTION_MESSAGES.boundKey(2)));
+  assert.ok(!root.textContent.includes('아직 모델 연결에 쓰이지 않음'));
+  assert.ok(!list('저장된 자격증명').children[1].textContent.includes('이 제공자 연결에 쓰이는 키'));
+});
+
+test('a pending act shows when it can be fenced; the button appears only once due, with no request', async () => {
+  const { sent, panel, timers, button, list, advance } = clockedPanel([snapshot({
+    credentials: [{ handle: H1, provider: 'claude', state: 'stored_unbound' }],
+    connections: [head(H1, 'bound', 1)],
+    pending_acts: [act(), act({ intent_id: '00000000-0000-4000-8000-00000000beef', kind: 'delete', fence_available_at: null })] })],
+  DUE_MS - 60_000);
+  await panel.load();
+  const rows = list('끝나지 않은 요청').children;
+  assert.match(rows[0].textContent, escaped(PENDING_MESSAGES.command_pending));
+  assert.match(rows[0].textContent, new RegExp(PENDING_MESSAGES.fenceAt('2026-09-25 10:05:00 UTC')));
+  assert.match(rows[1].textContent, new RegExp(PENDING_MESSAGES.noFence));
+  assert.equal(button('이 요청 차단'), undefined);
+  assert.equal(timers.length, 1);
+  assert.ok(timers[0].ms >= 60_000 && timers[0].ms < 61_000, String(timers[0].ms));
+  advance(60_000);
+  timers[0].callback();
+  assert.ok(button('이 요청 차단'));
+  assert.match(list('끝나지 않은 요청').children[0].textContent, new RegExp(PENDING_MESSAGES.fenceNow));
+  // a delete act is never fenceable
+  assert.equal(list('끝나지 않은 요청').children[1].findAll(el => el.tagName === 'BUTTON').length, 0);
+  assert.equal(sent.length, 1);  // the re-render read nothing
+});
+
+const fenced = uncertain => [200, { intent_id: INTENT, state: 'fenced', uncertain_record: uncertain, provider_revocation: 'not_performed' }];
+
+for (const [name, answer, expected, state] of [
+  ['unknown -> fenced', fenced('unknown'), FENCE_RESULTS.fenced, 'fenced'],
+  ['committed -> orphan retired', fenced('cleanup_pending'), FENCE_RESULTS.orphan_retired, 'orphan_retired'],
+  ['committed -> orphan retirement pending', fenced('retirement_pending'), FENCE_RESULTS.orphan_retiring, 'orphan_retiring'],
+  ['lost', refusal(409, 'secret_input_lost'), FENCE_RESULTS.secret_input_lost, 'secret_input_lost'],
+  ['still pending', refusal(503, 'command_pending'), FENCE_RESULTS.still_pending, 'still_pending'],
+  ['not yet due', refusal(409, 'fence_not_due'), FENCE_RESULTS.fence_not_due, 'fence_not_due'],
+]) {
+  test(`the fence posts only the intent with CSRF and shows the result: ${name}`, async () => {
+    const after = state === 'still_pending' || state === 'fence_not_due' ? [act()]
+      : state === 'secret_input_lost' ? []
+        : [act({ state: 'fenced', fence_available_at: null, uncertain_record: answer[1].uncertain_record })];
+    const { root, sent, button, panel, line } = clockedPanel(
+      [snapshot({ pending_acts: [act()] }), answer, snapshot({ pending_acts: after })], DUE_MS);
+    await panel.load();
+    await button('이 요청 차단').dispatch('click');
+    await flush();
+    assert.deepEqual(sent[1], [`${PATH}/fences`, { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-DeepTwin-CSRF': CSRF },
+      body: JSON.stringify({ intent_id: INTENT }) }]);
+    assert.equal(sent.length, 3);  // the fence, then a ledger-only re-read
+    assert.equal(sent[2][1].method, 'GET');
+    assert.equal(line().textContent, expected);
+    assert.equal(line().dataset.state, state);
+    if (state === 'fenced' || state.startsWith('orphan_')) {
+      assert.match(root.textContent, escaped(`${PENDING_MESSAGES.fenced}: ${PENDING_MESSAGES.uncertain[answer[1].uncertain_record]}`));
+      assert.equal(button('이 요청 차단'), undefined);
+    } else if (state !== 'secret_input_lost') {
+      assert.ok(button('이 요청 차단'));  // still unresolved: the owner may try again
+    }
+  });
+}
+
+test('fencing the page\'s own unconfirmed store ends its retry mode: the next submit is a new act', async () => {
+  const own = '00000000-0000-4000-8000-000000000001';
+  const { sent, panel, button, root, field } = clockedPanel([
+    snapshot({}),
+    refusal(503, 'command_pending'),
+    snapshot({ pending_acts: [act({ intent_id: own, kind: 'create' })] }),
+    [200, { intent_id: own, state: 'fenced', uncertain_record: 'unknown', provider_revocation: 'not_performed' }],
+    snapshot({ pending_acts: [act({ intent_id: own, kind: 'create', state: 'fenced', fence_available_at: null, uncertain_record: 'unknown' })] }),
+    [201, { handle: H1, provider: 'claude', state: 'stored_unbound' }],
+    snapshot({})], DUE_MS);
+  await panel.load();
+  field().value = SECRET;
+  await button('키 저장').dispatch('click');
+  await flush();
+  assert.ok(button('결과 다시 확인'));
+  await button('이 요청 차단').dispatch('click');
+  await flush();
+  assert.ok(button('키 저장') && !button('결과 다시 확인'));
+  field().value = SECRET;
+  await button('키 저장').dispatch('click');
+  await flush();
+  assert.equal(JSON.parse(sent[1][1].body).intent_id, own);
+  assert.notEqual(JSON.parse(sent[5][1].body).intent_id, own);
+  assert.ok(!everything(root).includes(SECRET));
+});
+
+test('connection_bound and connection_conflict are shown with their exact messages', async () => {
+  assert.equal(CREDENTIAL_ERRORS.connection_bound, '이 제공자에는 이미 연결된 키가 있습니다. 새 키로 바꾸려면 교체를 사용하세요.');
+  assert.equal(CREDENTIAL_ERRORS.connection_conflict, '저장하는 동안 제공자 연결이 바뀌었습니다. 이번 키는 연결하지 않고 정리합니다.');
+  for (const code of ['connection_bound', 'connection_conflict']) {
+    const { root, panel, button, line, field } = clockedPanel([snapshot({}), refusal(409, code), snapshot({})], 0);
+    await panel.load();
+    field().value = SECRET;
+    await button('키 저장').dispatch('click');
+    await flush();
+    assert.equal(line().textContent, CREDENTIAL_ERRORS[code]);
+    assert.equal(line().dataset.state, code);
+    assert.equal(field().value, '');
+    assert.ok(button('키 저장'));  // not a retry: a refused act starts over
+    assert.ok(!everything(root).includes(SECRET));
+  }
+});
+
+test('a malformed binding head or pending act is refused as unavailable, nothing listed', async () => {
+  for (const bad of [{ connections: [head(H1, 'bound', 0)] }, { connections: [head(H1, 'maybe', 1)] },
+    { connections: [head(H1, 'bound', 1, 'stale')] },
+    { pending_acts: [act({ fence_available_at: '2026-09-25 10:05' })] }, { pending_acts: [act({ state: 'unknown' })] },
+    { pending_acts: [act({ uncertain_record: 'bound' })] }]) {
+    const { root, panel } = clockedPanel([snapshot(bad)], 0);
+    await assert.rejects(panel.load());
+    assert.equal(root.findAll(el => el.tagName === 'LI').length, 0);
+    assert.match(root.textContent, new RegExp(CREDENTIAL_ERRORS.unavailable));
+  }
 });

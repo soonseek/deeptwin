@@ -1227,3 +1227,158 @@ a2d1cbbddf806ccbbf6d397b52a37bab527d971c68fdf7080d3ecdab61a438c9  app/tests/test
   erasure/`erasure_completed`, and a second-`create_app` control-plane restart test.
 - **Audit and regression.** No independent audit of this slice, and the full shared regression
   was not re-run (only the families listed above).
+
+## 2026-09-25 — credentials panel: binding heads, pending acts and the owner fence
+
+This slice takes the "Owner UI" item carried over above. Only the browser side changed:
+`createCredentialsPanel` in `app/static/account.mjs`, which is mounted on the records page. The
+routes, ledger, gateway and vault are unchanged, and the production fence delay is still
+`FENCE_AFTER_SECONDS` (300 s).
+
+### Panel
+
+- **Credentials.** The list still shows only provider · handle · custody state. The old
+  `stored_unbound` label "아직 모델 연결에 쓰이지 않음" predated binding and is gone. The label
+  is now "보관됨 (게이트웨이에 암호화 저장)". A row whose handle is its provider's bound record
+  also says "이 제공자 연결에 쓰이는 키 (바인딩 수정본 N)".
+- **Provider connections (read-only).** Each binding head shows its provider, its state
+  (`bound` 연결됨 / `revoked_pending_erasure` 연결 해제됨), its handle and its binding revision.
+  For a bound head it also says whether a catalog snapshot and a model choice are `current` for
+  that revision ("있음/없음"). The panel states that a rotation or delete voids the previous
+  revision's catalog/model choice, that a new catalog exists only after an explicit refresh, and
+  that this screen neither refreshes a catalog nor calls a model. No button is offered on a head.
+- **Pending acts.** Each act shows its kind, provider, handle and intent. A `command_pending` act
+  reads "결과 미확인 (… pending/unknown)", because the ledger does not tell `pending` from `unknown`
+  and the page does not guess. A store act also shows "차단 가능 시각: <UTC>" from
+  `fence_available_at`. A delete or retirement act (`fence_available_at: null`) is labelled "not a
+  fence target" and gets no button. A `fenced` act shows what is known of its record:
+  - `unknown`: a late commit would be retired `unbound_orphan`;
+  - `secret_input_lost`;
+  - `retirement_pending` or `cleanup_pending`: the late commit is retired `unbound_orphan`.
+- **Fence.** The "이 요청 차단" button appears only once the page clock has reached
+  `fence_available_at`. A timer re-renders the rows the page already holds at that moment, with
+  no request. The server still decides, and an early POST is refused `409 fence_not_due`. The
+  button POSTs `/api/v1/credentials/fences` with exactly `{"intent_id"}` and the CSRF header,
+  then re-reads the ledger. Each result has its own status line and `data-state`:
+  - `fenced`: the record is still unknown;
+  - `orphan_retired` (`cleanup_pending`) or `orphan_retiring` (`retirement_pending`); both say
+    the provider key is not revoked;
+  - `secret_input_lost`, whether it arrives as a 200 receipt or a 409;
+  - `still_pending` (`503 command_pending`: the gateway journaled the command);
+  - `fence_not_due`.
+
+  A fence that ends the page's own unconfirmed store also ends its "결과 다시 확인" retry mode, so
+  the next submit is a new intent. A replay of a fenced act (`409 fenced`) does the same.
+- **Refusals.** `connection_bound` shows "이 제공자에는 이미 연결된 키가 있습니다. 새 키로 바꾸려면
+  교체를 사용하세요." `connection_conflict` shows "저장하는 동안 제공자 연결이 바뀌었습니다. 이번
+  키는 연결하지 않고 정리합니다." These are the routes' own texts. Both start the next submit
+  over.
+- **Status read validation.** A malformed binding head or pending act (unknown state, revision
+  < 1, a stamp that is not the ledger's microsecond UTC form, an unknown `uncertain_record`) is
+  refused as unavailable, and nothing is listed. A bare-list status (no `connections` /
+  `pending_acts`) still renders.
+- **Unchanged.** The secret field is cleared synchronously before the request leaves and is never
+  written to the DOM or storage. Delete confirms first and says `provider_revocation:
+  not_performed`. A "상태 다시 읽기" button re-reads the ledger-only GET.
+
+### Tests
+
+`app/tests/account-credentials.test.mjs` grows from 9 to 20 tests. The new tests cover:
+
+- binding heads, read-only, with revision and catalog/model presence, the voiding notice and the
+  gone stale label;
+- the fence button only once due, via an injected clock and timer, with zero requests from the
+  re-render, and none for a delete act;
+- all six fence outcomes, with the exact POST (path, CSRF, `{"intent_id"}` body) followed by one
+  GET;
+- a fence of the page's own unconfirmed store ending its retry mode;
+- the exact `connection_bound` and `connection_conflict` messages, with the secret cleared and
+  absent;
+- malformed heads and acts refused.
+
+`app/tests/browser-credentials.test.mjs` (1, new) runs a real Chrome against the real supported
+`create_app` served by `app/tests/fixtures/credentials_server.py`. The stack is the
+`credentials-v1` routes, the real ledger, the real frame-only client, authenticated broker
+frames on socket pairs, `CredentialGatewayService` and an encrypted `CredentialVault`.
+
+Test-only substitutions in the fixture:
+
+- `open_credential_attachment` returns that in-process gateway instead of the verified
+  `cp-provider` pair root;
+- the ledger's fence delay is `--fence-delay-seconds 3`;
+- two synthetic secret prefixes script the gateway:
+  - `sk-fixture-noreply-…` is committed, but the store reply and the recovery query reply are
+    dropped (a gateway that commits without replying);
+  - `sk-fixture-unadmitted-…` fails ambiguously before admission, so every query answers
+    `unknown`;
+- `POST /__test__/catalog`, a wrapper route in front of the app and not a product route, records
+  a catalog refresh result and a model choice through the ledger's own API. It stands in for the
+  `refresh_catalog` act, which does not exist yet.
+
+The browser case, as the owner through the records page:
+
+1. **Create.** The key is bound at revision 1 with no catalog. After the test route, the catalog
+   and model choice read `current`.
+2. **Second create.** It is refused with the exact `connection_bound` text.
+3. **No-reply rotation.** The panel shows `command_pending`, the act with its fence time and no
+   button, and revision 1 with its catalog intact. A direct early POST is `409 fence_not_due`.
+   The button then appears by itself. The fence finds the commit and retires it `unbound_orphan`
+   (`orphan_retired`/`orphan_retiring`; the test accepts either, because the orphan's retirement
+   may finish inside the fence or on a later act). The retry mode ends, and the binding stays at
+   revision 1 with its catalog.
+4. **Unadmitted rotation.** After the delay the fence answers `fenced` with the record `unknown`,
+   and the act is listed as fenced.
+5. **Real rotation.** The binding moves to revision 2, and the catalog and model choice read
+   `absent`.
+6. **Delete.** The confirmation says the provider key is not revoked. The binding reads
+   `revoked_pending_erasure` at revision 3.
+7. **Sweep.** No synthetic secret appears in the DOM, in any input value, in local or session
+   storage, in any response body the page received, in the fixture's output, or in any file the
+   fixture owned (checked after shutdown).
+
+Mutation check (temporary, reverted): offering the fence button regardless of
+`fence_available_at` fails the node due-time test and the browser case.
+
+```text
+node --test app/tests/account-credentials.test.mjs                        20 pass
+CONTROL_PYTHON=… CONTROL_PLAYWRIGHT_MODULE=… node --test app/tests/browser-credentials.test.mjs
+                                                                           1 pass (3 serial runs)
+… --test-concurrency=1 browser-credentials browser-records browser-retention browser-backup
+    6 pass, 0 fail, 5 skipped (the backup/retention cases need Linux+root+DEEPTWIN_AGE_RUNTIME_ROOT,
+    not set here; unchanged skips)
+node --test app/tests/[!b]*.test.mjs app/tests/b[!r]*.test.mjs (every non-browser node test)
+    269 pass, 0 fail
+env -u DEEPTWIN_LIVE_ANTHROPIC_API_KEY .venv/bin/python -m pytest -q -p no:cacheprovider \
+  app/tests/test_credential_*.py test_web_shell_assets.py test_extension_architecture.py test_browser_worker.py
+    284 passed (includes test_credential_binding 13 and test_credential_routes_v2)
+ruff check app/tests/fixtures/credentials_server.py: All checks passed
+```
+
+Frozen identities (SHA-256; this block supersedes earlier blocks for these paths):
+
+```text
+229f4712f545a900ba3bfc9c228423fdc8b7f5c286e466ed095f73f87e6e6bd0  app/static/account.mjs
+3942723f8620ec7836afd6d071885a827e3c0c7c715e388a7a0ddc900a2d76fe  app/tests/account-credentials.test.mjs
+64151c3450bf7089655793387067e0a94f15dc55e47f44b34eca227f09e486a4  app/tests/browser-credentials.test.mjs
+1c343a27e3dc116abedcf8d1f83981c0f4627339245bfe230f6bde16416bac15  app/tests/fixtures/credentials_server.py
+```
+
+### Still not claimed
+
+- **Catalog refresh.** There is still no `refresh_catalog` route or provider list-models call
+  through the gateway. The browser case's catalog comes from a test-owned route over the ledger
+  API, and the panel only reports presence.
+- **`pending` versus `unknown`.** The status read reports `command_pending` for both, so the panel
+  cannot distinguish them. Only the fence's own query does: `503 command_pending` means the
+  gateway journaled the command.
+- **Clock skew.** The fence button follows the browser clock. If that clock runs ahead of the
+  server, the owner can see the button early and receive `fence_not_due`. The server stays
+  authoritative.
+- **Browser `connection_conflict`.** It is not produced in the browser case, because a CAS race
+  needs two concurrent acts. It is covered by the node test (message) and by
+  test_credential_binding (route).
+- **Gateway transport.** The browser fixture's gateway is in-process over socket pairs, not the
+  real UDS/SO_PEERCRED endpoint (that path stays covered by the root-only
+  test_credential_gateway_startup/main).
+- **Carried items.** Everything else carried above (gateway-side fence, binding consumers, T087,
+  compose, erasure, audit and full regression) is unchanged.

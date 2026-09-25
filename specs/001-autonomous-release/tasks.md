@@ -425,6 +425,17 @@ understanding; failure/restart preserves input. Fixture and live proofs remain s
   resolver does not yet read the binding head, a gateway-side fence (a late commit is neutralized,
   not prevented), T087 manifest/budget binding and send composition, compose/image wiring,
   erasure and an independent audit.
+  2026-09-25 (open, credentials UI): the records page's credentials panel now shows each provider
+  connection read-only (binding state, revision, and whether a catalog/model choice is current for
+  that revision, with the notice that rotation voids them until an explicit refresh), each pending
+  or fenced act (pending/unknown with its fence time, or what the fence left), and a fence button
+  only once `fence_available_at` has passed. The button posts `{"intent_id"}` with CSRF and shows
+  fenced / orphan retired / secret_input_lost / still pending. `connection_bound` and
+  `connection_conflict` have their exact messages, and the stale `stored_unbound` label is gone.
+  Covered by 20 node tests and a real-browser case over the real routes, ledger and gateway vault
+  (a no-reply gateway and an unadmitted store; fixture fence delay 3 s, production 300 s)
+  (evidence/credential-vault-t090.md §2026-09-25 credentials panel). Still open: no
+  `refresh_catalog` route (the browser catalog comes from a test route), plus everything above.
 - [ ] T024 [US1] Migrate browser MediaDevices/AudioWorklet capture and the existing cumulative
   whisper.cpp POST path to ADR-011's versioned non-overlapping one-second PCM PUT/SSE sessions in
   app/speech.py, app/speech_sessions.py, app/api/speech_routes.py, app/workers/speech.py and
