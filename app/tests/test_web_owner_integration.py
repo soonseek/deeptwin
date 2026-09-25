@@ -546,10 +546,10 @@ def test_same_writer_revision_cas_rejects_stale_snapshot(tmp_path):
         domain = application.state.domain_store
         with domain._connection(write=True) as db:
             row = db.execute("SELECT * FROM owner_auth_control").fetchone()
-            updated = storage.update(db, "control", row, {"clock_floor": row["clock_floor"] + 1}, identity="singleton")
+            updated = storage.update(db, "control", row, {"clock_floor": row["clock_floor"] + 1}, identity="epoch")
             assert updated["revision"] == row["revision"] + 1
             with pytest.raises(storage.AuthStorageError):
-                storage.update(db, "control", row, {"clock_floor": row["clock_floor"] + 2}, identity="singleton")
+                storage.update(db, "control", row, {"clock_floor": row["clock_floor"] + 2}, identity="epoch")
         with domain._connection() as db:
             row2 = db.execute("SELECT * FROM owner_auth_control").fetchone()
             assert row2["revision"] == updated["revision"]

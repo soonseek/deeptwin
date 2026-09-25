@@ -1,0 +1,164 @@
+{
+  "$comment": "Structural only; request/trust relations, signature authenticity, epoch succession and generation binding remain separately required.",
+  "$id": "urn:deeptwin:schemas:v2:deployment:request-owner-recovery-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "maxLength": 24,
+      "minLength": 1,
+      "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+      "type": "string"
+    },
+    "created_by": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "actor",
+          "type": "string"
+        },
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        },
+        "version": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "version",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "domain": {
+      "const": "deeptwin-deployment-request-v1",
+      "type": "string"
+    },
+    "effect_payload": {
+      "additionalProperties": false,
+      "properties": {
+        "target_recovery_epoch": {
+          "maximum": 1000000,
+          "minimum": 2,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target_recovery_epoch"
+      ],
+      "type": "object"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "maxLength": 24,
+      "minLength": 1,
+      "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z)(?![\\s\\S])",
+      "type": "string"
+    },
+    "instance_id": {
+      "maxLength": 32,
+      "minLength": 1,
+      "pattern": "^(?:[0-9a-f]{32})(?![\\s\\S])",
+      "type": "string"
+    },
+    "kind": {
+      "const": "owner_recovery",
+      "type": "string"
+    },
+    "origin_profile_digest": {
+      "maxLength": 43,
+      "minLength": 1,
+      "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+      "type": "string"
+    },
+    "preconditions": {
+      "additionalProperties": false,
+      "properties": {
+        "current_recovery_epoch": {
+          "maximum": 1000000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "current_session_root_generation_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+          "type": "string"
+        },
+        "current_session_root_manifest_sha256": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^(?:[0-9a-f]{64})(?![\\s\\S])",
+          "type": "string"
+        }
+      },
+      "required": [
+        "current_recovery_epoch",
+        "current_session_root_generation_id",
+        "current_session_root_manifest_sha256"
+      ],
+      "type": "object"
+    },
+    "request_digest": {
+      "maxLength": 43,
+      "minLength": 1,
+      "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 36,
+      "minLength": 1,
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      },
+      "pattern": "^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![\\s\\S])",
+      "type": "string"
+    },
+    "request_nonce": {
+      "maxLength": 43,
+      "minLength": 1,
+      "pattern": "^(?:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])(?![\\s\\S])",
+      "type": "string"
+    },
+    "schema": {
+      "const": "deployment-request-v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "domain",
+    "request_id",
+    "kind",
+    "request_nonce",
+    "request_digest",
+    "instance_id",
+    "origin_profile_digest",
+    "effect_payload",
+    "preconditions",
+    "created_by",
+    "created_at",
+    "expires_at"
+  ],
+  "type": "object"
+}

@@ -106,9 +106,10 @@ def install(db, *, verified_empty=False):
     if not source and verified_empty is True:
         # Composition precedes deployment startup reconciliation.  The exact same-store
         # owner binding already exists and is the authority from which prepare later creates
-        # its identical control row; no caller profile values are accepted here.
+        # its identical control row; no caller profile values are accepted here. The owner
+        # control keeps one row per recovery epoch, all with the same binding.
         source = list(db.execute("SELECT vault_id,instance_id,origin_digest "
-                                 "FROM owner_auth_control LIMIT 2"))
+                                 "FROM owner_auth_control GROUP BY vault_id,instance_id,origin_digest LIMIT 2"))
     if len(source) != 1:
         _fail()
     row = source[0]
@@ -224,7 +225,7 @@ def verify_layout(db):
     binding = deployment
     if not binding:
         binding = list(db.execute("SELECT vault_id,instance_id,origin_digest "
-                                  "FROM owner_auth_control LIMIT 2"))
+                                  "FROM owner_auth_control GROUP BY vault_id,instance_id,origin_digest LIMIT 2"))
     if (len(binding) != 1 or (row["vault_id"], row["instance_id"], row["origin_digest"])
             != tuple(binding[0])):
         _fail()

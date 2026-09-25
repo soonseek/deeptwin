@@ -25,6 +25,9 @@ def create_session_router(authority):
         # the public setup state the first screen needs: whether an owner exists and the
         # bootstrap claim's state — never a name, a digest or a session fact; a fault
         # is the closed envelope behind the boundary's headers, never a bare 500
+        if authority.reconciling:
+            # a recovery start: nothing but this state until the reconciliation commits
+            return {"state": "recovery_reconciliation"}
         try:
             owner, setup = authority.setup_state()
         except OwnerAuthError as error:
