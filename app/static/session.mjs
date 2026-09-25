@@ -190,14 +190,22 @@ export function createSupportedSession({ fetch, basePath = '/' } = {}) {
 
   // T073: the one encrypted backup bundle of a staged restore, as octet-stream bytes to
   // exactly `{base}api/v1/backups/restores/{restore_id}/bundle`; the answer is JSON
-  async function uploadBackupBundle(path, bytes) {
+  async function uploadBackupBundle(path, bytes, { signal } = {}) {
     const target = requirePath(path);
     const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
     if (!new RegExp(`^/api/v1/backups/restores/${uuid}/(?:bundle|portable-bundle)$`).test(target.slice(prefix.length))
         || !(bytes instanceof Uint8Array) || bytes.byteLength < 1) fail('invalid backup bundle upload');
     if (token === null) fail('브라우저 세션이 아직 없습니다.', 'unauthenticated');
-    const response = await send(target, { method: 'POST', credentials: 'same-origin',
-      headers: { [CSRF_HEADER]: token, 'Content-Type': 'application/octet-stream' }, body: bytes });
+    let response;
+    try {
+      response = await send(target, { method: 'POST', credentials: 'same-origin',
+        headers: { [CSRF_HEADER]: token, 'Content-Type': 'application/octet-stream' }, body: bytes,
+        ...(signal === undefined ? {} : { signal }) });
+    } catch (error) {
+      // a bundle upload the owner stopped is its own outcome, never a server failure
+      if (signal?.aborted === true) throw Object.assign(error, { code: 'aborted' });
+      throw error;
+    }
     const payload = await readJson(response);
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) token = null;

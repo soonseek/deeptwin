@@ -11,7 +11,15 @@ one bounded derived result:
 - `render_page` (PDF): page N rasterized to a PNG whose longest edge is at most
   `max_edge_px`, with the page count, the pixel size and the page's size in points;
 - `extract_text` (DOCX): the body paragraphs and table-cell text in document order,
-  bounded, with the counts and the parts that were not extracted.
+  bounded, with the counts and the parts that were not extracted;
+- `extract_pdf_text` (PDF, T074): every page's text layer, one character per PDFium
+  character index (pages separated by a form feed), bounded, with the page count;
+- `redact_pdf` (PDF, T074): a NEW image-only PDF of every page, rasterized with an opaque
+  box painted over each named character range (`ranges`: page, first character index,
+  count, as `extract_pdf_text` numbers them). The copy carries no text layer and none of
+  the original's metadata, links, forms or attachments; the worker reopens it and
+  verifies that it has no text and that every box is dark before it answers. It is a
+  different document from the original, never presented as the original.
 
 This module imports no parser (pypdfium2, pypdf, python-docx, Pillow) and no vault, route
 or web code; `app.tests.test_document_codec` pins that. It checks what it can check
@@ -63,11 +71,15 @@ MIN_EDGE_PX = 64
 MAX_EDGE_PX = 2_048
 DEFAULT_EDGE_PX = 1_200
 MAX_TEXT_BYTES = 65_536
+MAX_PDF_TEXT_BYTES = 1_048_576
+MAX_REDACT_PAGES = 64
+MAX_REDACT_RANGES = 64
+MAX_RANGE_CHARS = 4_096
 REQUEST_SCHEMA = "document-codec-request-v1"
 RESULT_SCHEMA = "document-codec-result-v1"
 ATTACHMENT_SCHEMA = "deeptwin-document-worker-attachment-v1"
 FORMATS = ("docx", "pdf")
-OPERATIONS = {"render_page": "pdf", "extract_text": "docx"}
+OPERATIONS = {"render_page": "pdf", "extract_text": "docx", "extract_pdf_text": "pdf", "redact_pdf": "pdf"}
 # closed codes a worker may answer; anything else is `malformed_result`
 WORKER_CODES = frozenset({"invalid_request", "media_unsupported", "page_out_of_range",
                           "content_rejected", "render_failed", "too_large"})
@@ -81,7 +93,7 @@ _HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 
 __all__ = [
     "ATTACHMENT_SCHEMA", "DocumentCodecClient", "DocumentCodecError", "DocumentWorkerConfiguration",
-    "PageRendering", "TextExtraction", "document_channel",
+    "PageRendering", "PdfRedaction", "PdfTextExtraction", "TextExtraction", "document_channel",
 ]
 
 
@@ -240,6 +252,22 @@ class TextExtraction:
     truncated: bool
 
 
+@dataclass(frozen=True, slots=True)
+class PdfTextExtraction:
+    pages: tuple  # each page's text; index i of a page is PDFium character index i
+    sha256: str
+    page_count: int
+    truncated: bool
+
+
+@dataclass(frozen=True, slots=True)
+class PdfRedaction:
+    pdf: bytes
+    sha256: str
+    page_count: int
+    boxes: int
+
+
 def _bounded_int(value, low, high) -> int:
     if type(value) is not int or not low <= value <= high:
         raise ValueError("result integer is out of bounds")
@@ -381,6 +409,44 @@ class DocumentCodecClient:
             if (width, height) != (rendering.width, rendering.height):
                 raise ValueError("declared size differs from the PNG")
             return rendering
+        except ValueError:
+            raise DocumentCodecError("malformed_result") from None
+
+    def extract_pdf_text(self, data: bytes) -> PdfTextExtraction:
+        result, output, digest = self._call({"op": "extract_pdf_text", "format": "pdf", "page": None,
+                                             "max_edge_px": None}, data)
+        try:
+            if set(result) != {"page_count", "truncated"} or type(result["truncated"]) is not bool \
+                    or len(output) > MAX_PDF_TEXT_BYTES:
+                raise ValueError("result shape")
+            count = _bounded_int(result["page_count"], 1, MAX_PAGES)
+            pages = tuple(output.decode("utf-8").split("\f"))
+            if len(pages) > count or (len(pages) != count and not result["truncated"]):
+                raise ValueError("page texts differ from the page count")
+            return PdfTextExtraction(pages=pages, sha256=digest, page_count=count, truncated=result["truncated"])
+        except (ValueError, UnicodeDecodeError):
+            raise DocumentCodecError("malformed_result") from None
+
+    def redact_pdf(self, data: bytes, ranges) -> PdfRedaction:
+        """A new image-only copy with each (page, first char index, count) painted over;
+        the worker has verified it carries no text and every box is dark."""
+
+        if (type(ranges) not in (list, tuple) or not 1 <= len(ranges) <= MAX_REDACT_RANGES
+                or any(type(item) not in (list, tuple) or len(item) != 3
+                       or any(type(part) is not int for part in item)
+                       or not 1 <= item[0] <= MAX_REDACT_PAGES or item[1] < 0
+                       or not 1 <= item[2] <= MAX_RANGE_CHARS for item in ranges)):
+            raise DocumentCodecError("invalid_request", sent=False)
+        result, output, digest = self._call({"op": "redact_pdf", "format": "pdf", "page": None,
+                                             "max_edge_px": None,
+                                             "ranges": [list(item) for item in ranges]}, data)
+        try:
+            if (set(result) != {"page_count", "boxes", "text_chars", "verified"} or result["verified"] is not True
+                    or result["text_chars"] != 0 or not output.startswith(b"%PDF-")):
+                raise ValueError("result shape")
+            return PdfRedaction(pdf=output, sha256=digest,
+                                page_count=_bounded_int(result["page_count"], 1, MAX_REDACT_PAGES),
+                                boxes=_bounded_int(result["boxes"], 1, MAX_REDACT_RANGES * MAX_RANGE_CHARS))
         except ValueError:
             raise DocumentCodecError("malformed_result") from None
 

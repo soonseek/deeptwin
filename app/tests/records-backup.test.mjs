@@ -204,6 +204,42 @@ test('a restore uploads the bundle after its receipt and shows the staged review
   assert.match(root.textContent, new RegExp(MESSAGES.staged));
 });
 
+test('the owner can stop an upload; the screen reads back the failed restore it left', async () => {
+  const root = new FakeElement('section');
+  const asked = [];
+  let release;
+  const replies = [{ restore_id: RESTORE_ID, state: 'awaiting_bundle' },
+    { restore_id: RESTORE_ID, state: 'failed', failure: 'the bundle upload was interrupted before it was complete; nothing was staged',
+      failure_code: 'restore_failed' }];
+  const request = async (path, options) => {
+    asked.push([path, options]);
+    if (path.endsWith('/api/v1/backups') && options === undefined) {
+      return { worker: 'ready', backups: [], restores: [], key_mode: 'instance_backup_key' };
+    }
+    return replies.shift();
+  };
+  const upload = (path, bytes, options) => new Promise((resolve, reject) => {
+    release = resolve;
+    options.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { code: 'aborted' })));
+  });
+  const backup = createBackupPanel({ root, document: { createElement: tag => new FakeElement(tag) }, basePath: BASE,
+    request, upload, crypto: { randomUUID: () => REQUEST_ID } });
+  await backup.load();
+  byId(root, 'restore-receipt').files = [{ text: async () => JSON.stringify(RECEIPT) }];
+  byId(root, 'restore-bundle').files = [{ arrayBuffer: async () => new Uint8Array([1, 2]).buffer }];
+  const stop = button(root, '업로드 중단');
+  assert.equal(stop.hidden, true);
+  const running = button(root, '스테이징 영역에 복원').dispatch('click');
+  while (release === undefined) await new Promise(resolve => setTimeout(resolve, 1));
+  assert.equal(stop.hidden, false);
+  await stop.dispatch('click');
+  await running;
+  assert.equal(stop.hidden, true);
+  assert.deepEqual(asked.at(-1), [`${BASE}api/v1/backups/restores/${RESTORE_ID}`, { method: 'GET' }]);
+  assert.match(root.textContent, new RegExp(MESSAGES.interrupted));
+  assert.match(root.textContent, /the bundle upload was interrupted/);
+});
+
 test('a failed restore is stated and stages nothing', async () => {
   const { root, panel: backup } = panel([{ restore_id: RESTORE_ID, state: 'awaiting_bundle' },
     { restore_id: RESTORE_ID, state: 'failed', failure: 'the backup file differs from its external receipt',

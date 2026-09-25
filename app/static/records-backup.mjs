@@ -21,6 +21,10 @@
 //   input is cleared at once, sent as the first line of one upload to the portable route
 //   and the sent buffer is zeroed. It is never put in an attribute, a label, a status,
 //   localStorage or sessionStorage, and the server uses it for one decrypt only.
+// - Interrupted upload (T074): while the bundle is being sent, `업로드 중단` aborts it.
+//   The server sees the upload end before its body is complete, drops the partial body
+//   and marks that restore `failed` (nothing staged, cleanable at once); the screen reads
+//   the restore back instead of assuming so, and a fresh restore starts over.
 // All server text reaches the DOM through textContent or attributes only.
 
 import { backupConsent, backupPreviewSummary, restoreReview } from './records.mjs';
@@ -91,6 +95,8 @@ export const MESSAGES = Object.freeze({
   stale: '미리보기 이후 기록이 바뀌었습니다. 다시 미리보기 하세요.',
   pickFiles: '외부 영수증(.receipt.json)과 암호화된 백업(.age)을 모두 고르세요.',
   restoring: '영수증과 백업을 대조하고 스테이징 영역에 복원하는 중…',
+  interrupted: '업로드를 중단했습니다. 이 복원은 실패로 기록되었고 스테이징 영역에 아무것도 남지 않았으며 활성 인스턴스는 바뀌지 않았습니다. 정리 화면에서 지울 수 있고, 새 복원을 다시 시작할 수 있습니다.',
+  interruptedUnknown: '업로드를 중단했습니다. 서버가 이 복원을 아직 실패로 기록하지 않았습니다. 새 복원을 다시 시작할 수 있습니다.',
   staged: '복원본을 스테이징 영역에 만들었습니다. 활성 인스턴스는 바뀌지 않았습니다.',
   review: '복원본은 검토 대기(restored_review) 상태이고 실행은 막혀 있습니다. 아래 단계가 모두 필요합니다.',
   reactivation: '환경은 자동으로 다시 켜지지 않습니다. 검토한 뒤 정확한 환경을 명시적으로 다시 활성화해야 합니다.',
@@ -182,12 +188,15 @@ export function createBackupPanel({ root, document, basePath = '/', request, upl
   const identityInput = element('input', undefined, { type: 'password', id: 'restore-recovery-identity',
     autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off', 'data-lpignore': 'true' });
   const restoreButton = element('button', '스테이징 영역에 복원', { type: 'button' });
+  const abortButton = element('button', '업로드 중단', { type: 'button', class: 'restore-abort' });
+  abortButton.hidden = true;
+  let inFlight = null;  // the AbortController of the bundle upload now being sent
   const review = element('div', undefined, { class: 'restore-review' });
   restoreArea.append(element('h3', '복원(검토 대기 상태로)'),
     element('label', '외부 영수증(.receipt.json)', { for: 'restore-receipt' }), receiptInput,
     element('label', '암호화된 백업(.age)', { for: 'restore-bundle' }), bundleInput,
     element('label', MESSAGES.identityLabel, { for: 'restore-recovery-identity' }), identityInput,
-    restoreButton, review);
+    restoreButton, abortButton, review);
   restoreArea.hidden = true;  // shown only when the server says the worker is ready
   root.replaceChildren(element('h2', '백업'), status, worker, note, createArea,
     element('h3', '만든 백업'), list, restoreArea);
@@ -342,6 +351,26 @@ export function createBackupPanel({ root, document, basePath = '/', request, upl
     return checked;
   }
 
+  // the owner stopped the upload: the server marks that restore failed (nothing staged);
+  // the screen reads it back rather than assuming, and a fresh restore starts over
+  async function interrupted(restoreId) {
+    let view = null;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      try {
+        view = await request(routes.restore(restoreId), { method: 'GET' });
+      } catch {
+        view = null;
+      }
+      if (view?.state === 'failed') break;
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    review.dataset.state = view?.state === 'failed' ? 'interrupted' : 'interrupted_unconfirmed';
+    review.replaceChildren(element('p', typeof view?.failure === 'string' ? view.failure : '', { class: 'restore-failure' }),
+      element('p', `복원 ${restoreId}`, { class: 'restore-ids' }));
+    say(view?.state === 'failed' ? MESSAGES.interrupted : MESSAGES.interruptedUnknown, 'interrupted');
+    return view;
+  }
+
   async function restore() {
     // the kept identity is read once and the masked input cleared before anything else
     let identity = typeof identityInput.value === 'string' ? identityInput.value.trim() : '';
@@ -385,10 +414,19 @@ export function createBackupPanel({ root, document, basePath = '/', request, upl
       const begun = await request(routes.restores, { method: 'POST',
         body: { schema_version: RESTORE_SCHEMA, request_id: crypto.randomUUID(), receipt } });
       let view;
+      const controller = typeof AbortController === 'function' ? new AbortController() : null;
+      inFlight = controller;
+      abortButton.hidden = controller === null;
       try {
-        view = portable ? await upload(routes.portableBundle(begun.restore_id), framed)
-          : await upload(routes.bundle(begun.restore_id), bytes);
+        const options = controller === null ? undefined : { signal: controller.signal };
+        view = portable ? await upload(routes.portableBundle(begun.restore_id), framed, options)
+          : await upload(routes.bundle(begun.restore_id), bytes, options);
+      } catch (error) {
+        if (error?.code === 'aborted') return await interrupted(begun.restore_id);
+        throw error;
       } finally {
+        inFlight = null;
+        abortButton.hidden = true;
         if (framed !== null) framed.fill(0);  // the sent identity does not linger in this buffer
         framed = null;
       }
@@ -414,5 +452,6 @@ export function createBackupPanel({ root, document, basePath = '/', request, upl
 
   previewButton.addEventListener('click', () => preview().catch(() => {}));
   restoreButton.addEventListener('click', () => restore().catch(() => {}));
+  abortButton.addEventListener('click', () => { if (inFlight !== null) inFlight.abort(); });
   return Object.freeze({ load, preview, restore, get state() { return state; } });
 }
