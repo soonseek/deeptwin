@@ -319,6 +319,10 @@ def preflight_api_v1(scope, body):
     from .provider_transport_qualification import preflight as transport_qualification_preflight
     if is_transport_qualification_path(path):
         transport_qualification_preflight(scope, body)
+    from .extension_bindings import is_bindings_path
+    from .extension_bindings import preflight as bindings_preflight
+    if is_bindings_path(path):
+        bindings_preflight(scope, body)
     from .platform_update import is_platform_update_path
     from .platform_update import preflight as platform_update_preflight
     if is_platform_update_path(path):

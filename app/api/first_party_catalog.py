@@ -13,6 +13,7 @@ from .deployment_prepare import (
     reconcile_prepare_startup,
 )
 from .design_workspace import design_workspace_services
+from .extension_bindings import binding_services
 from .extension_candidates import candidate_services
 from .first_party import InstalledContribution, core_services
 from .graphs import graph_services
@@ -213,6 +214,15 @@ INSTALLED = (
         ("extension.manage", "extension.read"),
         requires=("deployment-prepare.service", "installation-release.source-context"),
         provides=("provider-installation.service",),
+    ),
+    InstalledContribution(
+        "extension-bindings-v1.json",
+        "app.api.extension_bindings:create_router",
+        binding_services,
+        ("browser_session",),
+        ("extension.manage", "extension.read"),
+        requires=("provider-transport-qualification.service",),
+        provides=("extension-bindings.service",),
     ),
     InstalledContribution(
         "browser-grants-v1.json",

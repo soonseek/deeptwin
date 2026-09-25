@@ -51,6 +51,12 @@ def candidate_error(error):
 def preflight(scope, body, content_type):
     try:
         path, method = scope["path"], scope["method"]
+        if path == PATH and method == "GET":
+            # the bounded candidate list (extensions.candidates.list)
+            parse_query(scope.get("query_string", b""), allowed=("limit", "after"), max_bytes=256)
+            if body:
+                raise CandidateError()
+            return None
         parse_query(scope.get("query_string", b""), allowed=())
         if path == PATH:
             if method != "POST":
@@ -96,6 +102,17 @@ def create_router(*, registry, base_path):
                 request.state.candidate_payload,
             )
             return JSONResponse(project(value), status_code=201)
+        except CandidateError as error:
+            return candidate_error(error)
+
+    @router.get(PATH)
+    async def page(request: Request):
+        try:
+            value = await run_in_threadpool(
+                registry.page, request.state.authenticated_request,
+                limit=request.query_params.get("limit"), after=request.query_params.get("after"),
+            )
+            return JSONResponse({**value, "items": [project(item) for item in value["items"]]})
         except CandidateError as error:
             return candidate_error(error)
 

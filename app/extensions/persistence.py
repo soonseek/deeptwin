@@ -298,3 +298,49 @@ class PersistentCandidateRegistry:
             if row is None:
                 raise CandidateError("not_found")
             return load_candidate(self._domain, db, row)[0]
+
+    @closed
+    def page(self, request, *, limit=None, after=None):
+        """A bounded page of registered candidates ordered by candidate id (T087 inspection list).
+        Each row carries the manifest's identity, kind and port, the trust tier the closed port
+        catalog assigns that port, and the candidate's digests; nothing is fetched or executed."""
+        from .port_contracts import PORT_CONTRACTS
+
+        if limit is None:
+            limit = 20
+        elif type(limit) is str and limit.isdecimal() and len(limit) <= 3:
+            limit = int(limit)
+        else:
+            raise CandidateError()
+        if not 1 <= limit <= 50:
+            raise CandidateError()
+        if after is not None:
+            try:
+                uuid_string(after)
+            except ValueError:
+                raise CandidateError() from None
+        with _writer(), self._domain._connection(write=True) as db:
+            self._authenticate(request, db, read=True)
+            self._verify(db)
+            rows = db.execute(
+                "SELECT * FROM extension_candidate_index WHERE ? IS NULL OR candidate_id > ? "
+                "ORDER BY candidate_id LIMIT ?", (after, after, limit + 1)).fetchall()
+            items = []
+            for row in rows[:limit]:
+                value = load_candidate(self._domain, db, row)[0]
+                manifest = value["manifest"]
+                contract = PORT_CONTRACTS.get(manifest["port_contract_version"])
+                items.append({
+                    "candidate_id": row["candidate_id"], "state": value["state"],
+                    "extension_id": manifest["extension_id"], "extension_version": manifest["extension_version"],
+                    "extension_kind": manifest["extension_kind"],
+                    "port_contract_version": manifest["port_contract_version"],
+                    "trust_tier": None if contract is None else contract.trust_tier,
+                    "trust_tier_basis": None if contract is None else "port_contract",
+                    "manifest_digest": row["manifest_digest"],
+                    "service_descriptor_digest": row["descriptor_digest"],
+                    "registration_digest": row["registration_digest"],
+                    "links": {"self": "/api/v1/extensions/candidates/" + row["candidate_id"]},
+                })
+        return {"schema_version": "extension-candidate-list-v1", "limit": limit, "items": items,
+                "next_after": items[-1]["candidate_id"] if len(rows) > limit else None}

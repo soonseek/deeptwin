@@ -1,11 +1,13 @@
 # Settings > Extensions screen (T087 extension UI / T078 inspection list), 2026-09-25
 
-Status: **a first Settings > Extensions screen over the extension routes this server has.
-It is not the complete T087 UI or the T078 list.** No task is ticked. The screen reads and
-acts only through the existing fixed contributions (`extension-candidates-v1`,
-`provider-installation-v1`, `provider-conformance-v1` with the transport-qualification
-routes). It adds no route and changes none. Branch `extensions-ui` from `codex/ui-structure`
-(contains a76a53a).
+Status: **a Settings > Extensions screen over the extension routes this server has, now
+including bindings, rollback retention and the inventory lists. It is not the complete T087 UI
+or the T078 list.** No task is ticked. The first slice (below, "What landed") read and acted only
+through the existing contributions and added no route. The later slice the same day
+(§"Bindings, rollback retention and inventory lists") adds the `extension-bindings-v1`
+contribution and a candidate list route, and wires the screen to them. Branches `extensions-ui`
+(first slice) and `ext-bindings` (later slice), both from `codex/ui-structure` (the later one
+contains f133fb1).
 
 ## What landed
 
@@ -85,6 +87,114 @@ test_product_wording_t023, all node unit tests, browser credentials, grants and 
 browser-retention was updated for the new hub entry and its link target. It needs
 `DEEPTWIN_AGE_RUNTIME_ROOT` and was run with the age directory present on this host.
 
+## Bindings, rollback retention and inventory lists (2026-09-25, later)
+
+What the domain already had: the pure `BindingSlotKeyV1` value and digest
+(`app/extensions/port_contracts.py`), the closed port catalog with each port's trust tier, and the
+durable candidate, installation (staged revision 1, verified revision 2), conformance-run and sealed
+provider-transport-qualification records. The legacy in-memory `ExtensionRegistry`/`ExtensionBinding`
+(`contracts.py`, `registry.py`) is not durable, has no slot key and no rollback retention, and is not
+used here. No durable binding, retention or `ExtensionQualification` record existed.
+
+What landed:
+
+- **Records** (`app/domain/extension_binding.py`, validated from `domain.schemas` for these three
+  content schemas only): `extension-binding-revision-v1` (record id derived from the slot key
+  digest, record version = binding revision, so the slot's history is the record's versions and its
+  head is the newest), `extension-rollback-retention-revision-v1` (id from slot digest + target
+  binding record digest; revision 1 `retained`, revision 2 `released` or `consumed`) and
+  `extension-binding-command-record-v1` (replay). All use the existing `extension_binding` domain
+  kind. Stored field names avoid the `_ref` suffix for non-entity pointers because the domain store
+  indexes every `*_ref` as an entity edge; the API projections use the contract names.
+- **Service** (`app/extensions/binding_service.py`, `PersistentExtensionBindings`): bind (absent or
+  disabled head) and supersede (active head), disable, rollback and release, each with the exact
+  expected current head `{revision,binding_record_digest,state}` (`null` for an absent slot) and a
+  `409 binding_head_stale` without any write when it moved. A supersession or disable creates the
+  displaced active revision's `retained` head in the same transaction. A rollback names a strict
+  backward ancestor and its exact retained head, re-checks that revision's qualification
+  (`qualification_not_current` otherwise), consumes the retention, appends a new active revision
+  (`rollback_of`) and retains the head it displaces if that was active. The release is the closed
+  `ReleaseExtensionRollbackRetention` of contracts/api.md: all ten body fields, path digests equal
+  to the body, a strict-ancestor target, target installation and service tuple equal to the
+  retention record, exact retention head; the result is exactly the contract's twelve fields with
+  the nine request fields byte-equal. It changes neither the binding head nor any installation and
+  deletes no history; a released target cannot be rolled back. Bind/supersede/disable/rollback
+  append `extension.binding_changed` in the same transaction. Command ids are replay-safe (same
+  request: the committed result; another request, or another act, under the id: `command_conflict`).
+- **Qualification.** The only durable qualification this server has is the sealed
+  `provider-transport-qualification-record-v1` over a matched verified-installation conformance run.
+  A bind names it by exact ref; the production resolver re-checks it as current (shipped manifest
+  digest and the run's verified-installation admission unchanged) and derives the verified
+  installation, its `{extension_id,revision,installation_record_digest}` and the five-field service
+  tuple from the staged anchor. So only `provider-port-v1` is bindable; any other port is refused
+  (`qualification_missing`, or `selector_unsupported` for its selector).
+- **Slot key.** The server computes the key: `POST …/binding-slot-keys` takes the port, the
+  `binding_slot_id`, the target scope without `instance_id` (the server adds its own) and the
+  closed capability selector, and returns the exact key, its digest, the normalized selector and
+  scope and the slot's current head. Only the provider selector family
+  `{selector_kind:provider_role,provider_id,auth_mode:api,account_binding_ref}` is admitted (its
+  fields are fixed by the contracts; other families' field types are not). **Slice definition:**
+  `target_scope_fingerprint` is the canonical digest of
+  `{schema_version:"extension-binding-target-scope-v1",instance_id,environment_id,work_id,node_id,purpose}`;
+  the contracts fix the key field but not its derivation. Bind recomputes the key digest, the
+  selector digest and the scope fingerprint, and requires the scope's purpose to equal the key's
+  and its instance to be this one; a bind's `provider_id` must equal the qualification's provider.
+- **Routes** (`extension-bindings-v1`, `app/api/extension_bindings.py`; 8 routes) plus
+  `extensions.candidates.list` (`GET /api/v1/extensions/candidates?limit&after`) in
+  `extension-candidates-v1`: 128 installed routes (was 119). `GET …/installations` and
+  `GET …/bindings` are bounded pages (`limit` 1–50, default 20, `after` cursor, `next_after`);
+  `GET …/bindings/{digest}` is the slot inspection: key, digest, logical slot, selector, scope,
+  kind/trust tier, head, current extension/installation/qualification (with whether it is current),
+  immutable history with backward `previous_ref`/`supersedes_ref`/`rollback_of_ref`, every
+  retention head with its history and, while `retained`, the server's `release_warning` text,
+  coexisting slots of the same port/scope/purpose, same-slot holders and
+  `affected_environments` (`target_environment_id` from the scope; `bound_environment_versions`
+  is always `[]` because no environment version records a binding revision yet, stated in
+  `basis`). The installation list carries the trust tier from the port contract
+  (`trust_tier_basis:"port_contract"`), service tuple, platform, the staging deployment request
+  and receipt refs with the request's own read link, the linked candidate, and the slots whose
+  current head names that installation. **Deviation:** contracts/api.md places bindings under
+  `/extensions/{id}/…`; that segment would collide with the fixed `candidates`,
+  `provider-installation`, `provider-conformance` and `provider-transport-qualification`
+  segments, so the paths are `/extensions/bindings…` and the extension id travels in each body.
+  Every refusal has a fixed code and the exact text the screen shows (`REFUSALS`; a pytest keeps
+  the screen's `BINDING_ERRORS` equal).
+- **Screen** (`app/static/extensions.mjs`): the supply list now marks binding, slot key, slot and
+  selector, coexistence/competition, bind/disable/rollback, history and retention, release, affected
+  environments (with its limit), trust tier and staging as supplied; `platform` (no compatibility
+  judgement), `other_ports` (no qualification record) and `requests` (no list of requests that
+  produced no installation) stay not supplied. New: candidate and installation lists with "next
+  page", a staging-request read over the linked route, the binding-slot list, slot read and view
+  (facts, history, retentions), disable, rollback per retained revision, a release that opens a
+  separate confirmation showing the server's warning verbatim and the unchanged current binding,
+  and a bind form whose key comes only from the server's computation and whose qualification is the
+  sealed one in the transport-qualification state (without it, the bind is refused on the page with
+  no request). Every act carries exactly the key and heads last read; a 409 shows the server's text
+  and changes nothing on the page; an unread answer is resent with the same body.
+
+| Case | Surface | Result | Label |
+|---|---|---|---|
+| Records, CAS, competition, coexistence, disable, rollback, release, replay, paging | `app/tests/test_extension_bindings.py` (real `create_app`, owner cookie/CSRF; the resolver is a test resolver over real `validation_report` records and test-validator installation records) | **7/7 pass.** Wire refusals (query, body, CSRF, duplicate keys, bad digests); server-computed key equals the recomputed five-field key; four-field key, mismatched digest, other-instance scope, other extension, other provider refused; stale head refused with no write; a second candidate with the absent head refused and the first unchanged; sibling slot coexists; supersede retains A; disable retains B; rollback refused for a non-current qualification, a stale head and a non-ancestor target, then consumes A's retention; consumed retention refused; release refused for tuple mismatch, stale head, blank reason, path/body mismatch, cross-slot and current targets; release result has exactly the contract fields and changes only the retention; replay equal, changed body `command_conflict`, repeat refused, released target cannot roll back; `extension.binding_changed` metadata per revision; binding/installation/candidate list paging; the domain validator refuses inexact content; the screen's texts equal `REFUSALS` | synthetic, test actor |
+| Real qualified provider path | `app/tests/test_extension_bindings_qualified.py` (`installation_case`: verified installation through the app, 4/4 matched run through the framed worker, transport qualification sealed through its route; production resolver) | **1/1 pass.** Staged then verified installation listed with trust tier and staging refs; bind over the sealed qualification; a non-qualification ref and another extension id refused; slot shows the verified installation, qualification current, service tuple; `binding_unchanged`; disable → rollback (qualification re-checked current) → disable → release of the retained revision with the real service tuple; history read back unchanged after a cold reopen without the release source | synthetic release tree, test actor |
+| Screen | `app/tests/extensions.test.mjs` (node, fake DOM/fetch) | **14/14 pass** (5 new): inventory paging and facts, staging-request read over the server's link, slot facts as sent, disable body/stale head/new id/exact resend, server key and bind body, bind refused here without a sealed qualification, rollback body, release only from its confirmation with the warning verbatim and the contract's ten body fields | synthetic |
+| Real browser | `app/tests/browser-extensions.test.mjs` | **2/2 pass.** Case 1 (nothing seeded) now also checks the empty real lists, the real slot-key computation, the bind refused on the page with no POST, an unknown slot's `not_found` text, and the registered candidate's trust tier from the real list. Case 2 (`extensions_server.py --synthetic-bindings`: synthetic installations and the test resolver; real binding routes/records/CAS): set-up binds A, supersedes with B, binds a sibling slot; the screen's key/digest/selector equal the server's GET; coexistence, holders and retention shown; a competing disable after the read makes the page's rollback a 409 `binding_head_stale` with the server text and no change; after a re-read the rollback succeeds (revision 4, A's retention consumed); the release confirmation shows the server's warning, the POST has exactly the ten contract fields, the retention becomes `released` while head and four history rows are unchanged; disable to revision 5; the staging-request read goes to the real deployment route, which refuses the synthetic stand-in, shown with its code's text | synthetic, test actor |
+
+Also run on this branch, one file per process: every `test_extension_*.py`,
+`test_provider_installation*.py`, `test_provider_conformance*.py`,
+`test_provider_transport_qualification_routes.py`, `test_web_owner_integration.py`,
+`test_first_party.py`, `test_web_shell_assets.py`, `test_deployment_prepare.py`, the domain schema
+tests and the route-count pins (`test_runs_api.py`, `test_works_api.py`,
+`test_provider_source_startup.py`); counts are in the commit report. All 37 node unit test files
+pass (298 tests).
+
+Consequences to know: a binding record is an `extension_binding` domain record, so the existing
+deployment first-only guards (which refuse a new stage prepare while any `extension_qualification`
+or `extension_binding` record exists) now refuse a further provider stage after the first bind.
+That is the existing conservative guard (no replace/retire path exists), not a new rule. The
+synthetic installation records of the browser fixture's binding mode are outside the deployment
+journal, so that fixture cannot be restarted and its deployment reads refuse; the cold-reopen
+proof is the qualified pytest case.
+
 ## Not done / not driven
 
 - **No verified-installation path in a browser.** The standalone server cannot compose a
@@ -96,14 +206,18 @@ browser-retention was updated for the new hub entry and its link target. It need
   the matched/mismatch/incomplete displays. The browser test sees them only as refusals.
   They are unit-tested with reply shapes that follow `parse_installation_reply` and
   `parse_reply`.
-- **T087 routes that do not exist are not built.** These are
-  `/extensions/{id}/bindings…`, rollback-retention release, qualifications, retirements, the
-  extension-deployment request projection, a code-free lens/evaluator definition import,
-  and any list route. Because there is no list route, the screen can reach a candidate or an
-  installation only by its id or through the qualification state's run. Every T078 item
-  that depends on these routes is shown as not supplied rather than invented. Examples are
-  the five-field slot key and digest, slot/selector, coexistence and competition, exact
-  expected-head bind/disable/rollback, immutable history, retention state and warned release.
+- **T087 routes and records still missing** (after the later slice): durable
+  `ExtensionQualification` records (five checks, expiry, qualification-context heads) for any port,
+  so only the provider port is bindable; selector families other than the provider's; the
+  contract's distinct binding/retention event names (`extension.rollback_retention_*`,
+  superseded/disabled/rolled_back are not registered event types; bind/disable/rollback emit
+  `extension.binding_changed`, a release emits no event); environment versions that bind binding
+  revisions; startup reconciliation of expiry and revoked grants and the dispatch path reading these
+  binding heads (the provider semantic context still takes its binding records as injected
+  authority); retirements, current uninstall, replace and the extension-deployment request
+  projection; qualifications as a route; a list of deployment requests that produced no
+  installation; a code-free lens/evaluator definition import. The screen marks the items that
+  depend on them as not supplied.
 - **T078's own acceptance work is not done.** That covers the accessibility, 360/1024/wide,
   IME and three-mode checks and `browser-accessibility.test.mjs`/`ui-review.md`. It is still
   gated on the complete T087 UI and the frozen T081 candidate.

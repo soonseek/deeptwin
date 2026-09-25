@@ -142,6 +142,10 @@ def _validate_body(body):
         from .extension_installation import validate_installation_body
 
         validate_installation_body(body)
+    if body["kind"] == "extension_binding":
+        from .extension_binding import validate_body as validate_binding_body
+
+        validate_binding_body(body)
     if body["kind"] == "worker_response_capture":
         from .worker_response import validate_capture_content
 

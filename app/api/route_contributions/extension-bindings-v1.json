@@ -1,0 +1,15 @@
+{
+  "schema_version": "deeptwin-first-party-route-contribution-v1",
+  "contribution_id": "extension-bindings-v1",
+  "factory": "app.api.extension_bindings:create_router",
+  "routes": [
+    {"route_id":"extensions.installations.list","methods":["GET"],"path":"/api/v1/extensions/installations","auth_policy":"browser_session","required_scope":"extension.read"},
+    {"route_id":"extensions.bindings.list","methods":["GET"],"path":"/api/v1/extensions/bindings","auth_policy":"browser_session","required_scope":"extension.read"},
+    {"route_id":"extensions.bindings.read","methods":["GET"],"path":"/api/v1/extensions/bindings/{slot_key_digest}","auth_policy":"browser_session","required_scope":"extension.read"},
+    {"route_id":"extensions.bindings.slot_key","methods":["POST"],"path":"/api/v1/extensions/binding-slot-keys","auth_policy":"browser_session","required_scope":"extension.manage"},
+    {"route_id":"extensions.bindings.bind","methods":["POST"],"path":"/api/v1/extensions/bindings","auth_policy":"browser_session","required_scope":"extension.manage"},
+    {"route_id":"extensions.bindings.disable","methods":["POST"],"path":"/api/v1/extensions/bindings/{slot_key_digest}/disable","auth_policy":"browser_session","required_scope":"extension.manage"},
+    {"route_id":"extensions.bindings.rollback","methods":["POST"],"path":"/api/v1/extensions/bindings/{slot_key_digest}/rollback","auth_policy":"browser_session","required_scope":"extension.manage"},
+    {"route_id":"extensions.bindings.retention_release","methods":["POST"],"path":"/api/v1/extensions/bindings/{slot_key_digest}/rollback-retentions/{target_binding_record_digest}/release","auth_policy":"browser_session","required_scope":"extension.manage"}
+  ]
+}
