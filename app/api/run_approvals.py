@@ -1,4 +1,10 @@
-"""Fixed HTTP adapter for owner-recorded run approvals (human gates)."""
+"""Fixed HTTP adapter for owner-recorded run approvals (human gates).
+
+`POST {run}/approvals` records a v1 gate decision. `POST {run}/approvals/executions`
+records an execution-bound (v2) decision for one attempt the ledger asked for, and
+`GET {run}/approvals/executions` lists those asks with their state, so the owner
+approves exactly the execution and attempt (and inputs digest) the ledger names.
+"""
 
 import re
 from uuid import uuid4
@@ -74,11 +80,39 @@ def _segments(path: str):
     return run_id, parts[2:]
 
 
+EXECUTIONS = "executions"
+_EXECUTION_FIELDS = {
+    "command_id": str, "node_id": str, "approval_scope": str, "execution_id": str,
+    "execution_node_id": str, "attempt_no": int, "inputs_digest": (str, type(None)), "decision": str,
+}
+
+
+def _execution_preflight(run_id, method, body, content_type):
+    if method in {"GET", "HEAD"}:
+        if body:
+            raise ApprovalRouteError()
+        return None
+    if method != "POST" or content_type.split(";", 1)[0] != "application/json":
+        raise ApprovalRouteError()
+    value = parse_json_object(
+        body,
+        required=tuple(_EXECUTION_FIELDS),
+        field_types=_EXECUTION_FIELDS,
+        limits=WireLimits(max_bytes=4096, max_depth=2, max_items=16, max_members=8,
+                          max_string_bytes=256),
+    )
+    if set(value) != set(_EXECUTION_FIELDS):
+        raise ApprovalRouteError()
+    return {"schema_version": "run-approval-command-v2", "run_id": run_id, **value}
+
+
 def preflight(scope, body, content_type):
     try:
         path, method = scope["path"], scope["method"]
         parse_query(scope.get("query_string", b""), allowed=())
         run_id, rest = _segments(path)
+        if rest == [EXECUTIONS]:
+            return _execution_preflight(run_id, method, body, content_type)
         if not rest:
             if method != "POST":
                 raise ApprovalRouteError()
@@ -149,6 +183,36 @@ def create_router(*, approvals, base_path):
                 },
                 status_code=201,
             )
+        except RunApprovalError as error:
+            return approval_error(error)
+
+    @router.post(PREFIX + "{run_id}/approvals/" + EXECUTIONS)
+    async def record_execution(request: Request, run_id: str):
+        try:
+            command = request.state.approval_payload
+            value = await run_in_threadpool(
+                approvals.record_execution, request.state.authenticated_request, command
+            )
+            return JSONResponse(
+                {**value, "links": {"self": f"{root}{PREFIX}{run_id}/approvals/{EXECUTIONS}",
+                                    "events": f"{root}/api/v1/events"}},
+                status_code=201,
+            )
+        except RunApprovalError as error:
+            return approval_error(error)
+
+    @router.api_route(PREFIX + "{run_id}/approvals/" + EXECUTIONS, methods=["GET", "HEAD"])
+    async def read_executions(request: Request, run_id: str):
+        try:
+            listed = await run_in_threadpool(approvals.execution_requests, run_id)
+            value = {
+                "run_id": run_id,
+                "requests": listed,
+                "links": {"self": f"{root}{PREFIX}{run_id}/approvals/{EXECUTIONS}",
+                          "record": f"{root}{PREFIX}{run_id}/approvals/{EXECUTIONS}",
+                          "events": f"{root}/api/v1/events"},
+            }
+            return Response() if request.method == "HEAD" else JSONResponse(value)
         except RunApprovalError as error:
             return approval_error(error)
 

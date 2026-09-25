@@ -38,7 +38,11 @@ from ..domain.refs import (
 from ..domain.store import DomainStore, StorageError, _writer
 from .budgets import BudgetBook, BudgetDispatchRequest, BudgetUsage
 from .gates import (
+    EXECUTION_APPROVAL_REQUEST_COMMAND,
     GATE_REQUEST_COMMAND,
+    SHA256_HEX,
+    execution_approval_request,
+    execution_approval_request_identity,
     gate_request_identity,
     gate_request_recorded,
     local_identifier,
@@ -707,6 +711,14 @@ _TOOL_INPUT_FIELDS = ("ordinal", "media_type", "declared_size", "sha256", "role"
 MAX_TOOL_CALL_INPUTS = 8  # the execute grammar's MAX_ARTIFACT_INPUTS, pinned equal by test
 
 
+def tool_inputs_digest(artifact_inputs):
+    """The sha256 of the canonical ordered artifact input declarations of one tool
+    call — the same bytes the ledger stores as a ToolCall's `inputs_digest`."""
+    if type(artifact_inputs) not in (list, tuple):
+        raise TypeError("artifact inputs must be a sequence")
+    return _digest(canonical_json([dict(item) for item in artifact_inputs]))
+
+
 def tool_call_identity(attempt_id):
     """One tool call per attempt: deterministic in the attempt."""
     uuid_string(attempt_id)
@@ -1272,6 +1284,63 @@ class RuntimeLedger:
 
         with self._transaction() as db:
             return gate_request_recorded(db, self.vault_id, run_id, node_id, approval_scope)
+
+    def request_execution_approval(self, run_id, node_id, approval_scope, execution_id, attempt_no,
+                                   *, inputs_digest=None):
+        """Durably ask the owner for one execution-bound decision: one attempt of one
+        execution (node visit) of this run, behind the gate the ledger already asked for.
+
+        The executing node is read from the ledger's own execution row, never taken
+        from a caller; `inputs_digest` (optional) is `tool_inputs_digest` of the exact
+        artifact inputs the attempt will declare. One replayable command per (run, gate,
+        scope, execution, attempt) — its identity IS `execution_approval_request_identity`
+        — so an attempt has one ask with one digest (the same identity with another
+        digest conflicts). The attempt number must be one the execution already holds
+        or its next. No event is emitted (the gate's `approval.requested` stands) and
+        no ask expires; a v2 decision answers it only through the approvals service.
+        """
+
+        uuid_string(run_id)
+        uuid_string(execution_id)
+        node = local_identifier(node_id, "node id")
+        scope = local_identifier(approval_scope, "approval scope")
+        if type(attempt_no) is not int or not 1 <= attempt_no <= MAX_ATTEMPTS_PER_EXECUTION:
+            raise ValueError("attempt number is outside the ledger's bound")
+        if inputs_digest is not None and (type(inputs_digest) is not str
+                                          or SHA256_HEX.fullmatch(inputs_digest) is None):
+            raise ValueError("inputs digest must be sha256 hex")
+        command_id = execution_approval_request_identity(run_id, node, scope, execution_id, attempt_no)
+        with self._transaction(write=True) as db:
+            if not gate_request_recorded(db, self.vault_id, run_id, node, scope):
+                raise LedgerError("No gate request is held for this run, gate and scope")
+            execution = db.execute(
+                "SELECT run_id, node_id FROM runtime_node_executions WHERE vault_id=? AND id=?",
+                (self.vault_id, execution_id)).fetchone()
+            if execution is None or execution["run_id"] != run_id:
+                raise LedgerError("The execution is missing or belongs to another run")
+            payload = self._command_payload({
+                "run_id": run_id, "node_id": node, "approval_scope": scope,
+                "execution_id": execution_id, "execution_node_id": execution["node_id"],
+                "attempt_no": attempt_no, "inputs_digest": inputs_digest})
+            replay = self._command_replay(db, command_id, EXECUTION_APPROVAL_REQUEST_COMMAND, payload)
+            if replay is not None:
+                return replay
+            now = self._now(db)
+            highest = db.execute(
+                "SELECT MAX(attempt_no) AS n FROM runtime_attempts WHERE vault_id=? AND execution_id=?",
+                (self.vault_id, execution_id)).fetchone()["n"] or 0
+            if attempt_no > highest + 1:
+                raise LedgerError("The attempt number is neither held nor the execution's next")
+            result = {**parse_canonical(payload), "requested": True}
+            self._record_command(db, command_id, EXECUTION_APPROVAL_REQUEST_COMMAND, payload, result, now)
+            return result
+
+    def execution_approval_requested(self, run_id, node_id, approval_scope, execution_id, attempt_no):
+        """The ledger's held ask for this exact attempt's decision, or None."""
+
+        with self._transaction() as db:
+            return execution_approval_request(db, self.vault_id, run_id, node_id, approval_scope,
+                                              execution_id, attempt_no)
 
     def create_execution(self, command_id, spec):
         if type(spec) is not ExecutionSpec:

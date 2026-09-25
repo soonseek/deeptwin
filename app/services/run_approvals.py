@@ -36,6 +36,16 @@ authority that made it: a v2 record whose `approval.decided` event precedes
 the latest `auth.recovery_completed` event is superseded — `lookup_execution`
 and `resolve` refuse it with `RunApprovalError("superseded")` and every
 dispatcher fails closed. The record itself is never rewritten.
+
+`record_execution` is the owner surface for a v2 decision (the HTTP route): it
+answers only an ask the ledger itself holds for that exact attempt
+(`request_execution_approval`: the gate, the execution, the attempt number,
+the executing node as the ledger's execution row names it and, when the ledger
+knows it, the digest of the attempt's exact artifact inputs). Every field the
+owner names is checked against that ask; the record carries the ask's identity
+and its inputs digest, and the dispatcher refuses a decision whose ask or
+digest is not this attempt's. `execution_requests` lists a run's asks and
+whether each is pending, decided or superseded, so a UI asks for exactly that.
 """
 
 from __future__ import annotations
@@ -59,6 +69,10 @@ from ..domain.store import DomainStore, _writer
 from ..runtime.gates import (
     GATE_REQUEST_COMMAND,
     LOCAL,
+    SHA256_HEX,
+    execution_approval_request,
+    execution_approval_request_identity,
+    execution_approval_requests,
     gate_request_identity,
     gate_request_recorded,
 )
@@ -83,6 +97,10 @@ _RECORD_SCHEMA = "run-approval-v1"
 _SCHEMA_V2 = "run-approval-command-v2"
 _RECORD_SCHEMA_V2 = "run-approval-v2"
 _EXECUTION_FIELDS = ("execution_id", "execution_node_id", "attempt_no")
+# a v2 record answering the ledger's own ask names it and its inputs digest
+_ASK_FIELDS = ("execution_request_id", "inputs_digest")
+# `record` consults no execution ask (in-process callers); `record_execution` does
+_NO_ASK = object()
 # one grammar for gate node ids and scopes, shared with the ledger's requests
 _LOCAL = LOCAL
 
@@ -163,6 +181,10 @@ class RunApproval:
     execution_id: str | None = None
     execution_node_id: str | None = None
     attempt_no: int | None = None
+    # a v2 decision recorded against the ledger's ask names that ask and the
+    # inputs digest it carried (None when the ask carried none); otherwise both None
+    execution_request_id: str | None = None
+    inputs_digest: str | None = None
 
     @property
     def execution_bound(self) -> bool:
@@ -297,6 +319,8 @@ def _write_decision(domain, db, roots, *, approval_id, run_id, node_id, approval
     }
     if execution is not None:
         content.update({name: execution[name] for name in _EXECUTION_FIELDS})
+        if "execution_request_id" in execution:
+            content.update({name: execution[name] for name in _ASK_FIELDS})
     record = ImmutableRecord.create(
         kind="action_approval",
         id=approval_id,
@@ -476,8 +500,20 @@ class PersistentRunApprovals:
                 _attempt_no(bound["attempt_no"])
             except RunApprovalError:
                 raise RunApprovalError("unavailable") from None
-        elif any(name in content for name in _EXECUTION_FIELDS):
+        elif any(name in content for name in (*_EXECUTION_FIELDS, *_ASK_FIELDS)):
             raise RunApprovalError("unavailable")  # a v1 record never carries a binding
+        if version == _RECORD_SCHEMA_V2 and any(name in content for name in _ASK_FIELDS):
+            ask = {name: content.get(name) for name in _ASK_FIELDS}
+            digest = ask["inputs_digest"]
+            try:
+                _uuid(ask["execution_request_id"], "execution request id")
+            except RunApprovalError:
+                raise RunApprovalError("unavailable") from None
+            if (set(_ASK_FIELDS) - set(content)
+                    or (digest is not None and (type(digest) is not str
+                                                or SHA256_HEX.fullmatch(digest) is None))):
+                raise RunApprovalError("unavailable")
+            bound.update(ask)
         return RunApproval(
             run_id=content["run_id"],
             node_id=content["node_id"],
@@ -506,13 +542,60 @@ class PersistentRunApprovals:
         # authentication first: an unauthenticated caller learns nothing
         # about the command grammar
         self._authenticate(request)
-        command = _validate_command(payload)
+        return self._record(request, _validate_command(payload), _NO_ASK)
+
+    @_closed
+    def record_execution(self, request, payload) -> dict:
+        """The owner's execution-bound decision for one attempt the ledger asked for.
+
+        `payload` is a v2 command plus the `inputs_digest` the ledger's ask reported
+        (null when it carried none). Inside the writer every named field — the gate,
+        the execution, the executing node, the attempt number and the digest — must
+        equal the ledger's own held ask for that attempt and the ledger's execution
+        row; nothing the client says is trusted beyond selecting it. Replay-safe by
+        command id; the same attempt's decision under another command or decision
+        conflicts."""
+
+        self._authenticate(request)
+        if type(payload) is not dict or "inputs_digest" not in payload:
+            raise RunApprovalError("invalid command")
+        body = dict(payload)
+        digest = body.pop("inputs_digest")
+        if digest is not None and (type(digest) is not str or SHA256_HEX.fullmatch(digest) is None):
+            raise RunApprovalError("invalid inputs digest")
+        command = _validate_command(body)
+        if "execution_id" not in command:
+            raise RunApprovalError("invalid command")  # the route records v2 only
+        return self._record(request, command, digest)
+
+    def _record(self, request, command, digest_seen) -> dict:
         approval_id = _command_identity(command)
         record_schema = _RECORD_SCHEMA_V2 if "execution_id" in command else _RECORD_SCHEMA
+        answering_ask = digest_seen is not _NO_ASK
         with _writer(), self._domain._connection(write=True) as db:
             actor = self._authenticate(request, db)
             roots = self._domain._read_roots(db)
             _assert_event_schema(db, roots.genesis.id)
+            execution = command if record_schema == _RECORD_SCHEMA_V2 else None
+            if answering_ask:
+                try:
+                    held = execution_approval_request(
+                        db, roots.genesis.id, command["run_id"], command["node_id"],
+                        command["approval_scope"], command["execution_id"], command["attempt_no"])
+                except ValueError:
+                    raise RunApprovalError("unavailable") from None
+                owned = db.execute(
+                    "SELECT run_id, node_id FROM runtime_node_executions WHERE vault_id=? AND id=?",
+                    (roots.genesis.id, command["execution_id"])).fetchone()
+                if (held is None or held["execution_node_id"] != command["execution_node_id"]
+                        or held["inputs_digest"] != digest_seen
+                        or owned is None or owned["run_id"] != command["run_id"]
+                        or owned["node_id"] != command["execution_node_id"]):
+                    raise RunApprovalError("invalid execution: no such pending execution request")
+                execution = {**command, "inputs_digest": held["inputs_digest"],
+                             "execution_request_id": execution_approval_request_identity(
+                                 command["run_id"], command["node_id"], command["approval_scope"],
+                                 command["execution_id"], command["attempt_no"])}
             existing = self._load(db, approval_id, roots)
             if existing is not None:
                 if (
@@ -523,6 +606,8 @@ class PersistentRunApprovals:
                     or existing.schema_version != record_schema
                     or any(getattr(existing, name) != command.get(name)
                            for name in _EXECUTION_FIELDS)
+                    or (answering_ask and any(getattr(existing, name) != execution[name]
+                                              for name in _ASK_FIELDS))
                 ):
                     raise RunApprovalError("conflict")
                 stored = self._domain._load(db, existing.approval_ref, roots)[0].body
@@ -549,7 +634,7 @@ class PersistentRunApprovals:
                 run_id=command["run_id"], node_id=command["node_id"],
                 approval_scope=command["approval_scope"], decision=command["decision"],
                 command_id=command["command_id"], actor_ref=actor_ref, stamp=stamp,
-                execution=command if record_schema == _RECORD_SCHEMA_V2 else None,
+                execution=execution,
             )
             approval = RunApproval(
                 run_id=command["run_id"],
@@ -561,8 +646,47 @@ class PersistentRunApprovals:
                 actor_ref=actor_ref,
                 schema_version=record_schema,
                 **{name: command.get(name) for name in _EXECUTION_FIELDS},
+                **({name: execution[name] for name in _ASK_FIELDS} if answering_ask else {}),
             )
             return self._receipt(db, roots, approval, event_sequence)
+
+    @_closed
+    def execution_requests(self, run_id: str) -> list[dict]:
+        """The ledger's asks for execution-bound decisions of one run, each with its
+        state: `pending` (no v2 decision yet), `approved` / `rejected` (a current
+        decision, with its reference), or `superseded` (decided before the latest
+        owner recovery: it authorizes nothing, and the same attempt cannot be decided
+        again — a retry attempt needs its own ask)."""
+
+        run_id = _uuid(run_id, "run id")
+        with self._domain._connection() as db:
+            roots = self._domain._read_roots(db)
+            try:
+                held = execution_approval_requests(db, roots.genesis.id, run_id)
+            except ValueError:
+                raise RunApprovalError("unavailable") from None
+            listed = []
+            for ask in held:
+                found = self._load(db, execution_approval_identity(
+                    ask["run_id"], ask["node_id"], ask["approval_scope"], ask["execution_id"],
+                    ask["execution_node_id"], ask["attempt_no"]), roots)
+                state, ref = "pending", None
+                if found is not None:
+                    ref = found.approval_ref.as_dict()
+                    try:
+                        _require_current(self._domain, db, roots, found)
+                        state = found.decision
+                    except RunApprovalError as error:
+                        if str(error) != "superseded":
+                            raise
+                        state = "superseded"
+                listed.append({
+                    "run_id": ask["run_id"], "node_id": ask["node_id"],
+                    "approval_scope": ask["approval_scope"], "execution_id": ask["execution_id"],
+                    "execution_node_id": ask["execution_node_id"], "attempt_no": ask["attempt_no"],
+                    "inputs_digest": ask["inputs_digest"], "state": state, "approval_ref": ref,
+                })
+        return listed
 
     @_closed
     def lookup(
