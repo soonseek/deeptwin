@@ -51,6 +51,7 @@ from app.services.growth_store import (
     persist_dataset_ledger,
     persist_frozen_candidate,
     persist_loop_state,
+    persist_round_outputs,
     persist_validation_report,
 )
 from app.services.paired_execution import (
@@ -184,6 +185,7 @@ def execute_round(domain, plan, plan_record, reset_base, *, index, spec, candida
     value = _round_input(paired.result)
     assert record_comparison_round(plan, value).as_dict() == paired.result.as_dict()
     record = persist_comparison_round(domain, plan, value, plan_record_ref=plan_record, **marks(domain))
+    persist_round_outputs(domain, record, paired, **marks(domain))  # before the isolated runs go
     consumed = {"isolated_runs": 2 * len(paired.runs),
                 "node_visits": sum(len(run.trace.executions) for pair in paired.runs for run in pair)}
     remove_isolated_runs(reset_root)

@@ -93,7 +93,12 @@ describe('US6 growth chain in the real browser (synthetic test-actor evidence)',
     const group = section('비교 라운드').locator(`section[aria-label="계보 ${PLATEAU.slice(0, 8)}"]`);
     const rounds = group.locator('article');
     assert.equal(await rounds.count(), 6);
-    assert.match(await section('비교 라운드').textContent(), /산출물을 나란히 읽었다고 간주하지 않습니다/);
+    assert.match(await section('비교 라운드').textContent(), /기준과 후보가 만든 노드 결과를 나란히/);
+    // T066: every round shows both sides' node results side by side, the changed writer marked
+    const first = group.locator('article[aria-label="라운드 0"]');
+    const compared = first.locator('table[aria-label="항목 0 산출물 비교"]');
+    assert.equal(await compared.count(), 1);
+    assert.ok((await compared.locator('tr[data-changed="true"] th').allTextContents()).includes('writer · 다름'));
     for (let index = 0; index < 6; index += 1) {
       const round = group.locator(`article[aria-label="라운드 ${index}"]`);
       const text = await round.textContent();

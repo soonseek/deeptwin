@@ -73,3 +73,24 @@ test('no rounds says so, and the versions panel renders the rounds it read', asy
   await panel.load();
   assert.match(root.textContent, /라운드 0 \(round-0\)/);
 });
+
+test('a round shows both sides\' node results side by side, changes and out-of-scope nodes marked', async () => {
+  const { outputsView, MESSAGES: TEXT } = await import('../static/experiments.mjs');
+  const made = [];
+  const element = (tag, text, attributes = {}) => {
+    const node = { tag, text: text ?? '', attributes, children: [], append(...nodes) { this.children.push(...nodes); } };
+    made.push(node);
+    return node;
+  };
+  const [table] = outputsView(element, [{ item_index: 0, changed_nodes: ['writer'], unexplained_nodes: [],
+    baseline: [{ node_id: 'writer', result_text: '{"text":"a"}', truncated: false, result_bytes: 12 },
+      { node_id: 'intake', result_text: '{"x":1}', truncated: false, result_bytes: 7 }],
+    candidate: [{ node_id: 'writer', result_text: '{"text":"b"}', truncated: true, result_bytes: 9000 },
+      { node_id: 'intake', result_text: '{"x":1}', truncated: false, result_bytes: 7 }] }]);
+  const rows = table.children.filter(child => child.tag === 'tr' && child.attributes['data-changed'] !== undefined);
+  assert.deepEqual(rows.map(row => [row.children[0].text, row.attributes['data-changed']]),
+    [['intake', 'false'], ['writer · 다름', 'true']]);
+  assert.match(rows[1].children[2].text, /\(9000바이트 중 일부\)/);
+  assert.equal(outputsView(element, null)[0].text, TEXT.noOutputs);
+  assert.equal(outputsView(element, 'unreadable')[0].text, TEXT.outputsUnreadable);
+});

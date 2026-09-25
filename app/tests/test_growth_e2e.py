@@ -181,3 +181,20 @@ def test_g13_an_approval_given_before_the_version_changed_never_applies_later(se
     again = call(subject, "activate", {"approval_ref": fresh, "expected_revision": 3})
     assert again.status_code == 200, again.text
     assert again.json()["state"]["current_environment_ref"] == facts["candidates"]["P"]["bundle_ref"]
+
+
+def test_every_executed_round_keeps_both_sides_outputs_side_by_side(seeded):
+    # T066: the isolated runs are removed after each round; what each side produced is kept
+    # beside the round record, so the two can be read side by side
+    subject, _facts = seeded
+    rounds = [item for item in read(subject).json()["rounds"] if item["readable"]]
+    assert rounds and all(isinstance(item["outputs"], list) and item["outputs"] for item in rounds)
+    for item in rounds:
+        for output in item["outputs"]:
+            baseline = {entry["node_id"] for entry in output["baseline"]}
+            candidate = {entry["node_id"] for entry in output["candidate"]}
+            assert set(output["changed_nodes"]) <= baseline | candidate
+            assert all(entry["result_text"] and entry["result_bytes"] > 0 for entry in output["baseline"])
+    # a valid round's candidate changed the declared writer node
+    valid = next(item for item in rounds if item["validity"] == "valid")
+    assert "writer" in valid["outputs"][0]["changed_nodes"]

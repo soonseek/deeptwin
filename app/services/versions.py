@@ -26,6 +26,7 @@ from .growth_store import (
     GrowthStoreError,
     persist_promotion_state,
     resume_comparison_round_record,
+    resume_round_outputs,
     resume_loop,
     resume_promotion_state,
     resume_validation_report,
@@ -209,10 +210,18 @@ class PersistentVersions:
                 "validity": value["validity"], "validity_reasons": value["validity_reasons"],
                 "metric_vector": value["metric_vector"], "utility": value["utility"],
                 "evidence_refs": value["evidence_refs"],
+                # what each side produced, when the round kept it (its isolated runs are gone)
+                "outputs": self._round_outputs(ref),
             })
         found.sort(key=lambda item: (item.get("lineage_id", ""), item.get("round_index", -1),
                                      item["round_record"]["id"]))
         return found
+
+    def _round_outputs(self, ref):
+        try:
+            return resume_round_outputs(self._domain, ref)
+        except GrowthStoreError:
+            return "unreadable"
 
     @staticmethod
     def _state_view(state):

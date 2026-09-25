@@ -600,6 +600,11 @@ heldout validation and exact authenticated human promotion; no automatic operati
   candidate run, validity/reasons, score only on valid rounds, unreadable listed) in
   `experiments.mjs`. A side-by-side artifact reading remains: round runs are design
   run_manifest refs with no path to runs-v1 artifacts.
+  2026-09-25 side-by-side: a round keeps what each side produced before its isolated vaults are
+  removed (`persist_round_outputs`: per item both sides' node results, bounded with truncation
+  stated, and the changed / out-of-scope nodes), `versions-v1` rounds carry it, and
+  `experiments.mjs` shows the two side by side with changes marked (browser G-06 case, E2E and
+  unit tests). A round without kept outputs says so. No production path executes rounds yet.
 - [ ] T067 [US6] Run G-06–G-15 end-to-end recovery/loop/heldout/approval cases in app/tests/browser-growth.test.mjs and specs/001-autonomous-release/evidence/us6.md; label test-actor/synthetic vs actual user evidence (SC-007/SC-008).
   2026-09-25: G-06–G-13 and rollback exercised end to end in real Chromium against the
   supported server, over a durable chain seeded through the real services. The rounds come
