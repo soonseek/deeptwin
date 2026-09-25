@@ -315,6 +315,10 @@ def preflight_api_v1(scope, body):
     from .retention import preflight as retention_preflight
     if is_retention_path(path):
         retention_preflight(scope, body)
+    from .platform_update import is_platform_update_path
+    from .platform_update import preflight as platform_update_preflight
+    if is_platform_update_path(path):
+        platform_update_preflight(scope, body)
     from .browser_grants import is_browser_grants_path
     from .browser_grants import preflight as browser_grants_preflight
     if is_browser_grants_path(path):

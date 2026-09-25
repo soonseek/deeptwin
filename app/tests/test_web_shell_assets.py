@@ -49,6 +49,7 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "records-page.mjs": "application/javascript",
         "records-backup.mjs": "application/javascript",
         "records-retention.mjs": "application/javascript",
+        "records-update.mjs": "application/javascript",
         "account.mjs": "application/javascript",
         "claude-connection.mjs": "application/javascript",
         "work-model.mjs": "application/javascript",

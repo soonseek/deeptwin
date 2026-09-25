@@ -813,6 +813,24 @@ preview, missing evidence and no network send; backup/restore without original d
   lock/epoch request, lifecycle CAS and unique receipt consumption to the same migration/recovery
   transaction; test cancel-vs-receipt, replay/restart, missing component handshake and backup gate.
   No runtime pip/npm, browser-uploaded recovery receipt or silent new-data loss (FR-030).
+  2026-09-25: the operator tooling landed — `app/operations/updates.py`
+  (`status|prepare|backup|cancel|migrate`, control plane stopped) and `app/operations/recovery.py`
+  (guidance, operator-only input intake, owner-recovery import through it, gate-backup restore
+  to `restored_review`). A `release_update` `deployment-request-v1` binds the target manifest
+  and image-lock digests, origin, instance and current epoch/root generation; the lifecycle
+  (prepared→backup_verified→migrating→completed|cancelled|failed) is a revision CAS in the
+  vault's `deployment_update_` family; the unique receipt consumption, migration steps, release
+  head and `completed` commit in one transaction. The gate is a real backup through the
+  backup-crypto port verified at the live state digest; a later write refuses `backup_stale`.
+  Tested: cancel-vs-receipt both ways, a crash at every step, missing/wrong components, forged
+  and mismatched receipts, `epoch_changed` after an owner recovery, receipts from browser-upload
+  locations refused, only age spawned. The start refuses while an update is `migrating`, and the
+  records page shows the guidance read only (`GET /api/v1/platform/update`; real Chromium).
+  Not ticked: there is no real web release to update to (T081 images, manifest and image-lock
+  set), the update receipt reuses the recovery-operator adapter until the T025 port contract is
+  decided, the gate ran through the in-process port (not the worker process), and `DomainStore`
+  still migrates a v1 vault in place when it opens —
+  evidence/update-recovery-t072-2026-09-25.md.
 - [x] T073 [US7] Implement anywhere-accessible log/export/backup/retention GUI with actual included-content preview and consent in app/static/records.mjs and app/static/settings.mjs; no mandatory final export step (UX-AC08).
   2026-09-23 slice: work export end to end — actual-content preview (stores nothing, digest over
   exact bytes), explicit consent bound to that digest, stale-preview refusal, sealed consent/

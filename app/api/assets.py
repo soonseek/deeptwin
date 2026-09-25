@@ -47,6 +47,7 @@ MODULES = MappingProxyType({
     "records-page.mjs": JAVASCRIPT,
     "records-backup.mjs": JAVASCRIPT,
     "records-retention.mjs": JAVASCRIPT,
+    "records-update.mjs": JAVASCRIPT,
     "account.mjs": JAVASCRIPT,
     "claude-connection.mjs": JAVASCRIPT,
     "work-model.mjs": JAVASCRIPT,

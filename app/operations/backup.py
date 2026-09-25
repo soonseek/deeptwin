@@ -93,6 +93,8 @@ EXCLUDED = (
     ("permission_grants", "unconsumed_capabilities"),
     ("permission_projections", "unconsumed_capabilities"),
     ("deployment_prepare_", "deployment_receipt_private_state"),
+    # the update lifecycle, receipt consumptions and release head (T072): deployment state
+    ("deployment_update_", "deployment_receipt_private_state"),
 )
 # never part of the vault database at all; stated so the manifest is complete.
 # `credential_command_ledger` is the control plane's separate 0600
