@@ -47,6 +47,10 @@ REQUIRED_COVERAGE: dict[str, tuple[str, ...]] = {
     ),
     "extension_binding": (
         "extension.binding_changed", "extension.compatibility_failed",
+        "extension.binding_activated", "extension.binding_superseded",
+        "extension.binding_disabled", "extension.binding_rolled_back",
+        "extension.rollback_retention_created", "extension.rollback_retention_released",
+        "extension.rollback_retention_consumed",
     ),
     "work_source_ingestion": (
         "work.created", "work.revised", "source.stored",

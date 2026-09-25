@@ -31,8 +31,10 @@ This is the service behind the `extension-bindings-v1` owner routes
   not its derivation). Only the provider selector family is admitted (its fields are fixed by the
   contracts); other families are refused ``selector_unsupported``.
 
-Every mutation commits its records, the command replay record and `extension.binding_changed`
-(bind/supersede/disable/rollback) in one domain-store transaction. A command id is replay-safe:
+Every mutation commits its records, the command replay record and its contract events in one
+domain-store transaction: `extension.binding_{activated,superseded,disabled,rolled_back}` for the head
+move and `extension.rollback_retention_{created,consumed,released}` for each retention revision
+(`app/domain/events.py`; the exact slot/revision/retention records are the events' object refs). A command id is replay-safe:
 the same id and request answers the committed result, another request under it is refused
 ``command_conflict``. Nothing here contacts a provider or deploys anything.
 """
@@ -55,6 +57,7 @@ from ..domain.public_events import _append_event_in_transaction
 from ..domain.refs import (
     DomainContractError,
     EntityRef,
+    ObjectRef,
     canonical_json,
     parse_canonical,
     uuid_string,
@@ -95,6 +98,11 @@ RELEASE_RESULT_FIELDS = ("command_id", "extension_id", "binding_slot_key", "bind
                          "expected_current_binding_head", "target_binding_revision_ref",
                          "target_installation_ref", "target_service_tuple", "expected_retention_head",
                          "new_retention_revision", "new_retention_record_digest", "state")
+BINDING_EVENTS = {"bind": "extension.binding_activated", "supersede": "extension.binding_superseded",
+                  "disable": "extension.binding_disabled", "rollback": "extension.binding_rolled_back"}
+RETENTION_EVENTS = {"retained": "extension.rollback_retention_created",
+                    "released": "extension.rollback_retention_released",
+                    "consumed": "extension.rollback_retention_consumed"}
 _COMPOSE_FIELDS = frozenset({"port_contract_version", "binding_slot_id", "target_scope",
                              "capability_selector"})
 
@@ -257,15 +265,38 @@ class PersistentExtensionBindings:
                  "command_conflict")
         return parse_canonical(content["result_json"].encode())
 
-    def _event(self, db, roots, actor_ref, *, command_id, port, revision, stamp):
-        contract = PORT_CONTRACTS[port]
+    @staticmethod
+    def _object(ref):
+        return ObjectRef("extension_binding", ref.id, ref.version, ref.sha256)
+
+    def _emit(self, db, roots, actor_ref, *, event_type, command_id, key, refs, metadata, stamp):
+        contract = PORT_CONTRACTS[key["port_contract_version"]]
         _append_event_in_transaction(
             db, vault_id=roots.genesis.id, recorded_at_utc=stamp, observed_at_utc=stamp,
-            actor_kind="human", actor_ref=actor_ref, event_type="extension.binding_changed",
-            object_refs=(), correlation_id=command_id, causation_id=None, status="succeeded",
-            error_code=None, public_metadata={"extension_kind": contract.extension_kind,
-                                              "trust_tier": contract.trust_tier, "revision": revision},
+            actor_kind="human", actor_ref=actor_ref, event_type=event_type,
+            object_refs=tuple(dict.fromkeys(self._object(ref) for ref in refs)), correlation_id=command_id,
+            causation_id=None, status="succeeded", error_code=None,
+            public_metadata={"extension_kind": contract.extension_kind, "trust_tier": contract.trust_tier,
+                             "port_contract_version": key["port_contract_version"], "purpose": key["purpose"],
+                             **metadata},
             private_evidence_refs=(), retention_class="core", policy_ref=roots.access_policy)
+
+    def _binding_event(self, db, roots, actor_ref, *, command_id, key, action, ref, previous_ref, affected, stamp):
+        """`extension.binding_{activated,superseded,disabled,rolled_back}` for one committed head move."""
+        self._emit(db, roots, actor_ref, event_type=BINDING_EVENTS[action], command_id=command_id, key=key,
+                   refs=[ref] + ([] if previous_ref is None else [previous_ref]),
+                   metadata={"revision": ref.version,
+                             "previous_revision": 0 if previous_ref is None else previous_ref.version,
+                             "affected_environment_count": affected}, stamp=stamp)
+
+    def _retention_event(self, db, roots, actor_ref, *, command_id, key, retention_ref, target_ref, head_ref,
+                         previous_state, state, stamp):
+        """`extension.rollback_retention_{created,released,consumed}` for one retention revision."""
+        self._emit(db, roots, actor_ref, event_type=RETENTION_EVENTS[state], command_id=command_id, key=key,
+                   refs=[retention_ref, target_ref, head_ref],
+                   metadata={"retention_revision": retention_ref.version, "target_revision": target_ref.version,
+                             "binding_revision": head_ref.version, "previous_state": previous_state,
+                             "state": state}, stamp=stamp)
 
     # -- qualification --------------------------------------------------------------------
 
@@ -628,6 +659,9 @@ class PersistentExtensionBindings:
         self._capacity(db, roots, 4)
         ref = self._put(db, roots, actor_ref, record_id=values.slot_record_id(digest), version=new_revision,
                         parents=parents, content=content, stamp=stamp)
+        self._binding_event(db, roots, actor_ref, command_id=command_id, key=key, action=content["action"],
+                            ref=ref, previous_ref=None if head is None else history[-1][0], affected=0,
+                            stamp=stamp)
         retained = None
         if head is not None and head["state"] == "active" and retain_head:
             displaced_ref, displaced = history[-1]
@@ -644,6 +678,9 @@ class PersistentExtensionBindings:
             retention_ref = self._put(db, roots, actor_ref,
                                       record_id=values.retention_record_id(digest, displaced_ref.sha256),
                                       version=1, parents=[displaced_ref], content=retained_content, stamp=stamp)
+            self._retention_event(db, roots, actor_ref, command_id=command_id, key=key,
+                                  retention_ref=retention_ref, target_ref=displaced_ref, head_ref=ref,
+                                  previous_state="absent", state="retained", stamp=stamp)
             retained = {"target_binding_revision_ref": previous,
                         "retention_head": {"revision": 1, "retention_record_digest": retention_ref.sha256,
                                            "state": "retained"}}
@@ -663,11 +700,12 @@ class PersistentExtensionBindings:
                                      record_id=values.retention_record_id(digest, target["binding_record_digest"]),
                                      version=2, parents=[prior_ref, target_ref], content=consumed_content,
                                      stamp=stamp)
+            self._retention_event(db, roots, actor_ref, command_id=command_id, key=key,
+                                  retention_ref=consumed_ref, target_ref=target_ref, head_ref=ref,
+                                  previous_state="retained", state="consumed", stamp=stamp)
             consumed = {"target_binding_revision_ref": target,
                         "retention_head": {"revision": 2, "retention_record_digest": consumed_ref.sha256,
                                            "state": "consumed"}}
-        self._event(db, roots, actor_ref, command_id=command_id, port=key["port_contract_version"],
-                    revision=new_revision, stamp=stamp)
         result = self._result(action, command_id, extension_id, key, digest, expected, ref, content,
                               retained, consumed)
         self._record_command(db, roots, actor_ref, action=action, command_id=command_id,
@@ -865,6 +903,9 @@ class PersistentExtensionBindings:
                         "recorded_at_ms": now_ms}
             ref = self._put(db, roots, actor_ref, record_id=values.retention_record_id(digest, target_digest),
                             version=2, parents=[prior_ref, target_ref], content=released, stamp=stamp)
+            self._retention_event(db, roots, actor_ref, command_id=command_id, key=key, retention_ref=ref,
+                                  target_ref=target_ref, head_ref=history[-1][0], previous_state="retained",
+                                  state="released", stamp=stamp)
             result = {"command_id": command_id, "extension_id": extension_id, "binding_slot_key": key,
                       "binding_slot_key_digest": digest, "expected_current_binding_head": expected,
                       "target_binding_revision_ref": target, "target_installation_ref": target_installation,

@@ -168,3 +168,34 @@ def test_a_concurrent_head_move_is_never_admitted_after_it_commits(tmp_path, mon
     after = {outcome for after, outcome in outcomes if after}
     assert "admitted" in before and before <= {"admitted", reason}
     assert after == {reason}
+
+
+def test_the_contract_events_commit_in_the_binding_transaction(case, monkeypatch):
+    from app.extensions import binding_service
+    from app.extensions.binding_service import BindingError
+    from app.tests.test_extension_bindings import _events, _records
+
+    a = case.resolver.qualification("ext-a", "a")
+    b = case.resolver.qualification("ext-b", "b")
+    key = _key(case)
+    digest = key["binding_slot_key_digest"]
+    first = _ok(case.post("bindings", _bind(key, a, None)))
+    original = binding_service._append_event_in_transaction
+
+    def fail_retention_event(db, **fields):
+        if fields["event_type"] == "extension.rollback_retention_created":
+            raise BindingError("unavailable")
+        return original(db, **fields)
+
+    monkeypatch.setattr(binding_service, "_append_event_in_transaction", fail_retention_event)
+    records, events = _records(case), _events(case)
+    response = case.post("bindings", _bind(key, b, first["binding_head"]))
+    assert response.status_code >= 500 and response.json()["code"] == "unavailable"
+    # the supersession, its retention, its command record and its first event rolled back together
+    assert _records(case) == records and _events(case) == events
+    assert _ok(case.get(f"bindings/{digest}"))["head"] == first["binding_head"]
+    monkeypatch.setattr(binding_service, "_append_event_in_transaction", original)
+    second = _ok(case.post("bindings", _bind(key, b, first["binding_head"])))
+    assert second["binding_head"]["revision"] == 2
+    assert [event["event_type"] for event in _events(case)][-2:] == [
+        "extension.binding_superseded", "extension.rollback_retention_created"]
