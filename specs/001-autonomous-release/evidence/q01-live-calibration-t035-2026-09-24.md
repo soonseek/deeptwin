@@ -79,3 +79,20 @@ It carried the seven verified trials over unchanged and ran only the three.
 
 Total spend on these three runs was **about $11.80** (session total so far: about $15.8 of the
 $20 budget).
+
+## Joint errors, abstention and valid alternatives (2026-09-25)
+
+These counts were derived offline from the recorded complete tuned result (`observed/run-2-continued-results.json`) by `evals/deeptwin/qualification/calibration/analyze_observed.py`, guarded by `evals/deeptwin/tests/test_calibration_analysis.py`. They come only from the verifier's rule checks and judge items. No call was made, and no rate is inferred.
+
+- **Abstention.**
+  - The critic left 15 of 72 review findings `unresolved`, across the 9 trials that produced a valid review. 13 of these are on Q5–Q8, where the expectations allow it. 2 are on Q2 (c71/ce-17, c42/ce-43), where the materials support a decision; these are the two false non-passes above.
+  - No counterexample proposal abstained: all 9 proposal stages proposed chains.
+  - Of the three counterexample validity judgments, ce-29 was `rejected`, ce-17 `valid` and ce-43 `unresolved`. All three match the expectations.
+- **Valid alternatives.** Both accept cases passed without a false rejection: c71, and c24, which is an alternative accepted on its substance.
+- **Critic/judge joint errors.** The critic made 3 semantic errors (the 2 Q2 abstentions, and the c18 Q1 overconfidence).
+  - Only c18 has a judge item on the same criterion, and there the judge disagreed with the critic (`not_supported`). So 0 joint errors were observed, out of 1 measurable item.
+  - The two Q2 errors had no covering judge item, so for them joint error is **not measurable**. It is not "absent".
+  - The judge marked 1 of 36 items `not_supported`, and that one flag was correct.
+  - Critic and judge share a model (`independence_established: false`), so this agreement pattern is not evidence of independence. V3 is not addressed.
+
+With this, T035's scope is met: the calibration and independence profile are frozen, the authorized live trials were executed, the result (6/10, suite `fail`) is recorded, and joint errors, abstention and valid alternatives are recorded with their denominators, with no guarantee invented. No critic or lens qualifies. All ten cases are observed/tuned development data and never release heldout. The release qualification belongs to T076 (frozen and audited) and T077 (execution).
