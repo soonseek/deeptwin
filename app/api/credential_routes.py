@@ -119,6 +119,14 @@ _ACT_ERRORS = {
     "binding_refused": (409, "binding_refused",
                         "게이트웨이가 이 연결의 키 사용을 거부했습니다. 연결 상태를 다시 읽어 주세요.",
                         NOT_RETRYABLE),
+    "transport_unqualified": (409, "transport_unqualified",
+                              ("게이트웨이의 제공자 전송 매니페스트가 검증(qualification)되지 않았거나 "
+                               "검증 뒤 바뀌었습니다. 이 키로는 아무 요청도 보내지 않았습니다."),
+                              NOT_RETRYABLE),
+    "budget_refused": (409, "budget_refused",
+                       ("이 새로 고침의 예산 예약이 한도를 넘었거나 이미 쓰였습니다. "
+                        "제공자에게는 보내지 않았습니다. 새로 고침을 다시 시작해 주세요."),
+                       NOT_RETRYABLE),
     "provider_rejected": (424, "provider_rejected",
                           "제공자가 이 키로 모델 목록을 읽는 것을 거부했습니다.", NOT_RETRYABLE),
     "provider_unavailable": (503, "provider_unavailable",

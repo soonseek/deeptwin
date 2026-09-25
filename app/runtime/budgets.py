@@ -952,6 +952,47 @@ class BudgetBook:
             )
             return self._reservation(row)
 
+    def reserve_and_dispatch(self, session_id, request_id, *, model_calls, tool_calls,
+                             node_visits, loop_rounds, output_bytes, api_microunits,
+                             candidates=0):
+        """Reserve and mark one request dispatched in ONE transaction: the write-ahead
+        record of a send (the gateway-send budget binding, T090). The reservation is the
+        may-have-sent barrier: once this returns, the request is never dispatched again.
+        A request id already dispatched or settled is refused ``ReservationConflict``
+        (a crash between this call and the send leaves it ``dispatched`` and it is
+        settled, never re-sent); a request beyond the session's policy is refused
+        ``BudgetExceeded`` with nothing written."""
+        with self._connection(immediate=True) as db:
+            row, session, _, now = self._reserve_in_transaction(
+                db, session_id, request_id, model_calls=model_calls,
+                tool_calls=tool_calls, node_visits=node_visits,
+                loop_rounds=loop_rounds, output_bytes=output_bytes,
+                candidates=candidates, api_microunits=api_microunits,
+            )
+            if row["state"] != "reserved":
+                raise ReservationConflict("The request was already dispatched; it is never re-sent")
+            if session["blocked_reason"] is not None:
+                raise BudgetExceeded("Budget session is blocked after an accounting overrun")
+            if now >= session["deadline"]:
+                raise BudgetExceeded("Session wall-time budget expired before dispatch")
+            changed = db.execute(
+                "UPDATE runtime_budget_reservations SET state='dispatched',dispatched_at=? "
+                "WHERE request_id=? AND session_id=? AND state='reserved' "
+                "AND dispatched_at IS NULL AND settled_at IS NULL",
+                (now, request_id, session_id),
+            ).rowcount
+            if changed != 1:
+                raise ReservationConflict("Budget dispatch reservation lost its state CAS")
+            self._append_reservation_audit(db, request_id, now)
+            updated = db.execute("SELECT * FROM runtime_budget_reservations WHERE request_id=?",
+                                 (request_id,)).fetchone()
+            return self._reservation(updated)
+
+    def reservation_state(self, request_id):
+        """The stored state of one reservation, or None when this book has none (a read)."""
+        with self._connection(immediate=True) as db:
+            return self._reservation_state_in_transaction(db, request_id)
+
     def _reserve_and_mark_dispatched_in_transaction(self, db, request):
         """Reserve and dispatch on a caller-owned transaction over this exact DB.
 

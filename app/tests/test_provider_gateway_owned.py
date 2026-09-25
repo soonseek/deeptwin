@@ -42,13 +42,9 @@ BOOT_SECRET = broker.BootSecret(b"k" * broker.AUTH_SECRET_BYTES)
 
 
 def binding(port=1):
-    from app.workers.provider_gateway import ProviderBinding
+    from app.tests.support.transport_manifest import loopback_binding
 
-    return ProviderBinding(provider="claude", scheme="http", host="127.0.0.1", port=port,
-                           allowed_methods=("GET", "POST"), allowed_path_prefixes=("/v1",),
-                           allowed_request_headers=("anthropic-version", "content-type"),
-                           auth_header="x-api-key", max_request_bytes=1_048_576,
-                           max_response_bytes=1_048_576, timeout_seconds=2)
+    return loopback_binding(port)
 
 
 def services(vault, spec):

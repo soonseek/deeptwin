@@ -9,7 +9,7 @@ from . import credential_envelope as envelope
 from .credential_contracts import (MAX_SECRET_BYTES, MAX_ENVELOPE_BYTES, CredentialVaultError,
     canonical, fingerprint, metadata_value, reference, secret_value, strict_json, unb64u, uuid_value)
 from .credential_files import CustodyBudget, exclusion
-from .credential_journal import Journal
+from .credential_journal import MAX_SENDS, Journal
 from .credential_root import CredentialRoot
 
 
@@ -372,6 +372,52 @@ class CredentialVault:
                            (provider, revision, digest, canonical(head)))
             return head
 
+    def bind_transport(self, *, qualification):
+        """Adopt the control plane's provider-transport qualification (T087/T090).
+
+        The document (`provider-transport-qualification-v1`) names the digest of the
+        manifest a transport was qualified for; the send path delivers custody only while
+        the adopted document of the lease's provider names the digest of the manifest the
+        gateway's transport was built from. Revisions only move forward per provider: a
+        lower revision, or the same revision with a different body, is refused
+        ``conflict``; the identical document is an idempotent replay. Nonsecret."""
+        from .provider_transport_manifest import TransportManifestError, parse_qualification
+
+        try:
+            body = parse_qualification(qualification)
+        except TransportManifestError:
+            raise CredentialVaultError("invalid_metadata") from None
+        if body["provider"] not in ("claude", "codex"):
+            raise CredentialVaultError("invalid_metadata")
+        digest = sha256(canonical(body)).hexdigest()
+        with self._operation() as journal:
+            prior = journal.checked_read(
+                "SELECT revision, fingerprint FROM transports WHERE provider=?", (body["provider"],))
+            if prior:
+                if prior[0]["revision"] > body["revision"] or (
+                        prior[0]["revision"] == body["revision"]
+                        and prior[0]["fingerprint"] != digest):
+                    raise CredentialVaultError("conflict")
+                if prior[0]["revision"] == body["revision"]:
+                    return body
+            with journal.transaction() as db:
+                db.execute("INSERT OR REPLACE INTO transports VALUES(?,?,?,?)",
+                           (body["provider"], body["revision"], digest, canonical(body)))
+            return body
+
+    def transports(self):
+        """The adopted provider-transport qualifications (nonsecret)."""
+        with self._operation() as journal:
+            return [strict_json(row[0], 4096) for row in
+                    journal.checked_read("SELECT body FROM transports ORDER BY provider")]
+
+    def consumed_reservations(self):
+        """The budget reservations sends consumed, in claim order (nonsecret)."""
+        with self._operation() as journal:
+            return [dict(row) for row in journal.checked_read(
+                "SELECT reservation_id, reservation_sha256, prepare_sha256, endpoint FROM sends "
+                "ORDER BY rowid")]
+
     def heads(self):
         """The adopted binding heads (nonsecret)."""
         with self._operation() as journal:
@@ -396,7 +442,7 @@ class CredentialVault:
                 ("stored_unbound", "cleanup_pending", "secret_input_lost", "pending")} | {"quarantined": self._quarantined}
 
     def capabilities(self):
-        return {"port": "credential-op-v2", "operations": ["store_at", "query_record", "retire", "bind_head", "snapshot", "health", "capabilities"],
+        return {"port": "credential-op-v2", "operations": ["store_at", "query_record", "retire", "bind_head", "bind_transport", "snapshot", "health", "capabilities"],
                 "root_rotation": False, "erasure": False, "provider_resolution": False}
 
     def resolve_for_gateway(self, handle):
@@ -441,6 +487,30 @@ class CredentialVault:
                 head = strict_json(heads[0][0], 4096) if len(heads) == 1 else None
                 if head is None or head["state"] != "bound" or head["record"] != record:
                     raise CredentialVaultError("provider_binding_unavailable")
+                # T087 transport qualification: only a transport built from the manifest
+                # the adopted qualification names may send. An unqualified provider, or a
+                # manifest whose bytes changed after qualification (another digest), is
+                # refused here, before any provider byte.
+                transports = journal.checked_read("SELECT body FROM transports WHERE provider=?",
+                                                  (metadata["provider"],))
+                adopted = strict_json(transports[0][0], 4096) if len(transports) == 1 else None
+                if (adopted is None or lease.transport_manifest_sha256 is None
+                        or adopted["manifest_sha256"] != lease.transport_manifest_sha256):
+                    raise CredentialVaultError("transport_unqualified")
+                # T090 budget binding: the send consumes exactly one budget reservation,
+                # recorded by the control plane before the send. A lease without one, or a
+                # reservation a send already consumed (even before a gateway restart), is
+                # refused; the row is written before any provider byte.
+                reservation = lease.reservation_ref
+                if (type(reservation) is not dict or set(reservation) != {"kind", "id", "version", "sha256"}
+                        or type(reservation["id"]) is not str or len(reservation["id"]) != 36
+                        or type(reservation["sha256"]) is not str or len(reservation["sha256"]) != 64):
+                    raise CredentialVaultError("reservation_refused")
+                if journal.checked_read("SELECT 1 FROM sends WHERE reservation_id=?",
+                                        (reservation["id"],)):
+                    raise CredentialVaultError("reservation_refused")
+                if journal.count("sends") >= MAX_SENDS:
+                    raise CredentialVaultError("reservation_refused")
                 payload = self._published(metadata)
                 if payload is None:
                     raise CredentialVaultError("provider_binding_unavailable")
@@ -453,6 +523,11 @@ class CredentialVault:
                     raise CredentialVaultError("provider_binding_unavailable")
                 budget.checkpoint()
                 secret = self._root.open(payload, metadata)
+                budget.checkpoint()
+                with journal.transaction() as db:
+                    db.execute("INSERT INTO sends VALUES(?,?,?,?)",
+                               (reservation["id"], reservation["sha256"], lease.prepare_sha256,
+                                lease.endpoint))
                 budget.checkpoint()
                 yield secret
         finally:

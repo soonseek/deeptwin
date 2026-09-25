@@ -53,11 +53,10 @@ def authenticated_spec(root: Path):
 
 
 def binding(port):
-    return ProviderBinding(provider="claude", scheme="http", host="127.0.0.1", port=port,
-                           allowed_methods=("GET", "POST"), allowed_path_prefixes=("/v1",),
-                           allowed_request_headers=("anthropic-version", "content-type"),
-                           auth_header="x-api-key", max_request_bytes=1_048_576,
-                           max_response_bytes=1_048_576, timeout_seconds=2)
+    # the shipped manifest's binding, its origin replaced by the loopback mock (T087)
+    from app.tests.support.transport_manifest import loopback_binding
+
+    return loopback_binding(port)
 
 
 def future_deadline(seconds=3_600):
@@ -85,7 +84,8 @@ def prepared_catalog(meta, record, handle, pin, *, after_id=None):
         "version": 1, "sha256": "c" * 64}, request_id=str(uuid4()), request_sha256="d" * 64,
         selected_handle_ref=handle, connection_pin=pin, credential_metadata=meta,
         credential_record=record, endpoint="models", after_id=after_id, body=b"",
-        remaining_ms=2_000, deadline_at=future_deadline(), reservation_ref=None)
+        remaining_ms=2_000, deadline_at=future_deadline(), reservation_ref={
+            "kind": "validation_report", "id": str(uuid4()), "version": 1, "sha256": "e" * 64})
 
 
 def test_prepare_header_rejects_boolean_sequence_before_body_admission(tmp_path):
@@ -349,7 +349,7 @@ def test_authenticated_bodyless_models_pages_pin_one_semantic_request_uuid(tmp_p
                 request_sha256="d" * 64, selected_handle_ref=handle, connection_pin=pin,
                 credential_metadata=meta, credential_record=record, endpoint="models",
                 after_id=after_id, body=b"", remaining_ms=5_000,
-                deadline_at=future_deadline(), reservation_ref=None)
+                deadline_at=future_deadline(), reservation_ref={"kind": "validation_report", "id": str(uuid4()), "version": 1, "sha256": "e" * 64})
             assert prepare_header(message)["body_descriptor"] is None
             client = ProviderSendClient(transport_factory=factory, deadline_ms=5_000)
             try:

@@ -32,6 +32,27 @@ CREATE TABLE heads (provider TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(r
  fingerprint TEXT NOT NULL, body BLOB NOT NULL);
 """
 HEAD_STATES = ("bound", "revoked_pending_erasure")
+# The gateway's adopted provider-transport qualification (T087/T090): the control plane
+# publishes a `provider-transport-qualification-v1` document with `bind_transport`; the
+# send path delivers custody only while it names the digest of the manifest the transport
+# was built from. Revision-monotone per provider, like the heads.
+TRANSPORTS_SCHEMA = """
+CREATE TABLE transports (provider TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision >= 1),
+ fingerprint TEXT NOT NULL, body BLOB NOT NULL);
+"""
+# One row per budget reservation a send consumed (T090 budget binding), written at claim
+# time under the vault exclusion before any provider byte: a reservation is never used by
+# a second send, across gateway restarts. Nonsecret; validated by its column checks.
+SENDS_SCHEMA = """
+CREATE TABLE sends (reservation_id TEXT PRIMARY KEY CHECK(length(reservation_id)=36),
+ reservation_sha256 TEXT NOT NULL CHECK(length(reservation_sha256)=64),
+ prepare_sha256 TEXT NOT NULL CHECK(length(prepare_sha256)=64),
+ endpoint TEXT NOT NULL CHECK(endpoint IN ('messages','models')));
+"""
+# Tables added to the first layout, in order; a journal missing any of them gains it on
+# open (additive; no existing row is rewritten).
+ADDED_SCHEMAS = (HEADS_SCHEMA, TRANSPORTS_SCHEMA, SENDS_SCHEMA)
+MAX_SENDS = 16_384
 
 
 def checked_files(directory, *, custody_budget=None):
@@ -80,20 +101,24 @@ class Journal:
                 custody_budget.checkpoint()
             # DELETE journaling retains no long-lived WAL and creates sidecars with DB mode.
             if initialize:
-                self.connection.executescript("BEGIN IMMEDIATE;" + SCHEMA + HEADS_SCHEMA)
+                self.connection.executescript("BEGIN IMMEDIATE;" + SCHEMA + "".join(ADDED_SCHEMAS))
                 self.connection.execute("INSERT INTO binding VALUES(1,?)", (canonical(layout),))
                 self.connection.execute("COMMIT")
                 os.fsync(directory.fd)
             if self.checked_read("PRAGMA journal_mode")[0][0] != "delete":
                 raise CredentialVaultError("maintenance_required")
             first_layout = sorted(part.strip() for part in SCHEMA.split(";") if part.strip())
-            expected_schema = sorted(first_layout + [HEADS_SCHEMA.strip().rstrip(";")])
+            added = [part.strip().rstrip(";") for part in ADDED_SCHEMAS]
+            expected_schema = sorted(first_layout + added)
             actual_schema = sorted(row[0] for row in self.checked_read(
                 "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL"))
-            if actual_schema == first_layout:
-                # additive migration of a first-layout journal, under the caller's flock
+            missing = [statement for statement in added if statement not in actual_schema]
+            if (missing and set(first_layout) <= set(actual_schema)
+                    and set(actual_schema) <= set(expected_schema)):
+                # additive migration of an older layout, under the caller's flock
                 self.connection.execute("BEGIN IMMEDIATE")
-                self.connection.execute(HEADS_SCHEMA.strip().rstrip(";"))
+                for statement in missing:
+                    self.connection.execute(statement)
                 self.connection.execute("COMMIT")
                 actual_schema = sorted(row[0] for row in self.checked_read(
                     "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL"))
@@ -228,9 +253,20 @@ class Journal:
             if (receipt is None or receipt["ciphertext_sha256"] != ref["ciphertext_sha256"]
                     or receipt["provider"] != head["provider"]):
                 raise CredentialVaultError("maintenance_required")
+        from .provider_transport_manifest import TransportManifestError, parse_qualification
+        for row in self.checked_read("SELECT * FROM transports"):
+            if custody_budget is not None:
+                custody_budget.checkpoint()
+            try:
+                body = parse_qualification(strict_json(row["body"], 4096))
+            except TransportManifestError:
+                raise CredentialVaultError("maintenance_required") from None
+            if (body["provider"] != row["provider"] or body["revision"] != row["revision"]
+                    or row["fingerprint"] != sha256(canonical(body)).hexdigest()):
+                raise CredentialVaultError("maintenance_required")
 
     def count(self, table):
-        if table not in ("commands", "nonces", "receipts", "retirements"):
+        if table not in ("commands", "nonces", "receipts", "retirements", "sends"):
             raise CredentialVaultError("maintenance_required")
         return self.checked_read("SELECT count(*) FROM " + table)[0][0]
 

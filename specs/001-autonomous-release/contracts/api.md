@@ -521,8 +521,14 @@ request: a rotation or delete between request and result refuses it `409 catalog
 for that intent). `intent_id` is the refresh command; a replay of a recorded refresh answers from
 the ledger with no provider request. Other refusals: `409 connection_unbound`, `409
 catalog_unsupported` (only `claude` is listable), `409 binding_refused` (the gateway refused
-custody), `424 provider_rejected` (the provider answered 401/403), `503 provider_unavailable`,
-`503 dependency_unavailable` (no gateway/lister). `POST …/{provider}/model-choice
+custody), `409 transport_unqualified` (the gateway holds no qualification naming the digest of
+its provider-transport manifest, or the manifest changed after qualification), `409
+budget_refused` (the page's budget reservation is beyond the fixed zero-cost catalog policy, or an
+earlier attempt of the same refresh already reserved it), `424 provider_rejected` (the provider
+answered 401/403), `503 provider_unavailable`, `503 dependency_unavailable` (no gateway/lister).
+Every page is bound to a budget reservation recorded (reserved and dispatched in one budget
+transaction) before its prepare frame and settled with the observed usage after; the gateway
+refuses a send without a reservation and never serves one reservation twice. `POST …/{provider}/model-choice
 {"binding_revision", "model"}` (route `credentials.model_choice`) records a model that the current
 revision's catalog lists (`409 catalog_stale` for another revision or no catalog, `409
 model_not_listed`); it makes no provider call. No create/rotate/delete/fence act and no GET calls

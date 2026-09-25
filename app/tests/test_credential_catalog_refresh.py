@@ -16,6 +16,7 @@ import json
 import logging
 import sqlite3
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
@@ -30,6 +31,10 @@ from app.api.credential_commands import (
     record_of,
 )
 from app.api.credential_routes import attach_credential_gateway
+from app.runtime.budgets import BudgetBook
+from app.runtime.gateway_send_budget import GatewayCatalogBudget
+from app.storage import Store
+from app.tests.support.transport_manifest import qualify_vault
 from app.tests.local_http import LocalTestClient
 from app.tests.support.provider_semantic_harness import connection_values
 from app.tests.test_credential_gateway_persistence import Gateway
@@ -113,7 +118,12 @@ def bench(tmp_path, caplog):
     spy = Spy(gateway.client())
     ledger = CredentialCommandLedger(tmp_path / "credential-commands.sqlite3")
     lister_calls = []
-    inner = GatewayCatalogLister(lambda: gateway.send_client(upstream.port))
+    # the gateway serves sends only through a qualified transport manifest (T087), and
+    # every page is bound to a reservation in a budget book (T090)
+    qualify_vault(gateway.vault)
+    book = BudgetBook(Store(tmp_path / "budget"), clock=lambda: int(time.time()))
+    inner = GatewayCatalogLister(lambda: gateway.send_client(upstream.port),
+                                 budget=GatewayCatalogBudget(book))
 
     def lister(**kwargs):
         lister_calls.append(kwargs["binding_revision"])
@@ -122,7 +132,7 @@ def bench(tmp_path, caplog):
     application = make_app(tmp_path / "app")
     attach_credential_gateway(application, spy, ledger, catalog_lister=lister)
     with LocalTestClient(application, base_url=ORIGIN) as client:
-        yield SimpleNamespace(client=client, gateway=gateway, spy=spy, ledger=ledger,
+        yield SimpleNamespace(client=client, gateway=gateway, spy=spy, ledger=ledger, book=book,
                               upstream=upstream, lister_calls=lister_calls,
                               acts=CredentialActs(spy, ledger))
     upstream.close()

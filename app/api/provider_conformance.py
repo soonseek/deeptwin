@@ -31,8 +31,17 @@ def conformance_services(context, *, dependencies):
     source = dependencies["deployment-provider.source-context"]
     service = PersistentProviderConformance(context.domain_store, context.owner_authority,
         prepare_service=prepare, source_context=source)
+    # T087 -> T090: the owner's qualification of the shipped provider-transport manifest
+    # from a matched verified run; the gateway document is published through the
+    # credential gateway client when the host attached one (no HTTP route yet)
+    from ..extensions.provider_transport_qualification import PersistentTransportQualification
+
+    attachment = context.credential_gateway
+    publisher = None if attachment is None else getattr(attachment.client, "bind_transport", None)
+    qualification = PersistentTransportQualification(service, publisher=publisher)
     return ContributionServices(create_router(service=service, base_path=context.base_path),
-        {"provider-conformance.service": service})
+        {"provider-conformance.service": service,
+         "provider-transport-qualification.service": qualification})
 
 
 def conformance_error(error):

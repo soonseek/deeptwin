@@ -8,6 +8,13 @@ injected by the transport itself; caller-supplied auth, host, cookie, proxy or
 framing headers are rejected before any network effect. Redirects are never
 followed, and non-success responses are redacted: no provider error bytes and no
 credential material ever appear in results or errors.
+
+The send path (`exchange`) serves only a binding built from a provider-transport
+manifest (`ProviderBinding.from_manifest`, T087): origin, methods, path prefixes, the
+projected headers and their values, the injected auth header, the byte bounds and each
+endpoint's method/path/query/cursor/response media type all come from the manifest's
+exact bytes, and the vault delivers custody only while the gateway's adopted
+qualification names that manifest's digest (`CredentialVault.delivery_for_exchange`).
 """
 
 from __future__ import annotations
@@ -18,18 +25,21 @@ import socket
 from dataclasses import dataclass, field
 
 from .credential_vault import CredentialVault, CredentialVaultError
+from .provider_transport_manifest import (
+    FORBIDDEN_HEADERS,
+    TransportManifest,
+    TransportManifestError,
+    endpoint_request,
+    host_header,
+)
 
 _PROVIDER = re.compile(r"[a-z][a-z0-9_-]{0,31}\Z")
 _HOST = re.compile(r"[a-z0-9]([a-z0-9.-]{0,253}[a-z0-9])?\Z")
 _HEADER_NAME = re.compile(r"[a-z0-9-]{1,64}\Z")
 _PATH = re.compile(r"/[A-Za-z0-9/_.-]{0,1023}\Z")
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost"})
-_FORBIDDEN_HEADERS = frozenset({
-    "authorization", "proxy-authorization", "cookie", "set-cookie", "host",
-    "transfer-encoding", "content-encoding", "content-length", "connection",
-    "upgrade", "te", "trailer", "keep-alive", "forwarded", "x-forwarded-for",
-    "x-forwarded-host", "x-forwarded-proto",
-})
+_HEX = re.compile(r"[0-9a-f]{64}\Z")
+_FORBIDDEN_HEADERS = FORBIDDEN_HEADERS
 
 
 class GatewayError(RuntimeError):
@@ -62,6 +72,11 @@ class ProviderBinding:
     max_request_bytes: int
     max_response_bytes: int
     timeout_seconds: int
+    # Set only by `from_manifest`: the manifest digest the vault's adopted qualification
+    # must name, the projected header values and the endpoint table of the send path.
+    manifest_sha256: str | None = None
+    request_headers: tuple = ()
+    endpoints: tuple = ()
 
     def __post_init__(self) -> None:
         if (
@@ -101,18 +116,66 @@ class ProviderBinding:
         # Plain HTTP is a loopback-only test affordance; production is HTTPS.
         if self.scheme == "http" and self.host not in _LOOPBACK_HOSTS:
             raise GatewayError("plain http is loopback-only")
+        if self.manifest_sha256 is None:
+            if self.request_headers or self.endpoints:
+                raise GatewayError("provider binding is invalid")
+            return
+        if (type(self.manifest_sha256) is not str or _HEX.fullmatch(self.manifest_sha256) is None
+                or type(self.request_headers) is not tuple or type(self.endpoints) is not tuple
+                or tuple(sorted(name for name, _ in self.request_headers))
+                != tuple(sorted(self.allowed_request_headers))
+                or sorted(endpoint.name for endpoint in self.endpoints) != ["messages", "models"]
+                or any(endpoint.method not in self.allowed_methods
+                       or not any(endpoint.path == prefix or endpoint.path.startswith(prefix + "/")
+                                  for prefix in self.allowed_path_prefixes)
+                       for endpoint in self.endpoints)):
+            raise GatewayError("provider binding is invalid")
+
+    @classmethod
+    def from_manifest(cls, manifest: TransportManifest, *, loopback_port: int | None = None):
+        """The binding of one parsed provider-transport manifest: every field is the
+        manifest's. `loopback_port` replaces only the origin with plain HTTP on
+        127.0.0.1 -- a test affordance for a local mock provider; the manifest digest (and
+        therefore the qualification it needs) is unchanged, and the gateway process
+        never passes it."""
+        if type(manifest) is not TransportManifest:
+            raise GatewayError("an exact parsed transport manifest is required")
+        scheme, host, port = manifest.scheme, manifest.host, manifest.port
+        if loopback_port is not None:
+            scheme, host, port = "http", "127.0.0.1", loopback_port
+        return cls(provider=manifest.provider, scheme=scheme, host=host, port=port,
+                   allowed_methods=manifest.allowed_methods,
+                   allowed_path_prefixes=manifest.allowed_path_prefixes,
+                   allowed_request_headers=tuple(name for name, _ in manifest.request_headers),
+                   auth_header=manifest.auth_header,
+                   max_request_bytes=manifest.max_request_bytes,
+                   max_response_bytes=manifest.max_response_bytes,
+                   timeout_seconds=manifest.timeout_seconds,
+                   manifest_sha256=manifest.manifest_sha256,
+                   request_headers=manifest.request_headers,
+                   endpoints=manifest.endpoints)
+
+    def endpoint_request(self, endpoint: str, after_id: str | None):
+        """(method, request target, projected headers, accepted response media type) of
+        one send-dialogue endpoint, from the manifest; nothing is a code constant."""
+        try:
+            return endpoint_request(self.endpoints, self.request_headers, endpoint, after_id)
+        except TransportManifestError:
+            raise GatewayError("provider endpoint is not bound",
+                               failure_class="unsupported_capability") from None
+
+    def host_header(self) -> str:
+        return host_header(self.scheme, self.host, self.port)
 
 
-def claude_api_binding() -> ProviderBinding:
-    """The fixed Claude API request surface the gateway process serves (T090): the
-    official HTTPS origin, the `/v1` messages/models paths the lease builds, the two
-    projected headers and `x-api-key` injected at send time. Not a T087-qualified
-    provider-transport manifest; it is the gateway's one built-in binding."""
-    return ProviderBinding(provider="claude", scheme="https", host="api.anthropic.com", port=443,
-                           allowed_methods=("GET", "POST"), allowed_path_prefixes=("/v1",),
-                           allowed_request_headers=("anthropic-version", "content-type"),
-                           auth_header="x-api-key", max_request_bytes=1_048_576,
-                           max_response_bytes=1_048_576, timeout_seconds=30)
+def claude_api_manifest_binding() -> ProviderBinding:
+    """The gateway process's Claude API binding: built only from the shipped
+    provider-transport manifest (`transport_manifests/claude-api-v1.json`). Sends through it
+    are delivered only while the gateway's adopted qualification names this manifest's
+    digest."""
+    from .provider_transport_manifest import claude_api_manifest
+
+    return ProviderBinding.from_manifest(claude_api_manifest())
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,7 +298,6 @@ class CredentialedProviderTransport:
 
     def exchange(self, *, lease):
         """Perform one lease-bound request; raw credential bytes stay in this scope."""
-        from urllib.parse import quote
         from .provider_send_messages import GatewayExchangeLease, ProviderSendObservation, ProviderSendError
 
         if type(lease) is not GatewayExchangeLease:
@@ -245,18 +307,21 @@ class CredentialedProviderTransport:
         if lease.cancel_event.is_set():
             raise GatewayError("provider exchange cancelled", failure_class="cancelled",
                                cancel_observed=True, phase="not_sent")
-        if lease.endpoint == "messages":
-            method, path = "POST", "/v1/messages"
-            headers = {"anthropic-version": "2023-06-01", "content-type": "application/json"}
-        elif lease.endpoint == "models":
-            method = "GET"
-            path = "/v1/models?limit=100" + ("&after_id=" + quote(lease.after_id, safe="")
-                                               if lease.after_id is not None else "")
-            headers = {"anthropic-version": "2023-06-01", "content-type": "application/json"}
-        else:
+        if binding.manifest_sha256 is None:
+            # only a manifest-built binding serves sends: no code-constant request surface
+            raise GatewayError("provider binding has no transport manifest",
+                               failure_class="unsupported_capability", phase="not_sent")
+        if lease.transport_manifest_sha256 != binding.manifest_sha256:
+            raise GatewayError("exchange lease names another transport manifest",
+                               failure_class="integrity_failed", phase="not_sent")
+        try:
+            method, path, headers, expected_media = binding.endpoint_request(
+                lease.endpoint, lease.after_id)
+        except GatewayError:
             raise GatewayError("provider endpoint is not bound",
-                               failure_class="unsupported_capability")
-        # Query construction has its own exact check; the historical path validator has no query surface.
+                               failure_class="unsupported_capability", phase="not_sent") from None
+        # the query is built from the manifest's exact fixed query and cursor; the
+        # historical path validator has no query surface
         validate_path = path.split("?", 1)[0]
         try:
             projected = self._validate(method, validate_path, headers, lease.body)
@@ -291,9 +356,7 @@ class CredentialedProviderTransport:
                         cancel_observed=lease.cancel_event.is_set(), phase="not_sent")
                 connection.timeout = max(0.001, remaining)
                 connection.putrequest(method, path, skip_host=True, skip_accept_encoding=True)
-                host = binding.host if binding.port == {"http": 80, "https": 443}[binding.scheme] \
-                    else f"{binding.host}:{binding.port}"
-                connection.putheader("host", host)
+                connection.putheader("host", binding.host_header())
                 connection.putheader("content-length", str(len(lease.body)))
                 for name, value in projected.items():
                     connection.putheader(name, value)
@@ -368,6 +431,8 @@ class CredentialedProviderTransport:
                 "busy": "dependency_unavailable",
                 "closed": "dependency_unavailable",
                 "storage_failure": "dependency_unavailable",
+                "transport_unqualified": "unsupported_capability",
+                "reservation_refused": "resource_exhausted",
                 "maintenance_required": "integrity_failed",
                 "invalid_metadata": "integrity_failed",
                 "record_identity_mismatch": "integrity_failed",
@@ -403,7 +468,6 @@ class CredentialedProviderTransport:
             return ProviderSendObservation(lease.exchange_id, lease.prepare_sha256, status, payload,
                                            "terminal_observed", lease.cancel_event.is_set(), media,
                                            None)
-        expected_media = "text/event-stream" if lease.endpoint == "messages" else "application/json"
         if (media is None or media.lower() not in {expected_media, expected_media + "; charset=utf-8"}
                 or content_encoding is not None):
             return ProviderSendObservation(lease.exchange_id, lease.prepare_sha256, status, payload,
@@ -418,5 +482,5 @@ __all__ = [
     "GatewayError",
     "GatewayResponse",
     "ProviderBinding",
-    "claude_api_binding",
+    "claude_api_manifest_binding",
 ]

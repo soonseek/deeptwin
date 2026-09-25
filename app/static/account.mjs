@@ -235,6 +235,8 @@ export const CREDENTIAL_ERRORS = Object.freeze({
   catalog_stale: '요청하는 동안 제공자 연결이 바뀌어 이 결과는 쓰지 않았습니다. 현재 연결로 다시 새로 고쳐 주세요.',
   model_not_listed: '현재 바인딩의 모델 목록에 없는 모델입니다.',
   binding_refused: '게이트웨이가 이 연결의 키 사용을 거부했습니다. 상태를 다시 읽어 주세요.',
+  transport_unqualified: '게이트웨이의 제공자 전송 매니페스트가 검증되지 않았거나 검증 뒤 바뀌어, 아무 요청도 보내지 않았습니다.',
+  budget_refused: '이 새로 고침의 예산 예약이 한도를 넘었거나 이미 쓰여, 제공자에게 보내지 않았습니다. 다시 새로 고쳐 주세요.',
   provider_rejected: '제공자가 이 키로 모델 목록을 읽는 것을 거부했습니다.',
   provider_unavailable: '제공자의 모델 목록을 읽지 못했습니다. 잠시 뒤 다시 시도해 주세요.',
   connection_unbound: '이 제공자에는 연결된 키가 없습니다.',

@@ -203,7 +203,7 @@ INSTALLED = (
         ("browser_session",),
         ("extension.manage", "extension.read"),
         requires=("deployment-prepare.service", "deployment-provider.source-context"),
-        provides=("provider-conformance.service",),
+        provides=("provider-conformance.service", "provider-transport-qualification.service"),
     ),
     InstalledContribution(
         "provider-installation-v1.json",

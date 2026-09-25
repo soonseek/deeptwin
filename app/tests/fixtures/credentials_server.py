@@ -18,6 +18,10 @@ test_credential_gateway_persistence, in this process). Test-owned substitutions 
 - the gateway's provider-send path (`ProviderSendService` over the same vault, reached by a
   `ProviderSendClient` on socket pairs) is bound to a loopback mock of the provider's
   models endpoint in this process (`MockModels`), never a real provider;
+- the gateway vault adopts a synthetic `provider-transport-qualification-v1` document of
+  the shipped manifest (the real qualification act needs a verified extension
+  installation, which this fixture does not stage); every catalog page is still reserved
+  in the app's own budget book by the product composition;
 - `GET /__test__/upstream` (a wrapper route in front of the app, not a product route) only
   reports how many requests the mock provider received and how many carried the key the
   gateway currently binds (counts, never the key).
@@ -47,6 +51,7 @@ from app.operations.setup import (
     derive_capability_verifier,
 )
 from app.server import create_app
+from app.tests.support.transport_manifest import qualify_vault
 from app.tests.test_credential_gateway_persistence import Gateway
 from app.workers import credential_gateway_service
 from app.workers.credential_attachment import (
@@ -94,6 +99,9 @@ class ScriptedClient:
 
     def bind_head(self, **kwargs):
         return self._client.bind_head(**kwargs)
+
+    def bind_transport(self, **kwargs):
+        return self._client.bind_transport(**kwargs)
 
 
 class MockModels:
@@ -159,6 +167,11 @@ def main():
     (owned / "gateway").mkdir(mode=0o700)
     (owned / "ledger").mkdir(mode=0o700)
     gateway = Gateway(owned / "gateway")
+    # the gateway sends only through a qualified provider-transport manifest (T087); the
+    # fixture adopts a synthetic qualification document of the shipped manifest, as the
+    # authenticated control side would publish it (test_provider_transport_manifest runs
+    # the real qualification act)
+    qualify_vault(gateway.vault)
     ledger_path = owned / "ledger" / credential_wiring.LEDGER_NAME
     ledger = CredentialCommandLedger(ledger_path, fence_after_seconds=args.fence_delay_seconds)
     credential_gateway_service._write_logical_connection = _reply

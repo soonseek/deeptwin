@@ -168,6 +168,8 @@ class ProviderSendService:
             "body_sha256": lease.body_sha256,
             "body_size": lease.body_size,
             "max_response_bytes": lease.max_response_bytes,
+            "transport_manifest_sha256": lease.transport_manifest_sha256,
+            "reservation_ref": lease.reservation_ref,
         })
 
     def commit(self, exchange_id, prepare_sha256, commit_id, remaining_ms=None):
@@ -199,6 +201,7 @@ class ProviderSendService:
                 deepcopy(message.connection_pin), deepcopy(message.credential_metadata),
                 deepcopy(message.credential_record), message.endpoint, message.after_id, message.body,
                 message.body_sha256, message.body_size, self._transport._binding.max_response_bytes,
+                self._transport._binding.manifest_sha256, deepcopy(message.reservation_ref),
                 deadline, threading.Event(), threading.Event(), self)
             self._states[exchange_id] = ["committed", "not_sent", lease, None,
                                          self._lease_snapshot(lease)]

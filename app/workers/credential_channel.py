@@ -274,6 +274,12 @@ class CredentialGatewayClient:
         return self._call({"schema": "credential-op-v2", "op": "bind_head", "provider": provider,
                            "revision": revision, "state": state, "record": record})
 
+    def bind_transport(self, *, qualification: dict) -> dict:
+        """Publish the control plane's provider-transport qualification to the gateway
+        (the manifest digest the send path requires). Nonsecret; idempotent per revision."""
+        return self._call({"schema": "credential-op-v2", "op": "bind_transport",
+                           "qualification": qualification})
+
     def submit(
         self,
         *,

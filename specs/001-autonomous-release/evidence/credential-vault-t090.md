@@ -1619,3 +1619,258 @@ b621a39d8279292c9091b1c6e197ad92ae8a527246b29770f21db7514bce4063  app/tests/test
 - **Other carried items.** The gateway-side fence (a late commit is neutralized, not prevented),
   erasure/`erasure_completed`, an independent audit, and the full shared regression are all
   unchanged.
+
+## 2026-09-25 — T087 provider-transport manifest and the budget binding of every gateway send
+
+This slice takes the T087 item above. Before it, `claude_api_binding()` was a fixed code-constant
+binding, not a qualified provider-transport manifest, and no send was bound to a budget.
+
+### Provider-transport manifest
+
+- `app/workers/provider_transport_manifest.py` (new, pure; imported by both sides):
+  - `provider-transport-manifest-v1` is the closed request surface of one `provider-port-v1`
+    provider's credentialed transport. It holds the port config's `api_origin` (HTTPS only, no
+    path, query or userinfo), the sorted methods and absolute path prefixes, the projected request
+    headers with their fixed values, the auth header, the request/response byte bounds, and the two
+    send-dialogue endpoints (`messages`, `models`). Each endpoint carries its method, path (under a
+    prefix), fixed query, cursor parameter, body rule and accepted response media type.
+  - `parse_transport_manifest` accepts only exact canonical bytes. Its identity is SHA-256 of those
+    bytes.
+  - `endpoint_request` is the one request builder shared by the gateway binding and the transport
+    conformance.
+  - `parse_qualification` validates the nonsecret `provider-transport-qualification-v1` document:
+    the manifest digest; the sealed qualification record; the installation-conformance run (staged
+    and verified installation refs of one id, the result ref of the command id, 4/4); and the
+    transport conformance (4/4). The document is all-or-nothing.
+- The Claude API manifest ships as data: `app/workers/transport_manifests/claude-api-v1.json`
+  (digest `7ee95edd…27505`).
+- `provider_gateway.py`:
+  - `claude_api_binding()` is gone.
+  - `ProviderBinding.from_manifest(manifest, *, loopback_port=None)` builds every field from the
+    manifest and records `manifest_sha256`, the header values and the endpoint table.
+    `loopback_port` replaces only the origin with plain HTTP on 127.0.0.1, as a test affordance for
+    a local mock provider; the digest is unchanged. The gateway never passes it.
+  - `exchange` now takes method, target, headers and response media type from the manifest. The
+    `anthropic-version` value, the paths, `limit=100` and the media types are no longer code
+    constants.
+  - A binding without a manifest, or a lease naming another manifest digest, is refused `not_sent`
+    before any connection.
+  - `credential_gateway_main` builds `claude_api_manifest_binding()`. An unreadable or invalid
+    manifest is `gateway_unavailable` at startup.
+- Gateway adoption (`credential-op-v2` `bind_transport {qualification}`,
+  `CredentialGatewayClient.bind_transport`, `CredentialVault.bind_transport`):
+  - Revision-monotone per provider, like `bind_head`: an identical document is idempotent; a lower
+    revision, or the same revision with another body, is `conflict`; an invalid document is
+    `invalid_metadata`.
+  - The journal gains `transports` (additive; each row is validated on open) and `sends`. A journal
+    missing any of `heads`/`transports`/`sends` gains them on open.
+  - The claim-time check in `delivery_for_exchange` runs under the vault exclusion after the head
+    check. It requires the adopted qualification of the lease's provider to name the lease's
+    manifest digest (the transport's). Otherwise the send is refused `transport_unqualified` →
+    `unsupported_capability`, `not_sent`. So an unqualified manifest, or a manifest whose bytes
+    changed after qualification, refuses every send before any provider byte.
+  - The gateway trusts the authenticated control side for the document, exactly as for `bind_head`
+    and `retire`.
+
+### Qualification through the T087 installation/conformance path
+
+`app/extensions/provider_transport_qualification.py` (new; imports no gateway or vault code).
+`PersistentTransportQualification.qualify(request, {"schema_version":
+"provider-transport-qualification-command-v1", "command_id", "conformance_command_id",
+"manifest_sha256"})` runs these steps:
+
+1. **Authenticate** the owner through the conformance service. The named manifest digest must equal
+   the shipped manifest's; a changed manifest is `conflict`.
+2. **Installation conformance.** The named run must be a `provider-conformance-reply-v2` (a
+   *verified* installation). It must be `matched` 4/4 under the current `SUITE_SHA256`. Its
+   verified admission, re-resolved now, must hash to the run's `admission_sha256`: the installation
+   head and release sources are unchanged. A legacy v1 run is `conflict`, and a missing run is
+   `not_found`.
+3. **Offline transport conformance** (`run_transport_conformance`, suite
+   `provider-transport-conformance-v1`). It runs over the same four fixed public vectors against an
+   in-process mock provider on 127.0.0.1 that serves each vector's supplied provider bodies. Each
+   step must match:
+   - the exact method and request target (fixed query and cursor);
+   - the complete header set: the projected headers with their manifest values, the auth header
+     with a fixed nonsecret conformance value, `host` and `content-length`, and nothing else;
+   - the request-body digest, which equals the vector oracle's projection digest (the message body
+     is rebuilt from the vector plan);
+   - status 200, the manifest's media type, and the exact returned bytes within the response bound.
+
+   Only the origin is not exercised: offline conformance cannot reach the pinned `api_origin`.
+4. **Seal and publish.** A `validation_report` (`provider-transport-qualification-record-v1`) is
+   sealed. It carries the manifest bytes, both results and `qualified_at_ms`, with the verified
+   installation and the conformance result as parents. The document is then published through the
+   composed publisher. Re-qualifying the same run and manifest returns, and republishes, the same
+   record.
+
+Composition: the `provider-conformance-v1` contribution also exports
+`provider-transport-qualification.service`, with the credential attachment's
+`client.bind_transport` as publisher. There is no HTTP route or UI for the act yet.
+
+### Budget binding of every send
+
+- `provider-send-prepare-v1` now requires `reservation_ref` for both endpoints; a model page no
+  longer sends without one. `GatewayExchangeLease` carries the reservation and the manifest digest,
+  and both are part of the frozen lease snapshot.
+- At claim time, under the same exclusion, the gateway refuses a lease without a reservation, a
+  reservation id a send already consumed, or a full `sends` table (16,384 rows) with
+  `reservation_refused` → `resource_exhausted`, `not_sent`. It inserts the consumed reservation
+  (`reservation_id`, digest, `prepare_sha256`, endpoint) before any provider byte, so one
+  reservation is never served twice, across gateway restarts too.
+- Message sends name the runtime ledger's reservation, reserved and dispatched in
+  `commit_budgeted_send_intent` and settled at result acceptance (unchanged).
+- Model pages (`app/runtime/gateway_send_budget.py`, new):
+  - `GatewayCatalogBudget` over the host's `BudgetBook` opens one session per refresh scope. The
+    session uses `catalog_refresh_policy`: API mode with a currency cap of one micro-unit;
+    `max_loop_rounds` 10 and output bytes 10 × the manifest's response bound; concurrency 1; 600 s.
+  - Each page reserves zero micro-units, one round and the full response bound. It is reserved *and
+    marked dispatched in one budget transaction* (`BudgetBook.reserve_and_dispatch`, new) before
+    its prepare frame exists, and the request id is derived from the session and ordinal.
+  - After the observation, the page is settled with the observed usage: zero cost, the observed
+    bytes, and one round if anything may have been sent. It is settled `unknown` when the commit
+    frame was written and the gateway did not say `not_sent`.
+  - A page already reserved by an earlier attempt of the same scope (a crash between reservation
+    and send, or during it) is settled `unknown` (the full reservation is retained) and refused. It
+    is never re-sent.
+  - A page beyond the policy is refused with nothing written.
+- The owner's refresh (`GatewayCatalogLister`) is bound in `credential_services` to
+  `GatewayCatalogBudget(context.components.budget_book)`. A lister without a budget sends nothing.
+  New refusals: `409 transport_unqualified` and `409 budget_refused` (routes, `account.mjs`
+  messages, api.md).
+- The runtime semantic catalog operation (`ProviderAttemptTransport`) reserves and settles each
+  page the same way.
+
+### Tests
+
+- `app/tests/test_provider_transport_manifest.py` (25, new):
+  - The shipped manifest is canonical and is the whole binding.
+  - A changed manifest makes another binding.
+  - 14 parser refusals.
+  - The qualification document is closed and all-or-nothing.
+  - The refusal cases, each with zero requests at the mock provider:
+    - a binding without a manifest;
+    - an unqualified vault (message and page);
+    - a manifest changed after qualification, and a forged digest, until a later qualification
+      names it (the shipped manifest then refuses).
+  - `bind_transport` is monotone, idempotent and validated.
+  - Journal migration.
+  - **The qualification act over the real `installation_case`:** verification → the
+    `provider-conformance-command-v2` run through the framed worker (matched 4/4) → qualification.
+    - Refused `not_found` before the run and `conflict` for another manifest digest.
+    - The record holds the manifest bytes and the 4/4 transport result, with the two parents.
+    - Replay is idempotent.
+    - The published document, adopted by a real vault, lets the manifest-built transport send.
+  - A legacy v1 run does not qualify.
+  - The transport conformance detects a manifest whose byte bounds cannot carry the vectors.
+- `app/tests/test_gateway_send_budget.py` (12, new; the refresh bench of
+  test_credential_catalog_refresh):
+  - The policy is zero-cost and bounded, and the 11th page is refused.
+  - An unsettled page blocks its session and is never reserved again.
+  - Each page is reserved before and settled after its send. The gateway consumed exactly those
+    reservations, and a replay makes neither a reservation nor a send.
+  - **Crash between reservation and send:** zero requests, the retry is refused and settled
+    `unknown`, and a new refresh lists.
+  - **Crash after the send:** exactly one request, the retry is refused, and the reservation is
+    retained as `unknown`.
+  - A lister without a budget sends nothing.
+  - Pages beyond the policy: exactly 10 requests, then `budget_refused`.
+  - **No implicit sends:** create, rotate, GET and status make no budget session, reservation,
+    consumed row or request.
+  - A changed manifest makes the refresh `409 transport_unqualified` with zero requests and a
+    zero-usage settlement; a later qualification restores it.
+  - A prepare without a reservation is refused for both endpoints.
+  - The gateway consumes each reservation once, across a vault reopen.
+  - A message's ledger reservation is consumed once.
+- Mutation checks (temporary, reverted):
+  - Disabling the qualification check fails the unqualified-vault, changed-manifest and
+    route-level tests.
+  - Disabling the consumed-reservation check fails the restart and message one-shot tests.
+- Changed existing tests:
+  - The shared `binding(port)` helpers (`test_provider_send_gateway`, `test_provider_gateway_owned`,
+    `Gateway.send_client`) now build `loopback_binding`, the shipped manifest with a loopback
+    origin.
+  - `encrypted_credential` also adopts a synthetic qualification (`support/transport_manifest.py`;
+    the gateway-side tests trust the control side's document, as the gateway does).
+  - `prepared_catalog` and one inline models prepare name a reservation.
+  - The catalog-refresh bench qualifies its gateway and gives its lister a real budget book.
+  - The browser fixture adopts a synthetic qualification. Its pages are reserved in the app's own
+    budget book by the product composition.
+- A first run of the credential suite found that the conformance contribution's new export made the
+  control process import the vault (the real-UDS startup/main tests pin that). It was fixed by
+  moving the request builder into the pure manifest module; the qualification module imports no
+  gateway code.
+
+```text
+env -u DEEPTWIN_LIVE_ANTHROPIC_API_KEY .venv/bin/python -m pytest -q -p no:cacheprovider \
+  app/tests/test_credential_*.py                                    238 passed (one process)
+... app/tests/test_provider_*.py, one serial process per file (62 files, no other load)
+    2396 passed, 1 skipped (the existing metadata skip), 1 failed:
+    test_provider_semantic_owned_connection::test_owned_cancel_cannot_enter_after_settlement_before_artifact_write
+    (timing flake; it imports none of the changed send code; the same file on an untouched
+    `git archive` of the base bf2322f tree failed 2 of 4 runs, this tree 2 of 3)
+  test_provider_transport_manifest.py 25 passed; test_gateway_send_budget.py 12 passed
+  (re-run after the import fix: test_provider_send_gateway 85, test_provider_gateway_owned 40,
+  test_provider_transport 12, test_provider_semantic_vertical 83, test_provider_attempt_transport
+  9, test_provider_conformance_api 6, test_provider_client 16 — all passed)
+  test_extension_*.py per file (20 files)                           929 passed, 3 skipped (existing)
+  test_budget_policies 3, test_web_owner_integration 80, test_first_party 17, test_runtime_budgets
+  63, test_runtime_budget_dispatch 35, test_works_api 23, test_runs_api 27,
+  test_provider_source_startup 21                                   all passed
+node --test app/tests/account-credentials.test.mjs                  30 pass, 0 fail
+CONTROL_PYTHON=… CONTROL_PLAYWRIGHT_MODULE=… node --test --test-concurrency=1 \
+  app/tests/browser-credentials.test.mjs                            1 pass, 0 fail
+ruff check on the new modules: clean except the repository's usual fixture-import F811 pattern
+```
+
+Frozen identities (SHA-256; this block supersedes earlier blocks for these paths):
+
+```text
+3f086fbd1b9a539d196c42ff99b465f0bc3e33b05ae0e519ed3759ce6e444617  app/workers/provider_transport_manifest.py
+7ee95edd90860075c7ac581b401f6fd1e6e95b9651c5714684024d9222b27505  app/workers/transport_manifests/claude-api-v1.json
+1223bc8c540f61790536ef38c5d8b843b5a6beaf54e832e9a2560d84694978e2  app/workers/provider_gateway.py
+318fed411fc08bef77164248869b3cd7c17260dcca105193d93fd8429e0aac60  app/workers/provider_send_messages.py
+0bd094f818708ad37c6f1c8e1a9dc3634bc8907e34ca28a13d2bc97f4af4ab95  app/workers/provider_send_service.py
+a99f323fce9c20eda1926514233f147c24f6735d9823ae730d96e89a93d8038b  app/workers/credential_vault.py
+aff131b78a34134910bb40049b151f974e552b69a1375827eada66b017aaae41  app/workers/credential_journal.py
+458654cd303b2bf0319d09275348c13a2fa9747b3cc018c9e1644f593970ddfa  app/workers/credential_channel.py
+b8f365bb5fb714284ceeaa2cdbbba10d380364a8fad4b3bea78deb48e35cd18e  app/workers/credential_gateway_service.py
+394298a44f9ac6f5b60336ef4cce9a205267e9d884a55d74695bcef69bc6e276  app/workers/credential_gateway_main.py
+bace664b9c76ee2d601dfc02a8c9f054f665eacd523b7e4c2f06a8b5e18384b1  app/extensions/provider_transport_qualification.py
+32979cfa9e76efaf8b1941d219ef31afc7d7ebc3be53894e151ecfd032236b49  app/runtime/gateway_send_budget.py
+f8af7226f7e03f3cdc0e14c57218a97969568f40c934b8e40993e8d6ba0230b7  app/runtime/budgets.py
+a92b398ea3f4473092fd79c3f582429a34c8b7c722e566aa91ef7a2f4f1e0263  app/runtime/provider_attempt_transport.py
+f29455a79a49bafe8804c24fd6aa0aa09d39298e0101f831867c619a38b7bc71  app/api/credential_catalog.py
+c6bc3d9a569118ac2d561397dcbcf057e99deaf55f63174f39be3295878ea331  app/api/credential_commands.py
+270ce8b99c19374906dfbe18b7527d75f8dd0b962638c4550e26481d52764c98  app/api/credential_routes.py
+0e2a90d4e4d034c57f77cad1a69c9fcfb13c8759dcc0432d72a35c487c5b910a  app/api/credential_wiring.py
+91bcdbf7860dcff3f5e2c0daaff6b877cd909cb66b5c960dc30ffb2c21fa8b46  app/api/provider_conformance.py
+c5b1d8a790e4d2821c02ab0727c65fb670d0d10280cd22a36df37a8c7c559869  app/api/first_party_catalog.py
+7f46bcda7ee8fd1732a77b2f5b4b321bdd581b5245b5ad1f3568e2f2740b8c0c  app/static/account.mjs
+1affdae804e541ac1cdd6df11397250691f2e5ea03fe1f0fbc8a370d0fbb2c35  app/tests/test_provider_transport_manifest.py
+d47972a4723d7907ec24a43db8a30ac24e9b785808a4d3e04be616e609f64f16  app/tests/test_gateway_send_budget.py
+cdfe2546d4c2654b1426b3fd15484043a2e3cd405d24351db2b6e12dcfaf9da5  app/tests/support/transport_manifest.py
+6333df51e620b83eeb949dd0fed6235cb15a6868172a453b7e7ef247ccc5d4eb  app/tests/support/provider_semantic_harness.py
+95ad83eee473ebcd7fea56738ec47124da9ad7bdcd750c958597afa89d2b7cb0  app/tests/test_credential_catalog_refresh.py
+b655422efb17264f2fb74d1d1d035e680a5584a9cb446690bd71b3bf3d967c84  app/tests/test_credential_gateway_persistence.py
+80363fbba9189f91d1aa5df1b24bb649def47c5bf8687dbb2d27c13aba0eacb7  app/tests/test_provider_gateway_owned.py
+cd303175818b928a8ff37044922e5fe78596ad2d937b04799a4e3b16c3c21905  app/tests/test_provider_send_gateway.py
+409f0d1a7d290c4545d3e2d08cefcfc8473bfd37218e2aa01d58a084d20122d6  app/tests/fixtures/credentials_server.py
+```
+
+### Still not claimed
+
+- **No HTTP route or UI for the qualification act.** It exists as the
+  `provider-transport-qualification.service` export only. A production deployment therefore has no
+  owner path yet to qualify the manifest, so the gateway refuses every send
+  (`transport_unqualified`) until one exists. This fails closed.
+- **The origin is not exercised offline.** Transport conformance substitutes a loopback mock for
+  the pinned `api_origin`. The origin itself is only pinned by the manifest and parsed as HTTPS.
+- **The gateway trusts the control side's qualification document.** It checks shape and digest; it
+  does not re-verify the installation conformance.
+- **Consumed-reservation rows** are capped at 16,384 with no pruning. At the cap, sends are refused.
+- **The catalog policy is code-owned,** not an owner-authored `budget-policies-v1` record. Message
+  sends keep the runtime ledger's run budget. Runs still generate through the direct adapter, so no
+  production message send crosses the gateway yet.
+- Compose/image wiring and the gateway's egress, a gateway-side fence, erasure/`erasure_completed`,
+  an independent audit and the full shared regression are unchanged.

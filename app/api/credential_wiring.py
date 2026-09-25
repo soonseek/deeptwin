@@ -81,10 +81,17 @@ def open_credential_attachment(configuration, *, state_directory) -> CredentialA
 def credential_services(context):
     from .first_party import ContributionServices
 
+    from ..runtime.gateway_send_budget import GatewayCatalogBudget
+
     attachment = context.credential_gateway
+    lister = None
+    if attachment is not None and attachment.catalog_lister is not None:
+        # every catalog page is bound to a reservation in the host's budget book (T090)
+        lister = attachment.catalog_lister.with_budget(
+            GatewayCatalogBudget(context.components.budget_book))
     seams = (CredentialSeams() if attachment is None
              else credential_seams(attachment.client, attachment.ledger,
-                                   catalog_lister=attachment.catalog_lister))
+                                   catalog_lister=lister))
     return ContributionServices(create_router(seams=seams), {})
 
 

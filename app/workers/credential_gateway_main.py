@@ -27,9 +27,12 @@ IPC initializer (`ipc_root.initialize_pair_root`); a responder cannot and does n
 
 Serving: the shared `ProviderGatewayIngress` routes each owner's first frame to the
 credential-v2 vault engine or, for a `provider-send-prepare-v1`, to the send engine over
-the same vault with the fixed Claude API binding (`provider_gateway.claude_api_binding`).
-The send engine delivers custody, at claim time, only for the record the provider's
-binding head (`bind_head`) binds. One authenticated owner at a time (the channel's in-flight bound is 1). The loop
+the same vault with the Claude API binding built from the shipped provider-transport
+manifest (`provider_gateway.claude_api_manifest_binding`, T087). The send engine delivers
+custody, at claim time, only for the record the provider's binding head (`bind_head`)
+binds, only while the adopted transport qualification (`bind_transport`) names that
+manifest's digest, and only for a lease naming a budget reservation no earlier send
+consumed. One authenticated owner at a time (the channel's in-flight bound is 1). The loop
 waits for a pending connection in short slices, then accepts under a fresh operation
 deadline, so an idle wait never shortens a client's handshake window. A refused peer
 (SO_PEERCRED, wrong requester boot, malformed handshake) or a failed dialogue closes only
@@ -254,11 +257,22 @@ def _run(argv) -> int:
     from .credential_contracts import CredentialVaultError
     from .credential_gateway_service import CredentialGatewayService
     from .credential_vault import CredentialVault
-    from .provider_gateway import CredentialedProviderTransport, claude_api_binding
+    from .provider_gateway import (
+        CredentialedProviderTransport,
+        GatewayError,
+        claude_api_manifest_binding,
+    )
+    from .provider_transport_manifest import TransportManifestError
     from .provider_gateway_ingress import ProviderGatewayIngress
     from .provider_send_service import ProviderSendService
 
     root, spec = gateway_channel.gateway_channel()
+    try:
+        # the request surface comes only from the manifest's exact shipped bytes
+        binding = claude_api_manifest_binding()
+    except (TransportManifestError, GatewayError, OSError) as error:
+        _log("gateway_unavailable", error)
+        return EXIT_SERVICE
     try:
         vault = CredentialVault(root_directory=configuration.root_directory,
                                 records_directory=configuration.records_directory,
@@ -277,7 +291,7 @@ def _run(argv) -> int:
         # engine, a provider-send prepare to the send engine over the same vault, which
         # delivers custody only for the record the provider's binding head binds.
         service = ProviderGatewayIngress(credential, ProviderSendService(
-            CredentialedProviderTransport(vault, claude_api_binding())))
+            CredentialedProviderTransport(vault, binding)))
         try:
             worker = listener.bind_worker_listener(root, spec, responder_boot_id=secrets.token_hex(32))
         except (listener.ListenerError, ipc_root.IpcRootError, broker.BrokerError) as error:

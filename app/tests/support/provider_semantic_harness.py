@@ -93,6 +93,10 @@ def encrypted_credential(tmp_path, secret=b"synthetic-task47-api-key"):
         record = {key: receipt[key] for key in ("record_id", "record_version", "ciphertext_sha256")}
         # the gateway delivers custody only for the record its binding head binds (T090)
         vault.bind_head(provider=meta["provider"], revision=1, state="bound", record=record)
+        # ... and only through a qualified provider-transport manifest (T087)
+        from app.tests.support.transport_manifest import qualify_vault
+
+        qualify_vault(vault)
         yield vault, meta, record
 
 

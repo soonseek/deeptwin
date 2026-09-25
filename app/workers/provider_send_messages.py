@@ -98,6 +98,10 @@ class GatewayExchangeLease:
     body_sha256: str
     body_size: int
     max_response_bytes: int
+    # the transport manifest the lease is bound to (the vault requires its adopted
+    # qualification to name it) and the budget reservation this one send consumes
+    transport_manifest_sha256: str | None
+    reservation_ref: dict | None
     deadline_monotonic: float
     cancel_event: threading.Event = field(repr=False, compare=False)
     write_event: threading.Event = field(repr=False, compare=False)
@@ -125,10 +129,13 @@ def prepare_message(*, operation_ref, request_sha256, selected_handle_ref, conne
              and connection_pin["credential_metadata_sha256"] == fingerprint(metadata))
     _require(endpoint in {"messages", "models"} and type(body) is bytes
              and len(body) <= 1_048_576 and type(remaining_ms) is int and 1 <= remaining_ms <= 30_000)
-    _require((endpoint == "messages" and after_id is None and reservation_ref is not None)
+    # every send, a model page as much as a message, names the budget reservation
+    # recorded for it before the send (T090 budget binding); none is refused here
+    _require(reservation_ref is not None, "provider send requires a budget reservation")
+    _require((endpoint == "messages" and after_id is None)
              or (endpoint == "models" and (after_id is None or type(after_id) is str)
-                 and reservation_ref is None and body == b""))
-    reservation = None if reservation_ref is None else _ref(reservation_ref)
+                 and body == b""))
+    reservation = _ref(reservation_ref)
     _require(type(deadline_at) is str and len(deadline_at) == 24)
     try:
         datetime.strptime(deadline_at, "%Y-%m-%dT%H:%M:%S.%fZ")

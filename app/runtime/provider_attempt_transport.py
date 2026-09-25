@@ -38,6 +38,13 @@ from .ledger import ConsumedDispatchWindow, DispatchPermit, RuntimeLedger
 from .node_attempts import AttemptDispatchRequest, AttemptTransportResult, attempt_identity
 
 
+class _NotSentPage:
+    """The observation of a model page the requester knows was not sent."""
+
+    phase = "not_sent"
+    body = b""
+
+
 class _CatalogResponseFailure(RuntimeError):
     """The gateway returned an unsuccessful HTTP/read observation."""
 
@@ -591,6 +598,13 @@ class ProviderAttemptTransport:
             channel_id="task47-semantic-worker", sender="semantic-worker")
         context = replace(context, worker_session_observation=worker_session)
         traversal, raw_pages = CatalogTraversal(), []
+        # every model page is bound to a budget reservation recorded before its send and
+        # settled with its observed usage after (zero-cost, bounded; T090)
+        from .gateway_send_budget import GatewayCatalogBudget
+
+        budget = GatewayCatalogBudget(self._book)
+        budget_session = budget.open("semantic-catalog:" + context.operation_ref.id)
+        page_index = 0
         while True:
             remaining = int((deadline_end - time.monotonic()) * 1000)
             if remaining < 1:
@@ -599,25 +613,41 @@ class ProviderAttemptTransport:
             if (refreshed.config != context.config or refreshed.request != context.request
                     or refreshed.connection != context.connection):
                 raise ValueError("catalog authority changed between pages")
-            prepared = prepare_message(operation_ref=context.operation_ref.as_dict(),
-                request_id=context.request["request_id"],
-                request_sha256=sha256(canonical_json(context.request)).hexdigest(),
-                selected_handle_ref=context.connection["selected_handle_ref"],
-                connection_pin=context.connection["connection_pin"],
-                credential_metadata=context.connection["credential_metadata"],
-                credential_record=context.connection["credential_record"], endpoint="models",
-                after_id=proposal.after_id, body=b"", remaining_ms=min(30_000, remaining),
-                deadline_at=context.request["deadline_at"], reservation_ref=None)
-            ready = self._send.prepare(prepared, deadline_end_monotonic=deadline_end)
-            gateway_session = self._authenticated_session(
-                self._send.authenticated_session_observation,
-                protocol_id="credential-gateway-v1", channel_id="task47-provider-send",
-                sender="credential-gateway")
-            if gateway_session[2] == context.worker_session_observation[2]:
-                raise ValueError("worker and gateway authenticated sessions are not distinct")
-            context = replace(context, gateway_session_observation=gateway_session)
-            lease = self._send.commit(ready["exchange_id"], ready["prepare_sha256"], str(uuid4()))
-            observed = self._send.exchange(lease)
+            # write-ahead: reserved and dispatched in one budget transaction before the
+            # prepare frame exists; beyond the policy nothing is sent
+            reservation = budget.reserve_page(budget_session, page_index)
+            page_index += 1
+            committing = False
+            try:
+                prepared = prepare_message(operation_ref=context.operation_ref.as_dict(),
+                    request_id=context.request["request_id"],
+                    request_sha256=sha256(canonical_json(context.request)).hexdigest(),
+                    selected_handle_ref=context.connection["selected_handle_ref"],
+                    connection_pin=context.connection["connection_pin"],
+                    credential_metadata=context.connection["credential_metadata"],
+                    credential_record=context.connection["credential_record"],
+                    endpoint="models", after_id=proposal.after_id, body=b"",
+                    remaining_ms=min(30_000, remaining),
+                    deadline_at=context.request["deadline_at"],
+                    reservation_ref=reservation.reservation_ref)
+                ready = self._send.prepare(prepared, deadline_end_monotonic=deadline_end)
+                gateway_session = self._authenticated_session(
+                    self._send.authenticated_session_observation,
+                    protocol_id="credential-gateway-v1", channel_id="task47-provider-send",
+                    sender="credential-gateway")
+                if gateway_session[2] == context.worker_session_observation[2]:
+                    raise ValueError("worker and gateway authenticated sessions are not distinct")
+                context = replace(context, gateway_session_observation=gateway_session)
+                committing = True
+                lease = self._send.commit(ready["exchange_id"], ready["prepare_sha256"],
+                                          str(uuid4()))
+                observed = self._send.exchange(lease)
+            except BaseException as exc:
+                phase = getattr(exc, "phase", None)
+                budget.settle(reservation, observed=_NotSentPage(),
+                              unknown=committing and phase != "not_sent")
+                raise
+            budget.settle(reservation, observed=observed)
             latest_observation["value"] = observed
             if (observed.failure_class is not None or observed.status is None
                     or not 200 <= observed.status < 300):

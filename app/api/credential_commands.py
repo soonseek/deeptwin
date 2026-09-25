@@ -1095,7 +1095,8 @@ class CatalogListError(RuntimeError):
     """A sanitized failure of the gateway's model-list read (never provider bytes)."""
 
     RETRYABLE_CODES = ("provider_unavailable",)
-    CODES = ("binding_refused", "provider_rejected", *RETRYABLE_CODES)
+    CODES = ("binding_refused", "provider_rejected", "transport_unqualified", "budget_refused",
+             *RETRYABLE_CODES)
 
     def __init__(self, code):
         if code not in self.CODES:

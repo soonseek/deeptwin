@@ -90,18 +90,13 @@ class Gateway:
         """A provider-send client whose every dialogue is served, over real authenticated
         frames on a socket pair, by a `ProviderSendService` over this same vault, bound to a
         loopback upstream on `port` (the gateway's send path; test transport only)."""
-        from app.workers.provider_gateway import (
-            CredentialedProviderTransport,
-            ProviderBinding,
-        )
+        from app.tests.support.transport_manifest import loopback_binding
+        from app.workers.provider_gateway import CredentialedProviderTransport
         from app.workers.provider_send_client import ProviderSendClient
         from app.workers.provider_send_service import ProviderSendService
 
-        binding = ProviderBinding(provider="claude", scheme="http", host="127.0.0.1", port=port,
-                                  allowed_methods=("GET", "POST"), allowed_path_prefixes=("/v1",),
-                                  allowed_request_headers=("anthropic-version", "content-type"),
-                                  auth_header="x-api-key", max_request_bytes=1_048_576,
-                                  max_response_bytes=1_048_576, timeout_seconds=5)
+        # the shipped manifest's binding, its origin replaced by the loopback mock (T087)
+        binding = loopback_binding(port)
 
         def factory():
             left, right = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
