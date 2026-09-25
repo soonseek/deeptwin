@@ -66,7 +66,11 @@ from ..workers.extension_execute_messages import (
 )
 from .artifact_cas import store_received_artifact
 from .budgets import BudgetUsage
-from .gates import local_identifier, tool_approval_scope
+from .gates import (
+    execution_approval_request_identity,
+    local_identifier,
+    tool_approval_scope,
+)
 from .graph import CompiledToolTransport, resolve_compiled_tool_binding
 from .ledger import (
     TOOL_APPROVAL_EFFECTS,
@@ -77,6 +81,7 @@ from .ledger import (
     RuntimeLedger,
     ToolCallSpec,
     tool_call_identity,
+    tool_inputs_digest,
 )
 from .node_attempts import AttemptDispatchRequest, AttemptTransportResult
 from .worker_coordinator import ReceivedWorkerArtifact
@@ -418,6 +423,15 @@ class ExtensionAttemptTransport(CompiledToolTransport):
             raise ValueError("compiled tool binding disagrees with dispatch context")
 
     @property
+    def artifact_inputs_digest(self) -> str:
+        """`tool_inputs_digest` of the exact ordered input declarations this transport
+        sends (and the ledger records as its ToolCall's inputs): what a dispatcher names
+        in the ledger's ask for an execution-bound decision."""
+        inputs = self._artifact_inputs
+        return tool_inputs_digest([item.declaration(index, len(inputs)).as_dict()
+                                   for index, item in enumerate(inputs)])
+
+    @property
     def effect_class(self):
         """The compiler-resolved definition's effect, never a caller/worker fallback."""
         return None if self._compiled_binding is None else self._compiled_binding.effect_class
@@ -576,6 +590,26 @@ class ExtensionAttemptTransport(CompiledToolTransport):
         if (found is None or found.decision != "approved" or found.approval_ref != self._approval_ref
                 or execution["execution_id"] != request.execution_id
                 or execution["node_id"] != request.node_id or execution["run_id"] != request.run_id):
+            raise ExtensionTransportError("transport_invalid", dispatch_effect="definitely_not_sent")
+        # the inputs binding: when the ledger holds an ask for this attempt, the decision
+        # must answer that ask, and an inputs digest the ask (and so the decision) carries
+        # must be the digest of the exact inputs about to be declared
+        try:
+            ask = self._ledger.execution_approval_requested(
+                request.run_id, binding.approval_gate_node_id,
+                tool_approval_scope(binding.tool_id, binding.version),
+                execution["execution_id"], attempt["attempt_no"])
+            actual = self.artifact_inputs_digest
+        except Exception:  # noqa: BLE001 - the ledger's detail stays private
+            raise ExtensionTransportError("transport_unavailable", dispatch_effect="definitely_not_sent") from None
+        if ask is not None and (found.execution_request_id != execution_approval_request_identity(
+                    request.run_id, binding.approval_gate_node_id,
+                    tool_approval_scope(binding.tool_id, binding.version),
+                    execution["execution_id"], attempt["attempt_no"])
+                                or found.inputs_digest != ask["inputs_digest"]
+                                or ask["execution_node_id"] != execution["node_id"]):
+            raise ExtensionTransportError("transport_invalid", dispatch_effect="definitely_not_sent")
+        if found.inputs_digest is not None and found.inputs_digest != actual:
             raise ExtensionTransportError("transport_invalid", dispatch_effect="definitely_not_sent")
 
     def _record_tool_call_intent(self, permit, request, declarations):
