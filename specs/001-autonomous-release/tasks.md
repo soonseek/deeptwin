@@ -707,6 +707,15 @@ preview, missing evidence and no network send; backup/restore without original d
   canaries absent, stale preview refused) and the records page in real Chromium; fixed the log
   reading `recorded_at_utc` where the projection carries `observed_at_utc` —
   evidence/browser-records-t074-2026-09-23.md. Other categories, PDF redaction and restore remain.
+  2026-09-25 partial: in real Chromium against the supported server, the work export now carries
+  and previews the work's runs (completed, gated+approved, failed), their consents/approvals, the
+  frozen alternative and the source list; the bundle is verified member by member; canaries
+  (provider key, password, capability, CSRF, session cookie, credential-looking text, PDF name/
+  body, alternative text) are absent from the bundles and every response; a run after the
+  preview is refused as stale. Fixed: runs were silently missing from `events`. Interrupted
+  restore passes at the service level with real age (15/15). Not exercised: candidate/lens/round
+  export (no supported producer; not work-scoped), PDF redaction (the pipeline has none and
+  excludes PDF bytes), browser restore (no backup worker) — evidence/us7.md.
 
 ## Phase 10: Integrated qualification and release evidence
 

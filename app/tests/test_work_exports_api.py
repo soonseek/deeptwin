@@ -14,6 +14,7 @@ import io
 import json
 import zipfile
 from hashlib import sha256
+from types import SimpleNamespace
 from uuid import uuid4
 
 from app.domain.refs import EntityRef
@@ -188,3 +189,83 @@ def test_frozen_alternatives_of_the_work_are_exported_as_scope_only(tmp_path):
         assert [entry["alternative_id"] for entry in exported] == [mine.ref.id]
         assert exported[0]["coverage"] == "partial" and exported[0]["content"] == "내 버전 내용 미포함"
         assert "대안 본문 비밀" not in bundle.content.decode("latin-1")
+
+
+def test_the_runs_of_the_work_are_exported_with_their_stops_consents_and_approvals(tmp_path):
+    """Runs of this work only, through the real run, consent and approval routes: a gated
+    run approved and completed, and a run whose execution failed; identities, times and
+    closed codes only. A run recorded after the preview makes the consent stale."""
+    from app.runtime import scheduler as sch
+    from app.tests import test_runs_api as runs_api
+    from app.tests.test_graph_contract import graph_value
+    from app.tests.test_graph_execution import linear_graph
+    from app.tests.test_works_api import CREATE
+
+    class Failing(runs_api.Executor):
+        failing = False
+
+        def scheduler(self, compiled, **kwargs):
+            if not self.failing:
+                return super().scheduler(compiled, **kwargs)
+
+            def explode(context, view):
+                raise RuntimeError("synthetic handler failure")
+
+            handlers = {key: explode for key in ("core.deterministic", "core.agent", "core.join",
+                                                  "core.human_gate", "core.router")}
+            return sch.build_scheduler(compiled, ledger=kwargs["ledger"], run_id=kwargs["run_id"],
+                                       handlers=handlers, approvals=None)
+
+    executor = Failing()
+    with runs_api.owner_app(tmp_path, executor) as subject:
+        works = subject.profile.base_path + "api/v1/works"
+        work = runs_api.post(subject, {"schema_version": CREATE, "command_id": str(uuid4()),
+                                       "text": "실행이 있는 업무"}, works).json()
+        other = runs_api.post(subject, {"schema_version": CREATE, "command_id": str(uuid4()),
+                                        "text": "다른 업무"}, works).json()
+
+        def start(raw, work_ref):
+            graph_ref = runs_api.graph_record(subject, raw)
+            return runs_api.post(subject, runs_api.command(
+                subject, graph_ref, work_revision_ref=work_ref,
+                consent_ref=runs_api.consent_for(subject, graph_ref, work_ref=work_ref)))
+
+        gated = start(graph_value(), work["ref"])
+        assert gated.status_code == 201 and gated.json()["phase"] == "awaiting_human", gated.text
+        run_path = gated.json()["links"]["self"]
+        approved = runs_api.post(subject, {"command_id": str(uuid4()), "node_id": "owner-gate",
+                                           "approval_scope": "release-output", "decision": "approved"},
+                                 run_path + "/approvals")
+        assert approved.status_code == 201, approved.text
+        resumed = runs_api.post(subject, {"command_id": str(uuid4())}, run_path + "/resume")
+        assert resumed.json()["phase"] == "completed", resumed.text
+        executor.failing = True
+        assert start(linear_graph(), work["ref"]).status_code == 503  # the execution failed
+        executor.failing = False
+        assert start(linear_graph(), other["ref"]).status_code == 201  # another work's run
+
+        exports = SimpleNamespace(**{**vars(subject), "path": works})
+        shown = preview(exports, work["work_id"], ["events"]).json()
+        [runs_item] = [item for item in shown["items"] if item["relative_path"] == "events/runs.json"]
+        assert runs_item["content_mode"] == "metadata_only"
+        assert runs_item["label"] == "실행 2개 (실패 1개) · 실행 동의 2개 · 승인 결정 1개"
+        receipt = confirm(exports, work["work_id"], shown)
+        assert receipt.status_code == 201, receipt.text
+        bundle = subject.client.get(f"{works}/{work['work_id']}/exports/{receipt.json()['bundle_id']}",
+                                    headers=headers(subject.profile))
+        with zipfile.ZipFile(io.BytesIO(bundle.content)) as archive:
+            exported = json.loads(archive.read("events/runs.json"))
+        first, second = exported
+        assert first["run_id"] == gated.json()["run_id"]
+        assert set(first) == {"run_id", "started_at_utc", "work_revision", "stops", "consent", "approvals"}
+        assert [stop["reason_code"] for stop in first["stops"]] == ["completed"]
+        assert [(item["node_id"], item["decision"]) for item in first["approvals"]] == [("owner-gate", "approved")]
+        assert [stop["reason_code"] for stop in second["stops"]] == ["infrastructure_failure"]
+        assert second["approvals"] == [] and second["consent"]["revoked_at_utc"] is None
+        assert "synthetic handler failure" not in bundle.content.decode("latin-1")
+
+        # a run recorded after the preview: the consent no longer matches what the owner saw
+        again = preview(exports, work["work_id"], ["events"]).json()
+        assert start(linear_graph(), work["ref"]).status_code == 201
+        stale = confirm(exports, work["work_id"], again)
+        assert stale.status_code == 409 and stale.json()["code"] == "conflict"
