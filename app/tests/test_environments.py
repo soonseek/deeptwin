@@ -50,8 +50,8 @@ CRITIC_DIGEST = "c" * 64
 # admits it. The gate has no test hook (audit 5, non-blocking 5): ``actor_v3_design``
 # replaces ``critic_qualification.V3_VERIFYING_DESIGN_IDS`` itself for the duration
 # of a block, the way any test double replaces a module value. No production record
-# can be ``qualified``: V3_VERIFYING_DESIGN_IDS is empty and release-v6 cannot
-# verify V3 (audits 3 to 5).
+# can be ``qualified``: V3_VERIFYING_DESIGN_IDS is empty and release-v7 cannot
+# verify V3 (audits 3 to 6).
 TEST_ACTOR_DESIGN = "test-actor-v3-verifying-design"
 
 
@@ -69,7 +69,7 @@ def actor_v3_design():
 def suite_record(**overrides):
     record = {
         "schema_version": SUITE_RECORD_SCHEMA_VERSION,
-        "design_id": "q01-release-v6",
+        "design_id": "q01-release-v7",
         "critic_configuration_digest": CRITIC_DIGEST,
         "pre_dispatch_manifest_sha256": "a" * 64,
         "sealed_set_sha256": "d" * 64,
@@ -86,6 +86,11 @@ def suite_record(**overrides):
         "critic_transport_identity": "provider_reported",
         "judge_transport_identity": "provider_reported",
         "run_stopped": False,
+        # audit 6: one judge-log digest per trial and the digest of the sorted provider ids
+        "judge_logs": [{"trial_id": "t" + "0" * 31 + str(index), "lines_sha256": str(index) * 64}
+                       for index in range(1, 4)],
+        "provider_ids_sha256": "9" * 64,
+        "provider_id_count": 12,
     }
     record.update(overrides)
     if "record_sha256" not in overrides:
@@ -311,10 +316,10 @@ def test_a_passed_verdict_from_an_unqualified_critic_is_never_approvable(critic,
 def test_the_production_gate_can_never_yield_qualified():
     # BF1: no design is declared able to verify V3; every production-shaped pass is at most scoped.
     assert gate.V3_VERIFYING_DESIGN_IDS == frozenset()
-    assert gate.RELEASE_DESIGN_IDS == {"q01-release-v6"}
+    assert gate.RELEASE_DESIGN_IDS == {"q01-release-v7"}
     state = critic_qualification_from_suite(suite_record(), CRITIC_DIGEST)
     assert state.status == "scoped_pass"
-    # audit 4, N5: a v6 record claiming V3 verified is not schema-valid and is refused, not capped
+    # audit 4, N5: a v7 record claiming V3 verified is not schema-valid and is refused, not capped
     with pytest.raises(CriticQualificationError, match="V3 unverified"):
         critic_qualification_from_suite(suite_record(v3_error_independence="verified"), CRITIC_DIGEST)
     with actor_v3_design():
@@ -323,6 +328,26 @@ def test_the_production_gate_can_never_yield_qualified():
                                                 CRITIC_DIGEST)
         assert (state.status, state.reason) == ("scoped_pass", "v3_error_independence_unverified")
     assert gate.V3_VERIFYING_DESIGN_IDS == frozenset()
+
+
+def test_a_pass_needs_a_judge_log_digest_for_every_trial_and_its_provider_ids():
+    # audit 6, Y1 and Y2: every trial of a pass was judged (once) and its provider ids are recorded
+    logs = suite_record()["judge_logs"]
+    for overrides, match in (
+            ({"judge_logs": []}, "judge log digest for every trial"),
+            ({"judge_logs": [{**logs[0], "lines_sha256": None}, *logs[1:]]}, "judge log digest for every trial"),
+            ({"judge_logs": [logs[1], logs[0], logs[2]]}, "each trial once"),
+            ({"judge_logs": [logs[0], logs[0]]}, "each trial once"),
+            ({"judge_logs": [{**logs[0], "extra": 1}]}, "malformed judge log entry"),
+            ({"provider_ids_sha256": "x"}, "provider ids sha256"),
+            ({"provider_id_count": 0}, "its provider ids"),
+            ({"provider_id_count": True}, "non-negative integer")):
+        with pytest.raises(CriticQualificationError, match=match):
+            critic_qualification_from_suite(suite_record(**overrides), CRITIC_DIGEST)
+    # a failed suite may carry trials that were never judged
+    state = critic_qualification_from_suite(suite_record(suite_outcome="fail", judge_logs=[
+        {**logs[0], "lines_sha256": None}]), CRITIC_DIGEST)
+    assert (state.status, state.reason) == ("unqualified", "suite_fail")
 
 
 def test_the_gate_has_no_test_actor_hook():

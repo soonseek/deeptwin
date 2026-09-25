@@ -1,11 +1,11 @@
-"""Offline tests of the data-driven release-v6 verifier (``verifiers/sealed_critic.py``).
+"""Offline tests of the data-driven release-v7 verifier (``verifiers/sealed_critic.py``).
 
 TEST-ACTOR DEVELOPMENT DATA ONLY. Every material, candidate, counterexample,
 expectation, lens pack, manifest and independence profile below is synthetic
 development data authored in this file by the test actor (the harness/verifier
 developer) to exercise the verifier's mechanics. It is NOT a sealed set, was not
 written by an independent author, was not reviewed, names no real judge, and can
-never qualify anything: release-v6 forbids the developer as author and requires new,
+never qualify anything: release-v7 forbids the developer as author and requires new,
 sealed, owner-held data.
 
 Release trials run through the real harness and the Claude rig's attested turn, over
@@ -16,12 +16,24 @@ request id like the provider does, so the provider-reported identity path is exe
 to end. A scripted ``(system, user) -> str`` callable handed to the harness directly is the
 calibration/development transport: it can never complete a release trial (audit 5, X1).
 ``DevJudge`` is a deterministic offline stand-in whose ``judge_attested`` answers are those
-of a FAKE JUDGE PROVIDER STUB (a raw reply plus a stub served model and request id).
+of a FAKE JUDGE PROVIDER STUB (a raw reply plus a stub served model and a request id that is
+unique in this test process).
+
+The fake provider server is an INJECTED transport of the Claude rig. release-v7 allows no
+injected transport for a release run (``run_identity.critic_transport``, audit 6 non-blocking
+5), so this module admits the fake server's name in
+``q01_release_manifest.TEST_DOUBLE_TRANSPORTS`` for its duration only
+(``admit_the_fake_provider_server``); ``test_a6_5_*`` checks that nothing is admitted otherwise.
+
+Every trial is judged at most once (audit 6, Y1): a verification with a judge opens the trial's
+judge log exclusively, so the fail, invalid and not_judged suite variants below come from
+separately dispatched trials under their own manifests (``variant_run``), never from re-judging.
 
 Audit 3 (of release-v3) probes are marked ``BF1``/``BF2``/``BF3``, audit 4 (of
-release-v4) probes ``B1``/``B2``/``N1``..``N7`` and audit 5 (of release-v5) probes
-``X1`` and ``A5_1``..``A5_7``: each forged, degenerate, cherry-picked, unattested or rerun
-input now fails. Every release trial here gets its own manifest, trial base directory and
+release-v4) probes ``B1``/``B2``/``N1``..``N7``, audit 5 (of release-v5) probes
+``X1`` and ``A5_1``..``A5_7``, and audit 6 (of release-v6) probes ``A6_P1``..``A6_P5`` and
+``A6_2``..``A6_6``: each forged, degenerate, cherry-picked, unattested, re-judged, id-reusing
+or rerun input now fails. Every release trial here gets its own manifest, trial base directory and
 dispatch journal unless a test says otherwise (``run``), so trials follow the planned slots.
 """
 
@@ -56,6 +68,7 @@ from evals.deeptwin.harness.q01_harness import (
     harness_identity,
     run_release_trial,
 )
+from evals.deeptwin import q01_release_manifest
 from evals.deeptwin.q01_release_manifest import (
     PROVIDER_FAMILIES,
     check_pre_dispatch_manifest,
@@ -67,7 +80,7 @@ from evals.deeptwin.q01_release_manifest import (
     planned_slots,
     read_journal,
 )
-from evals.deeptwin.tests.claude_mock import attested_rig
+from evals.deeptwin.tests.claude_mock import MOCK_TRANSPORT_NAME, attested_rig
 from evals.deeptwin.verifiers import sealed_critic as sc
 from evals.deeptwin.verifiers.q01_core import AttestedJudgement
 from evals.deeptwin.verifiers.sealed_critic import (
@@ -92,7 +105,7 @@ from evals.deeptwin.verifiers.sealed_critic import (
 )
 
 ROOT = Path(__file__).resolve().parents[3]
-V6 = ROOT / "evals/deeptwin/qualification/release-v6"
+V7 = ROOT / "evals/deeptwin/qualification/release-v7"
 ACCEPT, DEFECT, REJECTED = "accept_without_false_rejection", "required_defect", "rejected_counterexample"
 VALID, UNRESOLVED, INSUFFICIENT = "valid_counterexample", "unresolved_specific_claim", "insufficient_evidence"
 LABEL = "test-actor development data, not sealed"
@@ -102,6 +115,20 @@ JUDGE_MODEL = "dev-fixture-judge-model"  # the fake judge provider stub's config
 # TEST-ACTOR commit reference: nothing is committed or timestamped for development data.
 COMMIT_REF = {"kind": "external_timestamp", "ref": "test actor: development only, no commit or timestamp"}
 DEV_LENS_PACK = {"id": "dev-lens", "version": "1", "rules": []}  # the configuration's (empty) lens pack
+
+
+@pytest.fixture(scope="module", autouse=True)
+def admit_the_fake_provider_server():
+    """Admit the offline fake provider server as a named test double for this module only.
+
+    release-v7 names no test double (``TEST_DOUBLE_TRANSPORTS`` is empty), so without this a
+    manifest naming the injected fake server is refused and nothing is dispatched.
+    """
+    assert q01_release_manifest.TEST_DOUBLE_TRANSPORTS == frozenset()
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(q01_release_manifest, "TEST_DOUBLE_TRANSPORTS", frozenset({MOCK_TRANSPORT_NAME}))
+        yield
+    assert q01_release_manifest.TEST_DOUBLE_TRANSPORTS == frozenset()
 
 
 @pytest.fixture(autouse=True)
@@ -335,7 +362,7 @@ def dev_expectation_cases():
 
 
 def expectation_bytes(cases=None, **top):
-    document = {"schema": "q01-sealed-expectations-1", "design_id": "q01-release-v6",
+    document = {"schema": "q01-sealed-expectations-1", "design_id": "q01-release-v7",
                 "dataset_id": "dev-synthetic-test-actor", "cases": dev_expectation_cases() if cases is None else cases}
     document.update(top)
     return json.dumps(document, ensure_ascii=False, sort_keys=True, indent=1).encode("utf-8")
@@ -459,12 +486,17 @@ class DeclaredJudge:
         return self.default
 
 
+# fake judge provider request/message ids, unique across this test process (audit 6, Y2)
+JUDGE_IDS = itertools.count(1)
+
+
 class DevJudge(DeclaredJudge):
     """``DeclaredJudge`` whose answers come back as a FAKE JUDGE PROVIDER STUB would return them.
 
     ``judge_attested`` wraps the scripted status in a raw provider reply and a stub
     provider-reported model (``served_model``, by default the manifest's ``JUDGE_MODEL``) and
-    request id; ``request_ids=False`` reports none. Test-actor development stand-in only.
+    a request id unique in this process; ``request_ids=False`` reports none. Test-actor
+    development stand-in only.
     """
 
     def __init__(self, default="supported", identity=None, served_model=JUDGE_MODEL, request_ids=True,
@@ -477,8 +509,9 @@ class DevJudge(DeclaredJudge):
         self.answers += 1
         raw = self.raw if self.raw is not None else json.dumps({"verdict": status,
                                                                 "reason": "Dev fake judge provider stub."})
-        request_id = f"req_devjudge{self.answers:08d}" if self.request_ids else None
-        return AttestedJudgement(raw, self.served_model, request_id, f"msg_devjudge{self.answers:08d}")
+        number = next(JUDGE_IDS)
+        request_id = f"req_devjudge{number:08d}" if self.request_ids else None
+        return AttestedJudgement(raw, self.served_model, request_id, f"msg_devjudge{number:08d}")
 
 
 
@@ -505,8 +538,8 @@ def attestation(name):
 
 
 def dev_profile(established=True, **changes):
-    """A TEST-ACTOR successor profile naming release-v6 (never a real judge arrangement)."""
-    profile = json.loads((V6 / "independence_profile.json").read_text(encoding="utf-8"))
+    """A TEST-ACTOR successor profile naming release-v7 (never a real judge arrangement)."""
+    profile = json.loads((V7 / "independence_profile.json").read_text(encoding="utf-8"))
     profile["profile_id"] = "test-actor-dev-profile"
     profile["judge_separation"]["established"] = established
     profile["judge_separation"]["judge"] = ({"identity": JUDGE_IDENTITY, "prompt_digest": JUDGE_PROMPT_DIGEST,
@@ -527,7 +560,7 @@ def environment_case_shas(task_dir):
 
 def prior_attempt(index, outcome, dataset="4" * 64, expectations="3" * 64, case_ids=None, case_shas=None):
     """One prior attempt of a manifest: its set digests, case ids and case sha256s (all spent)."""
-    return {"attempt": index, "design_id": "q01-release-v6", "sealed_dataset_sha256": dataset,
+    return {"attempt": index, "design_id": "q01-release-v7", "sealed_dataset_sha256": dataset,
             "sealed_expectations_sha256": expectations,
             "case_ids": case_ids or [f"q01-{index:010x}"], "case_sha256s": case_shas or [f"{index:x}" * 64],
             "suite_outcome": outcome}
@@ -544,7 +577,7 @@ def dev_manifest(expectations, materials_sha, *, rig, task_dir, attempt=1, prior
     profile_bytes = dev_profile() if profile_bytes is None else profile_bytes
     order = sorted(expectations.cases) if order is None else order
     return {
-        "schema": "q01-pre-dispatch-manifest-4", "design_id": "q01-release-v6",
+        "schema": "q01-pre-dispatch-manifest-5", "design_id": "q01-release-v7",
         "critic_configuration": configuration,
         "critic_configuration_digest": digest_ or critic_configuration_digest(configuration),
         "run_identity": {
@@ -559,7 +592,9 @@ def dev_manifest(expectations, materials_sha, *, rig, task_dir, attempt=1, prior
             "case_order": {"seed": "dev", "order": order},
             "authority_ref": "test actor: development only, no authority", "usd_hard_stop": 0.01,
             "planned_slots": planned_slots(order),
-            "dispatch_journal": {"path": str(journal or UNUSED_JOURNAL)}},
+            "dispatch_journal": {"path": str(journal or UNUSED_JOURNAL)},
+            # the rig's declared transport: the INJECTED fake provider server (admitted above)
+            "critic_transport": deepcopy(rig.claude.critic_transport)},
         "attempt": attempt,
         "prior_attempts": [prior_attempt(index + 1, outcome) for index, outcome in enumerate(prior)],
         "attestations": {"author": attestation("test actor as author"),
@@ -644,7 +679,9 @@ def run(world, key, critic=None, task_dir=None, pre_dispatch=None, repetition=No
 
     The critic fixture answers through the fake provider server and the rig's attested turn;
     with ``scripted=True`` the fixture itself is handed to the harness as a plain
-    ``(system, user) -> str`` transport (the calibration/development path)."""
+    ``(system, user) -> str`` transport (the calibration/development path), carrying the rig's
+    transport declaration the way an in-process caller can attach it (so the per-call
+    attestation checks, not the declared-transport check, are what refuse it)."""
     rig = rig or world["rig"]
     if pre_dispatch is None:
         assert task_dir is None, "a trial in another environment needs its own manifest"
@@ -653,6 +690,8 @@ def run(world, key, critic=None, task_dir=None, pre_dispatch=None, repetition=No
         pre_dispatch = dataclasses.replace(pre_dispatch, repetition=repetition)
     critic = critic or DevCritic()
     rig.critic.target = critic
+    if scripted and not hasattr(critic, "critic_transport"):
+        critic.critic_transport = deepcopy(rig.claude.critic_transport)
     record = run_release_trial(CASE[key], critic if scripted else rig.attested_turn,
                                base_dir=trial_base(world, pre_dispatch), config=rig.config,
                                pre_dispatch=pre_dispatch, task_dir=task_dir or world["task_dir"])
@@ -937,41 +976,74 @@ def test_leak_markers_come_from_the_sealed_set_not_calibration_sources(world):
 KEY = {case_id: key for key, case_id in CASE.items()}
 
 
-def _full(world, directory, profile_bytes, critics=None):
+# The slot of each suite variant and the judge that produces it on a freshly dispatched trial
+# (audit 6, Y1: a variant is never a second judging of a trial that was already judged).
+VARIANT_SLOTS = {FAIL: (CASE_KEYS[0], 1), INVALID: (CASE_KEYS[1], 1), NOT_JUDGED: (CASE_KEYS[2], 1)}
+VARIANT_JUDGES = {FAIL: lambda: DevJudge(accept="not_supported"),
+                  INVALID: lambda: DevJudge(q7=RuntimeError("judge down")),
+                  NOT_JUDGED: lambda: DeclaredJudge()}  # a judge that only declares its identity
+
+
+def _full(world, directory, profile_bytes, critics=None, variants=frozenset()):
     """Every dev case x 3 repetitions as real release trials under one manifest, dispatched in
     its planned slot order and journalled; ``critics`` maps a slot to a scripted critic.
 
-    The fail, invalid and not_judged variants re-verify journalled trials with another judge
-    (a judge that finds an item unsupported, a judge fault, no judge), so every variant is a
-    result of a trial that is in the journal."""
+    Each trial is verified exactly once. ``variants`` (a subset of fail, invalid, not_judged)
+    judges the variant's slot with the variant's judge instead of the passing ``DevJudge``:
+    a variant is its own separately dispatched run, never a re-judged trial."""
     pre_dispatch, loaded = release_setup(world, directory, profile_bytes=profile_bytes)
-    records, passes = {}, {}
+    records, results = {}, {}
+    judges = {VARIANT_SLOTS[variant]: VARIANT_JUDGES[variant] for variant in variants}
     for slot in loaded.identity["planned_slots"]:
         key, rep = KEY[slot["case_id"]], slot["repetition"]
         critic = (critics or {}).get((key, rep))
         records[(key, rep)] = run(world, key, critic, pre_dispatch=pre_dispatch, repetition=rep)
-        passes[(key, rep)] = verify(world, records[(key, rep)], DevJudge(), run=loaded)
-    variants = {
-        FAIL: verify(world, records[(CASE_KEYS[0], 1)], DevJudge(accept="not_supported"), run=loaded),
-        INVALID: verify(world, records[(CASE_KEYS[1], 1)], DevJudge(q7=RuntimeError("judge down")), run=loaded),
-        NOT_JUDGED: verify(world, records[(CASE_KEYS[2], 1)], None, run=loaded),
-    }
-    return {"run": loaded, "pre_dispatch": pre_dispatch, "records": records, "passes": passes,
-            "variants": variants}
+        results[(key, rep)] = verify(world, records[(key, rep)], judges.get((key, rep), DevJudge)(), run=loaded)
+    for variant in variants:
+        assert results[VARIANT_SLOTS[variant]]["verdict"] == variant
+    return {"run": loaded, "pre_dispatch": pre_dispatch, "records": records, "passes": results,
+            "variants": {variant: results[VARIANT_SLOTS[variant]] for variant in variants}}
 
 
 @pytest.fixture(scope="module")
-def full(world):
-    data = _full(world, world["root"] / "full", dev_profile())
+def runs(world):
+    """Full dev runs by (separated, variants), each dispatched and judged once, built on demand."""
+    cache = {}
+
+    def get(separated, variants=frozenset()):
+        key = (separated, frozenset(variants))
+        if key not in cache:
+            name = ("full" if separated else "unseparated") + "".join(f"-{v}" for v in sorted(variants))
+            cache[key] = _full(world, world["root"] / name, dev_profile(established=separated), variants=variants)
+        return cache[key]
+
+    return get
+
+
+@pytest.fixture(scope="module")
+def full(runs):
+    data = runs(True)
     assert all(result["verdict"] == PASS for result in data["passes"].values())
-    assert [data["variants"][v]["verdict"] for v in (FAIL, INVALID, NOT_JUDGED)] == [FAIL, INVALID, NOT_JUDGED]
     return data
 
 
 @pytest.fixture(scope="module")
-def unseparated(world):
+def unseparated(runs):
     """The same dev run under a profile without established judge separation."""
-    return _full(world, world["root"] / "unseparated", dev_profile(established=False))
+    return runs(False)
+
+
+def variant_run(runs, separated, fail=False, invalid_=False, not_judged=False):
+    """The run for a set of variant flags. Fail takes precedence over invalid and not_judged, and
+    invalid over not_judged, so the run with every lower-precedence variant as well decides the
+    same outcome: four runs per separation instead of eight."""
+    if fail:
+        return runs(separated, {FAIL, INVALID, NOT_JUDGED})
+    if invalid_:
+        return runs(separated, {INVALID, NOT_JUDGED})
+    if not_judged:
+        return runs(separated, {NOT_JUDGED})
+    return runs(separated)
 
 
 def passes(full_run):
@@ -997,7 +1069,7 @@ def stopped_journal(loaded, reason="usd_hard_stop reached (test actor)"):
 
 
 def oracle(fail, invalid_, missing, not_judged, mismatch, stopped, separated):
-    """release-v6 acceptance.suite_outcome, transcribed from the frozen design text."""
+    """release-v7 acceptance.suite_outcome, transcribed from the frozen design text."""
     if fail:
         return "fail"
     if invalid_ or missing or stopped or mismatch:
@@ -1012,14 +1084,11 @@ FLAGS = ("fail", "invalid_", "missing", "not_judged", "mismatch", "stopped", "se
 
 @pytest.mark.parametrize("flags", list(itertools.product([False, True], repeat=len(FLAGS))),
                          ids=lambda f: "".join("1" if x else "0" for x in f))
-def test_suite_precedence_table(world, full, unseparated, flags):
+def test_suite_precedence_table(world, runs, flags):
     state = dict(zip(FLAGS, flags))
-    source = full if state["separated"] else unseparated
+    # every variant is a separately dispatched trial of its own run, judged once (audit 6, Y1)
+    source = variant_run(runs, state["separated"], state["fail"], state["invalid_"], state["not_judged"])
     results = {slot: result for slot, result in source["passes"].items()}
-    for flag, verdict, key in (("fail", FAIL, CASE_KEYS[0]), ("invalid_", INVALID, CASE_KEYS[1]),
-                               ("not_judged", NOT_JUDGED, CASE_KEYS[2])):
-        if state[flag]:
-            results[(key, 1)] = source["variants"][verdict]
     if state["missing"]:
         del results[(CASE_KEYS[5], 3)]
     loaded = source["run"]
@@ -1033,9 +1102,11 @@ def test_suite_precedence_table(world, full, unseparated, flags):
     assert suite["suite_outcome"] == oracle(**state), suite["reasons"]
     all_pass = not any(state[name] for name in ("fail", "invalid_", "missing", "not_judged"))
     assert all(case["case_pass"] for case in suite["cases"].values()) is all_pass
+    # no result of a run is a second judging: every judge log is exactly its result's one judging
+    assert not {"judge_log_differs_from_result", "judge_log_without_a_judging_result"} & set(suite["reasons"])
 
 
-def test_case_pass_needs_every_repetition_valid_and_passing(world, full):
+def test_case_pass_needs_every_repetition_valid_and_passing(world, full, runs):
     base = passes(full)
     options = {"expectations": world["expectations"], "run": full["run"]}
     assert verify_suite(base, **options)["suite_outcome"] == "pass"
@@ -1045,14 +1116,21 @@ def test_case_pass_needs_every_repetition_valid_and_passing(world, full):
     assert "journalled_trial_not_submitted" in suite["reasons"]
     assert suite["cases"][ids[-1]]["case_pass"] is False
     assert sum(case["case_pass"] for case in suite["cases"].values()) == len(ids) - 1
-    # a second result for a slot is never absorbed
+    # a second result for a slot is never absorbed (and a trial is never judged twice)
     extra = verify(world, full["records"][(CASE_KEYS[0], 1)], DevJudge(), run=full["run"])
+    invalid(extra, "trial_already_judged")
     suite = verify_suite([*base, extra], **options)
     assert suite["suite_outcome"] == "incomplete" and "duplicate_repetition" in suite["reasons"]
+    unjudged = verify(world, full["records"][(CASE_KEYS[0], 1)], None, run=full["run"])
+    suite = verify_suite([*base, unjudged], **options)
+    assert suite["suite_outcome"] == "incomplete" and "duplicate_repetition" in suite["reasons"]
     # a fail keeps precedence over every incomplete cause
-    failing = [full["variants"][FAIL], *base[1:-1]]
-    with stopped_journal(full["run"]):
-        assert verify_suite(failing, **options)["suite_outcome"] == "fail"
+    failed = runs(True, {FAIL, INVALID, NOT_JUDGED})
+    failing = passes(failed)[:-1]
+    assert failing[0]["verdict"] == FAIL
+    with stopped_journal(failed["run"]):
+        assert verify_suite(failing, expectations=world["expectations"], run=failed["run"])[
+            "suite_outcome"] == "fail"
 
 
 # ---------------------------------------------------------------- BF2 probes: degenerate or cherry-picked runs
@@ -1074,7 +1152,10 @@ def test_bf2_one_trial_reused_for_three_repetitions_is_refused(world, full):
     for rep in (2, 3):
         invalid(verify(world, record, DevJudge(), repetition=rep, run=full["run"]),
                 "repetition_differs_from_journalled_slot")
-    reused = [verify(world, record, DevJudge(), run=full["run"]) for _ in (1, 2, 3)]
+    # the trial was judged once already (its pass); it is never judged again (audit 6, Y1)
+    again = [verify(world, record, DevJudge(), run=full["run"]) for _ in (1, 2)]
+    assert all(result["cause"] == "trial_already_judged" for result in again)
+    reused = [full["passes"][(CASE_KEYS[3], 1)]] * 3
     assert len({result["trial_id"] for result in reused}) == 1
     assert {result["repetition"] for result in reused} == {1}
     assert all(result["verdict"] == PASS and result["ledger_head"] and result["trial_record_sha256"]
@@ -1177,8 +1258,8 @@ def test_bf2_judge_separation_comes_only_from_the_pinned_profile(world, full, tm
     _pre, loaded = release_setup(world, tmp_path / "claims-v3", profile_bytes=json.dumps(claims_v3).encode("utf-8"))
     assert "profile:claims_v3_verified_under_a_design_that_cannot_verify_it" in loaded.errors
     assert loaded.v3_error_independence == "unverified"
-    # the pinned (frozen) v6 profile itself establishes nothing
-    pinned = (V6 / "independence_profile.json").read_bytes()
+    # the pinned (frozen) v7 profile itself establishes nothing
+    pinned = (V7 / "independence_profile.json").read_bytes()
     _pre, loaded = release_setup(world, tmp_path / "pinned", profile_bytes=pinned)
     assert loaded.errors == () and loaded.judge_separation_established is False
     # results judged by another judge than run_identity names are not this run's judgement
@@ -1335,7 +1416,10 @@ def test_b1_an_edited_or_truncated_journal_is_refused(world, tmp_path):
     record = run(world, key, blocked, pre_dispatch=pre, repetition=3)
     assert "dispatch_journal:journal_torn_tail" in record["pre_dispatch"]["errors"] and blocked.calls == []
     journal.write_bytes(original)
-    assert all(verify(world, record, DevJudge())["verdict"] == PASS for record in records)
+    # the restored journal verifies again; each trial was judged once already, so a second
+    # judging is refused and only a judge-less verification remains possible (audit 6, Y1)
+    assert all(verify(world, record)["verdict"] == NOT_JUDGED for record in records)
+    assert all(verify(world, record, DevJudge())["cause"] == "trial_already_judged" for record in records)
 
 
 def test_b1_a_manifest_edited_after_the_first_dispatch_is_not_the_journalled_manifest(world, full):
@@ -1537,7 +1621,7 @@ MIX_PACK = {"id": "dev-mix", "version": "1", "rules": [{"id": "L-P050-01", "vers
 
 
 def effect_section(world, **changes):
-    """A lens-effects-v6 section: every dispatched arm with its own configuration and attempt."""
+    """A lens-effects-v7 section: every dispatched arm with its own configuration and attempt."""
     base = dev_configuration(world["rig"], world["task_dir"])
     arms = []
     for arm_id, pack in [("no_lens", DEV_LENS_PACK), ("general_multi_perspective", CHECKLIST_PACK),
@@ -1548,8 +1632,8 @@ def effect_section(world, **changes):
                      "text_sha256": None if arm_id == "no_lens" else lens_refs_and_digests(pack)["pack_sha256"],
                      "attempt": 1, "prior_attempts": []})
     order = [{"arm": arm["id"], "case_id": case_id} for case_id in sorted(CASE.values()) for arm in arms]
-    section = {"design_id": "lens-effects-v6", "effect_set_sha256": "5" * 64,
-               "qualification_sets": [{"design_id": "q01-release-v6", "sealed_dataset_sha256": "2" * 64,
+    section = {"design_id": "lens-effects-v7", "effect_set_sha256": "5" * 64,
+               "qualification_sets": [{"design_id": "q01-release-v7", "sealed_dataset_sha256": "2" * 64,
                                        "sealed_expectations_sha256": "1" * 64}],
                "arms": arms, "arm_case_order": order, "predictions_sha256": "8" * 64}
     for change in changes.values():
@@ -1632,9 +1716,9 @@ def test_dev_suite_record_validates_and_reaches_the_product_gate(world, full):
     assert suite["dispatch_journal"] == {"verified": True, "head": journal.head, "entries": 39,
                                          "commit_ref": COMMIT_REF}
     record = build_suite_record(suite, run=full["run"])
-    schema = json.loads((V6 / "suite_record.schema.json").read_text(encoding="utf-8"))
+    schema = json.loads((V7 / "suite_record.schema.json").read_text(encoding="utf-8"))
     assert Draft202012Validator(schema).is_valid(record) and check_suite_record(record) == []
-    assert record["design_id"] == "q01-release-v6" and record["attempt"] == 1 and record["prior_outcomes"] == []
+    assert record["design_id"] == "q01-release-v7" and record["attempt"] == 1 and record["prior_outcomes"] == []
     assert record["critic_configuration_digest"] == critic_configuration_digest(
         dev_configuration(world["rig"], world["task_dir"]))
     assert record["sealed_set_sha256"] == world["manifest_sha"]
@@ -1664,12 +1748,12 @@ def test_bf1_v3_status_is_never_taken_from_the_caller_or_the_record(world, full)
     assert sc.V3_VERIFYING_DESIGN_IDS == frozenset() and full["run"].v3_error_independence == "unverified"
     record = build_suite_record(suite, run=full["run"])
     forged = {**record, "v3_error_independence": "verified"}
-    assert check_suite_record(forged)  # schema: v6 records can only say unverified
+    assert check_suite_record(forged)  # schema: v7 records can only say unverified
     from app.services.critic_qualification import suite_record_sha256
     with pytest.raises(CriticQualificationError, match="record sha256"):
         critic_qualification_from_suite(forged, record["critic_configuration_digest"])
     forged["record_sha256"] = suite_record_sha256(forged)
-    # N5 (audit 4): a schema-invalid v6 record is refused, not capped
+    # N5 (audit 4): a schema-invalid v7 record is refused, not capped
     with pytest.raises(CriticQualificationError, match="V3 unverified"):
         critic_qualification_from_suite(forged, record["critic_configuration_digest"])
     # an altered suite result is not an issued suite
@@ -1679,11 +1763,18 @@ def test_bf1_v3_status_is_never_taken_from_the_caller_or_the_record(world, full)
             build_suite_record(altered, run=full["run"])
 
 
-def test_unjudged_dev_suite_is_not_judged(world, full):
+def test_unjudged_dev_suite_is_not_judged(world, full, runs):
+    # a run one of whose trials was never attested-judged (its only verification) is not_judged
+    unjudged = runs(True, {NOT_JUDGED})
+    suite = verify_suite(passes(unjudged), expectations=world["expectations"], run=unjudged["run"])
+    assert suite["suite_outcome"] == "not_judged", suite["reasons"]
+    # audit 6, Y1: a judged trial re-verified without a judge does not turn into not_judged: its
+    # judge log exists, so the judge-less result is refused (a fail cannot be hidden this way)
     results = [verify(world, full["records"][(key, 1)], None, run=full["run"]) for key in CASE_KEYS[:4]]
+    assert {result["verdict"] for result in results} == {NOT_JUDGED}
     results += [result for (key, rep), result in full["passes"].items() if not (key in CASE_KEYS[:4] and rep == 1)]
     suite = verify_suite(results, expectations=world["expectations"], run=full["run"])
-    assert suite["suite_outcome"] == "not_judged", suite["reasons"]
+    assert suite["suite_outcome"] == INCOMPLETE and "judge_log_without_a_judging_result" in suite["reasons"]
 
 
 # ---------------------------------------------------------------- harness pre-dispatch refusal
@@ -1818,8 +1909,8 @@ def test_n1_the_verifier_rederives_the_selection_from_the_ledger(world, monkeypa
     actual = dev_configuration(world["rig"], world["task_dir"])
     real = q01_harness.pre_dispatch_errors
 
-    def patched(pre_dispatch, case_id, config, task_dir=q01_harness.TASK_DIR, base_dir=None):
-        info, _errors, _configuration = real(pre_dispatch, case_id, config, task_dir, base_dir)
+    def patched(pre_dispatch, case_id, config, task_dir=q01_harness.TASK_DIR, base_dir=None, transport=None):
+        info, _errors, _configuration = real(pre_dispatch, case_id, config, task_dir, base_dir, transport)
         return dict(info, errors=[]), [], actual
 
     monkeypatch.setattr(q01_harness, "pre_dispatch_errors", patched)
@@ -1958,7 +2049,7 @@ def test_importing_the_sealed_verifier_loads_no_calibration_module():
 
 def test_verifier_identity_hashes_its_source_files():
     identity = verifier_identity()
-    assert identity["version"] == "q01-sealed-verifier-4"
+    assert identity["version"] == "q01-sealed-verifier-5"
     assert {"app/critic_contract.py", "app/critic_audit.py"} <= set(sc.VERIFIER_FILES)
     files = {relative: hashlib.sha256((ROOT / relative).read_bytes()).hexdigest() for relative in sc.VERIFIER_FILES}
     assert identity["sha256"] == hashlib.sha256(json.dumps(files, sort_keys=True, separators=(",", ":"))
@@ -1980,7 +2071,7 @@ def test_x1_release_calls_carry_the_identity_the_provider_reported(world):
         assert details["model_identity"] == "provider_reported"
         assert details["served_model"] == world["rig"].choice["model"] == call["manifest"]["served_model"]
         assert details["provider_request_id"].startswith("req_q01mock")
-        assert details["provider_message_id"].startswith("msg_q01_")
+        assert details["provider_message_id"].startswith("msg_q01mock")
     result = verify(world, record, DevJudge())
     assert result["verdict"] == PASS and result["critic_transport_identity"] == "provider_reported"
 
@@ -2029,7 +2120,8 @@ def test_x1_a_reply_attesting_another_model_is_refused_and_the_check_is_exact(wo
     record = run(world, ("d-alt", None), other, scripted=True)
     assert (record["status"], record["cause"]) == ("invalid", "transport_contract_or_model_mismatch")
     # the harness check itself is exact: another snapshot or alias of the model is a mismatch
-    reported = {"model_identity": "provider_reported", "provider_request_id": "req_0123456789"}
+    reported = {"model_identity": "provider_reported", "provider_request_id": "req_0123456789",
+                "provider_message_id": "msg_0123456789"}
     configuration = dev_configuration(world["rig"], world["task_dir"])
     assert q01_harness.transport_identity_errors({**reported, "served_model": model}, configuration) == []
     for served in (model + "-20260101", model.upper(), None):
@@ -2042,17 +2134,19 @@ def test_x1_a_reply_attesting_another_model_is_refused_and_the_check_is_exact(wo
 # ---------------------------------------------------------------- X1 (audit 5): attested judge answers
 
 
-def test_x1_a_judge_that_only_declares_its_identity_judges_nothing(world, full):
-    record = full["records"][(CASE_KEYS[0], 1)]
-    result = verify(world, record, DeclaredJudge(), run=full["run"])
+def test_x1_a_judge_that_only_declares_its_identity_judges_nothing(world, runs):
+    record = run(world, CASE_KEYS[0])
+    judge = DeclaredJudge()
+    result = verify(world, record, judge)
     assert (result["verdict"], result["cause"]) == (NOT_JUDGED, "semantic_items_not_judged")
     assert {item["attestation"] for item in result["judge_items"]} == {"self_declared"}
-    assert result["judge_transport_identity"] == "not_attested"
-    results = [verify(world, full["records"][(key, rep)], DeclaredJudge(), run=full["run"])
-               for key in CASE_KEYS for rep in (1, 2, 3)]
-    suite = verify_suite(results, expectations=world["expectations"], run=full["run"])
+    assert result["judge_transport_identity"] == "not_attested" and result["judge_log"] is None
+    assert judge.items == []  # nothing was asked, so no judge log was opened
+    # the not_judged variant run: one slot verified with a judge that only declares its identity
+    declared = runs(True, {NOT_JUDGED})
+    suite = verify_suite(passes(declared), expectations=world["expectations"], run=declared["run"])
     assert suite["suite_outcome"] == NOT_JUDGED and suite["judge_transport_identity"] == "not_attested"
-    assert build_suite_record(suite, run=full["run"])["judge_transport_identity"] == "not_attested"
+    assert build_suite_record(suite, run=declared["run"])["judge_transport_identity"] == "not_attested"
 
 
 @pytest.mark.parametrize("judge,verdict,cause", [
@@ -2063,20 +2157,26 @@ def test_x1_a_judge_that_only_declares_its_identity_judges_nothing(world, full):
     # the verdict is re-derived from the raw provider reply, never taken from the judge object
     (lambda: DevJudge(raw=json.dumps({"verdict": "not_supported", "reason": "raw"})), FAIL, "semantic_judgement"),
 ], ids=["no_request_id", "no_served_model", "other_model", "malformed_reply", "raw_reply_decides"])
-def test_x1_judge_answers_count_only_with_the_judge_providers_reported_identity(world, full, judge, verdict, cause):
-    result = verify(world, full["records"][(CASE_KEYS[3], 2)], judge(), run=full["run"])
+def test_x1_judge_answers_count_only_with_the_judge_providers_reported_identity(world, judge, verdict, cause):
+    result = verify(world, run(world, CASE_KEYS[3]), judge())  # a fresh trial, judged once
     assert (result["verdict"], result["cause"]) == (verdict, cause)
 
 
-def test_x1_raw_judge_responses_are_durable_beside_the_trial(world, full):
-    record = full["records"][(CASE_KEYS[4], 1)]
-    result = verify(world, record, DevJudge(), run=full["run"])
+def test_x1_raw_judge_responses_are_durable_beside_the_trial(world):
+    record = run(world, CASE_KEYS[4])
+    result = verify(world, record, DevJudge())
     assert result["verdict"] == PASS and result["judge_transport_identity"] == "provider_reported"
     log = Path(result["judge_log"]["path"])
     assert log == Path(record["ledger_path"]).parent.parent / "judge-responses.jsonl"
+    assert log == sc.judge_log_path(RUNS[record["trial_id"]], record["trial_id"])
     lines = [json.loads(line) for line in log.read_bytes().splitlines()]
-    mine = [line for line in lines if line["trial_id"] == record["trial_id"]][-len(result["judge_items"]):]
-    assert len(mine) == len(result["judge_items"])
+    # one judging: the opening line, then one answer per judged item, nothing else (audit 6, Y1)
+    assert lines[0]["kind"] == "judging_opened" and lines[0]["trial_id"] == record["trial_id"]
+    assert lines[0]["items"] == [item["id"] for item in result["judge_items"]]
+    mine = lines[1:]
+    assert result["judge_log"]["lines"] == len(lines) and result["judge_log"]["lines_sha256"] == hashlib.sha256(
+        json.dumps(lines, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
+    assert len(mine) == len(result["judge_items"]) and {line["kind"] for line in mine} == {"answer"}
     for item, line in zip(result["judge_items"], mine):
         assert item["id"] == line["item_id"] and item["served_model"] == line["served_model"] == JUDGE_MODEL
         assert item["raw_response_sha256"] == hashlib.sha256(line["raw_response"].encode("utf-8")).hexdigest()
@@ -2266,3 +2366,231 @@ def test_a5_7_the_stop_is_a_journal_entry_not_a_caller_flag(world, full, tmp_pat
     extra["entry_sha256"] = journal_entry_sha256(extra)
     path.write_bytes(path.read_bytes() + journal_line(extra))
     assert read_journal(path).errors == ("journal_entry_after_stop",)
+
+
+# ---------------------------------------------------------------- audit 6 (of release-v6): one judging, distinct ids
+
+
+def _judge_log_lines(result):
+    return [json.loads(line) for line in Path(result["judge_log"]["path"]).read_bytes().splitlines()]
+
+
+def test_a6_every_trial_of_the_dev_run_was_judged_exactly_once(world, full):
+    """Audit-6 finding on the repo's own fixture: no result of the passing run is a re-judging."""
+    suite = verify_suite(passes(full), expectations=world["expectations"], run=full["run"])
+    assert suite["suite_outcome"] == PASS
+    for result in passes(full):
+        lines = _judge_log_lines(result)
+        assert [line["kind"] for line in lines].count("judging_opened") == 1
+        assert lines[0]["trial_id"] == result["trial_id"]
+    record = build_suite_record(suite, run=full["run"])
+    assert record["judge_logs"] == sorted(({"trial_id": r["trial_id"], "lines_sha256": r["judge_log"]["lines_sha256"]}
+                                           for r in passes(full)), key=lambda item: item["trial_id"])
+    ids = sorted(value for r in passes(full) for values in r["provider_ids"].values() for value in values)
+    assert len(ids) == len(set(ids)) == record["provider_id_count"]
+    assert record["provider_ids_sha256"] == hashlib.sha256(json.dumps(ids, separators=(",", ":")).encode()).hexdigest()
+
+
+def test_a6_p1_audit_probe_a_judge_reroll_is_refused(world, runs):
+    """Audit-6 probe P1: a trial judged not_supported (FAIL) is re-verified until supported."""
+    failed = runs(True, {FAIL, INVALID, NOT_JUDGED})
+    record = failed["records"][VARIANT_SLOTS[FAIL]]
+    first = failed["variants"][FAIL]
+    assert first["verdict"] == FAIL
+    before = Path(first["judge_log"]["path"]).read_bytes()
+    judge = DevJudge()
+    reroll = verify(world, record, judge, run=failed["run"])
+    invalid(reroll, "trial_already_judged")
+    assert judge.items == [] and judge.answers == 0  # the judge was never asked
+    assert Path(first["judge_log"]["path"]).read_bytes() == before
+    options = {"expectations": world["expectations"], "run": failed["run"]}
+    rerolled = [reroll if result is first else result for result in passes(failed)]
+    suite = verify_suite(rerolled, **options)
+    assert suite["suite_outcome"] == INCOMPLETE and "judge_log_without_a_judging_result" in suite["reasons"]
+    assert verify_suite(passes(failed), **options)["suite_outcome"] == FAIL
+
+
+def test_a6_p1_a_faulting_judge_leaves_its_judging_and_blocks_a_second(world):
+    record = run(world, CASE_KEYS[1])
+    faulted = verify(world, record, DevJudge(q7=RuntimeError("judge down")))
+    invalid(faulted, "judge_fault")
+    lines = _judge_log_lines(faulted)
+    assert lines[0]["kind"] == "judging_opened"
+    assert lines[-1] == {"kind": "fault", "item_id": lines[-1]["item_id"], "cause": "judge_fault"}
+    invalid(verify(world, record, DevJudge()), "trial_already_judged")
+
+
+def test_a6_p1_a_copied_ledger_cannot_open_a_second_judge_log(world, tmp_path):
+    record = run(world, CASE_KEYS[2])
+    assert verify(world, record, DevJudge())["verdict"] == PASS
+    trial_dir = Path(record["ledger_path"]).parent.parent
+    copy_dir = tmp_path / record["trial_id"]
+    shutil.copytree(trial_dir, copy_dir)
+    (copy_dir / "judge-responses.jsonl").unlink()
+    moved = {**record, "ledger_path": str(copy_dir / "audit" / "eval.sqlite3")}
+    invalid(verify(world, moved, DevJudge()), "evidence_outside_trial_base_dir")
+    invalid(verify(world, record, DevJudge(), ledger_path=copy_dir / "audit" / "eval.sqlite3"),
+            "evidence_outside_trial_base_dir")
+
+
+def _hand_built(model, ids):
+    """A scripted critic wrapped in hand-built ProviderReply objects with the ids ``ids()`` gives."""
+    critic = DevCritic()
+
+    def turn(system, user):
+        request_id, message_id = ids()
+        return ProviderReply(critic(system, user), served_model=model, provider_request_id=request_id,
+                             provider_message_id=message_id)
+    return turn
+
+
+def test_a6_p2_audit_probe_one_request_id_for_every_call_is_refused(world):
+    """Audit-6 probe P2: one request id (and message id) for every call of the trial."""
+    turn = _hand_built(world["rig"].choice["model"], lambda: ("req_REUSED0001", "msg_REUSED0001"))
+    record = run(world, ("d-good", None), turn, scripted=True)
+    assert record["status"] == "completed"  # the harness sees well-formed ids on each call
+    invalid(verify(world, record, DevJudge()), "provider_id_reused")
+
+
+def test_a6_p2_ids_reused_across_trials_make_the_suite_incomplete(world, tmp_path):
+    key = CASE_KEYS[0]
+    pre, loaded = release_setup(world, tmp_path, order=order_first(CASE[key]))
+    results = []
+    for rep in (1, 2):
+        counter = itertools.count(1)  # every trial restarts its ids: distinct within, reused across
+
+        def ids(counter=counter):
+            number = next(counter)
+            return f"req_TRIALID{number:04d}", f"msg_TRIALID{number:04d}"
+        turn = _hand_built(world["rig"].choice["model"], ids)
+        record = run(world, key, turn, pre_dispatch=pre, repetition=rep, scripted=True)
+        results.append(verify(world, record, DevJudge(), run=loaded))
+    assert [result["verdict"] for result in results] == [PASS, PASS]
+    suite = verify_suite(results, expectations=world["expectations"], run=loaded)
+    assert suite["suite_outcome"] == INCOMPLETE and "provider_id_reused_across_suite" in suite["reasons"]
+
+
+@pytest.mark.parametrize("request_id,message_id", [("x", "msg_0123456789"), ("msg_0123456789", "msg_abcdefghij"),
+                                                   ("req_0123456789", None), ("req_0123456789", "x")])
+def test_a6_p2b_ids_outside_the_adapters_forms_are_refused(world, monkeypatch, request_id, message_id):
+    """Audit-6 probe P2b: a request id 'x', a non-req id, no message id, a non-msg message id."""
+    import re
+
+    import app.critic_trial as critic_trial
+
+    turn = _hand_built(world["rig"].choice["model"], lambda: (request_id, message_id))
+    record = run(world, ("d-good", None), turn, scripted=True)
+    assert record["status"] == "invalid"
+    assert record["cause"] in {"transport_contract_or_model_mismatch", "transport_identity_unattested"}
+    # with the runner's and the harness's checks bypassed, the verifier still refuses the ids
+    monkeypatch.setattr(critic_trial, "_REQUEST_ID", re.compile(r".+\Z"))
+    monkeypatch.setattr(q01_harness, "transport_identity_errors", lambda *_args: [])
+    record = run(world, ("d-good", None), _hand_built(world["rig"].choice["model"], lambda: (request_id, message_id)),
+                 scripted=True)
+    assert record["status"] == "completed"
+    invalid(verify(world, record, DevJudge()), "transport_identity_unattested")
+
+
+class SpoofJudge:
+    """A judge that answers 'supported' with a stub provider identity of the caller's choosing."""
+
+    version, identity, prompt_digest = "spoof", JUDGE_IDENTITY, JUDGE_PROMPT_DIGEST
+
+    def __init__(self, ids):
+        self.ids = ids
+
+    def judge_attested(self, _item):
+        return AttestedJudgement(json.dumps({"verdict": "supported", "reason": "."}), JUDGE_MODEL, self.ids(), None)
+
+
+def test_a6_p4_audit_probe_a_judge_spoof_with_a_reused_request_id(world, tmp_path):
+    """Audit-6 probe P4: every judge answer carries the same request id."""
+    record = run(world, ("d-good", None))
+    result = verify(world, record, SpoofJudge(lambda: "req_SAMEID0001"))
+    invalid(result, "provider_id_reused")
+    assert _judge_log_lines(result)[-1]["cause"] == "provider_id_reused"
+    # the probe's own id ('req_SAME', too short for the adapter's form) is not an attestation at all
+    result = verify(world, run(world, ("d-good", None)), SpoofJudge(lambda: "req_SAME"))
+    assert (result["verdict"], result["judge_transport_identity"]) == (NOT_JUDGED, "not_attested")
+    # distinct within each trial but reused across trials: the suite is incomplete
+    key = CASE_KEYS[0]
+    pre, loaded = release_setup(world, tmp_path, order=order_first(CASE[key]))
+    results = []
+    for rep in (1, 2):
+        counter = itertools.count(1)
+        record = run(world, key, pre_dispatch=pre, repetition=rep)
+        judge = SpoofJudge(lambda counter=counter: f"req_JUDGEID{next(counter):04d}")
+        results.append(verify(world, record, judge, run=loaded))
+    assert [result["verdict"] for result in results] == [PASS, PASS]
+    suite = verify_suite(results, expectations=world["expectations"], run=loaded)
+    assert "provider_id_reused_across_suite" in suite["reasons"] and suite["suite_outcome"] == INCOMPLETE
+
+
+def test_a6_p5_audit_probe_an_altered_or_removed_judge_log_is_incomplete(world, full):
+    """Audit-6 probe P5: the judge log is overwritten, extended, then deleted."""
+    results = passes(full)
+    options = {"expectations": world["expectations"], "run": full["run"]}
+    log = Path(results[0]["judge_log"]["path"])
+    original = log.read_bytes()
+    try:
+        log.write_bytes(b"garbage\n")
+        suite = verify_suite(results, **options)
+        assert suite["suite_outcome"] == INCOMPLETE and "judge_log_differs_from_result" in suite["reasons"]
+        log.write_bytes(original + original.splitlines(keepends=True)[1])  # one extra answer line
+        assert "judge_log_differs_from_result" in verify_suite(results, **options)["reasons"]
+        log.unlink()
+        suite = verify_suite(results, **options)
+        assert suite["suite_outcome"] == INCOMPLETE and "judge_log_differs_from_result" in suite["reasons"]
+    finally:
+        log.write_bytes(original)
+    assert verify_suite(results, **options)["suite_outcome"] == PASS
+
+
+def test_a6_5_an_injected_transport_is_refused_for_release(world, tmp_path, monkeypatch):
+    """Audit-6 non-blocking 5: the manifest and every trial record say whether a transport was injected."""
+    manifest = dev_manifest(world["expectations"], "5" * 64, rig=world["rig"], task_dir=world["task_dir"])
+    assert manifest["run_identity"]["critic_transport"] == {"injected": True, "name": MOCK_TRANSPORT_NAME}
+    assert world["rig"].attested_turn.critic_transport == world["rig"].claude.critic_transport
+    product = _configured(world, tmp_path)
+    product["run_identity"]["critic_transport"] = {"injected": False, "name": None}
+    pre, _loaded = release_setup(world, tmp_path, manifest=product)
+    # outside this module's admission, release-v7 names no test double: the manifest is refused
+    monkeypatch.setattr(q01_release_manifest, "TEST_DOUBLE_TRANSPORTS", frozenset())
+    assert "critic_transport:injected_transport_not_allowed_for_release" in _manifest_check(manifest)
+    allowed = deepcopy(manifest)
+    allowed["run_identity"]["critic_transport"] = {"injected": False, "name": None}
+    assert _manifest_check(allowed) == ()
+    for malformed in ({"injected": False, "name": "x"}, {"injected": True, "name": ""}, {"injected": "no"}):
+        broken = deepcopy(manifest)
+        broken["run_identity"]["critic_transport"] = malformed
+        assert _manifest_check(broken)
+    # a manifest naming the product adapter path: the rig over the fake server is refused before any read
+    critic = DevCritic()
+    record = release_trial(world, ("d-good", None), pre, critic)
+    assert "critic_transport_differs_from_manifest" in record["pre_dispatch"]["errors"] and critic.calls == []
+    assert record["critic_transport"] == {"injected": True, "name": MOCK_TRANSPORT_NAME}
+
+
+def test_a6_5_a_turn_without_a_declared_transport_is_refused(world):
+    critic = DevCritic()
+    critic.critic_transport = None  # a scripted callable declares nothing
+    record = run(world, ("d-good", None), critic, scripted=True)
+    assert "critic_transport_differs_from_manifest" in record["pre_dispatch"]["errors"] and critic.calls == []
+    assert record["critic_transport"] is None
+
+
+def test_a6_5_the_verifier_checks_the_recorded_and_bound_transport(world):
+    record = run(world, ("d-alt", None))
+    edited = {**record, "critic_transport": {"injected": False, "name": None}}
+    invalid(verify(world, edited), "critic_transport_differs_from_manifest")
+    assert verify(world, record, DevJudge())["verdict"] == PASS
+
+
+def test_a6_5_the_rig_declares_how_it_was_built(tmp_path):
+    from evals.deeptwin.harness.claude_rig import claude_rig
+
+    rig = attested_rig(tmp_path)
+    assert rig.critic_transport == {"injected": True, "name": MOCK_TRANSPORT_NAME}
+    assert rig.turn.critic_transport == rig.attested_turn.critic_transport == rig.critic_transport
+    with pytest.raises(ValueError, match="only given with an injected transport"):
+        claude_rig(tmp_path, secret="s", model_id="m", effort=None, transport=None, transport_name="named")

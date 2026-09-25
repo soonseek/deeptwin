@@ -1,7 +1,7 @@
 """Data-driven Q01 release verifier over a sealed set (control plane; never agent-visible).
 
 Implements the ``verifier`` block and ``acceptance.suite_outcome`` of
-``evals/deeptwin/qualification/release-v6/qualification_design.json``. Unlike
+``evals/deeptwin/qualification/release-v7/qualification_design.json``. Unlike
 ``critic.py`` (whose expectations are the ten calibration cases), this module
 holds no expectations, no materials and no lens pack: all are supplied at verify
 time, and the lens pack is critic configuration (pinned by digest in the
@@ -22,10 +22,10 @@ pre-dispatch manifest), never sealed dataset material.
   silently drop is refused (audit 4). Material checks and answer-leak markers are
   derived from this bundle and the expectations, never from ``q01_materials``,
   ``critic.EXPECTED`` or ``Task.md``.
-* ``load_release_run`` re-checks the full pre-dispatch manifest (schema v4) and
+* ``load_release_run`` re-checks the full pre-dispatch manifest (schema v5) and
   loads the independence profile bytes it pins: the sha256 must match, the
   profile must name this design id, and judge separation and the V3 status are
-  derived from it (V3 is always ``unverified``: release-v6 cannot verify it).
+  derived from it (V3 is always ``unverified``: release-v7 cannot verify it).
   Nothing about the run is taken from the caller.
 * ``verify_trial`` judges one harness release trial record with the same order and
   outcome classes as ``critic.py`` (pass / fail / not_judged / invalid): trial
@@ -33,8 +33,12 @@ pre-dispatch manifest), never sealed dataset material.
   not dispatched under this manifest and a lens pack that does not hash to the
   critic configuration, a call whose durable selection is not the configuration's
   provider/mode/model/effort, a call whose durable details do not carry the
-  provider-reported served model (equal to the configured model) and provider
-  request id (``transport_identity_unattested``, audit 5 X1), a
+  provider-reported served model (equal to the configured model), a provider
+  request id in the adapter's ``req_`` form and a message id in the provider's
+  ``msg_`` form (``transport_identity_unattested``, audit 5 X1 and audit 6 Y2), a
+  provider id used twice in the trial (``provider_id_reused``), a critic transport
+  other than the manifest's ``run_identity.critic_transport`` (audit 6, non-blocking
+  5), a
   ``proposed_not_driven`` count the chain limit does not give, and a trial that is
   not journalled with its record's slot in this manifest's dispatch journal), then
   an output contract error (``fail``), rule checks, and semantic items only through
@@ -42,7 +46,12 @@ pre-dispatch manifest), never sealed dataset material.
   judge provider's raw response, returned by ``judge_attested`` with the served
   model (equal to ``run_identity.judge_model``) and request id the judge provider
   reported, and written to the trial's durable judge log; a judge that only
-  declares its identity leaves every semantic item not_judged. Each result carries
+  declares its identity leaves every semantic item not_judged. A trial is judged
+  at most once (audit 6, Y1): the judge log
+  ``<run_identity.trial_base_dir>/<trial id>/judge-responses.jsonl`` is created
+  exclusively when judging starts, every answer (and a judge fault) is appended as it
+  arrives, and a trial whose judge log already exists is refused
+  (``trial_already_judged``) without asking the judge. Each result carries
   the trial id, the trial record sha256, the ledger head and its own
   ``result_sha256``, and is registered as issued by this process. The repetition is
   read from the record's journalled slot; a caller value that differs is refused.
@@ -55,7 +64,10 @@ pre-dispatch manifest), never sealed dataset material.
   order, or results that are not exactly the trials of the manifest's dispatch
   journal, a journal that does not follow ``run_identity.planned_slots`` or holds a
   stop entry, or a dispatched trial record of this manifest under
-  ``run_identity.trial_base_dir`` that is not in the journal) > ``not_judged`` (a
+  ``run_identity.trial_base_dir`` that is not in the journal, a result whose trial's
+  judge log is not exactly the lines that result judged (a second judging, or a
+  judge log altered or removed), or a provider request or message id that is not in
+  the adapter's form or occurs twice in the suite) > ``not_judged`` (a
   not_judged repetition, or a profile without established judge separation) >
   ``pass``. Repetitions are fixed at the design's 3; whether the run was stopped
   is read from the journal, never supplied by the caller.
@@ -98,6 +110,9 @@ from evals.deeptwin.q01_release_manifest import (
     check_pre_dispatch_manifest,
     critic_configuration_digest,
     file_set_sha256,
+    is_critic_message_id,
+    is_judge_message_id,
+    is_request_id,
     is_sha256,
     journal_problems,
     prepared_lens_refs,
@@ -142,17 +157,17 @@ from .q01_core import (
     parse_judge_reply,
 )
 
-VERIFIER_VERSION = "q01-sealed-verifier-4"
-RESULT_SCHEMA = "q01-sealed-verifier-result-4"
-SUITE_SCHEMA = "q01-sealed-suite-result-4"
-SUITE_RECORD_SCHEMA_VERSION = "q01-release-suite-verdict-v5"
-PROFILE_SCHEMA = "q01-independence-profile-6"
+VERIFIER_VERSION = "q01-sealed-verifier-5"
+RESULT_SCHEMA = "q01-sealed-verifier-result-5"
+SUITE_SCHEMA = "q01-sealed-suite-result-5"
+SUITE_RECORD_SCHEMA_VERSION = "q01-release-suite-verdict-v6"
+PROFILE_SCHEMA = "q01-independence-profile-7"
 JUDGE_OPTIONS = frozenset({"human_reviewer", "other_provider"})
 # The frozen case's source and candidate keys a sealed bundle may carry (audit 4, non-blocking 7).
 SOURCE_KEYS = frozenset({"originals", "criteria", "candidate"})
 CANDIDATE_KEYS = frozenset({"id", "version", "roles", "artifacts", "handoffs", "control"})
 SELECTION_FIELDS = ("provider", "mode", "model", "effort")
-# Designs able to verify V3 error independence: none (release-v6 has no generation path).
+# Designs able to verify V3 error independence: none (release-v7 has no generation path).
 V3_VERIFYING_DESIGN_IDS = frozenset()
 # The model identity a release call and a release judge answer must carry (audit 5, X1): what
 # the provider response reported, never the selection or the judge's own declaration.
@@ -160,7 +175,8 @@ PROVIDER_REPORTED = "provider_reported"
 NOT_ATTESTED = "not_attested"
 TRANSPORT_UNATTESTED = "transport_identity_unattested"
 JUDGE_LOG = "judge-responses.jsonl"  # durable raw judge responses, in the trial directory
-_PROVIDER_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
+ALREADY_JUDGED = "trial_already_judged"  # audit 6, Y1: exactly one judging per trial
+PROVIDER_ID_REUSED = "provider_id_reused"  # audit 6, Y2: every provider id is distinct
 EXPECTATION_SCHEMA_FILE = DESIGN_DIR / "sealed_expectation.schema.json"
 SUITE_RECORD_SCHEMA_FILE = DESIGN_DIR / "suite_record.schema.json"
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -292,7 +308,7 @@ def _check_boundary(case, where):
 
 
 def composition_problems(expectations: SealedExpectations) -> list[str]:
-    """Release-v6 ``dataset.composition`` checks that are decidable from the expectations.
+    """Release-v7 ``dataset.composition`` checks that are decidable from the expectations.
 
     'At least one valid alternative candidate under Q4' is not decidable from the
     expectation data and stays a reviewer check.
@@ -646,20 +662,52 @@ def _check_transport_identity(trial, configuration):
     """Every call was served by the configured model, as the provider response reported it (audit 5, X1).
 
     Each call's durable, digest-bound ledger details must carry ``model_identity``
-    ``provider_reported``, a provider request id and a served model exactly equal to
-    ``critic_configuration.model``. The harness writes these only from what the transport
-    returned in an ``app.critic_trial.ProviderReply`` (the Claude rig's attested turn, whose
-    served model, message id and request id the product adapter parsed from the provider
-    response); a scripted ``(system, user) -> str`` transport records none of them, so a
-    trial it drives is invalid here even when the harness's own check was bypassed.
+    ``provider_reported``, a provider request id in the adapter's exact ``req_`` form, a
+    provider message id in the provider's ``msg_`` form (required; audit 6, Y2) and a served
+    model exactly equal to ``critic_configuration.model``. The harness writes these only from
+    what the transport returned in an ``app.critic_trial.ProviderReply`` (the Claude rig's
+    attested turn, whose served model, message id and request id the product adapter parsed
+    from the provider response); a scripted ``(system, user) -> str`` transport records none
+    of them, so a trial it drives is invalid here even when the harness's own check was
+    bypassed. Distinctness of the ids is checked by ``_check_provider_ids`` and, across the
+    suite, by ``verify_suite``.
     """
     for call in trial.calls:
         identity = call.get("identity") or {}
         if (identity.get("model_identity") != PROVIDER_REPORTED
-                or type(identity.get("provider_request_id")) is not str
-                or _PROVIDER_ID.fullmatch(identity["provider_request_id"]) is None
+                or not is_request_id(identity.get("provider_request_id"))
+                or not is_critic_message_id(identity.get("provider_message_id"))
                 or identity.get("served_model") != configuration["model"]):
             raise _Invalid(TRANSPORT_UNATTESTED)
+
+
+def _check_critic_transport(trial, record, run):
+    """The trial ran over the critic transport its manifest names (audit 6, non-blocking 5).
+
+    The record's ``critic_transport`` (whether a custom transport was injected into the
+    Claude rig, and its name) must equal ``run_identity.critic_transport``, and every frozen
+    call's durable code hashes must bind its digest. The manifest check refuses an injected
+    transport for a release run unless the design names it (release-v7 names none).
+    """
+    declared = run.identity["critic_transport"]
+    if record.get("critic_transport") != declared:
+        raise _Invalid("critic_transport_differs_from_manifest")
+    bound = _digest(declared)
+    if any(call["code_hashes"].get("critic_transport") != bound for call in trial.calls):
+        raise _Invalid("critic_transport_not_bound_in_ledger")
+
+
+def _critic_ids(trial):
+    """The provider request ids and message ids of the trial's critic calls, in dispatch order."""
+    return ([call["identity"]["provider_request_id"] for call in trial.calls],
+            [call["identity"]["provider_message_id"] for call in trial.calls])
+
+
+def _check_provider_ids(requests, messages):
+    """No provider request id or message id occurs twice (audit 6, Y2)."""
+    ids = [*requests, *messages]
+    if len(set(ids)) != len(ids):
+        raise _Invalid(PROVIDER_ID_REUSED)
 
 
 def _check_materials(trial, record, case, case_sha):
@@ -818,6 +866,8 @@ def _result(case_id, sealed, verdict, *, context, cause=None, rules=(), judged=(
               "judge_transport_identity": (PROVIDER_REPORTED if judged and all(
                   item.get("attestation") == PROVIDER_REPORTED for item in judged) else NOT_ATTESTED),
               "judge_log": context["judge_log"],
+              # audit 6, Y2: every provider id this result relies on, for the suite-wide distinctness check
+              "provider_ids": deepcopy(context["provider_ids"]),
               "judge": {"available": judge is not None,
                         "version": getattr(judge, "version", None) if judge is not None else None,
                         "identity": getattr(judge, "identity", None) if judge is not None else None,
@@ -878,6 +928,39 @@ def _check_journalled(trial, record, run, slot):
     return entry
 
 
+def _trial_dir(run, trial_id) -> Path:
+    """The trial's directory under ``run_identity.trial_base_dir`` (where the harness created it)."""
+    return Path(run.identity["trial_base_dir"]["path"]) / trial_id
+
+
+def judge_log_path(run: ReleaseRun, trial_id: str) -> Path:
+    """The trial's durable judge log, derived from the manifest (never from the record)."""
+    return _trial_dir(run, trial_id) / JUDGE_LOG
+
+
+def read_judge_log(path: Path) -> list[dict] | None:
+    """The lines of a judge log (``None`` when missing, unreadable, a symlink or not canonical JSON lines)."""
+    path = Path(path)
+    try:
+        if path.is_symlink():
+            return None
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if not data.endswith(b"\n"):
+        return None
+    lines = []
+    for raw in data[:-1].split(b"\n"):
+        try:
+            line = strict_json(raw)
+        except (ValueError, UnicodeDecodeError):
+            return None
+        if type(line) is not dict or canonical_bytes(line) != raw:
+            return None
+        lines.append(line)
+    return lines
+
+
 def _check_proposed_not_driven(trial, record, configuration):
     """``proposed_not_driven`` is what the configuration's chain limit gives (audit 4, non-blocking 2)."""
     proposal = next((call for call in trial.calls if call["purpose"] is P.COUNTEREXAMPLE_PROPOSAL), None)
@@ -889,51 +972,82 @@ def _check_proposed_not_driven(trial, record, configuration):
         raise _Invalid("proposed_not_driven_differs_from_chain_limit")
 
 
-def _append_judge_log(path: Path, lines: list[dict]) -> None:
-    """Append raw judge responses to the trial's durable judge log (O_APPEND, fsync)."""
-    data = b"".join(canonical_bytes(line) + b"\n" for line in lines)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0), 0o600)
-    try:
+class _JudgeLog:
+    """The trial's durable judge log, opened exactly once per trial (audit 6, Y1).
+
+    ``open`` creates the file with ``O_EXCL`` and writes the opening line before the judge is
+    asked anything, so a second judging of the same trial (by this process or any other, with
+    any judge) is refused: the file already exists. Every answer, and a judge fault, is
+    appended and fsynced as it arrives, so an interrupted judging still leaves its evidence.
+    """
+
+    def __init__(self, path: Path):
+        self.path, self.lines, self._fd = Path(path), [], None
+
+    def open(self, first: dict) -> bool:
+        try:
+            self._fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_APPEND
+                               | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        except FileExistsError:
+            return False
+        directory = os.open(self.path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+        self.append(first)
+        return True
+
+    def append(self, line: dict) -> None:
+        data = canonical_bytes(line) + b"\n"
         while data:
-            data = data[os.write(fd, data):]
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+            data = data[os.write(self._fd, data):]
+        os.fsync(self._fd)
+        self.lines.append(line)
+
+    def close(self) -> None:
+        if self._fd is not None:
+            os.close(self._fd)
+            self._fd = None
+
+    def evidence(self) -> dict:
+        return {"path": str(self.path), "lines": len(self.lines), "lines_sha256": _digest(self.lines)}
 
 
-def _judge_item(judge, item, judge_model):
-    """``(status, entry, log line)`` of one semantic item (audit 5, X1).
+def _answer_line(item, answer):
+    """The judge log line of one answer as received (before it is checked)."""
+    fields = {}
+    for name in ("raw_response", "served_model", "provider_request_id", "provider_message_id"):
+        value = getattr(answer, name, None)
+        fields[name] = value if value is None or type(value) is str else repr(type(value))
+    return {"kind": "answer", "item_id": item.item_id, **fields}
+
+
+def _judge_item(answer, judge_model):
+    """``(status, entry)`` of one semantic item from the judge's answer (audit 5, X1; audit 6, Y2).
 
     The status is re-derived from the judge provider's raw response and counts only when the
-    judge provider reported serving ``run_identity.judge_model`` with a request id. A judge
-    without ``judge_attested`` (identity only declared), or an answer without a reported
-    model or request id, leaves the item not_judged; a reported model other than the
-    configured judge model, or a reply that is not the judge contract, is a judge failure.
+    judge provider reported serving ``run_identity.judge_model`` with a request id in the
+    adapter's ``req_`` form (and, when present, a message id in the safe-id form). An answer
+    without a reported model or such a request id leaves the item not_judged; a reported
+    model other than the configured judge model, or a reply that is not the judge contract, is
+    a judge failure.
     """
-    attested = getattr(judge, "judge_attested", None)
-    if not callable(attested):
-        return "not_judged", {"attestation": "self_declared"}, None
-    answer = attested(item)  # a raise is a judge fault (caller)
     if type(answer) is not AttestedJudgement:
         raise _JudgeFault("judge_fault")
     if (judge_model is None or type(answer.raw_response) is not str or type(answer.served_model) is not str
-            or type(answer.provider_request_id) is not str
-            or _PROVIDER_ID.fullmatch(answer.provider_request_id) is None
-            or (answer.provider_message_id is not None and (type(answer.provider_message_id) is not str
-                                                             or _PROVIDER_ID.fullmatch(answer.provider_message_id)
-                                                             is None))):
-        return "not_judged", {"attestation": NOT_ATTESTED}, None
+            or not is_request_id(answer.provider_request_id)
+            or (answer.provider_message_id is not None and not is_judge_message_id(answer.provider_message_id))):
+        return "not_judged", {"attestation": NOT_ATTESTED}
     if answer.served_model != judge_model:
         raise _JudgeFault("judge_identity_mismatch")
     status, _reason = parse_judge_reply(answer.raw_response)
     if status is None:
         raise _JudgeFault("judge_fault")
-    entry = {"attestation": PROVIDER_REPORTED, "served_model": answer.served_model,
-             "provider_request_id": answer.provider_request_id, "provider_message_id": answer.provider_message_id,
-             "raw_response_sha256": sha256(answer.raw_response.encode("utf-8")).hexdigest()}
-    line = {"item_id": item.item_id, "status": status, "raw_response": answer.raw_response,
-            **{name: entry[name] for name in ("served_model", "provider_request_id", "provider_message_id")}}
-    return status, entry, line
+    return status, {"attestation": PROVIDER_REPORTED, "served_model": answer.served_model,
+                    "provider_request_id": answer.provider_request_id,
+                    "provider_message_id": answer.provider_message_id,
+                    "raw_response_sha256": sha256(answer.raw_response.encode("utf-8")).hexdigest()}
 
 
 class _JudgeFault(Exception):
@@ -950,14 +1064,20 @@ def verify_trial(record: dict, *, expectations: SealedExpectations, materials: S
     The repetition is the one fixed in the record's slot and journalled before dispatch;
     ``repetition`` is only an assertion by the caller, and a value that differs from the
     record's slot makes the result invalid (audit 4, B1). Every critic call must carry the
-    provider-reported served model and request id (``_check_transport_identity``), and every
-    semantic status comes from an attested, durably logged raw judge response
-    (``_judge_item``; audit 5, X1).
+    provider-reported served model, request id and message id (``_check_transport_identity``),
+    every semantic status comes from an attested, durably logged raw judge response
+    (``_judge_item``; audit 5, X1), and a trial is judged at most once: when a judge with
+    ``judge_attested`` is given, the trial's judge log is created exclusively before the judge
+    is asked anything, and a trial whose judge log already exists is invalid
+    (``trial_already_judged``) without any judge call (audit 6, Y1). ``ledger_path``, when
+    given, must be the ledger under the manifest's trial base directory.
     """
     case_id = sealed = None
     context = {"expectations": expectations, "materials": materials, "run": run, "repetition": None,
                "trial_id": None, "record_sha256": None, "ledger_head": None, "journal_entry_sha256": None,
-               "critic_transport_identity": NOT_ATTESTED, "judge_log": None}
+               "critic_transport_identity": NOT_ATTESTED, "judge_log": None,
+               "provider_ids": {"critic_request_ids": [], "critic_message_ids": [], "judge_request_ids": [],
+                                "judge_message_ids": []}}
     try:
         try:
             check_binding(expectations, materials)
@@ -1004,6 +1124,10 @@ def verify_trial(record: dict, *, expectations: SealedExpectations, materials: S
         context["ledger_head"] = _ledger_head(trial)
         _check_journal_coverage(trial, record, path)
         _check_journalled(trial, record, run, slot)
+        if path != _trial_dir(run, context["trial_id"]) / "audit" / "eval.sqlite3":
+            # the ledger (and so the judge log beside it) must be the trial's own, under the
+            # manifest's trial base directory: a copied ledger cannot open a second judge log
+            raise _Invalid("evidence_outside_trial_base_dir")
         _check_lineage(trial, record)
         key = _case_key(trial, record, expectations.keys)
         case_id = _case_id(*key)
@@ -1012,7 +1136,11 @@ def verify_trial(record: dict, *, expectations: SealedExpectations, materials: S
         _check_materials(trial, record, materials.cases[case_id], materials.case_sha256[case_id])
         _check_configuration(trial, run.configuration)
         _check_transport_identity(trial, run.configuration)
+        _check_critic_transport(trial, record, run)
+        requests, messages = _critic_ids(trial)
+        _check_provider_ids(requests, messages)
         context["critic_transport_identity"] = PROVIDER_REPORTED
+        context["provider_ids"].update(critic_request_ids=requests, critic_message_ids=messages)
         _check_proposed_not_driven(trial, record, run.configuration)
         _check_completeness(trial, key, record)
     except _Invalid as invalid:
@@ -1024,36 +1152,19 @@ def verify_trial(record: dict, *, expectations: SealedExpectations, materials: S
     expectation = sealed.expectation
     rules = _rules(trial, key, expectation)
     sealed_items = {item_id for item_id, _rubric, _selector in expectation.judge}
-    judged, log_lines = [], []
-    for item in _judge_items(trial, expectation):
-        origin = "sealed" if item.item_id in sealed_items else "verifier"
-        if judge is None:
-            judged.append({"id": item.item_id, "origin": origin, "status": "not_judged", "attestation": None})
-            continue
-        try:
-            status, entry, line = _judge_item(judge, item, run.identity["judge_model"])
-        except _JudgeFault as fault:
-            return _result(case_id, sealed, INVALID, cause=fault.cause, rules=rules, judged=judged,
-                           judge=judge, context=context)
-        except Exception:  # noqa: BLE001 - judge fault invalidates, never scores
-            return _result(case_id, sealed, INVALID, cause="judge_fault", rules=rules, judged=judged,
-                           judge=judge, context=context)
-        if status not in JUDGE_STATUSES | {"not_judged"}:
-            return _result(case_id, sealed, INVALID, cause="judge_fault", rules=rules, judged=judged,
-                           judge=judge, context=context)
-        judged.append({"id": item.item_id, "origin": origin, "status": status, **entry})
-        if line is not None:
-            log_lines.append({"trial_id": context["trial_id"], "judge_identity": getattr(judge, "identity", None),
-                              **line})
-    if log_lines:
-        # durable raw judge responses, beside the trial record, before any verdict is issued
-        log_path = path.parent.parent / JUDGE_LOG
-        try:
-            _append_judge_log(log_path, log_lines)
-        except OSError:
-            return _result(case_id, sealed, INVALID, cause="judge_evidence_unwritable", rules=rules,
-                           judged=judged, judge=judge, context=context)
-        context["judge_log"] = {"path": str(log_path), "lines_sha256": _digest(log_lines)}
+    items = list(_judge_items(trial, expectation))
+    judged = []
+    attested = getattr(judge, "judge_attested", None) if judge is not None else None
+    if judge is None or not callable(attested):
+        # no judge, or one that only declares its identity: nothing is asked and nothing counts
+        attestation = None if judge is None else "self_declared"
+        judged = [{"id": item.item_id, "origin": "sealed" if item.item_id in sealed_items else "verifier",
+                   "status": "not_judged", "attestation": attestation} for item in items]
+    else:
+        outcome = _judge_once(judge, attested, items, sealed_items, judged, context, run)
+        if outcome is not None:
+            return _result(case_id, sealed, INVALID, cause=outcome, rules=rules, judged=judged, judge=judge,
+                           context=context)
     extra = {"rules": rules, "judged": judged, "judge": judge, "context": context}
     if not all(item["ok"] for item in rules):
         return _result(case_id, sealed, FAIL, cause="rule_check", **extra)
@@ -1062,6 +1173,64 @@ def verify_trial(record: dict, *, expectations: SealedExpectations, materials: S
     if any(item["status"] in {"not_judged", "undetermined"} for item in judged):
         return _result(case_id, sealed, NOT_JUDGED, cause="semantic_items_not_judged", **extra)
     return _result(case_id, sealed, PASS, **extra)
+
+
+def _judge_once(judge, attested, items, sealed_items, judged, context, run):
+    """Judge the trial's items exactly once (audit 6, Y1); the invalid cause, or ``None``.
+
+    The judge log is created exclusively before the first question; if it already exists the
+    trial was judged before and nothing is asked. Every answer is logged as received, before
+    it is checked, and a fault is logged too, so the log is the complete record of this one
+    judging. Judge request ids must be distinct from each other and from the critic's.
+    """
+    log = _JudgeLog(judge_log_path(run, context["trial_id"]))
+    opening = {"kind": "judging_opened", "trial_id": context["trial_id"],
+               "judge_identity": getattr(judge, "identity", None), "judge_version": getattr(judge, "version", None),
+               "judge_prompt_digest": getattr(judge, "prompt_digest", None),
+               "judge_model": run.identity["judge_model"], "items": [item.item_id for item in items]}
+    for name in ("judge_identity", "judge_version", "judge_prompt_digest"):
+        if opening[name] is not None and type(opening[name]) is not str:
+            opening[name] = repr(type(opening[name]))
+    try:
+        if not log.open(opening):
+            return ALREADY_JUDGED  # a second judging is never asked, whatever the judge
+    except OSError:
+        log.close()
+        return "judge_evidence_unwritable"
+    ids = context["provider_ids"]
+    try:
+        for item in items:
+            origin = "sealed" if item.item_id in sealed_items else "verifier"
+            try:
+                answer = attested(item)
+            except Exception:  # noqa: BLE001 - a judge fault invalidates, never scores
+                log.append({"kind": "fault", "item_id": item.item_id, "cause": "judge_fault"})
+                return "judge_fault"
+            log.append(_answer_line(item, answer))
+            try:
+                status, entry = _judge_item(answer, run.identity["judge_model"])
+            except _JudgeFault as fault:
+                log.append({"kind": "fault", "item_id": item.item_id, "cause": fault.cause})
+                return fault.cause
+            if status not in JUDGE_STATUSES | {"not_judged"}:
+                log.append({"kind": "fault", "item_id": item.item_id, "cause": "judge_fault"})
+                return "judge_fault"
+            if entry["attestation"] == PROVIDER_REPORTED:
+                ids["judge_request_ids"].append(entry["provider_request_id"])
+                if entry["provider_message_id"] is not None:
+                    ids["judge_message_ids"].append(entry["provider_message_id"])
+                every = [*ids["critic_request_ids"], *ids["critic_message_ids"], *ids["judge_request_ids"],
+                         *ids["judge_message_ids"]]
+                if len(set(every)) != len(every):
+                    log.append({"kind": "fault", "item_id": item.item_id, "cause": PROVIDER_ID_REUSED})
+                    return PROVIDER_ID_REUSED
+            judged.append({"id": item.item_id, "origin": origin, "status": status, **entry})
+    except OSError:
+        return "judge_evidence_unwritable"
+    finally:
+        log.close()
+        context["judge_log"] = log.evidence()
+    return None
 
 
 # ---------------------------------------------------------------- suite
@@ -1149,8 +1318,48 @@ def _trial_base_dir_problems(run, journal) -> list[str]:
     return sorted(problems)
 
 
+def _judge_log_problems(result, run) -> list[str]:
+    """The trial's judge log is exactly the one judging this result carries (audit 6, Y1).
+
+    Re-read from ``<trial_base_dir>/<trial id>/judge-responses.jsonl``: a result that judged
+    nothing requires no log to exist (a trial judged and then re-verified without a judge is
+    refused), and a judging result requires the full log to be its own lines, by
+    ``lines_sha256``. Any extra judging, an edited or removed log, is a problem.
+    """
+    trial_id = result.get("trial_id")
+    if type(trial_id) is not str:
+        return []
+    path = judge_log_path(run, trial_id)
+    evidence = result.get("judge_log")
+    if evidence is None:
+        return ["judge_log_without_a_judging_result"] if (path.exists() or path.is_symlink()) else []
+    lines = read_judge_log(path)
+    if (lines is None or type(evidence) is not dict or evidence.get("path") != str(path)
+            or evidence.get("lines") != len(lines) or evidence.get("lines_sha256") != _digest(lines)):
+        return ["judge_log_differs_from_result"]
+    if not lines or lines[0].get("kind") != "judging_opened" or lines[0].get("trial_id") != trial_id or any(
+            line.get("kind") == "judging_opened" for line in lines[1:]):
+        return ["judge_log_differs_from_result"]
+    return []
+
+
+_ID_FIELDS = ("critic_request_ids", "critic_message_ids", "judge_request_ids", "judge_message_ids")
+_ID_FORMS = {"critic_request_ids": is_request_id, "critic_message_ids": is_critic_message_id,
+             "judge_request_ids": is_request_id, "judge_message_ids": is_judge_message_id}
+
+
+def _result_ids(result):
+    """(ids, well formed) of the provider ids a result carries."""
+    ids = result.get("provider_ids")
+    if type(ids) is not dict or set(ids) != set(_ID_FIELDS) or any(type(ids[name]) is not list
+                                                                   for name in _ID_FIELDS):
+        return [], False
+    values = [value for name in _ID_FIELDS for value in ids[name]]
+    return values, all(_ID_FORMS[name](value) for name in _ID_FIELDS for value in ids[name])
+
+
 def verify_suite(results: list[dict], *, expectations: SealedExpectations, run: ReleaseRun) -> dict:
-    """Aggregate per-repetition results into the release-v6 suite outcome.
+    """Aggregate per-repetition results into the release-v7 suite outcome.
 
     ``run`` is the loaded pre-dispatch manifest and profile (``load_release_run``): the
     manifest is always re-checked in full, and judge separation comes only from the
@@ -1160,7 +1369,11 @@ def verify_suite(results: list[dict], *, expectations: SealedExpectations, run: 
     B1): a best-of-N selection is incomplete. Whether the run was stopped is read from
     the journal's stop entry, never supplied by the caller, and every dispatched trial
     record of this manifest under ``run_identity.trial_base_dir`` must be journalled
-    (audit 5, non-blocking 7 and 1).
+    (audit 5, non-blocking 7 and 1). Each trial is judged exactly once: its judge log is
+    re-read and must be exactly the judged lines of its result (``_judge_log_problems``), and
+    every critic request id, critic message id, judge request id and judge message id must be
+    in the adapter's form and distinct across the suite (audit 6, Y1 and Y2). The per-trial
+    judge-log digests and a digest of the sorted provider ids go into the suite.
     """
     if type(expectations) is not SealedExpectations:
         raise SealedSetError("loaded sealed expectations are required")
@@ -1178,6 +1391,7 @@ def verify_suite(results: list[dict], *, expectations: SealedExpectations, run: 
     reasons.update(journal_issues)
     journalled = journal.by_trial if journal is not None and journal.ok else {}
     submitted, critic_transport, judge_transport = set(), set(), set()
+    provider_ids, judge_logs = [], {}
     for result in results:
         if not _is_issued(result, _ISSUED_RESULTS, "result_sha256"):
             reasons.add("result_not_issued_by_verify_trial")
@@ -1212,6 +1426,14 @@ def verify_suite(results: list[dict], *, expectations: SealedExpectations, run: 
                 identity["judge_identity"], identity["judge_prompt_digest"]):
             reasons.add("judge_differs_from_run_identity")
         slots[slot].append(result["verdict"])
+        reasons.update(_judge_log_problems(result, run))
+        if type(result.get("trial_id")) is str:
+            evidence = result.get("judge_log")
+            judge_logs[result["trial_id"]] = evidence.get("lines_sha256") if type(evidence) is dict else None
+        ids, well_formed = _result_ids(result)
+        if not well_formed:
+            reasons.add("provider_id_malformed")
+        provider_ids += ids
         critic_transport.add(result.get("critic_transport_identity"))
         judge_transport.add(result.get("judge_transport_identity"))
         if result["verdict"] == INVALID:
@@ -1219,6 +1441,9 @@ def verify_suite(results: list[dict], *, expectations: SealedExpectations, run: 
     if set(journalled) - submitted:
         # a journalled trial that is not among the results: best-of-N selection or a lost trial
         reasons.add("journalled_trial_not_submitted")
+    if len(set(provider_ids)) != len(provider_ids):
+        # one provider request or message id for two calls or answers (audit 6, Y2)
+        reasons.add("provider_id_reused_across_suite")
     if len(materials_shas) > 1:
         reasons.add("results_verified_against_different_materials")
     verdicts = [verdict for items in slots.values() for verdict in items]
@@ -1280,7 +1505,12 @@ def verify_suite(results: list[dict], *, expectations: SealedExpectations, run: 
              "critic_transport_identity": (PROVIDER_REPORTED if critic_transport == {PROVIDER_REPORTED}
                                            else NOT_ATTESTED),
              "judge_transport_identity": (PROVIDER_REPORTED if judge_transport == {PROVIDER_REPORTED}
-                                          else NOT_ATTESTED)}
+                                          else NOT_ATTESTED),
+             # audit 6: per-trial judge-log digests and the sorted provider ids' digest
+             "judge_logs": [{"trial_id": trial_id, "lines_sha256": judge_logs[trial_id]}
+                            for trial_id in sorted(judge_logs)],
+             "provider_ids_sha256": _digest(sorted(provider_ids)),
+             "provider_id_count": len(provider_ids)}
     suite["suite_sha256"] = _digest(suite)
     _ISSUED_SUITES.add(suite["suite_sha256"])
     return suite
@@ -1315,7 +1545,9 @@ def build_suite_record(suite: dict, *, run: ReleaseRun) -> dict:
     dispatch journal the suite verified (its head and the manifest's commit reference);
     judge separation and the V3 status come from the run (the profile and this design),
     never from the caller; the critic and judge transport identities and the stop come
-    from the suite (the verified results and the journal). A manifest or profile problem,
+    from the suite (the verified results and the journal), and so do the per-trial judge-log
+    digests and the digest and count of the sorted provider ids (audit 6). A manifest or
+    profile problem,
     a suite whose expectations, materials or case order are not the ones the manifest
     pins, or a journal that is unverified, stopped or has grown since the suite was
     verified, turns a would-be pass or not_judged into incomplete (a fail keeps
@@ -1363,6 +1595,9 @@ def build_suite_record(suite: dict, *, run: ReleaseRun) -> dict:
         "critic_transport_identity": suite["critic_transport_identity"],
         "judge_transport_identity": suite["judge_transport_identity"],
         "run_stopped": bool(suite["stopped"] or current.stopped),
+        "judge_logs": deepcopy(suite["judge_logs"]),
+        "provider_ids_sha256": suite["provider_ids_sha256"],
+        "provider_id_count": suite["provider_id_count"],
     }
     record["record_sha256"] = record_sha256(record)
     problems = check_suite_record(record)
@@ -1393,6 +1628,8 @@ __all__ = [
     "check_pre_dispatch_manifest",
     "check_suite_record",
     "composition_problems",
+    "judge_log_path",
+    "read_judge_log",
     "critic_configuration_digest",
     "load_release_run",
     "load_sealed_expectations",

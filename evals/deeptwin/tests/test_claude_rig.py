@@ -59,7 +59,7 @@ def test_turn_streams_a_toolless_bounded_request_and_records_usage(tmp_path):
     (entry,) = rig.usage
     assert entry["state"] == "completed" and entry["stop_reason"] == "end_turn"
     assert (entry["input_tokens"], entry["output_tokens"]) == (1234, 56)
-    assert entry["provider_message_id"] == "msg_q01_1" and entry["observed_model"] == PLAN_MODEL
+    assert entry["provider_message_id"] == "msg_q01mock00000001" and entry["observed_model"] == PLAN_MODEL
     assert entry["dispatched"] is True and entry["usage_observed"] is True and entry["role"] == "critic"
 
 
@@ -149,7 +149,7 @@ def test_the_attested_turn_reports_what_the_provider_response_said(tmp_path):
     rig = build(tmp_path, mock)
     reply = rig.attested_turn("S", "U")
     assert type(reply) is ProviderReply and reply.text == "reply:U"
-    assert (reply.served_model, reply.provider_message_id) == (PLAN_MODEL, "msg_q01_1")
+    assert (reply.served_model, reply.provider_message_id) == (PLAN_MODEL, "msg_q01mock00000001")
     assert reply.provider_request_id == "req_q01mock00000001" == rig.usage[0]["request_id"]
     assert rig.turn("S", "U") == "reply:U"  # the calibration turn stays text only
 

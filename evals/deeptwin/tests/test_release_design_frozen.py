@@ -1,4 +1,4 @@
-"""T076: the release-v1..v6 qualification, independence and lens-effect designs are frozen.
+"""T076: the release-v1..v7 qualification, independence and lens-effect designs are frozen.
 
 A changed file is a new design version, never a silent edit of the frozen one; and the
 frozen designs never admit the calibration cases or a same-model judge as independent.
@@ -155,6 +155,8 @@ def _record(schema, **overrides):
         "manifest_commit_ref": {"kind": "git_commit", "ref": "0123456789abcdef0123456789abcdef01234567"},
         "critic_transport_identity": "provider_reported", "judge_transport_identity": "provider_reported",
         "run_stopped": False,
+        "judge_logs": [{"trial_id": "t" + "1" * 32, "lines_sha256": "f" * 64}],
+        "provider_ids_sha256": "9" * 64, "provider_id_count": 6,
     }
     record.update(overrides)
     record["record_sha256"] = suite_record_sha256(record)
@@ -164,6 +166,7 @@ def _record(schema, **overrides):
 V4 = ROOT / "evals/deeptwin/qualification/release-v4"
 V5 = ROOT / "evals/deeptwin/qualification/release-v5"
 V6 = ROOT / "evals/deeptwin/qualification/release-v6"
+V7 = ROOT / "evals/deeptwin/qualification/release-v7"
 V4_FROZEN_IN_COMMIT = "fb718b6"  # the commit that added release-v4/FROZEN.json (git log --diff-filter=A)
 # Code that release-v4/FROZEN.json pins and that audit 4 changed for release-v5. v4's frozen JSON is
 # never edited, so for these files its recorded hashes are checked against the file as committed in
@@ -195,14 +198,30 @@ def _v5_bytes(path):
     return _at_commit(V5_FROZEN_IN_COMMIT, path)
 
 
+V6_FROZEN_IN_COMMIT = "c3204d6"  # the commit that added release-v6/FROZEN.json (git log --diff-filter=A)
+# Code that release-v6/FROZEN.json (or v6's recorded harness) pins and that audit 6 changed for
+# release-v7. v6's frozen JSON is never edited, so for these files its recorded hashes are checked
+# against the file as committed in c3204d6 (git show c3204d6:<path>), not against the working tree;
+# release-v7/FROZEN.json pins the current files. q01_core.py, claude_judge.py and the product adapter
+# app/adapters/claude_api.py are unchanged by audit 6.
+V7_CHANGED_CODE = frozenset({
+    GATE, "evals/deeptwin/verifiers/sealed_critic.py", "evals/deeptwin/q01_release_manifest.py",
+    "evals/deeptwin/harness/q01_harness.py", "app/critic_trial.py", "evals/deeptwin/harness/claude_rig.py",
+})
+
+
+def _v6_bytes(path):
+    return _at_commit(V6_FROZEN_IN_COMMIT, path)
+
+
 def _file_set_sha256(hashes):
     return hashlib.sha256(json.dumps(hashes, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
                                      allow_nan=False).encode("utf-8")).hexdigest()
 
 
-def test_the_product_gate_accepts_exactly_the_v6_suite_record_schema():
-    # Audit 3 moved the gate to v4 records, audit 4 to v5 records and audit 5 to v6 records (this
-    # test read v3, v4 and v5 before; those schemas are unchanged and still pinned by their FROZEN.json).
+def test_the_product_gate_accepts_exactly_the_v7_suite_record_schema():
+    # Audit 3 moved the gate to v4 records, audit 4 to v5, audit 5 to v6 and audit 6 to v7 records (this
+    # test read v3..v6 before; those schemas are unchanged and still pinned by their FROZEN.json).
     from jsonschema import Draft202012Validator
 
     from app.services.critic_qualification import (
@@ -214,13 +233,13 @@ def test_the_product_gate_accepts_exactly_the_v6_suite_record_schema():
         suite_record_sha256,
     )
 
-    schema = json.loads((V6 / "suite_record.schema.json").read_text())
+    schema = json.loads((V7 / "suite_record.schema.json").read_text())
     record = _record(schema)
     assert Draft202012Validator(schema).is_valid(record)
     assert set(schema["required"]) == set(record)
     assert schema["properties"]["schema_version"]["const"] == SUITE_RECORD_SCHEMA_VERSION
-    assert SUITE_RECORD_SCHEMA_VERSION == "q01-release-suite-verdict-v5"
-    assert RELEASE_DESIGN_IDS == {schema["properties"]["design_id"]["const"]} == {"q01-release-v6"}
+    assert SUITE_RECORD_SCHEMA_VERSION == "q01-release-suite-verdict-v6"
+    assert RELEASE_DESIGN_IDS == {schema["properties"]["design_id"]["const"]} == {"q01-release-v7"}
     assert V3_VERIFYING_DESIGN_IDS == frozenset()
     # a pass is a scoped pass, never a qualification; a V3 claim the schema forbids is refused
     state = critic_qualification_from_suite(record, "c" * 64)
@@ -234,8 +253,8 @@ def test_the_product_gate_accepts_exactly_the_v6_suite_record_schema():
     v3 = json.loads((V3 / "suite_record.schema.json").read_text())
     assert critic_qualification_from_suite(_record(v3, v3_error_independence="verified"), "c" * 64).status == \
         "unqualified"
-    # a v5-shaped (or v4-shaped) record is not read at all
-    for older in (V4, V5):
+    # a v6-shaped (or v5- or v4-shaped) record is not read at all
+    for older in (V4, V5, V6):
         schema_old = json.loads((older / "suite_record.schema.json").read_text())
         old = {key: value for key, value in _record(schema_old).items() if key in schema_old["required"]}
         old["schema_version"] = schema_old["properties"]["schema_version"]["const"]
@@ -251,6 +270,13 @@ def test_the_product_gate_accepts_exactly_the_v6_suite_record_schema():
         assert not Draft202012Validator(schema).is_valid(_record(schema, **{field: value}))  # not as a pass
         assert Draft202012Validator(schema).is_valid(_record(schema, suite_outcome="fail", **{field: value}))
         with pytest.raises(CriticQualificationError, match="provider-reported|stopped run"):
+            critic_qualification_from_suite(_record(schema, **{field: value}), "c" * 64)
+    # audit 6: a pass carries a judge-log digest for every trial and its provider ids
+    for field, value in (("judge_logs", []), ("judge_logs", [{"trial_id": "t1", "lines_sha256": None}]),
+                         ("provider_id_count", 0)):
+        assert not Draft202012Validator(schema).is_valid(_record(schema, **{field: value}))
+        assert Draft202012Validator(schema).is_valid(_record(schema, suite_outcome="incomplete", **{field: value}))
+        with pytest.raises(CriticQualificationError, match="judge log digest|provider ids"):
             critic_qualification_from_suite(_record(schema, **{field: value}), "c" * 64)
 
 
@@ -291,7 +317,8 @@ def test_release_v4_records_the_verifier_and_harness_it_froze():
     # every recorded file hash is the file at the v4 freeze commit (the working tree for files unchanged
     # since; audit 5 changed app/critic_trial.py, so it is checked at fb718b6 too)
     for path, digest in {**state["files"], **harness["files"]}.items():
-        data = _v4_bytes(path) if path in V5_CHANGED_CODE | V6_CHANGED_CODE else (ROOT / path).read_bytes()
+        changed = V5_CHANGED_CODE | V6_CHANGED_CODE | V7_CHANGED_CODE
+        data = _v4_bytes(path) if path in changed else (ROOT / path).read_bytes()
         assert hashlib.sha256(data).hexdigest() == digest, path
 
 
@@ -383,7 +410,8 @@ def test_release_v5_records_the_verifier_and_harness_it_froze():
     assert harness["file_set_sha256"] == manifest["harness"]["file_set_sha256"] == _file_set_sha256(
         harness["files"])
     for path, digest in {**state["files"], **harness["files"]}.items():
-        data = _v5_bytes(path) if path in V6_CHANGED_CODE else (ROOT / path).read_bytes()
+        # audit 6 changed more of that code for release-v7; it is checked at 4aed36d as well
+        data = _v5_bytes(path) if path in V6_CHANGED_CODE | V7_CHANGED_CODE else (ROOT / path).read_bytes()
         assert hashlib.sha256(data).hexdigest() == digest, path
     # a new verifier and a new harness are a new version
     assert verifier_identity()["sha256"] != state["file_set_sha256"]
@@ -446,6 +474,10 @@ def test_frozen_designs_before_v6_are_byte_identical_to_their_freeze():
 
 
 def test_release_v6_pins_every_version_every_manifest_the_gate_the_verifier_and_the_harness():
+    # Audit 6 changed the gate, the verifier (sealed_critic, q01_release_manifest), the harness
+    # (q01_harness, app/critic_trial.py) and claude_rig.py for release-v7. v6's FROZEN.json is never
+    # edited, so its hashes for that code are checked against the files as committed in the v6 freeze
+    # commit c3204d6 (the way v5's are checked against 4aed36d); release-v7 pins the new code.
     manifest = json.loads((V6 / "FROZEN.json").read_text())
     assert manifest["release_v5_frozen_in_commit"] == V5_FROZEN_IN_COMMIT
     assert manifest["release_v4_frozen_in_commit"] == V4_FROZEN_IN_COMMIT
@@ -461,27 +493,42 @@ def test_release_v6_pins_every_version_every_manifest_the_gate_the_verifier_and_
     ]
     for path in required:
         assert path in manifest["files"], path
+    v7 = json.loads((V7 / "FROZEN.json").read_text())["files"]
+    assert V7_CHANGED_CODE <= set(manifest["files"])
     for path, digest in manifest["files"].items():
+        if path in V7_CHANGED_CODE:
+            # pinned by v6 as it was at the v6 freeze (c3204d6); changed since only as release-v7
+            assert hashlib.sha256(_v6_bytes(path)).hexdigest() == digest, path
+            assert path in v7, path
+            continue
         assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest, path
 
 
-def test_release_v6_records_the_verifier_and_harness_that_exist():
+def test_release_v6_records_the_verifier_and_harness_it_froze():
+    # v6 recorded the verifier and harness of c3204d6; audit 6 changed both for release-v7
+    # (q01-sealed-verifier-5, q01-harness-5), so the recorded identities are checked against the
+    # files at c3204d6 for the changed code and against the working tree for the rest.
     from evals.deeptwin.harness.q01_harness import HARNESS_FILES, harness_identity
     from evals.deeptwin.verifiers.sealed_critic import VERIFIER_FILES, verifier_identity
 
     design = json.loads((V6 / "qualification_design.json").read_text())
     manifest = json.loads((V6 / "FROZEN.json").read_text())
     state = design["verifier"]["state_at_freeze"]
-    assert state["exists"] is True and state["version"] == verifier_identity()["version"] == "q01-sealed-verifier-4"
-    assert state["file_set_sha256"] == verifier_identity()["sha256"] == manifest["verifier"]["file_set_sha256"]
+    assert state["exists"] is True and state["version"] == "q01-sealed-verifier-4"
+    assert state["file_set_sha256"] == manifest["verifier"]["file_set_sha256"] == _file_set_sha256(state["files"])
     assert set(state["files"]) == set(VERIFIER_FILES) >= {"app/critic_contract.py", "app/critic_audit.py"}
     harness = design["verifier"]["harness_at_freeze"]
-    assert harness["version"] == harness_identity()["version"] == "q01-harness-4"
-    assert harness["file_set_sha256"] == harness_identity()["sha256"] == manifest["harness"]["file_set_sha256"]
+    assert harness["version"] == "q01-harness-4"
+    assert harness["file_set_sha256"] == manifest["harness"]["file_set_sha256"] == _file_set_sha256(
+        harness["files"])
     assert set(harness["files"]) == set(HARNESS_FILES) >= {"evals/deeptwin/harness/claude_rig.py",
                                                           "app/adapters/claude_api.py", "app/critic_trial.py"}
     for path, digest in {**state["files"], **harness["files"]}.items():
-        assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest, path
+        data = _v6_bytes(path) if path in V7_CHANGED_CODE else (ROOT / path).read_bytes()
+        assert hashlib.sha256(data).hexdigest() == digest, path
+    # a new verifier and a new harness are a new version
+    assert verifier_identity()["sha256"] != state["file_set_sha256"]
+    assert harness_identity()["sha256"] != harness["file_set_sha256"]
     v5 = json.loads((V5 / "FROZEN.json").read_text())
     assert v5["verifier"]["file_set_sha256"] != state["file_set_sha256"]  # a new verifier is a new version
     assert v5["harness"]["file_set_sha256"] != harness["file_set_sha256"]
@@ -535,3 +582,119 @@ def test_an_absent_freeze_commit_xfails_explicitly_never_silently():
     with pytest.raises(pytest.xfail.Exception, match="absent"):
         _at_commit("0" * 40, GATE)
     assert hashlib.sha256(_at_commit(V3_FROZEN_IN_COMMIT, GATE)).hexdigest() == V3_GATE_SHA256
+
+
+def test_frozen_designs_before_v7_are_byte_identical_to_their_freeze():
+    # v1..v6 files and lens-effects-v1..v6 are never edited in place; the code v6 pinned and
+    # audit 6 changed is checked against c3204d6 above
+    manifest = json.loads((V6 / "FROZEN.json").read_text())
+    for path, digest in manifest["files"].items():
+        if path in V7_CHANGED_CODE:
+            continue
+        assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest, path
+
+
+# ---------------------------------------------------------------- release-v7 (audit 6 of release-v6)
+
+
+def test_release_v7_pins_every_version_every_manifest_the_gate_the_verifier_and_the_harness():
+    manifest = json.loads((V7 / "FROZEN.json").read_text())
+    assert manifest["release_v6_frozen_in_commit"] == V6_FROZEN_IN_COMMIT
+    assert manifest["release_v5_frozen_in_commit"] == V5_FROZEN_IN_COMMIT
+    required = [
+        *(f"evals/deeptwin/qualification/release-v{version}/{name}" for version in (6, 7) for name in (
+            "qualification_design.json", "independence_profile.json", "sealed_expectation.schema.json",
+            "pre_dispatch_manifest.schema.json", "suite_record.schema.json")),
+        *(f"evals/deeptwin/effects/lens-effects-v{version}.json" for version in range(1, 8)),
+        *(f"evals/deeptwin/qualification/release-v{version}/FROZEN.json" for version in range(1, 7)),
+        GATE, *V7_CHANGED_CODE, "evals/deeptwin/verifiers/q01_core.py", "app/critic_contract.py",
+        "app/critic_audit.py", "evals/deeptwin/verifiers/claude_judge.py",
+    ]
+    for path in required:
+        assert path in manifest["files"], path
+    for path, digest in manifest["files"].items():
+        assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest, path
+
+
+def test_release_v7_pins_the_product_adapter_only_per_attempt():
+    # audit 6, non-blocking 6: FROZEN.json pins the evals code and the gate, never the product
+    # adapter; the adapter is in the harness identity that each pre-dispatch manifest fixes
+    from evals.deeptwin.harness.q01_harness import HARNESS_FILES, harness_identity
+
+    manifest = json.loads((V7 / "FROZEN.json").read_text())
+    design = json.loads((V7 / "qualification_design.json").read_text())
+    adapter = "app/adapters/claude_api.py"
+    assert adapter not in manifest["files"] and adapter in HARNESS_FILES
+    assert manifest["harness"]["pinned_per_attempt_only"] == [adapter]
+    assert "file_set_sha256" not in manifest["harness"]
+    harness = design["verifier"]["harness_at_freeze"]
+    assert harness["version"] == harness_identity()["version"] == "q01-harness-5"
+    assert adapter not in harness["files"] and harness["pinned_per_attempt_only"] == [adapter]
+    assert set(harness["files"]) | {adapter} == set(HARNESS_FILES)
+    for path, digest in harness["files"].items():
+        assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest, path
+    assert "never the product adapter" in design["pre_dispatch"]["harness"]
+    assert "refuses dispatch when the running files differ" in design["pre_dispatch"]["harness"]
+    assert "does not pin the product adapter" in manifest["rule"]
+
+
+def test_release_v7_records_the_verifier_that_exists():
+    from evals.deeptwin.verifiers.sealed_critic import VERIFIER_FILES, verifier_identity
+
+    design = json.loads((V7 / "qualification_design.json").read_text())
+    manifest = json.loads((V7 / "FROZEN.json").read_text())
+    state = design["verifier"]["state_at_freeze"]
+    assert state["exists"] is True and state["version"] == verifier_identity()["version"] == "q01-sealed-verifier-5"
+    assert state["file_set_sha256"] == verifier_identity()["sha256"] == manifest["verifier"]["file_set_sha256"]
+    assert set(state["files"]) == set(VERIFIER_FILES)
+    for path, digest in state["files"].items():
+        assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest, path
+    v6 = json.loads((V6 / "FROZEN.json").read_text())
+    assert v6["verifier"]["file_set_sha256"] != state["file_set_sha256"]
+
+
+def test_release_v7_resolves_the_sixth_audit():
+    design = json.loads((V7 / "qualification_design.json").read_text())
+    profile = json.loads((V7 / "independence_profile.json").read_text())
+    effects = json.loads((ROOT / "evals/deeptwin/effects/lens-effects-v7.json").read_text())
+    schema = json.loads((V7 / "pre_dispatch_manifest.schema.json").read_text())
+    record = json.loads((V7 / "suite_record.schema.json").read_text())
+    assert design["design_id"] == profile["design_id"] == "q01-release-v7"
+    assert profile["schema"] == "q01-independence-profile-7" and profile["judge_separation"]["established"] is False
+    assert schema["properties"]["schema"]["const"] == "q01-pre-dispatch-manifest-5"
+    assert effects["design_id"] == "lens-effects-v7" and "release-v7" in effects["transport"]
+    # Y1: exactly one judging per trial, in the code path and in the acceptance rule and audit
+    assert "trial_already_judged" in design["judge"]["one_judging_per_trial"]
+    assert "one_judging_per_trial" in design["acceptance"]["suite_outcome"]
+    assert "more than one judging of a trial" in design["acceptance"]["suite_outcome"]["incomplete"]
+    assert {"judge_logs", "provider_ids_sha256", "provider_id_count"} <= set(record["required"])
+    audit = design["acceptance"]["post_verdict_audit"]
+    assert any(item.startswith("one judging per trial") and "both directions" in item for item in audit)
+    # Y2: distinct ids in the adapter's forms, reconciled with the provider's records both ways
+    assert "occurs twice in the suite" in design["acceptance"]["suite_outcome"]["incomplete"]
+    assert audit[3].startswith("two-way reconciliation") and "no unlogged request exists" in audit[3]
+    assert "req_[A-Za-z0-9]{8,128}" in design["critic_configuration"]["checked_at_dispatch"]
+    assert "the message id is required" in design["critic_configuration"]["checked_at_dispatch"]
+    assert any("not on code" in claim for claim in design["claims_if_passed"])
+    assert any("in-process constructed replies" in item and "two-way reconciliation" in item
+               for item in design["open"])
+    # non-blocking 2..6
+    assert "human review" in design["pre_dispatch"]["spent_sets"]
+    assert design["critic_configuration"]["transport"].startswith("A release trial must run")
+    assert "(see open)" in design["critic_configuration"]["transport"]
+    assert "critic_transport" in schema["properties"]["run_identity"]["required"]
+    assert "critic_transport" in design["run_identity"]["fields"]
+    assert "never the product adapter" in design["pre_dispatch"]["harness"]
+    assert profile["v3_error_independence"]["verifiable_under_this_design"] is False
+
+
+def test_release_v7_code_names_the_adapters_id_forms():
+    # the id forms the verifier requires are the product adapter's (audit 6, Y2)
+    import re
+
+    from evals.deeptwin.q01_release_manifest import PROVIDER_REQUEST_ID, TEST_DOUBLE_TRANSPORTS
+
+    adapter = (ROOT / "app/adapters/claude_api.py").read_text(encoding="utf-8")
+    match = re.search(r'_PROVIDER_REQUEST_ID = re.compile\(r"([^"]+)"\)', adapter)
+    assert match and match.group(1) == PROVIDER_REQUEST_ID.pattern
+    assert TEST_DOUBLE_TRANSPORTS == frozenset()  # release-v7 names no test double

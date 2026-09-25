@@ -807,6 +807,23 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   verdict, no attested human-reviewer path, second-manifest cherry-picking and hand-built record provenance
   (organizational), verdict-to-configuration binding, no sealed set, author, reviewer or independent judge, V3
   unverifiable, and an independent audit of v6.
+  2026-09-25 audit 6 of v6: AUDIT FAIL (Y1 judge shopping: a journalled trial could be re-verified with the
+  judge asked again until it passed, and `verify_suite` never read the judge log, even the repo's own `_full`
+  fixture did it; Y2 the request-id anchor was defeatable: no code required distinct ids or the adapter's `req_`
+  form, so one reused id for every call, or `x`, passed). release-v7 (`release-v7/`, `lens-effects-v7.json`,
+  pre-dispatch manifest schema v5, suite record v6, `release-v7/FROZEN.json` pinning v1..v7, every manifest, the
+  gate, the verifier and the harness but no longer the product adapter, which is pinned per attempt through
+  `run_identity.harness`; v6's code hashes are checked against `c3204d6`) answers them without editing v1..v6:
+  `q01-sealed-verifier-5` judges each trial at most once (an `O_EXCL` judge log under the trial base
+  directory, `trial_already_judged`), `verify_suite` re-reads every judge log and requires every critic and
+  judge id in the adapter's forms (message id required for critic calls) and distinct across the suite, the
+  suite record carries per-trial judge-log digests and the provider-id digest, and the post-verdict audit
+  reconciles ids with the provider's records in both directions. Also: `run_identity.critic_transport`
+  (an injected rig transport is refused for release), spent-set and transport wording, fixtures that never
+  re-judge (evidence/release-designs-t076-2026-09-25.md). Still open: in-process constructed replies, fake
+  servers, a deleted-and-rejudged log and a re-asking judge wrapper are caught only by the manual two-way
+  provider reconciliation; the T077 dispatcher; no sealed set, author, reviewer or independent judge; V3
+  unverifiable; and an independent audit of v7.
 - [ ] T077 Execute authorized bounded actual-provider/critic/multimodal/lens-controlled comparisons and audit all failures/suspicious passes in specs/001-autonomous-release/evidence/live-qualification.md; lack of applicable authority remains explicit, not waived (SC-001/005/006).
 - [ ] T078 After T087's extension UI and the frozen T081 candidate exist, perform final visual/
   keyboard/screen-reader/360px/1024px/

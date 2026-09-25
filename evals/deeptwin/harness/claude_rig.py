@@ -8,13 +8,21 @@ plus a ``(system, user) -> str`` turn that streams through the same adapter
 and the same issued catalog snapshot.
 
 ``attested_turn`` (and ``make_turn(..., attested=True)``) is the release transport
-(release-v6, audit 5 X1): it returns an ``app.critic_trial.ProviderReply`` carrying
+(release-v6, audit 5 X1; release-v7): it returns an ``app.critic_trial.ProviderReply`` carrying
 the model the provider's response message named, the provider request id (the
 ``request-id`` response header, as the adapter exposes it) and the response message
 id, exactly as the product adapter parsed them from the provider response, never
 from the selection. When the provider reported any of them missing it returns the
 plain text, which the harness records as unattested (a release trial then cannot
 pass). ``turn`` stays the calibration transport and returns text only.
+
+Every turn declares how the rig was built (``turn.critic_transport``, audit 6 non-blocking
+5): ``{"injected": false, "name": null}`` when ``transport`` is ``None`` (the product
+adapter's own HTTP transport), else ``{"injected": true, "name": ...}`` with the given
+``transport_name`` (or the injected object's type). The harness records it in every release
+trial record and refuses dispatch when it differs from the manifest's
+``run_identity.critic_transport``; a release manifest may name an injected transport only
+when the design allows that named test double, and release-v7 allows none.
 
 The secret is handed to the vault once and never retained, logged or written
 by this module. A turn returns text only for a ``completed`` terminal and
@@ -97,6 +105,7 @@ class ClaudeRig:
     catalog: dict | None = None
     make_turn: Callable[..., Callable[[str, str], str]] | None = None
     attested_turn: Callable[[str, str], ProviderReply | str] | None = None
+    critic_transport: dict | None = None
 
     def __repr__(self) -> str:  # never render adapter/vault internals
         return f"ClaudeRig(model_id={self.model_id!r}, effort={self.effort!r}, calls={len(self.usage)})"
@@ -110,7 +119,7 @@ def _listed_efforts(catalog: dict, model_id: str) -> list[str]:
 
 
 def claude_rig(base_dir, *, secret: str, model_id: str, effort: str | None, transport=None,
-               max_tokens: int = 8192, call_seconds: int = MAX_CALL_SECONDS,
+               transport_name: str | None = None, max_tokens: int = 8192, call_seconds: int = MAX_CALL_SECONDS,
                harness_call_seconds: float | None = None, run_seconds: float = 3600.0,
                max_proposed_chains: int = 16, catalog_max_age_ms: int = 4 * 60 * 60 * 1000,
                guard=None, agent_id: str = "q01-critic") -> ClaudeRig:
@@ -126,6 +135,15 @@ def claude_rig(base_dir, *, secret: str, model_id: str, effort: str | None, tran
     if harness_seconds <= call_seconds:
         # The adapter's own deadline must end the call before the harness abandons it.
         raise ValueError("the harness call deadline must exceed the adapter deadline")
+    if transport is None:
+        if transport_name is not None:
+            raise ValueError("a transport name is only given with an injected transport")
+        critic_transport = {"injected": False, "name": None}
+    else:
+        name = transport_name or f"{type(transport).__module__}.{type(transport).__qualname__}"
+        if type(name) is not str or not name.strip():
+            raise ValueError("an injected transport needs a name")
+        critic_transport = {"injected": True, "name": name}
     vault = InMemoryCredentialVault()
     ref = vault.store(PROVIDER, secret)
     secret = ""
@@ -233,6 +251,7 @@ def claude_rig(base_dir, *, secret: str, model_id: str, effort: str | None, tran
                                  provider_request_id=entry["request_id"],
                                  provider_message_id=entry["provider_message_id"])
 
+        turn.critic_transport = dict(critic_transport)  # how this rig was built (audit 6, non-blocking 5)
         return turn
 
     turn = make_turn(model=model_id, effort=effort, max_tokens=max_tokens, role="critic", agent=agent_id)
@@ -242,7 +261,8 @@ def claude_rig(base_dir, *, secret: str, model_id: str, effort: str | None, tran
                       "fetched_at": snapshot["fetched_at"], "max_age_ms": snapshot["max_age_ms"],
                       "model": model_id, "listed_efforts": listed, "selection_version": saved["version"]}
     return ClaudeRig(config=config, turn=turn, usage=usage, model_id=model_id, effort=effort,
-                     catalog=public_catalog, make_turn=make_turn, attested_turn=attested_turn)
+                     catalog=public_catalog, make_turn=make_turn, attested_turn=attested_turn,
+                     critic_transport=dict(critic_transport))
 
 
 __all__ = ["MAX_CALL_SECONDS", "ClaudeRig", "TurnFailed", "claude_rig"]

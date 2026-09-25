@@ -1,14 +1,15 @@
-"""Release-v6 pre-dispatch manifest and dispatch-journal checks, shared by the harness and the sealed verifier.
+"""Release-v7 pre-dispatch manifest and dispatch-journal checks, shared by the harness and the sealed verifier.
 
-``evals/deeptwin/qualification/release-v6/qualification_design.json`` (``pre_dispatch``)
+``evals/deeptwin/qualification/release-v7/qualification_design.json`` (``pre_dispatch``)
 requires a manifest, frozen by sha256 before the first dispatch, that fixes the
 critic configuration and its digest, the run identity (including the planned
 (case, repetition) slot list, the path of the manifest's dispatch journal, the only
-trial base directory, the judge's exact model and every sealed case's sha256), the
+trial base directory, the judge's exact model, every sealed case's sha256 and the
+critic transport path: the product adapter, or a named injected test double), the
 attempt number and every prior attempt (with its sealed set and sealed expectations
 sha256, its case ids and its case sha256s), the author/reviewer/sealing attestations
 and, for a lens-effect run, every arm's critic configuration, text digest and attempt
-entry and the arm x case order (``pre_dispatch_manifest.schema.json``, schema v4).
+entry and the arm x case order (``pre_dispatch_manifest.schema.json``, schema v5).
 The harness refuses to dispatch unless the manifest it loads hashes to the committed
 value; the verifier checks the same value.
 
@@ -45,22 +46,41 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import best_match
 
-DESIGN_DIR = Path(__file__).resolve().parent / "qualification" / "release-v6"
+DESIGN_DIR = Path(__file__).resolve().parent / "qualification" / "release-v7"
 MANIFEST_SCHEMA_FILE = DESIGN_DIR / "pre_dispatch_manifest.schema.json"
-DESIGN_ID = "q01-release-v6"
-EFFECT_DESIGN_ID = "lens-effects-v6"
-REPETITIONS_PER_CASE = 3  # release-v6 execution.repetitions_per_case; never caller-supplied
-# lens-effects-v6 arms that are dispatched; strong_existing_procedure is a
+DESIGN_ID = "q01-release-v7"
+EFFECT_DESIGN_ID = "lens-effects-v7"
+REPETITIONS_PER_CASE = 3  # release-v7 execution.repetitions_per_case; never caller-supplied
+# lens-effects-v7 arms that are dispatched; strong_existing_procedure is a
 # duplicate of no_lens and user_construct is not runnable, so neither appears.
 BASELINE_ARM = "no_lens"
 TEXT_ARMS = frozenset({"general_multi_perspective", "single_L-P050-01", "single_L-P033-02", "mix"})
-# The lens rules each lens arm must carry, in order (lens-effects-v6 ``arms``). The
+# The lens rules each lens arm must carry, in order (lens-effects-v7 ``arms``). The
 # general checklist carries rules of its own, never one of these lenses.
 LENS_ARM_RULES = {"single_L-P050-01": ["L-P050-01"], "single_L-P033-02": ["L-P033-02"],
                   "mix": ["L-P050-01", "L-P033-02"]}
 COMMIT_REF_KINDS = frozenset({"git_commit", "external_timestamp"})
 JOURNAL_SCHEMA = "q01-dispatch-journal-2"
 JOURNAL_GENESIS = "0" * 64
+# The provider's request-id header in the only form the product Claude adapter exposes it
+# (``app/adapters/claude_api.py`` ``_PROVIDER_REQUEST_ID``); every critic call and every judge
+# answer of a release trial must carry one, distinct across the suite (audit 6, Y2).
+PROVIDER_REQUEST_ID = re.compile(r"req_[A-Za-z0-9]{8,128}\Z")
+# The provider's response message id of a critic call: the provider's msg_ form within the
+# characters the product adapter accepts for a message id (``_SAFE_ID``, at most 200 characters);
+# required for every release critic call and distinct across the suite (audit 6, Y2).
+PROVIDER_MESSAGE_ID = re.compile(r"msg_[A-Za-z0-9_]{8,196}\Z")
+# A judge answer's message id (the judge is another provider's model, so only the adapter's
+# generic safe-id form is required); optional, but distinct across the suite when present.
+JUDGE_MESSAGE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
+# ``run_identity.critic_transport``: whether a custom transport was injected into the Claude rig
+# (audit 6, non-blocking 5). ``{"injected": false, "name": null}`` is the product adapter path
+# (``claude_rig(..., transport=None)``). An injected transport is refused for a release run
+# unless its name is listed here; release-v7 lists none. Tests that drive release trials over
+# an offline fake provider server replace this value for their duration (like the gate's
+# ``V3_VERIFYING_DESIGN_IDS``); production code never changes it.
+PRODUCT_ADAPTER_TRANSPORT = {"injected": False, "name": None}
+TEST_DOUBLE_TRANSPORTS = frozenset()
 _HEX = re.compile(r"[0-9a-f]{64}\Z")
 _COMMIT = re.compile(r"[0-9a-f]{7,64}\Z")
 _TOKEN = re.compile(r"[^0-9a-z]+")
@@ -104,6 +124,38 @@ def prepared_lens_refs(prepared_manifest: dict) -> dict | None:
 
 def is_sha256(value) -> bool:
     return type(value) is str and _HEX.fullmatch(value) is not None
+
+
+def is_request_id(value) -> bool:
+    """A provider request id in the adapter's exact ``req_`` form (audit 6, Y2)."""
+    return type(value) is str and PROVIDER_REQUEST_ID.fullmatch(value) is not None
+
+
+def is_critic_message_id(value) -> bool:
+    """A critic call's provider message id in the provider's ``msg_`` form (audit 6, Y2)."""
+    return type(value) is str and PROVIDER_MESSAGE_ID.fullmatch(value) is not None
+
+
+def is_judge_message_id(value) -> bool:
+    return type(value) is str and JUDGE_MESSAGE_ID.fullmatch(value) is not None
+
+
+def critic_transport_errors(transport) -> list[str]:
+    """Why ``run_identity.critic_transport`` (or a turn's declared transport) is not allowed for release.
+
+    The product adapter path is always allowed; an injected transport only when its name is
+    one of ``TEST_DOUBLE_TRANSPORTS`` (empty for release-v7).
+    """
+    if (type(transport) is not dict or set(transport) != {"injected", "name"}
+            or type(transport["injected"]) is not bool):
+        return ["critic_transport:malformed"]
+    if not transport["injected"]:
+        return [] if transport["name"] is None else ["critic_transport:malformed"]
+    if type(transport["name"]) is not str or not transport["name"].strip():
+        return ["critic_transport:malformed"]
+    if transport["name"] not in TEST_DOUBLE_TRANSPORTS:
+        return ["critic_transport:injected_transport_not_allowed_for_release"]
+    return []
 
 
 def _pairs(pairs):
@@ -228,7 +280,7 @@ def judge_shares_critic(judge_identity: str, configuration: dict, judge_model: s
 
 
 def _lens_effect_errors(manifest) -> list[str]:
-    """lens-effects-v6: one sealed effect set, one run covering every arm."""
+    """lens-effects-v7: one sealed effect set, one run covering every arm."""
     effect = manifest["lens_effect"]
     if effect is None:
         return []
@@ -316,7 +368,7 @@ def check_pre_dispatch_manifest(data: bytes | Path, *, committed_sha256: str | N
 
     * the bytes hash to ``committed_sha256`` (``None`` or a non-hex value is an error:
       there is no dispatch without a committed value);
-    * strict JSON that validates against ``pre_dispatch_manifest.schema.json`` (v4);
+    * strict JSON that validates against ``pre_dispatch_manifest.schema.json`` (v5);
     * ``critic_configuration_digest`` recomputes from ``critic_configuration``;
     * ``attempt == len(prior_attempts) + 1`` and the prior attempts are numbered 1..k-1;
     * neither the sealed dataset nor the sealed expectations sha256, nor any case id or
@@ -329,6 +381,9 @@ def check_pre_dispatch_manifest(data: bytes | Path, *, committed_sha256: str | N
     * neither the judge identity nor the judge model names the critic's provider family
       or model (``judge_shares_critic``; a guard against accidental self-judging only);
     * a lens-effect section satisfies ``_lens_effect_errors``;
+    * ``run_identity.critic_transport`` is the product adapter path, or an injected
+      transport named in ``TEST_DOUBLE_TRANSPORTS`` (none for release-v7; audit 6,
+      non-blocking 5);
     * optionally, ``run_identity.harness`` / ``run_identity.verifier`` equal the given
       ``{"version", "sha256"}`` of the code that is about to run.
     """
@@ -371,6 +426,7 @@ def check_pre_dispatch_manifest(data: bytes | Path, *, committed_sha256: str | N
     if judge_shares_critic(identity["judge_identity"], manifest["critic_configuration"], identity["judge_model"]):
         errors.append("judge:shares_the_critic_provider_or_model")
     errors += _lens_effect_errors(manifest)
+    errors += critic_transport_errors(identity["critic_transport"])
     if harness is not None and identity["harness"] != harness:
         errors.append("harness_identity_mismatch")
     if verifier is not None and identity["verifier"] != verifier:
@@ -527,6 +583,15 @@ def journal_problems(state: JournalState, manifest_sha256: str | None, planned) 
 
 __all__ = [
     "DESIGN_ID",
+    "JUDGE_MESSAGE_ID",
+    "PRODUCT_ADAPTER_TRANSPORT",
+    "PROVIDER_MESSAGE_ID",
+    "PROVIDER_REQUEST_ID",
+    "TEST_DOUBLE_TRANSPORTS",
+    "critic_transport_errors",
+    "is_critic_message_id",
+    "is_judge_message_id",
+    "is_request_id",
     "EFFECT_DESIGN_ID",
     "JOURNAL_GENESIS",
     "JOURNAL_SCHEMA",

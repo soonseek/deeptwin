@@ -1,0 +1,63 @@
+{
+ "schema": "deeptwin-frozen-design-manifest-6",
+ "frozen_on": "2026-09-25",
+ "release_v1_frozen_in_commit": "3508883",
+ "release_v2_frozen_in_commit": "2690bef",
+ "release_v3_frozen_in_commit": "bd6a976",
+ "release_v4_frozen_in_commit": "fb718b6",
+ "release_v5_frozen_in_commit": "4aed36d",
+ "release_v6_frozen_in_commit": "c3204d6",
+ "files": {
+  "evals/deeptwin/qualification/release-v7/qualification_design.json": "e76c8469c65ab6605c2fadfa167ffcd358651d31c8daad259931d490195061b9",
+  "evals/deeptwin/qualification/release-v7/independence_profile.json": "ed14d5a4805b2d7554386eef0bf9bf5f68a466e230b0867ced40c29e7256b4a8",
+  "evals/deeptwin/qualification/release-v7/sealed_expectation.schema.json": "2af02c727290dfa62e788e12844554d106d1674a3fb89afc7716b4896c6bc128",
+  "evals/deeptwin/qualification/release-v7/pre_dispatch_manifest.schema.json": "7dc7e85bb386088c295637ab25a6d329d57bff958e454fafe4335690a92c3add",
+  "evals/deeptwin/qualification/release-v7/suite_record.schema.json": "55e1a315d243888be208149598dda33fc228ac46b3fc47a1d5c7225ffecd959b",
+  "evals/deeptwin/effects/lens-effects-v7.json": "42fcb537cde8e5cba481482099e743339b84d001b535ec87e15034adb80f9e7e",
+  "evals/deeptwin/effects/lens-effects-v6.json": "0cf723745c08b2afdbf2454a3f8c09ceb7ea054a07d8d53c06690d95cc6fa788",
+  "evals/deeptwin/effects/lens-effects-v5.json": "41736037daadd637d83da5e99c5c379ccdfa7af3088b021ec1e42562d9f7e940",
+  "evals/deeptwin/effects/lens-effects-v4.json": "05ea8c41d282d6f9db146421e4bb123d9c6abf15e50c2fb1eade4f4121a30ad3",
+  "evals/deeptwin/effects/lens-effects-v3.json": "845396747b1f16fa4cb22e4d017ab2f35054e3bc9e35f83265a841402b730b5a",
+  "evals/deeptwin/effects/lens-effects-v2.json": "30eb1c0ae8e61ebafcd73fd8eb7feab37a6b57b0866369dfac1ee99edf93ee5c",
+  "evals/deeptwin/effects/lens-effects-v1.json": "ad8622ac410def4fa97046e66891c52ef1b8e01a6241460c7f3797c65ac69d55",
+  "evals/deeptwin/qualification/release-v6/qualification_design.json": "bc27e5137e71e6bf3da80e1e5f6282c8a24d938553f180207c04e1e06eb299d4",
+  "evals/deeptwin/qualification/release-v6/independence_profile.json": "c48d5ff09fcf1e1e157a0f77b288f09cc0afcb3092c3f406ace345d3064d5e2a",
+  "evals/deeptwin/qualification/release-v6/sealed_expectation.schema.json": "d6a7bd27550829c66ca2b9ce43565d4716f637833a322737c553d0dd1984d7f2",
+  "evals/deeptwin/qualification/release-v6/pre_dispatch_manifest.schema.json": "581a01b480608a2615d329da3e32c4bfe88e467a3b6028a4bfbace98faa6f6cd",
+  "evals/deeptwin/qualification/release-v6/suite_record.schema.json": "3cd16eb84a70870968d174e2ef5e43837a8dc4446b407814d1a71082801a0886",
+  "evals/deeptwin/qualification/release-v6/FROZEN.json": "d7e43e3281b02451c5d9134b7e20159bda7d6c6f5f3b4e35ee3778485c5b27d0",
+  "evals/deeptwin/qualification/release-v5/FROZEN.json": "6c92b7274578616ad9b193a0782cd5bc15a514e5176c2b98d0dc6536f750a61e",
+  "evals/deeptwin/qualification/release-v4/FROZEN.json": "49fdd41f323129cbd92d6dec7d0b8e4f8527b05c866e2ad82f182a5cad82ffd2",
+  "evals/deeptwin/qualification/release-v3/FROZEN.json": "4142d025a13ed9a44861023b7173508758bb048af2bd4c6ba812feb40f604a59",
+  "evals/deeptwin/qualification/release-v2/FROZEN.json": "3195619d6ae750a8cf81d8b6825afbe32b95669e09b476688efb8892c497de61",
+  "evals/deeptwin/qualification/release-v1/FROZEN.json": "df611ba551d580c8952c8f2c3db1f66fb24907906d1b58fbe3f5c2828f71c97e",
+  "app/services/critic_qualification.py": "96dca501f8ded489a7768f448018cc9ef57086dec661fb7484a1b52c98b5e9ea",
+  "evals/deeptwin/verifiers/sealed_critic.py": "91c645a478ec2813573137f4f2f1be9fb0c4a1a20c63fa47b6b9e4daed425763",
+  "evals/deeptwin/verifiers/q01_core.py": "8ebd91e2c34f3ba1f3cbe12c422c511d93ca20fc40fa79cf70d36575b44ef350",
+  "evals/deeptwin/q01_release_manifest.py": "6662f3679709cb20206aae676f22df650841f6ffb32ea8372c55693203d8b04b",
+  "app/critic_contract.py": "fd5179f08fc5f33269dae0aeecd76a9c43e6f4ea356dbda6502cd8f83b09df0d",
+  "app/critic_audit.py": "bb9385df9ce81c6910fa905fcb69303d7afc69570840a4140bce6ea6e901d538",
+  "evals/deeptwin/harness/q01_harness.py": "363913d3bf4b0c23de97c1e40b8bcee2c7bcb7025bd8cfed8817d72dc56098ae",
+  "app/critic_trial.py": "b6f6b91dd250c3a41da909408dd3b11ff256307ef7dc052abecfcc32a9b86518",
+  "evals/deeptwin/harness/claude_rig.py": "84460a43c10df98505f7900bb160b074980bc410693c7b35a6a16f754bffe646",
+  "evals/deeptwin/verifiers/claude_judge.py": "940a1fcf29cb6ce21874da34862603d22ad3acfc197ea7f43debae9040073843"
+ },
+ "rule": "A change to any listed file is a new design version; every version is kept. This manifest pins release-v1..v7 (v6's design files directly, v1..v5 through their FROZEN.json), every earlier manifest, lens-effects-v1..v7, the product gate that reads v7 suite records, the verifier modules (sealed_critic, q01_core, q01_release_manifest, app/critic_contract, app/critic_audit), the harness (q01_harness.py, app/critic_trial.py) and the evals side of the attested release transport and judge path (claude_rig.py, claude_judge.py). It does not pin the product adapter app/adapters/claude_api.py (audit 6, non-blocking 6): the adapter is part of the harness identity and is pinned per attempt only, by run_identity.harness in the pre-dispatch manifest, which the harness refuses to dispatch against when the running files differ. The verifier's full identity is recorded as a file-set sha256 below and in the design's verifier block, and fixed per attempt in the pre-dispatch manifest.",
+ "gate_history": "release-v3/FROZEN.json records the gate as it was at bd6a976, release-v4/FROZEN.json the gate, verifier modules and harness as they were at fb718b6, release-v5/FROZEN.json as they were at 4aed36d and release-v6/FROZEN.json as they were at c3204d6; audit 6 changed the gate, the verifier (sealed_critic, q01_release_manifest), the harness (q01_harness, app/critic_trial.py) and claude_rig.py for v7 and their current hashes are pinned here. Earlier manifests are never edited: their code hashes are checked against the file at their freeze commit.",
+ "verifier": {
+  "version": "q01-sealed-verifier-5",
+  "file_set_sha256": "9303b413fcb950b488ff3b37ef42071b3b436d474f52faa78e2cfafef235e6de"
+ },
+ "harness": {
+  "version": "q01-harness-5",
+  "pinned_here": [
+   "evals/deeptwin/harness/q01_harness.py",
+   "app/critic_trial.py",
+   "evals/deeptwin/harness/claude_rig.py"
+  ],
+  "pinned_per_attempt_only": [
+   "app/adapters/claude_api.py"
+  ],
+  "rule": "the harness identity (file-set sha256 including the product adapter) is fixed per attempt in run_identity.harness, not here"
+ }
+}

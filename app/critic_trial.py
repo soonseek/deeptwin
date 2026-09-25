@@ -92,6 +92,10 @@ class OfflineTransport:
 
 PROVIDER_REPORTED = "provider_reported"
 _ATTESTATION_KEYS = frozenset({"source", "served_model", "provider_request_id", "provider_message_id"})
+# A provider request id only in the opaque ``req_`` form the product adapter exposes
+# (app/adapters/claude_api.py ``_PROVIDER_REQUEST_ID``; audit 6, Y2). A message id keeps the
+# adapter's generic safe-id form: other providers' message ids differ.
+_REQUEST_ID = re.compile(r"req_[A-Za-z0-9]{8,128}\Z")
 _ATTESTED_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
 
 
@@ -101,9 +105,12 @@ class ProviderReply:
 
     ``served_model`` is the model named by the provider's response message and
     ``provider_request_id`` the provider's request id (the ``request-id`` response
-    header); ``provider_message_id`` is the response message id when there is one. A
-    transport builds it from the parsed provider response, never from the selection it
-    was asked to use.
+    header, in the adapter's ``req_`` form); ``provider_message_id`` is the response
+    message id when there is one. A transport builds it from the parsed provider
+    response, never from the selection it was asked to use. Nothing here can tell a
+    reply built from a real provider response from one constructed in-process with the
+    same fields; that is detected only by reconciling the ids with the provider's own
+    records after the fact.
     """
 
     text: str
@@ -129,7 +136,8 @@ def _attestation_details(result, selected_model):
             or attestation["source"] != "provider_response"
             or type(attestation["served_model"]) is not str
             or attestation["served_model"] != result["model"] or attestation["served_model"] != selected_model
-            or not _attested_id(attestation["provider_request_id"])
+            or type(attestation["provider_request_id"]) is not str
+            or _REQUEST_ID.fullmatch(attestation["provider_request_id"]) is None
             or not _attested_id(attestation["provider_message_id"], optional=True)):
         return None
     return {"model_identity": PROVIDER_REPORTED, "served_model": attestation["served_model"],

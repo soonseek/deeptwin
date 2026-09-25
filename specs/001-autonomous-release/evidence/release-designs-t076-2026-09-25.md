@@ -217,3 +217,65 @@ Still not true:
 - The journal, trial directories, records, ledgers and judge log live on the operator's disk, and an operator who rewrites or deletes every file is not detected.
 
 T076 stays open until an independent audit of release-v6 passes.
+
+## Audit 6 (of release-v6): AUDIT FAIL → release-v7
+
+A sixth independent audit of release-v6 found two blocking problems (Y1, Y2) and five non-blocking notes (2–6). release-v1..v6 and `lens-effects-v1..v6.json` are unchanged (byte-identical to their freezes). v6's `FROZEN.json` pins the gate, the verifier modules, `q01_release_manifest.py`, the harness, `app/critic_trial.py` and `claude_rig.py`, so changing them made a new design version: **release-v7** (`evals/deeptwin/qualification/release-v7/`, `evals/deeptwin/effects/lens-effects-v7.json`, manifest `release-v7/FROZEN.json`). That manifest pins v1–v7 (v6's design files directly, v1–v5 through their manifests), every earlier manifest, `lens-effects-v1..v7`, the gate, the verifier modules (`sealed_critic.py` `q01-sealed-verifier-5`, `q01_core.py`, `q01_release_manifest.py`, `app/critic_contract.py`, `app/critic_audit.py`), the harness (`q01_harness.py` `q01-harness-5`, `app/critic_trial.py`) and the evals side of the attested transport and judge path (`claude_rig.py`, `claude_judge.py`), and records the v6 freeze commit (`c3204d6`). It no longer pins the product adapter `app/adapters/claude_api.py` (note 6). v6's manifest still records the code as it was at `c3204d6`; its guard tests now check the changed files against `git show c3204d6:<path>` (v4's and v5's guards also check the newly changed files at their own freeze commits), with comments. `q01_core.py`, `claude_judge.py` and `claude_api.py` are unchanged.
+
+| Finding | release-v7 response |
+|---|---|
+| Y1: judge shopping. `verify_trial` could be called repeatedly on the same journalled trial, asking the judge again each time, and `verify_suite` took one result per slot without reading `judge-responses.jsonl`. A trial judged `not_supported` (fail) could be re-verified until supported and reach `scoped_pass`. The repo's own `_full` fixture re-verified `(CASE_KEYS[0], 1)` with a different `DevJudge` and still reached `scoped_pass`. A judge wrapper could also re-ask its provider and return the best answer. | Exactly one judging per trial. The judge log is now derived from the manifest (`<run_identity.trial_base_dir>/<trial id>/judge-responses.jsonl`, `sealed_critic.judge_log_path`), and the record's ledger must be that trial's own ledger under the trial base directory (`evidence_outside_trial_base_dir`), so a copied ledger cannot open a second log. When a judge with `judge_attested` is given, `verify_trial` creates the log with `O_EXCL` and writes an opening line (trial, judge, items) before the judge is asked anything. Each answer is appended and fsynced as received, before it is checked, and a judge fault is logged as well. A trial whose log already exists is invalid (`trial_already_judged`) and the judge is never called. `verify_suite` re-reads every submitted trial's full log: a judging result must equal it exactly (`lines`, `lines_sha256`), a result that judged nothing requires that no log exist (so a judged fail cannot be resubmitted as a judge-less not_judged), and any extra judging, edit or removal is incomplete (`judge_log_differs_from_result`, `judge_log_without_a_judging_result`). Results carry the log's path, line count and digest. The suite record (`q01-release-suite-verdict-v6`) carries `judge_logs` (each trial's `lines_sha256`), and the schema and gate refuse a pass without a digest for every trial. The fixtures are restructured: every trial is verified exactly once, and the fail, invalid and not_judged variants come from separately dispatched runs under their own manifests (`variant_run`: the fail run also holds the invalid and not_judged slots, and the invalid run also holds not_judged, because precedence makes that equivalent; this gives four runs per separation instead of eight). `acceptance.suite_outcome` gains `one_judging_per_trial` and the incomplete clause. `post_verdict_audit` gains "one judging per trial … the judge provider's judge-model requests in the run window equal the logged judge request ids in both directions". `open` states that deleting a log and judging again leaves only unlogged provider requests, which the two-way reconciliation detects. |
+| Y2: the request-id anchor could be defeated by reuse, and the audit was one-directional. No code required distinct ids. A scripted critic wrapped in a hand-built `ProviderReply` with one id for all 114 calls passed, and an id `"x"` was accepted (the verifier's `_PROVIDER_ID` and `critic_trial._ATTESTED_ID`), although the adapter only emits `req_[A-Za-z0-9]{8,128}`. | The adapter's exact forms are now required everywhere. Request ids (critic and judge) must be `req_[A-Za-z0-9]{8,128}`, the adapter's `_PROVIDER_REQUEST_ID`; a guard test compares the two patterns. A critic message id is now required and must be in the provider's `msg_` form within the adapter's safe-id characters (`msg_[A-Za-z0-9_]{8,196}`; the adapter itself accepts any `_SAFE_ID` for a message id). A judge message id is optional, but when present it must be in the safe-id form, because the judge is another provider. `app/critic_trial.py` refuses an attestation whose request id is not in the `req_` form, the harness's `transport_identity_errors` requires both forms and a message id, and `_check_transport_identity` re-derives them from the ledger. `verify_trial` makes a trial invalid when any id repeats within it, across critic and judge (`provider_id_reused`). Results carry their ids. `verify_suite` requires every critic request id, critic message id, judge request id and judge message id to be well formed (`provider_id_malformed`) and distinct across the suite (`provider_id_reused_across_suite`). The suite record carries `provider_ids_sha256` (the sorted id list) and `provider_id_count`. `post_verdict_audit[3]` now requires a two-way reconciliation: each id is distinct and its provider record matches the call's model, time window and token usage, and the provider's requests for the account, models and window are exactly the logged ids (no unlogged retry, re-ask, peek or second judging). `claims_if_passed` now says code checks only form, distinctness and the logs. `open` states that in-process constructed replies (`ProviderReply`/`AttestedJudgement` with fresh well-formed ids), fake servers and intercepting proxies are caught only by that external two-way reconciliation. |
+| 2: the `pre_dispatch.spent_sets` wording. | The text now says the digest and id comparisons catch exact reuse only. A spent case that is edited and renamed passes them, and is excluded by `must_be_new` through human review (the author, reviewer and sealing attestations) and by the post-verdict audit item on other attempts. `open` repeats this. |
+| 3: `critic_configuration.transport` was worded as a description. | It is now a requirement ("A release trial must run through the provider-attested transport … No named test double is allowed for release") and points to `open` for what code cannot tell apart. |
+| 4: `checked_at_dispatch` and the code disagreed on the message id. | Both now require the message id: `checked_at_dispatch` names both forms and "the message id is required", matching `transport_identity_errors` and `_check_transport_identity`. |
+| 5: whether a custom transport was injected into `claude_rig` was not recorded. | `claude_rig` now declares `critic_transport` on every turn and on the rig: `{"injected": false, "name": null}` when `transport is None` (the product adapter path), otherwise `{"injected": true, "name": transport_name or the type}`. The pre-dispatch manifest (schema `q01-pre-dispatch-manifest-5`) has a required `run_identity.critic_transport`. The manifest check refuses an injected transport unless its name is in `q01_release_manifest.TEST_DOUBLE_TRANSPORTS`, which is empty for release-v7. The harness refuses dispatch when the turn's declared transport differs (`critic_transport_differs_from_manifest`), records it in the trial record, and binds its digest into every frozen call's code hashes. The verifier requires the record and the ledger binding to equal the manifest. The offline tests run over the fake provider server, an injected transport, and admit its name for the duration of that module only, the way the gate tests replace `V3_VERIFYING_DESIGN_IDS`. A test checks that nothing is admitted otherwise. |
+| 6: the design pinned the product adapter. | `app/adapters/claude_api.py` stays in `q01_harness.HARNESS_FILES`, so it is pinned per attempt through `run_identity.harness`, and the harness refuses dispatch when the running files differ. `release-v7/FROZEN.json` and the design's `harness_at_freeze` record the evals files and state the rule, but not the adapter's hash and no harness file-set sha256 (`pinned_per_attempt_only`). `FROZEN.json` pins the evals code and the gate. |
+
+Probe tests (the audit-6 probes, `test_a6_*` in `evals/deeptwin/tests/test_sealed_critic_verifier.py`):
+
+- P1, judge reroll:
+  - Re-verifying the fail slot of the fail run returns `trial_already_judged`, the judge is never asked, and the log is unchanged.
+  - Submitting that result instead of the fail is incomplete; the original run still fails.
+  - A faulting judge leaves its judging in the log and blocks a second one.
+  - A copied ledger cannot open a second log.
+  - `test_a6_every_trial_of_the_dev_run_was_judged_exactly_once` checks the fixture itself and the record's `judge_logs` and provider-id digest.
+- P2, reused ids:
+  - One request id and message id for every call is `provider_id_reused`.
+  - Ids that are distinct within each trial but reused across trials give `provider_id_reused_across_suite`.
+- P2b: the request ids `x` and `msg_…`, a missing message id, and message id `x` are refused by the runner or the harness, and again by the verifier when both checks are bypassed.
+- P4, judge spoof:
+  - One reused, well-formed judge request id is `provider_id_reused` and is logged.
+  - The probe's `req_SAME` is not an attestation (not_judged).
+  - Judge ids reused across trials make the suite incomplete.
+- P5: an overwritten, extended or deleted judge log is incomplete, and restoring it gives a pass again.
+- Note 5:
+  - An injected transport is refused for release.
+  - A rig or turn whose declared transport differs from the manifest, or declares none, is refused before any read.
+  - An edited record transport is invalid.
+  - The rig declares how it was built.
+- Also:
+  - `app/tests/test_critic_trial.py`: non-`req_` request ids are refused.
+  - `app/tests/test_environments.py`: a pass needs a judge-log digest per trial and its provider ids.
+  - `test_release_design_frozen.py`: v7 guards; v6 guards against `c3204d6`; the adapter is not in FROZEN; the id pattern matches the adapter's.
+
+Verification:
+
+- 746 tests pass:
+  - 467 evals tests (all of `evals/deeptwin/tests` except the live file).
+  - 279 app tests: `test_environments.py`, `test_design_store.py`, `test_design_audit_findings2.py`, `test_reuse_compliance.py`, `test_critic_trial.py`, `test_claude_api.py` and `test_claude_design_turn.py`.
+- Tests ran serially without the live key.
+- All data is test-actor synthetic data. Nothing was dispatched to a provider, and no network or API call was made.
+
+Still not true:
+
+- No sealed set, author, reviewer or independent judge exists.
+- V3 cannot be verified under v7.
+- Verdict-to-configuration binding in approval is open.
+- No T077 dispatcher exists, and no multi-arm effect dispatcher exists.
+- Code checks the form and distinctness of provider ids and the logs. It cannot tell in-process constructed replies, a fake server or a proxy from the provider, and cannot see a judge log that was deleted and judged again, or a judge wrapper that re-asked. All of these rest on the two-way reconciliation with the provider's records after the verdict, which is not automated.
+- The declared critic transport is what the rig reports about itself.
+- Items 2 and 4 of audit 5 remain organizational.
+- The journal, trial directories, records, ledgers and judge logs live on the operator's disk.
+
+T076 stays open until an independent audit of release-v7 passes.

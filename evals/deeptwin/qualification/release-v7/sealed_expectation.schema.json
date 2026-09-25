@@ -1,0 +1,275 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "deeptwin:q01-release-v7:sealed-expectations",
+ "title": "Sealed case expectations for a data-driven Q01 verifier",
+ "type": "object",
+ "additionalProperties": false,
+ "required": [
+  "schema",
+  "design_id",
+  "dataset_id",
+  "cases"
+ ],
+ "properties": {
+  "schema": {
+   "const": "q01-sealed-expectations-1"
+  },
+  "design_id": {
+   "const": "q01-release-v7"
+  },
+  "dataset_id": {
+   "type": "string",
+   "minLength": 1,
+   "maxLength": 128
+  },
+  "cases": {
+   "type": "array",
+   "minItems": 12,
+   "maxItems": 256,
+   "items": {
+    "$ref": "#/$defs/case"
+   }
+  }
+ },
+ "$defs": {
+  "ref": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "document",
+    "location",
+    "prefix"
+   ],
+   "properties": {
+    "document": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128,
+     "description": "an original id, 'fixed-criteria', or '@candidate'"
+    },
+    "location": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "prefix": {
+     "type": "boolean"
+    }
+   }
+  },
+  "rule": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "groups"
+   ],
+   "properties": {
+    "groups": {
+     "type": "array",
+     "minItems": 1,
+     "maxItems": 8,
+     "items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+       "$ref": "#/$defs/ref"
+      }
+     }
+    }
+   },
+   "description": "every group needs at least one matching citation"
+  },
+  "statuses": {
+   "type": "array",
+   "minItems": 1,
+   "uniqueItems": true,
+   "items": {
+    "enum": [
+     "pass",
+     "fail",
+     "unresolved"
+    ]
+   }
+  },
+  "case": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "candidate_id",
+    "counterexample_id",
+    "boundary",
+    "review",
+    "basis",
+    "judge"
+   ],
+   "properties": {
+    "candidate_id": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 64
+    },
+    "counterexample_id": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "maxLength": 64
+    },
+    "boundary": {
+     "enum": [
+      "accept_without_false_rejection",
+      "required_defect",
+      "rejected_counterexample",
+      "valid_counterexample",
+      "unresolved_specific_claim",
+      "insufficient_evidence"
+     ]
+    },
+    "counterexample_kind": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "maxLength": 64
+    },
+    "review": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "Q1",
+      "Q2",
+      "Q3",
+      "Q4",
+      "Q5",
+      "Q6",
+      "Q7",
+      "Q8"
+     ],
+     "properties": {
+      "Q1": {
+       "$ref": "#/$defs/statuses"
+      },
+      "Q2": {
+       "$ref": "#/$defs/statuses"
+      },
+      "Q3": {
+       "$ref": "#/$defs/statuses"
+      },
+      "Q4": {
+       "$ref": "#/$defs/statuses"
+      },
+      "Q5": {
+       "$ref": "#/$defs/statuses"
+      },
+      "Q6": {
+       "$ref": "#/$defs/statuses"
+      },
+      "Q7": {
+       "$ref": "#/$defs/statuses"
+      },
+      "Q8": {
+       "$ref": "#/$defs/statuses"
+      }
+     }
+    },
+    "review_evidence": {
+     "type": "object",
+     "additionalProperties": {
+      "$ref": "#/$defs/rule"
+     },
+     "propertyNames": {
+      "pattern": "^Q[1-8]$"
+     }
+    },
+    "validity": {
+     "enum": [
+      "valid",
+      "rejected",
+      "unresolved",
+      null
+     ]
+    },
+    "validity_evidence": {
+     "oneOf": [
+      {
+       "$ref": "#/$defs/rule"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "response": {
+     "oneOf": [
+      {
+       "type": "array",
+       "minItems": 1,
+       "uniqueItems": true,
+       "items": {
+        "enum": [
+         "avoid",
+         "mitigate",
+         "fail",
+         "unresolved"
+        ]
+       }
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "response_evidence": {
+     "oneOf": [
+      {
+       "$ref": "#/$defs/rule"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "judge": {
+     "type": "array",
+     "maxItems": 16,
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "item_id",
+       "rubric",
+       "selector"
+      ],
+      "properties": {
+       "item_id": {
+        "type": "string",
+        "pattern": "^[a-z0-9_]{1,64}$"
+       },
+       "rubric": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+       },
+       "selector": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 8,
+        "items": {
+         "type": "string",
+         "maxLength": 64
+        }
+       }
+      }
+     }
+    },
+    "basis": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 4096,
+     "description": "the author's derivation from the materials"
+    }
+   }
+  }
+ }
+}

@@ -8,10 +8,14 @@ requests (recognized by the judge system prompt) by a caller ``(payload) -> str`
 Like the provider, every streamed response names the model it served in its
 ``message_start`` message, carries a message id, and sends a ``request-id`` header,
 so the product adapter and the rig's attested turn surface a provider-reported
-identity offline (release-v6). ``request_ids=False`` omits the header and
-``served_model`` makes the fake provider name another model than the request's.
-It is a fake provider server for offline tests only: nothing here contacts a
-provider.
+identity offline (release-v6). Message ids are in the provider's ``msg_`` form and
+request ids in the ``req_`` form, both distinct per response (audit 6, Y2).
+``request_ids=False`` omits the header and ``served_model`` makes the fake provider
+name another model than the request's. It is a fake provider server for offline tests
+only: nothing here contacts a provider. A rig built over it declares an INJECTED
+transport named ``MOCK_TRANSPORT_NAME``; release-v7 allows no injected transport for a
+release run, so tests that drive release trials over it replace
+``q01_release_manifest.TEST_DOUBLE_TRANSPORTS`` for their duration.
 """
 
 from __future__ import annotations
@@ -31,12 +35,14 @@ from app.tests.test_claude_api import (
 from evals.deeptwin.verifiers.claude_judge import SYSTEM_PROMPT as JUDGE_SYSTEM
 
 PLAN_MODEL = "claude-opus-5"
+# The injected transport's name, as the rig declares it (run_identity.critic_transport).
+MOCK_TRANSPORT_NAME = "evals.deeptwin.tests.claude_mock.MockClaude (offline fake provider server)"
 SECRET = "sk-ant-api03-q01-offline-test-secret-never-real"
 EFFORTS = {"supported": True, "low": {"supported": True}, "medium": {"supported": True},
            "high": {"supported": True}, "xhigh": {"supported": False}, "max": {"supported": False}}
 
 
-def text_stream(text, *, model_id=PLAN_MODEL, message_id="msg_q01_1", input_tokens=7, output_tokens=5,
+def text_stream(text, *, model_id=PLAN_MODEL, message_id="msg_q01mock00000001", input_tokens=7, output_tokens=5,
                 reason="end_turn", thinking=None):
     events = [message_start(model_id=model_id, message_id=message_id, input_tokens=input_tokens,
                             output_tokens=1)]
@@ -103,7 +109,7 @@ class MockClaude:
         text = self.judge(json.loads(user)) if kind == "judge" else self.critic(system, user)
         input_tokens, output_tokens = self.usage(kind, system, user)
         stream = text_stream(text, model_id=self.served_model or payload["model"],
-                             message_id=f"msg_q01_{self.count}", input_tokens=input_tokens,
+                             message_id=f"msg_q01mock{self.count:08d}", input_tokens=input_tokens,
                              output_tokens=output_tokens, reason=self.stop_reason, thinking=self.thinking)
         headers = {"content-type": "text/event-stream"}
         if self.request_ids:
@@ -140,6 +146,7 @@ def attested_rig(root, *, call_seconds=5, run_seconds=60.0, **mock_options):
     critic = Switch()
     mock = MockClaude(critic, **mock_options)
     rig = claude_rig(root, secret=SECRET, model_id=PLAN_MODEL, effort="medium", transport=mock.transport,
-                     max_tokens=1000, call_seconds=call_seconds, run_seconds=run_seconds)
+                     transport_name=MOCK_TRANSPORT_NAME, max_tokens=1000, call_seconds=call_seconds,
+                     run_seconds=run_seconds)
     rig.critic, rig.mock = critic, mock
     return rig

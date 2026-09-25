@@ -174,6 +174,11 @@ def controlled(trial, rig, *, text="{}", mode=None, entered=None, release=None, 
                         attestation["served_model"] = "unselected-model"
                     elif mode == "attested_bad_request_id":
                         attestation["provider_request_id"] = "has spaces"
+                    elif mode == "attested_short_request_id":
+                        # audit 6, Y2: only the adapter's opaque req_ form is a provider request id
+                        attestation["provider_request_id"] = "x"
+                    elif mode == "attested_non_req_request_id":
+                        attestation["provider_request_id"] = "msg_0123456789ab"
                     elif mode == "attested_extra_key":
                         attestation["extra"] = "forbidden"
                     return {"text": text, "model": selection["model"], "attestation": attestation}
@@ -288,7 +293,8 @@ def test_model_output_classification_uses_utf8_limit_and_hash(trial, rig, raw):
 
 
 @pytest.mark.parametrize("mode", ["error", "factory_error", "wrong_model", "extra_key", "not_dict", "not_offline",
-                                  "attested_other_model", "attested_bad_request_id", "attested_extra_key"])
+                                  "attested_other_model", "attested_bad_request_id", "attested_short_request_id",
+                                  "attested_non_req_request_id", "attested_extra_key"])
 def test_transport_or_fixture_failures_are_invalid_and_do_not_leak_exception_text(trial, rig, mode):
     call = frozen(trial, rig)
     factory, _ = controlled(trial, rig, mode=mode)

@@ -3,17 +3,18 @@
 A criticism verdict says what one critic configuration concluded about one
 design; it never says whether that configuration may be trusted. Trust comes
 only from a suite record of a frozen release design
-(evals/deeptwin/qualification/release-v6/suite_record.schema.json): its pass is
+(evals/deeptwin/qualification/release-v7/suite_record.schema.json): its pass is
 a *scoped pass* for one exact critic configuration digest. It could become a
 qualification only under a design that is able to verify V3 error independence
 (a generation path and an owner-set tolerance), and no such design exists:
 ``V3_VERIFYING_DESIGN_IDS`` is empty, so no production record reaches
 ``qualified`` (audit 3, BF1). A record's V3 field is never trusted on its own:
-``record_sha256`` is recomputed and a mismatch refused, a release-v6 record that
+``record_sha256`` is recomputed and a mismatch refused, a release-v7 record that
 is not schema-valid (for example a V3 status other than the schema's constant
-``unverified``, a sealed set that a listed prior attempt already spent, or a pass
+``unverified``, a sealed set that a listed prior attempt already spent, a pass
 whose critic or judge transport identity is not provider-reported or whose run was
-stopped) is refused rather than capped (audits 4 and 5), and a design that cannot
+stopped, or a pass without a judge-log digest for every trial or without the digest
+of its provider ids) is refused rather than capped (audits 4, 5 and 6), and a design that cannot
 verify V3 is capped at ``scoped_pass``. There is no test hook in this module:
 tests that exercise the approval path replace ``V3_VERIFYING_DESIGN_IDS`` itself
 for the duration of one test (audit 5, non-blocking 5).
@@ -43,15 +44,16 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 
 CRITIC_QUALIFICATION_SCHEMA_VERSION = "critic-qualification-v1"
-SUITE_RECORD_SCHEMA_VERSION = "q01-release-suite-verdict-v5"
+SUITE_RECORD_SCHEMA_VERSION = "q01-release-suite-verdict-v6"
 # Only frozen release designs count; calibration designs never do. release-v2
 # could not pass (audit 2, B3), release-v3 trusted forged records (audit 3),
-# release-v4 admitted best-of-N trials and reruns of a spent set (audit 4) and
-# release-v5 never attested which model served the critic (audit 5, X1), so only
-# release-v6 suite records are read.
-RELEASE_DESIGN_IDS = frozenset({"q01-release-v6"})
-# Designs able to verify V3 error independence. None exists: release-v6 (like
-# v3..v5) has no generation path, so it can never verify V3 and a pass under it
+# release-v4 admitted best-of-N trials and reruns of a spent set (audit 4),
+# release-v5 never attested which model served the critic (audit 5, X1) and
+# release-v6 let a trial be judged repeatedly and accepted reused provider ids
+# (audit 6, Y1 and Y2), so only release-v7 suite records are read.
+RELEASE_DESIGN_IDS = frozenset({"q01-release-v7"})
+# Designs able to verify V3 error independence. None exists: release-v7 (like
+# v3..v6) has no generation path, so it can never verify V3 and a pass under it
 # is at most a scoped pass. Keep this empty until a frozen design with a
 # generation path, an owner-set tolerance and verdict-to-configuration binding
 # is audited. Tests that need a qualified state replace this value for the
@@ -66,7 +68,8 @@ _SUITE_KEYS = frozenset({
     "prior_outcomes", "suite_outcome", "independence_profile_sha256",
     "judge_separation_established", "v3_error_independence", "prior_sealed_set_sha256s",
     "prior_attempts_sha256", "dispatch_journal_head", "manifest_commit_ref", "critic_transport_identity",
-    "judge_transport_identity", "run_stopped", "record_sha256",
+    "judge_transport_identity", "run_stopped", "judge_logs", "provider_ids_sha256", "provider_id_count",
+    "record_sha256",
 })
 _TRANSPORT_IDENTITIES = frozenset({"provider_reported", "not_attested"})
 _COMMIT_REF_KINDS = frozenset({"git_commit", "external_timestamp"})
@@ -158,13 +161,14 @@ def _check_record_shape(record, v3_capable) -> None:
     if v3 not in {"unverified", "verified"}:
         raise CriticQualificationError("unknown V3 status")
     if design_id in RELEASE_DESIGN_IDS and design_id not in V3_VERIFYING_DESIGN_IDS and v3 != "unverified":
-        # the release-v6 schema fixes the constant "unverified": such a record is invalid, not capped
-        raise CriticQualificationError("a release-v6 suite record can only say V3 unverified")
+        # the release-v7 schema fixes the constant "unverified": such a record is invalid, not capped
+        raise CriticQualificationError("a release-v7 suite record can only say V3 unverified")
     for name in ("critic_transport_identity", "judge_transport_identity"):
         if record[name] not in _TRANSPORT_IDENTITIES:
             raise CriticQualificationError(f"unknown {name.replace('_', ' ')}")
     if type(record["run_stopped"]) is not bool:
         raise CriticQualificationError("run stopped must be a boolean")
+    _check_judge_logs_and_ids(record)
     if design_id not in RELEASE_DESIGN_IDS | v3_capable:
         return
     sealed = record["sealed_set_sha256"]
@@ -193,6 +197,37 @@ def _check_record_shape(record, v3_capable) -> None:
             raise CriticQualificationError("a pass needs provider-reported judge transport identity")
         if record["run_stopped"]:
             raise CriticQualificationError("a stopped run cannot pass")
+
+
+def _check_judge_logs_and_ids(record) -> None:
+    """The per-trial judge-log digests and the provider-id digest (audit 6, Y1 and Y2).
+
+    ``judge_logs`` lists one ``{trial_id, lines_sha256}`` per submitted trial, sorted by trial
+    id without repeats; a pass needs a digest for every trial (each judged exactly once), the
+    sha256 of the sorted provider ids and a positive id count.
+    """
+    logs = record["judge_logs"]
+    if type(logs) is not list:
+        raise CriticQualificationError("judge logs must be a list")
+    trial_ids = []
+    for item in logs:
+        if (type(item) is not dict or set(item) != {"trial_id", "lines_sha256"} or type(item["trial_id"]) is not str
+                or not item["trial_id"]):
+            raise CriticQualificationError("malformed judge log entry")
+        if item["lines_sha256"] is not None:
+            _hex(item["lines_sha256"], "judge log sha256")
+        trial_ids.append(item["trial_id"])
+    if trial_ids != sorted(set(trial_ids)):
+        raise CriticQualificationError("judge logs must name each trial once, sorted")
+    _hex(record["provider_ids_sha256"], "provider ids sha256")
+    count = record["provider_id_count"]
+    if type(count) is not int or count < 0:
+        raise CriticQualificationError("provider id count must be a non-negative integer")
+    if record["suite_outcome"] == "pass":
+        if not logs or any(item["lines_sha256"] is None for item in logs):
+            raise CriticQualificationError("a pass needs one judge log digest for every trial")
+        if count < 1:
+            raise CriticQualificationError("a pass needs its provider ids")
 
 
 def unknown_critic_qualification(configuration_digest) -> CriticQualification:

@@ -1,0 +1,122 @@
+{
+ "schema": "deeptwin-lens-effect-design-7",
+ "design_id": "lens-effects-v7",
+ "frozen_on": "2026-09-25",
+ "supersedes": {
+  "design": "lens-effects-v6.json",
+  "reason": "independent audit 6 of release-v6 (evidence/release-designs-t076-2026-09-25.md): the qualification design it inherits changed (release-v7: exactly one judging per trial with the judge log re-read by the suite, distinct provider request and message ids in the adapter's forms reconciled with the provider's records in both directions, and the critic transport path recorded in the manifest and every trial); lens-effects-v1..v6 are kept unchanged"
+ },
+ "purpose": "G-15 at the critic counterexample-search application point: whether structured micro-lenses change grounded new counterexamples, missed defects and false rejections, compared under identical conditions.",
+ "application_point": {
+  "measured": "critic counterexample search",
+  "held_fixed": [
+   "initial environment design (no lens intervention)",
+   "post-alternative SPLI (not exercised)"
+  ],
+  "note": "Only this point varies, so only its contribution may be reported."
+ },
+ "not_measured": {
+  "joint_error_change": "The verification.md section 8 change in joint (generation-path x critic) error is NOT measured by this design: release-v7 has no generation path, so no generation-path error exists to be linked to a critic miss on the same item. Only critic-side counts are observed; no claim about a lens changing V3 joint errors is made or implied."
+ },
+ "precondition": "The no_lens critic configuration has a scoped pass under release-v7 on its own sealed set; the arms are then compared on a further sealed effect set.",
+ "lens_pack_is_configuration": "Every arm's lens pack (or checklist text) is part of that arm's critic configuration: its pack id, version, canonical sha256 and per-rule digests are critic_configuration.lens_refs_and_digests, and the pack is supplied to the harness with the configuration, never read from the sealed bundle. The sealed bundle must not carry a lens pack; the harness and the verifier refuse a case that does. At every counterexample-proposal call the harness checks that the pack actually sent hashes to the arm's lens_refs_and_digests, and the verifier re-checks it from the durable ledger.",
+ "dataset": {
+  "rules": "follows qualification_design.dataset of release-v7 in full: must_be_new (including every previously dispatched set), independent authoring, review, storage and access, single_use and attempt_ledger",
+  "disjoint": "disjoint from every qualification set and from every earlier lens-effect set: the manifest lists the qualification sets (qualification_sets) and refuses an effect set (materials or expectations sha256) equal to any of them, and refuses an effect set that shares a set digest, a case id or a case sha256 with any set in any arm's prior attempts",
+  "coverage": "cases where each lens's applicability condition holds, cases where it does not (abstention expected), and cases from each boundary class; applicability is judged by the author from the materials, not by the lens author"
+ },
+ "arms": [
+  {
+   "id": "no_lens",
+   "definition": "counterexample-proposal path retained, same max_proposed_chains, lens pack with no rules",
+   "text_sha256": "null (no text); its critic configuration is the run's critic_configuration"
+  },
+  {
+   "id": "strong_existing_procedure",
+   "definition": "no stronger existing procedure is available for this task; this arm is recorded as identical to no_lens and is not run separately",
+   "state": "duplicate_of_no_lens",
+   "in_manifest": false
+  },
+  {
+   "id": "general_multi_perspective",
+   "definition": "a generic multi-perspective checklist given the same exploration budget as the lens arms, delivered through the lens-pack channel",
+   "text": "frozen full text taken from an existing published checklist or written by someone who is not a lens author",
+   "text_sha256": "required non-null before dispatch and equal to the arm's lens_refs_and_digests.pack_sha256",
+   "state": "text_not_yet_fixed",
+   "rules": "its own checklist rules (at least one), none of which is L-P050-01 or L-P033-02"
+  },
+  {
+   "id": "user_construct",
+   "definition": "constructs from actual user work cases",
+   "state": "not_runnable_data_needed",
+   "note": "no actual user constructs exist; none are invented",
+   "in_manifest": false
+  },
+  {
+   "id": "single_L-P050-01",
+   "lenses": [
+    "L-P050-01"
+   ],
+   "text_sha256": "required non-null before dispatch and equal to the arm's lens_refs_and_digests.pack_sha256",
+   "rules": "exactly the rules ['L-P050-01'] in this order, checked against lens_refs_and_digests"
+  },
+  {
+   "id": "single_L-P033-02",
+   "lenses": [
+    "L-P033-02"
+   ],
+   "text_sha256": "required non-null before dispatch and equal to the arm's lens_refs_and_digests.pack_sha256",
+   "rules": "exactly the rules ['L-P033-02'] in this order, checked against lens_refs_and_digests"
+  },
+  {
+   "id": "mix",
+   "lenses": [
+    "L-P050-01",
+    "L-P033-02"
+   ],
+   "text_sha256": "required non-null before dispatch and equal to the arm's lens_refs_and_digests.pack_sha256",
+   "rules": "exactly the rules ['L-P050-01', 'L-P033-02'] in this order, checked against lens_refs_and_digests"
+  }
+ ],
+ "pre_dispatch": {
+  "manifest_schema": "../qualification/release-v7/pre_dispatch_manifest.schema.json (schema q01-pre-dispatch-manifest-5), section lens_effect",
+  "per_arm": "every dispatched arm (no_lens, general_multi_perspective, single_L-P050-01, single_L-P033-02, mix) has its own critic_configuration, critic_configuration_digest, text_sha256 and attempt entry (attempt k and every prior attempt of that arm's configuration digest, each with its sealed dataset and expectations sha256, case ids and case sha256s); arms differ from the run's critic configuration only in lens_refs_and_digests; each arm's lens rules match its id; no two arms carry the same lens pack; the no_lens arm's attempt and prior attempts are the run's",
+  "order": "arm_case_order lists every (arm, case) pair exactly once, interleaved per case: consecutive blocks of one pair per arm, the blocks following run_identity.case_order; fixed before the first dispatch",
+  "text_digests": "non-null text digests are required for general_multi_perspective and every lens arm before dispatch; a manifest with a null digest for one of them does not verify, so the run cannot start while general_multi_perspective is text_not_yet_fixed",
+  "predictions": "predictions_sha256 fixes each lens arm's expected distinguishing questions, where it should apply and abstain on the new materials, and the defects it predicts to surface",
+  "spent_sets": "an effect set equal to any listed qualification set, or sharing a set digest, a case id or a case sha256 with a set in any arm's prior attempts, is refused"
+ },
+ "single_use": "One sealed effect set (effect_set_sha256 = run_identity.sealed_dataset_sha256) is spent by one run that covers all arms: the first dispatched trial of any arm marks the set observed for every arm. No arm is run on the set separately, continued, merged or rerun; each arm's attempt entry is numbered in that arm's own attempt ledger.",
+ "held_equal": [
+  "information access",
+  "task capability and authority",
+  "model, effort, max_tokens, prompt digest, contract, parser, chains and deadlines (checked by the manifest check)",
+  "evaluator, verifier, judge and independence profile",
+  "development/sealed separation",
+  "case order (randomized once, recorded, same for every arm)"
+ ],
+ "budget": {
+  "unit": "model calls and output tokens per case repetition, plus USD per arm",
+  "cap": "the same per-arm cap for every arm, fixed in the pre-dispatch manifest; the added input tokens of lens or checklist text are reported, not hidden",
+  "stop": "an arm that reaches its cap is incomplete for that arm; other arms are not affected"
+ },
+ "execution": "inherits release-v7 execution, pre_dispatch, acceptance.suite_outcome and post_verdict: 3 repetitions per case, no retry, no fallback, concurrency 1. The harness at this commit runs one critic configuration per manifest and its dispatch journal covers only that configuration's planned slots; a multi-arm dispatcher with an arm-aware journal does not exist yet, so this design cannot execute until one is written, reviewed and pinned in a later version. The USD hard stop is enforced by that dispatcher (T077) and journalled as a stop entry, as in release-v7.",
+ "measurements": [
+  "per case and arm: verifier verdict and boundary class",
+  "grounded new counterexamples (valid and citing materials) per arm",
+  "misses, false rejections and abstentions per arm with real denominators",
+  "paired differences of each arm against no_lens on the same case",
+  "calls, tokens, spend, wall time and human review burden per arm (a subscription is not cost zero)",
+  "information-gain effect (new evidence found) separated from interpretation effect"
+ ],
+ "reporting": "observed counts and paired differences with every invalid trial listed; source fidelity, question-trace presence, actual added effect and generalization scope reported separately; no effect, a worse effect or a narrower scope is a valid result",
+ "never_claimed": [
+  "that a lens improves the critic in general",
+  "a change in V3 joint errors (not measured: no generation path)",
+  "philosophical authority as evidence",
+  "effects at the other two application points",
+  "effects beyond the sealed set",
+  "actual user alternatives"
+ ],
+ "transport": "every arm runs through the provider-attested transport of release-v7 (critic_configuration.transport; run_identity.critic_transport must be the product adapter path); a call not served by exactly the arm's configured model, as the provider's response reported it, or without distinct request and message ids in the adapter's forms, makes that trial invalid, and semantic items count only with attested judge answers, each trial judged exactly once"
+}

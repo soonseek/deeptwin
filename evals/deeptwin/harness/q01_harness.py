@@ -3,9 +3,12 @@
 The harness drives exactly one trial of one frozen development case through a
 caller-supplied transport of the shape ``(system, user) -> str`` (calibration and
 development: the model identity is only declared) or ``(system, user) ->
-app.critic_trial.ProviderReply`` (the Claude rig's ``attested_turn``: the served model
-and request id as the provider response reported them; required for every call of a
-release trial). It reuses the reviewed product paths rather than re-implementing them:
+app.critic_trial.ProviderReply`` (the Claude rig's ``attested_turn``: the served model,
+request id and message id as the provider response reported them; required for every call
+of a release trial). A release trial also records the critic transport the turn declares
+(``critic_transport``: the product adapter path, or an injected transport and its name) and
+refuses to dispatch when it is not the manifest's ``run_identity.critic_transport``. It
+reuses the reviewed product paths rather than re-implementing them:
 
 * ``app.critic_contract.prepare_input`` projects each stage's visible input;
 * ``app.services.design_criticism_live.render_criticism_prompt`` renders the
@@ -62,6 +65,8 @@ from evals.deeptwin.q01_release_manifest import (
     check_pre_dispatch_manifest,
     commit_ref_errors,
     file_set_sha256,
+    is_critic_message_id,
+    is_request_id,
     journal_entry_sha256,
     journal_line,
     journal_problems,
@@ -89,7 +94,7 @@ P = GenerationPurpose
 STAGES = (P.REVIEW, P.COUNTEREXAMPLE_PROPOSAL, P.COUNTEREXAMPLE_VALIDITY, P.CANDIDATE_RESPONSE)
 # A call whose transport reported no provider identity: the model is only the selection the
 # harness declared (calibration and development transports). A release trial requires
-# PROVIDER_REPORTED on every call (release-v6, audit 5 X1).
+# PROVIDER_REPORTED on every call (release-v6, audit 5 X1; release-v7).
 MODEL_IDENTITY = "selection_declared_not_transport_reported"
 # The reviewed agent instruction (instruction.md); a change must be re-reviewed and re-pinned.
 INSTRUCTION_SHA256 = "ecc745601415ae49293c88a2abc530bbcde0bbea875325083bcfd1876e537762"
@@ -117,7 +122,7 @@ _CODE_FILES = (
     "evals/deeptwin/q01_materials.py", "evals/deeptwin/q01_lenses.json",
     "evals/deeptwin/harness/q01_cases.py", "evals/deeptwin/harness/q01_harness.py",
 )
-HARNESS_VERSION = "q01-harness-4"
+HARNESS_VERSION = "q01-harness-5"
 # The frozen case's source keys a release trial accepts (audit 4, non-blocking 7): the
 # agent-visible originals, criteria and candidate only. Anything else (a lens pack under
 # another key, a lens rule list, extra metadata) is refused, never silently dropped.
@@ -125,7 +130,12 @@ SOURCE_KEYS = frozenset({"originals", "criteria", "candidate"})
 # The harness's source files; their file-set sha256 is the harness sha256 that a
 # pre-dispatch manifest fixes (``run_identity.harness``). They include the attested
 # release transport: the Claude rig and the product adapter that parses the served model,
-# message id and request id from each provider response (release-v6).
+# message id and request id from each provider response. The product adapter
+# (app/adapters/claude_api.py) is pinned ONLY here, per attempt: the harness refuses to
+# dispatch when the running files differ from the manifest's harness identity. A release
+# design's FROZEN.json pins the evals code and the gate, never the product adapter
+# (release-v7, audit 6 non-blocking 6), so a product adapter change needs a new manifest,
+# not a new design version.
 HARNESS_FILES = (*_CODE_FILES, "evals/deeptwin/q01_release_manifest.py", "evals/deeptwin/harness/claude_rig.py",
                  "app/adapters/claude_api.py")
 # Critic-configuration fields the offline transport cannot observe at dispatch.
@@ -358,16 +368,35 @@ class _CallableTransport(OfflineTransport):
 
 
 def transport_identity_errors(details: dict, configuration: dict) -> list[str]:
-    """Why a completed release call is not attested as the configured model (release-v6, audit 5 X1).
+    """Why a completed release call is not attested as the configured model (audit 5 X1, audit 6 Y2).
 
-    The call's durable details must say ``provider_reported`` with a provider request id
-    and a served model exactly equal to ``critic_configuration.model`` (another alias or
-    snapshot of the model is a mismatch).
+    The call's durable details must say ``provider_reported`` with a provider request id in
+    the adapter's exact ``req_`` form, a provider message id in the provider's ``msg_`` form
+    (required) and a served model exactly equal to ``critic_configuration.model`` (another
+    alias or snapshot of the model is a mismatch). That no id repeats is checked by the
+    verifier, per trial and across the suite.
     """
-    if (details.get("model_identity") != PROVIDER_REPORTED or not details.get("provider_request_id")
+    if (details.get("model_identity") != PROVIDER_REPORTED or not is_request_id(details.get("provider_request_id"))
+            or not is_critic_message_id(details.get("provider_message_id"))
             or details.get("served_model") != configuration["model"]):
         return ["transport_identity_unattested"]
     return []
+
+
+def declared_transport(turn) -> dict | None:
+    """The critic transport a turn declares (``turn.critic_transport``), or ``None``.
+
+    The Claude rig declares ``{"injected": false, "name": null}`` for its product adapter path
+    (``claude_rig(..., transport=None)``) and ``{"injected": true, "name": ...}`` when a custom
+    transport was injected (audit 6, non-blocking 5). A scripted callable declares nothing. The
+    declaration is what the rig says about how it was built; an in-process caller can attach any
+    value, which only the post-verdict reconciliation with the provider's records detects.
+    """
+    value = getattr(turn, "critic_transport", None)
+    if type(value) is not dict or set(value) != {"injected", "name"} or type(value["injected"]) is not bool or (
+            value["name"] is not None and type(value["name"]) is not str):
+        return None
+    return {"injected": value["injected"], "name": value["name"]}
 
 
 @dataclass(frozen=True)
@@ -518,7 +547,7 @@ def _environment_case_shas(task_dir: Path) -> dict | None:
 
 
 def pre_dispatch_errors(pre_dispatch: PreDispatch, case_id: str, config: TrialConfig, task_dir: Path = TASK_DIR,
-                        base_dir: Path | None = None) -> tuple[dict, list[str], dict | None]:
+                        base_dir: Path | None = None, transport: dict | None = None) -> tuple[dict, list[str], dict | None]:
     """Why dispatch must be refused (empty when the manifest verifies and binds this trial).
 
     Besides the manifest itself, the trial must match it: the harness identity is the
@@ -526,7 +555,9 @@ def pre_dispatch_errors(pre_dispatch: PreDispatch, case_id: str, config: TrialCo
     ``run_identity.sealed_dataset_sha256`` and lists exactly ``sealed_case_sha256s``, the
     trial's base directory is ``run_identity.trial_base_dir`` (audit 5, non-blocking 1),
     the case is in ``case_order``, the slot's repetition is a planned one, the commit
-    reference is well formed, and every critic-configuration field observable before
+    reference is well formed, the turn's declared critic transport (``transport``) is the
+    manifest's ``run_identity.critic_transport`` (audit 6, non-blocking 5), and every
+    critic-configuration field observable before
     dispatch equals the running configuration (contract and parser version, prompt
     digest, chain limit, call and run deadlines, lens pack digests). Provider, mode,
     model and effort are checked per call against the frozen selection, and every
@@ -583,6 +614,8 @@ def pre_dispatch_errors(pre_dispatch: PreDispatch, case_id: str, config: TrialCo
             errors.append("environment_differs_from_sealed_case_sha256s")
         if base_dir is None or Path(base_dir) != Path(manifest["run_identity"]["trial_base_dir"]["path"]):
             errors.append("trial_base_dir_differs_from_manifest")
+        if transport != manifest["run_identity"]["critic_transport"]:
+            errors.append("critic_transport_differs_from_manifest")
     return ({"manifest_sha256": check.manifest_sha256, "committed_sha256": pre_dispatch.committed_sha256,
              "commit_ref": deepcopy(pre_dispatch.commit_ref),
              "slot": {"case_id": case_id, "repetition": repetition},
@@ -691,8 +724,11 @@ class Q01Trial:
             # release runs: no read and no dispatch unless the committed manifest verifies
             # and this trial's (case, repetition) slot is journalled as the next planned slot
             record["slot"] = {"case_id": self.case_id, "repetition": self.pre_dispatch.repetition}
+            # whether a custom transport was injected into the rig (audit 6, non-blocking 5)
+            record["critic_transport"] = declared_transport(self.turn)
             record["pre_dispatch"], errors, self._configuration = pre_dispatch_errors(
-                self.pre_dispatch, self.case_id, self.config, self.task_dir, self.base_dir)
+                self.pre_dispatch, self.case_id, self.config, self.task_dir, self.base_dir,
+                record["critic_transport"])
             errors = list(errors)
             if not errors:
                 self._journal_entry, journal_errors = journal_dispatch(self.pre_dispatch, self.case_id,
@@ -752,6 +788,8 @@ class Q01Trial:
         if self._journal_entry is not None:
             # binds every frozen call of this trial to its dispatch journal entry
             hashes["dispatch_journal_entry"] = self._journal_entry["entry_sha256"]
+            # and to the critic transport it runs over (audit 6, non-blocking 5)
+            hashes["critic_transport"] = sha256(canonical_bytes(record["critic_transport"])).hexdigest()
         counter = iter(range(1, 10_000))
 
         def call(prepared, lineage):
@@ -885,13 +923,15 @@ def run_trial(case_id: str, turn, *, base_dir: Path, config: TrialConfig, task_d
 
 def run_release_trial(case_id: str, turn, *, base_dir: Path, config: TrialConfig, pre_dispatch: PreDispatch,
                       task_dir: Path = TASK_DIR) -> dict:
-    """A release-v6 trial: refuses to dispatch without a verifying committed pre-dispatch manifest and
+    """A release-v7 trial: refuses to dispatch without a verifying committed pre-dispatch manifest and
     journals its (case, repetition) slot before the first call. ``base_dir`` must be the manifest's
     ``trial_base_dir`` and ``turn`` a provider-attested transport (the Claude rig's
-    ``attested_turn``): a call whose provider-reported served model and request id are missing,
-    or whose served model is not the configured model, ends the trial as invalid
-    (``transport_identity_unattested``). A scripted ``(system, user) -> str`` callable can
-    therefore never complete a release trial; it remains for calibration and development."""
+    ``attested_turn``) whose declared critic transport is the manifest's
+    ``run_identity.critic_transport``: a call whose provider-reported served model, request id or
+    message id is missing or malformed, or whose served model is not the configured model, ends
+    the trial as invalid (``transport_identity_unattested``). A scripted ``(system, user) -> str``
+    callable can therefore never complete a release trial; it remains for calibration and
+    development."""
     if type(pre_dispatch) is not PreDispatch:
         raise TypeError("a release trial requires its committed pre-dispatch manifest")
     if type(pre_dispatch.harness) is not dict or type(pre_dispatch.lens_pack) is not dict:
