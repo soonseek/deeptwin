@@ -378,6 +378,12 @@ understanding; failure/restart preserves input. Fixture and live proofs remain s
   (evidence/credential-vault-t090.md §2026-09-25). Still open: the HTTP routes still speak the refused
   v1 store/delete shapes (no v2 route), no production bootstrap wires the listener/profile, T087
   provider-transport manifest/budget binding, catalog invalidation and erasure/maintenance.
+  2026-09-25 (open, routes): the HTTP create/rotate/delete routes now speak credential-v2 end
+  to end. A control-plane command ledger allocates command ids for each `intent_id` act. A secret
+  is sent once per command. Ambiguity is recovered by `query_record`, or by same-command retire
+  replay. `secret_input_lost` is terminal, and GET reads the ledger only. Covered by 10 full-stack
+  tests (evidence/credential-vault-t090.md §2026-09-25 routes). Production wiring, binding CAS,
+  catalog invalidation, the unknown-command fence and erasure are still open.
 - [ ] T024 [US1] Migrate browser MediaDevices/AudioWorklet capture and the existing cumulative
   whisper.cpp POST path to ADR-011's versioned non-overlapping one-second PCM PUT/SSE sessions in
   app/speech.py, app/speech_sessions.py, app/api/speech_routes.py, app/workers/speech.py and

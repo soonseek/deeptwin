@@ -33,6 +33,10 @@ class CredentialIngressError(ValueError):
     """Sanitized ingress rejection; the message never contains secret bytes."""
 
 
+class CredentialIngressTooLarge(CredentialIngressError):
+    """The declared framing or the secret exceeds its bound (HTTP 413)."""
+
+
 @dataclass(frozen=True, slots=True)
 class CredentialIngress:
     """One validated create/rotate intent; the secret crosses exactly once."""
@@ -41,6 +45,15 @@ class CredentialIngress:
     provider: str
     secret: bytes = field(repr=False)
     rotate_from: str | None
+
+
+def _unique_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate field")
+        value[key] = item
+    return value
 
 
 def parse_credential_ingress(
@@ -78,7 +91,7 @@ def parse_credential_ingress(
         raise CredentialIngressError("ingress content length is not exact decimal")
     declared = int(lengths[0])
     if declared > MAX_INGRESS_BODY_BYTES:
-        raise CredentialIngressError("ingress body exceeds the framing bound")
+        raise CredentialIngressTooLarge("ingress body exceeds the framing bound")
     if len(body) != declared:
         raise CredentialIngressError("ingress body does not match its framing")
     if (
@@ -88,9 +101,9 @@ def parse_credential_ingress(
         raise CredentialIngressError("ingress requests must declare JSON content")
 
     try:
-        value = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError) as exc:
-        raise CredentialIngressError("ingress body is not strict JSON") from exc
+        value = json.loads(body.decode("utf-8"), object_pairs_hook=_unique_object)
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        raise CredentialIngressError("ingress body is not strict JSON") from None
     if type(value) is not dict or not (
         _FIELDS <= set(value) and set(value) <= _FIELDS | _OPTIONAL
     ):
@@ -110,7 +123,9 @@ def parse_credential_ingress(
         secret_bytes = secret.encode("utf-8")
     except UnicodeEncodeError:
         raise CredentialIngressError("ingress secret is not encodable text") from None
-    if not 1 <= len(secret_bytes) <= MAX_SECRET_BYTES:
+    if len(secret_bytes) > MAX_SECRET_BYTES:
+        raise CredentialIngressTooLarge("ingress secret is out of bounds")
+    if not secret_bytes:
         raise CredentialIngressError("ingress secret is out of bounds")
     if any(ord(character) < 32 or ord(character) == 127 for character in secret):
         raise CredentialIngressError("ingress secret contains control characters")
@@ -131,5 +146,6 @@ __all__ = [
     "MAX_SECRET_BYTES",
     "CredentialIngress",
     "CredentialIngressError",
+    "CredentialIngressTooLarge",
     "parse_credential_ingress",
 ]

@@ -29,9 +29,16 @@ _FRAGMENT_KEYS = {"schema", "transfer_id", "total_bytes", "index", "count", "chu
 
 
 class GatewayServiceError(RuntimeError):
-    """Sanitized gateway-channel failure; never carries secret bytes."""
-    def __init__(self, message="credential operation rejected", *, code="credential_operation_rejected"):
+    """Sanitized gateway-channel failure; never carries secret bytes.
+
+    ``sent`` is False only when the failure happened before any byte of the request
+    left this process (the connection or handshake failed): the gateway cannot have
+    admitted the command. Every other failure is ambiguous and must be recovered by
+    query or same-command replay, never by a new secret under the same command."""
+    def __init__(self, message="credential operation rejected", *, code="credential_operation_rejected",
+                 sent=True):
         self.code = code
+        self.sent = sent is not False
         super().__init__(message)
 
 
@@ -214,8 +221,9 @@ class CredentialGatewayClient:
         deadline = broker.Deadline.after_ms(self._deadline_ms)
         try:
             connection = self._open(deadline)
-        except broker.BrokerError as exc:
-            raise GatewayServiceError("gateway channel failed") from exc
+        except (broker.BrokerError, GatewayServiceError, OSError) as exc:
+            # nothing of the request was written: the gateway cannot have admitted it
+            raise GatewayServiceError("gateway channel failed", sent=False) from exc
         try:
             message_id = str(uuid4())
             _write_logical_connection(
@@ -268,6 +276,8 @@ class CredentialGatewayClient:
         secret: bytes,
         rotate_from: str | None,
     ) -> dict:
+        """The closed legacy v1 store shape, which the gateway refuses as unsupported.
+        Retained only for the gateway's refusal pins; no route calls it."""
         if type(secret) is not bytes:
             raise GatewayServiceError("secret bytes are required")
         return self._call({
@@ -279,6 +289,7 @@ class CredentialGatewayClient:
         })
 
     def delete(self, handle: str) -> dict:
+        """The closed legacy v1 delete shape (refused as unsupported; no route calls it)."""
         return self._call({"op": "delete", "handle": handle})
 
     def snapshot(self) -> list:

@@ -470,3 +470,130 @@ control-side command-id allocation and query-after-ambiguity flow yet. Rotation 
 catalog/model authority (no binding CAS exists). Erasure/`vault-maintenance` and `erasure_completed` remain
 unavailable by design. The T087 provider-transport manifest and budget binding are not implemented. No
 independent audit of these additions has run.
+
+## 2026-09-25 — HTTP create/rotate/delete routes over credential-v2, control-side command ids
+
+This slice closes the gap recorded just above: the authenticated HTTP routes now speak the current
+gateway protocol end to end, and the control plane allocates and recovers gateway commands itself.
+
+### What works
+
+- `app/api/credential_commands.py` (new, control plane; imports no vault code):
+  - `CredentialCommandLedger` — a 0600 SQLite ledger of owner acts. Each act is keyed by the
+    browser's `intent_id` (the act's idempotency key) and a fingerprint of its nonsecret request
+    (kind, provider, rotation target). Before any gateway call, one transaction records the act's
+    allocated gateway `command_id`, target `record_id`/`record_version`, `created_at` and predecessor
+    reference, plus the retirement command id and reason for a rotation (`superseded`) or delete
+    (`owner_delete`). The ledger stores no secret, secret hash or verifier. Receipted records
+    (`stored_unbound`/`cleanup_pending`) are kept here too.
+  - `CredentialActs` drives each act over the frame-only `CredentialGatewayClient`. `store_at` is
+    sent at most once per command id, and a compare-and-set claim picks the one sender under
+    concurrency. The command is released for the same act only on a pre-send failure (the new
+    `GatewayServiceError.sent is False`: the connection or handshake failed before any request byte)
+    or a definitive non-admission answer (`busy`, `capacity_exhausted`, `nonce_exhausted`,
+    `invalid_*`). Any other failure is ambiguous. That request and every retry of the act then
+    call `query_record` on the same command id and never re-send a secret. A retry adopts the
+    committed receipt. `unknown`/`pending` return a retryable `503 command_pending` and never lead
+    to a new id or a loss verdict. The gateway's `secret_input_lost` is terminal (`409
+    secret_input_lost`, not retryable): the same act never ingests re-entered bytes, and only a new
+    act with a fresh intent can try again. A changed request under a used intent is `409
+    conflict`. Retirement carries no secret, so an ambiguous retire is recovered by replaying the
+    same retire command. Only one unfinished rotate/delete act may target a handle at a time;
+    others get a retryable `409 conflict`, which prevents a delete racing an in-flight rotation.
+- `app/api/credential_routes.py`:
+  - `POST /api/v1/credentials` creates, or rotates when `rotate_from` is set. It returns `201
+    {handle, provider, state: "stored_unbound"}`. The handle is the record id in hex and is stable
+    across rotations.
+  - A rotation stores version+1 with the exact predecessor reference, then retires the predecessor
+    (`superseded`).
+  - `DELETE /api/v1/credentials/{handle}` takes the exact body `{"intent_id": uuid}` and returns
+    `{handle, state: "cleanup_pending", provider_revocation: "not_performed"}`.
+  - `GET /api/v1/credentials` now reads the ledger snapshot only. The earlier attachment read the
+    gateway `snapshot`, which was a gateway dispatch on a GET. Each entry also carries
+    `provider_revocation: "not_performed"`, which keeps local erasure distinct from provider-side
+    revocation.
+  - Blocking gateway calls run in the threadpool.
+  - `attach_credential_gateway(app, client, ledger)` now takes the ledger.
+  - A redacted-projection check still rejects any seam result with extra fields.
+- `app/api/credential_ingress.py`:
+  - Oversize framing or a secret over 65,536 bytes raises `CredentialIngressTooLarge`, which the
+    route maps to 413 as the API contract requires. Other violations stay 400.
+  - Duplicate JSON keys are now refused. Before this, a later `secret` silently won.
+  - Decode errors are no longer chained. A `JSONDecodeError` holds the whole body, secret included.
+- `app/workers/credential_channel.py`: `GatewayServiceError` gains `sent`, and `_call` marks
+  connect/handshake failures `sent=False` with the same code and message. The legacy
+  `submit`/`delete` stay only for the gateway's existing refusal pins, and no route calls them.
+  The C408 lint findings in this file predate this slice.
+
+### Tests
+
+`app/tests/test_credential_routes_v2.py` (10, new) runs over the real development app (session,
+CSRF, ingress checks), the ledger, the real client and real authenticated broker frames into
+`CredentialGatewayService` and an encrypted vault (the persistence harness). The vault journal is
+the oracle, and the teardown sweep finds no secret in logs, the ledger or any file.
+
+- create → rotate (successor stored, predecessor `cleanup_pending` under `superseded`) → delete,
+  journal (2, 2, 2, 2), then new acts on the retired handle are refused (`409`) with zero effect.
+- A same-act replay with a different secret returns the original receipt without a gateway call.
+  The same key with a changed provider or target is `409`.
+- Lost store response (create and rotate): with both the store and the recovery-query replies
+  lost, the request is `503 command_pending`. A retry with other bytes calls only `query_record`,
+  adopts the receipt, then retires the predecessor for a rotation. The decrypted record is the
+  original secret. With one lost reply, the same request recovers.
+- A lost retire response is recovered by replaying the same retire command, still one retirement.
+- `secret_input_lost`: the gateway journals the command, then its process crashes before
+  encryption. The route returns `409 secret_input_lost`. The same act with re-entered bytes makes
+  no gateway call, the snapshot lists the state, and a new act succeeds.
+- Route-level refusals: an unsupported provider, unknown rotate/delete targets, oversize framing
+  (413) and missing CSRF all have zero gateway or vault effect. A pre-send failure releases the
+  command for the same act. An unfinished rotation blocks delete and other rotations until it
+  settles.
+- Status reads with every client operation patched to fail leave the vault tree byte-identical.
+
+`app/tests/test_credential_routes.py` (11) was updated to the seam shapes: `stored_unbound`
+receipts, delete with an intent body, duplicate-key/413/query refusals, and
+`provider_revocation`. The v1-refusal full-stack test moved to the v2 file as working flows.
+
+```text
+env -u DEEPTWIN_LIVE_ANTHROPIC_API_KEY .venv/bin/python -m pytest -q -p no:cacheprovider \
+  app/tests/test_credential_{custody,gateway_peercred,gateway_persistence,gateway_service,import_boundary,ingress,root,routes,routes_v2,vault}.py \
+  app/tests/test_provider_transport.py app/tests/test_provider_gateway_channel.py \
+  app/tests/test_provider_gateway_owned.py app/tests/test_web_owner_integration.py app/tests/test_first_party.py
+340 passed, 1 known warning   (331 on the base commit; -1 legacy full-stack test, +10 new)
+app/tests/test_server_api_v1.py app/tests/test_first_party_dependencies.py: 60 passed
+ruff check (credential_commands, credential_routes, credential_ingress, both route tests): All checks passed
+```
+
+Mutation check (temporary, reverted): treating every store failure as "not admitted", which would
+re-send the secret under the consumed command, fails 4 of the 10 new tests: both lost-response
+cases, `secret_input_lost` and the unfinished-rotation guard.
+
+Route counts: no route was added (the same three paths), and these routes are not in the
+first-party route contributions, so `test_first_party` route counts are unchanged.
+
+Frozen identities (SHA-256; this block supersedes the earlier blocks above for these paths):
+
+```text
+8e4b4011037f0916978e192dd96e4224262110b3690d7615ff5f48f6eace0aed  app/api/credential_commands.py
+d416c31132a7dc581c69a80095b8711da0ff5315e426c28f2b0a6554985c1121  app/api/credential_routes.py
+202cf1b870f7dfa3ad39f29b1f2984bdf763a7d23c925341be24ea0ac877982c  app/api/credential_ingress.py
+6719f948e5a14c26894b6da613ee01552fe185a2072b94b3247deee01ca474bd  app/workers/credential_channel.py
+4edd09cd8a9baf1b800f184057099c4c50ec4e1c11d8c6cec0c6e160c178da7c  app/tests/test_credential_routes.py
+f3f14f96f9a61ae280ae727c08341cf09bca5eff5b50e662b4929ea738bce1ff  app/tests/test_credential_routes_v2.py
+```
+
+### Remaining
+
+- No production bootstrap creates the ledger, binds the listener or calls
+  `attach_credential_gateway`, so the routes stay honestly `503` in a deployed app.
+- The ledger is a separate SQLite file, not part of the main DB's command transaction. There is no
+  provider-binding CAS, so a stored credential is `stored_unbound`, never an active binding. Rotation
+  does not yet invalidate catalog/model authority.
+- An act whose command stays `unknown` (the request may or may not have reached the gateway)
+  blocks further rotate/delete on that handle. Resolving it needs the separate cancel/fence
+  protocol the custody contract defers, and create orphans are not yet retired as
+  `unbound_orphan`.
+- The browser-facing handle is the record id. The API contract's "no handles in creation
+  responses" wording is still to be reconciled with the addressable rotate/delete routes.
+- Erasure (`vault-maintenance`, `erasure_completed`), the T087 manifest/budget binding, a UI page
+  and an independent audit of this slice remain open. The full shared regression was not re-run.

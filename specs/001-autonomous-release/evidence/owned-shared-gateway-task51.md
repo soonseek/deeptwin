@@ -184,3 +184,7 @@ ac04a6b7ed5e74dce629d62ceb68694cdf27ddb25d5c91558b896554bd101bf9  app/tests/test
   admission, current binding, managed Codex, live provider or browser journey; the fixed
   factories expose no override (tests substitute only the module-local profile resolution
   into an owned temporary root). No model, tool or paid call.
+
+Later identity (2026-09-25, T090 routes): `app/workers/credential_channel.py` changed (pre-send
+`GatewayServiceError.sent`); its current identity is frozen in `credential-vault-t090.md`
+§"2026-09-25 — HTTP create/rotate/delete routes"; the block above is kept as historical.
