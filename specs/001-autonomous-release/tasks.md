@@ -803,6 +803,10 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   the `pyproject.toml` license metadata landed (evidence/license-approval-apache-2.0-2026-09-24.md).
   SPDX headers, per-image notices/source offers, the inbound-contribution mechanism, the Compose
   gaps and the pinned lens file remain open.
+  2026-09-25: SPDX coverage via `REUSE.toml` (Apache-2.0 default, upstream files under
+  `LicenseRef-Upstream-Terms`); `reuse lint` compliant 1671/1671, guarded by
+  `app/tests/test_reuse_compliance.py`. Per-image notices/source offers, inbound-contribution
+  mechanism, Compose gaps, pinned lens file and quoted-text rights remain open.
 - [ ] T085 Run full regression plus quickstart.md acceptance, reconcile every checkbox/result and produce specs/001-autonomous-release/evidence/release-report.md separating engineering/live/effect/human/signing readiness and checking final progress/ETA claims against actual task evidence; mark the goal complete only if the latest required delivery is genuinely achieved (FR-034, SC-010).
 
 ## Dependencies and parallel work

@@ -55,5 +55,7 @@ scrub. The files under `docs/release/` were written with repository-relative pat
 
 1. Owner approves a license (and a documentation license if different).
 2. Confirm ownership of all first-party areas above and decide which historical areas to publish.
-3. Add license files and SPDX headers; run `reuse lint` (pinned in the dev group) to check coverage.
+3. Done 2026-09-25: `LICENSE`, `LICENSES/` and `REUSE.toml` (Apache-2.0 default; the §3 upstream
+   files annotated `LicenseRef-Upstream-Terms`, never relicensed); `reuse lint` passes, 1671/1671 files,
+   guarded by `app/tests/test_reuse_compliance.py`. Rights to text quoted in `docs/lenses/` remain unverified.
 4. Verify the scrub and that fixtures and evidence contain no user private data or keys.

@@ -1,0 +1,24 @@
+version = 1
+SPDX-PackageName = "DeepTwin"
+SPDX-PackageDownloadLocation = "NOASSERTION"
+
+# First-party default. The owner approved Apache-2.0 on 2026-09-24
+# (specs/001-autonomous-release/evidence/license-approval-apache-2.0-2026-09-24.md).
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 The DeepTwin Authors"
+SPDX-License-Identifier = "Apache-2.0"
+
+# Upstream files kept for verification or notices keep their upstream terms and are never
+# relicensed (docs/release/source-license-inventory.md section 3).
+[[annotations]]
+path = [
+  "deploy/locks/licenses/**",
+  "deploy/locks/codex-*/Cargo.lock.*",
+  "deploy/locks/nodejs/**",
+  "deploy/locks/moby-default-seccomp-*.json",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "NOASSERTION"
+SPDX-License-Identifier = "LicenseRef-Upstream-Terms"
