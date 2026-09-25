@@ -209,3 +209,26 @@ test('a failed first list read leaves the session established and the list hones
   assert.match(document.elements.get('run-source').find(el => el.getAttribute('role') === 'status').textContent, /읽지 못했습니다/);
   assert.equal(document.elements.get('session-status').dataset.state, 'authenticated');
 });
+
+test('where the page offers the approval mount, a choice also shows the run\'s approvals', async () => {
+  const replies = new Map([
+    [`/${HEX}/session`, jsonResponse(200, { state: 'authenticated', csrf_token: 'tok-1' })],
+    [`/${HEX}/api/v1/snapshot`, jsonResponse(200, snapshot([{ id: RUN_A, phase: 'created', revision: 1 }]))],
+    [`/${HEX}/api/v1/runs/${RUN_A}`, jsonResponse(200, receipt())],
+    [`/${HEX}/api/v1/runs/${RUN_A}/artifacts`, jsonResponse(200, { run_id: RUN_A, artifacts: [] })],
+    [`/${HEX}/api/v1/runs/${RUN_A}/approvals/executions`, jsonResponse(200, { run_id: RUN_A, requests: [], links: {} })],
+  ]);
+  const fetched = [];
+  const document = fakeDocument({ ...MOUNT_IDS, approvals: 'run-approvals' });
+  const mounted = await boot({ document, location: { pathname: `${BASE}observe.html` },
+    crypto: { randomUUID: () => '77777777-7777-4777-8777-777777777777' },
+    fetch: async path => { fetched.push(path); return replies.get(path); } });
+  assert.equal(typeof mounted.approvals.show, 'function');
+  const select = document.elements.get('run-source').find(el => el.tagName === 'SELECT');
+  select.value = RUN_A;
+  await select.dispatch('change');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.ok(fetched.includes(`/${HEX}/api/v1/runs/${RUN_A}/approvals/executions`), JSON.stringify(fetched));
+  assert.equal(mounted.approvals.runId, RUN_A);
+  assert.match(document.elements.get('run-approvals').textContent, /지금 승인할 일이 없습니다/);
+});

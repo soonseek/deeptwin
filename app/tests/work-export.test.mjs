@@ -173,3 +173,63 @@ test('server text never becomes markup', async () => {
   await exporter.preview();
   assert.match(root.textContent, /<img src=x onerror=alert\(1\)>/);
 });
+
+// T074: raw originals with secret findings — kind and location only, withheld until the
+// owner confirms the exact finding set, which re-previews and is carried by the export
+const FINDINGS_SHA = 'f'.repeat(64);
+function scanned(confirmed) {
+  return previewReply({ include_raw: true, categories: ['originals'], preview_sha: confirmed ? '9'.repeat(64) : 'a'.repeat(64),
+    items: [confirmed
+      ? { ...previewReply().items[0], relative_path: 'originals/revision-1.txt', content_mode: 'raw', label: '작업 설명 1판 원문' }
+      : { ...previewReply().items[0], label: '작업 설명 1판 (비밀로 보이는 값이 있어 원문 제외)' }],
+    missing: confirmed ? [] : [{ category: 'originals', reason: 'redacted', claim: 'x' }],
+    secret_scan: { findings: [
+      { relative_path: 'originals/revision-1.txt', kind: 'anthropic_api_key', line: 2, column: 4 },
+      { relative_path: 'originals/revision-1.txt', kind: 'aws_secret_access_key', line: 3, column: 1 }],
+    truncated: false, findings_sha: FINDINGS_SHA, confirmed } });
+}
+
+test('secret findings are shown by kind and location, and withheld until the exact set is confirmed', async () => {
+  const receipt = { bundle_id: BUNDLE, bundle_sha256: 'd'.repeat(64), size_bytes: 10, item_count: 1,
+    manifest_sha256: 'e'.repeat(64), completed_at: '2026-09-23T00:00:00.000000Z', work_id: WORK,
+    request_id: REQ, missing: [] };
+  const { root, asked, exporter } = panel([scanned(false), scanned(true), receipt]);
+  boxes(root).find(el => el.getAttribute('id') === 'export-include-raw').checked = true;
+  await exporter.preview();
+  assert.equal('acknowledged_findings_sha' in asked[0][1].body, false);
+  const findings = root.findAll(el => el.getAttribute?.('class') === 'export-findings')[0];
+  assert.deepEqual(findings.children.map(li => li.textContent), [
+    'Anthropic API 키 형태 · 작업 설명 1판 2행 4열', 'AWS 비밀 액세스 키 지정 · 작업 설명 1판 3행 1열']);
+  assert.match(root.textContent, new RegExp(MESSAGES.findings));
+  assert.match(root.textContent, /원문 제외\(메타데이터만\)/);
+  const again = buttons(root).find(el => el.textContent.startsWith('확인한 값과 함께'));
+  // the confirmation is an explicit, unchecked control; nothing is sent without it
+  await again.dispatch('click');
+  assert.equal(asked.length, 1);
+  assert.match(root.textContent, new RegExp(MESSAGES.needFindings));
+  // the owner switching checkboxes afterwards does not change the confirmed selection
+  boxes(root).find(el => el.getAttribute('id') === 'export-category-events').checked = true;
+  boxes(root).find(el => el.getAttribute('id') === 'export-confirm-findings').checked = true;
+  await again.dispatch('click');
+  assert.deepEqual(asked[1][1].body, { schema_version: PREVIEW_SCHEMA, request_id: REQ, categories: ['originals'],
+    include_raw: true, acknowledged_findings_sha: FINDINGS_SHA });
+  assert.match(root.textContent, new RegExp(MESSAGES.findingsConfirmed));
+  assert.equal(boxes(root).some(el => el.getAttribute('id') === 'export-confirm-findings'), false);
+  boxes(root).find(el => el.getAttribute('id') === 'export-consent').checked = true;
+  await buttons(root).find(el => el.textContent === '이 내용으로 내보내기').dispatch('click');
+  assert.deepEqual(asked[2][1].body, { schema_version: CONFIRM_SCHEMA, request_id: REQ, categories: ['originals'],
+    include_raw: true, preview_sha: '9'.repeat(64), confirmed: true, acknowledged_findings_sha: FINDINGS_SHA });
+});
+
+test('a withheld preview exports without any finding confirmation', async () => {
+  const receipt = { bundle_id: BUNDLE, bundle_sha256: 'd'.repeat(64), size_bytes: 10, item_count: 1,
+    manifest_sha256: 'e'.repeat(64), completed_at: '2026-09-23T00:00:00.000000Z', work_id: WORK,
+    request_id: REQ, missing: [] };
+  const { root, asked, exporter } = panel([scanned(false), receipt]);
+  boxes(root).find(el => el.getAttribute('id') === 'export-include-raw').checked = true;
+  await exporter.preview();
+  boxes(root).find(el => el.getAttribute('id') === 'export-consent').checked = true;
+  await buttons(root).find(el => el.textContent === '이 내용으로 내보내기').dispatch('click');
+  assert.equal('acknowledged_findings_sha' in asked[1][1].body, false);
+  await assert.rejects(exporter.preview({ acknowledged: 'x', selection: { include_raw: true, categories: [] } }));
+});

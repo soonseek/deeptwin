@@ -20,6 +20,7 @@ from ..services.source_deletions import CONFIRM_SCHEMA as DELETION_CONFIRM_SCHEM
 from ..services.source_deletions import PREVIEW_SCHEMA as DELETION_PREVIEW_SCHEMA
 from ..services.source_deletions import SourceDeletions
 from ..services.work_exports import (
+    ACK_FIELD,
     CONFIRM_SCHEMA,
     PREVIEW_SCHEMA,
     PersistentWorkExports,
@@ -55,7 +56,7 @@ _LIMITS = WireLimits(max_bytes=MAX_BODY_BYTES, max_depth=2, max_items=8, max_mem
                      max_string_bytes=MAX_TEXT_BYTES)
 
 
-_EXPORT_LIMITS = WireLimits(max_bytes=2_048, max_depth=3, max_items=16, max_members=6,
+_EXPORT_LIMITS = WireLimits(max_bytes=2_048, max_depth=3, max_items=16, max_members=7,
                             max_string_bytes=128)
 
 
@@ -125,11 +126,11 @@ def preflight(scope, body, content_type):
             fields = ("schema_version", "request_id", "categories", "include_raw",
                       *(("preview_sha", "confirmed") if confirm else ()))
             value = parse_json_object(
-                body, required=fields,
-                field_types={name: kind for name, kind in (
+                body, required=fields, optional=(ACK_FIELD,),
+                field_types={**{name: kind for name, kind in (
                     ("schema_version", str), ("request_id", str), ("categories", list),
                     ("include_raw", bool), ("preview_sha", str), ("confirmed", bool))
-                    if name in fields},
+                    if name in fields}, ACK_FIELD: str},
                 limits=_EXPORT_LIMITS)
             if value["schema_version"] != (CONFIRM_SCHEMA if confirm else PREVIEW_SCHEMA):
                 raise WorkRouteError()

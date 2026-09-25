@@ -6,6 +6,11 @@
 // explicit check bound to that exact preview digest (records.mjs exportConsent);
 // a work changed after the preview is refused by the server and shown as such.
 // The finished bundle is downloaded from the same origin, beside its SHA-256.
+// T074: when raw originals are chosen, the server scans them for credential shapes
+// and the instance's own secrets. A finding is shown by kind and location only —
+// never the matched value — and its raw original stays out unless the owner
+// explicitly confirms that exact finding set, which re-previews with the set's
+// digest (bound into the preview digest and carried by the confirmation).
 // All server text reaches the DOM through textContent or attributes only.
 
 import { EXPORT_CATEGORIES, exportConsent, previewSummary } from './records.mjs';
@@ -35,6 +40,19 @@ export const REASON_LABELS = Object.freeze({
   rights_restricted: '권리 제한',
 });
 
+export const FINDING_LABELS = Object.freeze({
+  anthropic_api_key: 'Anthropic API 키 형태',
+  provider_api_key: '제공자 API 키 형태(sk-…)',
+  aws_access_key_id: 'AWS 액세스 키 ID 형태',
+  aws_secret_access_key: 'AWS 비밀 액세스 키 지정',
+  private_key_block: '개인 키(PEM) 블록',
+  bearer_token: 'Bearer 토큰',
+  instance_session_token: '이 인스턴스의 세션 토큰',
+  instance_bootstrap_capability: '이 인스턴스의 초기 설정 토큰',
+  unscanned_candidates: '검사 한도를 넘은 토큰 후보',
+  unscanned_text: '검사 한도를 넘은 원문 부분',
+});
+
 export const MODE_LABELS = Object.freeze({
   raw: '원문 포함', metadata_only: '원문 제외(메타데이터만)', redacted: '가림 처리',
 });
@@ -49,7 +67,14 @@ export const MESSAGES = Object.freeze({
   needConsent: '미리보기 내용에 동의해야 내보낼 수 있습니다.',
   exporting: '내보내기 묶음을 만드는 중…',
   stale: '미리보기 이후 작업이 바뀌었습니다. 다시 미리보기 하세요.',
+  findings: '원문에서 비밀로 보이는 값을 찾았습니다. 값은 표시하지 않으며, 해당 원문은 제외됩니다.',
+  confirmFindings: '위에 표시된 비밀 의심 값을 확인했고, 해당 원문을 그대로 포함합니다.',
+  needFindings: '비밀 의심 값을 확인한다는 표시가 있어야 원문을 포함할 수 있습니다.',
+  findingsConfirmed: '확인한 비밀 의심 값이 들어 있는 원문이 그대로 포함됩니다.',
+  truncated: '찾은 값이 많아 일부만 표시했습니다.',
 });
+
+const HEX64 = /^[0-9a-f]{64}$/;
 
 export const ERROR_MESSAGES = Object.freeze({
   invalid_input: '요청 형식이 맞지 않습니다.',
@@ -141,6 +166,41 @@ export function createWorkExport({ root, document, basePath = '/', request, cryp
     return EXPORT_CATEGORIES.filter(category => boxes.get(category).checked);
   }
 
+  function findingText(finding) {
+    const revision = /revision-(\d+)\./.exec(String(finding.relative_path))?.[1] ?? '?';
+    return `${FINDING_LABELS[finding.kind] ?? finding.kind} · 작업 설명 ${revision}판 `
+      + `${Number(finding.line)}행 ${Number(finding.column)}열`;
+  }
+
+  function renderFindings(value, parts) {
+    const scan = value.secret_scan;
+    if (!scan || !Array.isArray(scan.findings) || !scan.findings.length) return;
+    const list = element('ul', undefined, { class: 'export-findings', 'aria-label': '비밀 의심 값' });
+    for (const finding of scan.findings) {
+      list.append(element('li', findingText(finding), { 'data-kind': String(finding.kind) }));
+    }
+    parts.push(element('h3', `비밀 의심 값 ${scan.findings.length}개`), list);
+    if (scan.truncated) parts.push(element('p', MESSAGES.truncated));
+    if (scan.confirmed === true) {
+      parts.push(element('p', MESSAGES.findingsConfirmed, { class: 'export-findings-state',
+        'data-state': 'confirmed' }));
+      return;
+    }
+    parts.push(element('p', MESSAGES.findings, { class: 'export-findings-state', 'data-state': 'withheld' }));
+    if (typeof scan.findings_sha !== 'string' || !HEX64.test(scan.findings_sha)) return;
+    const acknowledge = element('input', undefined, { type: 'checkbox', id: 'export-confirm-findings' });
+    acknowledge.checked = false;
+    const again = element('button', '확인한 값과 함께 원문 포함해 다시 미리보기', { type: 'button' });
+    again.addEventListener('click', () => {
+      if (acknowledge.checked !== true) {
+        say(MESSAGES.needFindings, 'findings_required');
+        return;
+      }
+      preview({ acknowledged: scan.findings_sha, selection: value }).catch(() => {});
+    });
+    parts.push(acknowledge, element('label', MESSAGES.confirmFindings, { for: 'export-confirm-findings' }), again);
+  }
+
   function renderPreview(value) {
     const summary = previewSummary(value);
     const parts = [];
@@ -156,6 +216,7 @@ export function createWorkExport({ root, document, basePath = '/', request, cryp
         + `${REASON_LABELS[entry.reason] ?? entry.reason}`, { 'data-reason': entry.reason }));
     }
     parts.push(element('h3', '빠지는 범주와 이유'), missing);
+    renderFindings(value, parts);
     parts.push(element('p', `미리보기 SHA-256 ${summary.previewSha}`, { class: 'export-digest' }));
     if (!value.exportable) {
       parts.push(element('p', MESSAGES.nothing));
@@ -172,29 +233,34 @@ export function createWorkExport({ root, document, basePath = '/', request, cryp
     say(`포함될 항목 ${value.items.length}개를 확인하세요.`, 'previewed');
   }
 
-  async function preview() {
+  // `acknowledged` re-previews the SAME selection the owner saw, with the exact finding set confirmed
+  async function preview({ acknowledged = null, selection: shownSelection = null } = {}) {
     const id = workId();
     if (typeof id !== 'string' || !UUID.test(id)) {
       say(MESSAGES.unsaved, 'unsaved');
       return null;
     }
-    const categories = selection();
+    if (acknowledged !== null && (typeof acknowledged !== 'string' || !HEX64.test(acknowledged)
+        || shownSelection?.include_raw !== true)) fail('a finding confirmation needs the shown raw preview');
+    const categories = acknowledged !== null ? [...shownSelection.categories] : selection();
     if (!categories.length) {
       say(MESSAGES.choose, 'invalid_input');
       return null;
     }
-    const includeRaw = raw.checked === true && categories.includes('originals');
+    const includeRaw = acknowledged !== null
+      || (raw.checked === true && categories.includes('originals'));
     const mine = ++generation;
     current = null;
     shown.replaceChildren();
     say(MESSAGES.previewing, 'previewing');
     try {
-      const value = await request(routes.preview(id), { method: 'POST', body: {
-        schema_version: PREVIEW_SCHEMA, request_id: crypto.randomUUID(), categories,
-        include_raw: includeRaw } });
+      const body = { schema_version: PREVIEW_SCHEMA, request_id: crypto.randomUUID(), categories,
+        include_raw: includeRaw };
+      if (acknowledged !== null) body.acknowledged_findings_sha = acknowledged;
+      const value = await request(routes.preview(id), { method: 'POST', body });
       if (mine !== generation) return null;
       renderPreview(value);
-      current = { workId: id, value };
+      current = { workId: id, value, acknowledged };
       return value;
     } catch (error) {
       if (mine === generation) refusal(error);
@@ -209,13 +275,14 @@ export function createWorkExport({ root, document, basePath = '/', request, cryp
       return null;
     }
     const bound = exportConsent(summary, { confirmed: true, previewSha: current.value.preview_sha });
-    const { workId: id, value } = current;
+    const { workId: id, value, acknowledged } = current;
     const mine = generation;
     say(MESSAGES.exporting, 'exporting');
     try {
-      const receipt = await request(routes.confirm(id), { method: 'POST', body: {
-        schema_version: CONFIRM_SCHEMA, request_id: bound.request_id, categories: value.categories,
-        include_raw: value.include_raw, preview_sha: bound.preview_sha, confirmed: true } });
+      const body = { schema_version: CONFIRM_SCHEMA, request_id: bound.request_id, categories: value.categories,
+        include_raw: value.include_raw, preview_sha: bound.preview_sha, confirmed: true };
+      if (acknowledged !== null) body.acknowledged_findings_sha = acknowledged;
+      const receipt = await request(routes.confirm(id), { method: 'POST', body });
       if (mine !== generation) return null;
       const link = element('a', '내보낸 묶음 내려받기', { href: routes.download(id, receipt.bundle_id),
         download: `deeptwin-export-${receipt.bundle_id}.zip`, rel: 'noopener' });

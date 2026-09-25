@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import zipfile
 from datetime import UTC, datetime
 from functools import wraps
@@ -39,6 +40,7 @@ from ..operations.export import (
     create_export_request,
     seal_export,
 )
+from .export_secret_scan import findings_digest, scan_text
 from .owner_auth import OwnerAuthError
 from .run_approvals import _authenticate_owner, _owner_actor_ref
 from .works import PersistentWorks, WorkServiceError
@@ -54,6 +56,10 @@ RUN_MANIFEST_SCHEMA = "run-manifest-v1"
 UNCOLLECTED = frozenset({"model_final_responses", "tool_observations",
                          "evaluation_evidence"})
 _ZIP_TIME = (1980, 1, 1, 0, 0, 0)
+# the owner's explicit confirmation of the exact secret-finding set shown in a preview
+ACK_FIELD = "acknowledged_findings_sha"
+_HEX64 = re.compile(r"[0-9a-f]{64}")
+MAX_CANARIES = 64
 
 
 def _closed(method):
@@ -83,7 +89,10 @@ def _selection(payload, *, confirm):
     fields = {"schema_version", "request_id", "categories", "include_raw"}
     if confirm:
         fields |= {"preview_sha", "confirmed"}
-    if type(payload) is not dict or set(payload) != fields:
+    if type(payload) is not dict or set(payload) - {ACK_FIELD} != fields:
+        raise WorkServiceError("invalid_input")
+    acknowledged = payload.get(ACK_FIELD)
+    if ACK_FIELD in payload and (type(acknowledged) is not str or not _HEX64.fullmatch(acknowledged)):
         raise WorkServiceError("invalid_input")
     if payload["schema_version"] != (CONFIRM_SCHEMA if confirm else PREVIEW_SCHEMA):
         raise WorkServiceError("invalid_input")
@@ -100,7 +109,9 @@ def _selection(payload, *, confirm):
         raise WorkServiceError("invalid_input")
     if payload["include_raw"] and "originals" not in categories:
         raise WorkServiceError("invalid_input")  # raw inclusion is a choice about originals
-    return request_id, tuple(sorted(categories)), payload["include_raw"]
+    if acknowledged is not None and not payload["include_raw"]:
+        raise WorkServiceError("invalid_input")  # a finding confirmation is about raw originals
+    return request_id, tuple(sorted(categories)), payload["include_raw"], acknowledged
 
 
 class PersistentWorkExports:
@@ -205,8 +216,10 @@ class PersistentWorkExports:
         return sorted(runs, key=lambda run: (run["started_at_utc"], run["run_id"]))
 
     @staticmethod
-    def _collect(revisions, categories, include_raw, alternatives=(), runs=()):
-        """(items with their exact bytes, missing entries), deterministically ordered."""
+    def _collect(revisions, categories, include_raw, alternatives=(), runs=(), withheld=frozenset()):
+        """(items with their exact bytes, missing entries), deterministically ordered.
+        A revision in `withheld` (a raw original with an unconfirmed secret finding) is
+        exported as metadata only, and the omission is stated."""
 
         items, missing = [], []
 
@@ -218,14 +231,19 @@ class PersistentWorkExports:
             for record in revisions:
                 content = record.body["content"]
                 number = record.ref.version
-                if include_raw:
+                if include_raw and number not in withheld:
                     add("originals", f"originals/revision-{number}.txt", "text/plain; charset=utf-8",
                         content["text"].encode("utf-8"), mode="raw", label=f"작업 설명 {number}판 원문")
                 else:
                     add("originals", f"originals/revision-{number}.json", "application/json",
                         _json({"revision": number, "created_at_utc": record.body["created_at_utc"],
                                "characters": len(content["text"]), "text": "원문 미포함"}),
-                        mode="metadata_only", label=f"작업 설명 {number}판 (원문 제외)")
+                        mode="metadata_only", label=(
+                            f"작업 설명 {number}판 (비밀로 보이는 값이 있어 원문 제외)" if number in withheld
+                            else f"작업 설명 {number}판 (원문 제외)"))
+            if withheld:
+                missing.append({"category": "originals", "reason": "redacted",
+                                "claim": f"비밀로 보이는 값이 있어 작업 설명 원문 {len(withheld)}개를 제외했다."})
         if "events" in categories:
             add("events", "events/work-history.json", "application/json", _json([
                 {"revision": record.ref.version, "created_at_utc": record.body["created_at_utc"],
@@ -279,36 +297,68 @@ class PersistentWorkExports:
         return items, missing
 
     @staticmethod
-    def _preview_value(work_id, request_id, categories, include_raw, items, missing):
+    def _preview_value(work_id, request_id, categories, include_raw, items, missing, scan=None):
         shown = [{name: item[name] for name in ("export_id", "category", "relative_path",
                                                  "media_type", "size_bytes", "export_sha256",
                                                  "content_mode", "label")} for item in items]
         digest = sha256(canonical_json({
             "work_id": work_id, "request_id": request_id, "categories": list(categories),
-            "include_raw": include_raw, "items": shown, "missing": missing,
+            "include_raw": include_raw, "items": shown, "missing": missing, "secret_scan": scan,
         })).hexdigest()
         return {"request_id": request_id, "work_id": work_id, "preview_sha": digest,
                 "categories": list(categories), "include_raw": include_raw,
-                "items": shown, "missing": missing, "exportable": bool(shown)}
+                "items": shown, "missing": missing, "exportable": bool(shown), "secret_scan": scan}
 
-    def _current(self, db, roots, work_id, request_id, categories, include_raw):
+    def _scan(self, db, work_id, revisions, acknowledged):
+        """The secret scan over every raw original the export would carry: (the scan
+        shown in the preview, withheld revision numbers, matched values for canaries).
+        Only the kind and location of a finding is ever shown; a raw original with a
+        finding is withheld unless the owner confirmed exactly this finding set."""
+
+        findings, truncated, values, flagged = [], False, [], set()
+
+        def known(candidate):
+            return self._owner.recognizes_secret(db, candidate)
+
+        for record in revisions:
+            number = record.ref.version
+            found, cut, matched = scan_text(record.body["content"]["text"], known=known)
+            if found:
+                flagged.add(number)
+                values.extend(matched)
+                truncated = truncated or cut
+                findings.extend({"relative_path": f"originals/revision-{number}.txt", **item.as_dict()}
+                                for item in found)
+        digest = findings_digest(work_id, findings) if findings else None
+        if acknowledged is not None and acknowledged != digest:
+            raise WorkServiceError("conflict")  # the owner confirmed a finding set that is not this one
+        confirmed = digest is not None and acknowledged == digest
+        scan = {"findings": findings, "truncated": truncated, "findings_sha": digest,
+                "confirmed": confirmed}
+        withheld = frozenset() if confirmed else frozenset(flagged)
+        canaries = [] if confirmed else sorted({value for value in values if value})[:MAX_CANARIES]
+        return scan, withheld, canaries
+
+    def _current(self, db, roots, work_id, request_id, categories, include_raw, acknowledged=None):
         revisions = self._revisions(db, roots, work_id)
         alternatives = self._alternatives(db, roots, work_id) if "alternatives" in categories else ()
         runs = self._runs(db, roots, work_id) if "events" in categories else ()
-        items, missing = self._collect(revisions, categories, include_raw, alternatives, runs)
-        preview = self._preview_value(work_id, request_id, categories, include_raw, items, missing)
-        return revisions, items, missing, preview
+        scan, withheld, canaries = (self._scan(db, work_id, revisions, acknowledged) if include_raw
+                                    else (None, frozenset(), []))
+        items, missing = self._collect(revisions, categories, include_raw, alternatives, runs, withheld)
+        preview = self._preview_value(work_id, request_id, categories, include_raw, items, missing, scan)
+        return revisions, items, missing, preview, canaries
 
     @_closed
     def preview(self, request, work_id, payload) -> dict:
         """What the export would contain now; reads only, stores nothing."""
 
         work_id = uuid_string(work_id)
-        request_id, categories, include_raw = _selection(payload, confirm=False)
+        request_id, categories, include_raw, acknowledged = _selection(payload, confirm=False)
         _authenticate_owner(self._owner, request)
         with self._domain._connection() as db:
             roots = self._domain._read_roots(db)
-            return self._current(db, roots, work_id, request_id, categories, include_raw)[3]
+            return self._current(db, roots, work_id, request_id, categories, include_raw, acknowledged)[3]
 
     # --- the explicit, bound confirmation ------------------------------------------
 
@@ -337,7 +387,7 @@ class PersistentWorkExports:
     @_closed
     def confirm(self, request, work_id, payload) -> dict:
         work_id = uuid_string(work_id)
-        request_id, categories, include_raw = _selection(payload, confirm=True)
+        request_id, categories, include_raw, acknowledged = _selection(payload, confirm=True)
         if payload["confirmed"] is not True:
             raise WorkServiceError("invalid_input")  # consent is never implicit
         shown = payload["preview_sha"]
@@ -346,8 +396,8 @@ class PersistentWorkExports:
             roots = self._domain._read_roots(db)
             if self._for_request(db, roots, request_id):
                 raise WorkServiceError("conflict")  # one bundle per request id
-            _revisions, items, _missing, preview = self._current(
-                db, roots, work_id, request_id, categories, include_raw)
+            _revisions, items, _missing, preview, _canaries = self._current(
+                db, roots, work_id, request_id, categories, include_raw, acknowledged)
         if not preview["exportable"]:
             raise WorkServiceError("invalid_input")  # nothing selected exists to export
         if preview["preview_sha"] != shown:
@@ -360,15 +410,16 @@ class PersistentWorkExports:
             actor_ref = _owner_actor_ref(db, actor)
             if self._for_request(db, roots, request_id):
                 raise WorkServiceError("conflict")
-            revisions, items, missing, again = self._current(
-                db, roots, work_id, request_id, categories, include_raw)
+            revisions, items, missing, again, canaries = self._current(
+                db, roots, work_id, request_id, categories, include_raw, acknowledged)
             if again["preview_sha"] != shown:
                 raise WorkServiceError("conflict")
             latest = revisions[-1].ref
             consent = self._record(db, roots, actor_ref, "run_consent", {
                 "export_consent": {"work_id": work_id, "request_id": request_id,
                                    "preview_sha": shown, "categories": list(categories),
-                                   "include_raw": include_raw}}, (latest,))
+                                   "include_raw": include_raw,
+                                   "confirmed_secret_findings_sha": acknowledged}}, (latest,))
             raw_refs, by_revision = [], {record.ref.version: record.ref for record in revisions}
             for item in items:
                 if item["content_mode"] == "raw":
@@ -395,7 +446,7 @@ class PersistentWorkExports:
                 [{"export_ref": entry["category"], "reason": entry["reason"],
                   "affected_claims": [entry["claim"]],
                   "recoverable_by_user": entry["reason"] == "not_selected"} for entry in missing],
-                secret_canaries=[], created_at=created_at, app_release=APP_RELEASE,
+                secret_canaries=canaries, created_at=created_at, app_release=APP_RELEASE,
                 pseudonym_map_scope=f"work:{work_id}",
                 reproduction_limits=["모델·도구 실행 기록은 이 내보내기에 포함되지 않았다."],
             )

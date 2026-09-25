@@ -535,6 +535,22 @@ class PersistentOwnerAuthority:
             raise OwnerAuthError("unauthenticated") from None
         return values[0]
 
+    def recognizes_secret(self, db, candidate):
+        """The closed kind of one of this instance's own secrets `candidate` is, or None.
+        Checked only against what the server already stores (session token digests,
+        the bootstrap capability verifier); nothing secret is read or returned."""
+
+        try:
+            raw = parse_base64url_32(candidate)
+        except ValueError:
+            return None
+        if db.execute("SELECT 1 FROM owner_auth_sessions WHERE token_digest=?",
+                      (sha256(raw).hexdigest(),)).fetchone() is not None:
+            return "instance_session_token"
+        if self._verifier.matches(candidate):
+            return "instance_bootstrap_capability"
+        return None
+
     def _session_by_token(self, db, token, now, *, revoked=False):
         try:
             digest = sha256(parse_base64url_32(token)).hexdigest()
