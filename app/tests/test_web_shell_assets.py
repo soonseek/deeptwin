@@ -30,6 +30,7 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "styles.css": "text/css",
         "chat.mjs": "application/javascript",
         "settings.mjs": "application/javascript",
+        "browser-grants.mjs": "application/javascript",
         "speech-input.mjs": "application/javascript",
         "audio-capture-worklet.mjs": "application/javascript",
         "approvals.mjs": "application/javascript",

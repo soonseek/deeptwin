@@ -326,3 +326,11 @@ footer p { margin: 6px 0; }
 .settings-entries p { margin: 4px 0 0; color: var(--muted); }
 .settings-entries .settings-state { color: var(--ink); }
 .retention-categories li, .retention-items li { margin: 6px 0; }
+.grant-list { list-style: none; padding: 0; display: grid; gap: 12px; }
+.grant-list > li { border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; background: var(--panel); }
+.grant-list p, .grant-projection { margin: 4px 0 0; color: var(--muted); }
+.grant-list > li[data-state="revoked"], .grant-list > li[data-state="expired"] { opacity: 0.7; }
+.grant-projection { padding-left: 18px; overflow-wrap: anywhere; }
+.grant-form { display: grid; gap: 8px; margin-top: 16px; max-width: 640px; }
+.grant-form label { display: grid; gap: 4px; }
+.grant-form fieldset label { display: inline-flex; gap: 4px; margin-right: 12px; }

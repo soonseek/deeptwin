@@ -616,12 +616,24 @@ creates files and passes full artifacts to later roles; trace survives cancel/re
   Qualified root-only with real processes under 20104/20105 (own netns)/20102 over real pair
   roots against a loopback HTTPS fixture: grant/redirect/loopback/IPv6/private/rebinding/
   iframe/oversize/timeout refusals, the ungranted host never contacted, profile root empty.
-  Still open: source/projection-category binding of outbound content (only URL-prefix
-  sources and recipient hosts are enforced), grants resolved from persisted grant records and
-  a production authority registering the browser ToolDefinitions, the browser image/lock
-  reconciliation (the lock names a Node/playwright-core worker; this one is Python stdlib +
-  chromium-headless-shell) and in-container seccomp/`network_mode: none` qualification
-  (T081/T079).
+  2026-09-25 (grants, evidence/browser-grants-t043-2026-09-25.md): projection grants — a
+  grant's projection names the exact navigations permitted and, per query parameter, the
+  owner-declared data source whose values (SHA-256 digests only) it may carry; no
+  parameters is pure navigation. Control and the fetch service refuse any other URL
+  (`projection_denied`: registration, every navigation, and every derived request or redirect
+  hop that would carry a navigation's value to another host). Grants are owner-created
+  immutable `grant` records (`app/services/browser_grants.py`, `approval.decided`), revocable
+  (a sealed `decision_record`) and expiring, through the `browser-grants-v1` routes (103
+  installed) and a settings-page section (recipients, sources, projection, tools, expiry,
+  state); the transport builds its grant only from the record the compiled binding's
+  `grant_ref` names, which must equal the run's approved design `tool_permissions` (environment
+  → prepared head → design approval), re-resolved at dispatch — revoked/expired/other-grant is a
+  `denied` attempt with nothing sent. Qualified through the real fetch worker process too.
+  Still open: a production authority registering the browser ToolDefinitions
+  (`ClaudeRunExecutor` compiles with `tool_definitions=[]`), PK-06's worker/SW/popup/WS checks
+  with scripts on (scripts stay disabled), the browser image/lock reconciliation (the lock
+  names a Node/playwright-core worker; this one is Python stdlib + chromium-headless-shell)
+  and in-container seccomp/`network_mode: none` qualification (T081/T079).
 - [x] T044 [P] [US3] Implement bounded declarative DOCX/CSV/JSON/PDF/image creation and safe format validation in app/adapters/documents.py and app/tests/test_document_tools.py; use PDF skill and actual render inspection, not file-exists-only checks (SC-004). 2026-09-13: DOCX/CSV/JSON (evidence/document-tools-t044.md); 2026-09-23: PDF (text layer + per-character rasterized ink) and PNG (sampled pixels) with active-content/encryption/bomb refusal, over the T089-locked document-worker libraries (evidence/document-tools-pdf-png-t044.md). The Korean CID font is referenced, not embedded.
 - [x] T045 [US3] Implement purpose-scoped artifact storage/preview/range reads and multi-format viewers in app/services/artifacts.py and app/static/artifacts.mjs; preserve originals and disclose derived/unsupported coverage (FR-015). 2026-09-23 slice: the owner reads a run's artifacts through runs-v1 (`…/runs/{run}/artifacts`, metadata, the original whole or one byte range, a derived preview with digest/fidelity/coverage for text, JSON and CSV; images left to the browser; PDF/DOCX disclosed as needing the isolated codec worker, never parsed in the control plane) and the viewer is mounted on the observe page (evidence/run-artifacts-t045.md). PDF/DOCX page previews through the codec worker and a vault-wide artifact index stay open.
   2026-09-25: closed — PDF pages and DOCX text are previewed through the isolated document

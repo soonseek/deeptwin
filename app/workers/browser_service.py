@@ -35,7 +35,7 @@ from .fetch_channel import (
 )
 
 _ANSWER_MARGIN_S = 1.0
-_FETCH_CODES = frozenset({"grant_denied", "dns_denied", "redirect_denied", "too_large", "timeout",
+_FETCH_CODES = frozenset({"grant_denied", "projection_denied", "dns_denied", "redirect_denied", "too_large", "timeout",
                           "fetch_failed", "invalid_request"})
 
 

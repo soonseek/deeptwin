@@ -52,10 +52,10 @@ __all__ = [
 
 # the closed codes a browser session answers
 BROWSER_CODES = frozenset({
-    "grant_denied", "dns_denied", "redirect_denied", "too_large", "timeout", "render_failed",
+    "grant_denied", "projection_denied", "dns_denied", "redirect_denied", "too_large", "timeout", "render_failed",
     "fetch_failed", "sandbox_unavailable", "invalid_request",
 })
-_DENIAL_REASON = {"grant_denied": "BlockedByClient", "dns_denied": "NameNotResolved",
+_DENIAL_REASON = {"grant_denied": "BlockedByClient", "projection_denied": "BlockedByClient", "dns_denied": "NameNotResolved",
                   "redirect_denied": "BlockedByClient", "too_large": "BlockedByClient",
                   "timeout": "TimedOut", "fetch_failed": "Failed", "invalid_request": "BlockedByClient"}
 MAX_MESSAGE_BYTES = 48 * 1024 * 1024

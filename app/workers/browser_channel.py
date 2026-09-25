@@ -46,6 +46,7 @@ from .fetch_channel import (
     canonical,
     check_grant_id,
     check_url,
+    projection_values,
     read_chunks,
     source_admits,
     strict_object,
@@ -77,8 +78,8 @@ MAX_TITLE = 512
 OPERATIONS = ("navigate", "read", "screenshot")
 MEDIA = {"navigate": None, "read": "text/plain; charset=utf-8", "screenshot": "image/png"}
 # closed codes a worker may answer; anything else is `malformed_result`
-WORKER_CODES = frozenset({"grant_denied", "dns_denied", "redirect_denied", "too_large", "timeout",
-                          "render_failed", "fetch_failed", "sandbox_unavailable", "invalid_request"})
+WORKER_CODES = frozenset({"grant_denied", "projection_denied", "dns_denied", "redirect_denied", "too_large",
+                          "timeout", "render_failed", "fetch_failed", "sandbox_unavailable", "invalid_request"})
 CLIENT_CODES = WORKER_CODES | {"unavailable", "transport_failed", "malformed_result"}
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 _BOOT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
@@ -353,11 +354,15 @@ class BrowserClient:
             raise BrowserChannelError("grant_denied", sent=False)
         if urlsplit(request.url).hostname in excluded_hosts:
             raise BrowserChannelError("grant_denied", sent=False)
+        if projection_values(grant.projection, request.url) is None:
+            # the URL carries data the grant's projection does not permit: nothing leaves
+            raise BrowserChannelError("projection_denied", sent=False)
         try:
-            identifier = self._fetch.register(grant, tuple(excluded_hosts))
+            identifier = self._fetch.register(grant, request.url, tuple(excluded_hosts))
         except FetchChannelError as error:
             raise BrowserChannelError("unavailable" if error.code in ("unavailable", "transport_failed",
                                                                       "malformed_result", "too_many_grants")
+                                      else "projection_denied" if error.code == "projection_denied"
                                       else "grant_denied", sent=False) from None
         observation = failure = None
         try:

@@ -9,7 +9,9 @@
   `BrowserClient.for_worker` and prints one JSON line;
 - `dispatch <base>` reads a JSON plan on stdin and runs a compiled graph whose `writer`
   node is bound to a browser tool through the real dispatcher and
-  `BrowserAttemptTransport`, printing the sealed node result.
+  `BrowserAttemptTransport`, printing the sealed node result — in an owner vault of its
+  own, the grant being the owner's persisted record the run's approved design names
+  (`browser_grant_chain`), optionally revoked before the dispatch.
 
 The parent test (root on Linux) starts each child under a fixed numeric identity, so the
 kernel supplies every peer credential. The substitutions, all module-local:
@@ -119,18 +121,24 @@ def _request(base: Path) -> int:
     from hashlib import sha256
 
     from app.workers.browser_channel import BrowserChannelError, BrowserRequest
-    from app.workers.fetch_channel import BrowserGrant
+    from app.workers.fetch_channel import BrowserGrant, FetchChannelError
 
     plan = json.loads(sys.stdin.read())
     client = _client(base, plan)
     results = {}
     for case in plan["cases"]:
         request = BrowserRequest(**case["request"])
-        grant = BrowserGrant(**{key: tuple(item) if type(item) is list else item for key, item in case["grant"].items()})
+        grant = BrowserGrant.from_mapping(case["grant"])
         try:
             if case.get("skip_local_check"):
-                # the worker-side enforcement, without control's own source pre-check
-                identifier = client._fetch.register(grant)
+                # the worker-side enforcement, without control's own source/projection
+                # pre-check: the grant is registered for `register_url` (the request's own
+                # URL unless named) and the browser is asked for the request's URL
+                try:
+                    identifier = client._fetch.register(grant, case.get("register_url", request.url))
+                except FetchChannelError as error:
+                    results[case["name"]] = {"ok": False, "code": error.code, "sent": True, "stage": "register"}
+                    continue
                 try:
                     value = client._exchange(request, identifier, grant)
                 finally:
@@ -152,50 +160,62 @@ def _request(base: Path) -> int:
 
 
 def _dispatch(base: Path) -> int:
+    """The grant is the owner's persisted record, authorized through the owner's design
+    approval of the run's environment (`app.tests.support.browser_grant_chain`); with
+    `"revoke": true` the owner revokes it after the transport is built and before the
+    dispatch."""
+
     import tempfile
 
     from app.runtime import browser_attempt_transport as bt
     from app.runtime import node_attempts as na
     from app.runtime import scheduler as sch
-    from app.tests.test_browser_worker import browser_compiled, browser_run_subject
-    from app.tests.test_scheduler_attempt_dispatch import build, handlers
+    from app.runtime.scheduler import SchedulerError
+    from app.tests.support.browser_grant_chain import (
+        dispatch,
+        granted_run,
+        owner_vault,
+        revoke,
+    )
     from app.workers.browser_channel import BrowserRequest
-    from app.workers.fetch_channel import BrowserGrant
 
     plan = json.loads(sys.stdin.read())
     client = _client(base, plan)
-    with tempfile.TemporaryDirectory(prefix="dt-t043-dispatch-") as directory:
-        subject, run = browser_run_subject(Path(directory) / "ledger")
-        compiled = browser_compiled(subject, plan["tool"])
-        grant = BrowserGrant(**{key: tuple(item) if type(item) is list else item for key, item in plan["grant"].items()})
+    with tempfile.TemporaryDirectory(prefix="dt-t043-dispatch-") as directory, \
+            owner_vault(Path(directory)) as vault:
+        granted = granted_run(vault, tool=plan["tool"], command=plan.get("command"))
+        subject, run = granted.subject, granted.run
         transport = bt.BrowserAttemptTransport.build(
-            domain_store=subject.domain, ledger=subject.ledger, compiled=compiled, node_id="writer",
-            binding_id="source-read", client=client, request=BrowserRequest(**plan["request"]), grant=grant)
-        dispatcher = na.NodeAttemptDispatcher.build(
-            ledger=subject.ledger, budget_book=subject.book, owner=subject.owner,
-            bindings={"writer": na.AttemptBinding.create(
-                envelope_ref=subject.refs.envelope, profile_ref=subject.refs.profile,
-                budget_policy_ref=subject.refs.budget, deadline_at_ms=10_000, lease_duration_ms=60_000,
-                model_calls=1, tool_calls=1, node_visits=1, loop_rounds=0,
-                output_bytes=transport.output_bytes_bound, candidates=0, api_microunits=None,
-                principal=subject.principal, grant=subject.grant)},
-            transport=transport)
-        outcome = build(subject, run, dispatcher, handlers(subject, []), compiled=compiled).run()
+            domain_store=subject.domain, ledger=subject.ledger, compiled=subject.compiled, node_id="writer",
+            binding_id="source-read", client=client, request=BrowserRequest(**plan["request"]),
+            grants=granted.grants)
+        if plan.get("revoke"):
+            revoke(vault, granted)
+        value = {"result": None, "scheduler_error": None}
+        try:
+            outcome = dispatch(granted, transport)
+        except SchedulerError as error:
+            value["scheduler_error"] = str(error)
+            outcome = None
         execution = sch.execution_identity(run.run_id, "writer", 0)
-        ref = dict(outcome.result_refs).get(execution)
-        value = {"result": None}
+        ref = None if outcome is None else dict(outcome.result_refs).get(execution)
         if ref is not None:
             from app.domain.store import BlobRef
 
-            content = subject.domain.get(ref).body["content"]
+            record = subject.domain.get(ref).body
+            content = record["content"]
             blob = content["output"]["blob"] if content["output"] else None
             value["result"] = {"schema_version": content["schema_version"], "tool_id": content["tool_id"],
                                "operation": content["operation"], "final_url": content["observation"]["final_url"],
-                               "title": content["observation"]["title"], "output_blob": blob}
+                               "title": content["observation"]["title"], "output_blob": blob,
+                               "grant_parent": granted.grant_ref.as_dict() in record["parent_refs"]}
             if blob is not None:
                 value["output_text"] = subject.domain.read_blob(BlobRef.from_dict(blob),
                                                                 purpose="operational").decode("utf-8")
-        calls = subject.ledger.tool_calls_for_attempt(na.attempt_identity(run.run_id, "writer", 0, 0))
+        attempt_id = na.attempt_identity(run.run_id, "writer", 0, 0)
+        attempt = subject.ledger.get_attempt(attempt_id)
+        value["attempt"] = {"terminal_outcome": attempt["terminal_outcome"], "usage_finality": attempt["usage_finality"]}
+        calls = subject.ledger.tool_calls_for_attempt(attempt_id)
         value["tool_calls"] = [{"state": item["state"], "tool_id": item["tool_id"]} for item in calls]
     sys.stdout.write(json.dumps(value, sort_keys=True, default=str) + "\n")
     sys.stdout.flush()

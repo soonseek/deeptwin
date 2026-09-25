@@ -4,19 +4,27 @@ reaches the sandboxed browser worker through the dispatcher's one-shot permit.
 `BrowserAttemptTransport` is the code-owned `CompiledToolTransport` for the three
 first-suite browser tools (runtime.md §6: `browser.navigate`, `browser.read`,
 `browser.screenshot`, as the ToolDefinitions `browser_navigate`, `browser_read`,
-`browser_screenshot` 1.0.0). It is built for exactly one compiled node binding, one typed
-`BrowserRequest` (the operation must be the bound tool's) and one `BrowserGrant` (the URL
-must lie under a granted source; the product's own origin hosts are never recipients).
+`browser_screenshot` 1.0.0). It is built for exactly one compiled node binding and one
+typed `BrowserRequest` (the operation must be the bound tool's). Its grant is never
+supplied in code: it is the owner's persisted browser grant record
+(`app.services.browser_grants`) that the compiled binding's `grant_ref` names exactly,
+current for the bound tool; the URL must lie under a granted source and be exactly one of
+the grant's projection entries with only declared source values; the product's own origin
+hosts are never recipients.
 
-Per attempt, inside the consumed dispatch window: the ToolCall's write-ahead intent (also
-claimed by the dispatcher with the send), then one `BrowserClient.run` — grant registered
-with the fetch service, the browser session, grant revoked and the fetch service's own
-accounting compared — then the ToolCall settled from what control observed:
+Per attempt, inside the consumed dispatch window, the authority is re-resolved before
+anything is sent: the run's environment must resolve to the owner's design approval whose
+approved `tool_permissions` is exactly that grant record, and the record must still be
+current (not revoked, not expired). A refusal is a `denied` attempt (`permission_denied`)
+with nothing sent. Then the ToolCall's write-ahead intent (also claimed by the dispatcher
+with the send), one `BrowserClient.run` — grant registered with the fetch service, the
+browser session, grant revoked and the fetch service's own accounting compared — and the
+ToolCall settled from what control observed:
 
 - a verified observation is sealed control-side as an immutable `artifact` record (the
   output — rendered text or the PNG — imported as registered content first) and is the
   attempt's `succeeded` result; the usage is one tool call and the bytes control measured;
-- a grant, DNS or redirect refusal is a `denied` attempt (`permission_denied`); a timeout
+- a grant, projection, DNS or redirect refusal is a `denied` attempt (`permission_denied`); a timeout
   is `timed_out` (`deadline`); an oversize, render, sandbox or fetch failure is `failed`;
   each with final usage (the call ran);
 - no reachable worker is `definitely_not_sent`; a broken or contradictory exchange is an
@@ -37,6 +45,12 @@ from uuid import NAMESPACE_URL, uuid5
 from ..domain.refs import EntityRef, canonical_json, uuid_string
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore
+from ..services.browser_grants import (
+    GRANTABLE_TOOLS,
+    BrowserGrantError,
+    PersistentBrowserGrants,
+    approved_tool_permissions,
+)
 from ..workers.browser_channel import (
     MAX_OPERATION_MS,
     MIN_DEADLINE_MS,
@@ -44,7 +58,7 @@ from ..workers.browser_channel import (
     BrowserClient,
     BrowserRequest,
 )
-from ..workers.fetch_channel import BrowserGrant, check_hostname, source_admits
+from ..workers.fetch_channel import check_hostname, projection_values, source_admits
 from .budgets import BudgetUsage
 from .graph import CompiledToolTransport, resolve_compiled_tool_binding
 from .ledger import (
@@ -80,7 +94,9 @@ _WINDOW_MARGIN_MS = 6_000  # the client's connection deadline runs 5 s past the 
 CODES = frozenset({"transport_unavailable", "transport_deadline", "transport_invalid", "transport_mismatch",
                    "seal_failed"})
 _EFFECTS = frozenset({"definitely_not_sent", "may_have_started", "outcome_unknown"})
-_DENIED = frozenset({"grant_denied", "dns_denied", "redirect_denied"})
+_DENIED = frozenset({"grant_denied", "projection_denied", "dns_denied", "redirect_denied"})
+if tuple(sorted(tool for tool, _version in BROWSER_TOOLS)) != GRANTABLE_TOOLS:  # pragma: no cover
+    raise RuntimeError("the grantable browser tools are exactly the mirrored ToolDefinitions")
 _FAILED = frozenset({"too_large", "render_failed", "fetch_failed", "sandbox_unavailable", "invalid_request"})
 
 
@@ -112,16 +128,27 @@ def _usage(output_bytes: int) -> BudgetUsage:
 
 
 class BrowserAttemptTransport(CompiledToolTransport):
-    """Built only by `build`; one compiled browser tool binding, one request, one grant."""
+    """Built only by `build`; one compiled browser tool binding, one request, and the
+    owner's grant record that binding names."""
 
-    __slots__ = ("_client", "_compiled", "_compiled_binding", "_domain", "_excluded", "_grant", "_ledger",
+    __slots__ = ("_client", "_compiled", "_compiled_binding", "_domain", "_excluded", "_grants", "_ledger",
                  "_request")
 
     def __init__(self) -> None:
         raise TypeError("Use BrowserAttemptTransport.build")
 
+    @staticmethod
+    def _admits(dispatch, request, excluded) -> None:
+        grant = dispatch.grant
+        if not source_admits(grant.sources, request.url):
+            raise ValueError("the url is outside the grant's sources")
+        if projection_values(grant.projection, request.url) is None:
+            raise ValueError("the url carries data the grant's projection does not permit")
+        if any(host in excluded for host in grant.recipients):
+            raise ValueError("the product's own origin is never a browser recipient")
+
     @classmethod
-    def build(cls, *, domain_store, ledger, compiled, node_id, binding_id, client, request, grant,
+    def build(cls, *, domain_store, ledger, compiled, node_id, binding_id, client, request, grants,
               excluded_hosts=()):
         if type(domain_store) is not DomainStore:
             raise TypeError("Exact DomainStore required")
@@ -129,8 +156,10 @@ class BrowserAttemptTransport(CompiledToolTransport):
             raise TypeError("invocation requires the exact ledger and its DomainStore")
         if type(client) is not BrowserClient:
             raise TypeError("an exact BrowserClient is required")
-        if type(request) is not BrowserRequest or type(grant) is not BrowserGrant:
-            raise TypeError("an exact BrowserRequest and BrowserGrant are required")
+        if type(request) is not BrowserRequest:
+            raise TypeError("an exact BrowserRequest is required")
+        if type(grants) is not PersistentBrowserGrants or not grants.bound_to(domain_store):
+            raise TypeError("the owner's browser grants over the same store are required")
         excluded = tuple(check_hostname(host) for host in excluded_hosts)
         binding = resolve_compiled_tool_binding(compiled, node_id, binding_id)
         key = (binding.tool_id, binding.version)
@@ -140,15 +169,35 @@ class BrowserAttemptTransport(CompiledToolTransport):
             raise ValueError("the request's operation is not the bound tool's")
         if binding.effect_class != EFFECT_CLASS:
             raise ValueError("a browser tool's definition must carry the read effect")
-        if not source_admits(grant.sources, request.url):
-            raise ValueError("the url is outside the grant's sources")
-        if any(host in excluded for host in grant.recipients):
-            raise ValueError("the product's own origin is never a browser recipient")
+        try:
+            # the grant is the owner's record the binding names, current for this tool
+            dispatch = grants.for_dispatch(binding.grant_ref, tool_id=binding.tool_id, version=binding.version)
+        except BrowserGrantError as error:
+            raise ValueError(f"the bound grant is not a current owner browser grant ({error.code})") from None
+        cls._admits(dispatch, request, excluded)
         transport = object.__new__(cls)
         transport._domain, transport._ledger, transport._client = domain_store, ledger, client
         transport._compiled, transport._compiled_binding = compiled, binding
-        transport._request, transport._grant, transport._excluded = request, grant, excluded
+        transport._request, transport._grants, transport._excluded = request, grants, excluded
         return transport
+
+    def _current_grant(self, request):
+        """The grant this attempt may run under, re-resolved now; None when the run's
+        approved tool permissions are not exactly the bound grant record, or the record
+        is no longer current (revoked, expired)."""
+
+        binding = self._compiled_binding
+        try:
+            run = self._ledger.get_run(request.run_id)["spec"]
+            approved = approved_tool_permissions(self._domain, EntityRef.from_dict(run["environment_ref"]))
+            if approved != binding.grant_ref:
+                return None
+            dispatch = self._grants.for_dispatch(binding.grant_ref, tool_id=binding.tool_id,
+                                                 version=binding.version)
+            self._admits(dispatch, self._request, self._excluded)
+        except (BrowserGrantError, ValueError, KeyError, TypeError, LedgerError):
+            return None
+        return dispatch.grant
 
     # --- the CompiledToolTransport coherence interface ----------------------------------
 
@@ -222,12 +271,21 @@ class BrowserAttemptTransport(CompiledToolTransport):
             max_text_bytes=self._request.max_text_bytes, width=self._request.width, height=self._request.height,
             max_png_bytes=self._request.max_png_bytes)
         spec = self._spec(request.attempt_id)
+        grant = self._current_grant(request)
         try:
             self._ledger.record_tool_call(_tool_call_command(permit.command_id), spec)
         except Exception:  # noqa: BLE001 - the ledger's detail stays private
             raise BrowserTransportError("transport_invalid", dispatch_effect="definitely_not_sent") from None
+        if grant is None:
+            # no current owner grant for this run and tool: refused before anything is sent
+            self._settle(permit, spec, "failed", None)
+            return AttemptTransportResult(
+                outcome="denied", result_ref=None, usage_finality="final", remote_terminal_observed="not_observed",
+                reason_code="permission_denied",
+                usage=BudgetUsage.create(model_calls=0, tool_calls=0, node_visits=1, loop_rounds=0, output_bytes=0,
+                                         candidates=0, api_microunits=None))
         try:
-            observation = self._client.run(browser_request, self._grant, excluded_hosts=self._excluded)
+            observation = self._client.run(browser_request, grant, excluded_hosts=self._excluded)
         except BrowserChannelError as error:
             return self._refused(permit, spec, error)
         except Exception:
@@ -286,7 +344,7 @@ class BrowserAttemptTransport(CompiledToolTransport):
             record = ImmutableRecord.create(
                 kind="artifact", id=sealed_artifact_identity(permit.command_id), version=1,
                 created_at_utc=datetime.fromtimestamp(time.time(), UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                actor_ref=roots.actor, parent_refs=(request.envelope_ref,), purpose="operational",
+                actor_ref=roots.actor, parent_refs=(request.envelope_ref, binding.grant_ref), purpose="operational",
                 access_policy_ref=roots.access_policy, retention_policy_ref=roots.retention_policy,
                 content={"schema_version": OUTPUT_SCHEMA, "tool_id": binding.tool_id, "version": binding.version,
                          "operation": observation.op, "attempt_id": request.attempt_id,
@@ -311,22 +369,29 @@ class BrowserToolsUnavailable:
 
 
 class BrowserToolset:
-    """The deployment's attached browser: builds a node's transport over one client."""
+    """The deployment's attached browser: builds a node's transport over one client and
+    the owner's persisted browser grants (never a grant supplied in code)."""
 
-    __slots__ = ("_client", "_excluded")
+    __slots__ = ("_client", "_excluded", "_grants")
     available = True
 
-    def __init__(self, client: BrowserClient, *, excluded_hosts=()):
+    def __init__(self, client: BrowserClient, *, grants: PersistentBrowserGrants, excluded_hosts=()):
         if type(client) is not BrowserClient:
             raise TypeError("an exact BrowserClient is required")
-        self._client = client
+        if type(grants) is not PersistentBrowserGrants:
+            raise TypeError("the owner's persisted browser grants are required")
+        self._client, self._grants = client, grants
         self._excluded = tuple(check_hostname(host) for host in excluded_hosts)
 
     @property
     def client(self) -> BrowserClient:
         return self._client
 
-    def transport_for(self, *, domain_store, ledger, compiled, node_id, binding_id, request, grant):
+    @property
+    def grants(self) -> PersistentBrowserGrants:
+        return self._grants
+
+    def transport_for(self, *, domain_store, ledger, compiled, node_id, binding_id, request):
         return BrowserAttemptTransport.build(
             domain_store=domain_store, ledger=ledger, compiled=compiled, node_id=node_id, binding_id=binding_id,
-            client=self._client, request=request, grant=grant, excluded_hosts=self._excluded)
+            client=self._client, request=request, grants=self._grants, excluded_hosts=self._excluded)

