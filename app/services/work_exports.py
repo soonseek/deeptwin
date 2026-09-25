@@ -3,13 +3,15 @@
 
 `preview` reads what the export would ACTUALLY contain right now — every revision
 of the work (raw text only when the owner explicitly asks for raw originals,
-otherwise metadata only), the work's revision history, and the sources its
-revisions name — and states every selected category this server does not collect
-yet as `unavailable` and every unselected one as `not_selected`, never as an
-empty success. The preview is not stored: its `preview_sha` digests the request
-id, the selection and every item's exact bytes, so `confirm` recomputes it and a
-work that changed in between refuses (`conflict`) instead of exporting something
-the owner never saw. Confirmation must be explicit (`confirmed: true`) and binds
+otherwise metadata only), the work's revision history, its runs (start, every stop
+with its reason, the consent each ran under, the approvals recorded on it), the
+owner's frozen alternatives, and the sources its revisions name — and states
+every selected category this server does not collect yet as `unavailable` and
+every unselected one as `not_selected`, never as an empty success. The preview
+is not stored: its `preview_sha` digests the request id, the selection and every
+item's exact bytes, so `confirm` recomputes it and a work that changed in between
+(a new revision, run, stop or approval) refuses (`conflict`) instead of exporting
+something the owner never saw. Confirmation must be explicit (`confirmed: true`) and binds
 the exact digest; it seals the owner's consent, the raw-inclusion artifacts, the
 manifest (through `app.operations.export`, which never carries the archive's own
 hash) and the bundle, and returns the external receipt. Nothing is transmitted:
@@ -26,6 +28,7 @@ from functools import wraps
 from hashlib import sha256
 from uuid import uuid4
 
+from ..domain.public_events import EventEnvelope
 from ..domain.refs import EntityRef, canonical_json, uuid_string
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import BlobRef, _writer
@@ -46,6 +49,7 @@ PREVIEW_SCHEMA = "work-export-preview-v1"
 CONFIRM_SCHEMA = "work-export-confirm-v1"
 MAX_REVISIONS = 512
 APP_RELEASE = "deeptwin-dev"
+RUN_MANIFEST_SCHEMA = "run-manifest-v1"
 # selected categories whose records this server does not yet collect into an export
 UNCOLLECTED = frozenset({"model_final_responses", "tool_observations",
                          "evaluation_evidence"})
@@ -136,8 +140,72 @@ class PersistentWorkExports:
             raise WorkServiceError("too_large")
         return sorted(found, key=lambda record: (record.body["created_at_utc"], record.ref.id))
 
+    def _runs(self, db, roots, work_id):
+        """The owner's runs of this work, oldest first: each run's start, every
+        `run.stopped` with its reason (a failed execution is `infrastructure_failure`),
+        the consent it ran under and the action approvals recorded on it. Identities,
+        times and closed codes only — never graph, artifact or model content."""
+
+        manifests = []
+        for row in db.execute(
+                "SELECT id, version, sha256 FROM domain_records WHERE vault_id=? AND kind='run_manifest' "
+                "AND version=1 AND instr(body, ?) > 0 ORDER BY id",
+                (roots.genesis.id, work_id.encode())).fetchall():
+            record = self._domain._load(db, EntityRef("run_manifest", row["id"], row["version"],
+                                                      row["sha256"]), roots)[0]
+            content = record.body["content"]
+            if (content.get("schema_version") == RUN_MANIFEST_SCHEMA
+                    and content["inputs"]["work_revision_ref"]["id"] == work_id):
+                manifests.append(record)
+        if len(manifests) > MAX_REVISIONS:
+            raise WorkServiceError("too_large")
+        if not manifests:
+            return []
+        stops = {}
+        for row in db.execute(
+                "SELECT envelope FROM api_event_envelopes WHERE vault_id=? AND event_type='run.stopped' "
+                "ORDER BY sequence", (roots.genesis.id,)).fetchall():
+            envelope = EventEnvelope.from_bytes(bytes(row["envelope"]))
+            stops.setdefault(envelope.correlation_id, []).append(envelope)
+        runs = []
+        for record in manifests:
+            content = record.body["content"]
+            consent_ref = EntityRef.from_dict(content["inputs"]["consent_ref"])
+            consent = self._domain._load(db, consent_ref, roots)[0]
+            revoked = None
+            for row in db.execute(
+                    "SELECT id, version, sha256 FROM domain_records WHERE vault_id=? AND kind='decision_record' "
+                    "AND instr(body, ?) > 0", (roots.genesis.id, consent_ref.id.encode())).fetchall():
+                decision = self._domain._load(db, EntityRef("decision_record", row["id"], row["version"],
+                                                            row["sha256"]), roots)[0].body["content"]
+                if decision.get("consent_ref", {}).get("id") == consent_ref.id:
+                    revoked = decision["revoked_at_utc"]
+            approvals = []
+            for row in db.execute(
+                    "SELECT id, version, sha256 FROM domain_records WHERE vault_id=? AND kind='action_approval' "
+                    "AND instr(body, ?) > 0 ORDER BY id",
+                    (roots.genesis.id, content["run_id"].encode())).fetchall():
+                approval = self._domain._load(db, EntityRef("action_approval", row["id"], row["version"],
+                                                            row["sha256"]), roots)[0].body["content"]
+                if approval.get("run_id") == content["run_id"]:
+                    approvals.append({name: approval[name] for name in (
+                        "node_id", "approval_scope", "decision", "decided_at_utc")})
+            runs.append({
+                "run_id": content["run_id"], "started_at_utc": record.body["created_at_utc"],
+                "work_revision": content["inputs"]["work_revision_ref"]["version"],
+                "stops": [{"reason_code": event.public_metadata["reason_code"],
+                           "observed_at_utc": event.observed_at_utc}
+                          for event in stops.get(content["command_id"], ())
+                          if event.sequence > content["event_sequence"]],
+                "consent": {"consent_id": consent_ref.id,
+                            "decided_at_utc": consent.body["content"].get("decided_at_utc"),
+                            "revoked_at_utc": revoked},
+                "approvals": sorted(approvals, key=lambda item: (item["decided_at_utc"], item["node_id"])),
+            })
+        return sorted(runs, key=lambda run: (run["started_at_utc"], run["run_id"]))
+
     @staticmethod
-    def _collect(revisions, categories, include_raw, alternatives=()):
+    def _collect(revisions, categories, include_raw, alternatives=(), runs=()):
         """(items with their exact bytes, missing entries), deterministically ordered."""
 
         items, missing = [], []
@@ -164,6 +232,13 @@ class PersistentWorkExports:
                  "input_origin": record.body["content"].get("input_origin", "owner_text"),
                  "source_count": len(record.body["content"].get("source_refs", []))}
                 for record in revisions]), mode="metadata_only", label="작업 개정 기록")
+            if runs:
+                failed = sum(any(stop["reason_code"] == "infrastructure_failure" for stop in run["stops"])
+                             for run in runs)
+                decided = sum(len(run["approvals"]) for run in runs)
+                add("events", "events/runs.json", "application/json", _json(list(runs)),
+                    mode="metadata_only",
+                    label=f"실행 {len(runs)}개 (실패 {failed}개) · 실행 동의 {len(runs)}개 · 승인 결정 {decided}개")
         if "artifacts_metadata" in categories:
             sources = sorted({json.dumps(ref, sort_keys=True) for record in revisions
                               for ref in record.body["content"].get("source_refs", [])})
@@ -219,7 +294,8 @@ class PersistentWorkExports:
     def _current(self, db, roots, work_id, request_id, categories, include_raw):
         revisions = self._revisions(db, roots, work_id)
         alternatives = self._alternatives(db, roots, work_id) if "alternatives" in categories else ()
-        items, missing = self._collect(revisions, categories, include_raw, alternatives)
+        runs = self._runs(db, roots, work_id) if "events" in categories else ()
+        items, missing = self._collect(revisions, categories, include_raw, alternatives, runs)
         preview = self._preview_value(work_id, request_id, categories, include_raw, items, missing)
         return revisions, items, missing, preview
 
