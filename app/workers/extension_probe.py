@@ -39,6 +39,11 @@ from uuid import uuid4
 from ..domain.refs import DomainContractError, canonical_json, uuid_string
 from ..extensions.lineage_contracts import LineageContractError
 from ..extensions.port_contracts import OPERATION_CONTRACTS
+from ..extensions.tool_input_contracts import (
+    ToolArtifactInputContract,
+    ToolInputMismatch,
+    check_tool_inputs,
+)
 from . import broker, ipc_root, listener
 from . import extension_metadata as em
 from .artifact_stream import (
@@ -173,7 +178,12 @@ TEXT_PROFILE_ENTRY = MappingProxyType({
     "result_schema_sha256": sha256(canonical_json(TEXT_PROFILE_RESULT_SCHEMA)).hexdigest(),
     "effect_class": "read", "artifact_roles": ("document_source",),
 })
-_TEXT_PROFILE_INPUT = ("document_source", "text/plain")  # exactly one input of this role and media
+# exactly one `document_source` text/plain input, no selector: the tool's declared
+# ToolArtifactInputContractV1 (extension-ports.md §3.9 T-tool), as this worker states it
+_TEXT_DOCUMENT_INPUT = ToolArtifactInputContract.bounded(
+    min_items=1, max_items=1, role="document_source", allowed_media_types=("text/plain",),
+    selector_policy="forbidden",
+)
 
 # the second real tool: `text_normalize` derives a normalized text (NFC, LF line
 # endings, a leading BOM removed, nothing else changed) from exactly one streamed
@@ -197,10 +207,11 @@ TEXT_NORMALIZE_ENTRY = MappingProxyType({
     "effect_class": "read", "artifact_roles": ("document_source", "normalized_text"),
 })
 _TEXT_NORMALIZE_OUTPUT = ("normalized_text", "text/plain")
-# what each tool takes: exactly these (role, media) inputs, in order
-_TOOL_INPUT_CONTRACTS = MappingProxyType({
-    ("text_profile", "1.0.0"): (_TEXT_PROFILE_INPUT,),
-    ("text_normalize", "1.0.0"): (_TEXT_PROFILE_INPUT,),
+# what each tool takes: its declared input contract (count, role, media, selector);
+# control declares its own table and the two are pinned equal by test
+TOOL_INPUT_CONTRACTS = MappingProxyType({
+    ("text_profile", "1.0.0"): _TEXT_DOCUMENT_INPUT,
+    ("text_normalize", "1.0.0"): _TEXT_DOCUMENT_INPUT,
 })
 
 # the code-owned tool table of this worker (tool-port-v1 `describe_tools`
@@ -217,14 +228,20 @@ def tool_descriptions() -> list[dict]:
 
 def _tool_contract_admits(request) -> bool:
     """Whether an `invoke_tool` request names a tool of the table and declares
-    exactly the inputs that tool takes — checked before any artifact byte is read."""
+    exactly the inputs that tool's contract takes (count, role, media; the wire
+    names no selector) — re-checked here, before any artifact byte is read,
+    whatever control already checked."""
 
     if request.tool is None:
         return False
-    contract = _TOOL_INPUT_CONTRACTS.get((request.tool.tool_id, request.tool.version))
+    contract = TOOL_INPUT_CONTRACTS.get((request.tool.tool_id, request.tool.version))
     if contract is None:
         return False
-    return tuple((item.role, item.media_type) for item in request.artifact_inputs) == contract
+    try:
+        check_tool_inputs(contract, ((item.role, item.media_type, None) for item in request.artifact_inputs))
+    except ToolInputMismatch:
+        return False
+    return True
 
 
 _ASCII_WHITESPACE = re.compile(r"[ \t\n\r\f\v]+")

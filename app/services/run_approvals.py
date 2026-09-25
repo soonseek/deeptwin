@@ -13,6 +13,16 @@ command returns the same receipt, any other command or decision for the
 same key conflicts, and nothing is ever overwritten. Readers resolve the
 record through the store's exact reference; no caller-supplied boolean or
 reference can stand in for it.
+
+Two record versions exist. `run-approval-v1` binds (run, gate node, scope)
+and is what a human gate's passage consults; it stays readable, but it names
+no execution, so it can never authorize a tool call's dispatch. A
+`run-approval-v2` decision additionally binds the exact execution it
+authorizes as the ledger names it — the execution (the node visit) id, the
+executing node and the attempt number — under its own identity, so one
+decision authorizes one attempt of one visit and nothing else: never another
+visit (a later loop round, another node's execution) and never a retry
+attempt. Both are recordable only against a gate request the ledger holds.
 """
 
 from __future__ import annotations
@@ -34,6 +44,7 @@ from ..domain.request_identity import AuthenticatedRequest
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore, _writer
 from ..runtime.gates import LOCAL, gate_request_identity, gate_request_recorded
+from ..runtime.ledger import MAX_ATTEMPTS_PER_EXECUTION
 from .owner_auth import OwnerAuthError, PersistentOwnerAuthority
 
 __all__ = [
@@ -42,12 +53,17 @@ __all__ = [
     "RunApproval",
     "RunApprovalError",
     "approval_identity",
+    "execution_approval_identity",
     "gate_request_identity",
 ]
 
 DECISIONS = ("approved", "rejected")
 _SCHEMA = "run-approval-command-v1"
 _RECORD_SCHEMA = "run-approval-v1"
+# the execution-bound version: the command and the record name the execution
+_SCHEMA_V2 = "run-approval-command-v2"
+_RECORD_SCHEMA_V2 = "run-approval-v2"
+_EXECUTION_FIELDS = ("execution_id", "execution_node_id", "attempt_no")
 # one grammar for gate node ids and scopes, shared with the ledger's requests
 _LOCAL = LOCAL
 
@@ -88,6 +104,32 @@ def approval_identity(run_id: str, node_id: str, approval_scope: str) -> str:
     )
 
 
+def execution_approval_identity(
+    run_id: str, node_id: str, approval_scope: str, execution_id: str,
+    execution_node_id: str, attempt_no: int,
+) -> str:
+    """The single record identity for one execution-bound decision: the gate's
+    (run, node, scope) plus the execution, its node and the attempt number.
+    A namespace of its own, so it never collides with a v1 identity."""
+
+    return str(
+        uuid5(
+            NAMESPACE_URL,
+            canonical_json(
+                {
+                    "domain": "deeptwin-run-approval-v2",
+                    "run_id": run_id,
+                    "node_id": node_id,
+                    "approval_scope": approval_scope,
+                    "execution_id": execution_id,
+                    "execution_node_id": execution_node_id,
+                    "attempt_no": attempt_no,
+                }
+            ).decode(),
+        )
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class RunApproval:
     run_id: str
@@ -97,6 +139,15 @@ class RunApproval:
     command_id: str
     approval_ref: EntityRef
     actor_ref: EntityRef
+    # the record version, and for v2 the execution the decision authorizes
+    schema_version: str = _RECORD_SCHEMA
+    execution_id: str | None = None
+    execution_node_id: str | None = None
+    attempt_no: int | None = None
+
+    @property
+    def execution_bound(self) -> bool:
+        return self.schema_version == _RECORD_SCHEMA_V2
 
 
 def _local(value, label) -> str:
@@ -113,27 +164,51 @@ def _uuid(value, label) -> str:
     return value
 
 
+def _attempt_no(value) -> int:
+    if type(value) is not int or not 1 <= value <= MAX_ATTEMPTS_PER_EXECUTION:
+        raise RunApprovalError("invalid attempt number")
+    return value
+
+
+_V1_FIELDS = frozenset({"schema_version", "command_id", "run_id", "node_id", "approval_scope", "decision"})
+
+
 def _validate_command(payload) -> dict:
-    if type(payload) is not dict or set(payload) != {
-        "schema_version",
-        "command_id",
-        "run_id",
-        "node_id",
-        "approval_scope",
-        "decision",
-    }:
+    if type(payload) is not dict or "schema_version" not in payload:
         raise RunApprovalError("invalid command")
-    if payload["schema_version"] != _SCHEMA:
+    version = payload["schema_version"]
+    if type(version) is not str or version not in (_SCHEMA, _SCHEMA_V2):
+        if set(payload) not in (_V1_FIELDS, _V1_FIELDS | set(_EXECUTION_FIELDS)):
+            raise RunApprovalError("invalid command")
         raise RunApprovalError("invalid schema version")
+    expected = _V1_FIELDS if version == _SCHEMA else _V1_FIELDS | set(_EXECUTION_FIELDS)
+    if set(payload) != expected:
+        raise RunApprovalError("invalid command")
     if payload["decision"] not in DECISIONS or type(payload["decision"]) is not str:
         raise RunApprovalError("invalid decision")
-    return {
+    command = {
         "command_id": _uuid(payload["command_id"], "command id"),
         "run_id": _uuid(payload["run_id"], "run id"),
         "node_id": _local(payload["node_id"], "node id"),
         "approval_scope": _local(payload["approval_scope"], "approval scope"),
         "decision": payload["decision"],
     }
+    if version == _SCHEMA_V2:
+        command.update({
+            "execution_id": _uuid(payload["execution_id"], "execution id"),
+            "execution_node_id": _local(payload["execution_node_id"], "execution node id"),
+            "attempt_no": _attempt_no(payload["attempt_no"]),
+        })
+    return command
+
+
+def _command_identity(command: dict) -> str:
+    if "execution_id" in command:
+        return execution_approval_identity(
+            command["run_id"], command["node_id"], command["approval_scope"],
+            command["execution_id"], command["execution_node_id"], command["attempt_no"],
+        )
+    return approval_identity(command["run_id"], command["node_id"], command["approval_scope"])
 
 
 def _bound_pair(domain_store, owner_authority, error):
@@ -216,11 +291,23 @@ class PersistentRunApprovals:
         )
         body = self._domain._load(db, ref, roots)[0].body
         content = body["content"]
-        if content.get("schema_version") != _RECORD_SCHEMA:
+        version = content.get("schema_version")
+        if version not in (_RECORD_SCHEMA, _RECORD_SCHEMA_V2):
             raise RunApprovalError("unavailable")
         if _stored_owner_actor_ref(db) != body["actor_ref"]:
             # only the persistent owner's human actor authors approvals
             raise RunApprovalError("unavailable")
+        bound = dict.fromkeys(_EXECUTION_FIELDS)
+        if version == _RECORD_SCHEMA_V2:
+            bound = {name: content.get(name) for name in _EXECUTION_FIELDS}
+            try:
+                _uuid(bound["execution_id"], "execution id")
+                _local(bound["execution_node_id"], "execution node id")
+                _attempt_no(bound["attempt_no"])
+            except RunApprovalError:
+                raise RunApprovalError("unavailable") from None
+        elif any(name in content for name in _EXECUTION_FIELDS):
+            raise RunApprovalError("unavailable")  # a v1 record never carries a binding
         return RunApproval(
             run_id=content["run_id"],
             node_id=content["node_id"],
@@ -229,6 +316,8 @@ class PersistentRunApprovals:
             command_id=content["command_id"],
             approval_ref=ref,
             actor_ref=EntityRef.from_dict(body["actor_ref"]),
+            schema_version=version,
+            **bound,
         )
 
     def _receipt(self, db, roots, approval: RunApproval, event_sequence: int) -> dict:
@@ -248,9 +337,8 @@ class PersistentRunApprovals:
         # about the command grammar
         self._authenticate(request)
         command = _validate_command(payload)
-        approval_id = approval_identity(
-            command["run_id"], command["node_id"], command["approval_scope"]
-        )
+        approval_id = _command_identity(command)
+        record_schema = _RECORD_SCHEMA_V2 if "execution_id" in command else _RECORD_SCHEMA
         with _writer(), self._domain._connection(write=True) as db:
             actor = self._authenticate(request, db)
             roots = self._domain._read_roots(db)
@@ -262,6 +350,9 @@ class PersistentRunApprovals:
                     or existing.decision != command["decision"]
                     or existing.run_id != command["run_id"]
                     or existing.node_id != command["node_id"]
+                    or existing.schema_version != record_schema
+                    or any(getattr(existing, name) != command.get(name)
+                           for name in _EXECUTION_FIELDS)
                 ):
                     raise RunApprovalError("conflict")
                 stored = self._domain._load(db, existing.approval_ref, roots)[0].body
@@ -285,7 +376,7 @@ class PersistentRunApprovals:
             stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
             event_sequence = _event_stream(db, roots.genesis.id)["next_sequence"]
             content = {
-                "schema_version": _RECORD_SCHEMA,
+                "schema_version": record_schema,
                 "run_id": command["run_id"],
                 "node_id": command["node_id"],
                 "approval_scope": command["approval_scope"],
@@ -294,6 +385,8 @@ class PersistentRunApprovals:
                 "decided_at_utc": stamp,
                 "event_sequence": event_sequence,
             }
+            if record_schema == _RECORD_SCHEMA_V2:
+                content.update({name: command[name] for name in _EXECUTION_FIELDS})
             record = ImmutableRecord.create(
                 kind="action_approval",
                 id=approval_id,
@@ -335,6 +428,8 @@ class PersistentRunApprovals:
                 command_id=command["command_id"],
                 approval_ref=record.ref,
                 actor_ref=actor_ref,
+                schema_version=record_schema,
+                **{name: command.get(name) for name in _EXECUTION_FIELDS},
             )
             return self._receipt(db, roots, approval, event_sequence)
 
@@ -356,6 +451,57 @@ class PersistentRunApprovals:
             found.run_id != run_id
             or found.node_id != node_id
             or found.approval_scope != approval_scope
+            or found.execution_bound
         ):
             raise RunApprovalError("unavailable")
+        return found
+
+    @_closed
+    def lookup_execution(
+        self, run_id: str, node_id: str, approval_scope: str, *, execution_id: str,
+        execution_node_id: str, attempt_no: int,
+    ) -> RunApproval | None:
+        """The recorded execution-bound (v2) decision for one gate scope and one
+        attempt of one execution, or None; a v1 decision is never returned here."""
+
+        approval_id = execution_approval_identity(
+            _uuid(run_id, "run id"),
+            _local(node_id, "node id"),
+            _local(approval_scope, "approval scope"),
+            _uuid(execution_id, "execution id"),
+            _local(execution_node_id, "execution node id"),
+            _attempt_no(attempt_no),
+        )
+        with self._domain._connection() as db:
+            roots = self._domain._read_roots(db)
+            found = self._load(db, approval_id, roots)
+        if found is not None and (
+            not found.execution_bound
+            or (found.run_id, found.node_id, found.approval_scope) != (run_id, node_id, approval_scope)
+            or (found.execution_id, found.execution_node_id, found.attempt_no)
+            != (execution_id, execution_node_id, attempt_no)
+        ):
+            raise RunApprovalError("unavailable")
+        return found
+
+    @_closed
+    def resolve(self, approval_ref) -> RunApproval | None:
+        """The decision an exact `action_approval` reference names (either
+        version), or None when no record of this service is exactly that ref."""
+
+        if type(approval_ref) is not EntityRef or approval_ref.kind != "action_approval":
+            raise RunApprovalError("invalid approval reference")
+        _uuid(approval_ref.id, "approval id")
+        with self._domain._connection() as db:
+            roots = self._domain._read_roots(db)
+            found = self._load(db, approval_ref.id, roots)
+        if found is None or found.approval_ref != approval_ref:
+            return None
+        bound = ({name: getattr(found, name) for name in _EXECUTION_FIELDS}
+                 if found.execution_bound else {})
+        if found.approval_ref.id != _command_identity({
+            "run_id": found.run_id, "node_id": found.node_id,
+            "approval_scope": found.approval_scope, **bound,
+        }):
+            raise RunApprovalError("unavailable")  # a record under another decision's identity
         return found
