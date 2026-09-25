@@ -54,3 +54,5 @@ An earlier regression run did not pass on its first attempt, for two reasons:
 - Running a snapshot under a root-only scratch directory blocked the tests that run children under other UIDs.
 
 Neither affects this run. Browser (`*.test.mjs`) suites are run per change, as recorded in each task's evidence; they are not part of this Python regression.
+
+Browser suites at 8acaae8 (same day): all 28 `app/tests/browser-*.test.mjs` files were run serially in real Chromium, with the controlled Playwright module and the age runtime. **118 passed, 0 failed, 0 skipped.**
