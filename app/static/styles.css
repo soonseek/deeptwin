@@ -285,3 +285,20 @@ footer p { margin: 6px 0; }
 .run-artifacts .artifact-table td { border: 1px solid currentColor; padding: 0.125rem 0.375rem; }
 .run-artifacts .artifact-image { max-width: 100%; height: auto; }
 .run-artifacts .artifact-coverage, .run-artifacts .artifact-fidelity { font-size: 0.875rem; }
+
+
+/* T037/T048: the readable work graph */
+.graph-canvas { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 8px; }
+.graph-canvas svg { display: block; min-width: 100%; height: auto; }
+.graph-edge { stroke: var(--muted); stroke-width: 1.5; }
+.graph-edge-observation { stroke-dasharray: 4 4; opacity: 0.6; }
+.graph-edge-approval { stroke: var(--accent); }
+.graph-node rect { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; }
+.graph-node text { fill: var(--ink); font-size: 13px; }
+.graph-node { cursor: pointer; }
+.graph-state-completed rect { stroke: var(--accent); fill: var(--accent-soft); }
+.graph-state-failed rect { stroke: var(--error); }
+.graph-state-awaiting rect { stroke: var(--accent); stroke-dasharray: 5 3; }
+.graph-nodes { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; padding: 0; }
+.graph-nodes button[aria-pressed="true"] { outline: 2px solid var(--accent); }
+.graph-details { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; }

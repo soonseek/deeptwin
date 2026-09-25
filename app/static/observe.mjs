@@ -11,6 +11,7 @@
 import { createAlternativeFileForm } from './alternative-file.mjs';
 import { createAlternativeEditor } from './alternatives.mjs';
 import { createArtifactViewer } from './artifacts.mjs';
+import { createGraphView } from './graph.mjs';
 import { createInquiryPanel } from './inquiry.mjs';
 import { createRunList } from './run-list.mjs';
 import { createRunPanel } from './run-panel.mjs';
@@ -19,6 +20,7 @@ import { basePathFrom, createSupportedSession } from './session.mjs';
 export const ALTERNATIVE_MOUNT_ID = 'run-alternative';
 export const ALTERNATIVE_FILE_MOUNT_ID = 'run-alternative-file';
 export const INQUIRY_MOUNT_ID = 'run-inquiry';
+export const GRAPH_MOUNT_ID = 'run-graph';
 export const MOUNT_IDS = Object.freeze({
   session: 'session-status', source: 'run-source', panel: 'run-panel', artifacts: 'run-artifacts',
 });
@@ -89,17 +91,23 @@ export async function boot({ document, location, fetch, crypto } = {}) {
   const artifacts = createArtifactViewer({ root: roots.artifacts, document, basePath, request: session.request,
     onEdit: editor === null ? undefined : (runId, item) => editor.open(runId, item),
     onAlternativeFile: fileForm === null ? undefined : (runId, item) => fileForm.open(runId, item) });
+  // the selected run's own graph, with node states from its recorded outcome (T037/T048)
+  const graphRoot = document.getElementById(GRAPH_MOUNT_ID);
+  const graph = graphRoot !== null && typeof graphRoot?.replaceChildren === 'function'
+    ? createGraphView({ root: graphRoot, document, basePath, request: session.request })
+    : null;
   const list = createRunList({
     root: roots.source, document, basePath, request: session.request,
     // each refusal is shown on its own surface
-    onSelect: runId => Promise.all([panel.read(runId).catch(() => {}), artifacts.show(runId).catch(() => {})]),
+    onSelect: runId => Promise.all([panel.read(runId).catch(() => {}), artifacts.show(runId).catch(() => {}),
+      ...(graph === null ? [] : [graph.showRun(runId).catch(() => {})])]),
   });
   try {
     await list.refresh();
   } catch {
     // the list's own status names the failure; the session stands
   }
-  return Object.freeze({ established: true, basePath, session, list, panel, artifacts, commandId });
+  return Object.freeze({ established: true, basePath, session, list, panel, artifacts, graph, commandId });
 }
 
 // the page's entry: a boot that fails before or beside the session exchange

@@ -307,6 +307,10 @@ def preflight_api_v1(scope, body):
     from .claude_connection import preflight as claude_connection_preflight
     if is_claude_connection_path(path):
         claude_connection_preflight(scope, body)
+    from .graphs import is_graphs_path
+    from .graphs import preflight as graphs_preflight
+    if is_graphs_path(path):
+        graphs_preflight(scope, body)
     from .hypotheses import is_hypotheses_path
     from .hypotheses import preflight as hypotheses_preflight
     if is_hypotheses_path(path):

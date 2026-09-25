@@ -1,0 +1,10 @@
+{
+  "schema_version": "deeptwin-first-party-route-contribution-v1",
+  "contribution_id": "graphs-v1",
+  "factory": "app.api.graphs:create_router",
+  "routes": [
+    {"route_id": "graphs.read", "methods": ["GET", "HEAD"],
+     "path": "/api/v1/graphs/{graph_id}/versions/{version}",
+     "auth_policy": "browser_session", "required_scope": "work.read"}
+  ]
+}

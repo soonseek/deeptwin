@@ -1,6 +1,7 @@
 """The complete build-installed catalog; not a runtime extension registry."""
 
 from .claude_connection import connection_services
+from .graphs import graph_services
 from .hypotheses import hypothesis_services
 from .work_models import work_model_services
 from .deployment_prepare import (
@@ -82,6 +83,14 @@ INSTALLED = (
         ("work.command", "work.read"),
         requires=("run-approvals.service",),
         provides=("runs.service", "run-artifacts.service", "alternative-drafts.service"),
+    ),
+    InstalledContribution(
+        "graphs-v1.json",
+        "app.api.graphs:create_router",
+        graph_services,
+        ("browser_session",),
+        ("work.read",),
+        provides=("graphs.service",),
     ),
     InstalledContribution(
         "hypotheses-v1.json",
