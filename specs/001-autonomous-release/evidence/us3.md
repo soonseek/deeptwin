@@ -91,6 +91,24 @@ Observed (one run of the test, 2026-09-25, **1 passed**, ~35 s):
   lists its one imported output as an artifact (`page_text` / `screenshot`, declared type without
   parameters); before, browser outputs were invisible to the artifact routes and previews.
 
+### 2026-09-25 (after the T043 grants merge): the E2E runs under a persisted owner grant
+
+After T043's grants landed, `BrowserAttemptTransport` builds the grant only from the persisted
+record the compiled binding's `grant_ref` names and re-checks it against the run's approved
+`tool_permissions` on every dispatch; the E2E's code-supplied `BrowserGrant` was refused (503).
+Now `runtime_e2e_server.py` sets up the owner in-process, creates the owner's browser grant
+through the `browser_grants.create` route (tools `browser_read`/`browser_screenshot`; source
+`https://granted.test/`, recipient `granted.test`; projection = the exact pages `/report`,
+`/chart`, `/slow-once`, pure navigation, no data sources), approves a design whose
+`tool_permissions` is that record through the real producers
+(`browser_grant_chain.approved_environment`), and starts both runs on that approval's
+environment record; both graphs and the compilation authority bind the grant record. The
+browser test logs in as that owner and checks that the grant is listed `active` with exactly
+those entries. No grant is supplied in code. No live API call was made for this change.
+Re-run serially: `browser-runtime` and `browser-grants` **2 passed**; `test_browser_worker.py`,
+`test_browser_grants.py`, `test_claude_artifact_consumer.py` (offline),
+`test_scheduler_attempt_dispatch.py` **70 passed**.
+
 ## 2. The finite authorized Claude path (ONE live run)
 
 `app/tests/test_claude_live_artifact_consumer.py` (skipped without

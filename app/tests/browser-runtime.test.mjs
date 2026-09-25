@@ -32,7 +32,6 @@ const base = `/${'2'.repeat(32)}/`;
 const READY = /E2E_SEED=(\{[^\n]*\})\nE2E_URL=(http:\/\/[0-9a-f]{32}\.localhost:\d+\/[0-9a-f]{32}\/)/;
 const RESTARTED = /E2E_RESTARTED\n(?:[^\n]*\n)*?E2E_SEED=\{[^\n]*\}\nE2E_URL=http[^\n]*\n/;
 const PASSWORD = 'synthetic owner passphrase';
-const CAPABILITY = Buffer.alloc(32, 'T').toString('base64url');
 const PRODUCER_ROLES = ['figure', 'page_text', 'paper', 'screenshot', 'table'];
 const rootOnly = process.platform !== 'linux' || process.getuid?.() !== 0
   ? 'the T049 deployment starts workers under their own identities: Linux and root only' : false;
@@ -55,11 +54,13 @@ async function openDeployment(t) {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(url);
-  const bootstrapped = await page.evaluate(async ({ base, capability, password }) => (await fetch(base + 'session/bootstrap', {
+  // the fixture set up the owner (it created the owner's browser grant through its route);
+  // the browser logs in as that owner
+  const loggedIn = await page.evaluate(async ({ base, password }) => (await fetch(base + 'session/login', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ login_name: 'owner', password, raw_capability_b64u: capability }),
-  })).status, { base, capability: CAPABILITY, password: PASSWORD });
-  assert.equal(bootstrapped, 201);
+    body: JSON.stringify({ login_name: 'owner', password }),
+  })).status, { base, password: PASSWORD });
+  assert.equal(loggedIn, 200);
   async function restart() {
     const again = waitForOwnedChildOutput(server, { pattern: RESTARTED, timeoutMs: 120000, label: 'T049 restart',
       maxOutputChars: 65536 });
@@ -138,6 +139,15 @@ async function ensureSession(page) {
 test('producers → consumer over real browser, document and fetch workers, with restart, recovery and cancel',
   { timeout: 600000, skip: rootOnly }, async t => {
     const { page, url, errors, seed, restart } = await openDeployment(t);
+
+    // the owner's persisted browser grant the graph binds: active, pure navigation to the three pages
+    const grants = (await read(page, 'api/v1/browser-grants')).body.grants;
+    const grant = grants.find(item => item.grant_id === seed.grant_ref.id);
+    assert.equal(grant.state, 'active', JSON.stringify(grants));
+    assert.deepEqual(grant.tools, ['browser_read', 'browser_screenshot']);
+    assert.deepEqual(grant.projection.entries.map(entry => [entry.url, entry.parameters]),
+      [['https://granted.test/report', []], ['https://granted.test/chart', []], ['https://granted.test/slow-once', []]]);
+    assert.deepEqual(grant.projection.data_sources, []);
 
     // --- run A: three producers in parallel, the join, then the owner's gate
     const started = await startRun(page, seed, seed.graphs.main);
