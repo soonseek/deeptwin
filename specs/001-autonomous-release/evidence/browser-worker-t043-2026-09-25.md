@@ -133,6 +133,11 @@ Kept passing: `test_egress*.py`, `test_extension_*.py`, `test_document_*.py`,
 
 ## Open (why T043 stays unchecked)
 
+> 2026-09-25 addendum: the first item (projection) and the persisted-record half of the
+> second (grant authority) are closed by evidence/browser-grants-t043-2026-09-25.md; the
+> production authority registering the browser ToolDefinitions, and the items below, stay
+> open. The test counts above are this slice's; see that file for the current ones.
+
 - **Source/projection categories.** runtime.md §6 binds a grant to permitted recipients
   *and* allowed source/projection categories of the outbound request. This slice enforces
   URL-prefix navigation sources and recipient hosts; data-source tagging of URL/query

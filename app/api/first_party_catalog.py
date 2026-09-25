@@ -2,19 +2,19 @@
 
 from .artifact_index import artifact_index_services
 from .backups import backup_services
+from .browser_grants import browser_grant_services
 from .claude_connection import connection_services
 from .credential_wiring import credential_services
-from .design_workspace import design_workspace_services
-from .graphs import graph_services
-from .hypotheses import hypothesis_services
-from .work_models import work_model_services
 from .deployment_prepare import (
     STARTUP_KEYS,
     prepare_services,
     reconcile_prepare_startup,
 )
+from .design_workspace import design_workspace_services
 from .extension_candidates import candidate_services
 from .first_party import InstalledContribution, core_services
+from .graphs import graph_services
+from .hypotheses import hypothesis_services
 from .provider_conformance import conformance_services
 from .provider_installation import installation_services
 from .retention import retention_services
@@ -22,6 +22,7 @@ from .run_approvals import approval_services
 from .run_consents import consent_services
 from .runs import run_services
 from .versions import version_services
+from .work_models import work_model_services
 from .works import work_services
 
 INSTALLED = (
@@ -182,5 +183,13 @@ INSTALLED = (
         ("extension.manage", "extension.read"),
         requires=("deployment-prepare.service", "installation-release.source-context"),
         provides=("provider-installation.service",),
+    ),
+    InstalledContribution(
+        "browser-grants-v1.json",
+        "app.api.browser_grants:create_router",
+        browser_grant_services,
+        ("browser_session",),
+        ("work.command", "work.read"),
+        provides=("browser-grants.service",),
     ),
 )

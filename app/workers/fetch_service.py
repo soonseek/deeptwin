@@ -14,7 +14,12 @@ transport (`app.runtime.egress_transport.make_pinned_transport`):
   connects only to the addresses that check admitted;
 - each response is bounded by the grant's per-response limit and by what remains of its
   total byte budget, and the grant's request count is finite; an expired or unknown grant
-  refuses (`grant_denied`).
+  refuses (`grant_denied`);
+- the grant's projection (`fetch_channel`): the registered navigation URL and every
+  `navigation` request must be exactly a projection entry carrying only declared source
+  values (digest-compared); the values every admitted navigation carries (the registered
+  one first) tag the grant, and every request or redirect hop toward another host than
+  that navigation's entry host must not carry them (`projection_denied`, checked on each hop before its connection is opened).
 
 The answer carries only the status, a sanitized content type, the final URL, the redirect
 count and the body with its digest — never response headers such as `Set-Cookie`. The
@@ -28,6 +33,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from hashlib import sha256
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from . import broker
@@ -43,13 +49,16 @@ from .fetch_channel import (
     GRANT_RESULT_TYPE,
     KINDS,
     MAX_CONTENT_TYPE,
+    MAX_GRANT_REQUEST_BYTES,
     MAX_GRANTS,
     BrowserGrant,
     canonical,
+    carries_source_values,
     check_grant_id,
     check_hostname,
     check_url,
     chunk_count,
+    projection_values,
     source_admits,
     strict_object,
     write_chunks,
@@ -90,6 +99,9 @@ class _Grant:
     grant: BrowserGrant
     excluded: tuple[str, ...]
     expires: float
+    # (host, value): each source value an admitted navigation carried, and the one host it
+    # may reach — seeded from the registered navigation, extended by every later one
+    carried: tuple[tuple[str, str], ...] = ()
     requests: int = 0
     denied: int = 0
     body_bytes: int = 0
@@ -125,7 +137,13 @@ class FetchService:
         for key in [key for key, item in self._grants.items() if item.expires <= now]:
             del self._grants[key]
 
-    def register(self, identifier, grant: BrowserGrant, excluded=()) -> str:
+    def register(self, identifier, grant: BrowserGrant, navigation_url: str, excluded=()) -> str:
+        if not source_admits(grant.sources, navigation_url):
+            raise _Refusal("grant_denied")
+        projected = projection_values(grant.projection, navigation_url)
+        if projected is None:
+            raise _Refusal("projection_denied")
+        entry, carried = projected
         with self._lock:
             self._purge()
             if identifier in self._grants:
@@ -134,8 +152,22 @@ class FetchService:
                 raise _Refusal("too_many_grants")
             if any(host in excluded for host in grant.recipients):
                 raise _Refusal("grant_denied")
-            self._grants[identifier] = _Grant(grant, tuple(excluded), self._clock() + grant.ttl_ms / 1000.0)
+            self._grants[identifier] = _Grant(grant, tuple(excluded), self._clock() + grant.ttl_ms / 1000.0,
+                                              carried=tuple((entry.host, value) for value in carried))
         return grant.digest
+
+    @staticmethod
+    def _projection_admits(item: _Grant, url: str) -> bool:
+        """A request carries no source value a navigation carried toward any host other than
+        that navigation's entry host."""
+
+        try:
+            host = urlsplit(url).hostname
+        except ValueError:
+            return False
+        with item.lock:
+            foreign = tuple(value for allowed, value in item.carried if allowed != host)
+        return not carries_source_values(foreign, url)
 
     def revoke(self, identifier) -> dict:
         with self._lock:
@@ -154,7 +186,7 @@ class FetchService:
             raise broker.ProtocolViolation()
         try:
             try:
-                value = strict_object(first.payload)
+                value = strict_object(first.payload, limit=MAX_GRANT_REQUEST_BYTES)
             except (ValueError, UnicodeDecodeError):
                 raise _Refusal("invalid_request") from None
             if value.get("schema") != GRANT_REQUEST_SCHEMA:
@@ -164,17 +196,19 @@ class FetchService:
             except ValueError:
                 raise _Refusal("invalid_request") from None
             if value.get("op") == "register":
-                if set(value) - {"excluded_hosts"} != {"schema", "op", "grant_id", "grant"}:
+                if set(value) - {"excluded_hosts"} != {"schema", "op", "grant_id", "grant", "navigation_url"}:
                     raise _Refusal("invalid_request")
                 try:
                     grant = BrowserGrant.from_mapping(value["grant"])
+                    navigation_url = check_url(value["navigation_url"])
                     excluded = value.get("excluded_hosts", [])
                     if type(excluded) is not list or len(excluded) > 8:
                         raise ValueError("excluded hosts")
                     excluded = tuple(check_hostname(item) for item in excluded)
                 except (ValueError, TypeError):
                     raise _Refusal("invalid_request") from None
-                answer = {"grant_id": identifier, "grant_sha256": self.register(identifier, grant, excluded)}
+                answer = {"grant_id": identifier,
+                          "grant_sha256": self.register(identifier, grant, navigation_url, excluded)}
                 outcome = "registered"
             elif value.get("op") == "revoke":
                 if set(value) != {"schema", "op", "grant_id"}:
@@ -220,14 +254,35 @@ class FetchService:
         try:
             if kind == "navigation" and not source_admits(grant.sources, url):
                 raise _Refusal("grant_denied")
+            if kind == "navigation":
+                projected = projection_values(grant.projection, url)
+                if projected is None:
+                    raise _Refusal("projection_denied")
+                entry, values = projected
+                with item.lock:  # its values now tag the grant's later requests too
+                    item.carried = tuple(dict.fromkeys(item.carried + tuple((entry.host, value) for value in values)))
+            if not self._projection_admits(item, url):
+                raise _Refusal("projection_denied")
             if remaining <= 0:
                 raise _Refusal("too_large")
             limit = min(grant.max_response_bytes, remaining)
+            inner = []
+
+            def transport(method, hop, addresses, headers):
+                # every hop — the request and each redirect the broker follows — is judged
+                # before its connection is opened
+                if not self._projection_admits(item, hop):
+                    raise _Refusal("projection_denied")
+                return inner[0](method, hop, addresses, headers)
+
             try:
+                inner.append(self._transport_factory(limit))
                 policy = freeze_egress_policy(granted_hosts=grant.recipients, product_origins=item.excluded,
                                               max_redirects=grant.max_redirects, max_response_bytes=limit)
-                result = broker_fetch(policy, "GET", url, resolver=self._resolver,
-                                      transport=self._transport_factory(limit), headers=_ACCEPT)
+                result = broker_fetch(policy, "GET", url, resolver=self._resolver, transport=transport,
+                                      headers=_ACCEPT)
+            except _Refusal:
+                raise
             except EgressBrokerError as error:
                 raise _Refusal(error.code) from None
             except Exception:  # noqa: BLE001 - a transport fault is a closed code, never its message

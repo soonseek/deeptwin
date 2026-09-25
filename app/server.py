@@ -845,8 +845,9 @@ def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, e
     side (`BrowserControlConfiguration`, checked against the fixed `cp-browser` and
     `cp-fetch` profiles; each call runs the verified connect and handshake) or is the
     host's already built `BrowserClient`. Named, `app.state.browser_tools` is a
-    `BrowserToolset` that builds a graph node's `BrowserAttemptTransport` (the product's
-    own origin host is never a recipient). Unnamed, it is `BrowserToolsUnavailable`:
+    `BrowserToolset` that builds a graph node's `BrowserAttemptTransport` from the
+    owner's persisted browser grant records (`browser-grants-v1`; the product's own
+    origin host is never a recipient). Unnamed, it is `BrowserToolsUnavailable`:
     every browser tool build refuses `unavailable`; the control plane never drives a
     browser or fetches for one itself.
 
@@ -1034,8 +1035,15 @@ def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, e
             setattr(application.state, name, getattr(components, name))
         application.state.worker_dispatch = None
         application.state.worker_dispatch_slot = slot
-        application.state.browser_tools = (BrowserToolsUnavailable() if browser_worker is None else BrowserToolset(
-            browser_worker, excluded_hosts=_browser_excluded_hosts(profile.host)))
+        if browser_worker is None:
+            application.state.browser_tools = BrowserToolsUnavailable()
+        else:
+            from .services.browser_grants import PersistentBrowserGrants
+
+            # grants come only from the owner's persisted records (browser-grants-v1)
+            application.state.browser_tools = BrowserToolset(
+                browser_worker, grants=PersistentBrowserGrants(components.domain_store, authority),
+                excluded_hosts=_browser_excluded_hosts(profile.host))
         publication = compose_first_party(application, ApplicationContext(
             components=components, owner_authority=authority, base_path=profile.base_path,
             runtime_dispatch_resolver=runtime_dispatch_resolver, worker_dispatch_slot=slot,
