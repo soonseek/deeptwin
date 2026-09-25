@@ -16,6 +16,8 @@ from ..services.works import WorkServiceError
 from . import owner_material_upload as material_upload
 from . import provider_installation as installation
 from .assets import PUBLIC_ASSET_PATHS
+from .backups import MAX_UPLOAD_BYTES as BACKUP_UPLOAD_BYTES
+from .backups import is_bundle_upload
 from .deployment_prepare import PATH as DEPLOYMENT_PATH
 from .deployment_prepare import deployment_error
 from .deployment_prepare import preflight as deployment_preflight
@@ -147,6 +149,7 @@ class WebBoundary:
                 parse_query(scope.get("query_string", b""), allowed=())  # no query rides on an asset
             body = b""
             source_upload = material_upload.is_source_upload(path, method)
+            backup_upload = is_bundle_upload(path, method)
             if installation_route:
                 declared = installation.preflight({**scope,'path':path},fields)
                 state['authenticated_request'] = await run_in_threadpool(self.authority.authenticate_request,
@@ -195,6 +198,8 @@ class WebBoundary:
                     limit = FILE_BODY_BYTES
                 if work_route:
                     limit = WORK_BODY_BYTES if method == "POST" else 0
+                if backup_upload:
+                    limit = BACKUP_UPLOAD_BYTES
                 length = fields.get("content-length", "0")
                 if not length.isdecimal():
                     raise OwnerAuthError("invalid_input")
@@ -215,12 +220,13 @@ class WebBoundary:
                         raise WorkRouteError("invalid_input" if limit == 0 else "too_large")
                     response = JSONResponse({"code": "invalid_input"}, status_code=413)
                     return await response(scope, receive, safe_send)
+                received = bytearray()
                 while True:
                     message = await receive()
                     if message["type"] == "http.disconnect":
                         return
                     chunk = message.get("body", b"")
-                    if len(body) + len(chunk) > limit:
+                    if len(received) + len(chunk) > limit:
                         if conformance_route:
                             raise ConformanceError("invalid_input" if limit == 0 else "too_large")
                         if deployment_route or provider_route:
@@ -237,9 +243,11 @@ class WebBoundary:
                             raise WorkRouteError("invalid_input" if limit == 0 else "too_large")
                         response = JSONResponse({"code": "invalid_input"}, status_code=413)
                         return await response(scope, receive, safe_send)
-                    body += chunk
+                    received += chunk
                     if not message.get("more_body", False):
                         break
+                body = bytes(received)
+                del received
             if password_change:
                 if fields.get("content-type", "").split(";", 1)[0] != "application/json":
                     raise OwnerAuthError("invalid_input")

@@ -192,3 +192,83 @@ export function completionGate(journey) {
   void journey?.exported;
   return { complete: true, exportRequired: false, exportOffered: true };
 }
+
+// T070/T073: a backup made through the isolated backup-crypto worker. The preview is
+// the server's count of what a backup made NOW carries (row counts per included
+// history category, originals by count and bytes) and every excluded category with
+// its closed reason; consent binds that exact digest. The lists mirror
+// app/operations/backup.py (drift test: app/tests/test_records_contract_mirror.py).
+export const BACKUP_INCLUDED = Object.freeze([
+  'approvals_and_permissions', 'conversations', 'event_log', 'originals', 'other_history',
+  'records_and_lineage', 'run_history', 'work_history',
+]);
+
+export const BACKUP_EXCLUDED_REASONS = Object.freeze([
+  'authenticator_never_restored', 'credential_never_restored', 'deleted_by_owner',
+  'deployment_private_state', 'not_retained', 'recreated_after_restore', 'regenerable',
+  'separate_private_root', 'unconsumed_capability',
+]);
+
+// what a staged restore still needs before it can serve: each is required, none is done here
+export const RESTORE_REQUIREMENTS = Object.freeze([
+  'new_owner_bootstrap', 'recreate_connections_and_service_clients', 'review_and_activate_exact_environment',
+]);
+
+export function backupPreviewSummary(preview) {
+  if (typeof preview !== 'object' || preview === null || typeof preview.preview_sha !== 'string'
+      || !SHA256.test(preview.preview_sha) || typeof preview.request_id !== 'string' || !UUID.test(preview.request_id)
+      || !Array.isArray(preview.included) || !Array.isArray(preview.excluded)
+      || !Number.isInteger(preview.records) || preview.records < 0) {
+    fail('a full backup preview is required before consent');
+  }
+  const included = preview.included.map(entry => {
+    if (!BACKUP_INCLUDED.includes(entry?.category)) fail('an included category is outside the closed set');
+    return entry.category === 'originals'
+      ? { category: 'originals', count: Number(entry.count), bytes: Number(entry.bytes) }
+      : { category: entry.category, rows: Number(entry.rows) };
+  });
+  const excluded = preview.excluded.map(entry => {
+    if (typeof entry?.category !== 'string' || !BACKUP_EXCLUDED_REASONS.includes(entry.reason)) {
+      fail('an excluded reason is outside the closed set');
+    }
+    return { category: entry.category, reason: entry.reason, rows: Number.isInteger(entry.rows) ? entry.rows : null };
+  });
+  if (!excluded.some(entry => entry.category === 'owner_authenticators_sessions_and_bootstrap_verifiers')) {
+    fail('a backup preview must state that authenticators are excluded');
+  }
+  return {
+    requestId: preview.request_id, previewSha: preview.preview_sha, records: preview.records,
+    keyMode: preview.key_mode, recoverable: preview.recoverable_after_host_or_volume_loss === true,
+    included, excluded,
+  };
+}
+
+export function backupConsent(summary, ack) {
+  if (typeof summary !== 'object' || summary === null || typeof summary.previewSha !== 'string') {
+    fail('consent requires the shown backup preview');
+  }
+  if (typeof ack !== 'object' || ack === null || ack.confirmed !== true) {
+    fail('consent is never implicit');
+  }
+  if (ack.previewSha !== summary.previewSha) {
+    fail('consent must bind the exact previewed content');
+  }
+  return {
+    schema_version: 'backup-create-v1', request_id: summary.requestId,
+    preview_sha: summary.previewSha, confirmed: true,
+  };
+}
+
+export function restoreReview(view) {
+  const review = view?.review;
+  if (view?.state !== 'restored_review' || typeof review !== 'object' || review === null
+      || review.dispatch !== 'blocked' || review.environment_reactivation !== 'explicit_required'
+      || review.active_vault_changed !== false
+      || !Array.isArray(review.requires) || RESTORE_REQUIREMENTS.some(step => !review.requires.includes(step))) {
+    fail('a staged restore must stay blocked until its review steps are done');
+  }
+  return {
+    restoreId: view.restore_id, backupId: review.backup_id, requires: [...RESTORE_REQUIREMENTS],
+    notRestored: Array.isArray(review.not_restored) ? [...review.not_restored] : [],
+  };
+}

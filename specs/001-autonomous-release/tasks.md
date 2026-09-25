@@ -749,6 +749,17 @@ preview, missing evidence and no network send; backup/restore without original d
   evidence/backup-age-t070-2026-09-23.md. Same day: the content-addressed originals are now
   archived and verified on restore (the database-only archive could not back up any vault with an
   original; 14 tests).
+  2026-09-25: the worker boundary is a real separate process. `app.workers.backup_crypto_main`
+  runs on the `cp-backup` pair (verified UDS + SO_PEERCRED + handshake). It is networkless (an
+  audit hook refuses non-AF_UNIX sockets and non-age spawns, and it is tested in an empty netns).
+  It holds the only read-only key root (exactly the two backup-key-init files, else refused) and
+  answers a typed chunked archive stream. The control plane's `BackupCryptoClient` is the crypto
+  port of `create_backup`/`restore_backup`, and the control identity cannot read the key. Also
+  tested: stream interruption, corruption, wrong key and key/volume loss (37 tests). The
+  backup-key-init stack-update reruns are tested (`test_backup_key_init.py`, real-keygen rerun in
+  `test_backup.py`). Still open: the Compose `backup` service has no image or command, no
+  read-only `backup-key` mount and no config wiring (T081), and there is no portable-recovery UI
+  or migration gate (T072) — evidence/backup-age-t070-2026-09-23.md §2026-09-25.
 - [x] T071 [US7] Implement snapshot preview/redaction/pseudonyms/rights/missing-evidence manifest and safe archive validation in app/operations/export.py and app/tests/test_export.py; no self-referential archive hash (FR-028/029).
 - [ ] T072 [US7] Integrate the T025 `DeploymentControlPort` into verified web-release update/recovery
   guidance, backup-before-migration and safe state in app/operations/updates.py,
@@ -771,6 +782,15 @@ preview, missing evidence and no network send; backup/restore without original d
   kind and location only and its original is withheld unless the owner confirms that exact finding
   set, bound into the preview digest and the consent record; the export panel shows the findings
   and the confirmation — evidence/us7.md. Logs/backup/retention screens remain.
+  2026-09-25 backup: the records page creates a backup through the isolated backup-crypto worker.
+  It shows the actual included-content preview (categories with counts, excluded categories with
+  reasons), takes explicit consent bound to the preview digest (stale refused), downloads the
+  encrypted bundle and the external receipt, and restores by uploading them into a staged
+  `restored_review` that shows the new-owner bootstrap and the explicit environment reactivation
+  as required. The unavailable states are honest (no worker, key lost, unreachable). Routes are in
+  the `backups-v1` contribution. Tests: real browser, route and node unit tests —
+  evidence/us7.md. Remaining: retention/settings screens, portable-recovery input, and deleting
+  other records.
 - [ ] T074 [US7] Run setup/source/candidate/lens/failed-run/alternative/round/approval export, secret canaries, PDF redaction and interrupted restore cases in app/tests/browser-records.test.mjs and specs/001-autonomous-release/evidence/us7.md (SC-009).
   2026-09-23 partial: work export (actual preview, bound consent, raw only by choice, secret
   canaries absent, stale preview refused) and the records page in real Chromium; fixed the log

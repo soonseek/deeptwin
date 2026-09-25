@@ -826,8 +826,16 @@ def create_development_app(data_dir, port=4193, *, codex_factory=None, understan
 def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, expected_gid,
                runtime_dispatch_resolver=None, worker_dispatch_factory=None,
                first_party_startup_values=None, additional_protected_roots=(), run_executor=None,
-               recovery_trust_set=None, credential_gateway=None, document_worker=None):
+               recovery_trust_set=None, credential_gateway=None, document_worker=None,
+               backup_worker=None):
     """Supported web factory: exact deployment authority, no host provider discovery.
+
+    ``backup_worker`` is the deployment's optional naming of the networkless
+    backup-crypto worker endpoint (`BackupWorkerConfiguration`, the `cp-backup` pair).
+    Named, the backup routes send typed archives to that worker over the verified
+    connect and handshake; the control plane never holds the backup key. A name that is
+    not the verified pair root fails the start. Unnamed, the backup routes state that
+    no worker is attached and create/restore answer an honest 503.
 
     ``credential_gateway`` is the deployment's optional naming of the credential gateway
     endpoint (`CredentialGatewayConfiguration`). Named, the credential routes are bound
@@ -869,7 +877,10 @@ def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, e
             or type(expected_uid) is not int or type(expected_gid) is not int
             or min(expected_uid, expected_gid) < 0):
         raise ValueError('Deployment configuration is required')
-    from .api.credential_wiring import CredentialGatewayConfiguration, open_credential_attachment
+    from .api.credential_wiring import (
+        CredentialGatewayConfiguration,
+        open_credential_attachment,
+    )
 
     if credential_gateway is not None and type(credential_gateway) is not CredentialGatewayConfiguration:
         raise ValueError('Invalid credential gateway configuration')
@@ -879,6 +890,13 @@ def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, e
         document_worker = DocumentCodecClient.for_worker(document_worker)
     elif document_worker is not None and type(document_worker) is not DocumentCodecClient:
         raise ValueError('Invalid document worker configuration')
+
+    from .workers.backup_channel import BackupWorkerConfiguration
+    from .workers.backup_crypto_client import BackupCryptoClient
+
+    if backup_worker is not None and type(backup_worker) is not BackupWorkerConfiguration:
+        raise ValueError('Invalid backup worker configuration')
+    backup_client = None if backup_worker is None else BackupCryptoClient.for_worker(backup_worker)
     if recovery_trust_set is not None and (type(recovery_trust_set) is not bytes
                                            or not 1 <= len(recovery_trust_set) <= 16384):
         raise ValueError('Invalid recovery trust set')
@@ -990,7 +1008,8 @@ def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, e
             components=components, owner_authority=authority, base_path=profile.base_path,
             runtime_dispatch_resolver=runtime_dispatch_resolver, worker_dispatch_slot=slot,
             startup_inputs=startup_inputs, run_executor=run_executor,
-            credential_gateway=credential_attachment, document_codec=document_worker))
+            credential_gateway=credential_attachment, document_codec=document_worker,
+            backup_worker=backup_client))
         application.state.route_composition = publication.receipt
         application.state.first_party_exports = publication.exports
         application.state.credential_attachment = credential_attachment
@@ -1030,6 +1049,8 @@ def main():
                         help='deeptwin-credential-gateway-attachment-v1 naming the credential gateway endpoint')
     parser.add_argument('--document-worker-config', type=Path, default=None,
                         help='deeptwin-document-worker-attachment-v1 naming the document service endpoint')
+    parser.add_argument('--backup-worker-config', type=Path, default=None,
+                        help='deeptwin-backup-crypto-attachment-v1 naming the backup-crypto worker endpoint')
     args = parser.parse_args()
     if min(args.expected_uid, args.expected_gid) < 0:
         parser.error('Expected ownership IDs must be nonnegative')
@@ -1066,6 +1087,16 @@ def main():
         with document_path.open('rb') as source:
             document_worker = DocumentWorkerConfiguration.from_mapping(parse_json_object(source.read(4097),
                 required=('schema', 'pair_root', 'requester_boot_id'), limits=WireLimits(max_bytes=4096)))
+    backup_worker = None
+    if args.backup_worker_config is not None:
+        from .workers.backup_channel import BackupWorkerConfiguration
+
+        worker_path = args.backup_worker_config.absolute()
+        if '..' in worker_path.parts:
+            parser.error('Invalid backup worker configuration path')
+        with worker_path.open('rb') as source:
+            backup_worker = BackupWorkerConfiguration.from_mapping(parse_json_object(source.read(4097),
+                required=('schema', 'pair_root', 'requester_boot_id'), limits=WireLimits(max_bytes=4096)))
     # the direct-adapter Claude profile: the code-owned run executor, bounded by the
     # operator's non-secret limits (the API key itself is entered by the owner in the
     # browser and kept in server memory only)
@@ -1077,7 +1108,7 @@ def main():
         session_root_dir=args.session_root_dir, expected_uid=args.expected_uid, expected_gid=args.expected_gid,
         additional_protected_roots=(config_path.parent,), run_executor=ClaudeRunExecutor(limits=limits),
         recovery_trust_set=trust_set, credential_gateway=credential_gateway,
-        document_worker=document_worker)
+        document_worker=document_worker, backup_worker=backup_worker)
     uvicorn.run(application, host='0.0.0.0', port=8080, workers=1, reload=False,
                 proxy_headers=False, forwarded_allow_ips='', access_log=False)
 

@@ -46,6 +46,7 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "work-export.mjs": "application/javascript",
         "source-deletion.mjs": "application/javascript",
         "records-page.mjs": "application/javascript",
+        "records-backup.mjs": "application/javascript",
         "account.mjs": "application/javascript",
         "claude-connection.mjs": "application/javascript",
         "work-model.mjs": "application/javascript",

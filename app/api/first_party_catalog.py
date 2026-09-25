@@ -1,6 +1,7 @@
 """The complete build-installed catalog; not a runtime extension registry."""
 
 from .artifact_index import artifact_index_services
+from .backups import backup_services
 from .claude_connection import connection_services
 from .credential_wiring import credential_services
 from .design_workspace import design_workspace_services
@@ -69,6 +70,14 @@ INSTALLED = (
         ("browser_session",),
         ("work.command", "work.read"),
         provides=("claude.connection",),
+    ),
+    InstalledContribution(
+        "backups-v1.json",
+        "app.api.backups:create_router",
+        backup_services,
+        ("browser_session",),
+        ("work.command", "work.read"),
+        provides=("backups.service",),
     ),
     InstalledContribution(
         "credentials-v1.json",

@@ -156,7 +156,12 @@ class ApplicationContext:
     # as needing it (and the page routes answering 503)
     document_codec: object | None = None
 
+    # the backup-crypto worker client the host opened from the deployment's named
+    # `cp-backup` endpoint; None composes the backup routes with an honest unavailable
+    backup_worker: object | None = None
+
     def __post_init__(self):
+        from ..workers.backup_crypto_client import BackupCryptoClient
         from ..workers.document_channel import DocumentCodecClient
         from .credential_wiring import CredentialAttachment
 
@@ -182,6 +187,10 @@ class ApplicationContext:
             or (
                 self.document_codec is not None
                 and type(self.document_codec) is not DocumentCodecClient
+            )
+            or (
+                self.backup_worker is not None
+                and type(self.backup_worker) is not BackupCryptoClient
             )
         ):
             raise TypeError(
