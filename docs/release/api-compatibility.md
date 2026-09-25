@@ -1,6 +1,6 @@
 # API surface and compatibility (draft)
 
-Date: 2026-09-23 · Status: **draft for T084**. Normative source: `contracts/api.md` (`api-v1`) and
+Date: 2026-09-23 · Updated: 2026-09-25 · Status: **draft for T084**. Normative source: `contracts/api.md` (`api-v1`) and
 `contracts/verification.md`. This page describes the routes the supported factory (`create_app` in
 `app/server.py`) mounts today and the compatibility rules that apply to them.
 
@@ -11,7 +11,7 @@ service-client (bearer) automation are **not yet provided** (see §5).
 
 | Family | Prefix | Versioned | Source of truth |
 | --- | --- | --- | --- |
-| Owner session and shell | `/`, `/health`, `/session`, `/session/bootstrap`, `/session/login`, `/session/logout`, static assets | no (fixed by design) | `app/api/session_routes.py`, `app/api/assets.py` |
+| Owner session and shell | `/`, `/health`, `/session`, `/session/bootstrap`, `/session/login`, `/session/password`, `/session/revoke-others`, `/session/logout`, static assets | no (fixed by design) | `app/api/session_routes.py`, `app/api/assets.py` |
 | Domain API | `/api/v1/…` | yes, major `v1` | `app/api/route_contributions/*.json` |
 | Development preview only | `/api/works…`, `/api/speech…` and others | no | `create_development_app` in `app/server.py`; **not** part of the supported surface |
 
@@ -76,9 +76,10 @@ editing it by hand.
 
 - **Closed input.** Request bodies are closed JSON objects; unknown keys, duplicate keys and
   out-of-bound values are rejected rather than ignored.
-- **Body limits** are enforced at the web boundary before parsing: 4 KiB for ordinary run routes,
-  600 KB for draft saves, 5.6 MB for alternative-file uploads (4 MiB decoded), and route-specific
-  limits for work and source uploads.
+- **Body limits** are enforced at the web boundary before parsing: 4 KiB for run, consent,
+  approval, deployment and conformance routes, 600 KB for draft saves, 5.6 MB for alternative-file
+  uploads (4 MiB decoded), 1 MiB for an extension-candidate registration, 64 MiB for a backup
+  restore upload, and route-specific limits for work and source uploads.
 - **Commands are idempotent per command ID.** Replaying a command with identical content returns
   the original result; the same command ID with different content is a `conflict`.
 - **Revision-safe writes.** Writes name the revision they were based on; a stale base gets
@@ -122,5 +123,13 @@ No formal deprecation window or support period has been decided; that is an open
   not register or parse bearer credentials, with no cookie or plaintext fallback.
 - **Installable HTTP/OpenAPI client** (`deeptwin_client`) with parity proof from a separate process
   that does not import `app` (T087/T083).
-- Contract routes such as `/extensions`, `/service-clients`, backup, retention/deletion and
-  settings routes listed in `contracts/api.md` §2 that have no descriptor yet.
+- Contract routes listed in `contracts/api.md` §2 that have no descriptor yet, among them
+  `/service-clients`, the code-free definition import and retirement/uninstall arms of
+  `/extensions`, `/extension-deployment/requests`, the managed-login connection routes (T088) and
+  `/speech/sessions` (T024).
+- **Documented deviations.** The artifact routes are served run-scoped
+  (`/api/v1/runs/{run_id}/artifacts/{artifact_id}/…`, with `artifacts.index` returning the run id)
+  rather than as `/artifacts/{id}/…`; extension bindings are served at `/api/v1/extensions/bindings…`
+  with the extension id in each body, because an `/extensions/{id}/…` segment would collide with the
+  fixed `candidates`, `provider-installation`, `provider-conformance` and
+  `provider-transport-qualification` segments (`evidence/extensions-ui-2026-09-25.md`).

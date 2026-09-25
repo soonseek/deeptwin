@@ -1,10 +1,15 @@
 # Third-party notices inventory (draft)
 
-Date: 2026-09-23 · Status: **draft technical inventory for T084. This is not a NOTICE file, not
-legal advice and not a distribution approval.** No `NOTICE` or `LICENSES/` directory has been
-created for third-party components; they must be assembled and reviewed per release image before
-any publication. The repository's own license is Apache-2.0 (approved 2026-09-24,
-[license-recommendation.md](license-recommendation.md)).
+Date: 2026-09-23 · Updated: 2026-09-25 · Status: **draft technical inventory for T084. This is not
+a NOTICE file, not legal advice and not a distribution approval.** The repository's own licence is
+Apache-2.0 (approved 2026-09-24, [license-recommendation.md](license-recommendation.md)); the
+repository `NOTICE` and `LICENSES/` cover DeepTwin's own files and point here for third-party
+components. No per-image third-party NOTICE, licence-text set or source offer exists yet; they must
+be assembled and reviewed per release image (T081/T082) before any publication of images.
+
+The locks, manifests, `pyproject.toml` and `uv.lock` have not changed since this inventory was
+first drafted (only the licence metadata was added to `pyproject.toml` on 2026-09-24), so the
+tables below still describe the recorded build inputs.
 
 ## How to read this page
 
@@ -167,15 +172,22 @@ recorded in the manifests).
 | Upstream base images | python 3.12.14-slim-bookworm, node 24.20.0-bookworm-slim, caddy 2.11.4-alpine | image contents not licence-inventoried | `deploy/manifests/upstream-images.json` |
 | Silero (licence text only) | unknown | MIT text locked (`deploy/locks/licenses/Silero-MIT.txt`) | `deploy/locks/licenses/` |
 
+Packaging note: the browser worker process that landed on 2026-09-25
+(`app/workers/browser_worker_main.py`) runs on a Python runtime (standard library only) plus
+chromium-headless-shell, while `deploy/locks/service-roots.json` still declares the browser service
+as Node 24 + `playwright-core` + chromium-headless-shell. The browser image and its lock must be
+reconciled (T081/T089) before the browser image's notices can be closed
+(`evidence/browser-worker-t043-2026-09-25.md`).
+
 ## 5. Browser shell and prototypes
 
 `app/static/` loads no third-party JavaScript or fonts from the network (CSP `script-src 'self'`);
 no bundled third-party front-end library was found there. `control-prototype/` and `prototype/`
 were not inventoried by this draft.
 
-## 6. Open items before a NOTICE file can exist
+## 6. Open items before per-image third-party notices can exist
 
-1. Owner approval of the repository licence.
+1. Done 2026-09-24: owner approval of the repository licence (Apache-2.0).
 2. Review of bundled native code in wheels, the Chromium bundle, Debian packages, base images and
    the Codex closure, including MPL-2.0 and other file-level or source-offer obligations.
 3. Assembly of `LICENSES/` texts and a `NOTICE` file, plus any source offers, per final image

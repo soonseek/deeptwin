@@ -1,6 +1,6 @@
 # Repository license recommendation (for owner decision)
 
-Date: 2026-09-23 · Status: **decided. On 2026-09-24 the owner approved the Apache License 2.0
+Date: 2026-09-23 · Updated: 2026-09-25 · Status: **decided. On 2026-09-24 the owner approved the Apache License 2.0
 for the repository** (§3's recommended default). This page keeps the analysis that led to it.
 
 ## Decision status
@@ -11,10 +11,13 @@ for the repository** (§3's recommended default). This page keeps the analysis t
 - Added: `LICENSE` and `LICENSES/Apache-2.0.txt` (the canonical text, sha256
   `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30`), `NOTICE`, and
   `license = "Apache-2.0"` / `license-files` in `pyproject.toml`.
-- Not done by this decision: SPDX headers in source files, per-image third-party NOTICE and
-  source-offer closure (T081/T082), the inbound-contribution mechanism (§4.2), trademark
-  policy (§4.3), and publication. Publication still needs its own authority; nothing is pushed
-  publicly, tagged or uploaded by this change.
+- Added 2026-09-25: per-file licence coverage through `REUSE.toml` (Apache-2.0 default, upstream
+  files annotated `LicenseRef-Upstream-Terms` and never relicensed); `reuse lint` is compliant and
+  guarded by `app/tests/test_reuse_compliance.py`.
+- Still open: per-image third-party NOTICE and source-offer closure (T081/T082), the
+  inbound-contribution mechanism (§4.2, an owner decision), trademark policy (§4.3), confirmation
+  of ownership (§4.1) and of rights to text quoted in `docs/lenses/`, and publication. Publication
+  still needs its own authority; nothing is pushed publicly, tagged or uploaded.
 
 This document is engineering input, not legal advice (§4).
 
@@ -79,16 +82,17 @@ it should be settled first.
 6. **Historical material.** Decide whether `packaging/macos/`, `prototype/`, `control-prototype/`
    and large evidence files are published at all.
 
-## 5. What happens after approval (not done now)
+## 5. After approval: status
 
-Only after the owner's explicit approval of a named license:
-
-1. Add `LICENSE` / `LICENSES/<id>.txt` and SPDX headers; add `license` metadata to
-   `pyproject.toml` and to the future SDK/client packages.
-2. Assemble `NOTICE` and third-party license texts and source offers per final image
-   (after T081/T082).
-3. Finish the publishable-content scrub (usernames, absolute paths, private locations, user data).
-4. Record the approval (who, when, which license) in `specs/001-autonomous-release/evidence/`.
-5. Publish only with the separately required publication authority; no automatic public push.
+1. Done: `LICENSE`, `LICENSES/Apache-2.0.txt`, `NOTICE` and `pyproject.toml` licence metadata
+   (2026-09-24); REUSE coverage through `REUSE.toml` instead of in-file SPDX headers (2026-09-25).
+   The future SDK/client packages do not exist yet.
+2. Open: assemble per-image third-party licence texts, NOTICE files and source offers (after
+   T081/T082 produce the images and SBOMs).
+3. Partly done: the publishable-content scrub (2026-09-23); the pinned lens source file and content
+   added since remain ([source-license-inventory.md](source-license-inventory.md) §4).
+4. Done: the approval record
+   (`specs/001-autonomous-release/evidence/license-approval-apache-2.0-2026-09-24.md`).
+5. Open: publish only with the separately required publication authority; no automatic public push.
 
 See also [source-license-inventory.md](source-license-inventory.md).
