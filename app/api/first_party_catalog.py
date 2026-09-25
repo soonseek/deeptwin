@@ -15,6 +15,7 @@ from .extension_candidates import candidate_services
 from .first_party import InstalledContribution, core_services
 from .graphs import graph_services
 from .hypotheses import hypothesis_services
+from .platform_update import platform_update_services
 from .provider_conformance import conformance_services
 from .provider_installation import installation_services
 from .retention import retention_services
@@ -191,5 +192,13 @@ INSTALLED = (
         ("browser_session",),
         ("work.command", "work.read"),
         provides=("browser-grants.service",),
+    ),
+    InstalledContribution(
+        "platform-update-v1.json",
+        "app.api.platform_update:create_router",
+        platform_update_services,
+        ("browser_session",),
+        ("deployment.read",),
+        provides=("platform-update.guidance",),
     ),
 )

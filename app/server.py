@@ -949,6 +949,11 @@ def create_app(data_dir, *, deployment_config, session_root_dir, expected_uid, e
     try:
         with _validated_data_dir(data_dir) as (validated_data_path, directory_fd):
             lock = ServingLock(validated_data_path, expected_uid=expected_uid, expected_gid=expected_gid)
+            from .operations.recovery import refuse_start_during_migration
+
+            # a journaled update migration is finished by the operator tool, never served
+            # over; checked before the store's first write (its start event)
+            refuse_start_during_migration(validated_data_path)
             store = Store(validated_data_path, _verified_directory_fd=directory_fd)
             state_directory = validated_data_path
         domain = DomainStore(store)
