@@ -38,9 +38,13 @@ from ..domain.refs import (
 from ..domain.store import DomainStore, StorageError, _writer
 from .budgets import BudgetBook, BudgetDispatchRequest, BudgetUsage
 from .gates import (
+    EXECUTION_APPROVAL_REFUSAL_COMMAND,
     EXECUTION_APPROVAL_REQUEST_COMMAND,
     GATE_REQUEST_COMMAND,
+    REFUSAL_REASONS,
     SHA256_HEX,
+    execution_approval_refusal,
+    execution_approval_refusal_identity,
     execution_approval_request,
     execution_approval_request_identity,
     gate_request_identity,
@@ -49,6 +53,13 @@ from .gates import (
 )
 
 MAX_LEASE_MS = 86_400_000
+# how long the ledger's ask for one attempt's execution-bound decision stays
+# answerable, server-set from the ledger's own clock at the first recording; a
+# decision answering it carries the same instant and is refused at dispatch after
+# it. Bounded: never shorter than a minute, never longer than a day.
+EXECUTION_APPROVAL_TTL_MS = 30 * 60 * 1000
+MIN_EXECUTION_APPROVAL_TTL_MS = 60_000
+MAX_EXECUTION_APPROVAL_TTL_MS = 86_400_000
 MAX_ACTIVE_ATTEMPTS = 1_000
 MAX_ATTEMPTS_PER_EXECUTION = 1_000
 MAX_CHECKPOINT_BYTES = 1_048_576
@@ -144,6 +155,24 @@ class StartupReconciliationRequired(DispatchBlocked):
 
 class ClockError(LedgerError):
     pass
+
+
+class ApprovalAlreadyUsed(LedgerError):
+    """One approval admits one attempt's tool call; another attempt named it."""
+
+
+APPROVAL_REFUSALS = frozenset({"missing", "rejected", "expired", "superseded", "used", "mismatch"})
+
+
+class ApprovalRefused(LedgerError):
+    """The execution-bound approval a tool dispatch claims is not a current, unexpired,
+    unused approval of exactly this attempt; nothing of the claim was written."""
+
+    def __init__(self, reason):
+        if reason not in APPROVAL_REFUSALS:
+            reason = "mismatch"
+        super().__init__(f"approval refused: {reason}")
+        self.reason = reason
 
 
 def _ref(value, kind):
@@ -735,8 +764,10 @@ class ToolCallSpec:
     rest; the transport verifies it before the send against the owner's
     execution-bound decision for the run, gate, tool scope, execution and
     attempt number — the ledger records the reference it was given and admits
-    one approval for one attempt's call only; no expiry exists on a decision,
-    so none is verified anywhere)."""
+    one approval for one attempt's call only). When the dispatcher claims the
+    call with its send (`ToolDispatchClaim`), the claim's check runs inside the
+    send-intent transaction: the decision must be current, approved, answer this
+    attempt's ask and be unexpired on the ledger's clock."""
 
     tool_call_id: str
     attempt_id: str
@@ -779,6 +810,29 @@ class ToolCallSpec:
                 "version": self.version, "effect_class": self.effect_class,
                 "artifact_inputs": [dict(item) for item in self.artifact_inputs],
                 "approval_ref": None if self.approval_ref is None else self.approval_ref.as_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class ToolDispatchClaim:
+    """What a dispatcher claims together with one attempt's budgeted send intent: the
+    ToolCall's write-ahead intent (recorded under `command_id`) and, for an external
+    effect, the approval check `verify(db, now_ms)` run inside the same transaction
+    (raising `ApprovalRefused`). The approval use (the ToolCall's approval reference,
+    admitted for one attempt only), the ToolCall intent, the budget reservation and the
+    send-intent barrier then commit together or not at all."""
+
+    command_id: str
+    spec: ToolCallSpec
+    verify: object = None
+
+    def __post_init__(self):
+        uuid_string(self.command_id)
+        if type(self.spec) is not ToolCallSpec:
+            raise TypeError("a dispatch claim carries an exact ToolCallSpec")
+        if self.verify is not None and not callable(self.verify):
+            raise TypeError("a dispatch claim's check is callable")
+        if (self.spec.approval_ref is not None) != (self.verify is not None):
+            raise ValueError("an approval is claimed only with its in-transaction check")
 
 
 class RuntimeLedger:
@@ -1296,8 +1350,11 @@ class RuntimeLedger:
         scope, execution, attempt) — its identity IS `execution_approval_request_identity`
         — so an attempt has one ask with one digest (the same identity with another
         digest conflicts). The attempt number must be one the execution already holds
-        or its next. No event is emitted (the gate's `approval.requested` stands) and
-        no ask expires; a v2 decision answers it only through the approvals service.
+        or its next. No event is emitted (the gate's `approval.requested` stands). The
+        ask expires `EXECUTION_APPROVAL_TTL_MS` after its first recording on this
+        ledger's clock (server-set, bounded; kept in the recorded result, so a replay
+        returns the same instant); a v2 decision answers it only through the approvals
+        service and only before that instant, and carries it.
         """
 
         uuid_string(run_id)
@@ -1331,7 +1388,11 @@ class RuntimeLedger:
                 (self.vault_id, execution_id)).fetchone()["n"] or 0
             if attempt_no > highest + 1:
                 raise LedgerError("The attempt number is neither held nor the execution's next")
-            result = {**parse_canonical(payload), "requested": True}
+            ttl = EXECUTION_APPROVAL_TTL_MS
+            if (type(ttl) is not int
+                    or not MIN_EXECUTION_APPROVAL_TTL_MS <= ttl <= MAX_EXECUTION_APPROVAL_TTL_MS):
+                raise LedgerError("The execution approval time to live is outside its bound")
+            result = {**parse_canonical(payload), "requested": True, "expires_at_ms": now + ttl}
             self._record_command(db, command_id, EXECUTION_APPROVAL_REQUEST_COMMAND, payload, result, now)
             return result
 
@@ -1340,6 +1401,36 @@ class RuntimeLedger:
 
         with self._transaction() as db:
             return execution_approval_request(db, self.vault_id, run_id, node_id, approval_scope,
+                                              execution_id, attempt_no)
+
+    def refuse_execution_approval(self, run_id, node_id, approval_scope, execution_id, attempt_no, reason):
+        """Record once why the scheduler stopped this attempt's visit at its decision
+        (`rejected`, `expired`, `superseded`); only for an ask the ledger holds. The
+        first recorded reason stands: a replay with the same reason returns it, a
+        different reason for the same attempt conflicts."""
+
+        if reason not in REFUSAL_REASONS:
+            raise ValueError("refusal reason is outside the closed set")
+        ask_id = execution_approval_request_identity(run_id, node_id, approval_scope, execution_id, attempt_no)
+        command_id = execution_approval_refusal_identity(ask_id)
+        payload = self._command_payload({"request_id": ask_id, "reason": reason})
+        with self._transaction(write=True) as db:
+            replay = self._command_replay(db, command_id, EXECUTION_APPROVAL_REFUSAL_COMMAND, payload)
+            if replay is not None:
+                return replay
+            now = self._now(db)
+            if execution_approval_request(db, self.vault_id, run_id, node_id, approval_scope,
+                                          execution_id, attempt_no) is None:
+                raise LedgerError("No execution approval request is held for this attempt")
+            result = {"request_id": ask_id, "reason": reason, "refused": True}
+            self._record_command(db, command_id, EXECUTION_APPROVAL_REFUSAL_COMMAND, payload, result, now)
+            return result
+
+    def execution_approval_refused(self, run_id, node_id, approval_scope, execution_id, attempt_no):
+        """The recorded reason this attempt's visit stopped at its decision, or None."""
+
+        with self._transaction() as db:
+            return execution_approval_refusal(db, self.vault_id, run_id, node_id, approval_scope,
                                               execution_id, attempt_no)
 
     def create_execution(self, command_id, spec):
@@ -1405,48 +1496,51 @@ class RuntimeLedger:
 
         if type(spec) is not ToolCallSpec:
             raise TypeError("record_tool_call requires an exact ToolCallSpec")
-        payload = self._command_payload({"spec": spec.as_dict()})
         with self._transaction(write=True) as db:
-            replay = self._command_replay(db, command_id, "record_tool_call", payload)
-            if replay is not None:
-                return replay
-            now = self._now(db)
-            attempt = db.execute("SELECT id FROM runtime_attempts WHERE vault_id=? AND id=?",
-                                 (self.vault_id, spec.attempt_id)).fetchone()
-            if attempt is None:
-                raise KeyError(spec.attempt_id)
-            existing = db.execute("SELECT * FROM runtime_tool_calls WHERE vault_id=? AND attempt_id=?",
-                                  (self.vault_id, spec.attempt_id)).fetchone()
-            if existing is not None:
-                # the same intent again (under any command) is the same intent; a different
-                # intent for the attempt is refused — one tool call per attempt
-                snapshot = self._tool_call_snapshot(existing)
-                same = spec.as_dict()
-                if all(snapshot[name] == same[name] for name in
-                       ("tool_id", "version", "effect_class", "artifact_inputs", "approval_ref")):
-                    self._record_command(db, command_id, "record_tool_call", payload, snapshot, now)
-                    return snapshot
-                raise LedgerError("The attempt already recorded a different tool call intent")
-            encoded = canonical_json(spec.as_dict()["artifact_inputs"])
-            approval = spec.approval_ref
-            if approval is not None and db.execute(
-                    "SELECT 1 FROM runtime_tool_calls WHERE vault_id=? AND approval_kind=? AND approval_id=? "
-                    "AND attempt_id<>?", (self.vault_id, approval.kind, approval.id, spec.attempt_id)).fetchone():
-                # one approval is used by one attempt's call: never by another attempt,
-                # a retry of the same visit included (the same attempt replays above)
-                raise LedgerError("The approval already admitted another attempt's tool call")
-            db.execute("INSERT INTO runtime_tool_calls VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                       (self.vault_id, spec.tool_call_id, spec.attempt_id, spec.tool_id, spec.version,
-                        spec.effect_class, encoded, _digest(encoded), "intent", None, None, None, None,
-                        command_id, now, None,
-                        None if approval is None else approval.kind, None if approval is None else approval.id,
-                        None if approval is None else approval.version,
-                        None if approval is None else approval.sha256))
-            row = db.execute("SELECT * FROM runtime_tool_calls WHERE vault_id=? AND id=?",
-                             (self.vault_id, spec.tool_call_id)).fetchone()
-            result = self._tool_call_snapshot(row)
-            self._record_command(db, command_id, "record_tool_call", payload, result, now)
-            return result
+            return self._record_tool_call_in_transaction(db, command_id, spec)
+
+    def _record_tool_call_in_transaction(self, db, command_id, spec, now=None):
+        payload = self._command_payload({"spec": spec.as_dict()})
+        replay = self._command_replay(db, command_id, "record_tool_call", payload)
+        if replay is not None:
+            return replay
+        now = self._now(db) if now is None else now
+        attempt = db.execute("SELECT id FROM runtime_attempts WHERE vault_id=? AND id=?",
+                             (self.vault_id, spec.attempt_id)).fetchone()
+        if attempt is None:
+            raise KeyError(spec.attempt_id)
+        existing = db.execute("SELECT * FROM runtime_tool_calls WHERE vault_id=? AND attempt_id=?",
+                              (self.vault_id, spec.attempt_id)).fetchone()
+        if existing is not None:
+            # the same intent again (under any command) is the same intent; a different
+            # intent for the attempt is refused — one tool call per attempt
+            snapshot = self._tool_call_snapshot(existing)
+            same = spec.as_dict()
+            if all(snapshot[name] == same[name] for name in
+                   ("tool_id", "version", "effect_class", "artifact_inputs", "approval_ref")):
+                self._record_command(db, command_id, "record_tool_call", payload, snapshot, now)
+                return snapshot
+            raise LedgerError("The attempt already recorded a different tool call intent")
+        encoded = canonical_json(spec.as_dict()["artifact_inputs"])
+        approval = spec.approval_ref
+        if approval is not None and db.execute(
+                "SELECT 1 FROM runtime_tool_calls WHERE vault_id=? AND approval_kind=? AND approval_id=? "
+                "AND attempt_id<>?", (self.vault_id, approval.kind, approval.id, spec.attempt_id)).fetchone():
+            # one approval is used by one attempt's call: never by another attempt,
+            # a retry of the same visit included (the same attempt replays above)
+            raise ApprovalAlreadyUsed("The approval already admitted another attempt's tool call")
+        db.execute("INSERT INTO runtime_tool_calls VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   (self.vault_id, spec.tool_call_id, spec.attempt_id, spec.tool_id, spec.version,
+                    spec.effect_class, encoded, _digest(encoded), "intent", None, None, None, None,
+                    command_id, now, None,
+                    None if approval is None else approval.kind, None if approval is None else approval.id,
+                    None if approval is None else approval.version,
+                    None if approval is None else approval.sha256))
+        row = db.execute("SELECT * FROM runtime_tool_calls WHERE vault_id=? AND id=?",
+                         (self.vault_id, spec.tool_call_id)).fetchone()
+        result = self._tool_call_snapshot(row)
+        self._record_command(db, command_id, "record_tool_call", payload, result, now)
+        return result
 
     def settle_tool_call(self, command_id, tool_call_id, *, outcome, result_ref):
         """Settle one tool call: `succeeded` with its sealed result, `failed`, or
@@ -1695,12 +1789,21 @@ class RuntimeLedger:
 
     def commit_budgeted_send_intent(self, command_id, attempt_id, owner, *,
                                     expected_revision, budget_book, budget_request,
-                                    principal=None, grant=None):
-        """Atomically reserve budget and commit send intent before issuing a permit."""
+                                    principal=None, grant=None, tool_call=None):
+        """Atomically reserve budget and commit send intent before issuing a permit.
+
+        With `tool_call` (a `ToolDispatchClaim` for this attempt) the same transaction
+        also runs the claim's approval check against the ledger's clock and records the
+        ToolCall's write-ahead intent with its approval reference (one approval, one
+        attempt's call): approval use, ToolCall intent, budget reservation and send
+        intent commit together, or a refusal (`ApprovalRefused`) writes none of them."""
         if type(budget_book) is not BudgetBook:
             raise TypeError("Exact BudgetBook required")
         if type(budget_request) is not BudgetDispatchRequest:
             raise TypeError("Exact BudgetDispatchRequest required")
+        if tool_call is not None and (type(tool_call) is not ToolDispatchClaim
+                                      or tool_call.spec.attempt_id != attempt_id):
+            raise TypeError("A dispatch claim must be this attempt's exact ToolDispatchClaim")
         book_path = Path(os.path.abspath(budget_book.path))
         if book_path != self._domain.path:
             raise LedgerError("BudgetBook must share the same vault database")
@@ -1714,6 +1817,7 @@ class RuntimeLedger:
             budget_request=budget_request,
             principal=principal,
             grant=grant,
+            tool_call=tool_call,
         )
 
     def _stage_budgeted_send_intent_in_transaction(
@@ -1768,7 +1872,7 @@ class RuntimeLedger:
 
     def _commit_send_intent(self, command_id, attempt_id, owner, *, expected_revision,
                             command_kind, budget_book, budget_request, _db=None,
-                            principal=None, grant=None, _activate=True):
+                            principal=None, grant=None, _activate=True, tool_call=None):
         """Commit the may-have-sent barrier, then return at most one ephemeral permit.
 
         Exact command replay returns ``None``.  This deliberate exception prevents an
@@ -1797,6 +1901,8 @@ class RuntimeLedger:
         if principal is not None:
             payload_value["principal_id"] = principal.id
             payload_value["grant_id"] = grant.id
+        # the claim is not part of the replayed payload: an exact replay (no permit, never
+        # a second send) is recognised whether or not the caller re-derived its claim
         payload = self._command_payload(payload_value)
         permit = None
         transaction = self._transaction(write=True) if _db is None else nullcontext(_db)
@@ -1871,6 +1977,15 @@ class RuntimeLedger:
                 result = {"intent_committed": False, "reason": "lease_expired", "attempt_id": attempt_id}
                 self._record_command(db, command_id, command_kind, payload, result, now)
                 return None
+            if tool_call is not None and tool_call.verify is not None:
+                # the approval is checked on this transaction's view and clock, before
+                # any budget or send row: a refusal writes nothing of the claim
+                try:
+                    tool_call.verify(db, now)
+                except ApprovalRefused:
+                    raise
+                except Exception:  # noqa: BLE001 - an unreadable approval authorizes nothing
+                    raise ApprovalRefused("missing") from None
             budget_deadline_epoch_seconds = None
             if budget_request is not None:
                 _, policy, budget_deadline_epoch_seconds = \
@@ -1893,6 +2008,12 @@ class RuntimeLedger:
                           {"lease_fence": updated["lease_fence"], "revision": updated["revision"]}, now)
             self._event(db, "attempt.dispatched", "attempt", attempt_id,
                         {"attempt_no": spec.attempt_no}, now)
+            if tool_call is not None:
+                # the ToolCall intent (and its approval use) in the send-intent transaction
+                try:
+                    self._record_tool_call_in_transaction(db, tool_call.command_id, tool_call.spec, now)
+                except ApprovalAlreadyUsed:
+                    raise ApprovalRefused("used") from None
             result = {"intent_committed": True, "attempt_id": attempt_id,
                       "permit_id": permit_id, "revision": updated["revision"]}
             self._record_command(db, command_id, command_kind, payload, result, now)

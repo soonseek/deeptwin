@@ -149,6 +149,27 @@ function pairs(value, label) {
   });
 }
 
+// T087: a gated tool visit waits on (or was stopped at) one attempt's own decision:
+// (gate, scope, execution, executing node, attempt number[, reason]). Absent in an
+// older receipt: nothing waits per attempt there.
+const EXECUTION_REFUSALS = Object.freeze(['rejected', 'expired', 'superseded']);
+
+function executionEntries(value, label, { refused }) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) fail(`${label} must be a list`);
+  return value.map(entry => {
+    if (!Array.isArray(entry) || entry.length !== (refused ? 6 : 5)) fail(`${label} entries name one attempt`);
+    const [gate, scope, executionId, nodeId, attemptNo] = entry;
+    if (!Number.isInteger(attemptNo) || attemptNo < 1) fail(`${label} attempt number is not positive`);
+    if (refused && !EXECUTION_REFUSALS.includes(entry[5])) fail(`${label} reason is outside the closed set`);
+    return Object.freeze({
+      gateId: requireLocal(gate, 'gate node id'), scope: requireLocal(scope, 'approval scope'),
+      executionId: requireUuid(executionId, 'execution id'), nodeId: requireLocal(nodeId, 'execution node id'),
+      attemptNo, ...(refused ? { reason: entry[5] } : {}),
+    });
+  });
+}
+
 function identifiers(value, label) {
   if (!Array.isArray(value)) fail(`${label} must be a list`);
   return value.map(item => requireLocal(item, `${label} entry`));
@@ -162,10 +183,10 @@ function scopesByNode(list) {
 
 // The phase is the server's (app/services/runs.py `_phase`); the receipt is
 // refused when its own identities contradict it (대기를 완료 처리 금지).
-function checkPhase(phase, { cancelled, awaiting, rejected, pending, visited }) {
+function checkPhase(phase, { cancelled, awaiting, rejected, awaitingAttempts = [], refusedAttempts = [], pending, visited }) {
   const expected = cancelled ? 'cancelled'
-    : awaiting.length ? 'awaiting_human'
-      : rejected.length ? 'rejected'
+    : awaiting.length || awaitingAttempts.length ? 'awaiting_human'
+      : rejected.length || refusedAttempts.length ? 'rejected'
         : pending.length ? 'running'
           : visited ? 'completed' : 'created';
   if (phase !== expected) {
@@ -199,6 +220,8 @@ export function runView(receipt, basePath = '/', { nodeIds = null } = {}) {
   const pending = identifiers(outcome.pending_node_ids, 'pending node ids');
   const awaiting = pairs(outcome.awaiting_human, 'awaiting_human');
   const rejected = pairs(outcome.rejected_human, 'rejected_human');
+  const awaitingAttempts = executionEntries(outcome.awaiting_execution, 'awaiting_execution', { refused: false });
+  const refusedAttempts = executionEntries(outcome.rejected_execution, 'rejected_execution', { refused: true });
   const counters = outcome.counters;
   if (typeof counters !== 'object' || counters === null || Array.isArray(counters)) fail('counters must be a map');
   for (const [nodeId, count] of Object.entries(counters)) {
@@ -228,8 +251,9 @@ export function runView(receipt, basePath = '/', { nodeIds = null } = {}) {
       remoteTerminalObserved: entry.remote_terminal_observed,
     });
   });
-  if (cancellation.requested && awaiting.length) fail('a cancelled run waits on nobody');
-  checkPhase(phase, { cancelled: cancellation.requested, awaiting, rejected, pending, visited });
+  if (cancellation.requested && (awaiting.length || awaitingAttempts.length)) fail('a cancelled run waits on nobody');
+  checkPhase(phase, { cancelled: cancellation.requested, awaiting, rejected, awaitingAttempts, refusedAttempts,
+    pending, visited });
   const complete = phase === 'completed';
 
   const resultByExecution = new Map();
@@ -283,8 +307,9 @@ export function runView(receipt, basePath = '/', { nodeIds = null } = {}) {
       Object.freeze(refs.map(ref => requireRef(ref, 'approval ref', 'action_approval'))));
   }
 
-  const awaitingScopes = scopesByNode(awaiting);
-  const rejectedScopes = scopesByNode(rejected);
+  // a gated tool node waits on (or was stopped at) its own attempt's decision
+  const awaitingScopes = scopesByNode([...awaiting, ...awaitingAttempts]);
+  const rejectedScopes = scopesByNode([...rejected, ...refusedAttempts]);
   const touched = new Set([...Object.keys(counters), ...completed, ...pending,
     ...awaitingScopes.keys(), ...rejectedScopes.keys(), ...visits.map(row => row.nodeId),
     ...routesTaken.flatMap(route => [route.routerId, ...route.targets]), ...approvalRefsByNode.keys()]);
@@ -330,6 +355,8 @@ export function runView(receipt, basePath = '/', { nodeIds = null } = {}) {
     routes: Object.freeze(routesTaken),
     awaiting: Object.freeze(awaiting),
     rejected: Object.freeze(rejected),
+    awaitingAttempts: Object.freeze(awaitingAttempts),
+    refusedAttempts: Object.freeze(refusedAttempts),
     cancellation: Object.freeze({ requested: cancellation.requested, attempts: Object.freeze(attempts) }),
     approvalsPath: links.approvals,
     eventsPath: links.events,

@@ -188,6 +188,8 @@ def projection(outcome: SchedulerOutcome) -> dict:
         "approvals": [[node, [ref.as_dict() for ref in refs]] for node, refs in outcome.approvals],
         "pending_node_ids": list(outcome.pending_node_ids),
         "rejected_human": [list(item) for item in outcome.rejected_human],
+        "awaiting_execution": [list(item) for item in outcome.awaiting_execution],
+        "rejected_execution": [list(item) for item in outcome.rejected_execution],
     }
 
 
@@ -198,9 +200,9 @@ def _phase(outcome: SchedulerOutcome, *, cancelled: bool = False) -> str:
 
     if cancelled:
         return "cancelled"
-    if outcome.awaiting_human:
+    if outcome.awaiting_human or outcome.awaiting_execution:
         return "awaiting_human"
-    if outcome.rejected_human:
+    if outcome.rejected_human or outcome.rejected_execution:
         return "rejected"
     if not outcome.pending_node_ids:
         return "completed" if outcome.counters else "created"
@@ -384,7 +386,7 @@ class PersistentRuns:
         cancellation = self._cancellation(manifest.run_id)
         if cancellation["requested"]:
             # a cancelled run waits on nobody; an earlier rejection stays a past fact
-            outcome = replace(outcome, awaiting_human=())
+            outcome = replace(outcome, awaiting_human=(), awaiting_execution=())
         return {
             "command_id": command_id,
             "run_id": manifest.run_id,
@@ -462,7 +464,8 @@ class PersistentRuns:
             try:
                 outcome = scheduler.run()
             except SchedulerError as error:
-                if str(error).startswith("approval_rejected:") or self._cancelled(manifest.run_id):
+                if (str(error).startswith(("approval_rejected:", "approval_refused:"))
+                        or self._cancelled(manifest.run_id)):
                     # the owner's rejection or cancellation ended the run
                     self._stop_event(actor_ref, manifest, "cancelled", once=True)
                     return scheduler.observe()

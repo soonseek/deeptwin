@@ -60,6 +60,24 @@ node has exactly one visit, and every node defers until its activated
 producers completed: LangGraph triggers successors of a deferring (empty)
 write too.
 
+Tool gates (T087): a node bound to an external-family tool behind a human
+gate (the compiled `tool_effects` name the gate) is authorized per attempt,
+never by the gate's run-wide v1 decision. The gate's tool scopes are not v1
+scopes: passing the gate records its durable gate request and nothing else.
+The tool node must be attempt-bound; before its handler runs, the scheduler
+asks the ledger for exactly the attempt the dispatcher would send next
+(`request_execution_approval`: gate, scope, execution, attempt number, the
+digest of the transport's exact inputs) and consults the owner's v2 decision
+for that attempt only: none yet → the visit pauses (`awaiting_execution`);
+approved and unexpired → the handler dispatches, and the dispatcher claims
+the approval with the ToolCall intent, the budget reservation and the send
+intent in one ledger transaction; rejected, expired or superseded by an owner
+recovery → the visit stops, the reason is recorded once for that attempt
+(`refuse_execution_approval`) and the run fails as `approval_refused:<node>`.
+A retry attempt (the owner's recovery after a terminal attempt) is a new
+attempt number and so a new ask needing its own decision. A pause is a node
+that did not run: the next `run()` visits it again from the durable head.
+
 Explicit limits: a fatal failure stops the whole run at its step — an
 independent branch continues only on the resume, not concurrently with the
 failure. Retries within a visit are the owner's recovery through the
@@ -79,14 +97,15 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 
 from ..domain.refs import EntityRef, canonical_json
-from ..services.run_approvals import PersistentRunApprovals
+from ..services.run_approvals import PersistentRunApprovals, RunApprovalError
 from .checkpoints import (
     NAMESPACE,
     AttemptBindings,
     CheckpointError,
     LedgerCheckpointSaver,
 )
-from .graph import HANDLER_KEYS, CompiledGraph
+from .gates import tool_approval_scope
+from .graph import HANDLER_KEYS, CompiledGraph, CompiledToolTransport
 from .ledger import ExecutionSpec, RuntimeLedger
 from .node_attempts import NodeAttemptDispatcher
 from .scheduling_state import seal_activation, visit_identity
@@ -105,6 +124,7 @@ _SUPPORTED_KINDS = frozenset(
     {"deterministic", "agent", "join", "router", "bounded_loop", "human_gate"}
 )
 _DISPATCHING_KINDS = frozenset({"router", "bounded_loop"})  # route by sealed Command
+_REFUSAL_REASONS = frozenset({"rejected", "expired", "superseded"})
 _MAX_NODES = 256
 _SCALARS = (str, int, bool)
 
@@ -135,6 +155,23 @@ class _GateRejected(Exception):
     def __init__(self, node_id: str) -> None:
         super().__init__("approval_rejected")
         self.node_id = node_id
+
+
+class _ExecutionAwaiting(Exception):
+    """Internal: a gated tool node's next attempt has no owner decision yet."""
+
+    def __init__(self, node_id: str) -> None:
+        super().__init__("awaiting_execution")
+        self.node_id = node_id
+
+
+class _ExecutionRefused(Exception):
+    """Internal: a gated tool node's attempt decision is not an approval."""
+
+    def __init__(self, node_id: str, reason: str) -> None:
+        super().__init__("approval_refused")
+        self.node_id = node_id
+        self.reason = reason
 
 
 def execution_identity(run_id: str, node_id: str, loop_index: int) -> str:
@@ -222,6 +259,10 @@ class SchedulerOutcome:
     join_selections: tuple[tuple[str, tuple[str, ...]], ...] = ()
     # producers whose failure a tolerant join absorbed: terminal evidence, not a visit
     failed_node_ids: tuple[str, ...] = ()
+    # (gate, scope, execution id, executing node, attempt no) a gated tool visit waits on
+    awaiting_execution: tuple[tuple[str, str, str, str, int], ...] = ()
+    # (gate, scope, execution id, executing node, attempt no, reason) that stopped a visit
+    rejected_execution: tuple[tuple[str, str, str, str, int, str], ...] = ()
 
 
 def _detached_view(state: dict) -> dict:
@@ -236,6 +277,7 @@ class GraphScheduler:
 
     __slots__ = (
         "_approvals",
+        "_attempts",
         "_compiled",
         "_gates",
         "_graph",
@@ -246,6 +288,7 @@ class GraphScheduler:
         "_routers",
         "_run_id",
         "_saver",
+        "_tool_gates",
     )
 
     def __init__(self) -> None:
@@ -259,6 +302,7 @@ class GraphScheduler:
             "recursion_limit": self._recursion_limit,
         }
         awaiting: tuple[tuple[str, str], ...] = ()
+        paused = False
         try:
             head = self._saver.get_tuple(config)
             initial = None if head is not None else {"results": {}, "counters": {}}
@@ -286,6 +330,11 @@ class GraphScheduler:
             raise SchedulerError(f"loop_cap:{cap.loop_id}") from None
         except _GateRejected as rejected:
             raise SchedulerError(f"approval_rejected:{rejected.node_id}") from None
+        except _ExecutionRefused as refused:
+            raise SchedulerError(f"approval_refused:{refused.node_id}") from None
+        except _ExecutionAwaiting:
+            # the gated tool visit did not run: the durable head still names it
+            paused = True
         except SchedulerError:
             raise
         except CheckpointError:
@@ -293,10 +342,61 @@ class GraphScheduler:
         except Exception:  # noqa: BLE001 - never surface private graph or provider detail
             raise SchedulerError("scheduler_failed") from None
         try:
+            if paused:
+                final = self._graph.get_state(config).values
             pending = self._pending_nodes(config)
+            waiting, refused = self._execution_status(config)
+        except SchedulerError:
+            raise
         except Exception:  # noqa: BLE001 - never surface private graph detail
             raise SchedulerError("scheduler_failed") from None
-        return self._project(final, awaiting, pending=pending)
+        if paused and not waiting:
+            raise SchedulerError("scheduler_failed")  # a pause always names its ask
+        return self._project(final, awaiting, pending=pending, awaiting_execution=waiting,
+                             rejected_execution=refused)
+
+    def _execution_status(self, config: dict) -> tuple[tuple, tuple]:
+        """The gated tool visits the durable head still has to run, read without
+        writing: (awaiting, refused) over the ledger's ask for the attempt each would
+        send next and the owner's decision for exactly that attempt."""
+
+        if not self._tool_gates:
+            return (), ()
+        state = self._graph.get_state(config)
+        counters = state.values.get("counters", {})
+        awaiting, refused = [], []
+        for node_id in sorted(set(state.next) & set(self._tool_gates)):
+            gate, scope = self._tool_gates[node_id]
+            loop_index = counters.get(node_id, 0)
+            execution_id = execution_identity(self._run_id, node_id, loop_index)
+            try:
+                self._ledger.get_execution(execution_id)
+            except KeyError:
+                continue  # the visit was never reached: nothing was asked
+            # the attempt an owner's recovery would send next: reported only once the
+            # ledger holds its ask (a recovery asked for it), whichever mode reads it
+            attempt_no = self._attempts.next_attempt_no(
+                run_id=self._run_id, node_id=node_id, execution_id=execution_id, loop_index=loop_index,
+                recovery=True)
+            if attempt_no is None:
+                continue  # an attempt already sent: its replay resolves it
+            entry = (gate, scope, execution_id, node_id, attempt_no)
+            reason = self._ledger.execution_approval_refused(self._run_id, gate, scope, execution_id, attempt_no)
+            if reason is not None:
+                refused.append((*entry, reason))
+                continue
+            try:
+                status = self._approvals.execution_state(
+                    self._run_id, gate, scope, execution_id=execution_id, attempt_no=attempt_no)
+            except RunApprovalError:
+                raise SchedulerError(f"approval_unreadable:{node_id}") from None
+            if status is None:
+                continue  # not asked yet: the next run asks
+            if status[0] == "pending":
+                awaiting.append(entry)
+            elif status[0] != "approved":
+                refused.append((*entry, status[0]))
+        return tuple(awaiting), tuple(refused)
 
     def _pending_nodes(self, config: dict) -> tuple[str, ...]:
         node_ids = {node.node_id for node in self._compiled.nodes}
@@ -323,8 +423,10 @@ class GraphScheduler:
                         awaiting.append((node, scope))
                     elif found.decision != "approved":
                         rejected.append((node, scope))
+            waiting, refused = self._execution_status(config)
             return self._project(state.values, tuple(awaiting), pending=self._pending_nodes(config),
-                                 rejected=tuple(rejected))
+                                 rejected=tuple(rejected), awaiting_execution=waiting,
+                                 rejected_execution=refused)
         except SchedulerError:
             raise
         except CheckpointError:
@@ -406,6 +508,7 @@ class GraphScheduler:
     def _project(
         self, state: dict, awaiting: tuple[tuple[str, str], ...] = (), *,
         pending: tuple[str, ...] = (), rejected: tuple[tuple[str, str], ...] = (),
+        awaiting_execution: tuple = (), rejected_execution: tuple = (),
     ) -> SchedulerOutcome:
         node_ids = {node.node_id for node in self._compiled.nodes}
         raw_counters = state.get("counters", {})
@@ -447,6 +550,8 @@ class GraphScheduler:
             failed_node_ids=tuple(sorted(
                 node for node in node_ids if raw_counters.get(f"{node}.failed")
             )),
+            awaiting_execution=tuple(awaiting_execution),
+            rejected_execution=tuple(rejected_execution),
         )
 
 
@@ -579,12 +684,37 @@ def build_scheduler(
             kinds[node_id] not in {"router", "join", "human_gate"},
             f"{kinds[node_id]} node {node_id} inside a bounded loop is unsupported",
         )
-    gates = {
-        node.node_id: tuple(node.as_dict()["config"]["approval_scopes"])
-        for node in compiled.execution_graph.nodes
-        if node.kind == "human_gate"
-    }
-    if gates:
+    # a node bound to an external-family tool behind a gate: that gate's scope for the
+    # tool is decided per attempt of the node's visit (v2), never by the gate's v1 record
+    tool_gates: dict[str, tuple[str, str]] = {}
+    for node_id, _binding_id, tool_id, version, _effect, gate in compiled.tool_effects:
+        if gate is None:
+            continue
+        entry = (gate, tool_approval_scope(tool_id, version))
+        _require(tool_gates.setdefault(node_id, entry) == entry,
+                 f"node {node_id} binds more than one gated tool")
+    tool_scopes: dict[str, set[str]] = {}
+    for gate, scope in tool_gates.values():
+        tool_scopes.setdefault(gate, set()).add(scope)
+    for node_id in sorted(tool_gates):
+        _require(node_id not in loop_members, f"gated tool node {node_id} inside a bounded loop is unsupported")
+        _require(
+            attempts is not None and node_id in attempts.node_ids
+            and isinstance(attempts.transport, CompiledToolTransport)
+            and getattr(attempts.transport, "per_attempt_approval", False) is True
+            and attempts.transport.compiled_tool_binding is not None
+            and attempts.transport.compiled_tool_binding.node_id == node_id,
+            f"gated tool node {node_id} requires its attempt dispatcher with a per-attempt approval transport",
+        )
+    gates = {}
+    for node in compiled.execution_graph.nodes:
+        if node.kind != "human_gate":
+            continue
+        scopes = tuple(scope for scope in node.as_dict()["config"]["approval_scopes"]
+                       if scope not in tool_scopes.get(node.node_id, ()))
+        if scopes:
+            gates[node.node_id] = scopes
+    if gates or tool_gates:
         # a human gate can only be passed by the owner's recorded decision:
         # the persistent approval service is the sole reader of that record
         _require(
@@ -625,6 +755,8 @@ def build_scheduler(
     scheduler._handlers = dict(handlers)
     scheduler._approvals = approvals
     scheduler._gates = gates
+    scheduler._tool_gates = dict(tool_gates)
+    scheduler._attempts = attempts
     scheduler._routers = {
         node_id: _router_branches(compiled, node_id)
         for node_id, kind in kinds.items()
@@ -772,6 +904,56 @@ def build_scheduler(
             and execution_identity(run_id, source, counters[source] - 1) in parents
         ))
 
+    def next_attempt(node_id: str, execution_id: str, loop_index: int):
+        try:
+            return attempts.next_attempt_no(run_id=run_id, node_id=node_id,
+                                            execution_id=execution_id, loop_index=loop_index)
+        except Exception:  # noqa: BLE001 - ledger detail stays private
+            raise _NodeFailure(node_id) from None
+
+    def refuse(node_id: str, execution_id: str, loop_index: int, reason: str):
+        """Record once why this attempt's visit stopped, then stop it."""
+
+        gate, scope = tool_gates[node_id]
+        attempt_no = next_attempt(node_id, execution_id, loop_index)
+        if reason not in _REFUSAL_REASONS or attempt_no is None:
+            raise _NodeFailure(node_id)  # a claim mismatch or a used approval: a failure
+        try:
+            ledger.refuse_execution_approval(run_id, gate, scope, execution_id, attempt_no, reason)
+        except Exception:  # noqa: BLE001 - ledger detail stays private
+            raise _NodeFailure(node_id) from None
+        raise _ExecutionRefused(node_id, reason)
+
+    def execution_gate(node_id: str, execution_id: str, loop_index: int):
+        """Before a gated tool visit's handler: the ledger's ask for the attempt the
+        dispatcher would send next, and the owner's decision for exactly that attempt."""
+
+        attempt_no = next_attempt(node_id, execution_id, loop_index)
+        if attempt_no is None:
+            return  # an attempt already committed its send: the replay resolves it
+        gate, scope = tool_gates[node_id]
+        try:
+            recorded = ledger.execution_approval_refused(run_id, gate, scope, execution_id, attempt_no)
+        except Exception:  # noqa: BLE001 - ledger detail stays private
+            raise _NodeFailure(node_id) from None
+        if recorded is not None:
+            raise _ExecutionRefused(node_id, recorded)
+        try:
+            ledger.request_gate_approval(run_id, gate, scope)
+            ledger.request_execution_approval(
+                run_id, gate, scope, execution_id, attempt_no,
+                inputs_digest=attempts.transport.artifact_inputs_digest)
+            status = approvals.execution_state(run_id, gate, scope, execution_id=execution_id,
+                                               attempt_no=attempt_no)
+        except Exception:  # noqa: BLE001 - ledger/approval detail stays private
+            raise _NodeFailure(node_id) from None
+        if status is None:
+            raise _NodeFailure(node_id)  # the ask just recorded must be readable
+        if status[0] == "pending":
+            raise _ExecutionAwaiting(node_id)
+        if status[0] != "approved":
+            refuse(node_id, execution_id, loop_index, status[0])
+
     def producing_node(node_id: str):
         handler = handler_by_node[node_id]
         sources = predecessors.get(node_id, ())
@@ -820,6 +1002,13 @@ def build_scheduler(
                     found = approvals.lookup(run_id, node_id, scope)
                     if found is None or found.decision != "approved":
                         raise _NodeFailure(node_id)
+            for scope in sorted(tool_scopes.get(node_id, ())):
+                # passing a gate for a tool scope only records the durable gate ask;
+                # each attempt behind it is decided on its own (v2) at the tool node
+                try:
+                    ledger.request_gate_approval(run_id, node_id, scope)
+                except Exception:  # noqa: BLE001 - ledger detail stays private
+                    raise _NodeFailure(node_id) from None
             execution_id, loop_index, context, selected = record_selected(
                 node_id, state, selected
             )
@@ -833,9 +1022,16 @@ def build_scheduler(
                     compiled=compiled,
                 )
                 context = replace(context, attempt=visit_attempt)
+            if node_id in tool_gates:
+                execution_gate(node_id, execution_id, loop_index)
             try:
                 result = handler(context, _detached_view(state))
             except Exception:  # noqa: BLE001 - handler detail is private
+                refusal = None if visit_attempt is None else visit_attempt.approval_refusal
+                if node_id in tool_gates and refusal is not None:
+                    # the claim refused the approval inside the send-intent transaction: no
+                    # budget, ToolCall or send was committed; the visit stops with its reason
+                    refuse(node_id, execution_id, loop_index, refusal)
                 return failed(loop_index)
             if type(result) is not EntityRef:
                 return failed(loop_index)

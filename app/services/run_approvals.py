@@ -45,12 +45,22 @@ knows it, the digest of the attempt's exact artifact inputs). Every field the
 owner names is checked against that ask; the record carries the ask's identity
 and its inputs digest, and the dispatcher refuses a decision whose ask or
 digest is not this attempt's. `execution_requests` lists a run's asks and
-whether each is pending, decided or superseded, so a UI asks for exactly that.
+whether each is pending, decided, superseded or expired, so a UI asks for exactly
+that.
+
+Expiry (T087, 2026-09-25): the ledger's ask carries a server-set, bounded
+`expires_at_ms` (its clock at the first recording plus its time to live). A
+decision can be recorded for it only before that instant, and the v2 record
+carries the same instant. At dispatch the ledger's claim transaction refuses an
+approval on or after it (`verify_dispatch_claim`, on the ledger's own clock); the
+listing shows an ask `expired` once the instant passed with no decision, or with
+an approval no ToolCall used. An expired attempt cannot be decided again.
 """
 
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import wraps
@@ -76,7 +86,7 @@ from ..runtime.gates import (
     gate_request_identity,
     gate_request_recorded,
 )
-from ..runtime.ledger import MAX_ATTEMPTS_PER_EXECUTION
+from ..runtime.ledger import MAX_ATTEMPTS_PER_EXECUTION, ApprovalRefused
 from .owner_auth import OwnerAuthError, PersistentOwnerAuthority
 
 __all__ = [
@@ -97,8 +107,11 @@ _RECORD_SCHEMA = "run-approval-v1"
 _SCHEMA_V2 = "run-approval-command-v2"
 _RECORD_SCHEMA_V2 = "run-approval-v2"
 _EXECUTION_FIELDS = ("execution_id", "execution_node_id", "attempt_no")
-# a v2 record answering the ledger's own ask names it and its inputs digest
-_ASK_FIELDS = ("execution_request_id", "inputs_digest")
+# a v2 record answering the ledger's own ask names it, its inputs digest and the
+# instant the ask (and so the decision) expires, all copied from the ledger's ask
+_ASK_FIELDS = ("execution_request_id", "inputs_digest", "expires_at_ms")
+# the listing's states of one ask
+EXECUTION_STATES = ("pending", "approved", "rejected", "superseded", "expired")
 # `record` consults no execution ask (in-process callers); `record_execution` does
 _NO_ASK = object()
 # one grammar for gate node ids and scopes, shared with the ledger's requests
@@ -181,10 +194,12 @@ class RunApproval:
     execution_id: str | None = None
     execution_node_id: str | None = None
     attempt_no: int | None = None
-    # a v2 decision recorded against the ledger's ask names that ask and the
-    # inputs digest it carried (None when the ask carried none); otherwise both None
+    # a v2 decision recorded against the ledger's ask names that ask, the inputs
+    # digest it carried (None when the ask carried none) and the ask's server-set
+    # expiry (ledger clock milliseconds); otherwise all None
     execution_request_id: str | None = None
     inputs_digest: str | None = None
+    expires_at_ms: int | None = None
 
     @property
     def execution_bound(self) -> bool:
@@ -396,6 +411,20 @@ def _require_current(domain, db, roots, found: RunApproval) -> RunApproval:
     return found
 
 
+def _approval_used(db, vault_id, approval_ref: EntityRef) -> bool:
+    """Whether a ToolCall intent already carries this approval (its one use)."""
+
+    table = db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='runtime_tool_calls'"
+    ).fetchone()
+    if table is None:
+        return False
+    return db.execute(
+        "SELECT 1 FROM runtime_tool_calls WHERE vault_id=? AND approval_kind=? AND approval_id=?",
+        (vault_id, approval_ref.kind, approval_ref.id),
+    ).fetchone() is not None
+
+
 def expire_pending_in_transaction(domain, db, roots, *, recovery_id: str, stamp: str) -> int:
     """Expire every gate request no decision answers yet, for one owner recovery.
 
@@ -457,10 +486,21 @@ def expire_pending_in_transaction(domain, db, roots, *, recovery_id: str, stamp:
 class PersistentRunApprovals:
     """Writes and reads owner approvals over the exact bound store."""
 
-    def __init__(self, domain_store, owner_authority):
+    def __init__(self, domain_store, owner_authority, *, clock_ms=None):
         self._domain, self._owner = _bound_pair(
             domain_store, owner_authority, RunApprovalError
         )
+        if clock_ms is not None and not callable(clock_ms):
+            raise RunApprovalError("unavailable")
+        # the clock an ask's expiry is read against here (the listing, a decision);
+        # dispatch reads it against the ledger's own clock inside the claim
+        self._clock = clock_ms or (lambda: time.time_ns() // 1_000_000)
+
+    def _now_ms(self) -> int:
+        now = self._clock()
+        if type(now) is not int or now < 0:
+            raise RunApprovalError("unavailable")
+        return now
 
     def _authenticate(self, request, db=None):
         return _authenticate_owner(self._owner, request, db)
@@ -509,9 +549,11 @@ class PersistentRunApprovals:
                 _uuid(ask["execution_request_id"], "execution request id")
             except RunApprovalError:
                 raise RunApprovalError("unavailable") from None
+            expires = ask["expires_at_ms"]
             if (set(_ASK_FIELDS) - set(content)
                     or (digest is not None and (type(digest) is not str
-                                                or SHA256_HEX.fullmatch(digest) is None))):
+                                                or SHA256_HEX.fullmatch(digest) is None))
+                    or type(expires) is not int or expires < 0):
                 raise RunApprovalError("unavailable")
             bound.update(ask)
         return RunApproval(
@@ -593,6 +635,7 @@ class PersistentRunApprovals:
                         or owned["node_id"] != command["execution_node_id"]):
                     raise RunApprovalError("invalid execution: no such pending execution request")
                 execution = {**command, "inputs_digest": held["inputs_digest"],
+                             "expires_at_ms": held["expires_at_ms"],
                              "execution_request_id": execution_approval_request_identity(
                                  command["run_id"], command["node_id"], command["approval_scope"],
                                  command["execution_id"], command["attempt_no"])}
@@ -627,6 +670,10 @@ class PersistentRunApprovals:
                 command["approval_scope"],
             ):
                 raise RunApprovalError("invalid gate: no pending approval request")
+            if answering_ask and self._now_ms() >= execution["expires_at_ms"]:
+                # an expired ask can no longer be decided (an exact replay of a decision
+                # recorded in time was answered above); a later attempt needs its own ask
+                raise RunApprovalError("conflict")
             actor_ref = _owner_actor_ref(db, actor)
             stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
             record, event_sequence = _write_decision(
@@ -650,15 +697,39 @@ class PersistentRunApprovals:
             )
             return self._receipt(db, roots, approval, event_sequence)
 
+    def _ask_state(self, db, roots, ask, now: int) -> tuple[str, RunApproval | None]:
+        """The state of one held ask on `now`: `superseded` (decided before the latest
+        owner recovery), `rejected`, `approved` (current, and either unexpired or already
+        used by its attempt's tool call), `expired` (the ask's instant passed with no
+        decision, or with an approval no tool call used), or `pending`."""
+
+        found = self._load(db, execution_approval_identity(
+            ask["run_id"], ask["node_id"], ask["approval_scope"], ask["execution_id"],
+            ask["execution_node_id"], ask["attempt_no"]), roots)
+        expired = now >= ask["expires_at_ms"]
+        if found is None:
+            return ("expired" if expired else "pending"), None
+        try:
+            _require_current(self._domain, db, roots, found)
+        except RunApprovalError as error:
+            if str(error) != "superseded":
+                raise
+            return "superseded", found
+        if found.decision != "approved":
+            return found.decision, found
+        if expired and not _approval_used(db, roots.genesis.id, found.approval_ref):
+            return "expired", found
+        return "approved", found
+
     @_closed
     def execution_requests(self, run_id: str) -> list[dict]:
         """The ledger's asks for execution-bound decisions of one run, each with its
-        state: `pending` (no v2 decision yet), `approved` / `rejected` (a current
-        decision, with its reference), or `superseded` (decided before the latest
-        owner recovery: it authorizes nothing, and the same attempt cannot be decided
-        again — a retry attempt needs its own ask)."""
+        state (`_ask_state`: pending, approved, rejected, superseded or expired), its
+        decision reference when one exists and the instant the ask expires. A retry
+        attempt is its own ask; a superseded or expired attempt cannot be decided again."""
 
         run_id = _uuid(run_id, "run id")
+        now = self._now_ms()
         with self._domain._connection() as db:
             roots = self._domain._read_roots(db)
             try:
@@ -667,26 +738,87 @@ class PersistentRunApprovals:
                 raise RunApprovalError("unavailable") from None
             listed = []
             for ask in held:
-                found = self._load(db, execution_approval_identity(
-                    ask["run_id"], ask["node_id"], ask["approval_scope"], ask["execution_id"],
-                    ask["execution_node_id"], ask["attempt_no"]), roots)
-                state, ref = "pending", None
-                if found is not None:
-                    ref = found.approval_ref.as_dict()
-                    try:
-                        _require_current(self._domain, db, roots, found)
-                        state = found.decision
-                    except RunApprovalError as error:
-                        if str(error) != "superseded":
-                            raise
-                        state = "superseded"
+                state, found = self._ask_state(db, roots, ask, now)
                 listed.append({
                     "run_id": ask["run_id"], "node_id": ask["node_id"],
                     "approval_scope": ask["approval_scope"], "execution_id": ask["execution_id"],
                     "execution_node_id": ask["execution_node_id"], "attempt_no": ask["attempt_no"],
-                    "inputs_digest": ask["inputs_digest"], "state": state, "approval_ref": ref,
+                    "inputs_digest": ask["inputs_digest"], "expires_at_ms": ask["expires_at_ms"],
+                    "state": state,
+                    "approval_ref": None if found is None else found.approval_ref.as_dict(),
                 })
         return listed
+
+    @_closed
+    def execution_state(self, run_id: str, node_id: str, approval_scope: str, *,
+                        execution_id: str, attempt_no: int, now_ms: int | None = None):
+        """(state, decision) of the ledger's ask for one attempt, or None when the ledger
+        holds no such ask. `now_ms` (the scheduler passes its ledger's clock) defaults to
+        this service's clock."""
+
+        _uuid(run_id, "run id")
+        _uuid(execution_id, "execution id")
+        _attempt_no(attempt_no)
+        now = self._now_ms() if now_ms is None else now_ms
+        if type(now) is not int or now < 0:
+            raise RunApprovalError("invalid clock")
+        with self._domain._connection() as db:
+            roots = self._domain._read_roots(db)
+            try:
+                ask = execution_approval_request(db, roots.genesis.id, run_id, node_id, approval_scope,
+                                                 execution_id, attempt_no)
+            except ValueError:
+                raise RunApprovalError("unavailable") from None
+            if ask is None:
+                return None
+            return self._ask_state(db, roots, ask, now)
+
+    def verify_dispatch_claim(self, db, now_ms: int, *, run_id: str, node_id: str, approval_scope: str,
+                              execution_id: str, execution_node_id: str, attempt_no: int,
+                              approval_ref: EntityRef, inputs_digest: str, require_ask: bool) -> None:
+        """The approval check of one tool dispatch claim, run by the ledger inside the
+        send-intent transaction (`db`, its clock `now_ms`). Raises `ApprovalRefused`
+        unless the exact recorded v2 decision for this attempt is the claimed reference,
+        approved, current (not superseded by an owner recovery), answers the ledger's
+        ask for this attempt when one is held (always, with `require_ask`), carries the
+        digest of the inputs about to be declared, and is unexpired on `now_ms`."""
+
+        roots = self._domain._read_roots(db)
+        try:
+            found = self._load(db, execution_approval_identity(
+                run_id, node_id, approval_scope, execution_id, execution_node_id, attempt_no), roots)
+        except RunApprovalError:
+            raise ApprovalRefused("missing") from None
+        if found is None:
+            raise ApprovalRefused("missing")
+        if found.approval_ref != approval_ref:
+            raise ApprovalRefused("mismatch")
+        try:
+            _require_current(self._domain, db, roots, found)
+        except RunApprovalError as error:
+            raise ApprovalRefused("superseded" if str(error) == "superseded" else "missing") from None
+        if found.decision != "approved":
+            raise ApprovalRefused("rejected")
+        try:
+            ask = execution_approval_request(db, roots.genesis.id, run_id, node_id, approval_scope,
+                                             execution_id, attempt_no)
+        except ValueError:
+            raise ApprovalRefused("missing") from None
+        if ask is None:
+            if require_ask:
+                raise ApprovalRefused("missing")
+        elif (found.execution_request_id != execution_approval_request_identity(
+                run_id, node_id, approval_scope, execution_id, attempt_no)
+                or found.inputs_digest != ask["inputs_digest"]
+                or ask["execution_node_id"] != execution_node_id
+                or found.expires_at_ms != ask["expires_at_ms"]):
+            raise ApprovalRefused("mismatch")
+        if found.inputs_digest is not None and found.inputs_digest != inputs_digest:
+            raise ApprovalRefused("mismatch")
+        if found.expires_at_ms is not None and now_ms >= found.expires_at_ms:
+            raise ApprovalRefused("expired")
+        if require_ask and found.expires_at_ms is None:
+            raise ApprovalRefused("expired")  # an answer to an ask always carries its expiry
 
     @_closed
     def lookup(

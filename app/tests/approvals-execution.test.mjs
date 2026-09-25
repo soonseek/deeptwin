@@ -39,7 +39,7 @@ test('routes name the fixed execution-approval path under the deployment base', 
   assert.equal(executionApprovalRoutes(RUN_ID, base).record,
     `/${'a'.repeat(32)}/api/v1/runs/${RUN_ID}/approvals/executions`);
   assert.throws(() => executionApprovalRoutes('../x'));
-  assert.deepEqual([...EXECUTION_STATES], ['pending', 'approved', 'rejected', 'superseded']);
+  assert.deepEqual([...EXECUTION_STATES], ['pending', 'approved', 'rejected', 'superseded', 'expired']);  // T087 expiry slice
 });
 
 test('the owner is shown the exact execution and attempt, and the command echoes it', () => {

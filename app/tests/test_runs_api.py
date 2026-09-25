@@ -136,6 +136,7 @@ PROJECTION_FIELDS = {
     "run_id", "graph_digest", "completed_node_ids", "execution_ids", "result_refs",
     "counters", "activations", "awaiting_human", "approvals", "pending_node_ids",
     "rejected_human",
+    "awaiting_execution", "rejected_execution",  # T087: gated tool attempts
 }
 
 

@@ -541,3 +541,31 @@ test('a cancelled receipt names what was closed and never claims the remote work
   assert.match(call, /원격 종료 미확인/);
   assert.equal(accessibleRows(runView(receipt())).some(row => row.includes('취소')), false);
 });
+
+// T087 scheduler slice (2026-09-25): a gated tool visit waits on (or was stopped at)
+// its own attempt's decision; the phase the server derived must agree with it
+test('a run waiting on one attempt\'s decision is awaiting_human, a refused attempt rejected', () => {
+  const execution = '00000000-0000-4000-8000-00000000e0e1';
+  const waiting = receipt({ phase: 'awaiting_human', outcome: outcome({
+    completed_node_ids: ['intake'], execution_ids: [['intake', 'e-intake']],
+    result_refs: [['e-intake', ref('artifact', '44444444-4444-4444-8444-444444444444')]],
+    counters: { intake: 1 }, pending_node_ids: ['writer'],
+    awaiting_execution: [['tool-gate', 'tool-scope', execution, 'writer', 1]], rejected_execution: [] }) });
+  const view = runView(waiting);
+  assert.equal(view.phase, 'awaiting_human');
+  assert.deepEqual(view.awaitingAttempts.map(item => [item.gateId, item.executionId, item.nodeId, item.attemptNo]),
+    [['tool-gate', execution, 'writer', 1]]);
+  assert.equal(view.nodes.find(node => node.nodeId === 'writer').state, 'awaiting_human');
+  assert.throws(() => runView({ ...waiting, phase: 'running' }), /awaiting_human run cannot be running/);
+  const refused = structuredClone(waiting);
+  refused.phase = 'rejected';
+  refused.outcome.awaiting_execution = [];
+  refused.outcome.rejected_execution = [['tool-gate', 'tool-scope', execution, 'writer', 1, 'expired']];
+  assert.equal(runView(refused).refusedAttempts[0].reason, 'expired');
+  assert.equal(runView(refused).nodes.find(node => node.nodeId === 'writer').state, 'rejected');
+  refused.outcome.rejected_execution[0][5] = 'maybe';
+  assert.throws(() => runView(refused), /reason is outside the closed set/);
+  const bad = structuredClone(waiting);
+  bad.outcome.awaiting_execution = [['tool-gate', 'tool-scope', execution, 'writer', 0]];
+  assert.throws(() => runView(bad), /attempt number is not positive/);
+});
