@@ -5,6 +5,7 @@ import sqlite3
 
 import pytest
 
+from app.critic_trial import ProviderReply
 from app.model_catalog import ModelCatalog
 from app.model_selection import ModelSelection
 from app.tests.test_claude_api import model
@@ -139,3 +140,33 @@ def test_a_harness_trial_runs_through_the_rig_and_freezes_the_claude_selection(t
     assert selections and all(s["provider"] == "claude" and s["model"] == PLAN_MODEL and s["effort"] == "medium"
                               for s in selections)
     assert files_contain(tmp_path, SECRET.encode()) == []
+
+
+def test_the_attested_turn_reports_what_the_provider_response_said(tmp_path):
+    # release-v6 (audit 5, X1): served model, message id and request id come from the
+    # (fake) provider response as the product adapter parsed it, never from the selection
+    mock = MockClaude(echo)
+    rig = build(tmp_path, mock)
+    reply = rig.attested_turn("S", "U")
+    assert type(reply) is ProviderReply and reply.text == "reply:U"
+    assert (reply.served_model, reply.provider_message_id) == (PLAN_MODEL, "msg_q01_1")
+    assert reply.provider_request_id == "req_q01mock00000001" == rig.usage[0]["request_id"]
+    assert rig.turn("S", "U") == "reply:U"  # the calibration turn stays text only
+
+
+def test_the_attested_turn_is_plain_text_without_a_provider_request_id(tmp_path):
+    rig = build(tmp_path, MockClaude(echo, request_ids=False))
+    assert rig.attested_turn("S", "U") == "reply:U"  # nothing to attest: the harness records it unattested
+
+
+def test_an_attested_harness_trial_records_the_provider_reported_identity(tmp_path):
+    mock = MockClaude(ScriptedCritic())
+    rig = build(tmp_path, mock)
+    trials = tmp_path / "trials"
+    trials.mkdir()
+    record = run_trial(CASE[("c71", None)], rig.attested_turn, base_dir=trials, config=rig.config)
+    assert record["status"] == "completed" and record["model_identity"] == "provider_reported"
+    ids = [call["ledger"]["details"]["provider_request_id"] for call in record["calls"]]
+    assert ids == [entry["request_id"] for entry in rig.usage] and len(set(ids)) == len(ids)
+    plain = run_trial(CASE[("c71", None)], rig.turn, base_dir=trials, config=rig.config)
+    assert plain["model_identity"] == "selection_declared_not_transport_reported"

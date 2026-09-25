@@ -1,0 +1,186 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "deeptwin:q01-release-v6:suite-record",
+ "title": "Suite verdict record of one release-v6 attempt",
+ "type": "object",
+ "additionalProperties": false,
+ "required": [
+  "schema_version",
+  "design_id",
+  "critic_configuration_digest",
+  "pre_dispatch_manifest_sha256",
+  "sealed_set_sha256",
+  "attempt",
+  "prior_outcomes",
+  "suite_outcome",
+  "independence_profile_sha256",
+  "judge_separation_established",
+  "v3_error_independence",
+  "prior_sealed_set_sha256s",
+  "prior_attempts_sha256",
+  "dispatch_journal_head",
+  "manifest_commit_ref",
+  "critic_transport_identity",
+  "judge_transport_identity",
+  "run_stopped",
+  "record_sha256"
+ ],
+ "properties": {
+  "schema_version": {
+   "const": "q01-release-suite-verdict-v5"
+  },
+  "design_id": {
+   "const": "q01-release-v6"
+  },
+  "critic_configuration_digest": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "pre_dispatch_manifest_sha256": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "sealed_set_sha256": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "attempt": {
+   "type": "integer",
+   "minimum": 1
+  },
+  "prior_outcomes": {
+   "type": "array",
+   "items": {
+    "enum": [
+     "pass",
+     "fail",
+     "incomplete",
+     "not_judged"
+    ]
+   }
+  },
+  "suite_outcome": {
+   "enum": [
+    "pass",
+    "fail",
+    "incomplete",
+    "not_judged"
+   ]
+  },
+  "independence_profile_sha256": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "judge_separation_established": {
+   "type": "boolean"
+  },
+  "v3_error_independence": {
+   "const": "unverified",
+   "$comment": "release-v6 has no generation path and cannot verify V3; the verifier derives this value, never the caller, and the product gate refuses a release-v6 record with any other value"
+  },
+  "prior_sealed_set_sha256s": {
+   "$comment": "sealed_dataset_sha256 of every prior attempt, in attempt order; the record's own sealed set is none of them",
+   "type": "array",
+   "items": {
+    "type": "string",
+    "pattern": "^[0-9a-f]{64}$"
+   }
+  },
+  "prior_attempts_sha256": {
+   "$comment": "sha256 of the canonical JSON of the manifest's prior_attempts list (sets, expectations and outcomes)",
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "dispatch_journal_head": {
+   "$comment": "entry_sha256 of the last entry of the manifest's dispatch journal when the suite was verified; null only when the journal did not verify (the suite is then incomplete)",
+   "oneOf": [
+    {
+     "type": "string",
+     "pattern": "^[0-9a-f]{64}$"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "manifest_commit_ref": {
+   "$comment": "the commit id or external timestamp reference under which the manifest sha256 was committed before the first dispatch, as recorded in the dispatch journal header; audited after the verdict",
+   "oneOf": [
+    {
+     "type": "null"
+    },
+    {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "kind",
+      "ref"
+     ],
+     "properties": {
+      "kind": {
+       "enum": [
+        "git_commit",
+        "external_timestamp"
+       ]
+      },
+      "ref": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 256
+      }
+     }
+    }
+   ]
+  },
+  "critic_transport_identity": {
+   "$comment": "provider_reported when every critic call of every submitted trial recorded the provider-reported served model (equal to the configured model) and the provider request id; not_attested otherwise. The product gate refuses a pass that is not provider_reported.",
+   "enum": [
+    "provider_reported",
+    "not_attested"
+   ]
+  },
+  "judge_transport_identity": {
+   "$comment": "provider_reported when every judged semantic item of every submitted result has a durable raw judge response with the judge provider's reported model (equal to run_identity.judge_model) and request id; not_attested otherwise. The product gate refuses a pass that is not provider_reported.",
+   "enum": [
+    "provider_reported",
+    "not_attested"
+   ]
+  },
+  "run_stopped": {
+   "$comment": "true when the dispatch journal holds a stop entry (written by the T077 dispatcher when it enforces the USD hard stop); read from the journal, never supplied by the caller. The product gate refuses a pass of a stopped run.",
+   "type": "boolean"
+  },
+  "record_sha256": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  }
+ },
+ "allOf": [
+  {
+   "$comment": "audit 5: a pass is provider-attested on the critic and the judge side and comes from an unstopped run",
+   "if": {
+    "properties": {
+     "suite_outcome": {
+      "const": "pass"
+     }
+    },
+    "required": [
+     "suite_outcome"
+    ]
+   },
+   "then": {
+    "properties": {
+     "critic_transport_identity": {
+      "const": "provider_reported"
+     },
+     "judge_transport_identity": {
+      "const": "provider_reported"
+     },
+     "run_stopped": {
+      "const": false
+     }
+    }
+   }
+  }
+ ]
+}

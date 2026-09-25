@@ -395,11 +395,21 @@ def _safe_nonnegative_int(value: Any, field: str, *, optional=False) -> int | No
     return value
 
 
-def _request_id(value: str | None) -> str | None:
+_PROVIDER_REQUEST_ID = re.compile(r"req_[A-Za-z0-9]{8,128}\Z")
+
+
+def _request_id(value: str | None, canaries: tuple[tuple[str, int], ...] | None = None) -> str | None:
     # A provider-controlled header can reflect the API key.  Hashing it would
-    # still emit a prohibited stable key fingerprint, so it stays private to
-    # the HTTP boundary until a separate safe correlation mapping exists.
-    return None
+    # still emit a prohibited stable key fingerprint, so a request id is only
+    # exposed verbatim on the streamed-message path, where the secret canaries
+    # are in scope, and only in the provider's documented opaque ``req_`` form
+    # that reflects no key material (release-v6 attests each critic and judge
+    # call by it).  Every other path keeps it private to the HTTP boundary.
+    if canaries is None or not isinstance(value, str) or _PROVIDER_REQUEST_ID.fullmatch(value) is None:
+        return None
+    if _reflects_secret(value, canaries):
+        return None
+    return value
 
 
 class ClaudeAPIAdapter:
@@ -1548,7 +1558,7 @@ class ClaudeAPIAdapter:
                     mark_request_started=mark_request_started,
                 ) as raw_response:
                     response_observed = True
-                    request_id = _request_id(raw_response.headers.get("request-id"))
+                    request_id = _request_id(raw_response.headers.get("request-id"), secret_canaries)
                     content_type = raw_response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
                     if content_type != "text/event-stream":
                         raise _ProtocolViolation("stream_content_type")

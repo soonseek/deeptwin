@@ -7,6 +7,15 @@ selection that names the true model and effort, and returns a ``TrialConfig``
 plus a ``(system, user) -> str`` turn that streams through the same adapter
 and the same issued catalog snapshot.
 
+``attested_turn`` (and ``make_turn(..., attested=True)``) is the release transport
+(release-v6, audit 5 X1): it returns an ``app.critic_trial.ProviderReply`` carrying
+the model the provider's response message named, the provider request id (the
+``request-id`` response header, as the adapter exposes it) and the response message
+id, exactly as the product adapter parsed them from the provider response, never
+from the selection. When the provider reported any of them missing it returns the
+plain text, which the harness records as unattested (a release trial then cannot
+pass). ``turn`` stays the calibration transport and returns text only.
+
 The secret is handed to the vault once and never retained, logged or written
 by this module. A turn returns text only for a ``completed`` terminal and
 raises ``TurnFailed`` otherwise. Every dispatched call appends one usage entry
@@ -37,6 +46,7 @@ from app.adapters.claude_api import (
     ModelSelection as AdapterSelection,
 )
 from app.adapters.keychain import InMemoryCredentialVault
+from app.critic_trial import ProviderReply
 from app.model_catalog import ModelCatalog
 from app.model_selection import ModelSelection
 from app.storage import Store
@@ -86,6 +96,7 @@ class ClaudeRig:
     effort: str | None = None
     catalog: dict | None = None
     make_turn: Callable[..., Callable[[str, str], str]] | None = None
+    attested_turn: Callable[[str, str], ProviderReply | str] | None = None
 
     def __repr__(self) -> str:  # never render adapter/vault internals
         return f"ClaudeRig(model_id={self.model_id!r}, effort={self.effort!r}, calls={len(self.usage)})"
@@ -145,7 +156,8 @@ def claude_rig(base_dir, *, secret: str, model_id: str, effort: str | None, tran
     counter = iter(range(1, 1_000_000))
     lock = threading.Lock()
 
-    def make_turn(*, model: str, effort: str | None, max_tokens: int, role: str, agent: str):
+    def make_turn(*, model: str, effort: str | None, max_tokens: int, role: str, agent: str,
+                  attested: bool = False):
         if model not in {item["model"] for item in snapshot["models"]}:
             raise ValueError("the requested model is not in the refreshed catalog")
         if effort is not None and effort not in _listed_efforts(snapshot, model):
@@ -209,16 +221,28 @@ def claude_rig(base_dir, *, secret: str, model_id: str, effort: str | None, tran
                 guard.after_call(entry)  # may raise after a completed call
             if entry["state"] != "completed":
                 raise TurnFailed(entry["state"], entry["failure"] or entry["stop_reason"])
-            return "".join(pieces)
+            text = "".join(pieces)
+            if not attested:
+                return text
+            if (entry["observed_model"] is None or entry["request_id"] is None
+                    or entry["provider_message_id"] is None):
+                # nothing the provider reported to attest: the harness records the call as unattested
+                return text
+            # served model, request id and message id exactly as the provider response reported them
+            return ProviderReply(text=text, served_model=entry["observed_model"],
+                                 provider_request_id=entry["request_id"],
+                                 provider_message_id=entry["provider_message_id"])
 
         return turn
 
     turn = make_turn(model=model_id, effort=effort, max_tokens=max_tokens, role="critic", agent=agent_id)
+    attested_turn = make_turn(model=model_id, effort=effort, max_tokens=max_tokens, role="critic", agent=agent_id,
+                              attested=True)
     public_catalog = {"catalog_id": snapshot["catalog_id"], "source_catalog_id": snapshot["source_catalog_id"],
                       "fetched_at": snapshot["fetched_at"], "max_age_ms": snapshot["max_age_ms"],
                       "model": model_id, "listed_efforts": listed, "selection_version": saved["version"]}
     return ClaudeRig(config=config, turn=turn, usage=usage, model_id=model_id, effort=effort,
-                     catalog=public_catalog, make_turn=make_turn)
+                     catalog=public_catalog, make_turn=make_turn, attested_turn=attested_turn)
 
 
 __all__ = ["MAX_CALL_SECONDS", "ClaudeRig", "TurnFailed", "claude_rig"]

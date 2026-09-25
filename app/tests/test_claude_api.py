@@ -887,6 +887,23 @@ def test_provider_request_id_is_only_exposed_as_an_opaque_non_reflecting_handle(
     assert SECRET not in repr(events)
 
 
+@pytest.mark.parametrize("header, exposed", [
+    ("req_011CabcdEFGH1234", True),
+    ("req_short", False),  # fewer than 8 characters after the prefix
+    ("req_with-dash-0123456", False),
+    ("msg_0123456789abcdef", False),
+    (None, False),
+])
+def test_a_streamed_request_id_is_exposed_only_in_the_opaque_req_form(header, exposed):
+    # release-v6 attests each call by the provider's request id; only the documented opaque
+    # ``req_`` form that reflects no key material leaves the HTTP boundary
+    headers = {} if header is None else {"request-id": header}
+    adapter, binding, _, _ = configured(stream_body=complete_text_stream(), message_headers=headers)
+    snapshot, events = fetch_and_stream(adapter, binding)
+    started = next(event for event in events if isinstance(event, ProviderStarted))
+    assert started.request_id == (header if exposed else None)
+
+
 def test_provider_message_identity_and_text_cannot_reflect_key_material():
     body = b"".join(
         sse_event(name, payload)

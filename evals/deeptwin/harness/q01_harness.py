@@ -1,8 +1,11 @@
 """Isolated Q01 harness: frozen case -> four critic stages -> audited trial record.
 
 The harness drives exactly one trial of one frozen development case through a
-caller-supplied transport of the shape ``(system, user) -> str``. It reuses
-the reviewed product paths rather than re-implementing them:
+caller-supplied transport of the shape ``(system, user) -> str`` (calibration and
+development: the model identity is only declared) or ``(system, user) ->
+app.critic_trial.ProviderReply`` (the Claude rig's ``attested_turn``: the served model
+and request id as the provider response reported them; required for every call of a
+release trial). It reuses the reviewed product paths rather than re-implementing them:
 
 * ``app.critic_contract.prepare_input`` projects each stage's visible input;
 * ``app.services.design_criticism_live.render_criticism_prompt`` renders the
@@ -41,7 +44,13 @@ from app.critic_contract import (
     ValidityEvidence,
     prepare_input,
 )
-from app.critic_trial import OfflineRunner, OfflineTransport, freeze_call
+from app.critic_trial import (
+    PROVIDER_REPORTED,
+    OfflineRunner,
+    OfflineTransport,
+    ProviderReply,
+    freeze_call,
+)
 from app.generation_profiles import GenerationPurpose, profile_for
 from app.services.design_criticism_live import _CITATION_RULE, render_criticism_prompt
 from evals.deeptwin.q01_release_manifest import (
@@ -78,6 +87,9 @@ RECORD_SCHEMA = "q01-trial-record-1"
 REPO_ROOT = Path(__file__).resolve().parents[3]
 P = GenerationPurpose
 STAGES = (P.REVIEW, P.COUNTEREXAMPLE_PROPOSAL, P.COUNTEREXAMPLE_VALIDITY, P.CANDIDATE_RESPONSE)
+# A call whose transport reported no provider identity: the model is only the selection the
+# harness declared (calibration and development transports). A release trial requires
+# PROVIDER_REPORTED on every call (release-v6, audit 5 X1).
 MODEL_IDENTITY = "selection_declared_not_transport_reported"
 # The reviewed agent instruction (instruction.md); a change must be re-reviewed and re-pinned.
 INSTRUCTION_SHA256 = "ecc745601415ae49293c88a2abc530bbcde0bbea875325083bcfd1876e537762"
@@ -105,14 +117,17 @@ _CODE_FILES = (
     "evals/deeptwin/q01_materials.py", "evals/deeptwin/q01_lenses.json",
     "evals/deeptwin/harness/q01_cases.py", "evals/deeptwin/harness/q01_harness.py",
 )
-HARNESS_VERSION = "q01-harness-3"
+HARNESS_VERSION = "q01-harness-4"
 # The frozen case's source keys a release trial accepts (audit 4, non-blocking 7): the
 # agent-visible originals, criteria and candidate only. Anything else (a lens pack under
 # another key, a lens rule list, extra metadata) is refused, never silently dropped.
 SOURCE_KEYS = frozenset({"originals", "criteria", "candidate"})
 # The harness's source files; their file-set sha256 is the harness sha256 that a
-# pre-dispatch manifest fixes (``run_identity.harness``).
-HARNESS_FILES = (*_CODE_FILES, "evals/deeptwin/q01_release_manifest.py")
+# pre-dispatch manifest fixes (``run_identity.harness``). They include the attested
+# release transport: the Claude rig and the product adapter that parses the served model,
+# message id and request id from each provider response (release-v6).
+HARNESS_FILES = (*_CODE_FILES, "evals/deeptwin/q01_release_manifest.py", "evals/deeptwin/harness/claude_rig.py",
+                 "app/adapters/claude_api.py")
 # Critic-configuration fields the offline transport cannot observe at dispatch.
 UNCHECKABLE_FIELDS = ("max_tokens",)
 
@@ -319,11 +334,15 @@ def code_hashes(instructions: dict[str, str], case_sha: str) -> dict[str, str]:
 
 
 class _CallableTransport(OfflineTransport):
-    """Adapts a caller ``(system, user) -> str`` to the OfflineRunner boundary.
+    """Adapts a caller ``(system, user) -> str | ProviderReply`` to the OfflineRunner boundary.
 
-    The adapter refuses a prompt other than the rendered user payload. The
-    callable reports no model identity, so the selected model is declared by
-    the harness (``MODEL_IDENTITY``), not attested by the transport.
+    The adapter refuses a prompt other than the rendered user payload. A turn that
+    returns plain text reports no model identity: the selected model is then only
+    declared by the harness (``MODEL_IDENTITY``) and the call is unattested, which a
+    release trial refuses. A turn that returns an ``app.critic_trial.ProviderReply``
+    (the Claude rig's ``attested_turn``) passes on the served model, provider request id
+    and message id the provider response reported; ``OfflineRunner`` refuses a served
+    model other than the selection and records the identity in the durable ledger.
     """
 
     def __init__(self, turn, system: str, user: str):
@@ -332,7 +351,23 @@ class _CallableTransport(OfflineTransport):
     def generate(self, prompt, schema, cancel_event, *, selection):
         if prompt != self._user:
             raise ValueError("dispatched prompt differs from the rendered user payload")
-        return {"text": self._turn(self._system, self._user), "model": selection["model"]}
+        reply = self._turn(self._system, self._user)
+        if type(reply) is ProviderReply:
+            return {"text": reply.text, "model": reply.served_model, "attestation": reply.attestation()}
+        return {"text": reply, "model": selection["model"]}
+
+
+def transport_identity_errors(details: dict, configuration: dict) -> list[str]:
+    """Why a completed release call is not attested as the configured model (release-v6, audit 5 X1).
+
+    The call's durable details must say ``provider_reported`` with a provider request id
+    and a served model exactly equal to ``critic_configuration.model`` (another alias or
+    snapshot of the model is a mismatch).
+    """
+    if (details.get("model_identity") != PROVIDER_REPORTED or not details.get("provider_request_id")
+            or details.get("served_model") != configuration["model"]):
+        return ["transport_identity_unattested"]
+    return []
 
 
 @dataclass(frozen=True)
@@ -347,7 +382,7 @@ class TrialConfig:
 
 @dataclass(frozen=True)
 class PreDispatch:
-    """One release trial's committed pre-dispatch manifest and fixed slot (release-v5 ``pre_dispatch``).
+    """One release trial's committed pre-dispatch manifest and fixed slot (release-v6 ``pre_dispatch``).
 
     ``committed_sha256`` is the value committed to the repository (or externally
     timestamped) before the first dispatch, and ``commit_ref`` says where:
@@ -386,7 +421,7 @@ def slot_errors(state: JournalState, planned: list, case_id: str, repetition: in
 
 
 class DispatchJournal:
-    """Writer of one manifest's append-only, hash-chained dispatch journal (release-v5, audit 4 B1).
+    """Writer of one manifest's append-only, hash-chained dispatch journal (release-v6; audit 4 B1).
 
     The file is JSON lines (``q01_release_manifest.parse_journal`` reads and checks it):
     a header binding the manifest sha256, the commit reference and the planned slot
@@ -395,7 +430,10 @@ class DispatchJournal:
     chain-checks the whole file, refuses a trial whose slot is not the next planned
     slot, appends with ``O_APPEND`` and fsyncs the file (and its directory when
     it creates it) before returning, so the entry is durable before the trial's first
-    call. It never rewrites or truncates an entry.
+    call. It never rewrites or truncates an entry. ``stop`` appends the dispatcher's final
+    stop entry: the T077 dispatcher enforces the USD hard stop and writes it; no trial is
+    dispatched after it, and ``verify_suite`` reads the stop from the journal, never from
+    its caller (audit 5, non-blocking 7).
     """
 
     def __init__(self, path: Path):
@@ -403,6 +441,20 @@ class DispatchJournal:
 
     def dispatch(self, *, manifest_sha256: str, commit_ref: dict, planned: list, trial_id: str, case_id: str,
                  repetition: int) -> tuple[dict | None, list[str]]:
+        def make(state):
+            return slot_errors(state, planned, case_id, repetition), {
+                "seq": len(state.dispatches) + 1, "kind": "dispatch", "trial_id": trial_id, "case_id": case_id,
+                "repetition": repetition, "prev": state.head}
+        return self._append(manifest_sha256, commit_ref, planned, make)
+
+    def stop(self, *, manifest_sha256: str, commit_ref: dict, planned: list,
+             reason: str) -> tuple[dict | None, list[str]]:
+        if type(reason) is not str or not reason.strip() or len(reason) > 200:
+            return None, ["dispatch_journal:stop_reason_malformed"]
+        return self._append(manifest_sha256, commit_ref, planned, lambda state: ([], {
+            "seq": len(state.dispatches) + 1, "kind": "stop", "reason": reason, "prev": state.head}))
+
+    def _append(self, manifest_sha256, commit_ref, planned, make) -> tuple[dict | None, list[str]]:
         path = self.path
         if not path.is_absolute():
             return None, ["dispatch_journal:path_not_absolute"]
@@ -432,11 +484,12 @@ class DispatchJournal:
             errors = journal_problems(state, manifest_sha256, planned)
             if state.header["commit_ref"] != commit_ref:
                 errors.append("commit_ref_differs_from_dispatch_journal")
-            errors = errors or slot_errors(state, planned, case_id, repetition)
+            if state.stopped:
+                errors.append("dispatch_journal:run_stopped")
+            entry_errors, entry = make(state)
+            errors = errors or entry_errors
             if errors:
                 return None, errors
-            entry = {"seq": len(state.dispatches) + 1, "kind": "dispatch", "trial_id": trial_id,
-                     "case_id": case_id, "repetition": repetition, "prev": state.head}
             entry["entry_sha256"] = journal_entry_sha256(entry)
             pending.append(entry)
             data = b"".join(journal_line(item) for item in pending)
@@ -456,19 +509,30 @@ class DispatchJournal:
         return entry, []
 
 
-def pre_dispatch_errors(pre_dispatch: PreDispatch, case_id: str, config: TrialConfig,
-                        task_dir: Path = TASK_DIR) -> tuple[dict, list[str], dict | None]:
+def _environment_case_shas(task_dir: Path) -> dict | None:
+    try:
+        manifest = json.loads((Path(task_dir) / ENVIRONMENT_MANIFEST).read_bytes())
+        return {entry["case_id"]: entry["sha256"] for entry in manifest["cases"]}
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def pre_dispatch_errors(pre_dispatch: PreDispatch, case_id: str, config: TrialConfig, task_dir: Path = TASK_DIR,
+                        base_dir: Path | None = None) -> tuple[dict, list[str], dict | None]:
     """Why dispatch must be refused (empty when the manifest verifies and binds this trial).
 
     Besides the manifest itself, the trial must match it: the harness identity is the
     running code's, the environment manifest the harness is about to read hashes to
-    ``run_identity.sealed_dataset_sha256``, the case is in ``case_order``, the slot's
-    repetition is a planned one, the commit reference is well formed, and every
-    critic-configuration field observable before dispatch equals the running
-    configuration (contract and parser version, prompt digest, chain limit, call and run
-    deadlines, lens pack digests). Provider, mode, model and effort are checked per call
-    against the frozen selection; ``max_tokens`` is not observable offline and is listed
-    as unchecked. The dispatch journal is checked and written afterwards
+    ``run_identity.sealed_dataset_sha256`` and lists exactly ``sealed_case_sha256s``, the
+    trial's base directory is ``run_identity.trial_base_dir`` (audit 5, non-blocking 1),
+    the case is in ``case_order``, the slot's repetition is a planned one, the commit
+    reference is well formed, and every critic-configuration field observable before
+    dispatch equals the running configuration (contract and parser version, prompt
+    digest, chain limit, call and run deadlines, lens pack digests). Provider, mode,
+    model and effort are checked per call against the frozen selection, and every
+    completed call's provider-reported served model against the configured model
+    (``transport_identity_errors``); ``max_tokens`` is not observable offline and is
+    listed as unchecked. The dispatch journal is checked and written afterwards
     (``DispatchJournal``), immediately before the first read.
     """
     try:
@@ -515,12 +579,32 @@ def pre_dispatch_errors(pre_dispatch: PreDispatch, case_id: str, config: TrialCo
             errors.append("case_not_in_manifest_case_order")
         if environment_sha != manifest["run_identity"]["sealed_dataset_sha256"]:
             errors.append("environment_differs_from_sealed_dataset_sha256")
+        if _environment_case_shas(task_dir) != manifest["run_identity"]["sealed_case_sha256s"]:
+            errors.append("environment_differs_from_sealed_case_sha256s")
+        if base_dir is None or Path(base_dir) != Path(manifest["run_identity"]["trial_base_dir"]["path"]):
+            errors.append("trial_base_dir_differs_from_manifest")
     return ({"manifest_sha256": check.manifest_sha256, "committed_sha256": pre_dispatch.committed_sha256,
              "commit_ref": deepcopy(pre_dispatch.commit_ref),
              "slot": {"case_id": case_id, "repetition": repetition},
              "environment_manifest_sha256": environment_sha, "harness": running,
              "unchecked_configuration_fields": list(UNCHECKABLE_FIELDS), "journal": None, "errors": errors},
             errors, configuration)
+
+
+def journal_stop(pre_dispatch: PreDispatch, reason: str) -> tuple[dict | None, list[str]]:
+    """Append the dispatcher's stop entry to the manifest's dispatch journal.
+
+    The T077 dispatcher calls this when it enforces the USD hard stop (or any other halt);
+    no trial of the manifest is dispatched after it and the suite is incomplete.
+    """
+    check = check_pre_dispatch_manifest(Path(pre_dispatch.manifest_path),
+                                        committed_sha256=pre_dispatch.committed_sha256)
+    if not schema_valid(check):
+        return None, ["dispatch_journal:manifest_unverified"]
+    manifest = check.manifest
+    return DispatchJournal(_journal_path(manifest)).stop(
+        manifest_sha256=check.manifest_sha256, commit_ref=pre_dispatch.commit_ref,
+        planned=manifest["run_identity"]["planned_slots"], reason=reason)
 
 
 def journal_dispatch(pre_dispatch: PreDispatch, case_id: str, trial_id: str) -> tuple[dict | None, list[str]]:
@@ -573,6 +657,7 @@ class Q01Trial:
         base = Path(base_dir)
         if not base.is_absolute():
             raise ValueError("an absolute base directory is required")
+        self.base_dir = base
         self.trial_dir = base / self.trial_id
         self.trial_dir.mkdir(mode=0o700, parents=False, exist_ok=False)  # fresh state per trial
         self._lock = Lock()
@@ -607,7 +692,7 @@ class Q01Trial:
             # and this trial's (case, repetition) slot is journalled as the next planned slot
             record["slot"] = {"case_id": self.case_id, "repetition": self.pre_dispatch.repetition}
             record["pre_dispatch"], errors, self._configuration = pre_dispatch_errors(
-                self.pre_dispatch, self.case_id, self.config, self.task_dir)
+                self.pre_dispatch, self.case_id, self.config, self.task_dir, self.base_dir)
             errors = list(errors)
             if not errors:
                 self._journal_entry, journal_errors = journal_dispatch(self.pre_dispatch, self.case_id,
@@ -644,6 +729,8 @@ class Q01Trial:
             record["status"], record["cause"] = "invalid", "environment_read_refused"
         except InputContractError:
             record["status"], record["cause"] = "invalid", "input_contract"
+        identities = {call["manifest"]["model_identity"] for call in record["calls"]}
+        record["model_identity"] = PROVIDER_REPORTED if identities == {PROVIDER_REPORTED} else MODEL_IDENTITY
         record["access_log"] = list(reader.log)
         (self.trial_dir / "trial-record.json").write_text(canonical(record), encoding="utf-8")
         return record
@@ -775,6 +862,15 @@ class Q01Trial:
         entry["ledger"] = result
         state, details = result["state"], result["details"]
         if state == "completed":
+            # the identity the provider response reported, as bound into the durable ledger details
+            reported = details.get("model_identity") == PROVIDER_REPORTED
+            manifest.update(model_identity=PROVIDER_REPORTED if reported else MODEL_IDENTITY,
+                            served_model=details.get("served_model"),
+                            provider_request_id=details.get("provider_request_id"),
+                            provider_message_id=details.get("provider_message_id"))
+            if self._configuration is not None and transport_identity_errors(details, self._configuration):
+                # release trials: an unattested call, or one served by another model, ends the trial
+                raise _Stop("invalid", "transport_identity_unattested")
             if details.get("output_contract") == "valid":
                 return request_id, details["parsed"]
             raise _Stop("completed", "model_output_invalid", "model_output_invalid")
@@ -789,8 +885,13 @@ def run_trial(case_id: str, turn, *, base_dir: Path, config: TrialConfig, task_d
 
 def run_release_trial(case_id: str, turn, *, base_dir: Path, config: TrialConfig, pre_dispatch: PreDispatch,
                       task_dir: Path = TASK_DIR) -> dict:
-    """A release-v5 trial: refuses to dispatch without a verifying committed pre-dispatch manifest and
-    journals its (case, repetition) slot before the first call."""
+    """A release-v6 trial: refuses to dispatch without a verifying committed pre-dispatch manifest and
+    journals its (case, repetition) slot before the first call. ``base_dir`` must be the manifest's
+    ``trial_base_dir`` and ``turn`` a provider-attested transport (the Claude rig's
+    ``attested_turn``): a call whose provider-reported served model and request id are missing,
+    or whose served model is not the configured model, ends the trial as invalid
+    (``transport_identity_unattested``). A scripted ``(system, user) -> str`` callable can
+    therefore never complete a release trial; it remains for calibration and development."""
     if type(pre_dispatch) is not PreDispatch:
         raise TypeError("a release trial requires its committed pre-dispatch manifest")
     if type(pre_dispatch.harness) is not dict or type(pre_dispatch.lens_pack) is not dict:

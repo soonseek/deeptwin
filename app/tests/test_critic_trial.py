@@ -166,6 +166,17 @@ def controlled(trial, rig, *, text="{}", mode=None, entered=None, release=None, 
                     return {"text": text, "model": selection["model"], "extra": "forbidden"}
                 if mode == "not_dict":
                     return [text, selection["model"]]
+                if mode is not None and mode.startswith("attested"):
+                    reply = trial.ProviderReply(text, served_model=selection["model"],
+                                                provider_request_id="req_0123456789ab", provider_message_id="msg_01")
+                    attestation = reply.attestation()
+                    if mode == "attested_other_model":
+                        attestation["served_model"] = "unselected-model"
+                    elif mode == "attested_bad_request_id":
+                        attestation["provider_request_id"] = "has spaces"
+                    elif mode == "attested_extra_key":
+                        attestation["extra"] = "forbidden"
+                    return {"text": text, "model": selection["model"], "attestation": attestation}
                 return {"text": text, "model": selection["model"]}
             finally:
                 if finished is not None:
@@ -276,7 +287,8 @@ def test_model_output_classification_uses_utf8_limit_and_hash(trial, rig, raw):
             assert details["raw_final"] == raw
 
 
-@pytest.mark.parametrize("mode", ["error", "factory_error", "wrong_model", "extra_key", "not_dict", "not_offline"])
+@pytest.mark.parametrize("mode", ["error", "factory_error", "wrong_model", "extra_key", "not_dict", "not_offline",
+                                  "attested_other_model", "attested_bad_request_id", "attested_extra_key"])
 def test_transport_or_fixture_failures_are_invalid_and_do_not_leak_exception_text(trial, rig, mode):
     call = frozen(trial, rig)
     factory, _ = controlled(trial, rig, mode=mode)
@@ -286,6 +298,19 @@ def test_transport_or_fixture_failures_are_invalid_and_do_not_leak_exception_tex
               else "transport_contract_or_model_mismatch")
     assert record["details"] == {"reason": reason, "score": None}
     assert "PRIVATE" not in canonical(record)
+
+
+def test_a_provider_attestation_is_bound_into_the_durable_details(trial, rig):
+    # release-v6 (audit 5, X1): what the provider reported serving is recorded, not the selection
+    source = bound_source()
+    raw = json.dumps(output_for(P.REVIEW, source), ensure_ascii=False)
+    call = frozen(trial, rig)
+    factory, _ = controlled(trial, rig, text=raw, mode="attested")
+    record = runner(trial, rig).run(call, rig.prepared, factory)
+    assert record["state"] == "completed" and record == rig.ledger.get(call.request_id)
+    details = record["details"]
+    assert (details["model_identity"], details["served_model"], details["provider_request_id"],
+            details["provider_message_id"]) == ("provider_reported", "gpt-fixture", "req_0123456789ab", "msg_01")
 
 
 @pytest.mark.parametrize("change", ["version", "account", "selection_bytes", "offline_flag", "seconds"])

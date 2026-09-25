@@ -1,24 +1,27 @@
-"""Release-v5 pre-dispatch manifest and dispatch-journal checks, shared by the harness and the sealed verifier.
+"""Release-v6 pre-dispatch manifest and dispatch-journal checks, shared by the harness and the sealed verifier.
 
-``evals/deeptwin/qualification/release-v5/qualification_design.json`` (``pre_dispatch``)
+``evals/deeptwin/qualification/release-v6/qualification_design.json`` (``pre_dispatch``)
 requires a manifest, frozen by sha256 before the first dispatch, that fixes the
 critic configuration and its digest, the run identity (including the planned
-(case, repetition) slot list and the path of the manifest's dispatch journal),
-the attempt number and every prior attempt (with its sealed set and sealed
-expectations sha256), the author/reviewer/sealing attestations and, for a
-lens-effect run, every arm's critic configuration, text digest and attempt entry
-and the arm x case order (``pre_dispatch_manifest.schema.json``, schema v3). The
-harness refuses to dispatch unless the manifest it loads hashes to the committed
+(case, repetition) slot list, the path of the manifest's dispatch journal, the only
+trial base directory, the judge's exact model and every sealed case's sha256), the
+attempt number and every prior attempt (with its sealed set and sealed expectations
+sha256, its case ids and its case sha256s), the author/reviewer/sealing attestations
+and, for a lens-effect run, every arm's critic configuration, text digest and attempt
+entry and the arm x case order (``pre_dispatch_manifest.schema.json``, schema v4).
+The harness refuses to dispatch unless the manifest it loads hashes to the committed
 value; the verifier checks the same value.
 
 The dispatch journal (``read_journal``) is an append-only JSON-lines file, one
 per manifest: a header entry binding the manifest sha256, the commit reference and
 the planned slot list, then one ``dispatch`` entry per trial, written by the
-harness before the trial's first call. Each entry carries ``prev`` (the previous
-entry's ``entry_sha256``; 64 zeros for the header) and ``entry_sha256`` (sha256 of
-the canonical JSON of the entry without that key); every line is exactly the
-canonical JSON of its entry. The harness writes it (``q01_harness``); this module
-only reads and checks it, so the verifier never imports the harness.
+harness before the trial's first call, and at most one final ``stop`` entry, written
+by the dispatcher (T077) when it enforces the USD hard stop; nothing follows a stop.
+Each entry carries ``prev`` (the previous entry's ``entry_sha256``; 64 zeros for the
+header) and ``entry_sha256`` (sha256 of the canonical JSON of the entry without that
+key); every line is exactly the canonical JSON of its entry. The harness writes it
+(``q01_harness``); this module only reads and checks it, so the verifier never
+imports the harness.
 
 Canonical JSON (used for ``critic_configuration_digest``, lens digests and journal
 entries)::
@@ -42,21 +45,21 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import best_match
 
-DESIGN_DIR = Path(__file__).resolve().parent / "qualification" / "release-v5"
+DESIGN_DIR = Path(__file__).resolve().parent / "qualification" / "release-v6"
 MANIFEST_SCHEMA_FILE = DESIGN_DIR / "pre_dispatch_manifest.schema.json"
-DESIGN_ID = "q01-release-v5"
-EFFECT_DESIGN_ID = "lens-effects-v5"
-REPETITIONS_PER_CASE = 3  # release-v5 execution.repetitions_per_case; never caller-supplied
-# lens-effects-v5 arms that are dispatched; strong_existing_procedure is a
+DESIGN_ID = "q01-release-v6"
+EFFECT_DESIGN_ID = "lens-effects-v6"
+REPETITIONS_PER_CASE = 3  # release-v6 execution.repetitions_per_case; never caller-supplied
+# lens-effects-v6 arms that are dispatched; strong_existing_procedure is a
 # duplicate of no_lens and user_construct is not runnable, so neither appears.
 BASELINE_ARM = "no_lens"
 TEXT_ARMS = frozenset({"general_multi_perspective", "single_L-P050-01", "single_L-P033-02", "mix"})
-# The lens rules each lens arm must carry, in order (lens-effects-v5 ``arms``). The
+# The lens rules each lens arm must carry, in order (lens-effects-v6 ``arms``). The
 # general checklist carries rules of its own, never one of these lenses.
 LENS_ARM_RULES = {"single_L-P050-01": ["L-P050-01"], "single_L-P033-02": ["L-P033-02"],
                   "mix": ["L-P050-01", "L-P033-02"]}
 COMMIT_REF_KINDS = frozenset({"git_commit", "external_timestamp"})
-JOURNAL_SCHEMA = "q01-dispatch-journal-1"
+JOURNAL_SCHEMA = "q01-dispatch-journal-2"
 JOURNAL_GENESIS = "0" * 64
 _HEX = re.compile(r"[0-9a-f]{64}\Z")
 _COMMIT = re.compile(r"[0-9a-f]{7,64}\Z")
@@ -148,12 +151,24 @@ def _attempt_errors(attempt, prior, label):
     return []
 
 
-def _spent_errors(current, prior, label):
-    """Audit 4, B2: a sealed set (materials or expectations) spent by a prior attempt is never rerun."""
+def _spent_errors(current, prior, label, case_ids=(), case_shas=()):
+    """A sealed set spent by a prior attempt is never rerun (audit 4, B2), nor any of its cases (audit 5, 3).
+
+    ``current`` holds the run's sealed dataset and expectations sha256; ``case_ids`` and
+    ``case_shas`` its case ids and case-file sha256s. Any overlap with a prior attempt's set
+    digests, case ids (the hashed expectation case keys) or case sha256s is refused, so
+    re-serializing the environment manifest or reusing a spent case does not make a spent
+    set new.
+    """
+    errors = []
     spent = {item[name] for item in prior for name in ("sealed_dataset_sha256", "sealed_expectations_sha256")}
     if set(current) & spent:
-        return [f"{label}sealed_set_already_spent_by_a_prior_attempt"]
-    return []
+        errors.append(f"{label}sealed_set_already_spent_by_a_prior_attempt")
+    if set(case_ids) & {case_id for item in prior for case_id in item["case_ids"]}:
+        errors.append(f"{label}case_id_already_spent_by_a_prior_attempt")
+    if set(case_shas) & {sha for item in prior for sha in item["case_sha256s"]}:
+        errors.append(f"{label}case_sha256_already_spent_by_a_prior_attempt")
+    return errors
 
 
 def planned_slots(case_order) -> list[dict]:
@@ -167,22 +182,53 @@ def normalized_name(value: str) -> str:
     return " ".join(value.casefold().split())
 
 
-def judge_shares_critic(judge_identity: str, configuration: dict) -> bool:
-    """The judge identity names the critic's provider family or its model string.
+# Provider families and the aliases that name them (audit 5, non-blocking 6). A judge
+# identity or judge model naming any alias of a family that the critic's provider or model
+# names is refused. Matching is case-insensitive substring matching and errs towards
+# refusal; it only guards against accidental self-judging (a judge configured with the
+# critic's own provider family or model), never against a judge that hides its provider.
+PROVIDER_FAMILIES = {
+    "anthropic": ("anthropic", "claude", "opus", "sonnet", "haiku"),
+    "openai": ("openai", "gpt", "codex", "chatgpt"),
+    "google": ("google", "gemini", "bard", "palm"),
+    "meta": ("llama",),
+    "mistral": ("mistral", "mixtral", "codestral"),
+    "xai": ("xai", "grok"),
+    "deepseek": ("deepseek",),
+    "cohere": ("cohere",),
+    "alibaba": ("qwen",),
+}
+
+
+def provider_families(*values) -> set[str]:
+    """The provider families whose alias occurs (case-insensitively) in any of ``values``."""
+    folded = [normalized_name(value) for value in values if type(value) is str]
+    return {family for family, aliases in PROVIDER_FAMILIES.items()
+            if any(alias in value for alias in aliases for value in folded)}
+
+
+def judge_shares_critic(judge_identity: str, configuration: dict, judge_model: str | None = None) -> bool:
+    """The judge identity or judge model names the critic's provider family or its model string.
 
     Normalized (``normalized_name``): the critic's model string occurring anywhere in the
-    judge identity, or the first token of the critic's provider (its family, e.g. the
-    part before ``/``) occurring as a token of the judge identity.
+    judge identity or judge model; the first token of the critic's provider occurring as a
+    token of either; or a provider family (``PROVIDER_FAMILIES``, case-insensitive substring
+    match) named both by the critic's provider or model and by the judge identity or model.
+    This only guards against accidental self-judging.
     """
-    judge = normalized_name(judge_identity)
-    tokens = {token for token in _TOKEN.split(judge) if token}
+    names = [normalized_name(judge_identity)]
+    if type(judge_model) is str:
+        names.append(normalized_name(judge_model))
+    tokens = {token for name in names for token in _TOKEN.split(name) if token}
     model = normalized_name(configuration["model"])
     family = [token for token in _TOKEN.split(normalized_name(configuration["provider"])) if token]
-    return bool(model and model in judge) or bool(family and family[0] in tokens)
+    if (model and any(model in name for name in names)) or (family and family[0] in tokens):
+        return True
+    return bool(provider_families(configuration["provider"], configuration["model"]) & provider_families(*names))
 
 
 def _lens_effect_errors(manifest) -> list[str]:
-    """lens-effects-v5: one sealed effect set, one run covering every arm."""
+    """lens-effects-v6: one sealed effect set, one run covering every arm."""
     effect = manifest["lens_effect"]
     if effect is None:
         return []
@@ -205,6 +251,7 @@ def _lens_effect_errors(manifest) -> list[str]:
         errors.append("lens_effect:identical_lens_pack_on_different_arms")
     held = {name: value for name, value in configuration.items() if name != "lens_refs_and_digests"}
     current = (identity["sealed_dataset_sha256"], identity["sealed_expectations_sha256"])
+    cases = identity["sealed_case_sha256s"]
     for arm in arms:
         label = f"lens_effect:{arm['id']}:"
         arm_configuration = arm["critic_configuration"]
@@ -233,7 +280,7 @@ def _lens_effect_errors(manifest) -> list[str]:
                                                                       for lens in rules}):
                 errors.append(label + "lens_rules_do_not_match_the_arm")
         errors += _attempt_errors(arm["attempt"], arm["prior_attempts"], label)
-        errors += _spent_errors(current, arm["prior_attempts"], label)
+        errors += _spent_errors(current, arm["prior_attempts"], label, cases, cases.values())
     order = [(item["arm"], item["case_id"]) for item in effect["arm_case_order"]]
     case_order = identity["case_order"]["order"]
     planned = {(arm_id, case_id) for arm_id in ids for case_id in case_order}
@@ -269,15 +316,18 @@ def check_pre_dispatch_manifest(data: bytes | Path, *, committed_sha256: str | N
 
     * the bytes hash to ``committed_sha256`` (``None`` or a non-hex value is an error:
       there is no dispatch without a committed value);
-    * strict JSON that validates against ``pre_dispatch_manifest.schema.json`` (v3);
+    * strict JSON that validates against ``pre_dispatch_manifest.schema.json`` (v4);
     * ``critic_configuration_digest`` recomputes from ``critic_configuration``;
     * ``attempt == len(prior_attempts) + 1`` and the prior attempts are numbered 1..k-1;
-    * neither the sealed dataset nor the sealed expectations sha256 is one a prior
-      attempt already spent (audit 4, B2);
+    * neither the sealed dataset nor the sealed expectations sha256, nor any case id or
+      case sha256 of ``sealed_case_sha256s``, is one a prior attempt already spent
+      (audit 4, B2; audit 5, non-blocking 3);
+    * ``sealed_case_sha256s`` names exactly the cases of ``case_order``;
     * ``planned_slots`` is exactly ``case_order`` x 3, case-major and in order;
     * the author and reviewer differ, and the judge is none of author, reviewer and
       sealer (names compared case- and whitespace-normalized);
-    * the judge identity does not name the critic's provider or model;
+    * neither the judge identity nor the judge model names the critic's provider family
+      or model (``judge_shares_critic``; a guard against accidental self-judging only);
     * a lens-effect section satisfies ``_lens_effect_errors``;
     * optionally, ``run_identity.harness`` / ``run_identity.verifier`` equal the given
       ``{"version", "sha256"}`` of the code that is about to run.
@@ -307,15 +357,18 @@ def check_pre_dispatch_manifest(data: bytes | Path, *, committed_sha256: str | N
         errors.append("critic_configuration_digest_mismatch")
     identity = manifest["run_identity"]
     errors += _attempt_errors(manifest["attempt"], manifest["prior_attempts"], "")
+    cases = identity["sealed_case_sha256s"]
     errors += _spent_errors((identity["sealed_dataset_sha256"], identity["sealed_expectations_sha256"]),
-                            manifest["prior_attempts"], "")
+                            manifest["prior_attempts"], "", cases, cases.values())
     order = identity["case_order"]["order"]
     if len(set(order)) != len(order):
         errors.append("case_order_repeats_a_case")
+    if set(cases) != set(order):
+        errors.append("sealed_case_sha256s_do_not_match_case_order")
     if identity["planned_slots"] != planned_slots(order):
         errors.append("planned_slots_are_not_case_order_times_three")
     errors += _attestation_errors(manifest)
-    if judge_shares_critic(identity["judge_identity"], manifest["critic_configuration"]):
+    if judge_shares_critic(identity["judge_identity"], manifest["critic_configuration"], identity["judge_model"]):
         errors.append("judge:shares_the_critic_provider_or_model")
     errors += _lens_effect_errors(manifest)
     if harness is not None and identity["harness"] != harness:
@@ -354,6 +407,8 @@ def file_set_sha256(root: Path, relatives) -> str:
 _HEADER_KEYS = frozenset({"schema", "seq", "kind", "manifest_sha256", "commit_ref", "planned_slots_sha256",
                           "prev", "entry_sha256"})
 _DISPATCH_KEYS = frozenset({"seq", "kind", "trial_id", "case_id", "repetition", "prev", "entry_sha256"})
+# The dispatcher's stop entry (audit 5, non-blocking 7): the run was halted, e.g. at its USD hard stop.
+_STOP_KEYS = frozenset({"seq", "kind", "reason", "prev", "entry_sha256"})
 
 
 def journal_entry_sha256(entry: dict) -> str:
@@ -378,10 +433,15 @@ class JournalState:
     dispatches: tuple[dict, ...]
     head: str | None
     errors: tuple[str, ...]
+    stop: dict | None = None  # the dispatcher's stop entry, when the run was halted
 
     @property
     def ok(self) -> bool:
         return not self.errors
+
+    @property
+    def stopped(self) -> bool:
+        return self.stop is not None
 
     @property
     def by_trial(self) -> dict:
@@ -389,13 +449,13 @@ class JournalState:
 
 
 def parse_journal(data: bytes, path: Path | None = None) -> JournalState:
-    """Check journal bytes: canonical lines, a header, a hash chain, unique trial ids."""
+    """Check journal bytes: canonical lines, a header, a hash chain, unique trial ids, a final stop."""
     path = Path(path) if path is not None else None
     if not data:
         return JournalState(path, None, (), None, ())
     if not data.endswith(b"\n"):
         return JournalState(path, None, (), None, ("journal_torn_tail",))
-    header, dispatches, prev, seen = None, [], JOURNAL_GENESIS, set()
+    header, dispatches, prev, seen, stop = None, [], JOURNAL_GENESIS, set(), None
     for seq, line in enumerate(data[:-1].split(b"\n")):
         try:
             entry = strict_json(line)
@@ -403,16 +463,23 @@ def parse_journal(data: bytes, path: Path | None = None) -> JournalState:
             return JournalState(path, header, tuple(dispatches), None, ("journal_line_not_strict_json",))
         if type(entry) is not dict or journal_line(entry) != line + b"\n":
             return JournalState(path, header, tuple(dispatches), None, ("journal_line_not_canonical",))
-        keys = _HEADER_KEYS if seq == 0 else _DISPATCH_KEYS
-        if set(entry) != keys or entry["seq"] != seq or entry["kind"] != ("open" if seq == 0 else "dispatch"):
+        if stop is not None:
+            return JournalState(path, header, tuple(dispatches), None, ("journal_entry_after_stop",))
+        kind = "open" if seq == 0 else ("stop" if entry.get("kind") == "stop" else "dispatch")
+        keys = {"open": _HEADER_KEYS, "stop": _STOP_KEYS, "dispatch": _DISPATCH_KEYS}[kind]
+        if set(entry) != keys or entry["seq"] != seq or entry["kind"] != kind:
             return JournalState(path, header, tuple(dispatches), None, ("journal_entry_shape",))
         if entry["prev"] != prev or entry["entry_sha256"] != journal_entry_sha256(entry):
             return JournalState(path, header, tuple(dispatches), None, ("journal_chain_broken",))
-        if seq == 0:
+        if kind == "open":
             if (entry["schema"] != JOURNAL_SCHEMA or not is_sha256(entry["manifest_sha256"])
                     or commit_ref_errors(entry["commit_ref"]) or not is_sha256(entry["planned_slots_sha256"])):
                 return JournalState(path, None, (), None, ("journal_header_shape",))
             header = entry
+        elif kind == "stop":
+            if type(entry["reason"]) is not str or not entry["reason"].strip() or len(entry["reason"]) > 200:
+                return JournalState(path, header, tuple(dispatches), None, ("journal_entry_shape",))
+            stop = entry
         else:
             if (type(entry["trial_id"]) is not str or type(entry["case_id"]) is not str
                     or type(entry["repetition"]) is not int or entry["trial_id"] in seen):
@@ -420,7 +487,7 @@ def parse_journal(data: bytes, path: Path | None = None) -> JournalState:
             seen.add(entry["trial_id"])
             dispatches.append(entry)
         prev = entry["entry_sha256"]
-    return JournalState(path, header, tuple(dispatches), prev, ())
+    return JournalState(path, header, tuple(dispatches), prev, (), stop)
 
 
 def read_journal(path: Path) -> JournalState:
@@ -463,6 +530,7 @@ __all__ = [
     "EFFECT_DESIGN_ID",
     "JOURNAL_GENESIS",
     "JOURNAL_SCHEMA",
+    "PROVIDER_FAMILIES",
     "REPETITIONS_PER_CASE",
     "JournalState",
     "ManifestCheck",
@@ -482,6 +550,7 @@ __all__ = [
     "planned_slots",
     "planned_slots_sha256",
     "prepared_lens_refs",
+    "provider_families",
     "read_journal",
     "schema_valid",
     "strict_json",

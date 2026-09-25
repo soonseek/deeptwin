@@ -112,13 +112,45 @@ class SemanticJudge(Protocol):
 
     A release verifier also reads ``identity`` and ``prompt_digest`` (when present) and
     binds them to the pre-dispatch manifest's ``run_identity.judge_identity`` and
-    ``judge_prompt_digest``.
+    ``judge_prompt_digest``. Those two are only what the judge declares about itself: the
+    release-v6 verifier accepts a semantic status only from ``judge_attested`` (see
+    ``AttestedJudgement``), and treats an item judged through ``judge`` alone as not_judged.
     """
 
     version: str
 
     def judge(self, item: JudgeItem) -> str:  # "supported" | "not_supported" | "undetermined"
         ...
+
+
+@dataclass(frozen=True)
+class AttestedJudgement:
+    """One judge answer with the identity its provider reported (release-v6, audit 5 X1).
+
+    ``raw_response`` is the judge provider's full reply text (the verdict is re-derived from
+    it with ``parse_judge_reply``, never taken from the judge object); ``served_model``,
+    ``provider_request_id`` and ``provider_message_id`` are what the judge provider's
+    response reported, or ``None`` when it reported nothing (the item is then not_judged).
+    """
+
+    raw_response: str | None
+    served_model: str | None
+    provider_request_id: str | None
+    provider_message_id: str | None = None
+
+
+def parse_judge_reply(text) -> tuple[str | None, str | None]:
+    """``(verdict, reason)`` of a judge reply that is exactly ``{"verdict", "reason"}``, else ``(None, None)``."""
+    if type(text) is not str:
+        return None, None
+    try:
+        value = json.loads(text.strip())
+    except ValueError:
+        return None, None
+    if (type(value) is not dict or set(value) != {"verdict", "reason"} or type(value["verdict"]) is not str
+            or type(value["reason"]) is not str or value["verdict"] not in JUDGE_STATUSES):
+        return None, None
+    return value["verdict"], value["reason"]
 
 
 class _Invalid(Exception):
@@ -232,7 +264,11 @@ class _Trial:
             code_hashes = json.loads(call["metadata_json"])["code_hashes"]
         except (ValueError, KeyError, TypeError):
             raise _Invalid("evidence_input_mismatch") from None
-        return {"selection": selection, "code_hashes": code_hashes,"manifest": manifest, "purpose": purpose, "visible": visible, "parsed": parsed,
+        # the model identity the transport reported, as bound into the durable details (release-v6)
+        identity = {name: details.get(name) for name in ("model_identity", "served_model", "provider_request_id",
+                                                          "provider_message_id")}
+        return {"selection": selection, "code_hashes": code_hashes, "identity": identity,
+                "manifest": manifest, "purpose": purpose, "visible": visible, "parsed": parsed,
                 "contract": details["output_contract"], "request_id": call["request_id"],
                 "system": system, "user": call["prompt"],
                 "reserved": lineage_events[0] if lineage_events else None,

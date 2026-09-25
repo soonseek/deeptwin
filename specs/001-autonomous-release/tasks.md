@@ -790,6 +790,23 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   allowlist) (evidence/release-designs-t076-2026-09-25.md). Still open: verdict-to-configuration binding, a
   multi-arm dispatcher with an arm-aware journal, no sealed set, author, reviewer or independent judge, V3
   unverifiable under v5, operator-disk trust limits of the journal, and an independent audit of v5.
+  2026-09-25 audit 5 of v5: AUDIT FAIL (X1 the critic's transport and model were never attested: the harness
+  echoed the selected model, so a scripted turn that ignored the configured model reached `scoped_pass`, and the
+  judge only declared its identity). release-v6 (`release-v6/`, `lens-effects-v6.json`, pre-dispatch manifest
+  schema v4, suite record v5, `release-v6/FROZEN.json` pinning v1..v6, every manifest, the gate, the verifier,
+  the harness and the attested transport and judge path; v5's code hashes are checked against `4aed36d`, and an
+  absent freeze commit now xfails explicitly) answers it without editing v1..v5. The Claude rig's attested turn
+  returns the served model, message id and request id that the product adapter parsed from the provider
+  response. The runner binds them into the durable ledger, and the harness and `q01-sealed-verifier-4` make a
+  release trial invalid (`transport_identity_unattested`) unless every call is provider-reported as exactly the
+  configured model, so a scripted callable can never complete one. Judge verdicts count only from durable raw
+  judge-provider replies with the reported `judge_model` and request id. Also fixed: a scanned
+  `trial_base_dir`, prior attempts with case ids and case sha256s, no gate test hook, a provider-family alias
+  table, and a journalled stop written by the T077 dispatcher (evidence/release-designs-t076-2026-09-25.md).
+  Still open: the T077 dispatcher itself, provider attestation checked against provider records only after the
+  verdict, no attested human-reviewer path, second-manifest cherry-picking and hand-built record provenance
+  (organizational), verdict-to-configuration binding, no sealed set, author, reviewer or independent judge, V3
+  unverifiable, and an independent audit of v6.
 - [ ] T077 Execute authorized bounded actual-provider/critic/multimodal/lens-controlled comparisons and audit all failures/suspicious passes in specs/001-autonomous-release/evidence/live-qualification.md; lack of applicable authority remains explicit, not waived (SC-001/005/006).
 - [ ] T078 After T087's extension UI and the frozen T081 candidate exist, perform final visual/
   keyboard/screen-reader/360px/1024px/

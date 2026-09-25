@@ -78,10 +78,63 @@ def freeze_call(prepared, selections, work_id, version, *, run_id, request_id,
 
 
 class OfflineTransport:
-    """Marker for trusted, controlled fixtures, not a hostile-Python sandbox."""
+    """Marker for trusted, controlled fixtures, not a hostile-Python sandbox.
+
+    ``generate`` returns ``{"text", "model"}``, or ``{"text", "model", "attestation"}``
+    when the transport can report what the provider said it served (see
+    ``ProviderReply.attestation``). Without an attestation the ``model`` is only the
+    selection the transport was given, and the durable details carry no model identity.
+    """
 
     def generate(self, prompt, schema, cancel_event, *, selection):
         raise NotImplementedError("supply a controlled offline test double")
+
+
+PROVIDER_REPORTED = "provider_reported"
+_ATTESTATION_KEYS = frozenset({"source", "served_model", "provider_request_id", "provider_message_id"})
+_ATTESTED_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
+
+
+@dataclass(frozen=True)
+class ProviderReply:
+    """A completed provider turn with the identity the provider response itself reported.
+
+    ``served_model`` is the model named by the provider's response message and
+    ``provider_request_id`` the provider's request id (the ``request-id`` response
+    header); ``provider_message_id`` is the response message id when there is one. A
+    transport builds it from the parsed provider response, never from the selection it
+    was asked to use.
+    """
+
+    text: str
+    served_model: str
+    provider_request_id: str
+    provider_message_id: str | None = None
+
+    def attestation(self) -> dict:
+        return {"source": "provider_response", "served_model": self.served_model,
+                "provider_request_id": self.provider_request_id, "provider_message_id": self.provider_message_id}
+
+
+def _attested_id(value, *, optional=False) -> bool:
+    if value is None:
+        return optional
+    return type(value) is str and _ATTESTED_ID.fullmatch(value) is not None
+
+
+def _attestation_details(result, selected_model):
+    """Durable identity fields of an attested result; ``None`` when it is not a valid attestation."""
+    attestation = result["attestation"]
+    if (type(attestation) is not dict or set(attestation) != _ATTESTATION_KEYS
+            or attestation["source"] != "provider_response"
+            or type(attestation["served_model"]) is not str
+            or attestation["served_model"] != result["model"] or attestation["served_model"] != selected_model
+            or not _attested_id(attestation["provider_request_id"])
+            or not _attested_id(attestation["provider_message_id"], optional=True)):
+        return None
+    return {"model_identity": PROVIDER_REPORTED, "served_model": attestation["served_model"],
+            "provider_request_id": attestation["provider_request_id"],
+            "provider_message_id": attestation["provider_message_id"]}
 
 
 @dataclass
@@ -229,11 +282,18 @@ class OfflineRunner:
         if active.transport_error:
             return "invalid", {"reason": "transport_or_fixture_error", "score": None}
         selected_model = json.loads(call.selection_json)["model"]
-        if (type(result) is not dict or set(result) != {"text", "model"}
+        if (type(result) is not dict or set(result) - {"attestation"} != {"text", "model"}
                 or type(result["text"]) is not str or result["model"] != selected_model):
             return "invalid", {"reason": "transport_contract_or_model_mismatch", "score": None}
+        identity = {}
+        if "attestation" in result:
+            # the served model and request id the provider reported, bound into the durable details
+            identity = _attestation_details(result, selected_model)
+            if identity is None:
+                return "invalid", {"reason": "transport_contract_or_model_mismatch", "score": None}
         raw = result["text"]
-        details = {"model": result["model"], "actual_effort": None, "semantic": "not_checked", "score": None}
+        details = {"model": result["model"], "actual_effort": None, "semantic": "not_checked", "score": None,
+                   **identity}
         try:
             encoded = raw.encode("utf-8")
         except UnicodeEncodeError:

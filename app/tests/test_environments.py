@@ -13,7 +13,12 @@ is status "prepared" — never active, with no activation path in this module
 """
 
 import dataclasses
+import json
+import os
+import subprocess
+import sys
 from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 
@@ -42,28 +47,29 @@ from app.tests.test_design_review import pool_inputs, verdict
 ENV_ID = "00000000-0000-4000-8000-00000000e001"
 CRITIC_DIGEST = "c" * 64
 # TEST-ACTOR design id: no frozen design uses it, and production code never
-# admits it (critic_qualification._TEST_ACTOR_V3_DESIGN_IDS is empty outside
-# ``actor_v3_design``, and it is honoured only while pytest runs a test). No
-# production record can be ``qualified``: V3_VERIFYING_DESIGN_IDS is empty and
-# release-v5 cannot verify V3 (audits 3 and 4).
+# admits it. The gate has no test hook (audit 5, non-blocking 5): ``actor_v3_design``
+# replaces ``critic_qualification.V3_VERIFYING_DESIGN_IDS`` itself for the duration
+# of a block, the way any test double replaces a module value. No production record
+# can be ``qualified``: V3_VERIFYING_DESIGN_IDS is empty and release-v6 cannot
+# verify V3 (audits 3 to 5).
 TEST_ACTOR_DESIGN = "test-actor-v3-verifying-design"
 
 
 @contextmanager
 def actor_v3_design():
     """Admit the test-only V3-verifying design id for the duration of a block."""
-    previous = gate._TEST_ACTOR_V3_DESIGN_IDS
-    gate._TEST_ACTOR_V3_DESIGN_IDS = frozenset({TEST_ACTOR_DESIGN})
+    previous = gate.V3_VERIFYING_DESIGN_IDS
+    gate.V3_VERIFYING_DESIGN_IDS = frozenset({TEST_ACTOR_DESIGN})
     try:
         yield
     finally:
-        gate._TEST_ACTOR_V3_DESIGN_IDS = previous
+        gate.V3_VERIFYING_DESIGN_IDS = previous
 
 
 def suite_record(**overrides):
     record = {
         "schema_version": SUITE_RECORD_SCHEMA_VERSION,
-        "design_id": "q01-release-v5",
+        "design_id": "q01-release-v6",
         "critic_configuration_digest": CRITIC_DIGEST,
         "pre_dispatch_manifest_sha256": "a" * 64,
         "sealed_set_sha256": "d" * 64,
@@ -77,6 +83,9 @@ def suite_record(**overrides):
         "prior_attempts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "dispatch_journal_head": "e" * 64,
         "manifest_commit_ref": {"kind": "git_commit", "ref": "0123456789abcdef0123456789abcdef01234567"},
+        "critic_transport_identity": "provider_reported",
+        "judge_transport_identity": "provider_reported",
+        "run_stopped": False,
     }
     record.update(overrides)
     if "record_sha256" not in overrides:
@@ -300,42 +309,59 @@ def test_a_passed_verdict_from_an_unqualified_critic_is_never_approvable(critic,
 
 
 def test_the_production_gate_can_never_yield_qualified():
-    # BF1: no design is declared able to verify V3, and the test-actor hook is
-    # empty outside tests; every production-shaped pass is at most scoped.
+    # BF1: no design is declared able to verify V3; every production-shaped pass is at most scoped.
     assert gate.V3_VERIFYING_DESIGN_IDS == frozenset()
-    assert gate._TEST_ACTOR_V3_DESIGN_IDS == frozenset()
-    assert gate.RELEASE_DESIGN_IDS == {"q01-release-v5"}
+    assert gate.RELEASE_DESIGN_IDS == {"q01-release-v6"}
     state = critic_qualification_from_suite(suite_record(), CRITIC_DIGEST)
     assert state.status == "scoped_pass"
-    # audit 4, N5: a v5 record claiming V3 verified is not schema-valid and is refused, not capped
+    # audit 4, N5: a v6 record claiming V3 verified is not schema-valid and is refused, not capped
     with pytest.raises(CriticQualificationError, match="V3 unverified"):
         critic_qualification_from_suite(suite_record(v3_error_independence="verified"), CRITIC_DIGEST)
     with actor_v3_design():
-        # even under the hook a record of the test-actor design must say V3 verified
+        # even with the test-actor design admitted, its record must say V3 verified
         state = critic_qualification_from_suite(actor_record(v3_error_independence="unverified"),
                                                 CRITIC_DIGEST)
         assert (state.status, state.reason) == ("scoped_pass", "v3_error_independence_unverified")
-    assert gate._TEST_ACTOR_V3_DESIGN_IDS == frozenset()
+    assert gate.V3_VERIFYING_DESIGN_IDS == frozenset()
 
 
-def test_the_test_actor_hook_is_honoured_only_under_pytest(monkeypatch):
-    # audit 4, N5: outside a running pytest test the hook admits nothing, so even a
-    # test-actor record set up by the hook stays unqualified in production
-    with actor_v3_design():
-        assert critic_qualification_from_suite(actor_record(), CRITIC_DIGEST).status == "qualified"
-        monkeypatch.delenv("PYTEST_CURRENT_TEST")
-        state = critic_qualification_from_suite(actor_record(), CRITIC_DIGEST)
-        assert (state.status, state.reason) == ("unqualified", "not_a_frozen_release_design")
-        with pytest.raises(CriticQualificationError, match="V3 unverified"):
-            critic_qualification_from_suite(suite_record(v3_error_independence="verified"), CRITIC_DIGEST)
-    previous = gate._TEST_ACTOR_V3_DESIGN_IDS
-    monkeypatch.setenv("PYTEST_CURRENT_TEST", "hook test")
-    try:
-        gate._TEST_ACTOR_V3_DESIGN_IDS = frozenset({"q01-release-v5"})  # a hook naming a release design
-        with pytest.raises(CriticQualificationError, match="test-only"):
-            critic_qualification_from_suite(suite_record(), CRITIC_DIGEST)
-    finally:
-        gate._TEST_ACTOR_V3_DESIGN_IDS = previous
+def test_the_gate_has_no_test_actor_hook():
+    # audit 5, non-blocking 5 (probe E): the hook and its PYTEST_CURRENT_TEST condition are gone;
+    # setting the old attribute, even with the variable set, admits nothing
+    assert not hasattr(gate, "_TEST_ACTOR_V3_DESIGN_IDS") and not hasattr(gate, "_test_actor_design_ids")
+    script = (
+        "import json, os\n"
+        "from app.services import critic_qualification as g\n"
+        "os.environ['PYTEST_CURRENT_TEST'] = 'x'\n"
+        "g._TEST_ACTOR_V3_DESIGN_IDS = frozenset({'fake-design'})\n"
+        "rec = json.loads(os.environ['REC'])\n"
+        "rec['record_sha256'] = g.suite_record_sha256(rec)\n"
+        "print(g.critic_qualification_from_suite(rec, 'c' * 64).status)\n")
+    record = {key: value for key, value in suite_record(design_id="fake-design",
+                                                        v3_error_independence="verified").items()}
+    env = {key: value for key, value in os.environ.items() if key != "PYTEST_CURRENT_TEST"}
+    env["REC"] = json.dumps(record)
+    out = subprocess.run([sys.executable, "-c", script], cwd=Path(__file__).resolve().parents[2], env=env,
+                         capture_output=True, text=True, timeout=120, check=False)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "unqualified"
+
+
+@pytest.mark.parametrize("overrides, match", [
+    ({"critic_transport_identity": "not_attested"}, "critic transport identity"),
+    ({"judge_transport_identity": "not_attested"}, "judge transport identity"),
+    ({"run_stopped": True}, "stopped run"),
+    ({"critic_transport_identity": "declared"}, "unknown critic transport identity"),
+    ({"run_stopped": "no"}, "run stopped"),
+])
+def test_a_v6_pass_needs_attested_transports_and_an_unstopped_run(overrides, match):
+    # audit 5, X1 and non-blocking 7: a pass whose critic or judge identity is only declared,
+    # or whose journal holds a stop, is refused; the same fields on a fail are only recorded
+    with pytest.raises(CriticQualificationError, match=match):
+        critic_qualification_from_suite(suite_record(**overrides), CRITIC_DIGEST)
+    if match != "run stopped" and "unknown" not in match:
+        state = critic_qualification_from_suite(suite_record(suite_outcome="fail", **overrides), CRITIC_DIGEST)
+        assert (state.status, state.reason) == ("unqualified", "suite_fail")
 
 
 @pytest.mark.parametrize("overrides, match", [
@@ -349,8 +375,8 @@ def test_the_test_actor_hook_is_honoured_only_under_pytest(monkeypatch):
     ({"manifest_commit_ref": {"kind": "git_commit", "ref": "not-hex"}}, "commit reference"),
     ({"manifest_commit_ref": {"kind": "rumour", "ref": "x"}}, "commit reference"),
 ])
-def test_a_schema_invalid_v5_record_is_refused(overrides, match):
-    # audit 4 (B2, N3, N5): the gate refuses a v5 record whose set was spent by a listed prior
+def test_a_schema_invalid_v6_record_is_refused(overrides, match):
+    # audit 4 (B2, N3, N5): the gate refuses a v6 record whose set was spent by a listed prior
     # attempt, that lists no prior sets, or that passes without a journal head or commit reference
     with pytest.raises(CriticQualificationError, match=match):
         critic_qualification_from_suite(suite_record(**overrides), CRITIC_DIGEST)

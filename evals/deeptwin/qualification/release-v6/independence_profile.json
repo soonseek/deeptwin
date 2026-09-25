@@ -1,0 +1,64 @@
+{
+ "schema": "q01-independence-profile-6",
+ "profile_id": "q01-release-v6-independence",
+ "design_id": "q01-release-v6",
+ "frozen_on": "2026-09-25",
+ "supersedes": "../release-v5/independence_profile.json",
+ "judge_separation": {
+  "requirement": "The semantic judge must not share the critic's provider family or model: a named human reviewer judges every semantic item, or a judge from a different provider does, with identity, a non-null prompt digest and the exact judge model recorded. Under release-v6 a semantic status counts only when it is re-derived from the judge provider's raw response, the judge provider reported serving run_identity.judge_model with a request id, and the raw response is written to the trial's durable judge log; a judge that only declares its identity leaves every semantic item not_judged.",
+  "excluded_as_judge": [
+   "the sealed set's author",
+   "its reviewer",
+   "the harness and verifier developer",
+   "anyone who tuned the critic",
+   "any model or session with repository access, and any model of the critic's provider family or with the critic's model string (checked on the judge identity and the judge model with a provider/family alias table, case-insensitive substring matching; this guards only against accidental self-judging)",
+   "the sealing step"
+  ],
+  "established": false,
+  "judge": null,
+  "how_established_becomes_true": "Only in a successor profile file with this schema, frozen and committed before sealing, whose design_id is q01-release-v6, whose judge_separation.established is true and whose judge_separation.judge is {identity, prompt_digest, option} with option human_reviewer (prompt_digest may be null) or other_provider (prompt_digest must be a sha256). Its path and sha256 enter the pre-dispatch manifest; the verifier loads its bytes, checks the sha256 and the design id, derives judge separation from it, and requires judge.identity and judge.prompt_digest to equal run_identity.judge_identity and run_identity.judge_prompt_digest and every judged result's judge. The manifest check refuses a judge identity or judge model naming the critic's provider family or model and a judge who is the author, reviewer or sealer (names compared case- and whitespace-normalized). A caller never supplies judge separation. Never set in place.",
+  "currently_available": {
+   "authorized_providers": [
+    "claude/api"
+   ],
+   "human_review": "not arranged",
+   "consequence": "release-v6 cannot execute until a separate judge is arranged in a successor profile"
+  },
+  "judge_attestation": {
+   "other_provider": "every judged item needs a durable raw judge response with the served model and request id the judge provider reported; the served model must equal run_identity.judge_model exactly",
+   "human_reviewer": "no provider reports a human reviewer's identity; release-v6 has no attested human-reviewer path, so a human reviewer's answers leave the semantic items not_judged (open item in the design)"
+  }
+ },
+ "v3_error_independence": {
+  "status": "unverified",
+  "verifiable_under_this_design": false,
+  "why": "release-v6, like release-v3 to v5, has no generation path, so the item-level linking of generation-path errors and critic errors that verification.md section 6 requires cannot be observed; the tolerated joint-failure level and required precision are also not set by the owner. The verifier derives unverified for every release-v6 suite record from this design, never from the caller or the record.",
+  "fixed_now": {
+   "task_and_error_scope": "Q01-family critic judgments on design candidates: criteria Q1-Q8 and the six boundary classes",
+   "comparison_baseline": "the same critic configuration with the empty lens pack (no_lens)",
+   "joint_error_definition": "an item where the generation path's output has the defect and the critic misses it on the same item, and, separately, an item without the defect that the critic rejects; the two never share a denominator",
+   "known_confounders": [
+    "shared model and training data between generator and critic",
+    "materials authored in one project style",
+    "repeated calls on one case"
+   ],
+   "analysis": "descriptive counts with real denominators; a confidence interval only when its sample and dependence assumptions hold, otherwise counts and limits only"
+  },
+  "not_fixed": [
+   "tolerated joint-failure level",
+   "required sample size and precision",
+   "a generation path"
+  ],
+  "stop_and_exclusion": "exclusions only before the first dispatch, with the reason recorded; after the first dispatch a disputed case makes the suite incomplete",
+  "metric_labels": {
+   "joint_error": "a generation-path defect missed by the critic on the same item (a V3 metric; needs a generation path, which release-v6 does not have)",
+   "judge_disagreement": "a judge verdict differing from the sealed expectation (reported, never a joint error)"
+  },
+  "becomes_verified": "only under a later frozen design that has a generation path, fixes the owner-set tolerated joint-failure level, sample size and precision, binds criticism verdicts to the critic configuration digest, is declared in the product gate's V3_VERIFYING_DESIGN_IDS after an independent audit, and has a run that meets it"
+ },
+ "not_claimed": [
+  "a universal independence threshold or score",
+  "that a separate judge makes errors statistically independent",
+  "V3 satisfied"
+ ]
+}

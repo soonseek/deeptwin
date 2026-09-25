@@ -1,0 +1,53 @@
+{
+ "schema": "deeptwin-frozen-design-manifest-5",
+ "frozen_on": "2026-09-25",
+ "release_v1_frozen_in_commit": "3508883",
+ "release_v2_frozen_in_commit": "2690bef",
+ "release_v3_frozen_in_commit": "bd6a976",
+ "release_v4_frozen_in_commit": "fb718b6",
+ "release_v5_frozen_in_commit": "4aed36d",
+ "files": {
+  "evals/deeptwin/qualification/release-v6/qualification_design.json": "bc27e5137e71e6bf3da80e1e5f6282c8a24d938553f180207c04e1e06eb299d4",
+  "evals/deeptwin/qualification/release-v6/independence_profile.json": "c48d5ff09fcf1e1e157a0f77b288f09cc0afcb3092c3f406ace345d3064d5e2a",
+  "evals/deeptwin/qualification/release-v6/sealed_expectation.schema.json": "d6a7bd27550829c66ca2b9ce43565d4716f637833a322737c553d0dd1984d7f2",
+  "evals/deeptwin/qualification/release-v6/pre_dispatch_manifest.schema.json": "581a01b480608a2615d329da3e32c4bfe88e467a3b6028a4bfbace98faa6f6cd",
+  "evals/deeptwin/qualification/release-v6/suite_record.schema.json": "3cd16eb84a70870968d174e2ef5e43837a8dc4446b407814d1a71082801a0886",
+  "evals/deeptwin/effects/lens-effects-v6.json": "0cf723745c08b2afdbf2454a3f8c09ceb7ea054a07d8d53c06690d95cc6fa788",
+  "evals/deeptwin/effects/lens-effects-v5.json": "41736037daadd637d83da5e99c5c379ccdfa7af3088b021ec1e42562d9f7e940",
+  "evals/deeptwin/effects/lens-effects-v4.json": "05ea8c41d282d6f9db146421e4bb123d9c6abf15e50c2fb1eade4f4121a30ad3",
+  "evals/deeptwin/effects/lens-effects-v3.json": "845396747b1f16fa4cb22e4d017ab2f35054e3bc9e35f83265a841402b730b5a",
+  "evals/deeptwin/effects/lens-effects-v2.json": "30eb1c0ae8e61ebafcd73fd8eb7feab37a6b57b0866369dfac1ee99edf93ee5c",
+  "evals/deeptwin/effects/lens-effects-v1.json": "ad8622ac410def4fa97046e66891c52ef1b8e01a6241460c7f3797c65ac69d55",
+  "evals/deeptwin/qualification/release-v5/qualification_design.json": "507d0b8a150a4c5956ee6c17ff5d1df7af1f5bca9613a45c63a96f538335b728",
+  "evals/deeptwin/qualification/release-v5/independence_profile.json": "336256fec3dcb54935efc23eea4ea94501a44823efc22dea8bcee6c0b64b52f1",
+  "evals/deeptwin/qualification/release-v5/sealed_expectation.schema.json": "31c4607ad07610bd861b6839aabeeb91dee271e8128f098f779efd47d1b3199d",
+  "evals/deeptwin/qualification/release-v5/pre_dispatch_manifest.schema.json": "a912f25a29fe5efc0b3c1289cf3af104bf201eea3e596446f0fd3ebcb56f8c0d",
+  "evals/deeptwin/qualification/release-v5/suite_record.schema.json": "68765b66ca0fe2c64bfb8f4377b33f52f6cbf56142e3e8ee7467b142c2fdee3a",
+  "evals/deeptwin/qualification/release-v5/FROZEN.json": "6c92b7274578616ad9b193a0782cd5bc15a514e5176c2b98d0dc6536f750a61e",
+  "evals/deeptwin/qualification/release-v4/FROZEN.json": "49fdd41f323129cbd92d6dec7d0b8e4f8527b05c866e2ad82f182a5cad82ffd2",
+  "evals/deeptwin/qualification/release-v3/FROZEN.json": "4142d025a13ed9a44861023b7173508758bb048af2bd4c6ba812feb40f604a59",
+  "evals/deeptwin/qualification/release-v2/FROZEN.json": "3195619d6ae750a8cf81d8b6825afbe32b95669e09b476688efb8892c497de61",
+  "evals/deeptwin/qualification/release-v1/FROZEN.json": "df611ba551d580c8952c8f2c3db1f66fb24907906d1b58fbe3f5c2828f71c97e",
+  "app/services/critic_qualification.py": "3af4d0e40fc87e3260cbb29572ffdefb5ee689ca2337df0c154194e6d8c8e3f4",
+  "evals/deeptwin/verifiers/sealed_critic.py": "4acdabeeb319eb616fbfbf712d970f3ab9bf00dbad11a067da1e59afb617145f",
+  "evals/deeptwin/verifiers/q01_core.py": "8ebd91e2c34f3ba1f3cbe12c422c511d93ca20fc40fa79cf70d36575b44ef350",
+  "evals/deeptwin/q01_release_manifest.py": "dabdabf360eb1ad696ad8a9b975d652433fd4afe2f7023f04ab369d556006e0e",
+  "app/critic_contract.py": "fd5179f08fc5f33269dae0aeecd76a9c43e6f4ea356dbda6502cd8f83b09df0d",
+  "app/critic_audit.py": "bb9385df9ce81c6910fa905fcb69303d7afc69570840a4140bce6ea6e901d538",
+  "evals/deeptwin/harness/q01_harness.py": "5b206f3b8b41ddc80dd22fbd021e4118e7610de354f88ec38385c5446534193e",
+  "app/critic_trial.py": "08ee6a86e4c712e2584a2ce8fd9d3678df7bbbd8f08edbcdb50bd3c13ebd95a1",
+  "evals/deeptwin/harness/claude_rig.py": "7b988bc68214cdf5a663948127aab540f65e62707749529653915c8dac8a27aa",
+  "app/adapters/claude_api.py": "5cf234e8c26f79a76fa0d6241a17c6ecefbff406895b57de66e80b2e2ef74a8c",
+  "evals/deeptwin/verifiers/claude_judge.py": "940a1fcf29cb6ce21874da34862603d22ad3acfc197ea7f43debae9040073843"
+ },
+ "rule": "A change to any listed file is a new design version; every version is kept. This manifest pins release-v1..v6 (v5's design files directly, v1..v4 through their FROZEN.json), every earlier manifest, lens-effects-v1..v6, the product gate that reads v6 suite records, the verifier modules (sealed_critic, q01_core, q01_release_manifest, app/critic_contract, app/critic_audit), the harness (q01_harness.py, app/critic_trial.py) and the attested release transport and judge path (claude_rig.py, app/adapters/claude_api.py, claude_judge.py). The verifier's and the harness's full identities are recorded as file-set sha256 below and in the design's verifier block, and fixed per attempt in the pre-dispatch manifest.",
+ "gate_history": "release-v3/FROZEN.json records the gate as it was at bd6a976, release-v4/FROZEN.json the gate, verifier modules and harness as they were at fb718b6, and release-v5/FROZEN.json as they were at 4aed36d; audit 5 changed the gate, the verifier modules, the harness and app/critic_trial.py for v6 and their current hashes are pinned here. Earlier manifests are never edited: their code hashes are checked against the file at their freeze commit.",
+ "verifier": {
+  "version": "q01-sealed-verifier-4",
+  "file_set_sha256": "f025fe60f249cfbddac9354eb560d38967a6fa33c1e75270d3606e3632f968e5"
+ },
+ "harness": {
+  "version": "q01-harness-4",
+  "file_set_sha256": "cdb4a99d0cda1adcf29336980193417568eeb2d9e36c99fa9aadb1af22e7a8d4"
+ }
+}

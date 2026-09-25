@@ -3,19 +3,26 @@
 A criticism verdict says what one critic configuration concluded about one
 design; it never says whether that configuration may be trusted. Trust comes
 only from a suite record of a frozen release design
-(evals/deeptwin/qualification/release-v5/suite_record.schema.json): its pass is
+(evals/deeptwin/qualification/release-v6/suite_record.schema.json): its pass is
 a *scoped pass* for one exact critic configuration digest. It could become a
 qualification only under a design that is able to verify V3 error independence
 (a generation path and an owner-set tolerance), and no such design exists:
 ``V3_VERIFYING_DESIGN_IDS`` is empty, so no production record reaches
 ``qualified`` (audit 3, BF1). A record's V3 field is never trusted on its own:
-``record_sha256`` is recomputed and a mismatch refused, a release-v5 record that
+``record_sha256`` is recomputed and a mismatch refused, a release-v6 record that
 is not schema-valid (for example a V3 status other than the schema's constant
-``unverified``, or a sealed set that a listed prior attempt already spent) is
-refused rather than capped (audit 4), and a design that cannot verify V3 is
-capped at ``scoped_pass``. The test-actor hook below is honoured only while
-pytest runs a test (``PYTEST_CURRENT_TEST`` is set), so production can never
-reach ``qualified`` through it.
+``unverified``, a sealed set that a listed prior attempt already spent, or a pass
+whose critic or judge transport identity is not provider-reported or whose run was
+stopped) is refused rather than capped (audits 4 and 5), and a design that cannot
+verify V3 is capped at ``scoped_pass``. There is no test hook in this module:
+tests that exercise the approval path replace ``V3_VERIFYING_DESIGN_IDS`` itself
+for the duration of one test (audit 5, non-blocking 5).
+
+The gate checks a record's shape and self-consistency; it cannot tell a record
+built by ``sealed_critic.build_suite_record`` from one assembled by hand with the
+same fields. That provenance is established outside the gate (the committed
+pre-dispatch manifest, the dispatch journal and the release design's post-verdict
+audit).
 
 Calibration runs, a failed, incomplete or not_judged suite, a suite without
 established judge separation, a scoped pass, and the absence of any record are
@@ -31,30 +38,26 @@ any design that can verify V3 is admitted.
 from __future__ import annotations
 
 import json
-import os
 import re
 from dataclasses import dataclass, field
 from hashlib import sha256
 
 CRITIC_QUALIFICATION_SCHEMA_VERSION = "critic-qualification-v1"
-SUITE_RECORD_SCHEMA_VERSION = "q01-release-suite-verdict-v4"
+SUITE_RECORD_SCHEMA_VERSION = "q01-release-suite-verdict-v5"
 # Only frozen release designs count; calibration designs never do. release-v2
-# could not pass (audit 2, B3), release-v3 trusted forged records (audit 3) and
-# release-v4 admitted best-of-N trials and reruns of a spent set (audit 4), so
-# only release-v5 suite records are read.
-RELEASE_DESIGN_IDS = frozenset({"q01-release-v5"})
-# Designs able to verify V3 error independence. None exists: release-v5 (like
-# v3 and v4) has no generation path, so it can never verify V3 and a pass under
-# it is at most a scoped pass. Keep this empty until a frozen design with a
+# could not pass (audit 2, B3), release-v3 trusted forged records (audit 3),
+# release-v4 admitted best-of-N trials and reruns of a spent set (audit 4) and
+# release-v5 never attested which model served the critic (audit 5, X1), so only
+# release-v6 suite records are read.
+RELEASE_DESIGN_IDS = frozenset({"q01-release-v6"})
+# Designs able to verify V3 error independence. None exists: release-v6 (like
+# v3..v5) has no generation path, so it can never verify V3 and a pass under it
+# is at most a scoped pass. Keep this empty until a frozen design with a
 # generation path, an owner-set tolerance and verdict-to-configuration binding
-# is audited.
+# is audited. Tests that need a qualified state replace this value for the
+# duration of one test (app/tests/test_environments.py ``actor_v3_design``);
+# production code never changes it.
 V3_VERIFYING_DESIGN_IDS = frozenset()
-# TEST-ACTOR HOOK. Never set by production code. Tests replace it (see
-# app/tests/test_environments.py ``actor_v3_design``) with a test-only
-# design id that no frozen design uses, so the approval path can be exercised
-# without any production record ever yielding ``qualified``. It is honoured
-# only while pytest runs a test (``_test_actor_design_ids``).
-_TEST_ACTOR_V3_DESIGN_IDS: frozenset = frozenset()
 STATUSES = frozenset({"qualified", "scoped_pass", "unqualified", "unknown"})
 SUITE_OUTCOMES = frozenset({"pass", "fail", "incomplete", "not_judged"})
 _SUITE_KEYS = frozenset({
@@ -62,8 +65,10 @@ _SUITE_KEYS = frozenset({
     "pre_dispatch_manifest_sha256", "sealed_set_sha256", "attempt",
     "prior_outcomes", "suite_outcome", "independence_profile_sha256",
     "judge_separation_established", "v3_error_independence", "prior_sealed_set_sha256s",
-    "prior_attempts_sha256", "dispatch_journal_head", "manifest_commit_ref", "record_sha256",
+    "prior_attempts_sha256", "dispatch_journal_head", "manifest_commit_ref", "critic_transport_identity",
+    "judge_transport_identity", "run_stopped", "record_sha256",
 })
+_TRANSPORT_IDENTITIES = frozenset({"provider_reported", "not_attested"})
 _COMMIT_REF_KINDS = frozenset({"git_commit", "external_timestamp"})
 _HEX = re.compile(r"[0-9a-f]{64}\Z")
 _COMMIT = re.compile(r"[0-9a-f]{7,64}\Z")
@@ -131,16 +136,6 @@ def suite_record_sha256(record: dict) -> str:
     return sha256(data).hexdigest()
 
 
-def _test_actor_design_ids() -> frozenset:
-    """The TEST-ACTOR hook's ids, only while pytest runs a test; empty otherwise."""
-    if not os.environ.get("PYTEST_CURRENT_TEST"):
-        return frozenset()
-    hooked = _TEST_ACTOR_V3_DESIGN_IDS
-    if type(hooked) is not frozenset or hooked & RELEASE_DESIGN_IDS:
-        raise CriticQualificationError("the test-actor hook may only name test-only design ids")
-    return hooked
-
-
 def _commit_ref_valid(value) -> bool:
     if value is None:
         return True
@@ -163,8 +158,13 @@ def _check_record_shape(record, v3_capable) -> None:
     if v3 not in {"unverified", "verified"}:
         raise CriticQualificationError("unknown V3 status")
     if design_id in RELEASE_DESIGN_IDS and design_id not in V3_VERIFYING_DESIGN_IDS and v3 != "unverified":
-        # the release-v5 schema fixes the constant "unverified": such a record is invalid, not capped
-        raise CriticQualificationError("a release-v5 suite record can only say V3 unverified")
+        # the release-v6 schema fixes the constant "unverified": such a record is invalid, not capped
+        raise CriticQualificationError("a release-v6 suite record can only say V3 unverified")
+    for name in ("critic_transport_identity", "judge_transport_identity"):
+        if record[name] not in _TRANSPORT_IDENTITIES:
+            raise CriticQualificationError(f"unknown {name.replace('_', ' ')}")
+    if type(record["run_stopped"]) is not bool:
+        raise CriticQualificationError("run stopped must be a boolean")
     if design_id not in RELEASE_DESIGN_IDS | v3_capable:
         return
     sealed = record["sealed_set_sha256"]
@@ -185,6 +185,14 @@ def _check_record_shape(record, v3_capable) -> None:
         raise CriticQualificationError("malformed manifest commit reference")
     if record["manifest_commit_ref"] is None and record["suite_outcome"] == "pass":
         raise CriticQualificationError("a pass needs the manifest's commit reference")
+    if record["suite_outcome"] == "pass":
+        # audit 5, X1: a pass needs every critic call and judge answer attested by its provider
+        if record["critic_transport_identity"] != "provider_reported":
+            raise CriticQualificationError("a pass needs provider-reported critic transport identity")
+        if record["judge_transport_identity"] != "provider_reported":
+            raise CriticQualificationError("a pass needs provider-reported judge transport identity")
+        if record["run_stopped"]:
+            raise CriticQualificationError("a stopped run cannot pass")
 
 
 def unknown_critic_qualification(configuration_digest) -> CriticQualification:
@@ -213,7 +221,7 @@ def critic_qualification_from_suite(record, configuration_digest) -> CriticQuali
         raise CriticQualificationError("the attempt number must match its listed prior outcomes")
     if any(outcome not in SUITE_OUTCOMES for outcome in prior):
         raise CriticQualificationError("unknown prior suite outcome")
-    v3_capable = V3_VERIFYING_DESIGN_IDS | _test_actor_design_ids()
+    v3_capable = V3_VERIFYING_DESIGN_IDS
     _check_record_shape(record, v3_capable)
     if _hex(record["critic_configuration_digest"], "suite configuration digest") != configuration_digest:
         # A suite speaks for exactly the critic configuration it ran; any change of
