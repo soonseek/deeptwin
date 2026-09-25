@@ -71,13 +71,13 @@ const BOOT_FAILED_TEXT = '이 화면을 준비하지 못했습니다. 세션을 
 // item 4: the notices, short, with the detail beneath — each claims only what this screen holds
 const NOTICES = Object.freeze([
   '저장한 설명·원본은 이 인스턴스에, 미저장 설명은 이 브라우저에만 남습니다.',
-  '외부 모델 전송은 연결 후 실행을 명시적으로 시작할 때만 이뤄집니다.',
+  '외부 모델 전송은 업무 모델 초안처럼 소유자가 명시적으로 요청한 동작에서만 이뤄집니다.',
   '제작자에게 자동으로 보내는 것은 없습니다.',
 ]);
 const NOTICE_DETAIL = '저장한 설명은 이 인스턴스의 저장소에 수정본 단위로 남고, 이전 수정본은 덮어쓰지 않습니다. '
   + '아직 저장하지 않은 입력은 이 브라우저에만 임시 보관되며 다른 기기나 인스턴스에 있지 않습니다. '
   + '외부 모델·도구로 무엇이 전송되는지는 실행을 시작하기 전에 대상과 범위를 표시합니다. '
-  + '이 화면은 어떤 제공자에도 연결하지 않으며 아무것도 전송하지 않습니다.';
+  + '저장·입력만으로는 아무것도 전송하지 않으며, 연결된 Claude로 보내는 것은 소유자가 누른 요청뿐입니다.';
 
 function fail(message) {
   throw new Error(message);
