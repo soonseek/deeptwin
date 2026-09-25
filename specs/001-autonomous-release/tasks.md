@@ -512,6 +512,9 @@ Independent test: fixed synthetic work → real design decisions/candidates → 
   or no record are not qualified, and `design_approval_subject` (v2) refuses a passed verdict unless the
   critic is qualified and binds the qualification into the approval. No real release suite has passed
   (T077), so no design is approvable in production today; storing suite records remains T077.
+  2026-09-25: each criticism run records the contract-validated proposal status and per-lens
+  contribution (exact counterexample ids) / exclusion / abstention with reasons, persisted in the
+  criticism record (`lens_use`).
 - [ ] T037 [US2] Implement large readable graph comparison, same-focus differences, model/tool details and edit/merge/review/prepare commands in app/static/graph.mjs and app/static/workspace.mjs (UX-AC01, FR-005/FR-008/FR-009).
 - [ ] T038 [US2] Exercise real generation→critique→selection and 0/1/2/3 valid-candidate/revision/cancel paths in app/tests/browser-design.test.mjs and specs/001-autonomous-release/evidence/us2.md; no fixture scores presented as live (SC-003/SC-005).
 

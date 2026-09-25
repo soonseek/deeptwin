@@ -113,6 +113,11 @@ class CriticismRunResult:
     review: dict = field(repr=False)
     chains: tuple[dict, ...] = field(repr=False)
     call_records: tuple[CriticismCallRecord, ...] = field(repr=False)
+    # The contract-validated proposal outcome: whether the proposal abstained,
+    # and per lens rule whether it contributed (with the exact counterexample
+    # ids), was excluded or abstained, and why.
+    proposal_status: str
+    lens_use: tuple[dict, ...]
     _issuer_token: object = field(repr=False, compare=False)
 
 
@@ -254,6 +259,17 @@ def run_candidate_criticism(
         review=review,
         chains=tuple(chains),
         call_records=tuple(records),
+        proposal_status=proposal["status"],
+        lens_use=tuple(
+            {
+                "rule_id": use["rule_id"],
+                "rule_version": use["rule_version"],
+                "status": use["status"],
+                "reason": use["reason"],
+                "counterexample_ids": tuple(use["counterexample_ids"]),
+            }
+            for use in proposal["lens_use"]
+        ),
         _issuer_token=_ISSUE_TOKEN,
     )
 

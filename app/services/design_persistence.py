@@ -276,6 +276,7 @@ def persist_candidate_criticism(
     record_id: str | None = None,
     call_records: list | None = None,
     call_record_refs: tuple = (),
+    lens_use: dict | None = None,
 ) -> EntityRef:
     """Persist one candidate's criticism and its verdict, parented to the candidate.
 
@@ -296,6 +297,8 @@ def persist_candidate_criticism(
     }
     if call_records is not None:
         design["call_records"] = call_records
+    if lens_use is not None:
+        design["lens_use"] = lens_use
     try:
         record = ImmutableRecord.create(
             kind="decision_record",
@@ -477,6 +480,13 @@ def persist_criticism_run(
         record_id=record_id,
         call_records=[record.as_dict() for record in run.call_records],
         call_record_refs=tuple(call_refs),
+        lens_use={
+            "proposal_status": run.proposal_status,
+            "rules": [
+                {**use, "counterexample_ids": list(use["counterexample_ids"])}
+                for use in run.lens_use
+            ],
+        },
     )
     return PersistedCriticismRun(
         criticism_ref=criticism_ref, call_refs=tuple(call_refs),
