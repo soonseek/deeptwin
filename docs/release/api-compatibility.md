@@ -39,19 +39,35 @@ dot segments; methods, auth policies and scopes come from closed sets; and route
 The composed set is mounted once. There is no runtime route registry and extensions cannot add
 routes.
 
-Current inventory (54 routes, all `auth_policy: browser_session`):
+Current inventory (128 routes in 25 contributions; auth policies: `browser_session`):
 
 | Contribution | Routes | Scopes |
 | --- | --- | --- |
-| `core-v1` | events list/stream/by-type, snapshot, command read/create (6) | `work.read`, `work.command` |
-| `works-v1` | work create/read/revise, revision read, source upload/read/content, command receipt, export preview/confirm/download (11) | `work.read`, `work.command` |
-| `runs-v1` | run create/read/resume/cancel/recover, artifacts list/read/content/preview, drafts list/save/read/freeze/differences, alternative-file upload, alternative difference read/observe (17) | `work.read`, `work.command` |
-| `run-consents-v1` | record, read (2) | `work.command`, `work.read` |
-| `run-approvals-v1` | record, read (2) | `approval.manage`, `approval.read` |
-| `deployment-prepare-v1` | deployment and provider-deployment requests: prepare, cancel, read, receipt import, consume (10) | `deployment.manage`, `deployment.read` |
-| `extension-candidates-v1` | candidate create, read (2) | `extension.manage`, `extension.read` |
-| `provider-conformance-v1` | execute, read (2) | `extension.manage`, `extension.read` |
-| `provider-installation-v1` | execute, read (2) | `extension.manage`, `extension.read` |
+| `core-v1` | events.read, events.stream, events.type, snapshot.read, commands.read, commands.create (6) | `work.command`, `work.read` |
+| `extension-candidates-v1` | extensions.candidates.create, extensions.candidates.list, extensions.candidates.read (3) | `extension.manage`, `extension.read` |
+| `run-approvals-v1` | runs.approvals.record, runs.approvals.read, runs.execution_approvals.record, runs.execution_approvals.read (4) | `approval.manage`, `approval.read` |
+| `works-v1` | works.receipt, works.source_upload, works.revision, works.source, works.source_content, works.export_preview, works.export_confirm, works.export_download, works.deletion_preview, works.deletion_confirm, works.create, works.read, works.revise (13) | `work.command`, `work.read` |
+| `run-consents-v1` | run_consents.record, run_consents.read, run_consents.revoke (3) | `work.command`, `work.read` |
+| `claude-connection-v1` | connections.claude.read, connections.claude.key, connections.claude.forget, connections.claude.catalog, connections.claude.model_choice (5) | `work.command`, `work.read` |
+| `backups-v1` | backups.read, backups.preview, backups.create, backups.ciphertext, backups.receipt, backups.restore_begin, backups.restore_read, backups.restore_upload, backups.restore_upload_portable (9) | `work.command`, `work.read` |
+| `retention-v1` | retention.read, retention.cleanup_preview, retention.cleanup (3) | `work.command`, `work.read` |
+| `credentials-v1` | credentials.read, credentials.store, credentials.delete, credentials.fence, credentials.catalog_refresh, credentials.model_choice (6) | `work.command`, `work.read` |
+| `work-models-v1` | work_models.draft, work_models.read, work_models.confirm (3) | `work.command`, `work.read` |
+| `source-readings-v1` | source_readings.list, source_readings.read, source_readings.latest (3) | `work.command`, `work.read` |
+| `conversations-v1` | conversations.read, conversations.message, conversations.propose, conversations.challenge, conversations.approve (5) | `work.command`, `work.read` |
+| `budget-policies-v1` | budget_policies.list, budget_policies.create (2) | `work.command`, `work.read` |
+| `runs-v1` | runs.create, runs.read, runs.resume, runs.cancel, runs.recover, runs.artifacts, runs.artifact, runs.artifact_content, runs.artifact_preview, runs.artifact_page, runs.artifact_page_image, runs.artifact_drafts, runs.artifact_draft_save, runs.artifact_draft, runs.artifact_draft_freeze, runs.artifact_alternative_file, runs.artifact_draft_differences, runs.alternative_difference, runs.alternative_difference_observe (19) | `work.command`, `work.read` |
+| `artifact-index-v1` | artifacts.index (1) | `work.read` |
+| `graphs-v1` | graphs.read (1) | `work.read` |
+| `design-workspace-v1` | design_requests.list, design_requests.read, design_requests.derive, design_requests.review, design_requests.prepare (5) | `work.command`, `work.read` |
+| `hypotheses-v1` | hypotheses.read, hypotheses.propose (2) | `work.command`, `work.read` |
+| `versions-v1` | versions.read, versions.adopt, versions.decide, versions.activate, versions.rollback, versions.tool_effect_boundaries.read, versions.tool_effect_boundaries.decide (7) | `work.command`, `work.read` |
+| `deployment-prepare-v1` | deployment.requests.prepare, deployment.requests.cancel, deployment.requests.read, deployment.requests.receipts.import, deployment.requests.consume, deployment.provider-requests.prepare, deployment.provider-requests.cancel, deployment.provider-requests.read, deployment.provider-requests.receipts, deployment.provider-requests.consume (10) | `deployment.manage`, `deployment.read` |
+| `provider-conformance-v1` | extensions.provider-conformance.execute, extensions.provider-conformance.read, extensions.provider-transport-qualification.read, extensions.provider-transport-qualification.execute (4) | `extension.manage`, `extension.read` |
+| `provider-installation-v1` | extensions.provider-installation.execute, extensions.provider-installation.read (2) | `extension.manage`, `extension.read` |
+| `extension-bindings-v1` | extensions.installations.list, extensions.bindings.list, extensions.bindings.read, extensions.bindings.slot_key, extensions.bindings.bind, extensions.bindings.disable, extensions.bindings.rollback, extensions.bindings.retention_release (8) | `extension.manage`, `extension.read` |
+| `browser-grants-v1` | browser_grants.read, browser_grants.create, browser_grants.revoke (3) | `work.command`, `work.read` |
+| `platform-update-v1` | platform.update.read (1) | `deployment.read` |
 
 The descriptor files are the authoritative list; regenerate this table from them rather than
 editing it by hand.
