@@ -1,0 +1,69 @@
+{
+ "schema": "q01-release-qualification-design-2",
+ "design_id": "q01-release-v2",
+ "frozen_on": "2026-09-25",
+ "supersedes": {"design": "../release-v1/qualification_design.json", "reason": "independent audit of release-v1 (evidence/release-designs-t076-2026-09-25.md): B1-B4 blocking, S1-S8 should-fix; release-v1 is kept unchanged"},
+ "purpose": "The release qualification design for the Q01-family critic configuration: a scoped acceptance rule for one exact configuration on one sealed set, frozen before any heldout material exists. It is not a general capability claim and cannot by itself satisfy the error-independence requirement (V3).",
+ "execution_state": "kept outside this pinned file (a separate run record); this file never changes in place",
+ "configuration_under_test": {
+  "identity_fields": ["provider", "mode", "model", "effort", "max_tokens", "critic_prompt_digest", "contract_version", "harness_version", "verifier_version", "parser_version", "max_proposed_chains", "call_and_run_deadlines", "lens_refs_and_digests", "judge_identity", "judge_prompt_digest", "sealed_dataset_sha256"],
+  "binding": "All identity fields are fixed in the run record before the first dispatch; a change to any is a new configuration, and the sealed set it ran on is spent (see dataset.single_use).",
+  "lens_arm": "The qualified configuration names its lens set explicitly (possibly empty); a qualification never carries over between a lens and a no-lens configuration."
+ },
+ "dataset": {
+  "dataset_id": "q01-release-v2-sealed",
+  "must_be_new": "No case, material, candidate, counterexample or wording from evals/deeptwin/q01_materials.py, q01_lenses.json or the ten calibration cases, and no paraphrase of them.",
+  "authoring": {
+   "author": "A named person who has not seen the verifier's calibration expectations and does not tune the critic configuration.",
+   "excluded_as_author_reviewer_or_judge": ["the developer who built the Q01 harness and verifier", "anyone who tuned the critic configuration", "any model or session with repository access, and any model of the critic's family"],
+   "expectations": "Written by the author from the new materials alone, before any trial, and sealed (content sha256 recorded in the run record).",
+   "review": "A second named person, not the author and not the judge, checks each expectation against the materials before sealing; a disagreement is resolved or the case dropped, never averaged."
+  },
+  "composition": {
+   "boundary_classes": ["accept_without_false_rejection", "required_defect", "rejected_counterexample", "valid_counterexample", "unresolved_specific_claim", "insufficient_evidence"],
+   "minimum_cases_per_class": 2,
+   "required_coverage": ["at least one required_defect for each of Q1 (meaning), Q2 (hand-off), Q3 (authority)", "at least one valid alternative (Q4) inside accept_without_false_rejection", "every valid_counterexample paired: the same counterexample applied to a candidate that forces the defect and one that preserves or corrects it (Q5)"],
+   "note": "A scoped design choice so every class and criterion has instances; it is not a statistical sample size and supports no rate estimate."
+  },
+  "storage_and_access": {
+   "location": "outside the git repository, in an owner-controlled location recorded by path and sha256 in the run record",
+   "readers_before_run": ["the author", "the reviewer", "the sealing step"],
+   "during_run": "agent inputs come only from the harness's allowlisted reader; expectations are read only by the verifier; every read is logged in the run record",
+   "results": "the developer reads trial outputs and verdicts only after the suite verdict is recorded",
+   "single_use": "The first dispatched trial marks the set observed. Exactly one run per sealed set: no continuation, merge or rerun. A fail or incomplete result closes this design on this set; a new attempt needs a new sealed set (and, after any configuration change, a new design version)."
+  }
+ },
+ "execution": {
+  "repetitions_per_case": 3,
+  "repetition_meaning": "three calls on one case are one task sample, never three independent samples",
+  "retry": "none",
+  "model_fallback": "none",
+  "concurrency": 1,
+  "output_contract_error": "a completed trial whose output breaks the contract is a fail of that repetition (Task.md), never an invalid trial",
+  "invalid_trials": "only harness, evidence, isolation or judge failures; reported with cause, never scored, never replaced within the run",
+  "authority": "The run record names who authorized the run, the authority reference and the budget; without it the run is not executed and that is stated.",
+  "spend": "a hard USD stop fixed in the run record before any call; a stopped run is incomplete"
+ },
+ "judge": {
+  "independence_profile": "independence_profile.json",
+  "judge_errors": "every judge verdict is recorded beside the sealed expectation; a judge failure makes that trial invalid (Task.md Q8); judge-versus-expectation disagreements are listed, never folded into the critic's score"
+ },
+ "acceptance": {
+  "case_pass": "a case passes only if every one of its repetitions is valid and passes under the frozen verifier",
+  "suite_pass": "every case passes",
+  "incomplete": "any case with fewer valid repetitions than planned makes the suite incomplete (no verdict), never a pass",
+  "judge_dependence": "semantic items count only under an independence profile version whose judge_separation.established is true; otherwise they are not_judged and the suite cannot pass"
+ },
+ "reporting": ["per case and boundary class: passes, misses (a required defect not found), false rejections (a valid candidate or alternative rejected), abstentions, and not_judged items, each with its real denominator", "judge-versus-expectation disagreements per item", "same-item joint errors of critic and judge", "cluster counts (cases sharing materials count as one cluster)", "every invalid trial with its cause, calls, tokens, spend and wall time"],
+ "claims_if_passed": [
+  "This exact configuration met the frozen acceptance rule on this sealed set, in these repetitions.",
+  "V3 (error independence) remains unmet: this design fixes no joint-error criteria, so no automatic critic qualification follows from a pass."
+ ],
+ "never_claimed": [
+  "an error rate, false-rejection rate or missed-defect rate beyond the observed counts",
+  "V3 / FR-006 / SC-005 error independence",
+  "generalization to other tasks or materials",
+  "a lens effect (see evals/deeptwin/effects/lens-effects-v2.json)",
+  "actual user alternatives or behavior"
+ ]
+}

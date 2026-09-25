@@ -684,7 +684,10 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   other than the verifier's developer, 2+ cases per boundary class (a scoped choice, no rate),
   3 repetitions, every case must pass, an independent judge (human or another provider) required
   — neither available now, so release-v1 cannot execute yet; the lens-effect comparison keeps
-  the no-lens baseline whole and claims no superiority. Independent audit pending.
+  the no-lens baseline whole and claims no superiority. Independent audit of v1 found
+  identity, single-use, storage, coverage, contract-error, reporting, V3 and §8-arm gaps; release-v2
+  (`release-v2/`, `lens-effects-v2.json`, manifest pinning v1 too) addresses them without editing v1
+  (evidence/release-designs-t076-2026-09-25.md). Still open: no sealed set, no independent judge, V3 unverified.
 - [ ] T077 Execute authorized bounded actual-provider/critic/multimodal/lens-controlled comparisons and audit all failures/suspicious passes in specs/001-autonomous-release/evidence/live-qualification.md; lack of applicable authority remains explicit, not waived (SC-001/005/006).
 - [ ] T078 After T087's extension UI and the frozen T081 candidate exist, perform final visual/
   keyboard/screen-reader/360px/1024px/

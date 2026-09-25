@@ -1,0 +1,27 @@
+{
+ "schema": "q01-independence-profile-2",
+ "profile_id": "q01-release-v2-independence",
+ "frozen_on": "2026-09-25",
+ "supersedes": "../release-v1/independence_profile.json",
+ "judge_separation": {
+  "requirement": "The semantic judge must not share the critic's model: a named human reviewer judges every semantic item, or a judge from a different provider does, with identity recorded.",
+  "excluded_as_judge": ["the sealed set's author", "its reviewer", "the harness and verifier developer", "anyone who tuned the critic", "any model or session with repository access, and any model of the critic's family"],
+  "established": false,
+  "how_established_becomes_true": "Only in a new, frozen profile version that records the judge's identity, the option chosen and the exclusions above; never set in place.",
+  "currently_available": {"authorized_providers": ["claude/api"], "human_review": "not arranged", "consequence": "release-v2 cannot execute until a separate judge is arranged in a new profile version"}
+ },
+ "v3_error_independence": {
+  "status": "unverified",
+  "why": "verification.md section 6 requires, on the same model, item-level linking of generation-path errors and independent-reconstruction-path critic errors, with task/error scope, baseline critic, joint-error criteria, sample size and precision, confounders, analysis method and stop/exclusion rules fixed before sealed data is seen. This profile fixes the scope below but not the tolerated joint-failure level or the required precision, because no risk-based tolerance has been set by the owner.",
+  "fixed_now": {
+   "task_and_error_scope": "Q01-family critic judgments on design candidates: criteria Q1-Q8 and the six boundary classes",
+   "comparison_baseline": "the same critic configuration with no lens set",
+   "joint_error_definition": "an item where the generation path's output has the defect and the critic misses it on the same item, and, separately, an item without the defect that the critic rejects; the two never share a denominator",
+   "known_confounders": ["shared model and training data between generator and critic", "materials authored in one project style", "repeated calls on one case"],
+   "analysis": "descriptive counts with real denominators; a confidence interval only when its sample and dependence assumptions hold, otherwise counts and limits only"
+  },
+  "not_fixed": ["tolerated joint-failure level", "required sample size and precision"],
+  "stop_and_exclusion": "a case whose expectation is disputed after sealing is excluded with the reason recorded before any result is read; no exclusion after results are seen"
+ },
+ "not_claimed": ["a universal independence threshold or score", "that a separate judge makes errors statistically independent", "V3 satisfied"]
+}

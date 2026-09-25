@@ -1,0 +1,24 @@
+{
+ "schema": "deeptwin-lens-effect-design-2",
+ "design_id": "lens-effects-v2",
+ "frozen_on": "2026-09-25",
+ "supersedes": {"design": "lens-effects-v1.json", "reason": "independent audit S8: missing comparison arms, execution rules, total budget and fixed predictions"},
+ "purpose": "G-15 at the critic counterexample-search application point: whether structured micro-lenses change grounded new counterexamples, missed defects, false rejections and joint errors, compared under identical conditions.",
+ "application_point": {"measured": "critic counterexample search", "held_fixed": ["initial environment design (no lens intervention)", "post-alternative SPLI (not exercised)"], "note": "Only this point varies, so only its contribution may be reported."},
+ "precondition": "The no-lens configuration of the critic has passed release-v2 qualification on its own sealed set; lens arms are then compared on a further sealed set not used for qualification.",
+ "arms": [
+  {"id": "strong_existing_procedure", "definition": "the critic's standard review with its full default counterexample-proposal path, same max_proposed_chains", "note": "recorded as a duplicate of no_lens if identical"},
+  {"id": "no_lens", "definition": "counterexample-proposal path retained, same max_proposed_chains, lens text absent"},
+  {"id": "general_multi_perspective", "definition": "a generic multi-perspective checklist with the same exploration budget as the lens arms"},
+  {"id": "user_construct", "definition": "constructs from actual user work cases", "state": "not_runnable_data_needed", "note": "no actual user constructs exist; none are invented"},
+  {"id": "single_L-P050-01", "lenses": ["L-P050-01"]},
+  {"id": "single_L-P033-02", "lenses": ["L-P033-02"]},
+  {"id": "mix", "lenses": ["L-P050-01", "L-P033-02"]}
+ ],
+ "held_equal": ["information access", "task capability and authority", "model, effort, max_tokens", "evaluator, verifier, judge and independence profile", "development/sealed separation", "total generation + review + completion + execution budget per arm", "case order (randomized once, recorded)"],
+ "predictions_fixed_in_advance": "each lens arm's expected distinguishing questions and the defects it predicts to surface are recorded in the run record before the first dispatch",
+ "execution": "inherits release-v2 execution and acceptance.incomplete: 3 repetitions per case, no retry, no fallback, concurrency 1, one run per sealed set, authority and spend recorded",
+ "measurements": ["per case and arm: verifier verdict and boundary class", "grounded new counterexamples (valid and citing materials) per arm", "misses, false rejections, abstentions and same-item joint errors per arm, real denominators", "paired differences of each arm against no_lens and against strong_existing_procedure on the same case", "calls, tokens, spend, wall time and human review burden per arm (a subscription is not cost zero)", "information-gain effect (new evidence found) separated from interpretation effect"],
+ "reporting": "observed counts and paired differences with every invalid trial listed; source fidelity, question-trace presence, actual added effect and generalization scope reported separately; no effect, a worse effect or a narrower scope is a valid result",
+ "never_claimed": ["that a lens improves the critic in general", "philosophical authority as evidence", "effects at the other two application points", "effects beyond the sealed set"]
+}
