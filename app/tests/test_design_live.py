@@ -15,6 +15,7 @@ from app.domain.refs import canonical_json
 from app.generation_profiles import DesignGenerationPurpose, design_profile_for
 from app.services.design import DesignContractError
 from app.services.design_live import (
+    _CRITIC_DESIGN_RULES,
     DesignGenerationError,
     GenerationCallRecord,
     render_candidate_prompt,
@@ -95,6 +96,29 @@ def test_the_generator_is_told_the_critics_design_rules():
     assert "one writer per artifact" in system
     assert "never re-emits a contract it received" in system
     assert "completion_conditions" in system and "other than the one that produced" in system
+
+
+def test_the_generator_is_told_the_design_hygiene_rules():
+    """T038 attempt 3: the three deeper defects the live critic found in attempt 2 are stated
+    to the generator as general hygiene: a check reads exactly what it verifies; nothing is
+    altered after approval without a re-check before release; a check that finds unresolved
+    problems blocks the downstream join, gate or release. First-round and revision alike;
+    the task's own wording (dossier, script, fact-check) is not used."""
+    _target, _lens, _decision, request, graph = prepared()
+    system, _user = render_candidate_prompt(request)
+    parent = run_candidate_generation(request, model_turn=scripted_model(model_json(graph))[0],
+                                      model_id=MODEL_ID).candidates[0]
+    revised, _ = render_candidate_prompt(request, revision=(parent, "shorten the pipeline"))
+    for text in (system, revised):
+        assert "a check reads what it verifies" in text
+        assert "artifact input edge for each exact artifact it verifies" in text
+        assert "nothing changes after approval unchecked" in text
+        assert "re-checks it against the approved content before release" in text
+        assert "a check that finds unresolved problems blocks" in text
+        assert "failure_handling block" in text
+    rules = _CRITIC_DESIGN_RULES
+    for task_word in ("dossier", "fact-check", "fact check", "thumbnail", "research"):
+        assert task_word not in rules.split("(c)")[1]
 
 
 def test_model_supplies_only_graphs_never_identity_or_call_refs():

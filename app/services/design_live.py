@@ -155,6 +155,25 @@ _CRITIC_DESIGN_RULES = (
     " or to the completion criterion, and whatever the condition depends on (e.g. a citation map, a"
     " thumbnail promise) is a declared artifact, not only responsibility text. A node that needs"
     " artifacts from two predecessors is a join, per the structure rules."
+    # T038 attempt 2: the candidate passed every review finding and was rejected on three
+    # deeper defects (a checker that could not read what it verified; content regenerated
+    # after approval with no re-check; a check report of unresolved problems that did not
+    # block). Stated here as general design hygiene, not as task wording.
+    " (c) a check reads what it verifies: every checking node has an artifact input edge for"
+    " each exact artifact it verifies or compares against (e.g. the source material a claim is"
+    " checked against, not only a summary or map derived from it); a check whose responsibility"
+    " names an artifact it cannot read is invalid. (d) nothing changes after approval unchecked:"
+    " the content a human gate approves is the content released; no node after an approval"
+    " regenerates, rewrites, reformats or otherwise alters approved content, and if a later"
+    " derived artifact is unavoidable, a node other than its producer re-checks it against the"
+    " approved content before release, and that check's report is an input of the release path."
+    " (e) a check that finds unresolved problems blocks: a checking node's findings decide what"
+    " happens next in the graph, not only in its report; route on a declared verdict fact (a"
+    " router whose only onward edge to the join, gate or release is conditioned on the passing"
+    " value, while a failing value goes back to revision through a bounded loop or ends the"
+    " run), or give the check a failure_policy that stops its dependants when it finds a"
+    " problem and have every downstream join use failure_handling block; a report that lists"
+    " unverified or failed items must never reach the join, gate or release as if it passed."
 )
 
 
