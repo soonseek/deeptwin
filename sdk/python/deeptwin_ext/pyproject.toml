@@ -1,0 +1,19 @@
+# The extension-author distribution (ADR-014, T087). A separate package root with its own
+# version; it never imports or ships the DeepTwin core (`app`).
+[build-system]
+requires = []
+build-backend = "deeptwin_build_backend"
+backend-path = ["_build"]
+
+[project]
+name = "deeptwin-ext"
+version = "0.1.0"
+description = "DeepTwin extension-author kit: manifests and worker protocol messages (data only)."
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+dependencies = []
+
+[tool.deeptwin-build]
+package-dir = "src"
+packages = ["deeptwin_ext"]

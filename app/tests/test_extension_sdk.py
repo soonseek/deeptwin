@@ -10,7 +10,7 @@ import pytest
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]
-SDK_ROOT = REPOSITORY / "sdk" / "python"
+SDK_ROOT = REPOSITORY / "sdk" / "python" / "deeptwin_ext" / "src"
 if str(SDK_ROOT) not in sys.path:
     sys.path.insert(0, str(SDK_ROOT))
 

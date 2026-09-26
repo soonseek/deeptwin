@@ -1,0 +1,9 @@
+DeepTwin
+Copyright 2026 The DeepTwin Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Release images bundle third-party components under their own licenses. Their
+inventory is docs/release/third-party-notices.md; per-image NOTICE files,
+license texts and source offers are assembled with each release image
+(T081/T082) and are not part of this file.

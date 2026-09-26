@@ -912,7 +912,7 @@ print(json.dumps(value))
 '''
     completed = subprocess.run(
         [sys.executable, "-I", "-c", "import sys; sys.path.insert(0, "
-         + repr(str(REPOSITORY / "sdk" / "python")) + ");" + script],
+         + repr(str(REPOSITORY / "sdk" / "python" / "deeptwin_ext" / "src")) + ");" + script],
         cwd=REPOSITORY,
         capture_output=True,
         text=True,
@@ -922,7 +922,7 @@ print(json.dumps(value))
     assert completed.returncode == 0, completed.stderr
     assert ExtensionManifest.from_mapping(json.loads(completed.stdout)).extension_id == \
         "org.example.sdk-tool"
-    for source in (REPOSITORY / "sdk" / "python" / "deeptwin_ext").glob("*.py"):
+    for source in (REPOSITORY / "sdk" / "python" / "deeptwin_ext" / "src" / "deeptwin_ext").glob("*.py"):
         text = source.read_text(encoding="utf-8")
         assert "from app" not in text and "import app" not in text
 
