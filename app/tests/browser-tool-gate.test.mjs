@@ -24,6 +24,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { closeOwnedFixture, waitForOwnedChildOutput } from './helpers/owned-fixture-lifecycle.mjs';
+import { openRunFromList } from './helpers/run-list.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const base = `/${'2'.repeat(32)}/`;
@@ -102,7 +103,7 @@ async function gatedRun(page, seed, graphRef, workRef) {
 }
 
 async function choose(page, runId) {
-  await page.getByRole('combobox', { name: '관제할 실행 선택' }).selectOption(runId);
+  await openRunFromList(page, runId);
   await page.locator(`#run-panel[data-run-id="${runId}"]`).waitFor();
 }
 

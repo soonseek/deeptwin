@@ -200,3 +200,34 @@ test('the page holds only the log and the export entry, and links export to the 
   assert.equal(link.getAttribute('href'), './work.html#work-records');
   assert.equal(nodes[MOUNT_IDS.logs].children.length, 0);  // no log without a session
 });
+
+test('UI phase 5: the filter reads from the hash, and kind and period narrow the log honestly', async () => {
+  const { EVENT_GROUPS } = await import('../static/ui-format.mjs');
+  const { PERIODS, filterFrom, filterHash } = await import('../static/records-page.mjs');
+  const RUN = '00000000-0000-4000-8000-00000000aaa1';
+  const WORK = '00000000-0000-4000-8000-00000000bbb1';
+  assert.deepEqual({ ...filterFrom(`#run=${RUN}&kind=run&period=7d`) }, { runId: RUN, workId: null, kind: 'run', period: '7d' });
+  // one subject at a time: a run wins over a work; unknown kinds and periods are no filter
+  assert.deepEqual({ ...filterFrom(`#run=${RUN}&work=${WORK}&kind=nope&period=2y`) }, { runId: RUN, workId: null, kind: null, period: null });
+  assert.equal(filterHash({ workId: WORK, kind: 'design', period: '24h' }), `#work=${WORK}&kind=design&period=24h`);
+  assert.equal(filterHash({}), '');
+  assert.deepEqual(PERIODS.map(([id]) => id), ['', '1h', '24h', '7d', '30d']);
+  // the kind goes to the server as its event types; the work as work_id; the period is applied here
+  const root = new FakeElement('section');
+  const asked = [];
+  const now = Date.parse('2026-09-26T00:00:00Z');
+  const old = event(1, { event_type: 'work.created', observed_at_utc: '2026-09-01T00:00:00.000000Z' });
+  const recent = event(2, { event_type: 'work.revised', observed_at_utc: '2026-09-25T23:00:00.000000Z', public_metadata: { revision: 2 } });
+  const replies = [{ events: [old, recent], next_cursor: 'c2', gap: null }, { events: [], next_cursor: 'c2', gap: null }];
+  const request = async (path, options) => { asked.push([path, options]); return replies.shift(); };
+  const log = createEventLog({ root, document: { createElement: tag => new FakeElement(tag) }, request,
+    filter: { workId: WORK, kind: 'work', period: '7d' }, now: () => now, heading: false });
+  await log.load();
+  const group = EVENT_GROUPS.find(item => item.id === 'work');
+  assert.deepEqual(asked[0], ['/api/v1/events', { query: { limit: PAGE_SIZE, work_id: WORK, event_type: [...group.types] } }]);
+  assert.equal(log.shown, 1);
+  assert.equal(log.scanned, 2);
+  assert.match(root.textContent, /불러온 사건 2개 중 기간에 맞는 1개/);
+  assert.equal(root.findAll(el => el.tagName === 'H2').length, 0);
+  assert.equal(root.findAll(el => el.tagName === 'LI' && el.getAttribute('data-event-type')).length, 1);
+});

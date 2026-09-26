@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { closeOwnedFixture, waitForOwnedChildOutput } from './helpers/owned-fixture-lifecycle.mjs';
+import { openRunFromList } from './helpers/run-list.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const base = `/${'2'.repeat(32)}/`;
@@ -186,7 +187,7 @@ test('settings holds the sections moved off the records page, one panel at a tim
       return run.run_id;
     }, { base, seed });
     await page.reload();
-    await page.getByRole('combobox', { name: '관제할 실행 선택' }).selectOption(runId);
+    await openRunFromList(page, runId);
     await bar.waitFor();
     assert.equal((await bar.textContent()).trim(), `실행${runId.slice(0, 8)}`);
     assert.doesNotMatch(await bar.textContent(), /운영|설계 검토|격리 실험|과거 기록/, 'no mode is guessed');

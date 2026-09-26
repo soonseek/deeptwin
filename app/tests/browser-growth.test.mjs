@@ -57,6 +57,9 @@ async function openVersions() {
 const section = name => page.locator(`#versions section[aria-label="${name}"]`);
 const experiment = lineage => section('성장 실험').locator('p', { hasText: `계보 ${lineage.slice(0, 8)}` });
 const candidate = ref => section('후보').locator('article', { hasText: short(ref) });
+// UI phase 5: the owner's decisions on a candidate, apply and rollback sit in the 승인·적용·롤백 tab
+const decision = ref => section('승인·적용·롤백').locator('article', { hasText: short(ref) });
+const showTab = name => page.getByRole('tab', { name: new RegExp(`^${name}`) }).click();
 const current = async () => section('운영 버전').textContent();
 
 describe('US6 growth chain in the real browser (synthetic test-actor evidence)', { timeout: 600000 }, () => {
@@ -155,9 +158,12 @@ describe('US6 growth chain in the real browser (synthetic test-actor evidence)',
   });
 
   it('G-11: an early-stop candidate cannot be put into operation without separate validation and exact approval', async () => {
+    await showTab('승인·적용·롤백');
     const early = candidate(seed.early.bundle_ref).filter({ hasText: '(shadow)' });
     assert.match(await early.textContent(), /검증 passed \(shadow\).*봉인 검증을 통과하지 못한 후보는 승인할 수 없습니다/);
-    assert.equal(await early.getByRole('button', { name: '승인' }).count(), 0);
+    const earlyChoice = decision(seed.early.bundle_ref).filter({ hasText: '(shadow)' });
+    assert.equal(await earlyChoice.count(), 1);
+    assert.equal(await earlyChoice.getByRole('button', { name: '승인' }).count(), 0);
     // even recorded through the route, an approve over tuning-only evidence never applies
     const recorded = await api('/decisions', { command_id: crypto.randomUUID(), decision: 'approve',
       validation_report_ref: seed.early.validation_report_ref });
@@ -166,7 +172,7 @@ describe('US6 growth chain in the real browser (synthetic test-actor evidence)',
     const refused = await api('/activate', { approval_ref: recorded.body.approval_ref, expected_revision: before.body.state.revision });
     assert.equal(refused.status, 409);
     // a separately validated candidate still needs the owner's approval: no apply control, no apply without one
-    const p = candidate(seed.candidates.P.bundle_ref);
+    const p = decision(seed.candidates.P.bundle_ref);
     assert.equal(await p.getByRole('button', { name: '승인', exact: true }).count(), 1);
     assert.equal(await p.getByRole('button', { name: '승인한 이 버전 적용' }).count(), 0);
     const unapproved = await api('/activate', { approval_ref: seed.candidates.P.report_record, expected_revision: before.body.state.revision });
@@ -175,9 +181,11 @@ describe('US6 growth chain in the real browser (synthetic test-actor evidence)',
   });
 
   it('G-12: a candidate edited after its sealed data was reviewed gets no unseen pass', async () => {
+    await showTab('승인·적용·롤백');
     const q = candidate(seed.candidates.Q.bundle_ref);
     assert.match(await q.textContent(), /검증 failed \(sealed_offline\).*미관측 전이: fail · 비교 라운드 1개 · 새 사례 전이에서 필수 출처가 빠짐/);
-    assert.equal(await q.getByRole('button', { name: '승인', exact: true }).count(), 0);
+    assert.equal(await decision(seed.candidates.Q.bundle_ref).count(), 1);
+    assert.equal(await decision(seed.candidates.Q.bundle_ref).getByRole('button', { name: '승인', exact: true }).count(), 0);
     // the edited Q' exists as a frozen bundle but has no report: nothing to decide over
     assert.equal(await candidate(seed.edited_q.bundle_ref).count(), 0);
     assert.equal(seed.edited_q.sealed_q_classification, 'tuning');
@@ -188,8 +196,9 @@ describe('US6 growth chain in the real browser (synthetic test-actor evidence)',
   it('G-13 and rollback: a moved version fails the conditional apply; nothing else is promoted; rollback states its reason', async () => {
     const operating = short(seed.operating_environment_ref);
     assert.match(await current(), new RegExp(`지금 운영: ${operating.replace(/[()]/g, '\\$&')} · 수정본 1`));
-    const p = candidate(seed.candidates.P.bundle_ref);
-    const r = candidate(seed.candidates.R.bundle_ref);
+    const p = decision(seed.candidates.P.bundle_ref);
+    const r = decision(seed.candidates.R.bundle_ref);
+    await showTab('승인·적용·롤백');
     await p.getByRole('button', { name: '승인', exact: true }).click();
     await p.getByRole('button', { name: '승인한 이 버전 적용' }).waitFor();
     await r.getByRole('button', { name: '승인', exact: true }).click();
@@ -204,7 +213,7 @@ describe('US6 growth chain in the real browser (synthetic test-actor evidence)',
     // rollback needs a stated reason and does not claim to undo what went outside
     await page.getByRole('button', { name: '이전 버전으로 되돌리기' }).click();
     await page.locator('#versions [role=status][data-state=invalid_input]').waitFor();
-    assert.match(await current(), /이미 보낸 것·게시한 것은 되돌리지 않습니다/);
+    assert.match(await section('롤백').textContent(), /이미 보낸 것·게시한 것은 되돌리지 않습니다/);
     await page.locator('#versions-rollback-reason').fill('합성 사례: 적용 뒤 보고서 품질 저하');
     await page.getByRole('button', { name: '이전 버전으로 되돌리기' }).click();
     await page.locator('#versions [role=status][data-state=rolled_back]').waitFor();

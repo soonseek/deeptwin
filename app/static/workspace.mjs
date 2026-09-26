@@ -20,6 +20,11 @@
 // (`POST design-requests`) — only where the instance has a qualified lens decision; where
 // it has none (production: no lens is qualified) the section states that exact reason and
 // offers no button. A persisted request the instance cannot rebuild is listed with why.
+// UI phase 5 (redesign §5.1): on the work page this is step ③ 환경 제안. With a `workId` source
+// it shows the design requests of that work (each listing item names its work) and any request
+// whose work is not a saved work of this instance (`knownWorks`), labelled so; the create action
+// is `환경 제안받기` (UX-D06). `onChange` hears every read and command, so the page can move its
+// steps; `facts()` says what the step summary needs.
 
 import { compareGraphs, createGraphView, differenceSummary, focusDifference, unionNodeIds } from './graph.mjs';
 
@@ -47,6 +52,7 @@ export const CREATION_TEXT = Object.freeze({
   needsModel: '수락한 작업 모델이 있어야 설계 요청을 만들 수 있습니다. 위의 작업 모델을 만들고 수락해 주세요.',
   ready: '수락한 작업 모델로 설계 요청을 만듭니다. 이 인스턴스의 렌즈 결정은 다음 출처입니다:',
 });
+export const CREATE_LABEL = '환경 제안받기';
 export const RUN_OUTCOMES = Object.freeze({ filled: '기본 3안을 채움', shortfall: '부족', cancelled: '소유자가 취소함' });
 
 // one design-arc run as recorded: its outcome, rounds, model calls, refusals and what stayed unreviewed
@@ -106,7 +112,8 @@ export function qualificationText(preparation) {
   return `평가자 구성의 자격: ${QUALIFICATION_LABELS[q.status] ?? q.status} (${q.status}: ${q.reason})${simulated}`;
 }
 
-export function createDesignWorkspace({ root, document, request, basePath = '/', commandId, workModel = () => null } = {}) {
+export function createDesignWorkspace({ root, document, request, basePath = '/', commandId, workModel = () => null,
+  workId = null, knownWorks = () => null, onChange = () => {}, onPrepared = () => {} } = {}) {
   if (typeof root?.replaceChildren !== 'function') fail('a root is required');
   if (typeof request !== 'function') fail('a request adapter is required');
   if (typeof commandId !== 'function') fail('a command id source is required');
@@ -133,8 +140,11 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
   const derived = element('section', undefined, { class: 'design-derivations', 'aria-label': '새 설계 버전' });
   const arc = element('section', undefined, { class: 'design-generation', 'aria-label': '후보 생성' });
   const creator = element('section', undefined, { class: 'design-create', 'aria-label': '설계 요청 만들기' });
-  root.replaceChildren(element('h2', '설계 후보 비교'), status, creator, picker, arc, summary, compare, derived);
+  const scoped = typeof workId === 'function';
+  const title = element(scoped ? 'h3' : 'h2', '설계 후보 비교');
+  root.replaceChildren(title, status, creator, picker, arc, summary, compare, derived);
   let listed = null;
+  let shown = [];  // the listing's requests this surface offers
   let creating = false;
   let generating = false;
   picker.hidden = true;
@@ -147,6 +157,32 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
   function say(text, state) {
     status.textContent = text;
     status.dataset.state = state;
+  }
+
+  function changed() {
+    try { onChange(facts()); } catch { /* the page's own redraw never breaks this surface */ }
+  }
+
+  // what step ③'s summary needs: the requests shown and the pool of the one on screen
+  function facts() {
+    return Object.freeze({ requests: shown.length, presented: view?.pool?.presented_count ?? null,
+      requestId, creation: listed?.creation ?? null });
+  }
+
+  // a work page shows its own work's requests, and those of no saved work (named so)
+  function belongs(item) {
+    if (!scoped) return true;
+    const current = workId();
+    if (typeof item?.work_id !== 'string') return true;
+    if (item.work_id === current) return true;
+    const known = knownWorks();
+    // without the list of saved works nothing can be called another work's: shown, and labelled
+    return !(known instanceof Set) || !known.has(item.work_id);
+  }
+
+  function requestLabel(item) {
+    const own = !scoped || item.work_id === workId() || typeof item?.work_id !== 'string';
+    return `설계 요청 ${item.request_id.slice(0, 8)}${own ? '' : ' · 저장된 업무와 연결되지 않음'}`;
   }
 
   function refusal(error) {
@@ -376,6 +412,7 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
       requestId = id;
       render();
       say(`설계 요청 ${id.slice(0, 8)}의 후보를 보여 줍니다.`, 'shown');
+      changed();
       return view;
     } catch (error) {
       say(ERROR_TEXT[error?.code] ?? ERROR_TEXT.unavailable, error?.code ?? 'unavailable');
@@ -416,6 +453,8 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
       const value = await command('preparations', { schema_version: 'design-prepare-command-v1', candidate_id: candidateId });
       outcome.textContent = `환경 버전 ${value.environment_version.version}을 준비했습니다. 준비는 활성화가 아니며 작업을 시작하지 않습니다.`;
       outcome.dataset.state = 'prepared';
+      try { onPrepared(value); } catch { /* the page's own reads never undo a preparation */ }
+      changed();
       return value;
     } catch (error) {
       outcome.textContent = `준비하지 않았습니다: ${refusal(error)}`;
@@ -426,7 +465,7 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
 
   // --- creating a request from the accepted work model (T038) -----------------------------
   function renderCreation() {
-    const parts = [element('h3', '설계 요청 만들기')];
+    const parts = scoped ? [] : [element('h3', '설계 요청 만들기')];
     const creation = listed?.creation;
     const model = workModel();
     const outcome = element('p', '', { role: 'status', class: 'design-create-status' });
@@ -442,8 +481,8 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
       parts.push(element('p', CREATION_TEXT.needsModel, { 'data-state': 'needs_work_model' }));
     } else {
       parts.push(element('p', `${CREATION_TEXT.ready} ${creation.source}`),
-        button('이 작업 모델로 설계 요청 만들기', () => createRequest(model.work_model_id, outcome),
-          { 'data-command': 'create-request' }));
+        button(CREATE_LABEL, () => createRequest(model.work_model_id, outcome),
+          { 'data-command': 'create-request', class: shown.length ? 'btn btn-secondary' : 'btn btn-primary step-action' }));
     }
     for (const item of listed.unrestorable ?? []) {
       parts.push(element('p', `설계 요청 ${item.request_id.slice(0, 8)}을 저장된 기록에서 다시 만들지 못했습니다: ${item.reason}`,
@@ -451,6 +490,8 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
     }
     parts.push(outcome);
     creator.replaceChildren(...parts);
+    // once this work has a request, creating another is a quiet second path under the pool
+    creator.dataset.hasRequests = shown.length ? 'true' : 'false';
   }
 
   async function createRequest(workModelId, outcome) {
@@ -479,24 +520,31 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
       listed = await request(api, {});
     } catch (error) {
       say(ERROR_TEXT[error?.code] ?? ERROR_TEXT.unavailable, error?.code ?? 'unavailable');
+      changed();
       return null;
     }
-    picker.replaceChildren(...listed.requests.map(item => element('option', `설계 요청 ${item.request_id.slice(0, 8)}`,
-      { value: item.request_id })));
-    picker.hidden = listed.requests.length < 2;
+    shown = (Array.isArray(listed.requests) ? listed.requests : []).filter(belongs);
+    picker.replaceChildren(...shown.map(item => element('option', requestLabel(item), { value: item.request_id })));
+    picker.hidden = shown.length < 2;
+    title.hidden = scoped && !shown.length;
     renderCreation();
-    if (!listed.requests.length) {
+    if (!shown.length) {
+      view = null;
+      requestId = null;
+      arc.replaceChildren();
       summary.replaceChildren();
       compare.replaceChildren();
       derived.replaceChildren();
-      say('이 인스턴스에 비교할 설계 요청이 없습니다.', 'empty');
+      // on the work page the create action (or why it cannot run) is the whole step
+      if (scoped) say('', 'empty'); else say('이 인스턴스에 비교할 설계 요청이 없습니다.', 'empty');
+      changed();
       return null;
     }
-    const chosen = listed.requests.find(item => item.request_id === preferred) ?? listed.requests[0];
+    const chosen = shown.find(item => item.request_id === preferred) ?? shown[0];
     picker.value = chosen.request_id;
     return show(chosen.request_id);
   }
 
   return Object.freeze({ load, show, derive, review: reviewDerivation, prepare: prepareCandidate,
-    create: createRequest, refreshCreation: renderCreation });
+    create: createRequest, refreshCreation: renderCreation, facts });
 }

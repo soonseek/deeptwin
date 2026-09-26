@@ -10,9 +10,13 @@
 // timeline markers) and the DOM half (`createFeedbackControl`: two toggle buttons with
 // aria-pressed, an optional memo, an explicit save, a clear and a saved state) live here. All
 // text reaches the DOM through textContent.
+//
+// UI phase 5: every revision stays on the server (`history`); the control shows a small "이전 기록
+// N건" disclosure — N from the target's own revision number — that reads the earlier revisions
+// (mark, memo, time; a clear says so) only when the owner opens it.
 
 import { FEEDBACK_MARK_LABELS, FEEDBACK_MARK_TONES, relativeTime, absoluteTime } from './ui-format.mjs';
-import { el } from './ui-parts.mjs';
+import { el, timeStamp } from './ui-parts.mjs';
 
 export const FEEDBACK_SCHEMA = 'process-feedback-command-v1';
 export const LIST_SCHEMA = 'process-feedback-list-v1';
@@ -166,6 +170,33 @@ export function feedbackSummary(feedback) {
     attention, ok, memo, run, tone: run?.mark === 'needs_attention' || attention ? 'warn' : 'ok' });
 }
 
+// how many earlier records one target has: every revision before the one shown (a cleared
+// target shows none, so all its revisions — the clear included — are earlier records)
+export function earlierCount(latest) {
+  if (!latest || !Number.isSafeInteger(latest.revision) || latest.revision < 1) return 0;
+  return latest.state === 'set' ? latest.revision - 1 : latest.revision;
+}
+
+// the earlier revisions of one target from the server's history, newest first
+export function earlierRevisions(history, target, latest = null) {
+  const key = targetKey(target);
+  return (Array.isArray(history) ? history : [])
+    .filter(item => { try { return targetKey(item.target) === key; } catch { return false; } })
+    .filter(item => !(latest?.state === 'set' && item.revision === latest.revision))
+    .sort((a, b) => b.revision - a.revision);
+}
+
+export function historyLine(item) {
+  if (item.state === 'cleared') return `수정본 ${item.revision} · 지움`;
+  const parts = [`수정본 ${item.revision}`];
+  parts.push(item.mark ? FEEDBACK_MARK_LABELS[item.mark] ?? item.mark : '표시 없음');
+  if (typeof item.memo === 'string' && item.memo) {
+    const memo = [...item.memo].length > 80 ? `${[...item.memo].slice(0, 79).join('')}…` : item.memo;
+    parts.push(`메모 “${memo}”`);
+  }
+  return parts.join(' · ');
+}
+
 // "저장됨 · 3분 전" (the absolute local time rides as the title)
 export function savedText(item, now = Date.now()) {
   if (!item) return '';
@@ -177,7 +208,7 @@ export function savedText(item, now = Date.now()) {
 
 // `onSave({ mark, memo })` and `onClear()` resolve once the server recorded the revision (the
 // caller re-renders the control through `show`); a refusal rejects with the server's code
-export function createFeedbackControl({ document, idPrefix, onSave, onClear, now = () => Date.now() } = {}) {
+export function createFeedbackControl({ document, idPrefix, onSave, onClear, onHistory = null, now = () => Date.now() } = {}) {
   if (typeof document?.createElement !== 'function') fail('a document is required');
   if (typeof idPrefix !== 'string' || !/^[a-z][a-z0-9-]*$/.test(idPrefix)) fail('an id prefix is required');
   if (typeof onSave !== 'function' || typeof onClear !== 'function') fail('save and clear are required');
@@ -206,8 +237,30 @@ export function createFeedbackControl({ document, idPrefix, onSave, onClear, now
   const clear = el(document, 'button', { className: 'btn btn-quiet feedback-clear', text: '지우기', attrs: { type: 'button' } });
   const status = el(document, 'p', { className: 'feedback-status', attrs: { role: 'status', 'aria-live': 'polite' } });
   const actions = el(document, 'div', { className: 'feedback-actions' }, [save, clear, status]);
+  const historySummary = el(document, 'summary', { text: '' });
+  const historyList = el(document, 'ol', { attrs: { 'aria-label': '이전 피드백 기록' } });
+  const history = el(document, 'details', { className: 'feedback-history' }, [historySummary, historyList]);
+  history.hidden = true;
   const root = el(document, 'section', { className: 'feedback-box', attrs: { 'data-feedback-for': idPrefix } },
-    [el(document, 'div', { className: 'feedback-head' }, [title, hint]), marks, memoBox, actions]);
+    [el(document, 'div', { className: 'feedback-head' }, [title, hint]), marks, memoBox, actions, history]);
+  let latest = null;    // the target's latest revision, set or cleared (for "이전 기록 N건")
+  let historyTurn = 0;
+
+  async function readHistory() {
+    if (typeof onHistory !== 'function' || !history.open) return;
+    const mine = ++historyTurn;
+    historyList.replaceChildren(el(document, 'li', { text: '이전 기록을 읽는 중…' }));
+    try {
+      const items = await onHistory(latest);
+      if (mine !== historyTurn) return;
+      historyList.replaceChildren(...(items.length ? items.map(item => el(document, 'li', { attrs: { 'data-revision': String(item.revision) } }, [
+        el(document, 'span', { text: historyLine(item) }), timeStamp(document, item.recorded_at_utc, { now: now() })]))
+        : [el(document, 'li', { text: '이전 기록이 없습니다.' })]));
+    } catch {
+      if (mine === historyTurn) historyList.replaceChildren(el(document, 'li', { text: '이전 기록을 읽지 못했습니다.' }));
+    }
+  }
+  history.addEventListener('toggle', () => { readHistory(); });
 
   let saved = null;     // the target's current feedback (null: none or cleared)
   let mark = null;      // the owner's pick on screen
@@ -293,10 +346,15 @@ export function createFeedbackControl({ document, idPrefix, onSave, onClear, now
 
   // show one target's current feedback; `keepDraft` keeps an unsaved edit the owner is making
   // (another place of the page saved, and this control's own draft must not be lost)
-  function show({ heading, item = null, keepDraft = false } = {}) {
+  function show({ heading, item = null, keepDraft = false, last = null } = {}) {
     title.textContent = heading ?? '';
     root.setAttribute('aria-label', `${heading ?? ''}에 대한 피드백`);
     saved = item ?? null;
+    latest = last ?? item ?? null;
+    const earlier = typeof onHistory === 'function' ? earlierCount(latest) : 0;
+    history.hidden = earlier === 0;
+    historySummary.textContent = `이전 기록 ${earlier}건`;
+    if (history.open) readHistory();
     if (!(keepDraft && dirty)) {
       note = null;
       mark = saved?.mark ?? null;
@@ -309,5 +367,5 @@ export function createFeedbackControl({ document, idPrefix, onSave, onClear, now
 
   refresh();
   return Object.freeze({ root, show, get mark() { return mark; }, get dirty() { return dirty; },
-    get saved() { return saved; }, buttons, area, save, clear, status });
+    get saved() { return saved; }, buttons, area, save, clear, status, history });
 }

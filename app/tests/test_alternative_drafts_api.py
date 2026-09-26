@@ -121,6 +121,31 @@ def test_whole_coverage_only_when_the_owner_says_so(tmp_path):
         assert whole["unreviewed_scope"] == "none"
 
 
+def test_the_listing_names_each_frozen_alternative_so_a_screen_can_reopen_it(tmp_path):
+    """UI phase 5: every freeze stays its own alternative (one per command); the drafts listing
+    and read name each one — its id, the revision it sealed, its coverage and time — so the
+    run screen reopens an existing difference after a reload instead of freezing again."""
+    executor = Executor()
+    with owner_app(tmp_path, executor) as subject:
+        run_id, ref = started(subject, executor, [("report", "text/plain", TEXT)])
+        artifact_id = artifact_identity(ref, 0)
+        draft = save(subject, run_id, artifact_id, format="text", text="첫 줄\n고친 둘째 줄\n셋째 줄\n").json()
+        listed = get(subject, drafts_path(run_id, artifact_id)).json()
+        assert listed["drafts"][0]["frozen_alternatives"] == [] and listed["drafts"][0]["frozen_revisions"] == []
+        first = freeze(subject, run_id, artifact_id, draft["draft_id"], 1).json()
+        again = freeze(subject, run_id, artifact_id, draft["draft_id"], 1).json()
+        assert first["alternative_ref"]["id"] != again["alternative_ref"]["id"]  # the server's design
+        listed = get(subject, drafts_path(run_id, artifact_id)).json()["drafts"][0]
+        read = get(subject, drafts_path(run_id, artifact_id) + f"/{draft['draft_id']}").json()
+        for value in (listed, read):
+            assert value["frozen_revisions"] == [1, 1]
+            items = value["frozen_alternatives"]
+            assert sorted(item["alternative_id"] for item in items) == sorted(
+                [first["alternative_ref"]["id"], again["alternative_ref"]["id"]])
+            assert all(set(item) == {"alternative_id", "revision", "coverage", "frozen_at_utc"} for item in items)
+            assert all(item["revision"] == 1 and item["coverage"] == "partial" for item in items)
+
+
 def test_unchanged_copies_wrong_formats_and_closed_wire_are_refused(tmp_path):
     executor = Executor()
     with owner_app(tmp_path, executor) as subject:

@@ -11,7 +11,13 @@
 // means and are approved or rejected here as the owner's own recorded decision over
 // the exact boundary shown (its digest travels with the command).
 
+// UI phase 5 (redesign §5.6): the page is four tabs — 운영 버전 · 후보 · 실험 · 승인·적용·롤백 — each with
+// a plain empty state. The candidates tab shows what validation recorded; the owner's decisions
+// (approve / reject / defer), applying an approved candidate and the rollback sit together in the
+// last tab. The functions and their commands are unchanged.
+
 import { renderBoundaries, renderRounds } from './experiments.mjs';
+import { el, emptyState, tabs } from './ui-parts.mjs';
 
 const BASE_PATH = /^\/(?:[0-9a-f]{32}\/)?$/;
 
@@ -31,9 +37,13 @@ export const GATE_LABELS = Object.freeze({
 });
 
 export const MESSAGES = Object.freeze({
-  noState: '운영 버전이 아직 채택되지 않았습니다. 설계 승인으로 준비된 환경을 채택하면 여기에서 버전을 관리합니다.',
+  noState: '아직 운영 버전이 없습니다. 새 환경에서는 정상입니다.',
+  noStateNext: '설계 승인으로 준비된 환경을 운영 버전으로 채택하면 여기에서 버전과 이력을 봅니다.',
   noCandidates: '검증을 마친 후보가 없습니다.',
+  noCandidatesNext: '변경 후보가 검증을 마치면 게이트마다 기록된 결과와 함께 여기에 나옵니다.',
   noExperiments: '기록된 성장 실험이 없습니다.',
+  noDecisions: '결정할 후보도, 되돌릴 이전 버전도 없습니다.',
+  noDecisionsNext: '검증을 마친 후보는 여기에서 승인·거절·보류하고, 승인한 것만 따로 적용합니다.',
   notApprovable: '봉인 검증을 통과하지 못한 후보는 승인할 수 없습니다. 거절하거나 보류할 수 있습니다.',
   rollbackReason: '되돌리는 이유를 적어 주세요.',
   rollbackNote: '되돌리면 이전 버전의 번들로 돌아갈 뿐, 이미 보낸 것·게시한 것은 되돌리지 않습니다.',
@@ -67,6 +77,10 @@ export const budgetText = budget => {
 
 const short = ref =>(ref && typeof ref.id === 'string' ? `${ref.kind} ${ref.id.slice(0, 8)} (${ref.sha256.slice(0, 12)})` : '없음');
 
+export const TABS = Object.freeze([
+  ['current', '운영 버전'], ['candidates', '후보'], ['experiments', '실험'], ['decisions', '승인·적용·롤백'],
+]);
+
 export function createVersionsPanel({ root, document, request, basePath = '/', crypto } = {}) {
   if (typeof root?.replaceChildren !== 'function') fail('a root is required');
   if (typeof request !== 'function') fail('a request adapter is required');
@@ -89,7 +103,17 @@ export function createVersionsPanel({ root, document, request, basePath = '/', c
   const experiments = element('section', undefined, { 'aria-label': '성장 실험' });
   const boundaries = element('section', undefined, { 'aria-label': '도구 효과 경계' });
   const rounds = element('section', undefined, { 'aria-label': '비교 라운드' });
-  root.replaceChildren(element('h2', '버전'), status, current, candidates, experiments, boundaries, rounds);
+  const decisions = element('section', undefined, { 'aria-label': '승인·적용·롤백' });
+  const rollbackBox = element('section', undefined, { 'aria-label': '롤백' });
+  const panels = {
+    current: el(document, 'div', { className: 'versions-panel' }, [current]),
+    candidates: el(document, 'div', { className: 'versions-panel' }, [candidates]),
+    experiments: el(document, 'div', { className: 'versions-panel' }, [experiments, rounds, boundaries]),
+    decisions: el(document, 'div', { className: 'versions-panel' }, [decisions, rollbackBox]),
+  };
+  const tabBar = tabs(document, { label: '버전·실험 보기', idPrefix: 'versions', selected: 'current',
+    items: TABS.map(([id, label]) => ({ id, label, panel: panels[id] })) });
+  root.replaceChildren(element('h2', '버전'), status, tabBar.root);
   let plans = [];
 
   function say(text, state) {
@@ -114,7 +138,8 @@ export function createVersionsPanel({ root, document, request, basePath = '/', c
 
   function renderCurrent() {
     if (view.state === null) {
-      current.replaceChildren(element('h3', '운영 버전'), element('p', MESSAGES.noState));
+      current.replaceChildren(element('h3', '운영 버전'), emptyState(document, { missing: MESSAGES.noState, next: MESSAGES.noStateNext }));
+      rollbackBox.replaceChildren();
       return;
     }
     const state = view.state;
@@ -122,23 +147,29 @@ export function createVersionsPanel({ root, document, request, basePath = '/', c
     for (const item of state.history) {
       history.append(element('li', `${short(item.environment_ref)} · ${item.lifecycle === 'retired' ? '이전 운영' : '되돌림으로 내림'}`));
     }
-    const parts = [element('h3', '운영 버전'), element('p', `지금 운영: ${short(state.current_environment_ref)} · 수정본 ${state.revision}`),
-      element('h4', '이력'), state.history.length ? history : element('p', '이전 버전이 없습니다.')];
+    current.replaceChildren(element('h3', '운영 버전'), element('p', `지금 운영: ${short(state.current_environment_ref)} · 수정본 ${state.revision}`),
+      element('h4', '이력'), state.history.length ? history : element('p', '이전 버전이 없습니다.'));
+    // the rollback is a decision: it sits with approve and apply
     if (state.history.some(item => item.lifecycle === 'retired')) {
       const reason = element('textarea', undefined, { id: 'versions-rollback-reason', rows: '2' });
       const go = element('button', '이전 버전으로 되돌리기', { type: 'button' });
       go.addEventListener('click', () => rollback(reason).catch(() => {}));
-      parts.push(element('label', MESSAGES.rollbackReason, { for: 'versions-rollback-reason' }), reason,
-        element('p', MESSAGES.rollbackNote), go);
+      rollbackBox.replaceChildren(element('h3', '롤백'), element('p', `지금 운영: ${short(state.current_environment_ref)} · 수정본 ${state.revision}`),
+        element('label', MESSAGES.rollbackReason, { for: 'versions-rollback-reason' }), reason, element('p', MESSAGES.rollbackNote), go);
+    } else {
+      rollbackBox.replaceChildren(element('h3', '롤백'), element('p', '되돌릴 이전 운영 버전이 없습니다.'));
     }
-    current.replaceChildren(...parts);
   }
 
   function renderCandidates() {
     const parts = [element('h3', '후보')];
-    if (!view.candidates.length) parts.push(element('p', MESSAGES.noCandidates));
+    const choices = [element('h3', '승인·거절·보류와 적용')];
+    if (!view.candidates.length) {
+      parts.push(emptyState(document, { missing: MESSAGES.noCandidates, next: MESSAGES.noCandidatesNext }));
+      choices.push(emptyState(document, { missing: MESSAGES.noDecisions, next: MESSAGES.noDecisionsNext }));
+    }
     for (const item of view.candidates) {
-      const entry = element('article', undefined, { 'aria-label': '후보' });
+      const entry = element('article', undefined, { 'aria-label': '후보', class: 'versions-candidate' });
       if (!item.readable) {
         entry.append(element('p', MESSAGES.unreadable));
         parts.push(entry);
@@ -152,27 +183,33 @@ export function createVersionsPanel({ root, document, request, basePath = '/', c
       }
       entry.append(gates);
       if (!item.approvable) entry.append(element('p', MESSAGES.notApprovable));
+      parts.push(entry);
+      // the owner's decision on the same candidate, in the decisions tab
+      const choice = element('article', undefined, { 'aria-label': '후보 결정', class: 'versions-candidate' });
+      choice.append(element('h4', `${short(item.candidate_bundle_ref)} · 검증 ${item.status} (${item.mode})`));
+      if (!item.approvable) choice.append(element('p', MESSAGES.notApprovable));
       const decisions = [['reject', '거절'], ['defer', '보류']];
       if (item.approvable) decisions.unshift(['approve', '승인']);
       for (const [decision, label] of decisions) {
         const button = element('button', label, { type: 'button' });
         button.addEventListener('click', () => decide(item, decision).catch(() => {}));
-        entry.append(button);
+        choice.append(button);
       }
       const approval = approvals.get(item.validation_report_ref.sha256);
       if (approval && view.state !== null) {
         const apply = element('button', '승인한 이 버전 적용', { type: 'button' });
         apply.addEventListener('click', () => activate(approval).catch(() => {}));
-        entry.append(apply);
+        choice.append(apply);
       }
-      parts.push(entry);
+      choices.push(choice);
     }
     candidates.replaceChildren(...parts);
+    decisions.replaceChildren(...choices);
   }
 
   function renderExperiments() {
     const parts = [element('h3', '성장 실험')];
-    if (!view.experiments.length) parts.push(element('p', MESSAGES.noExperiments));
+    if (!view.experiments.length) parts.push(emptyState(document, { missing: MESSAGES.noExperiments }));
     for (const item of view.experiments) {
       if (!item.readable) {
         parts.push(element('p', `계보 ${item.lineage_id.slice(0, 8)}: 기록을 정확히 다시 읽지 못했습니다.`));
@@ -193,6 +230,12 @@ export function createVersionsPanel({ root, document, request, basePath = '/', c
     renderCandidates();
     renderExperiments();
     renderRounds({ root: rounds, document, rounds: Array.isArray(view.rounds) ? view.rounds : [] });
+    // the tab names carry the counts the owner looks for
+    const counts = { candidates: view.candidates.length, experiments: view.experiments.length };
+    for (const [id, label] of TABS) {
+      const tab = Array.from(tabBar.list.children ?? []).find(item => item.getAttribute?.('id') === `versions-${id}`) ?? null;
+      if (tab && Object.hasOwn(counts, id)) tab.textContent = counts[id] ? `${label} ${counts[id]}` : label;
+    }
   }
 
   function renderPlans() {
@@ -275,6 +318,6 @@ export function createVersionsPanel({ root, document, request, basePath = '/', c
     return next;
   }
 
-  return Object.freeze({ load, decide, decideBoundary, activate, get view() { return view; },
+  return Object.freeze({ load, decide, decideBoundary, activate, tabs: tabBar, get view() { return view; },
     get plans() { return plans; } });
 }

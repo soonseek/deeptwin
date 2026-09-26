@@ -52,7 +52,7 @@ test('drafting is explicit, uses the exact model choice ref and shows the whole 
   await model.load();
   assert.equal(asked.length, 1);  // loading reads the connection only; nothing is sent
   assert.match(root.textContent, new RegExp(MESSAGES.transmission.slice(0, 20)));
-  await button(root, '작업 모델 만들기').dispatch('click');
+  await button(root, '업무 이해하기').dispatch('click');
   await flush();
   assert.deepEqual(asked[1], ['/api/v1/connections/claude/model-choice', { method: 'POST', body: { model_id: 'claude-opus-5' } }]);
   assert.deepEqual(asked[2], ['/api/v1/work-models', { method: 'POST', body: {
@@ -66,7 +66,7 @@ test('the owner confirms exactly the draft shown', async () => {
   const { root, asked, model } = panel([connection, { model_choice_ref: choiceRef }, draftView(), connection,
     draftView('confirmed'), connection]);
   await model.load();
-  await button(root, '작업 모델 만들기').dispatch('click');
+  await button(root, '업무 이해하기').dispatch('click');
   await flush();
   await button(root, '이 작업 모델 수락').dispatch('click');
   await flush();
@@ -84,10 +84,10 @@ test('no sources, no connection and refusals are said plainly and nothing is sen
   const unconnected = panel([{ key_present: false, catalog: null }]);
   await unconnected.model.load();
   assert.match(unconnected.root.textContent, new RegExp(MESSAGES.noConnection.slice(0, 15)));
-  assert.equal(button(unconnected.root, '작업 모델 만들기'), undefined);
+  assert.equal(button(unconnected.root, '업무 이해하기'), undefined);
   const refused = panel([connection, { model_choice_ref: choiceRef }, Object.assign(new Error('x'), { code: 'model_output_invalid' }), connection]);
   await refused.model.load();
-  await button(refused.root, '작업 모델 만들기').dispatch('click');
+  await button(refused.root, '업무 이해하기').dispatch('click');
   await flush();
   assert.match(refused.root.textContent, new RegExp(ERROR_MESSAGES.model_output_invalid.slice(0, 20)));
 });

@@ -48,7 +48,8 @@ export async function saveWork(page, url) {
   await page.getByLabel('원본 자료 선택').setInputFiles({ name: '자료.txt', mimeType: 'text/plain',
     buffer: Buffer.from('합성 원본 자료\n') });
   await page.getByRole('button', { name: '이 인스턴스에 저장', exact: true }).click();
-  await page.locator('#work-deletion').getByLabel('자료.txt', { exact: false }).waitFor();
+  // UI phase 5: source deletion sits folded in the work menu; the materials list shows the stored original
+  await page.locator('#materials li', { hasText: '자료.txt' }).filter({ hasText: '원본 보관됨' }).waitFor();
   return page.evaluate(key => JSON.parse(localStorage.getItem(key)).work_id, `deeptwin:intake:${base}`);
 }
 

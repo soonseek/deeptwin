@@ -192,10 +192,11 @@ test('responsiveness under the declared workload', { timeout: 600000 }, async t 
   assert.match(runId, /^[0-9a-f-]{36}$/);
   await page.goto(url + 'observe.html');
   const takeSelection = await watchLongTasks(page);
-  const picker = page.getByRole('combobox', { name: '관제할 실행 선택' });
-  await picker.waitFor();
+  // UI phase 5: the run list table opens the run
+  const link = page.locator(`#run-table a[data-run-id="${runId}"]`).first();
+  await link.waitFor();
   const selectStarted = Date.now();
-  await picker.selectOption(runId);
+  await link.click();
   // the run detail (UI phase 3): the header and the graph's node list; the per-node text rows
   // are folded under the header
   await page.locator('#run-summary .run-title').waitFor();

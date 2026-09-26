@@ -16,6 +16,10 @@
 // While the owner writes, the original stands beside the owner's version on a wide screen
 // (a stylesheet hides it on a narrow one, where the 원본 view shows it). The explicit freeze
 // is named "차이 살펴보기" (UX-D07); what it does is unchanged. "닫기" hands the place back.
+//
+// UI phase 5: the server seals one alternative per freeze command, so pressing "차이 살펴보기" again
+// on the same saved revision (and the same whole/partial claim) reopens the alternative already
+// sealed — named by the drafts listing's `frozen_alternatives` — instead of freezing a second one.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const BASE_PATH = /^\/(?:[0-9a-f]{32}\/)?$/;
@@ -93,6 +97,7 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
   let saving = null;
   let dirty = false;
   let generation = 0;
+  let frozen = [];     // the open draft's sealed alternatives: { alternative_id, revision, coverage }
 
   function element(tag, text, attributes = {}) {
     const node = document.createElement(tag);
@@ -275,10 +280,12 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
         const read = await request(routes.one(runId, artifact.artifactId, latest.draft_id), {});
         if (mine !== generation) return null;
         draft = { draftId: read.draft_id, revision: read.revision };
+        frozen = Array.isArray(read.frozen_alternatives) ? read.frozen_alternatives.filter(item => typeof item?.alternative_id === 'string') : [];
         content = format === 'text' ? String(read.text) : read.rows.map(row => row.map(String));
         say(`${MESSAGES.resumed} (수정본 ${read.revision})`, 'resumed');
       } else {
         draft = null;
+        frozen = [];
         content = format === 'text' ? String(listing.original.text)
           : listing.original.rows.map(row => row.map(String));
         say(MESSAGES.original, 'original');
@@ -305,6 +312,7 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
     saving = (async () => {
       try {
         const saved = await request(routes.list(target.runId, target.artifactId), { method: 'POST', body });
+        if (draft === null || saved.draft_id !== draft.draftId) frozen = [];
         draft = { draftId: saved.draft_id, revision: saved.revision };
         dirty = content !== sent;  // typing during the save keeps the newer text unsaved
         say(dirty ? MESSAGES.unsaved : `자동 저장됨 (수정본 ${saved.revision})`, dirty ? 'dirty' : 'saved');
@@ -335,24 +343,41 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
     if (draft === null) { say(MESSAGES.unchanged, 'invalid_input'); return null; }
     // the content of the exact revision frozen below (unknown when the owner kept typing)
     const frozenContent = dirty ? null : content;
+    const coverage = reviewedWhole === true ? 'whole' : 'partial';
+    const sealed = frozen.find(item => item.revision === draft.revision && item.coverage === coverage);
+    if (sealed && !dirty) {
+      // this exact revision is already sealed with this claim: reopen that alternative's difference
+      result.replaceChildren(element('p', `이 수정본(수정본 ${draft.revision})은 이미 고정했습니다. 같은 대안의 차이를 다시 엽니다.`),
+        element('p', '새 대안은 만들지 않았습니다. 내용을 고쳐 저장하면 새 수정본으로 다시 살펴볼 수 있습니다.'));
+      say(MESSAGES.frozen, 'frozen');
+      if (typeof onFrozen === 'function') {
+        Promise.resolve(onFrozen(target.runId, target.artifactId, sealed.alternative_id, {
+          format: target.format, original: originalContent, mine: content, revision: draft.revision,
+        })).catch(() => {});
+      }
+      return { alternative_ref: { kind: 'own_alternative', id: sealed.alternative_id }, reused: true, coverage };
+    }
     try {
-      const frozen = await request(routes.freeze(target.runId, target.artifactId, draft.draftId), {
+      const sealedNow = await request(routes.freeze(target.runId, target.artifactId, draft.draftId), {
         method: 'POST', body: { schema_version: FREEZE_SCHEMA, command_id: crypto.randomUUID(),
           expected_revision: draft.revision, reviewed_whole: reviewedWhole === true } });
-      const scope = frozen.coverage === 'whole' ? '전체를 내 버전으로 기록했습니다.'
-        : `바꾼 부분 ${frozen.selectors.length}곳을 내 근거로 기록했습니다. 나머지는 검토하지 않은 영역입니다.`;
+      const scope = sealedNow.coverage === 'whole' ? '전체를 내 버전으로 기록했습니다.'
+        : `바꾼 부분 ${sealedNow.selectors.length}곳을 내 근거로 기록했습니다. 나머지는 검토하지 않은 영역입니다.`;
+      if (!dirty && typeof sealedNow?.alternative_ref?.id === 'string') {
+        frozen = [...frozen, { alternative_id: sealedNow.alternative_ref.id, revision: draft.revision, coverage: sealedNow.coverage }];
+      }
       result.replaceChildren(element('p', `${MESSAGES.frozen} (수정본 ${draft.revision})`),
         element('p', scope), element('p', '영향 범위는 따로 조사합니다.'));
       say(MESSAGES.frozen, 'frozen');
       if (typeof onFrozen === 'function') {
         // the exact two contents this freeze compared ride along for the difference view's parts
         // (UI phase 4): the original as recorded and the saved revision just frozen
-        Promise.resolve(onFrozen(target.runId, target.artifactId, frozen.alternative_ref.id, {
+        Promise.resolve(onFrozen(target.runId, target.artifactId, sealedNow.alternative_ref.id, {
           format: frozenContent === null ? null : target.format, original: originalContent, mine: frozenContent,
           revision: draft.revision,
         })).catch(() => {});
       }
-      return frozen;
+      return sealedNow;
     } catch (error) {
       if (error?.code === 'invalid_input') say(MESSAGES.unchanged, 'invalid_input'); else refusal(error);
       throw error;
@@ -367,5 +392,6 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
   }
 
   return Object.freeze({ open, save, freeze, show, close: closeEditor, get view() { return view; },
-    get draft() { return draft; }, get dirty() { return dirty; }, get content() { return content; } });
+    get draft() { return draft; }, get dirty() { return dirty; }, get content() { return content; },
+    get frozen() { return frozen; } });
 }

@@ -445,9 +445,15 @@ export function createArtifactIndex({ root, document, request, basePath = '/', o
   let generation = 0;
   let filter = '';
   let items = [];
+  let loaded = [];
   let nextCursor = null;
+  // UI phase 5 (records filters): one run through the server's `run_id`, or a work's runs
+  // filtered here over the pages read so far (the index has no work filter), said so
+  let scope = { runId: null, runIds: null, label: null };
 
   const status = element('p', MESSAGES.index_idle, { role: 'status', 'aria-live': 'polite' });
+  const scopeNote = element('p', '', { class: 'artifact-scope' });
+  scopeNote.hidden = true;
   const select = element('select', undefined, { 'aria-label': '산출물 형식 필터' });
   for (const [value, label] of INDEX_FILTERS) {
     const option = element('option', label);
@@ -459,7 +465,7 @@ export function createArtifactIndex({ root, document, request, basePath = '/', o
   const more = element('button', '더 보기', { type: 'button' });
   more.disabled = true;
   const note = element('p', MESSAGES.declared, { class: 'artifact-note' });
-  root.replaceChildren(element('h2', '모든 산출물'), status, select, reload, note, list, more);
+  root.replaceChildren(element('h2', '모든 산출물'), scopeNote, status, select, reload, note, list, more);
 
   function row(item) {
     const entry = element('li', undefined, { 'data-artifact-id': item.artifactId, 'data-run-id': item.runId });
@@ -477,7 +483,9 @@ export function createArtifactIndex({ root, document, request, basePath = '/', o
   }
 
   function statusText(page) {
-    const base = items.length ? `산출물 ${page.total}개 중 ${items.length}개 표시` : MESSAGES.index_empty;
+    const base = scope.runIds !== null
+      ? (items.length ? `읽은 산출물 ${loaded.length}개 중 이 업무의 것 ${items.length}개 표시 (전체 ${page.total}개)` : MESSAGES.index_empty)
+      : items.length ? `산출물 ${page.total}개 중 ${items.length}개 표시` : MESSAGES.index_empty;
     const notes = [];
     if (page.runs.unreadable) notes.push(`읽지 못한 실행 ${page.runs.unreadable}개`);
     if (page.runs.omitted) notes.push(`색인 한도 밖의 실행 ${page.runs.omitted}개`);
@@ -488,6 +496,7 @@ export function createArtifactIndex({ root, document, request, basePath = '/', o
     const mine = ++generation;
     const query = { limit: String(INDEX_LIMIT) };
     if (filter) query.media_type = filter;
+    if (scope.runId !== null) query.run_id = scope.runId;
     if (append && nextCursor !== null) query.cursor = nextCursor;
     status.dataset.state = 'loading';
     status.textContent = MESSAGES.index_loading;
@@ -495,7 +504,8 @@ export function createArtifactIndex({ root, document, request, basePath = '/', o
     try {
       const page = indexPage(await request(routes.index, { query }));
       if (mine !== generation) return null;
-      items = append ? [...items, ...page.items] : [...page.items];
+      loaded = append ? [...loaded, ...page.items] : [...page.items];
+      items = scope.runIds !== null ? loaded.filter(item => scope.runIds.has(item.runId)) : loaded;
       nextCursor = page.nextCursor;
       list.replaceChildren(...items.map(row));
       status.dataset.state = items.length ? 'listed' : 'empty';
@@ -529,6 +539,17 @@ export function createArtifactIndex({ root, document, request, basePath = '/', o
       if (!INDEX_FILTERS.some(([known]) => known === value)) fail('unknown filter');
       filter = value;
       select.value = value;
+      nextCursor = null;
+      return read();
+    },
+    // the records page's run or work filter: `{ runId }`, `{ runIds, label }` or nothing
+    setScope({ runId = null, runIds = null, label = null } = {}) {
+      if (runId !== null) requireUuid(runId, 'run id');
+      scope = { runId, runIds: runId === null && runIds instanceof Set ? runIds : null, label };
+      scopeNote.hidden = scope.runId === null && scope.runIds === null;
+      scopeNote.textContent = scope.runId !== null ? `실행 ${shortId(scope.runId)}의 산출물만 봅니다 (서버가 거름).`
+        : scope.runIds !== null ? `${label ?? '고른 업무'}의 실행 ${scope.runIds.size}개가 남긴 산출물만 봅니다. 색인에는 업무 거르기가 없어 지금까지 읽은 쪽 안에서만 걸렀습니다. "더 보기"로 이어 읽습니다.`
+          : '';
       nextCursor = null;
       return read();
     },

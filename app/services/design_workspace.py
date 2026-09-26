@@ -590,6 +590,7 @@ class PersistentDesignWorkspace:
                 "requested_candidate_count": request.requested_candidate_count,
                 "design_disposition": request.design_disposition,
                 "work_model_ref": request.work_target.work_model_ref.as_dict(),
+                "work_revision_ref": request.work_target.work_model.work_revision_ref.as_dict(),
             },
             "pool": {
                 "pool_size": SELECTION_POOL_SIZE,
@@ -676,8 +677,12 @@ class PersistentDesignWorkspace:
                 unrestorable.append({"request_id": request_id, "code": error.code, "reason": error.reason})
         with self._lock:
             registrations = sorted(self._requests.values(), key=lambda item: item.request.request_id)
+        # each request names the work it was designed for (UI phase 5: the work page shows a
+        # work's own requests); the work is the confirmed work model's own revision reference
         return {"requests": [{"request_id": item.request.request_id, "version": item.request.version,
-                              "requested_candidate_count": item.request.requested_candidate_count}
+                              "requested_candidate_count": item.request.requested_candidate_count,
+                              "work_id": item.request.work_target.work_model.work_revision_ref.id,
+                              "work_revision": item.request.work_target.work_model.work_revision_ref.version}
                              for item in registrations],
                 "unrestorable": unrestorable, "creation": self.creation()}
 

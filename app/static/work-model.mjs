@@ -6,6 +6,11 @@
 // marked) and the recommended shape — and the owner accepts or rejects exactly that
 // draft. A work without a retained original cannot be drafted, and the panel says why
 // instead of sending. Server text reaches the DOM through textContent only.
+// UI phase 5 (redesign §5.1, UX-D06): this is step ② 업무 이해; drafting is `업무 이해하기`. With
+// `restore` the panel reopens the latest work model of the saved work after a reload: the
+// `understanding.completed` events name every drafted work model, and the newest whose own
+// revision reference is this work is read back (its state from the server, never assumed). A
+// model made from an older revision says so and does not count as understanding the current one.
 
 const BASE_PATH = /^\/(?:[0-9a-f]{32}\/)?$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -23,7 +28,12 @@ export const MESSAGES = Object.freeze({
   confirmed: '이 작업 모델을 수락했습니다.',
   rejected: '이 작업 모델을 거절했습니다. 설명을 고쳐 저장한 뒤 다시 만들 수 있습니다.',
   blocking: '막힌 미결 사항이 있어 이 작업 모델로는 설계를 시작할 수 없습니다. 설명에 답을 보태 저장한 뒤 다시 만드세요.',
+  older: '이 작업 모델은 수정본 {model}을(를) 이해한 결과입니다. 지금 설명은 수정본 {work}입니다. 다시 이해하면 지금 수정본으로 새 결과를 만듭니다.',
 });
+export const DRAFT_LABEL = '업무 이해하기';
+export const REDRAFT_LABEL = '다시 이해하기';
+export const MAX_RESTORE_PAGES = 20;
+export const MAX_RESTORE_READS = 25;
 
 export const ERROR_MESSAGES = Object.freeze({
   invalid_input: '요청 형식이 맞지 않습니다.',
@@ -46,7 +56,8 @@ function fail(message) {
   throw new Error(message);
 }
 
-export function createWorkModel({ root, document, request, crypto, basePath = '/', work, onChange = () => {} } = {}) {
+export function createWorkModel({ root, document, request, crypto, basePath = '/', work, onChange = () => {},
+  restore = false } = {}) {
   if (typeof root?.replaceChildren !== 'function') fail('a root is required');
   if (typeof request !== 'function') fail('a request adapter is required');
   if (typeof crypto?.randomUUID !== 'function') fail('a UUID source is required');
@@ -55,6 +66,8 @@ export function createWorkModel({ root, document, request, crypto, basePath = '/
   const api = `${basePath.slice(0, -1)}/api/v1`;
   let view = null;
   let busy = false;
+  let restoredFor = null;  // the work whose latest work model was looked up
+  let restoring = null;    // that lookup, awaited by every render until it is done
 
   function element(tag, text, attributes = {}) {
     const node = document.createElement(tag);
@@ -65,7 +78,8 @@ export function createWorkModel({ root, document, request, crypto, basePath = '/
 
   const status = element('p', '', { role: 'status', 'aria-live': 'polite' });
   const body = element('div');
-  root.replaceChildren(element('h2', '작업 모델'), element('p', MESSAGES.intro), status, body);
+  const heading = element(restore ? 'h3' : 'h2', '작업 모델');
+  root.replaceChildren(heading, element('p', MESSAGES.intro, { class: 'work-model-intro' }), status, body);
 
   function say(text, code) {
     status.textContent = text;
@@ -89,7 +103,14 @@ export function createWorkModel({ root, document, request, crypto, basePath = '/
 
   function renderView() {
     const model = view.work_model;
+    const current = work();
+    const modelRevision = model.work_revision_ref?.version;
+    const older = Number.isInteger(modelRevision) && Number.isInteger(current?.revision) && modelRevision !== current.revision;
     const parts = [
+      element('p', Number.isInteger(modelRevision) ? `설명 수정본 ${modelRevision}을(를) 이해한 결과입니다.` : '이해한 결과입니다.',
+        { class: 'work-model-basis' }),
+      ...(older ? [element('p', MESSAGES.older.replace('{model}', String(modelRevision)).replace('{work}', String(current.revision)),
+        { class: 'work-model-older', 'data-state': 'older_revision' })] : []),
       list('목표', model.goals, item => item),
       list('산출물', model.deliverables, item => `${item.description} (${item.media_types.join(', ')} · ${item.min_items}–${item.max_items}개)`),
       list('완료 조건', model.completion_conditions, item => item),
@@ -111,13 +132,50 @@ export function createWorkModel({ root, document, request, crypto, basePath = '/
     return parts;
   }
 
+  // the newest drafted work model of this work, read back from the server (UI phase 5)
+  async function restoreLatest(workId) {
+    const ids = [];
+    let cursor = null;
+    for (let page = 0; page < MAX_RESTORE_PAGES; page += 1) {
+      const value = await request(`${api}/events/understanding.completed`, { query: { limit: '100', ...(cursor ? { cursor } : {}) } });
+      const events = Array.isArray(value?.events) ? value.events : [];
+      for (const event of events) {
+        for (const ref of Array.isArray(event?.object_refs) ? event.object_refs : []) {
+          if (ref?.kind === 'work_model' && typeof ref.id === 'string' && UUID.test(ref.id)) ids.push(ref.id);
+        }
+      }
+      const next = typeof value?.next_cursor === 'string' ? value.next_cursor : null;
+      if (!events.length || next === null || next === cursor) break;
+      cursor = next;
+    }
+    for (const id of [...new Set(ids)].reverse().slice(0, MAX_RESTORE_READS)) {
+      const candidate = await request(`${api}/work-models/${id}`, {});
+      if (candidate?.work_model?.work_revision_ref?.id === workId) return candidate;
+    }
+    return null;
+  }
+
   async function render() {
     const current = work();
     const parts = [];
+    // on the work page's step ② the heading names the result, so it waits for one
+    heading.hidden = restore && view === null;
     if (!current?.work_id || !UUID.test(current.work_id)) {
       body.replaceChildren(element('p', MESSAGES.unsaved));
       return;
     }
+    if (restore && view === null && restoredFor !== current.work_id) {
+      restoredFor = current.work_id;
+      restoring = restoreLatest(current.work_id).then(found => {
+        if (found !== null && view === null && work()?.work_id === current.work_id) {
+          view = found;
+          onChange(view);
+        }
+      }).catch(() => {
+        // nothing restored: the step says what the server holds, and the owner can understand again
+      });
+    }
+    if (restoring !== null) await restoring;
     if (!(current.sources > 0)) {
       body.replaceChildren(element('p', MESSAGES.noSources), ...(view ? renderView() : []));
       return;
@@ -128,13 +186,15 @@ export function createWorkModel({ root, document, request, crypto, basePath = '/
     } catch {
       connection = null;
     }
+    heading.hidden = restore && view === null;
     const models = connection?.key_present && connection.catalog ? connection.catalog.model_ids : [];
     if (!models.length) {
       parts.push(element('p', MESSAGES.noConnection));
     } else {
       const select = element('select', undefined, { id: 'work-model-model', 'aria-label': '작업 모델에 쓸 모델' });
       for (const id of models) select.append(element('option', id, { value: id }));
-      const make = element('button', view ? '작업 모델 다시 만들기' : '작업 모델 만들기', { type: 'button' });
+      const make = element('button', view ? REDRAFT_LABEL : DRAFT_LABEL, { type: 'button',
+        class: view ? 'btn btn-secondary' : 'btn btn-primary step-action', 'data-command': 'draft' });
       make.addEventListener('click', () => draft(select.value));
       parts.push(element('p', MESSAGES.transmission), element('label', '작업 모델에 쓸 모델', { for: 'work-model-model' }), select, make);
     }

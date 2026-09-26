@@ -176,3 +176,18 @@ test('a run.stopped chip is the run outcome; a feedback event says what was mark
   assert.equal(feedback({ scope: 'step', mark: 'none', memo: false, cleared: true, revision: 3 }),
     '과정 피드백을 남겼습니다 (단계 · 지움)');
 });
+
+test('UI phase 5: every event type falls in exactly one "종류" group, each within the server filter bound', async () => {
+  const { EVENT_GROUPS, eventGroupOf } = await import('../static/ui-format.mjs');
+  const seen = new Map();
+  for (const group of EVENT_GROUPS) {
+    assert.ok(group.types.length >= 1 && group.types.length <= 64, group.id);
+    assert.equal(typeof group.label, 'string');
+    for (const type of group.types) seen.set(type, (seen.get(type) ?? 0) + 1);
+  }
+  assert.deepEqual([...seen.keys()].sort(), Object.keys(EVENT_TEXT).sort());
+  assert.ok([...seen.values()].every(count => count === 1));
+  assert.equal(eventGroupOf('run.started').id, 'run');
+  assert.equal(eventGroupOf('feedback.recorded').id, 'approval');
+  assert.equal(eventGroupOf('future.kind'), null);
+});

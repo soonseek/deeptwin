@@ -11,7 +11,7 @@ test('the versions page states an empty operating state honestly', { timeout: 90
   const { page, url, errors } = await open(t);
   await page.goto(url + 'versions.html');
   const root = page.locator('#versions');
-  await root.getByText('운영 버전이 아직 채택되지 않았습니다', { exact: false }).waitFor();
+  await root.getByText('아직 운영 버전이 없습니다. 새 환경에서는 정상입니다.', { exact: false }).waitFor();
   await root.locator('[role=status][data-state=loaded]').waitFor({ state: 'attached' });
   const text = await root.textContent();
   assert.match(text, /검증을 마친 후보가 없습니다/);

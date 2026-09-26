@@ -48,6 +48,14 @@ async function saveWork(page, url, text) {
   await page.locator('#work-description').fill(text);
   await page.getByRole('button', { name: '이 인스턴스에 저장' }).click();
   await page.getByText('이 인스턴스에 저장됨 · 수정본', { exact: false }).first().waitFor();
+  await openFold(page, 'work-records');
+}
+
+// UI phase 5: export and source deletion sit folded in the work page's menu (optional, US7-3)
+async function openFold(page, id) {
+  const fold = page.locator(`#${id}-fold`);
+  await fold.locator('summary').waitFor();
+  if (!(await fold.evaluate(node => node.open))) await fold.locator('summary').click();
 }
 
 async function exportBundle(page, { raw }) {
@@ -142,6 +150,7 @@ test('an original is deleted only through its preview and consent; readers then 
     { name: '지울 원본.pdf', mimeType: 'application/pdf', buffer: bytes },
     { name: '읽은 메모.txt', mimeType: 'text/plain', buffer: memo }]);
   await page.getByRole('button', { name: '이 인스턴스에 저장', exact: true }).click();
+  await openFold(page, 'work-deletion');
   const panel = page.locator('#work-deletion');
   await panel.getByLabel('지울 원본.pdf', { exact: false }).waitFor();
   await panel.getByLabel('읽은 메모.txt', { exact: false }).waitFor();
@@ -312,6 +321,7 @@ test('export of every produced category: actual preview, bound consent, verified
   await page.getByLabel('원본 자료 선택').setInputFiles({ name: SYNTHETIC.fileName, mimeType: 'application/pdf',
     buffer: Buffer.from(`%PDF-1.7\n1 0 obj << /Title (${SYNTHETIC.pdf}) >> endobj\n(${SYNTHETIC.pdf})\n%%EOF\n`) });
   await page.getByRole('button', { name: '이 인스턴스에 저장', exact: true }).click();
+  await openFold(page, 'work-deletion');
   await page.locator('#work-deletion').getByLabel(SYNTHETIC.fileName, { exact: false }).waitFor();
   const workId = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).work_id, `deeptwin:intake:${base}`);
   const work = await page.evaluate(async ({ base, id }) => (await fetch(`${base}api/v1/works/${id}`)).json(), { base, id: workId });
@@ -338,7 +348,7 @@ test('export of every produced category: actual preview, bound consent, verified
   await page.getByText('내 근거로 기록했습니다.', { exact: false }).waitFor();
 
   // metadata-only export of every selectable category
-  await page.goto(url + 'work.html');
+  await page.goto(url + 'work.html#work-records');
   await page.locator('#work-records').getByRole('button', { name: '포함될 내용 미리보기' }).waitFor();
   const metadata = await exportAll(page, { raw: false });
   const shown = metadata.items.join('\n');
@@ -513,6 +523,7 @@ test('design candidates, recorded verdicts, lenses, growth rounds and a redacted
     await page.locator('#work-description').fill('설계·비교·첨부 내보내기 합성 업무');
     await page.getByLabel('원본 자료 선택').setInputFiles({ name: PDF_NAME, mimeType: 'application/pdf', buffer: pdf });
     await page.getByRole('button', { name: '이 인스턴스에 저장', exact: true }).click();
+    await openFold(page, 'work-deletion');
     await page.locator('#work-deletion').getByLabel(PDF_NAME, { exact: false }).waitFor();
     const workId = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).work_id, `deeptwin:intake:${base}`);
     const work = await page.evaluate(async ({ base, id }) => (await fetch(`${base}api/v1/works/${id}`)).json(), { base, id: workId });
@@ -540,7 +551,7 @@ test('design candidates, recorded verdicts, lenses, growth rounds and a redacted
     assert.equal(prepared.status, 201, JSON.stringify(prepared.body));
 
     // the export: every category, raw originals and attached originals, through the work screen
-    await page.goto(url + 'work.html');
+    await page.goto(url + 'work.html#work-records');
     await page.locator('#work-records').getByRole('button', { name: '포함될 내용 미리보기' }).waitFor();
     const withheld = await exportAll(page, { raw: true, sources: true });
     const shown = withheld.items.join('\n');

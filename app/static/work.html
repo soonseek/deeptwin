@@ -11,22 +11,58 @@
 <body class="shell-page page-work">
   <div id="app" class="app-shell" data-page="work">
     <main id="main">
-      <header class="page-header">
-        <h1>업무</h1>
-        <p class="page-purpose">맡길 일을 설명하거나 자료로 시작하세요. 작업 모델, 설계 후보 비교, 실행 시작이 이 화면에서 이어집니다.</p>
+      <header class="page-header work-header">
+        <div class="work-header-row">
+          <h1>업무</h1>
+          <div id="work-switcher" class="work-switcher" aria-label="업무 바꾸기" hidden></div>
+        </div>
+        <p class="page-purpose">맡길 일을 설명하고 자료를 더한 뒤 업무 이해, 환경 제안, 준비·시작으로 이어집니다. 지금까지 온 단계와 다음 단계 하나만 보입니다.</p>
       </header>
       <p id="session-status" role="status" aria-live="polite" data-state="">브라우저 세션을 확인하는 중…</p>
       <section id="intake-notice" class="introduction" aria-label="보관과 전송 안내"></section>
-      <form id="work-form" class="work-surface" aria-label="업무 설명" method="post" hidden></form>
-      <p id="save-status" role="status" aria-live="polite" data-state=""></p>
-      <section id="materials" class="materials card" aria-label="자료"></section>
-      <section id="source-readings" class="source-readings card" aria-label="자료 읽기"></section>
-      <section id="work-model" class="work-model card" aria-label="작업 모델"></section>
-      <section id="work-conversation" class="work-conversation card" aria-label="대화"></section>
-      <section id="design-workspace" class="design-workspace card" aria-label="설계 후보 비교"></section>
-      <section id="work-run" class="work-run card" aria-label="실행 시작"></section>
-      <section id="work-records" class="work-records card" aria-label="기록 내보내기"></section>
-      <section id="work-deletion" class="work-deletion card" aria-label="원본 삭제"></section>
+      <div class="work-layout">
+        <ol id="work-steps" class="work-steps" aria-label="업무 단계">
+          <li id="step-describe" class="work-step card" data-step="describe" aria-labelledby="step-describe-title">
+            <div id="step-describe-body" class="work-step-body">
+              <form id="work-form" class="work-surface" aria-label="업무 설명" method="post" hidden></form>
+              <p id="save-status" role="status" aria-live="polite" data-state=""></p>
+              <section id="materials" class="materials step-part" aria-label="자료"></section>
+              <section id="source-readings" class="source-readings step-part" aria-label="자료 읽기"></section>
+            </div>
+          </li>
+          <li id="step-understand" class="work-step card" data-step="understand" aria-labelledby="step-understand-title" hidden>
+            <div id="step-understand-body" class="work-step-body">
+              <section id="work-model" class="work-model step-part" aria-label="작업 모델"></section>
+              <section id="work-conversation" class="work-conversation step-part" aria-label="대화"></section>
+            </div>
+          </li>
+          <li id="step-design" class="work-step card" data-step="design" aria-labelledby="step-design-title" hidden>
+            <div id="step-design-body" class="work-step-body">
+              <section id="design-workspace" class="design-workspace step-part" aria-label="설계 후보 비교"></section>
+            </div>
+          </li>
+          <li id="step-start" class="work-step card" data-step="start" aria-labelledby="step-start-title" hidden>
+            <div id="step-start-body" class="work-step-body">
+              <section id="work-run" class="work-run step-part" aria-label="실행 시작"></section>
+            </div>
+          </li>
+        </ol>
+        <aside id="work-side" class="work-side" aria-label="이 업무의 실행과 메뉴">
+          <section id="work-runs" class="work-runs card" aria-label="이 업무의 실행"></section>
+          <section id="work-menu" class="work-menu card" aria-labelledby="work-menu-title">
+            <h2 id="work-menu-title"><span aria-hidden="true">⋯ </span>업무 메뉴</h2>
+            <p class="work-menu-note">내보내기와 원본 삭제는 필요할 때만 씁니다. 업무를 진행하는 데 필요한 단계가 아닙니다.</p>
+            <details id="work-records-fold" class="work-fold">
+              <summary>기록 내보내기</summary>
+              <section id="work-records" class="work-records" aria-label="기록 내보내기"></section>
+            </details>
+            <details id="work-deletion-fold" class="work-fold">
+              <summary>원본 삭제</summary>
+              <section id="work-deletion" class="work-deletion" aria-label="원본 삭제"></section>
+            </details>
+          </section>
+        </aside>
+      </div>
       <nav id="observe-link" aria-label="다른 화면"></nav>
       <footer>
         <p>설명과 자료 원본은 이 인스턴스에 수정본 단위로 남습니다. 미저장 설명은 이 브라우저에 임시 보관되며, 선택한 파일은 이 화면을 닫으면 다시 선택해야 합니다.</p>

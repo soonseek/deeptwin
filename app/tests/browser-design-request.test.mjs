@@ -18,7 +18,7 @@ async function acceptedWorkModel(page, url) {
   assert.deepEqual([key.status, catalog.status], [200, 200]);
   await saveWork(page, url);
   const model = page.locator('#work-model');
-  await model.getByRole('button', { name: '작업 모델 만들기', exact: true }).click();
+  await model.getByRole('button', { name: '업무 이해하기', exact: true }).click();
   await model.getByRole('button', { name: '이 작업 모델 수락', exact: true }).click();
   await model.getByText('이 작업 모델을 수락했습니다.').first().waitFor();
 }
@@ -30,21 +30,24 @@ test('with a simulated qualified lens the owner creates a design request from th
   await saveWork(page, url);
   const workspace = page.locator('#design-workspace');
   const creator = workspace.locator('.design-create');
-  // no accepted work model yet: the section says what is missing, and offers nothing
-  await creator.getByText('수락한 작업 모델이 있어야 설계 요청을 만들 수 있습니다', { exact: false }).waitFor();
-  assert.equal(await creator.getByRole('button').count(), 0);
+  // no accepted work model yet: the section says what is missing, and offers nothing. UI phase 5:
+  // the design step is not even drawn before understanding is reached (step ② is the next step)
+  await creator.getByText('수락한 작업 모델이 있어야 설계 요청을 만들 수 있습니다', { exact: false }).waitFor({ state: 'attached' });
+  assert.equal(await creator.getByRole('button', { includeHidden: true }).count(), 0);
+  assert.equal(await page.locator('#step-design').isHidden(), true);
+  assert.equal(await page.locator('#step-understand').getAttribute('data-state'), 'next');
   const catalog = await owner(page, 'api/v1/connections/claude/catalog', {});
   assert.equal(catalog.status, 200);
   await page.reload();
   const model = page.locator('#work-model');
-  await model.getByRole('button', { name: '작업 모델 만들기', exact: true }).click();
+  await model.getByRole('button', { name: '업무 이해하기', exact: true }).click();
   await model.getByRole('button', { name: '이 작업 모델 수락', exact: true }).click();
   await model.getByText('이 작업 모델을 수락했습니다.').first().waitFor();
   // the lens source is labelled a simulation; the owner creates the request here (the work model's
   // "accepted" line is drawn before the design section re-renders, so wait for the section itself)
   await creator.getByText('SIMULATED lens qualification', { exact: false }).waitFor();
   assert.match(await creator.textContent(), /SIMULATED lens qualification/);
-  await creator.getByRole('button', { name: '이 작업 모델로 설계 요청 만들기', exact: true }).click();
+  await creator.getByRole('button', { name: '환경 제안받기', exact: true }).click();
   await workspace.locator('[role=status]').first().filter({ hasText: '을 만들었습니다. 후보는 아직 없습니다.' }).waitFor();
   const pool = workspace.locator('.design-pool');
   assert.match(await pool.locator('.design-pool-count').textContent(), /후보 0개를 제시합니다/);

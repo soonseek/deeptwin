@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { closeOwnedFixture, waitForOwnedChildOutput } from './owned-fixture-lifecycle.mjs';
+import { openRunFromList } from './run-list.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 export const base = `/${'2'.repeat(32)}/`;
@@ -56,7 +57,7 @@ export async function open(t) {
 
 export async function openEditor(page, url, runId, role = 'report') {
   await page.goto(url + 'observe.html');
-  await page.getByRole('combobox', { name: '관제할 실행 선택' }).selectOption(runId);
+  await openRunFromList(page, runId);
   const row = page.locator('li', { hasText: `${role} ·` });
   await row.getByRole('button', { name: '내 버전 편집' }).click();
   await page.locator('#run-alternative [role=status]').filter({ hasText: /원본을 복사해|이어서 편집/ }).waitFor();

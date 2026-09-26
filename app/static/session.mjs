@@ -117,12 +117,18 @@ export function createSupportedSession({ fetch, basePath = '/' } = {}) {
       if (method !== 'GET' || typeof query !== 'object' || query === null || Array.isArray(query)) {
         fail('only a read carries query parameters');
       }
+      // UI phase 5: one name may repeat (the event log's type filter): a value is then a list of
+      // 1–64 plain strings, still encoded here and bounded in total
       const entries = Object.entries(query);
+      const valid = value => typeof value === 'string' && value.length >= 1 && value.length <= 512;
       if (entries.length > 4 || entries.some(([key, value]) => !QUERY_KEY.test(key)
-          || typeof value !== 'string' || value.length < 1 || value.length > 512)) {
+          || !(valid(value) || (Array.isArray(value) && value.length >= 1 && value.length <= 64 && value.every(valid))))) {
         fail('query parameters are out of bounds');
       }
-      if (entries.length) target += `?${new URLSearchParams(entries)}`;
+      const pairs = entries.flatMap(([key, value]) => (Array.isArray(value) ? value.map(item => [key, item]) : [[key, value]]));
+      const encoded = new URLSearchParams(pairs).toString();
+      if (encoded.length > 8192) fail('query parameters are out of bounds');
+      if (pairs.length) target += `?${encoded}`;
     }
     const headers = {};
     const options = { method, credentials: 'same-origin', headers };

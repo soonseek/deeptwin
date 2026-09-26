@@ -33,7 +33,7 @@ test('production state: no prepared environment — the run section says exactly
   const absent = section.locator('.run-start-absent');
   await absent.waitFor();
   assert.match(await absent.textContent(), /준비된 실행 환경이 없어 실행을 시작할 수 없습니다\. 승인된 설계가 없습니다: 설계를 승인하려면 평가자\(critic\) 구성과 렌즈의 자격이 필요한데, 이 인스턴스에는 자격을 얻을 수 있는 평가자 구성이 없습니다 \(V3 오류 독립성 미검증\)\./);
-  assert.equal(await section.getByRole('button', { name: '동의하고 실행 시작' }).count(), 0);
+  assert.equal(await section.getByRole('button', { name: '업무 시작', exact: true }).count(), 0);
   const view = await read(page, `api/v1/run-environments/${workId}`);
   assert.deepEqual(view.environments, []);
   assert.deepEqual(view.absence, { code: 'no_prepared_environment', reason: 'no_approved_design', critic_qualifiable: false });
@@ -83,7 +83,7 @@ test('SIMULATED qualification: prepare, see exactly what the run uses, consent, 
   assert.match(rows['예산 정책'], /execution · subscription · 모델 호출 3 · 도구 호출 5/);
   assert.match(rows['동의 범위'], /실행 한 번에만 쓰입니다\. 외부 쓰기·결제 변경·승격은 포함하지 않습니다\./);
 
-  const start = section.getByRole('button', { name: '동의하고 실행 시작' });
+  const start = section.getByRole('button', { name: '업무 시작', exact: true });
   assert.equal(await start.isDisabled(), true, 'nothing starts before the owner consents');
   await section.getByRole('checkbox', { name: '위 내용으로 이 실행 한 번에 동의합니다' }).check();
   await start.click();
@@ -99,7 +99,7 @@ test('SIMULATED qualification: prepare, see exactly what the run uses, consent, 
   await page.waitForURL(/observe\.html#run=/);
   const panel = page.locator('#run-panel');
   await page.locator('#run-panel[data-phase=awaiting_human]').waitFor();
-  assert.equal(await page.getByRole('combobox', { name: '관제할 실행 선택' }).inputValue(), runId);
+  assert.equal(await page.getByRole('combobox', { name: '다른 실행 열기' }).inputValue(), runId);
   const screen = page.locator('#run-approvals');
   await screen.getByRole('button', { name: '승인: owner-gate/artifact.publish' }).click();
   await screen.getByText('결정을 기록했습니다.', { exact: false }).waitFor();

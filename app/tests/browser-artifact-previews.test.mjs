@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { closeOwnedFixture, waitForOwnedChildOutput } from './helpers/owned-fixture-lifecycle.mjs';
+import { openRunFromList } from './helpers/run-list.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const base = `/${'2'.repeat(32)}/`;
@@ -77,7 +78,7 @@ async function imageLoaded(page, selector) {
 test('a PDF page rendered by the isolated worker, page navigation, DOCX text and the vault-wide index', { timeout: 120000 }, async t => {
   const { page, url, errors, runIds } = await open(t);
   await page.goto(url + 'observe.html');
-  await page.getByRole('combobox', { name: '관제할 실행 선택' }).selectOption(runIds[0]);
+  await openRunFromList(page, runIds[0]);
   const paper = page.locator('#run-artifacts li', { hasText: 'paper ·' });
   await paper.getByRole('button', { name: '미리보기' }).click();
   const viewer = page.locator('#run-artifacts .artifact-viewer');

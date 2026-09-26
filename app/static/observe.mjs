@@ -21,6 +21,7 @@ import { createInquiryPanel } from './inquiry.mjs';
 import { createRunDetail } from './run-detail.mjs';
 import { createRunList } from './run-list.mjs';
 import { createRunPanel } from './run-panel.mjs';
+import { createRunTable } from './run-summaries.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
 import { shortId } from './ui-format.mjs';
 import { mountShell } from './ui-shell.mjs';
@@ -33,6 +34,8 @@ export const DIFFERENCE_MOUNT_ID = 'run-difference';
 export const GRAPH_MOUNT_ID = 'run-graph';
 export const APPROVALS_MOUNT_ID = 'run-approvals';
 export const INDEX_MOUNT_ID = 'artifact-index';
+// UI phase 5 (§5.2): the run list as a table, shown while no run is open
+export const TABLE_MOUNT_ID = 'run-table';
 export const MOUNT_IDS = Object.freeze({
   session: 'session-status', source: 'run-source', panel: 'run-panel', artifacts: 'run-artifacts',
 });
@@ -229,8 +232,38 @@ export async function boot({ document, location, fetch, crypto, shell = null, hi
     ? createApprovalScreen({ root: approvalsRoot, document, basePath, request: session.request, commandId,
       onDecided: runId => panel.read(runId) })
     : null;
+  // UI phase 5: an alternative sealed earlier reopens its difference in place, after a reload too;
+  // the parts are shown only when the sealed revision is the one the drafts read returns
+  async function showDifference(runId, item, context, found) {
+    if (difference === null) return null;
+    const slot = context?.slot;
+    for (const surface of surfaces) park(surface);
+    if (hasDetail && slot && typeof slot.append === 'function') {
+      slot.append(differenceRoot);
+      context.anchor?.setAttribute?.('data-editing-artifact', 'true');
+    }
+    let texts = { reason: 'older' };
+    try {
+      if (found.revision === found.latestRevision && found.original) {
+        const read = await session.request(`${basePath.slice(0, -1)}/api/v1/runs/${runId}/artifacts/${item.artifactId}/drafts/${found.draftId}`);
+        if (read?.revision === found.revision) {
+          texts = found.original.format === 'text'
+            ? { format: 'text', original: String(found.original.text ?? ''), mine: String(read.text ?? ''), revision: read.revision }
+            : { format: 'table', original: found.original.rows ?? [], mine: read.rows ?? [], revision: read.revision };
+        }
+      }
+    } catch {
+      // the observation alone is still shown
+    }
+    const shown = difference.show({ runId, artifactId: item.artifactId, alternativeId: found.alternativeId,
+      title: context?.title ?? null, texts, segment: detail?.segment(context?.segment) ?? null });
+    differenceRoot.scrollIntoView?.({ block: 'start' });
+    return shown;
+  }
+
   if (hasDetail) {
     detail = createRunDetail({ document, request: session.request, basePath, graph, artifacts, commandId,
+      onShowDifference: difference !== null ? showDifference : null,
       roots: { summary: detailRoots.summary, banner: detailRoots.banner, final: detailRoots.final,
         views: detailRoots.views, graphMount: graphRoot, timeline: detailRoots.timeline,
         selection: detailRoots.selection, artifactsMount: roots.artifacts },
@@ -308,33 +341,60 @@ export async function boot({ document, location, fetch, crypto, shell = null, hi
     : null;
   // `#run=<id>&artifact=<id>` previews that artifact once, when its run opens
   let namedPreview = artifactFromHash(location?.hash);
+  // UI phase 5: the table is the way to a run; inside a run, the select is the compact
+  // "다른 실행" switch in the header (a page without the table keeps the select as its list)
+  const tableRoot = hasDetail ? mount(document, TABLE_MOUNT_ID) : null;
+  const table = tableRoot !== null ? createRunTable({ root: tableRoot, document, basePath, request: session.request }) : null;
   const list = createRunList({ root: roots.source, document, basePath, request: session.request,
+    ...(table !== null ? { compact: true, label: '다른 실행 열기' } : {}),
     onSelect: runId => {
       const preview = namedPreview !== null && runFromHash(location?.hash) === runId ? namedPreview : null;
       namedPreview = null;
       return openRun(runId, { preview });
     } });
+
+  // back to the table: the run view steps aside and the list is read again
+  function showList() {
+    current = null;
+    opening = null;
+    shownKey = null;
+    detail?.reset();
+    for (const surface of surfaces) park(surface);
+    if (hasDetail) {
+      detailRoots.view.hidden = true;
+      detailRoots.empty.hidden = false;
+    }
+    shell?.setContext?.({ work: null, extra: [] });
+    return table?.load().catch(() => null) ?? Promise.resolve(null);
+  }
+
+  // a link to another run on this same page (`#run=<id>`) changes only the hash; a hash
+  // without a run (the header's "← 실행 목록") goes back to the table
+  if (typeof events?.addEventListener === 'function') {
+    events.addEventListener('hashchange', () => {
+      const named = runFromHash(location?.hash);
+      namedPreview = artifactFromHash(location?.hash);
+      if (named && named !== current) {
+        if (!list.select(named)) list.refresh().then(() => list.select(named)).catch(() => {});
+      } else if (named && namedPreview !== null) {
+        const preview = namedPreview;
+        namedPreview = null;
+        artifacts.open(named, preview).catch(() => {});
+      } else if (!named && table !== null && current !== null) {
+        showList();
+      }
+    });
+  }
   try {
     await list.refresh();
     // `#run=<id>` (the work page's link to the run it started; an asset takes no query)
     // selects that run if the list holds it
     const named = runFromHash(location?.hash);
     if (named) list.select(named);
+    else if (table !== null) await showList();
   } catch {
     // the list's own status names the failure; the session stands
-  }
-  // a link to another run on this same page (`#run=<id>`) changes only the hash
-  if (typeof events?.addEventListener === 'function') {
-    events.addEventListener('hashchange', () => {
-      const named = runFromHash(location?.hash);
-      namedPreview = artifactFromHash(location?.hash);
-      if (named && named !== current) list.select(named);
-      else if (named && namedPreview !== null) {
-        const preview = namedPreview;
-        namedPreview = null;
-        artifacts.open(named, preview).catch(() => {});
-      }
-    });
+    if (table !== null && !runFromHash(location?.hash)) await showList();
   }
   if (index !== null) {
     try {
@@ -343,8 +403,8 @@ export async function boot({ document, location, fetch, crypto, shell = null, hi
       // the index's own status names the failure
     }
   }
-  return Object.freeze({ established: true, basePath, session, list, panel, artifacts, index, graph, approvals,
-    detail, commandId, get loading() { return loading; } });
+  return Object.freeze({ established: true, basePath, session, list, table, panel, artifacts, index, graph, approvals,
+    detail, commandId, showList, get loading() { return loading; } });
 }
 
 // the page's entry: a boot that fails before or beside the session exchange

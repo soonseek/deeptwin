@@ -436,7 +436,8 @@ class PersistentAlternativeDrafts:
                     drafts[record.ref.id] = self._projection(record)
             frozen = self._frozen_ids(db, roots, list(drafts))
         for draft_id, value in drafts.items():
-            value["frozen_revisions"] = frozen.get(draft_id, [])
+            value["frozen_revisions"] = [item["revision"] for item in frozen.get(draft_id, [])]
+            value["frozen_alternatives"] = frozen.get(draft_id, [])
         return {"run_id": run_id, "artifact_id": artifact_id, "original": original,
                 "drafts": sorted(drafts.values(), key=lambda item: item["saved_at_utc"])}
 
@@ -456,7 +457,8 @@ class PersistentAlternativeDrafts:
         if (bound["run_id"], bound["artifact_id"]) != (run_id, artifact_id):
             raise DraftError("not_found")
         value = self._projection(record, data=self._bytes(record), include_content=True)
-        value["frozen_revisions"] = frozen
+        value["frozen_revisions"] = [item["revision"] for item in frozen]
+        value["frozen_alternatives"] = frozen
         return value
 
     @_closed
@@ -643,6 +645,9 @@ class PersistentAlternativeDrafts:
     # --- the explicit freeze --------------------------------------------------------
 
     def _frozen_ids(self, db, roots, draft_ids):
+        """Each draft's frozen alternatives: which saved revision each one sealed, with its
+        own id, coverage and time (UI phase 5: the run screen reopens an existing
+        difference instead of freezing the same revision again), oldest first."""
         frozen = {}
         for draft_id in draft_ids:
             for row in db.execute(
@@ -651,10 +656,15 @@ class PersistentAlternativeDrafts:
                     (roots.genesis.id, f'"id":"{draft_id}"'.encode())).fetchall():
                 record = self._domain._load(db, EntityRef("own_alternative", row["id"], row["version"],
                                                           row["sha256"]), roots)[0]
-                ref = record.body["content"]["alternative_artifact_ref"]
+                content = record.body["content"]
+                ref = content["alternative_artifact_ref"]
                 if ref["id"] == draft_id:
-                    frozen.setdefault(draft_id, []).append(ref["version"])
-        return {key: sorted(value) for key, value in frozen.items()}
+                    frozen.setdefault(draft_id, []).append({
+                        "alternative_id": record.ref.id, "revision": ref["version"],
+                        "coverage": content["coverage"], "frozen_at_utc": record.body["created_at_utc"]})
+        return {key: sorted(value, key=lambda item: (item["revision"], item["frozen_at_utc"],
+                                                     item["alternative_id"]))
+                for key, value in frozen.items()}
 
     def _seal_alternative(self, db, roots, actor_ref, *, item, manifest, alternative, reviewed_whole,
                           selectors, alternative_id, command_id, run_id, artifact_id):

@@ -333,6 +333,30 @@ export const EVENT_TEXT = Object.freeze({
 });
 export const UNKNOWN_EVENT = '기록된 사건';
 
+// UI phase 5 (redesign §5.7): the records page's "종류" filter. Each group is the event types of
+// EVENT_TEXT whose name starts with one of its prefixes; every type falls in exactly one group
+// (a node test holds that), and a group names at most 64 types, the server's filter bound.
+const EVENT_GROUP_PREFIXES = Object.freeze([
+  ['work', '업무·자료', ['work.', 'source.', 'ingestion.', 'understanding.', 'speech.']],
+  ['design', '설계', ['design.', 'review.', 'lens.']],
+  ['run', '실행', ['run.', 'attempt.', 'handoff.', 'artifact.', 'tool.', 'memory.', 'model.']],
+  ['approval', '승인·피드백', ['approval.', 'feedback.']],
+  ['mine', '내 버전·탐구', ['alternative.', 'difference.', 'hypothesis.', 'inquiry.']],
+  ['change', '변경 후보·버전·실험', ['candidate.', 'evaluation.', 'validation.', 'loop.', 'promotion.', 'rollback.']],
+  ['connection', '모델 연결·자격증명', ['connection.', 'catalog.', 'credential.', 'service_client.', 'managed_login.', 'provider.']],
+  ['account', '계정·보안', ['owner.', 'session.', 'auth.', 'security.']],
+  ['records', '백업·보존·내보내기', ['backup.', 'retention.', 'export.', 'record.']],
+  ['system', '설치·확장·업데이트', ['setup.', 'update.', 'deployment.', 'extension.', 'recovery.']],
+]);
+export const EVENT_GROUPS = Object.freeze(EVENT_GROUP_PREFIXES.map(([id, label, prefixes]) => Object.freeze({
+  id, label, types: Object.freeze(Object.keys(EVENT_TEXT).filter(type => prefixes.some(prefix => type.startsWith(prefix)))),
+})));
+
+// the group an event type belongs to, or null for a type outside the dictionary
+export function eventGroupOf(type) {
+  return EVENT_GROUPS.find(group => group.types.includes(type)) ?? null;
+}
+
 // media types as the owner reads them; parameters (`; charset=…`) never change the label
 export const MEDIA_LABELS = Object.freeze({
   'text/plain': '텍스트',

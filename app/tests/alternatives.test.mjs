@@ -182,3 +182,33 @@ test('three views: the original stays read-only, differences are observed on a s
   await tab('내 버전').dispatch('click');
   assert.equal(root.findAll(el => el.tagName === 'TEXTAREA')[0].value, '바꾼 줄\n');  // the owner text survives
 });
+
+test('UI phase 5: pressing 차이 살펴보기 again on a sealed revision reopens that alternative, never a second freeze', async () => {
+  const ALT = '33333333-3333-5333-8333-333333333333';
+  const listing = { ...textListing, drafts: [{ draft_id: DRAFT, revision: 2 }] };
+  const read = { draft_id: DRAFT, revision: 2, format: 'text', text: '첫 줄 고침\n',
+    frozen_alternatives: [{ alternative_id: ALT, revision: 2, coverage: 'partial', frozen_at_utc: '2026-09-26T00:00:00.000000Z' }] };
+  const root = new FakeElement('section');
+  const asked = [];
+  const replies = [listing, read, { alternative_ref: { kind: 'own_alternative', id: 'x', version: 1, sha256: 'b'.repeat(64) },
+    coverage: 'whole', selectors: [] }];
+  const opened = [];
+  const editor = createAlternativeEditor({ root, document, crypto, schedule: () => 0,
+    request: async (path, options) => { asked.push([path, options]); return replies.shift(); },
+    onFrozen: (runId, artifactId, alternativeId, texts) => { opened.push([alternativeId, texts?.revision]); } });
+  await editor.open(RUN, { artifactId: ART, mediaType: 'text/plain' });
+  const freeze = root.findAll(el => el.tagName === 'BUTTON' && el.textContent === FREEZE_LABEL)[0];
+  await freeze.dispatch('click');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(asked.filter(([, options]) => options?.method === 'POST').length, 0, 'nothing is frozen again');
+  assert.deepEqual(opened, [[ALT, 2]]);
+  assert.match(root.textContent, /이미 고정했습니다/);
+  // a different claim (the whole reviewed) is a different alternative: that one is sealed
+  root.findAll(el => el.getAttribute('id') === 'alternative-reviewed-whole')[0].checked = true;
+  await freeze.dispatch('click');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const posts = asked.filter(([, options]) => options?.method === 'POST');
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0][1].body.reviewed_whole, true);
+  assert.equal(posts[0][1].body.expected_revision, 2);
+});

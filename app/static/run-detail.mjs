@@ -16,11 +16,15 @@
 // mark, and the graph and the timeline mark the steps and attempts that have feedback. No reason
 // is asked for, and feedback is never an alternative. `segment(target)` names the run segment an
 // artifact came from, for the difference view (difference-view.mjs).
+//
+// UI phase 5: a final result the owner already answered carries one line — "내 버전 1개 · 차이
+// 살펴봄 1번 · [차이 보기]" — read from the drafts listing (its `frozen_alternatives`), so the
+// difference view reopens after a reload without freezing again (`onShowDifference`).
 
 import { artifactRoutes, coverageText, MESSAGES as ARTIFACT_MESSAGES, previewView } from './artifacts.mjs';
 import {
-  createFeedbackControl, feedbackCommand, feedbackFor, feedbackIndex, feedbackRoute, feedbackSummary, nodeMarkers,
-  runTarget, stepMarker, stepTarget, targetKey,
+  createFeedbackControl, earlierRevisions, feedbackCommand, feedbackFor, feedbackIndex, feedbackRoute, feedbackSummary,
+  nodeMarkers, runTarget, stepMarker, stepTarget, targetKey,
 } from './run-feedback.mjs';
 import {
   attemptOptionText, differenceSegment, errorText, finalResults, pendingApprovals, resolveSelection, runSummary,
@@ -38,6 +42,8 @@ export const DETAIL_TABS = Object.freeze([
   ['inputs', '입력'], ['outputs', '산출물'], ['handoffs', '전달'], ['calls', '도구·모델'], ['records', '기록'],
 ]);
 export const VIEW_TABS = Object.freeze([['graph', '그래프'], ['timeline', '타임라인']]);
+// the formats the owner's in-place editor writes (alternatives.mjs EDITABLE_MEDIA)
+const OWN_VERSION_MEDIA = Object.freeze(['text/plain', 'text/markdown', 'application/json', 'text/csv']);
 export const MESSAGES = Object.freeze({
   loading: '실행 기록을 읽는 중…',
   failed: '실행 기록을 읽지 못했습니다.',
@@ -83,6 +89,7 @@ function refText(value) {
 export function createRunDetail({
   document, request, basePath = '/', roots, graph = null, artifacts = null,
   onEdit = null, onAlternativeFile = null, onOpenApprovals = null, onSelectionChange = null, commandId = null,
+  onShowDifference = null,
 } = {}) {
   if (typeof document?.createElement !== 'function') fail('a document is required');
   if (typeof request !== 'function') fail('a request adapter is required');
@@ -143,12 +150,21 @@ export function createRunDetail({
     }
   }
 
+  // UI phase 5: the earlier revisions of one target, read from the server's history on demand
+  async function earlierFor(target, last) {
+    const mine = runId;
+    const answer = await request(feedbackRoute(basePath, mine), {});
+    return earlierRevisions(answer?.history, target, last);
+  }
+
   const runControl = canRecord ? createFeedbackControl({ document, idPrefix: 'feedback-run',
     onSave: value => recordFeedback(runTarget(), { action: 'set', ...value }),
-    onClear: () => recordFeedback(runTarget(), { action: 'clear' }) }) : null;
+    onClear: () => recordFeedback(runTarget(), { action: 'clear' }),
+    onHistory: last => earlierFor(runTarget(), last) }) : null;
   const stepControl = canRecord ? createFeedbackControl({ document, idPrefix: 'feedback-step',
     onSave: value => recordFeedback(stepTargetShown, { action: 'set', ...value }),
-    onClear: () => recordFeedback(stepTargetShown, { action: 'clear' }) }) : null;
+    onClear: () => recordFeedback(stepTargetShown, { action: 'clear' }),
+    onHistory: last => earlierFor(stepTargetShown, last) }) : null;
   if (runControl) runFeedbackMount.append(runControl.root);
   if (stepControl) stepFeedbackMount.append(stepControl.root);
   roots.selection.replaceChildren(selectionHead, pickers, selectionNotes, stepFeedbackMount, detailTabs.root);
@@ -281,13 +297,45 @@ export function createRunDetail({
     trace_.addEventListener('click', () => select({ nodeId: item.nodeId, visitNo: item.visitNo, attemptNo: item.attemptNo },
       { focus: true, tab: 'outputs' }));
     actions.append(trace_);
+    const own = el(document, 'p', { className: 'own-version-line', attrs: { 'data-own-versions': '' } });
+    own.hidden = true;
     card.append(el(document, 'header', { className: 'final-head' }, [
       el(document, 'h3', { text: item.role, className: 'final-title' }),
       el(document, 'p', { className: 'final-meta', text: `${madeBy} · ${facts}` }),
-    ]), preview, actions, slot, technicalDetails(document, [['산출물 ID', item.artifactId], ['밝힌 형식', item.mediaType],
+    ]), preview, actions, own, slot, technicalDetails(document, [['산출물 ID', item.artifactId], ['밝힌 형식', item.mediaType],
       ['SHA-256', item.sha256], ['결과 기록', refText(item.resultRef)]]));
     previewInto(preview, item);
+    ownVersionsInto(own, listed, context);
     return card;
+  }
+
+  // the owner's saved versions of one artifact and the differences already sealed from them
+  function ownVersionsInto(target, listed, context) {
+    if (typeof onShowDifference !== 'function' || !OWN_VERSION_MEDIA.includes(listed.mediaType)) return null;
+    const mine = runId;
+    return request(`${routes.read(runId, listed.artifactId)}/drafts`, {}).then(value => {
+      if (mine !== runId) return;
+      const drafts = Array.isArray(value?.drafts) ? value.drafts : [];
+      if (!drafts.length) return;
+      const sealed = drafts.flatMap(draft => (Array.isArray(draft.frozen_alternatives) ? draft.frozen_alternatives : [])
+        .map(item => ({ ...item, draftId: draft.draft_id, latestRevision: draft.revision })));
+      const last = sealed.sort((a, b) => String(a.frozen_at_utc).localeCompare(String(b.frozen_at_utc))).at(-1) ?? null;
+      const parts = [el(document, 'span', { text: `내 버전 ${drafts.length}개` })];
+      if (last) {
+        const distinct = new Set(sealed.map(item => `${item.draftId}:${item.revision}`)).size;
+        parts.push(el(document, 'span', { text: ` · 차이 살펴본 수정본 ${distinct}개` }));
+        const open = el(document, 'button', { text: '차이 보기', className: 'btn btn-secondary', attrs: { type: 'button',
+          'aria-label': `${listed.role}의 내 버전 차이 보기` } });
+        open.addEventListener('click', () => Promise.resolve(onShowDifference(runId, listed, context, {
+          alternativeId: last.alternative_id, draftId: last.draftId, revision: last.revision,
+          latestRevision: last.latestRevision, original: value.original ?? null })).catch(() => {}));
+        parts.push(open);
+      } else {
+        parts.push(el(document, 'span', { text: ' · 아직 차이를 살펴보지 않았습니다' }));
+      }
+      target.replaceChildren(...parts);
+      target.hidden = false;
+    }).catch(() => {});
   }
 
   function renderFinal() {
@@ -317,7 +365,8 @@ export function createRunDetail({
   function renderRunFeedback(hasResult = runHeading === MESSAGES.wholeResult, { keepDraft = false } = {}) {
     runHeading = hasResult ? MESSAGES.wholeResult : MESSAGES.wholeRunFeedback;
     runFeedbackMount.hidden = runControl === null;
-    runControl?.show({ heading: runHeading, item: feedbackFor(feedbackIdx, runTarget()).item, keepDraft });
+    runControl?.show({ heading: runHeading, item: feedbackFor(feedbackIdx, runTarget()).item, keepDraft,
+      last: feedbackIdx.get('run') ?? null });
   }
 
   // the selected step's exact attempt (or a visit without attempts); none for the whole run
@@ -342,7 +391,7 @@ export function createRunDetail({
     const same = stepTargetShown !== null && JSON.stringify(stepTargetShown) === JSON.stringify(target);
     stepTargetShown = target;
     stepControl.show({ heading: stepHeading(view, target), item: feedbackFor(feedbackIdx, target).item,
-      keepDraft: keepDraft && same });
+      keepDraft: keepDraft && same, last: feedbackIdx.get(targetKey(target)) ?? null });
   }
 
   // a recorded revision (or the server's latest after a conflict) redraws every place it shows;

@@ -29,6 +29,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { closeOwnedFixture, waitForOwnedChildOutput } from './helpers/owned-fixture-lifecycle.mjs';
+import { openRunFromList } from './helpers/run-list.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const base = `/${'2'.repeat(32)}/`;
@@ -105,7 +106,7 @@ test('G-14: a queue with a past gated send is re-evaluated without sending it ag
   const runId = started.body.run_id;
   assert.equal(started.body.outcome.awaiting_execution[0][0], GATE);
   await page.goto(url + 'observe.html');
-  await page.getByRole('combobox', { name: '관제할 실행 선택' }).selectOption(runId);
+  await openRunFromList(page, runId);
   await page.locator(`#run-panel[data-run-id="${runId}"]`).waitFor();
   const screen = page.locator('#run-approvals');
   await screen.locator('.approval-executions li[data-attempt="1"]').getByRole('button', { name: '승인: 시도 1' }).click();
@@ -116,12 +117,18 @@ test('G-14: a queue with a past gated send is re-evaluated without sending it ag
   const sent = await read(page, `api/v1/runs/${runId}`);
   assert.deepEqual(sent.cancellation.attempts.map(item => [item.attempt_no, item.phase]), [[1, 'terminal']]);
 
+  // the run screen's own reads of the finished run (its trace, artifacts and the owner's versions)
+  // settle before the fixture counts the production path's builds
+  await page.waitForLoadState('networkidle');
+
   // --- 2. the plans, and the owner's boundary approvals on the versions page
   await writeFile(join(dir, 'g14-request.json'), JSON.stringify({ run_id: runId }));
   const prepared = await waitForFile(join(dir, 'g14-plans.json'), 60000);
   assert.equal(prepared.error, undefined, prepared.error);
   await page.goto(url + 'versions.html');
   await page.locator('#versions [role=status][data-state=loaded]').waitFor({ state: 'attached' });
+  // UI phase 5: the boundaries sit in the versions page's 실험 tab
+  await page.getByRole('tab', { name: /^실험/ }).click();
   const boundaries = page.locator('#versions section[aria-label="도구 효과 경계"]');
   const plan = name => boundaries.locator(`section[aria-label="계획 ${LINEAGES[name].slice(0, 8)}"]`);
   const needed = name => plan(name).locator('ul[aria-label="필요한 경계"] > li');

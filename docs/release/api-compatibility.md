@@ -196,6 +196,21 @@ parsing, like on every other browser-session route):
   the memo text. It is never under `alternatives`.
 - Process feedback is not an alternative and is never counted as one (UX-AC05).
 
+## 3d. Additive fields for the work steps and the reload of 차이 살펴보기 (2026-09-26, UI phase 5)
+
+No route was added (146 routes in 29 contributions stay). Two existing responses gain fields; no
+field was removed or renamed, and a reader that ignores unknown keys is unaffected.
+
+- `GET /api/v1/design-requests` (`design-workspace-v1`): each `requests[]` item gains `work_id` and
+  `work_revision` — the work revision the request's confirmed work model was made from. `GET
+  /api/v1/design-requests/{id}` gains `request.work_revision_ref` (the full reference). The work
+  page uses them to show a work's own design requests.
+- `GET /api/v1/runs/{run_id}/artifacts/{artifact_id}/drafts` and `…/drafts/{draft_id}`
+  (`runs-v1`): each draft gains `frozen_alternatives[]` (`alternative_id`, `revision`, `coverage`,
+  `frozen_at_utc`), oldest revision first, beside the unchanged `frozen_revisions`. A freeze is still
+  one alternative per command (freezing the same revision again seals another one); the run screen
+  uses the list to reopen an existing difference after a reload instead of freezing again.
+
 ## 4. Compatibility policy
 
 From `contracts/api.md`:

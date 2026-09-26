@@ -81,10 +81,13 @@ test('actual owner file-first originals survive download/reload with keyboard an
       assert.equal(await page.evaluate(() => document.activeElement.textContent), '자료 추가');
       const layout = await page.evaluate(() => {
         const box = selector => document.querySelector(selector).getBoundingClientRect();
-        return { lefts: ['h1', '#session-status', '#intake-notice', '#work-form', '#materials'].map(selector => box(selector).left),
+        // UI phase 5: the form and the materials sit inside step ① (one card), aligned with each other
+        return { lefts: ['h1', '#session-status', '#intake-notice', '#step-describe'].map(selector => box(selector).left),
+          inner: ['#work-form', '#materials'].map(selector => box(selector).left),
           addTop: box('.original-toolbar button').top, textTop: box('textarea').top };
       });
       assert.ok(layout.lefts.every(left => Math.abs(left - layout.lefts[0]) < 1), 'one aligned work container');
+      assert.ok(layout.inner.every(left => Math.abs(left - layout.inner[0]) < 1), 'one aligned step body');
       assert.ok(layout.addTop < layout.textTop && layout.addTop < 640, 'file-first action appears above input and within first screen');
       await page.screenshot({ path: join(evidence, `${width}-${colorScheme}.png`), fullPage: true });
     }

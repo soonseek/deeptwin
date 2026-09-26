@@ -5,11 +5,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { open } from './helpers/alternatives-fixture.mjs';
+import { openRunFromList } from './helpers/run-list.mjs';
 
 test('the observe page draws the selected run graph with its recorded node states', { timeout: 90000 }, async t => {
   const { page, url, errors, runId } = await open(t);
   await page.goto(url + 'observe.html');
-  await page.getByRole('combobox', { name: '관제할 실행 선택' }).selectOption(runId);
+  await openRunFromList(page, runId);
   const graph = page.locator('#run-graph');
   await graph.getByText('노드 3개 · 연결 2개', { exact: false }).waitFor();
   const labels = await graph.locator('.graph-nodes button').allTextContents();

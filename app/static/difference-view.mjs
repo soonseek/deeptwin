@@ -25,6 +25,7 @@ export const MESSAGES = Object.freeze({
   noParts: '이 형식은 부분을 나눠 보이지 않습니다. 관측 설명만 봅니다.',
   noTexts: '올린 파일과 원본의 부분 대응은 계산하지 않았습니다(정렬 미정). 관측 설명만 봅니다.',
   moving: '고정하는 동안 내용이 바뀌어 고정한 두 내용을 확실히 알 수 없습니다. 관측 설명만 봅니다.',
+  older: '이 대안은 지금 저장된 내 버전보다 앞선 수정본을 고정한 것이라, 그 수정본의 내용을 다시 읽지 않았습니다. 관측 설명만 봅니다.',
   alignment: '위치는 제안된 정렬입니다. 차이가 왜 생겼는지는 아직 해석하지 않았습니다.',
   firstScreen: '먼저 무엇이 달라졌는지와 그 결과를 만든 실행 구간을 봅니다. 차이를 고르면 원본 부분, 내 버전 부분, 앞뒤 문맥이 나옵니다.',
 });
@@ -50,6 +51,7 @@ const inRange = (span, count) => Array.isArray(span) && span.length === 2 && Num
 export function differenceParts(observation, texts, context = CONTEXT_LINES) {
   const locator = observation?.locator ?? {};
   if (!texts) return Object.freeze({ kind: 'none', reason: MESSAGES.noTexts });
+  if (texts.reason === 'older') return Object.freeze({ kind: 'none', reason: MESSAGES.older });
   if (texts.format === null || texts.mine === null) return Object.freeze({ kind: 'none', reason: MESSAGES.moving });
   if (texts.format !== 'text' && texts.format !== 'table') return Object.freeze({ kind: 'none', reason: MESSAGES.noParts });
   if (texts.format === 'text' && Array.isArray(locator.original_lines)) {
@@ -243,8 +245,10 @@ export function createDifferenceView({ root, document, request, basePath = '/', 
       scope.textContent = scopeText(value);
       renderObserved();
       renderDetail();
+      // the status says "observed" once the whole view, the inquiry inside it included, is drawn
+      await inquiry.showValue(value).catch(() => null);
+      if (mine !== generation) return null;
       say(MESSAGES.observed, 'observed');
-      await inquiry.showValue(value);
       return value;
     } catch (error) {
       if (mine === generation) {

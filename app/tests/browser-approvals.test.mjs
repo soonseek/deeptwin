@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { closeOwnedFixture, waitForOwnedChildOutput } from './helpers/owned-fixture-lifecycle.mjs';
+import { openRunFromList } from './helpers/run-list.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const base = `/${'2'.repeat(32)}/`;
@@ -103,7 +104,7 @@ test('the approval screen decides a pending gate through the owner route and the
   await page.goto(url + 'observe.html');
   const screen = page.locator('#run-approvals');
   const panel = page.locator('#run-panel');
-  await page.getByRole('combobox', { name: '관제할 실행 선택' }).selectOption(approveRun);
+  await openRunFromList(page, approveRun);
   await screen.getByText('결정할 일 1개가 있습니다.').waitFor();
   const [gate] = await screen.locator('.approval-gates li .approval-subject').allTextContents();
   assert.equal(gate, `실행 ${approveRun} · 노드 owner-gate · 범위 release-output`);
@@ -131,7 +132,7 @@ test('the approval screen decides a pending gate through the owner route and the
   await page.locator('#run-panel[data-phase=completed]').waitFor();
 
   // the other run's gate is rejected on the same screen
-  await page.getByRole('combobox', { name: '관제할 실행 선택' }).selectOption(rejectRun);
+  await openRunFromList(page, rejectRun);
   await screen.getByText('결정할 일 1개가 있습니다.').waitFor();
   assert.match(await screen.locator('.approval-gates li').textContent(), new RegExp(`실행 ${rejectRun}`));
   await screen.getByRole('button', { name: '거절: owner-gate/release-output' }).click();

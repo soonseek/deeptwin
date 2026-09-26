@@ -250,6 +250,24 @@ test('the request adapter sends the CSRF header on every non-GET and confines pa
   assert.equal(calls.length, 3);
 });
 
+test('a read may repeat one plain query name (UI phase 5); everything else about the query stays closed', async () => {
+  const { fetch, calls } = fakeFetch([jsonResponse(200, { state: 'authenticated', csrf_token: 'tok-1' }),
+    jsonResponse(200, { events: [] })]);
+  const session = createSupportedSession({ fetch, basePath: BASE });
+  await session.establish();
+  await session.request(`/${HEX}/api/v1/events`, { query: { limit: '50', event_type: ['run.started', 'run.stopped'] } });
+  assert.equal(calls[1][0], `/${HEX}/api/v1/events?limit=50&event_type=run.started&event_type=run.stopped`);
+  for (const query of [{ event_type: [] }, { event_type: Array.from({ length: 65 }, () => 'run.started') },
+    { event_type: ['run.started', 7] }, { event_type: [''] }, { event_type: ['x'.repeat(513)] }, { 'Bad-Key': 'x' },
+    { a: 'x', b: 'x', c: 'x', d: 'x', e: 'x' }, { event_type: { nested: 'x' } },
+    { a: Array.from({ length: 64 }, () => 'x'.repeat(200)) }]) {
+    await assert.rejects(session.request(`/${HEX}/api/v1/events`, { query }), error => error.code === 'invalid_input');
+  }
+  await assert.rejects(session.request(`/${HEX}/api/v1/runs`, { method: 'POST', body: {}, query: { a: 'x' } }),
+    error => error.code === 'invalid_input');
+  assert.equal(calls.length, 2);
+});
+
 test('a refused request keeps the envelope code and the status, and a 401 drops the session', async () => {
   const { fetch } = fakeFetch([
     jsonResponse(200, { state: 'authenticated', csrf_token: 'tok-1' }),

@@ -80,7 +80,7 @@ test('mixed intake, explicit readings and an in-conversation approval that refus
   assert.match(await readings.textContent(), /이 형식은 읽을 수 없습니다/);
   // understanding: one explicit model turn over the text and the readings made
   const model = page.locator('#work-model');
-  await model.getByRole('button', { name: '작업 모델 만들기', exact: true }).click();
+  await model.getByRole('button', { name: '업무 이해하기', exact: true }).click();
   await model.getByRole('button', { name: '이 작업 모델 수락', exact: true }).waitFor();
   // the conversation: ordinary words are recorded and approve nothing
   const chat = page.locator('#work-conversation');
@@ -110,8 +110,11 @@ test('mixed intake, explicit readings and an in-conversation approval that refus
   await chat.locator('li[data-proposal-state="executed"]').waitFor();
   await model.getByText('이 작업 모델을 수락했습니다.').first().waitFor();
   assert.equal(await model.getByRole('button', { name: '이 작업 모델 수락', exact: true }).count(), 0);
-  // after a reload the shared history is the instance's, not this page's
+  // after a reload the shared history is the instance's, not this page's. UI phase 5: the
+  // understanding step is complete, so it opens folded to one line; the owner opens it again
   await page.reload();
+  await page.locator('#step-understand[data-folded="true"]').waitFor();
+  await page.locator('#step-understand .step-toggle').click();
   await chat.locator('li[data-origin="approval_response"]').filter({ hasText: phrase }).waitFor();
   assert.equal(await chat.locator('li[data-proposal-state="executed"]').count(), 1);
   assert.equal(await readings.locator('li[data-reading-state="complete"]').count(), 1);

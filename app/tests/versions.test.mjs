@@ -172,3 +172,27 @@ test('the consumed budget is shown exactly as the loop recorded it', () => {
   assert.equal(budgetText({}), '기록 없음');
   assert.equal(budgetText(undefined), '기록 없음');
 });
+
+test('UI phase 5: four tabs — 운영 버전 · 후보 · 실험 · 승인·적용·롤백 — each with a plain empty state', async () => {
+  const { TABS } = await import('../static/versions.mjs');
+  assert.deepEqual(TABS.map(([, label]) => label), ['운영 버전', '후보', '실험', '승인·적용·롤백']);
+  const { root, panel } = panelWith([view({ state: null, candidates: [], experiments: [] })]);
+  await panel.load();
+  const tabs = root.findAll(el => el.getAttribute('role') === 'tab');
+  assert.deepEqual(tabs.map(tab => tab.textContent), ['운영 버전', '후보', '실험', '승인·적용·롤백']);
+  assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
+  const text = root.textContent;
+  assert.match(text, /아직 운영 버전이 없습니다\. 새 환경에서는 정상입니다\./);
+  assert.match(text, new RegExp(MESSAGES.noCandidates));
+  assert.match(text, new RegExp(MESSAGES.noDecisions));
+  assert.equal(button(root, '승인'), undefined);
+  // with a candidate, the gates are in 후보 and the decisions in 승인·적용·롤백; the tab names count
+  const filled = panelWith([view()]);
+  await filled.panel.load();
+  const panels = filled.root.findAll(el => el.getAttribute('role') === 'tabpanel');
+  assert.match(panels[1].textContent, /회귀: pass/);
+  assert.equal(panels[1].findAll(el => el.tagName === 'BUTTON').length, 0);
+  assert.ok(panels[3].findAll(el => el.tagName === 'BUTTON' && el.textContent === '승인').length === 1);
+  assert.deepEqual(filled.root.findAll(el => el.getAttribute('role') === 'tab').map(tab => tab.textContent),
+    ['운영 버전', '후보 1', '실험 1', '승인·적용·롤백']);
+});

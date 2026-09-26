@@ -9,6 +9,10 @@
 // it says exactly why (no approved design: no critic configuration can be qualified here)
 // and offers no start: nothing is started, simulated or implied. A qualification outside
 // the release designs is labelled a simulation (test-actor). All text uses textContent.
+// UI phase 5 (redesign §5.1, UX-D06): this is step ④ 준비·시작; the start button is `업무 시작`
+// (still only after the explicit consent to exactly the inputs shown). Without an environment
+// the one-sentence reason stays, with the server's raw absence in "기술 정보". `onStarted` and
+// `onLoaded` let the page move its steps and its list of this work's runs.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const BASE_PATH = /^\/(?:[0-9a-f]{32}\/)?$/;
@@ -66,7 +70,10 @@ export function usageRows(entry, policy) {
   ];
 }
 
-export function createRunStart({ root, document, request, basePath = '/', commandId, workId } = {}) {
+export const START_LABEL = '업무 시작';
+
+export function createRunStart({ root, document, request, basePath = '/', commandId, workId, onStarted = () => {},
+  onLoaded = () => {}, heading = true } = {}) {
   if (typeof root?.replaceChildren !== 'function') fail('a root is required');
   if (typeof request !== 'function') fail('a request adapter is required');
   if (typeof commandId !== 'function') fail('a command id source is required');
@@ -84,7 +91,8 @@ export function createRunStart({ root, document, request, basePath = '/', comman
   const status = element('p', '', { role: 'status', 'aria-live': 'polite', class: 'run-start-status' });
   const body = element('div', undefined, { class: 'run-start-body' });
   const refresh = element('button', '실행 준비 다시 읽기', { type: 'button' });
-  root.replaceChildren(element('h2', '실행 시작'), status, body, refresh);
+  refresh.setAttribute('class', 'btn btn-quiet run-start-refresh');
+  root.replaceChildren(...(heading ? [element('h2', '실행 시작')] : []), status, body, refresh);
   refresh.addEventListener('click', () => { load().catch(() => {}); });
   let view = null;
   let policies = [];
@@ -98,7 +106,11 @@ export function createRunStart({ root, document, request, basePath = '/', comman
   function render(selected = 0, policyIndex = 0) {
     const environments = view.environments;
     if (!environments.length) {
-      body.replaceChildren(element('p', absenceText(view), { class: 'run-start-absent', 'data-reason': view.absence?.reason ?? '' }));
+      const technical = element('details', undefined, { class: 'tech-details' });
+      technical.append(element('summary', '기술 정보 (서버 원문)'),
+        element('p', `absence: ${view.absence?.code ?? '없음'} · ${view.absence?.reason ?? '없음'} · runs: ${view.runs?.available ? 'available' : (view.runs?.reason ?? 'unavailable')}`));
+      body.replaceChildren(element('p', absenceText(view), { class: 'run-start-absent', 'data-reason': view.absence?.reason ?? '' }),
+        technical);
       say('실행을 시작할 수 없습니다.', 'absent');
       return;
     }
@@ -113,10 +125,11 @@ export function createRunStart({ root, document, request, basePath = '/', comman
     budget.value = String(policyIndex);
     const entry = environments[selected];
     const policy = policies[policyIndex] ?? null;
-    const usage = element('dl', undefined, { class: 'run-start-usage', 'aria-label': '이 실행이 쓰는 것' });
+    const usage = element('dl', undefined, { class: 'run-start-usage kv-list', 'aria-label': '이 실행이 쓰는 것' });
     for (const [label, value] of usageRows(entry, policy)) usage.append(element('dt', label), element('dd', value));
-    const agree = element('input', undefined, { type: 'checkbox', 'aria-label': '위 내용으로 이 실행 한 번에 동의합니다' });
-    const start = element('button', '동의하고 실행 시작', { type: 'button', 'data-command': 'start' });
+    const agree = element('input', undefined, { type: 'checkbox', 'aria-label': '위 내용으로 이 실행 한 번에 동의합니다',
+      id: 'run-start-consent' });
+    const start = element('button', START_LABEL, { type: 'button', 'data-command': 'start', class: 'btn btn-primary step-action' });
     const outcome = element('p', '', { role: 'status', class: 'run-start-outcome' });
     const blockers = [];
     if (!view.runs.available) blockers.push('이 인스턴스에 실행기가 설정되지 않아 실행을 시작할 수 없습니다.');
@@ -128,9 +141,14 @@ export function createRunStart({ root, document, request, basePath = '/', comman
     budget.addEventListener('change', () => render(Number(picker.value), Number(budget.value)));
     start.addEventListener('click', () => begin(entry, policy, outcome, start));
     update();
-    body.replaceChildren(picker, budget, element('h3', '이 실행이 쓰는 것'), usage,
+    const pickers = element('div', undefined, { class: 'run-start-pickers' });
+    pickers.append(element('label', '실행 환경', { class: 'run-start-picker-label' }), picker,
+      element('label', '예산 정책', { class: 'run-start-picker-label' }), budget);
+    const consent = element('div', undefined, { class: 'run-start-consent' });
+    consent.append(agree, element('label', '위 내용으로 이 실행 한 번에 동의합니다', { for: 'run-start-consent' }));
+    body.replaceChildren(pickers, element('h3', '이 실행이 쓰는 것'), usage,
       ...blockers.map(text => element('p', text, { class: 'run-start-blocked' })),
-      element('label', '위 내용으로 이 실행 한 번에 동의합니다'), agree, start, outcome);
+      consent, start, outcome);
     say(`준비된 환경 ${environments.length}개`, 'ready');
   }
 
@@ -150,6 +168,7 @@ export function createRunStart({ root, document, request, basePath = '/', comman
       outcome.replaceChildren(element('span', `실행 ${short(run.run_id)}을 시작했습니다 · 상태 ${run.phase}. `),
         element('a', '관제 화면에서 보기', { href: `./observe.html#run=${run.run_id}`, 'data-run': run.run_id }));
       outcome.dataset.state = 'started';
+      try { onStarted(run); } catch { /* the page's own redraw never undoes a started run */ }
       return run;
     } catch (error) {
       outcome.textContent = `시작하지 않았습니다: ${ERROR_TEXT[error?.code] ?? ERROR_TEXT.unavailable}`;
@@ -179,8 +198,9 @@ export function createRunStart({ root, document, request, basePath = '/', comman
       return null;
     }
     render();
+    try { onLoaded(view); } catch { /* the page's own redraw never hides this answer */ }
     return view;
   }
 
-  return Object.freeze({ load });
+  return Object.freeze({ load, get view() { return view; } });
 }

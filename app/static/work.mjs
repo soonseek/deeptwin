@@ -17,6 +17,14 @@
 // their contents are read only when the owner asks, per original (source-reading.mjs),
 // and the shared conversation (chat.mjs) binds messages to this work. The microphone
 // is not part of this screen (T024).
+//
+// UI phase 5 (docs/ui/2026-09-26-product-ux-redesign.md §5.1): where the page offers the step
+// mounts, the modules sit in one stepped surface (work-steps.mjs): ① 설명·자료, ② 업무 이해,
+// ③ 환경 제안, ④ 준비·시작 — only the steps the server says were reached, plus the next one with
+// its single call to action; a complete step folds to one line. The work's runs are listed
+// beside the steps, export and source deletion sit folded in the work menu (optional, US7-3;
+// `#work-records` / `#work-deletion` open them), and with several saved works a switcher and
+// "새 업무" change the work only when nothing typed or picked here is unsaved.
 
 import { createWorkConversation } from './chat.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
@@ -26,6 +34,8 @@ import { createWorkExport } from './work-export.mjs';
 import { createWorkModel } from './work-model.mjs';
 import { createRunStart } from './run-start.mjs';
 import { createDesignWorkspace } from './workspace.mjs';
+import { createWorkRuns, savedWorkIds } from './run-summaries.mjs';
+import { createWorkSteps, STEPS } from './work-steps.mjs';
 import { mountShell } from './ui-shell.mjs';
 
 export const MOUNT_IDS = Object.freeze({ session: 'session-status', notice: 'intake-notice', form: 'work-form',
@@ -42,6 +52,13 @@ export const RUN_START_MOUNT_ID = 'work-run';
 // the owner's explicit readings of originals and the shared conversation (T023), optional too
 export const READINGS_MOUNT_ID = 'source-readings';
 export const CONVERSATION_MOUNT_ID = 'work-conversation';
+// UI phase 5: the step mounts (each `step-<id>` holds a `step-<id>-body`), the work switcher,
+// this work's runs and the work menu's folds — all optional
+export const STEP_MOUNT_PREFIX = 'step-';
+export const SWITCHER_MOUNT_ID = 'work-switcher';
+export const RUNS_MOUNT_ID = 'work-runs';
+export const FOLDS = Object.freeze({ 'work-records': 'work-records-fold', 'work-deletion': 'work-deletion-fold' });
+export const MAX_SWITCHER_WORKS = 30;
 export const MAX_TEXT_CHARS = 20_000;  // app/services/works.py MAX_TEXT_CHARS
 export const MAX_TEXT_BYTES = 65_536;  // app/services/works.py MAX_TEXT_BYTES (raw UTF-8)
 const CREATE_SCHEMA = 'work-create-command-v1';
@@ -191,7 +208,8 @@ export function workContext(text, revision) {
   return { work: name || null, extra: isCount(revision) ? [['저장본', `수정본 ${revision}`]] : [] };
 }
 
-export async function boot({ document, location, fetch, crypto, storage, shell = null } = {}) {
+export async function boot({ document, location, fetch, crypto, storage, shell = null, events = null,
+  reload = null } = {}) {
   if (typeof document !== 'object' || document === null || typeof document.getElementById !== 'function'
       || typeof document.createElement !== 'function') fail('a document is required');
   if (typeof fetch !== 'function') fail('a fetch function is required');
@@ -268,7 +286,15 @@ export async function boot({ document, location, fetch, crypto, storage, shell =
   }
   roots.link.replaceChildren(links);
 
+  // the stepped surface, where the page offers it (a page without the mounts keeps the list)
+  const stepMounts = Object.fromEntries(STEPS.map(step => [step.id, {
+    root: document.getElementById(`${STEP_MOUNT_PREFIX}${step.id}`),
+    body: document.getElementById(`${STEP_MOUNT_PREFIX}${step.id}-body`) }]));
+  const steps = Object.values(stepMounts).every(item => typeof item.root?.replaceChildren === 'function' && item.body)
+    ? createWorkSteps({ document, roots: stepMounts }) : null;
+
   let state = store.read();
+  let loadedWork = state.work_id ?? null;  // the work the work-scoped surfaces last read
   const recordsRoot = document.getElementById(RECORDS_MOUNT_ID);
   const exporter = recordsRoot !== null && typeof recordsRoot?.replaceChildren === 'function'
     ? createWorkExport({ root: recordsRoot, document, basePath, request: session.request, crypto,
@@ -288,14 +314,14 @@ export async function boot({ document, location, fetch, crypto, storage, shell =
   let conversation = null;
   const workModelRoot = document.getElementById(WORK_MODEL_MOUNT_ID);
   const workModel = workModelRoot !== null && typeof workModelRoot?.replaceChildren === 'function'
-    ? createWorkModel({ root: workModelRoot, document, basePath, request: session.request, crypto,
+    ? createWorkModel({ root: workModelRoot, document, basePath, request: session.request, crypto, restore: steps !== null,
       work: () => ({ work_id: state.work_id ?? null, revision: state.revision ?? null, sources: savedSources.length }),
-      onChange: () => { conversation?.refreshReferences(); design?.refreshCreation(); } })
+      onChange: () => { conversation?.refreshReferences(); design?.refreshCreation(); refreshSteps(); } })
     : null;
   const readingsRoot = document.getElementById(READINGS_MOUNT_ID);
   const readings = readingsRoot !== null && typeof readingsRoot?.replaceChildren === 'function'
     ? createSourceReadings({ root: readingsRoot, document, basePath, request: session.request, crypto,
-      workId: () => state.work_id ?? null, onChange: () => conversation?.refreshReferences() })
+      workId: () => state.work_id ?? null, onChange: () => { conversation?.refreshReferences(); refreshSteps(); } })
     : null;
   // what the owner can point a message at: exactly the records this screen shows now
   function conversationReferences() {
@@ -312,19 +338,76 @@ export async function boot({ document, location, fetch, crypto, storage, shell =
   const conversationRoot = document.getElementById(CONVERSATION_MOUNT_ID);
   conversation = conversationRoot !== null && typeof conversationRoot?.replaceChildren === 'function'
     ? createWorkConversation({ root: conversationRoot, document, basePath, request: session.request, crypto, storage,
-      work: () => ({ work_id: state.work_id ?? null, revision: state.revision ?? null }),
-      references: conversationReferences, onDecided: () => workModel?.refresh() })
+      work: () => ({ work_id: state.work_id ?? null, revision: state.revision ?? null }), headingLevel: steps ? 3 : 2,
+      references: conversationReferences,
+      // a decision made in the conversation is the same one the panel makes: read it, then move the steps
+      onDecided: () => workModel?.refresh().then(() => { design?.refreshCreation(); refreshSteps(); }) })
     : null;
+  // the saved works of this instance (from their `work.created` events): the switcher's list, and
+  // which design requests belong to no saved work
+  let knownWorks = null;
   const designRoot = document.getElementById(DESIGN_WORKSPACE_MOUNT_ID);
   const design = designRoot !== null && typeof designRoot?.replaceChildren === 'function'
     ? createDesignWorkspace({ root: designRoot, document, basePath, request: session.request,
-      commandId: () => crypto.randomUUID(), workModel: () => workModel?.view ?? null })
+      commandId: () => crypto.randomUUID(), workModel: () => workModel?.view ?? null,
+      ...(steps ? { workId: () => state.work_id ?? null, knownWorks: () => knownWorks,
+        onChange: () => refreshSteps(), onPrepared: () => { runStart?.load().catch(() => {}); } } : {}) })
     : null;
   const runRoot = document.getElementById(RUN_START_MOUNT_ID);
-  const runStart = runRoot !== null && typeof runRoot?.replaceChildren === 'function'
-    ? createRunStart({ root: runRoot, document, basePath, request: session.request,
-      commandId: () => crypto.randomUUID(), workId: () => state.work_id ?? null })
+  const runsRoot = document.getElementById(RUNS_MOUNT_ID);
+  const workRuns = runsRoot !== null && typeof runsRoot?.replaceChildren === 'function'
+    ? createWorkRuns({ root: runsRoot, document, basePath, request: session.request, workId: () => state.work_id ?? null })
     : null;
+  const runStart = runRoot !== null && typeof runRoot?.replaceChildren === 'function'
+    ? createRunStart({ root: runRoot, document, basePath, request: session.request, heading: steps === null,
+      commandId: () => crypto.randomUUID(), workId: () => state.work_id ?? null,
+      onLoaded: () => refreshSteps(),
+      onStarted: () => { workRuns?.load().then(() => refreshSteps()).catch(() => {}); } })
+    : null;
+
+  // ---- the steps: what each one is, from what the modules read from the server ----------------
+  function readingCounts() {
+    const counts = { complete: 0, partial: 0, unreadable: 0, notRead: 0 };
+    for (const entry of readings?.listing?.sources ?? []) {
+      const reading = entry?.reading?.state;
+      if (reading === 'complete') counts.complete += 1;
+      else if (reading === 'partial') counts.partial += 1;
+      else if (reading === 'unreadable') counts.unreadable += 1;
+      else if (entry?.original_state !== 'deleted') counts.notRead += 1;
+    }
+    return counts;
+  }
+
+  function unsavedHere() {
+    if (state.pending_command || state.unresolved_legacy) return true;
+    if (selections.some(item => !['stored', 'cancelled'].includes(item.status))) return true;
+    return state.work_id ? savedValue !== null && area.value !== savedValue : area.value !== '';
+  }
+
+  function facts() {
+    const model = workModel?.view ?? null;
+    const designFacts = design?.facts?.() ?? {};
+    return {
+      describe: { saved: Boolean(state.work_id), dirty: unsavedHere(), revision: state.revision ?? null,
+        sources: savedSources.length, readings: readingCounts() },
+      understand: { state: model?.state ?? null, revision: model?.work_model?.work_revision_ref?.version ?? null,
+        goals: model?.work_model?.goals?.length ?? 0, deliverables: model?.work_model?.deliverables?.length ?? 0,
+        blocking: model?.blocking_unknown_ids?.length ?? 0 },
+      design: { requests: designFacts.requests ?? 0, presented: designFacts.presented ?? null },
+      start: { environments: runStart?.view?.environments?.length ?? 0, runs: workRuns?.runs?.length ?? 0 },
+    };
+  }
+
+  const sideRoot = document.getElementById('work-side');
+  function refreshSteps() {
+    if (steps === null) return null;
+    // the conversation is part of understanding: it opens with the first work model
+    if (conversationRoot) conversationRoot.hidden = !(workModel?.view);
+    // readings wait for a saved original; the runs and the work menu for a saved work
+    if (readingsRoot) readingsRoot.hidden = savedSources.length === 0;
+    if (sideRoot) sideRoot.hidden = !state.work_id;
+    return steps.update(facts());
+  }
   let activeUpload = null;
 
   function renderMaterials() {
@@ -372,10 +455,17 @@ export async function boot({ document, location, fetch, crypto, storage, shell =
     savedSources = saved.source_refs ?? [];
     if (saved.ref && typeof saved.ref === 'object') savedRef = saved.ref;
     renderMaterials();
+    refreshSteps();
     if (deletion !== null) deletion.load().catch(() => {});
-    if (workModel !== null) workModel.load().catch(() => {});
-    if (readings !== null) readings.load().catch(() => {});
+    if (workModel !== null) workModel.load().then(refreshSteps).catch(() => {});
+    if (readings !== null) readings.load().then(refreshSteps).catch(() => {});
     if (conversation !== null) conversation.load().catch(() => {});
+    if (steps !== null && loadedWork !== saved.work_id) {
+      // a work saved for the first time here: its own designs, runs and the switcher's list
+      loadKnownWorks().then(() => design?.load()).catch(() => {});
+      workRuns?.load().then(refreshSteps).catch(() => {});
+    }
+    loadedWork = saved.work_id;
     for (const ref of savedSources) {
       if (!originals.has(ref.id)) {
         try {
@@ -574,6 +664,7 @@ export async function boot({ document, location, fetch, crypto, storage, shell =
   area.addEventListener('input', () => {
     keep({ draft_text: area.value, base_revision: state.work_id && state.base_revision === undefined ? state.revision : state.base_revision });
     draftStatus();
+    refreshSteps();
   });
 
   async function acceptSaved(saved, pending) {
@@ -678,6 +769,7 @@ export async function boot({ document, location, fetch, crypto, storage, shell =
       keep({ draft_text: area.value, base_revision: state.revision });
       draftStatus();
     }
+    refreshSteps();
   }
 
   function sendFailed(error) {
@@ -752,13 +844,122 @@ export async function boot({ document, location, fetch, crypto, storage, shell =
     await saveAll();
   });
 
+  // ---- the work switcher and "새 업무" (UI phase 5) -------------------------------------------
+  const switcherRoot = steps !== null ? document.getElementById(SWITCHER_MOUNT_ID) : null;
+  const switcherStatus = element('p', { role: 'status', 'aria-live': 'polite', class: 'work-switcher-status' });
+  const names = new Map();  // work id -> its first line, read once
+
+  function refuseSwitch() {
+    if (!unsavedHere() && !busy) return false;
+    switcherStatus.textContent = '저장하지 않은 입력이나 전송 중인 자료가 있어 업무를 바꾸지 않았습니다. 먼저 저장해 주세요.';
+    switcherStatus.dataset.state = 'refused';
+    return true;
+  }
+
+  function reopenAs(changes) {
+    keep({ base_revision: undefined, draft_text: undefined, pending_command: undefined, unresolved_legacy: undefined, ...changes });
+    if (typeof reload === 'function') reload();
+    else location.reload?.();
+  }
+
+  async function renderSwitcher(ids) {
+    if (switcherRoot === null || typeof switcherRoot.replaceChildren !== 'function') return;
+    const offerSelect = ids.length >= 2 || (ids.length >= 1 && !state.work_id);
+    if (!offerSelect && !state.work_id) {
+      switcherRoot.replaceChildren();
+      switcherRoot.hidden = true;
+      return;
+    }
+    // each listed work's first line and latest revision, read from the work itself
+    const listed = ids.slice(-MAX_SWITCHER_WORKS).reverse();
+    const works = (await Promise.all(listed.map(async id => {
+      try {
+        const saved = await session.request(`${prefix}/api/v1/works/${id}`);
+        return isCount(saved?.revision) ? { id, revision: saved.revision,
+          name: workContext(saved.text, saved.revision).work ?? '설명 없이 자료만 있는 업무' } : null;
+      } catch {
+        return null;  // a work this instance no longer serves is not offered
+      }
+    }))).filter(Boolean);
+    const parts = [];
+    if (offerSelect) {
+      const select = element('select', { id: 'work-switch', 'aria-label': '다른 업무 열기' });
+      if (!state.work_id) select.append(element('option', { value: '' }, '새 업무 (저장 전)'));
+      for (const item of works) {
+        const option = element('option', { value: item.id, title: item.id }, `${item.name} · 수정본 ${item.revision}`);
+        select.append(option);
+      }
+      select.value = state.work_id ?? '';
+      select.addEventListener('change', () => {
+        const chosen = select.value;
+        if (!chosen || chosen === state.work_id) return;
+        if (refuseSwitch()) {
+          select.value = state.work_id ?? '';
+          return;
+        }
+        const target = works.find(item => item.id === chosen);
+        if (!target) return;
+        reopenAs({ work_id: target.id, revision: target.revision });
+      });
+      parts.push(element('label', { for: 'work-switch', class: 'work-switch-label' }, '업무'), select);
+    }
+    if (state.work_id) {
+      const fresh = element('button', { type: 'button', class: 'btn btn-secondary work-new' }, '새 업무');
+      fresh.addEventListener('click', () => {
+        if (refuseSwitch()) return;
+        reopenAs({ work_id: undefined, revision: undefined });
+      });
+      parts.push(fresh);
+    }
+    switcherRoot.replaceChildren(...parts, switcherStatus);
+    switcherRoot.hidden = false;
+  }
+
+  async function loadKnownWorks() {
+    if (steps === null) return null;
+    try {
+      const ids = await savedWorkIds({ request: session.request, basePath });
+      if (state.work_id && !ids.includes(state.work_id)) ids.push(state.work_id);
+      knownWorks = new Set(ids);
+      await renderSwitcher(ids);
+      return ids;
+    } catch {
+      knownWorks = null;
+      return null;
+    }
+  }
+
+  // ---- the work menu's folds: `#work-records` / `#work-deletion` open them ---------------------
+  function openFold() {
+    const named = typeof location?.hash === 'string' ? location.hash.replace(/^#/, '') : '';
+    if (!Object.hasOwn(FOLDS, named)) return false;
+    const fold = document.getElementById(FOLDS[named]);
+    if (!fold) return false;
+    fold.open = true;
+    document.getElementById(named)?.scrollIntoView?.({ block: 'start' });
+    return true;
+  }
+  if (typeof events?.addEventListener === 'function') events.addEventListener('hashchange', () => openFold());
+
   if (deletion !== null) deletion.load().catch(() => {});
-  if (workModel !== null) workModel.load().catch(() => {});
-  if (design !== null) design.load().catch(() => {});
-  if (runStart !== null) runStart.load().catch(() => {});
-  if (readings !== null) readings.load().catch(() => {});
+  const first = [];
+  if (workModel !== null) first.push(workModel.load());
+  if (runStart !== null) first.push(runStart.load());
+  if (readings !== null) first.push(readings.load());
   if (conversation !== null) conversation.load().catch(() => {});
-  return Object.freeze({ mode, basePath, session, exporter, deletion, workModel, design, runStart, readings, conversation });
+  if (workRuns !== null) first.push(workRuns.load());
+  if (design !== null) first.push(steps !== null ? loadKnownWorks().then(() => design.load()) : design.load());
+  openFold();
+  // the first reads are in: complete steps fold, the next step stands open
+  const ready = Promise.allSettled(first).then(() => {
+    if (steps !== null) {
+      refreshSteps();
+      steps.settle(facts());
+    }
+    openFold();
+  });
+  return Object.freeze({ mode, basePath, session, exporter, deletion, workModel, design, runStart, readings, conversation,
+    steps, workRuns, ready, refreshSteps });
 }
 
 // the page's entry: a boot that fails before the exchange still reaches the status line
@@ -786,5 +987,6 @@ if (typeof globalThis.document === 'object' && globalThis.document !== null
   }
   const shell = mountShell({ document: globalThis.document, page: 'work' });
   bootPage({ document: globalThis.document, location: globalThis.location, crypto: globalThis.crypto,
-    storage, shell, fetch: (...args) => globalThis.fetch(...args) });
+    storage, shell, events: globalThis, reload: () => globalThis.location.reload(),
+    fetch: (...args) => globalThis.fetch(...args) });
 }

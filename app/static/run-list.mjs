@@ -81,7 +81,11 @@ function partition(error) {
   return CODE_BY_STATUS[error?.status] ?? 'unavailable';
 }
 
-export function createRunList({ root, document, request, basePath = '/', onSelect = () => {} } = {}) {
+// UI phase 5: on the run screen this list is the compact "다른 실행" switch in the run detail's
+// header (`compact`: a visible label, no refresh button); the run table (run-summaries.mjs) is
+// the primary way to pick a run.
+export function createRunList({ root, document, request, basePath = '/', onSelect = () => {}, compact = false,
+  label = '관제할 실행 선택' } = {}) {
   if (typeof root !== 'object' || root === null || typeof root.replaceChildren !== 'function') fail('a root element is required');
   if (typeof document !== 'object' || document === null || typeof document.createElement !== 'function') fail('a document is required');
   if (typeof request !== 'function') fail('an injected request function is required');
@@ -96,11 +100,17 @@ export function createRunList({ root, document, request, basePath = '/', onSelec
   }
 
   const status = element('p', IDLE_STATUS, { role: 'status', 'aria-live': 'polite' });
-  const select = element('select', undefined, { 'aria-label': '관제할 실행 선택' });
+  const select = element('select', undefined, { 'aria-label': label });
   select.disabled = true;
   const refresh = element('button', '실행 목록 다시 읽기');
   refresh.type = 'button';
-  root.replaceChildren(status, select, refresh);
+  if (compact) {
+    select.setAttribute('id', 'run-switch-select');
+    status.setAttribute('class', 'visually-hidden');
+    root.replaceChildren(element('label', '다른 실행', { for: 'run-switch-select', class: 'run-switch-label' }), select, status);
+  } else {
+    root.replaceChildren(status, select, refresh);
+  }
 
   let state = Object.freeze({ busy: false, runs: Object.freeze([]), error: null, selected: null });
   let generation = 0;

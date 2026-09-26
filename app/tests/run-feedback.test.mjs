@@ -306,3 +306,36 @@ test('without a command id source the detail is read-only: no feedback controls,
     && node.getAttribute('data-kind') === 'visit');
   assert.equal(row.getAttribute('data-feedback'), 'needs_attention');
 });
+
+test('UI phase 5: "이전 기록 N건" counts the earlier revisions and lists them only when opened', async () => {
+  const { earlierCount, earlierRevisions, historyLine } = await import('../static/run-feedback.mjs');
+  assert.equal(earlierCount(null), 0);
+  assert.equal(earlierCount({ state: 'set', revision: 1 }), 0);
+  assert.equal(earlierCount({ state: 'set', revision: 3 }), 2);
+  assert.equal(earlierCount({ state: 'cleared', revision: 3 }), 3);
+  const target = runTarget();
+  const history = [
+    { revision: 1, target, state: 'set', mark: 'needs_attention', memo: null, recorded_at_utc: '2026-09-26T00:00:00.000000Z' },
+    { revision: 1, target: stepTarget('publish', 1, 1), state: 'set', mark: 'ok', memo: null, recorded_at_utc: '2026-09-26T00:00:01.000000Z' },
+    { revision: 2, target, state: 'set', mark: 'ok', memo: '두 번째 판단', recorded_at_utc: '2026-09-26T00:01:00.000000Z' },
+  ];
+  const earlier = earlierRevisions(history, target, { state: 'set', revision: 2 });
+  assert.deepEqual(earlier.map(item => item.revision), [1]);
+  assert.equal(historyLine(earlier[0]), '수정본 1 · 확인 필요');
+  assert.equal(historyLine(history[2]), '수정본 2 · 괜찮음 · 메모 “두 번째 판단”');
+  assert.equal(historyLine({ revision: 3, state: 'cleared' }), '수정본 3 · 지움');
+  let reads = 0;
+  const control = createFeedbackControl({ document, idPrefix: 'feedback-run', onSave: async () => null, onClear: async () => null,
+    onHistory: async last => { reads += 1; return earlierRevisions(history, target, last); } });
+  control.show({ heading: '이 결과 전체', item: history[2], last: history[2] });
+  assert.equal(control.history.hidden, false);
+  assert.match(control.history.textContent, /이전 기록 1건/);
+  assert.equal(reads, 0, 'nothing is read before the owner opens it');
+  control.history.open = true;
+  await control.history.dispatch('toggle');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(reads, 1);
+  assert.match(control.history.textContent, /수정본 1 · 확인 필요/);
+  control.show({ heading: '이 결과 전체', item: history[0], last: history[0] });
+  assert.equal(control.history.hidden, true);
+});

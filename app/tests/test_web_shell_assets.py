@@ -45,6 +45,8 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "run-detail.mjs": "application/javascript",
         "run-feedback.mjs": "application/javascript",
         "difference-view.mjs": "application/javascript",
+        "run-summaries.mjs": "application/javascript",
+        "work-steps.mjs": "application/javascript",
         "artifacts.mjs": "application/javascript",
         "alternatives.mjs": "application/javascript",
         "alternative-file.mjs": "application/javascript",

@@ -43,9 +43,13 @@ def test_the_pool_is_read_back_honestly_with_the_real_count_and_reasons(tmp_path
     with owner_app(tmp_path, Executor()) as subject:
         request, roles = open_seeded(subject.app)
         listed = subject.client.get(url(subject), headers=headers(subject.profile)).json()
+        # the request names the work it was designed for (its confirmed work model's revision)
+        work_ref = request.work_target.work_model.work_revision_ref
         assert listed["requests"] == [{"request_id": request.request_id, "version": 1,
-                                       "requested_candidate_count": 3}]
+                                       "requested_candidate_count": 3, "work_id": work_ref.id,
+                                       "work_revision": work_ref.version}]
         view = read(subject, request.request_id)
+        assert view["request"]["work_revision_ref"] == work_ref.as_dict()
         pool = view["pool"]
         presented = {roles["base"].candidate_id, roles["reshaped"].candidate_id}
         assert set(pool["presented_candidate_ids"]) == presented

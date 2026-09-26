@@ -311,7 +311,7 @@ export function conversationStorageKey(basePath, workId) {
 }
 
 export function createWorkConversation({ root, document, request, crypto, basePath = '/', work, references = () => [],
-  storage = null, onDecided = () => {} } = {}) {
+  storage = null, onDecided = () => {}, headingLevel = 2 } = {}) {
   if (typeof root?.replaceChildren !== 'function') throw new TypeError('a root is required');
   if (typeof request !== 'function' || typeof crypto?.randomUUID !== 'function') throw new TypeError('request and crypto are required');
   if (typeof work !== 'function' || typeof references !== 'function' || typeof onDecided !== 'function') {
@@ -369,7 +369,7 @@ export function createWorkConversation({ root, document, request, crypto, basePa
   composer.append(element('label', '대화 입력', { for: 'conversation-input' }), input, refBox,
     element('label', '함께 제안할 명령', { for: 'conversation-command' }), kind, send, answer,
     element('p', CONVERSATION_MESSAGES.draftKept, { class: 'conversation-draft-note' }));
-  root.replaceChildren(element('h2', '대화'), element('p', CONVERSATION_MESSAGES.intro),
+  root.replaceChildren(element(`h${headingLevel === 3 ? 3 : 2}`, '대화'), element('p', CONVERSATION_MESSAGES.intro),
     element('p', CONVERSATION_MESSAGES.approvalRule), status, log, proposals, composer);
 
   function say(text, code) {
