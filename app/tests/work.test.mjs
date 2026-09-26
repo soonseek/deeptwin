@@ -10,7 +10,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { MAX_TEXT_BYTES, MAX_TEXT_CHARS, MOUNT_IDS, boot, bootPage, storageKey } from '../static/work.mjs';
+import { MAX_TEXT_BYTES, MAX_TEXT_CHARS, MOUNT_IDS, boot, bootPage, storageKey, workContext } from '../static/work.mjs';
 
 const HEX = '2'.repeat(32);
 const BASE = `/${HEX}/`;
@@ -688,4 +688,12 @@ test('resolving an older pending receipt never calls its text the current saved 
   assert.equal(state.revision, 5);
   assert.equal(state.base_revision, 2);
   assert.equal(state.draft_text, 'own edit');
+});
+
+test('the context bar names the saved work by its first written line and revision, and nothing else', () => {
+  assert.deepEqual(workContext('\n  화요일 공간 안내  \n둘째 줄', 3), { work: '화요일 공간 안내', extra: [['저장본', '수정본 3']] });
+  assert.equal(workContext('가'.repeat(40), 1).work, `${'가'.repeat(31)}…`);
+  // a material-only work has no written line: no name is made up for it
+  assert.deepEqual(workContext('', 2), { work: null, extra: [['저장본', '수정본 2']] });
+  assert.deepEqual(workContext(null, 0), { work: null, extra: [] });
 });

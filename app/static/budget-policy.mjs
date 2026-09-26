@@ -1,4 +1,4 @@
-// T023: the owner's run budgets on the records page, over `budget-policies-v1`. A budget
+// T023: the owner's run budgets on the settings page, over `budget-policies-v1`. A budget
 // is exact finite limits the runtime enforces for a run the owner consents to — model
 // calls, tool calls, node visits, loop rounds, output bytes, concurrency, wall seconds,
 // candidates — and, for an API-key connection only, a currency and cost cap. A

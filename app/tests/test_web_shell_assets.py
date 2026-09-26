@@ -71,6 +71,10 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "start.html": "text/html",
         "work.mjs": "application/javascript",
         "work.html": "text/html",
+        "settings-page.mjs": "application/javascript",
+        "ui-shell.mjs": "application/javascript",
+        "ui-parts.mjs": "application/javascript",
+        "ui-format.mjs": "application/javascript",
     }
     assert "index.html" not in MODULES
 
@@ -195,7 +199,8 @@ def test_every_pages_module_graph_is_catalogued_transitively():
     # to load in the browser — so the import graph is walked from the page's module
     import re
 
-    pending = ["observe.mjs", "work.mjs", "start.mjs"]
+    pending = ["observe.mjs", "work.mjs", "start.mjs", "records-page.mjs", "settings-page.mjs",
+               "versions-page.mjs", "browser-grants.mjs", "extensions.mjs"]
     seen = set()
     while pending:
         name = pending.pop()
@@ -206,6 +211,8 @@ def test_every_pages_module_graph_is_catalogued_transitively():
         source = (STATIC / name).read_text(encoding="utf-8")
         pending.extend(re.findall(r"from '\./([^']+)'", source))
     assert {"run-list.mjs", "run-panel.mjs", "runtime.mjs", "session.mjs"} <= seen
+    # the app shell and its parts are loaded by every signed-in page (2026-09-26 phase 2)
+    assert {"ui-shell.mjs", "ui-parts.mjs", "ui-format.mjs", "account.mjs", "records-backup.mjs"} <= seen
 
 
 @pytest.mark.parametrize("mode", ["local", "https"])
@@ -373,3 +380,30 @@ def test_the_first_screens_flow_end_to_end_on_the_real_factory(tmp_path, mode):
     # the forms never submit natively: method post, so a blocked script cannot put a secret in a URL
     source = (STATIC / "start.html").read_text(encoding="utf-8")
     assert source.count('method="post"') == 2
+
+
+@pytest.mark.parametrize("page", ["work.html", "observe.html", "versions.html", "records.html", "settings.html", "start.html"])
+def test_every_supported_page_is_relative_catalogued_csp_clean_and_carries_no_preview_banner(page):
+    # 2026-09-26 UI phase 2: the signed-in pages share one app shell (mounted by ui-shell.mjs into
+    # `#app`, around `<main id="main">`); only start.html stays outside it. No page carries the
+    # development-preview banner, an inline script or an inline style (CSP: script-src 'self';
+    # style-src 'self'), and every reference is relative and catalogued (the random base path)
+    import re
+
+    source = (STATIC / page).read_text(encoding="utf-8")
+    for reference in re.findall(r'(?:src|href)="([^"]+)"', source):
+        assert reference.startswith("./") and reference.split("#", 1)[0][2:] in MODULES, (page, reference)
+    assert "개발 미리보기" not in source and "development-preview" not in source
+    assert " style=" not in source and "<style" not in source
+    assert re.search(r"<script(?![^>]*\bsrc=)", source) is None, "no inline script"
+    if page == "start.html":
+        assert "app-shell" not in source
+    else:
+        assert '<div id="app" class="app-shell"' in source and '<main id="main">' in source
+
+
+def test_the_shell_parts_never_write_markup():
+    for name in ("ui-shell.mjs", "ui-parts.mjs", "ui-format.mjs", "settings-page.mjs", "records-page.mjs"):
+        source = (STATIC / name).read_text(encoding="utf-8")
+        for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"):
+            assert sink not in source, (name, sink)

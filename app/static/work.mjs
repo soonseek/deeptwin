@@ -26,6 +26,7 @@ import { createWorkExport } from './work-export.mjs';
 import { createWorkModel } from './work-model.mjs';
 import { createRunStart } from './run-start.mjs';
 import { createDesignWorkspace } from './workspace.mjs';
+import { mountShell } from './ui-shell.mjs';
 
 export const MOUNT_IDS = Object.freeze({ session: 'session-status', notice: 'intake-notice', form: 'work-form',
   save: 'save-status', materials: 'materials', link: 'observe-link' });
@@ -182,7 +183,15 @@ function draftStore(storage, key) {
   return { read, write };
 }
 
-export async function boot({ document, location, fetch, crypto, storage } = {}) {
+// the context bar names the saved work only: its first written line and its revision;
+// a draft or an unsaved work names nothing
+export function workContext(text, revision) {
+  const line = typeof text === 'string' ? text.split('\n').map(item => item.trim()).find(Boolean) ?? '' : '';
+  const name = [...line].length > 32 ? `${[...line].slice(0, 31).join('')}…` : line;
+  return { work: name || null, extra: isCount(revision) ? [['저장본', `수정본 ${revision}`]] : [] };
+}
+
+export async function boot({ document, location, fetch, crypto, storage, shell = null } = {}) {
   if (typeof document !== 'object' || document === null || typeof document.getElementById !== 'function'
       || typeof document.createElement !== 'function') fail('a document is required');
   if (typeof fetch !== 'function') fail('a fetch function is required');
@@ -239,17 +248,25 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   const addMaterials = element('button', { type: 'button' }, '자료 추가');
   const toolbar = element('div', { class: 'original-toolbar' });
   toolbar.append(label, addMaterials);
-  form.append(toolbar, area, submit);
+  form.append(toolbar, area, element('p', { class: 'field-note' }, '마이크 입력은 아직 지원하지 않습니다. 글로 적거나 자료를 추가해 주세요.'),
+    submit);
   const picker = element('input', { type: 'file', multiple: '', 'aria-label': '원본 자료 선택' });
   picker.hidden = true;
   addMaterials.addEventListener('click', () => picker.click());
   const materialList = element('ul', { class: 'original-list', 'aria-label': '원본 자료 목록' });
   const materialStatus = element('p', { role: 'status', 'aria-live': 'polite' });
-  roots.materials.replaceChildren(picker, element('p', {}, '파일당 10 MiB · 업무당 20개, 합계 50 MiB. 설명 없이 자료만 저장할 수 있습니다.'),
+  roots.materials.replaceChildren(element('h2', {}, '자료'), picker,
+    element('p', {}, '파일당 10 MiB · 업무당 20개, 합계 50 MiB. 설명 없이 자료만 저장할 수 있습니다.'),
     element('p', {}, '원본 저장은 파일 형식 검증이나 내용 이해가 아닙니다. 내용은 자료 읽기에서 자료마다 직접 읽을 때만 읽습니다.'),
     materialStatus, materialList);
-  roots.link.replaceChildren(element('a', { href: './observe.html' }, '기록된 실행 관제 화면'),
-    element('span', { 'aria-hidden': 'true' }, ' · '), element('a', { href: './records.html' }, '기록·내보내기·백업'));
+  // two separate destinations, each named for what it opens
+  const links = element('ul', { class: 'page-links' });
+  for (const [href, text] of [['./observe.html', '실행 화면에서 기록된 실행 보기'], ['./records.html', '기록 화면에서 사건 기록 보기']]) {
+    const item = element('li');
+    item.append(element('a', { href }, text));
+    links.append(item);
+  }
+  roots.link.replaceChildren(links);
 
   let state = store.read();
   const recordsRoot = document.getElementById(RECORDS_MOUNT_ID);
@@ -351,6 +368,7 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   }
 
   async function loadMaterials(saved) {
+    shell?.setContext?.(workContext(saved.text, state.revision ?? saved.revision));
     savedSources = saved.source_refs ?? [];
     if (saved.ref && typeof saved.ref === 'object') savedRef = saved.ref;
     renderMaterials();
@@ -766,6 +784,7 @@ if (typeof globalThis.document === 'object' && globalThis.document !== null
   } catch {
     storage = null;
   }
+  const shell = mountShell({ document: globalThis.document, page: 'work' });
   bootPage({ document: globalThis.document, location: globalThis.location, crypto: globalThis.crypto,
-    storage, fetch: (...args) => globalThis.fetch(...args) });
+    storage, shell, fetch: (...args) => globalThis.fetch(...args) });
 }

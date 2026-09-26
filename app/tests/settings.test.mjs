@@ -8,7 +8,6 @@ import {
   SETTINGS_ENTRIES,
   SETTINGS_LINKED_PAGES,
   SETTINGS_MOUNT_ID,
-  bootSettings,
   catalogURL,
   connectionOptions,
   hubStateLines,
@@ -17,6 +16,7 @@ import {
   settingsHub,
   usagePolicyPayload,
 } from '../static/settings.mjs';
+import { SHELL_SECONDARY } from '../static/ui-shell.mjs';
 
 class FakeElement {
   constructor(tagName) {
@@ -48,24 +48,33 @@ class FakeElement {
   }
 }
 
-test('the settings hub lists every records and operations entry point, none required', () => {
+test('the settings sub-navigation lists every operations section, none required', () => {
   const hub = settingsHub();
-  assert.deepEqual(hub.map(entry => entry.id), ['logs', 'export', 'backup', 'retention', 'account', 'connection', 'credentials', 'extensions']);
+  assert.deepEqual(hub.map(entry => entry.id), ['account', 'models', 'budgets', 'backup', 'update', 'extensions', 'grants']);
   assert.ok(hub.every(entry => entry.required === false && entry.available === 'everywhere' && entry.exportRequired === false));
-  assert.equal(hub.find(entry => entry.id === 'export').href, './work.html#work-records');
-  assert.equal(hub.find(entry => entry.id === 'retention').href, './records.html#records-retention');
-  const root = new FakeElement('section');
-  renderSettingsHub({ root, document: { createElement: tag => new FakeElement(tag) },
+  // in-page links: each opens its own panel on this page, in any order
+  assert.ok(hub.every(entry => entry.href === `#${entry.panel}`));
+  const root = new FakeElement('nav');
+  renderSettingsHub({ root, document: { createElement: tag => new FakeElement(tag) }, current: 'settings-backup',
     lines: hubStateLines({ backups: { worker: 'ready', backups: [{}, {}] },
       retention: { items: [{ eligible: true }, { eligible: false }] } }) });
-  const links = root.findAll(el => el.tagName === 'A').map(el => el.getAttribute('href'));
-  assert.deepEqual(links, SETTINGS_ENTRIES.map(entry => entry.href));
+  const links = root.findAll(el => el.tagName === 'A');
+  assert.deepEqual(links.map(el => el.getAttribute('href')), SETTINGS_ENTRIES.map(entry => entry.href));
+  assert.deepEqual(links.filter(el => el.getAttribute('aria-current') === 'true').map(el => el.textContent), ['백업·보존']);
   assert.match(root.textContent, new RegExp(HUB_MESSAGES.noFinalStep));
-  assert.match(root.textContent, /백업 워커 연결됨 · 만든 백업 2개/);
-  assert.match(root.textContent, /자동 삭제 없음 · 지금 정리할 수 있는 항목 1개/);
+  // backup and retention share the 백업·보존 panel, so its entry carries both state lines
+  const backup = root.findAll(el => el.getAttribute('data-entry') === 'backup')[0];
+  assert.match(backup.textContent, /백업 워커 연결됨 · 만든 백업 2개/);
+  assert.match(backup.textContent, /자동 삭제 없음 · 지금 정리할 수 있는 항목 1개/);
 });
 
-test('every page header links to the one settings hub', () => {
+test('every signed-in page reaches settings from the shell; the start screen keeps its header link', () => {
+  assert.deepEqual(SHELL_SECONDARY.map(item => [item.id, item.href]), [['settings', './settings.html']]);
+  for (const page of ['work.html', 'observe.html', 'records.html', 'versions.html', 'settings.html']) {
+    const html = readFileSync(new URL(`../static/${page}`, import.meta.url), 'utf8');
+    assert.match(html, /<div id="app" class="app-shell" data-page="[a-z]+">/, page);
+    assert.match(html, /<main id="main">/, page);
+  }
   for (const page of SETTINGS_LINKED_PAGES) {
     const html = readFileSync(new URL(`../static/${page}`, import.meta.url), 'utf8');
     assert.match(html, /<nav class="app-settings" aria-label="설정"><a href="\.\/settings\.html"[^>]*>설정<\/a><\/nav>/, page);
@@ -73,17 +82,6 @@ test('every page header links to the one settings hub', () => {
   const hub = readFileSync(new URL('../static/settings.html', import.meta.url), 'utf8');
   assert.match(hub, new RegExp(`id="${SETTINGS_MOUNT_ID}"`));
   assert.match(readFileSync(new URL('../static/index.html', import.meta.url), 'utf8'), /href="\/settings\.html"/);
-});
-
-test('without a session the hub still lists every entry point and says so', async () => {
-  const nodes = { [SETTINGS_MOUNT_ID]: new FakeElement('section'), 'session-status': new FakeElement('p') };
-  const document = { getElementById: id => nodes[id] ?? null, createElement: tag => new FakeElement(tag) };
-  const fetch = async () => ({ ok: false, status: 401, headers: { get: () => 'application/json' },
-    json: async () => ({ code: 'unauthenticated' }), text: async () => '{"code":"unauthenticated"}' });
-  const result = await bootSettings({ document, location: { pathname: '/settings.html' }, fetch });
-  assert.equal(result.established, false);
-  assert.equal(nodes['session-status'].textContent, HUB_MESSAGES.unauthenticated);
-  assert.equal(nodes[SETTINGS_MOUNT_ID].findAll(el => el.tagName === 'A').length, SETTINGS_ENTRIES.length);
 });
 
 const providers = [{

@@ -167,7 +167,7 @@ export const CONNECTION_MESSAGES = Object.freeze({
   catalog: Object.freeze({ current: '이 바인딩의 모델 목록: 있음', absent: '이 바인딩의 모델 목록: 없음' }),
   model_choice: Object.freeze({ current: '이 바인딩의 모델 선택: 있음', absent: '이 바인딩의 모델 선택: 없음' }),
   voids: '키를 교체하거나 삭제하면 그 전 바인딩의 모델 목록과 모델 선택은 무효가 됩니다. 새 바인딩의 목록은 "모델 목록 새로 고침"을 누를 때만 생깁니다. 그때만 게이트웨이가 보관한 키로 제공자의 모델 목록을 읽습니다(과금되는 모델 호출은 아님). 키 저장·교체·삭제와 상태 읽기는 목록을 새로 고치지 않습니다.',
-  independent: '이 게이트웨이 키와 모델 선택은 "Claude 연결"(서버 메모리에만 두는 키)과 별개입니다. 여기서 키를 교체하거나 삭제해도 그쪽 키는 바뀌지 않고, 그쪽에서 잊어도 여기는 바뀌지 않습니다. 지금 런(run) 실행은 이 게이트웨이 키가 아니라 그쪽 키를 씁니다.',
+  independent: '이 게이트웨이 키와 모델 선택은 "Claude 연결"(서버 메모리에만 두는 키)과 별개입니다. 여기서 키를 교체하거나 삭제해도 그쪽 키는 바뀌지 않고, 그쪽에서 잊어도 여기는 바뀌지 않습니다. 지금 실행은 이 게이트웨이 키가 아니라 그쪽 키를 씁니다.',
   gatewayPending: '게이트웨이 반영 대기: 게이트웨이가 이 바인딩을 확인하기 전까지 이 키로는 요청을 보내지 않습니다.',
   chosen: model => `선택된 모델: ${model}`,
   notListable: '이 제공자의 모델 목록은 게이트웨이로 읽을 수 없습니다.',
@@ -702,9 +702,9 @@ export function createCredentialsPanel({ root, document, fetch, basePath = '/', 
 // read is retried under the same command id, which only returns the same qualification.
 
 export const TRANSPORT_QUALIFICATION_MESSAGES = Object.freeze({
-  intro: '게이트웨이는 제공자 전송 매니페스트의 검증(qualification)을 채택하기 전까지 저장된 키로 어떤 요청도 보내지 않습니다(transport_unqualified). 검증에는 검증된 제공자 설치에서 4개 벡터를 모두 통과한 적합성 검사와, 이 매니페스트를 로컬 모의 제공자에 대고 오프라인으로 돌리는 전송 적합성 검사가 필요합니다. 검증하는 동안 실제 제공자에게는 아무것도 보내지 않습니다.',
+  intro: '게이트웨이는 제공자 전송 매니페스트의 검증을 채택하기 전까지 저장된 키로 어떤 요청도 보내지 않습니다. 검증에는 검증된 제공자 설치에서 4개 벡터를 모두 통과한 적합성 검사와, 이 매니페스트를 로컬 모의 제공자에 대고 오프라인으로 돌리는 전송 적합성 검사가 필요합니다. 검증하는 동안 실제 제공자에게는 아무것도 보내지 않습니다.',
   manifest: digest => `전송 매니페스트 SHA-256: ${digest}`,
-  requirement: '요구 조건: 검증된 설치(verified installation)에서 matched 4/4인 적합성 검사, 그 설치의 헤드와 릴리스 소스가 검사 뒤 그대로일 것, 오프라인 전송 적합성 검사 4/4.',
+  requirement: '요구 조건: 검증된 설치에서 4개 벡터를 모두 통과한(4/4) 적합성 검사, 그 설치의 헤드와 릴리스 소스가 검사 뒤 그대로일 것, 오프라인 전송 적합성 검사 4/4.',
   prerequisite: Object.freeze({
     met: run => `충족: 검증된 설치에서 4/4로 통과한 적합성 검사가 있습니다 (실행 ${run}).`,
     verified_installation_missing: '미충족: 검증된 제공자 설치가 없습니다.',
@@ -734,9 +734,9 @@ export const TRANSPORT_QUALIFICATION_MESSAGES = Object.freeze({
 
 // the server's exact refusal texts (the route answers the same message for each code)
 export const TRANSPORT_QUALIFICATION_ERRORS = Object.freeze({
-  verified_installation_missing: '검증된 제공자 설치(verified installation)가 없어 전송 매니페스트를 검증하지 않았습니다. 먼저 제공자 설치를 검증하고, 그 설치로 제공자 적합성 검사를 실행해 주세요.',
+  verified_installation_missing: '검증된 제공자 설치가 없어 전송 매니페스트를 검증하지 않았습니다. 먼저 제공자 설치를 검증하고, 그 설치로 제공자 적합성 검사를 실행해 주세요.',
   conformance_run_missing: '검증된 설치에 대한 제공자 적합성 검사(conformance) 실행이 없어 전송 매니페스트를 검증하지 않았습니다. 먼저 적합성 검사를 실행해 주세요.',
-  conformance_run_unmatched: '검증된 설치에서 4개 벡터를 모두 통과한(matched 4/4) 제공자 적합성 검사가 없어 전송 매니페스트를 검증하지 않았습니다.',
+  conformance_run_unmatched: '검증된 설치에서 4개 벡터를 모두 통과한(4/4) 제공자 적합성 검사가 없어 전송 매니페스트를 검증하지 않았습니다.',
   conformance_admission_stale: '적합성 검사 뒤 설치 헤드나 릴리스 소스가 바뀌어 그 검사로는 검증하지 않았습니다. 현재 설치로 적합성 검사를 다시 실행해 주세요.',
   manifest_changed: '검토한 전송 매니페스트가 지금 배포된 매니페스트와 다릅니다. 상태를 다시 읽고 다시 검증해 주세요.',
   transport_conformance_failed: '전송 매니페스트가 오프라인 전송 적합성 검사(로컬 모의 제공자)를 통과하지 못해 검증하지 않았습니다.',

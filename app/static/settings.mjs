@@ -1,40 +1,30 @@
 // Settings: the preview shell's connection/usage payloads (below) and, for the supported
-// server, the single settings hub (T073, UX-AC08; settings.html). The hub is reachable from
-// every page's header navigation and lists every records/operations entry point — the
-// event log, export, backup and restore, retention and cleanup, account and session, the
-// Claude connection and API credentials — each a plain link with no prerequisite and no
-// order; none is a required final step (export is offered, never required). With a
-// session it adds one line of the server's own state per entry (backup worker, retention
-// eligibility); without one it says so and still lists every entry point. All server text
-// reaches the DOM through textContent only.
+// server, the settings page's own sub-navigation (T073, UX-AC08; settings.html, booted by
+// settings-page.mjs). The page holds every operations section — account and session, model
+// connections (the Claude API key and the credential gateway's API credentials with their
+// transport qualification), run budgets, backup and retention, update guidance, extensions
+// and browser grants — one panel at a time behind this list. Each entry is a plain in-page
+// link with no prerequisite and no order; none is a required final step (export is offered,
+// never required). With a session an entry may add one line of the server's own state
+// (backup worker, retention eligibility). All server text reaches the DOM through
+// textContent only.
 
 import { completionGate } from './records.mjs';
-import { basePathFrom, createSupportedSession } from './session.mjs';
 
 export const SETTINGS_MOUNT_ID = 'settings-hub';
 export const SETTINGS_STATUS_ID = 'session-status';
-// every page that carries the header link to this hub
-export const SETTINGS_LINKED_PAGES = Object.freeze([
-  'work.html', 'observe.html', 'records.html', 'versions.html', 'settings.html', 'start.html',
-]);
+// the one page outside the app shell that still carries a static header link to settings;
+// every page inside the shell reaches it from the shell's navigation (ui-shell.mjs)
+export const SETTINGS_LINKED_PAGES = Object.freeze(['start.html']);
 
 export const SETTINGS_ENTRIES = Object.freeze([
-  Object.freeze({ id: 'logs', label: '기록(사건 로그)', href: './records.html#records-logs',
-    description: '이 인스턴스에 기록된 제품 사건을 시간순으로 봅니다.' }),
-  Object.freeze({ id: 'export', label: '내보내기', href: './work.html#work-records',
-    description: '업무마다 작업 화면에서, 실제로 포함될 내용을 먼저 보고 동의한 내용만 내보냅니다. 선택 사항입니다.' }),
-  Object.freeze({ id: 'backup', label: '백업과 복원', href: './records.html#records-backup',
-    description: '실제로 포함될 내용을 미리 보고 동의한 뒤 백업을 만들고, 복원은 검토 대기 상태로만 스테이징합니다.' }),
-  Object.freeze({ id: 'retention', label: '보존과 정리', href: './records.html#records-retention',
-    description: '범주별로 무엇을 얼마나 남기는지 보고, 오래된 백업과 스테이징된 복원본을 미리보기와 동의를 거쳐 정리합니다.' }),
-  Object.freeze({ id: 'account', label: '계정과 세션', href: './records.html#records-account',
-    description: '비밀번호를 바꾸고 다른 세션을 끝냅니다.' }),
-  Object.freeze({ id: 'connection', label: 'Claude 연결', href: './records.html#records-connection',
-    description: 'Claude API 연결과 모델 선택을 봅니다.' }),
-  Object.freeze({ id: 'credentials', label: 'API 자격증명', href: './records.html#records-credentials',
-    description: '저장한 API 자격증명을 보고 지웁니다. 값은 다시 보여 주지 않습니다.' }),
-  Object.freeze({ id: 'extensions', label: '확장', href: './settings.html#settings-extensions',
-    description: '확장 후보·제공자 설치 검증·적합성 검사를 보고, 서버가 보내지 않는 항목은 제공되지 않음으로 봅니다. 선택 사항입니다.' }),
+  Object.freeze({ id: 'account', label: '계정과 세션', href: '#settings-account', panel: 'settings-account' }),
+  Object.freeze({ id: 'models', label: '모델 연결', href: '#settings-models', panel: 'settings-models' }),
+  Object.freeze({ id: 'budgets', label: '실행 한도', href: '#settings-budgets', panel: 'settings-budgets' }),
+  Object.freeze({ id: 'backup', label: '백업·보존', href: '#settings-backup', panel: 'settings-backup' }),
+  Object.freeze({ id: 'update', label: '업데이트·복구', href: '#settings-update', panel: 'settings-update' }),
+  Object.freeze({ id: 'extensions', label: '확장', href: '#settings-extensions', panel: 'settings-extensions' }),
+  Object.freeze({ id: 'grants', label: '브라우저 권한', href: '#settings-grants', panel: 'settings-grants' }),
 ]);
 
 export const HUB_MESSAGES = Object.freeze({
@@ -49,7 +39,7 @@ const WORKER_LINES = Object.freeze({
   key_unavailable: '백업 키 볼륨 없음', unreachable: '백업 워커에 연결하지 못함',
 });
 
-// every entry is available everywhere and none is required: the hub never sequences them
+// every entry is available everywhere and none is required: the list never sequences them
 export function settingsHub() {
   const gate = completionGate({ exported: false });
   return Object.freeze(SETTINGS_ENTRIES.map(entry => Object.freeze({
@@ -70,7 +60,10 @@ export function hubStateLines({ backups, retention } = {}) {
   return lines;
 }
 
-export function renderSettingsHub({ root, document, lines = {} }) {
+// which state lines each entry shows: backup and retention share the one 백업·보존 panel
+const ENTRY_LINES = Object.freeze({ backup: ['backup', 'retention'] });
+
+export function renderSettingsHub({ root, document, lines = {}, current = null }) {
   if (typeof root?.replaceChildren !== 'function') throw new TypeError('a hub mount is required');
   const element = (tag, text, attributes = {}) => {
     const node = document.createElement(tag);
@@ -78,55 +71,19 @@ export function renderSettingsHub({ root, document, lines = {} }) {
     for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
     return node;
   };
-  const list = element('ul', undefined, { class: 'settings-entries', 'aria-label': '설정 항목' });
+  const list = element('ul', undefined, { class: 'settings-entries' });
   for (const entry of settingsHub()) {
     const row = element('li', undefined, { 'data-entry': entry.id, 'data-required': 'false' });
-    row.append(element('a', entry.label, { href: entry.href }), element('p', entry.description));
-    if (typeof lines[entry.id] === 'string') row.append(element('p', lines[entry.id], { class: 'settings-state' }));
+    const link = element('a', entry.label, { href: entry.href, 'data-panel': entry.panel });
+    if (entry.panel === current) link.setAttribute('aria-current', 'true');
+    row.append(link);
+    for (const key of ENTRY_LINES[entry.id] ?? []) {
+      if (typeof lines[key] === 'string') row.append(element('p', lines[key], { class: 'settings-state' }));
+    }
     list.append(row);
   }
-  root.replaceChildren(element('h2', '설정'), element('p', HUB_MESSAGES.noFinalStep, { class: 'settings-no-final-step' }), list);
+  root.replaceChildren(list, element('p', HUB_MESSAGES.noFinalStep, { class: 'settings-no-final-step' }));
   return list;
-}
-
-export async function bootSettings({ document, location, fetch } = {}) {
-  if (typeof document?.getElementById !== 'function') throw new TypeError('a document is required');
-  const root = document.getElementById(SETTINGS_MOUNT_ID);
-  const status = document.getElementById(SETTINGS_STATUS_ID);
-  renderSettingsHub({ root, document });
-  const basePath = basePathFrom(location.pathname);
-  const session = createSupportedSession({ fetch, basePath });
-  try {
-    await session.establish();
-  } catch (error) {
-    if (status) {
-      status.dataset.state = error?.code ?? 'unavailable';
-      status.textContent = error?.code === 'unauthenticated' ? HUB_MESSAGES.unauthenticated : HUB_MESSAGES.failed;
-    }
-    return Object.freeze({ established: false, basePath });
-  }
-  if (status) {
-    status.dataset.state = 'authenticated';
-    status.textContent = HUB_MESSAGES.authenticated;
-  }
-  const prefix = basePath.slice(0, -1);
-  const [backups, retention] = await Promise.all([
-    session.request(`${prefix}/api/v1/backups`).catch(() => null),
-    session.request(`${prefix}/api/v1/retention`).catch(() => null),
-  ]);
-  const lines = hubStateLines({ backups, retention });
-  renderSettingsHub({ root, document, lines });
-  return Object.freeze({ established: true, basePath, lines });
-}
-
-if (typeof globalThis.document === 'object' && globalThis.document !== null
-    && typeof globalThis.document.getElementById === 'function'
-    && globalThis.document.getElementById(SETTINGS_MOUNT_ID) !== null) {
-  bootSettings({ document: globalThis.document, location: globalThis.location,
-    fetch: (...args) => globalThis.fetch(...args) }).catch(() => {
-    const status = globalThis.document.getElementById(SETTINGS_STATUS_ID);
-    if (status) status.textContent = '이 화면을 준비하지 못했습니다.';
-  });
 }
 
 const CONNECTIONS = new Map([

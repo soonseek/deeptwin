@@ -1,5 +1,5 @@
 // T090 credentials panel in a real browser against the real supported server
-// (`app/tests/fixtures/credentials_server.py`): the records page's panel over the
+// (`app/tests/fixtures/credentials_server.py`): the settings page's panel (모델 연결) over the
 // credentials-v1 routes, the control-plane ledger and the frame-only client talking
 // authenticated frames to an encrypted gateway vault. The fixture's fence delay is a few
 // seconds (test only; production stays 300 s) and two synthetic secret prefixes script a
@@ -96,7 +96,7 @@ async function open(t) {
 
 test('credentials panel: binding heads, catalog refresh and model choice, pending acts, the owner fence and refusals, no secret anywhere', { timeout: 120000 }, async t => {
   const { page, url, errors, bodies } = await open(t);
-  await page.goto(url + 'records.html');
+  await page.goto(url + 'settings.html#records-credentials');
   const panel = page.locator('#records-credentials');
   const line = panel.locator('[role=status]');
   const connections = panel.getByRole('list', { name: '제공자 연결' });

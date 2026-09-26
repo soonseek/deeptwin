@@ -174,11 +174,15 @@ test('every closed error code has text the owner can act on, and none claims wha
 test('a running head is shown as unfinished, never as live work the view cannot see', async () => {
   // review SHOULD: the receipt carries no liveness; after a failed execution the head is
   // `running` with nothing live, so the status must not read 실행 중
-  const { panel, status } = mounted([running()]);
+  const { panel, status, root } = mounted([running()]);
   await panel.read(RUN_ID);
   assert.doesNotMatch(status().textContent, /실행 중/);
   assert.match(status().textContent, /미완료/);
-  assert.match(status().textContent, new RegExp(RUN_ID));
+  // the status reads the short id; the full id is one technical fold away
+  assert.match(status().textContent, new RegExp(`실행 ${RUN_ID.slice(0, 8)}$`));
+  const fold = root.find(el => el.tagName === 'DETAILS');
+  assert.equal(fold.hidden, false);
+  assert.equal(fold.textContent, `기술 정보실행 ID${RUN_ID}`);
 });
 
 test('a command id source that yields a non-UUID is a recorded invalid_input, never a send', async () => {

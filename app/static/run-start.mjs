@@ -121,7 +121,7 @@ export function createRunStart({ root, document, request, basePath = '/', comman
     const blockers = [];
     if (!view.runs.available) blockers.push('이 인스턴스에 실행기가 설정되지 않아 실행을 시작할 수 없습니다.');
     if (!entry.usable) blockers.push(`이 환경으로는 시작할 수 없습니다 (${entry.unusable_reason}).`);
-    if (!policy) blockers.push('예산 정책이 없습니다. 기록·내보내기 화면(./records.html)에서 실행 예산을 먼저 만들어 주세요.');
+    if (!policy) blockers.push('예산 정책이 없습니다. 설정 > 실행 한도에서 실행 예산을 먼저 만들어 주세요.');
     const update = () => { start.disabled = busy || blockers.length > 0 || !agree.checked; };
     agree.addEventListener('change', update);
     picker.addEventListener('change', () => render(Number(picker.value), Number(budget.value)));

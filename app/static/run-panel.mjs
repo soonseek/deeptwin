@@ -12,12 +12,12 @@
 // so a repeated click is a new command, never a replay of the last one.
 
 import { ERROR_CODES, accessibleRows, createRunObserver, runRoutes } from './runtime.mjs';
+import { RUN_CONTROL_LABELS, shortId } from './ui-format.mjs';
+import { TECHNICAL_SUMMARY } from './ui-parts.mjs';
 
-export const CONTROL_LABELS = Object.freeze({
-  resume: '이어서 진행',
-  cancel: '새 dispatch 중단',
-  recover: '복구 시도',
-});
+// the owner's words for the three commands (ui-format.mjs): "cancel" stops sending new work;
+// calls already sent end on their own and are shown row by row
+export const CONTROL_LABELS = RUN_CONTROL_LABELS;
 
 // one actionable sentence per closed error code (runtime.mjs ERROR_CODES)
 // the text never claims what the view cannot know: a 503 may have run a node and
@@ -95,7 +95,14 @@ export function createRunPanel({ root, document, request, basePath = '/', comman
     buttons[name] = button;
     actions.append(button);
   }
-  root.replaceChildren(status, rows, alert, actions);
+  // the full run id stays one fold away from the short one in the status line
+  const techValue = element('dd');
+  const techList = element('dl', undefined, { class: 'kv-list tech-list' });
+  techList.append(element('dt', '실행 ID'), techValue);
+  const tech = element('details', undefined, { class: 'tech-details' });
+  tech.append(element('summary', TECHNICAL_SUMMARY), techList);
+  tech.hidden = true;
+  root.replaceChildren(status, tech, rows, alert, actions);
   root.dataset.phase = '';
   root.dataset.runId = '';
   root.setAttribute('aria-busy', 'false');
@@ -113,7 +120,9 @@ export function createRunPanel({ root, document, request, basePath = '/', comman
     root.dataset.phase = view ? view.phase : '';
     root.dataset.runId = view ? view.runId : '';
     const phaseText = view ? PHASE_STATUS[view.phase] ?? view.phaseLabel : '';
-    status.textContent = state.busy ? BUSY_STATUS : view ? `${phaseText} · 실행 ${view.runId}` : IDLE_STATUS;
+    status.textContent = state.busy ? BUSY_STATUS : view ? `${phaseText} · 실행 ${shortId(view.runId)}` : IDLE_STATUS;
+    tech.hidden = !view;
+    techValue.textContent = view ? view.runId : '';
     rows.replaceChildren(...(view ? accessibleRows(view).map(text => element('li', text)) : []));
     if (state.error) {
       alert.hidden = false;

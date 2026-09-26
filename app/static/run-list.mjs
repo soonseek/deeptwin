@@ -11,6 +11,8 @@
 // newer list, and a failed re-read keeps the last honest list beside its
 // error. A snapshot outside the contract never becomes the list.
 
+import { shortId } from './ui-format.mjs';
+
 export const SNAPSHOT_VERSION = 'public-snapshot-v1';
 // the runtime ledger's durable run phases (app/runtime/ledger.py RUN_PHASES):
 // a row's own phase — the derived phase (running, awaiting…) is the receipt's
@@ -114,7 +116,8 @@ export function createRunList({ root, document, request, basePath = '/', onSelec
     const empty = element('option', '실행을 선택해 주세요');
     empty.value = '';
     select.replaceChildren(empty, ...state.runs.map(run => {
-      const option = element('option', `${run.phaseLabel} · ${run.runId}`);
+      // the short id reads; the full id is the option's value and title
+      const option = element('option', `${run.phaseLabel} · 실행 ${shortId(run.runId)}`, { title: run.runId });
       option.value = run.runId;
       option.dataset.phase = run.phase;
       return option;

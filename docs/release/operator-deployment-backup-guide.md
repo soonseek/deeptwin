@@ -235,7 +235,7 @@ member로 담으며(원본이 없거나 digest가 다르면 백업 전체 거절
 - control-plane(`app.server --backup-worker-config=<attachment>`)은 snapshot·미리보기·archive·
   복원 검증만 하고, archive/암호문을 **typed stream**(요청, 32 KiB 이하 chunk, 크기·SHA-256을 묶는 end
   frame)으로 주고받는다. 키 핸들이나 키 경로를 받지 않으며, 키 볼륨은 control 신원이 읽을 수 없다.
-- 브라우저의 기록 화면에서 소유자는 `instance_backup_key` 백업을 만들고(실제 포함 내용 미리보기와 그
+- 브라우저의 설정 화면(백업·보존)에서 소유자는 `instance_backup_key` 백업을 만들고(실제 포함 내용 미리보기와 그
   digest에 묶인 동의), 암호화된 백업과 외부 영수증을 내려받고, 영수증+백업을 올려 `restored_review`
   스테이징 복원을 할 수 있다. 복원은 두 키 모드를 모두 받으며, `portable_recovery`는 소유자가 따로
   보관한 identity를 한 번만 받아 worker가 쓰고 지운다. 업로드는 64 MiB까지다. 브라우저에서
@@ -302,7 +302,7 @@ member로 담으며(원본이 없거나 digest가 다르면 백업 전체 거절
   [--acknowledge-new-data-after-backup DIGEST]`는 게이트 백업을 빈 staging 디렉터리에
   `restored_review`로 복원한다. 활성 vault에 백업 뒤 자료가 있으면, 버려질 지금 상태의 digest를 운영자가
   정확히 적지 않는 한 거절한다.
-- 소유자는 기록 화면의 "업데이트와 복구"에서 같은 안내를 읽기만 한다.
+- 소유자는 설정 화면의 "업데이트·복구"에서 같은 안내를 읽기만 한다.
 
 근거: `evidence/update-recovery-t072-2026-09-25.md` (시험 소유 입력, 실제 age 1.3.2). 업데이트할
 **실제 웹 릴리스는 아직 없다**: 매니페스트·이미지 잠금 형식은 정의·검사되지만 T081이 만들 릴리스가 아직

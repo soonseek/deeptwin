@@ -296,10 +296,10 @@ test('producers → consumer over real browser, document and fetch workers, with
     for (const item of attemptsB) {
       assert.ok(rowsB.some(row => row.startsWith(`시도 ${item.attempt_no} 호출 ${item.attempt_id}: `)), rowsB.join('\n'));
     }
-    await panel.getByRole('button', { name: '새 dispatch 중단' }).click();
+    await panel.getByRole('button', { name: '새 작업 보내기 중단' }).click();
     await page.locator(`#run-panel[data-run-id="${runB}"][data-phase=cancelled]`).waitFor();
     const cancelledRows = await panelRows(page);
-    assert.equal(cancelledRows[0], '취소 요청됨: 새 dispatch 중단');
+    assert.equal(cancelledRows[0], '취소 요청됨: 새 작업 보내기 중단');
     for (const item of attemptsB) {
       assert.ok(cancelledRows.some(row => row.startsWith(`시도 ${item.attempt_no} 호출 ${item.attempt_id}: `)), cancelledRows.join('\n'));
     }

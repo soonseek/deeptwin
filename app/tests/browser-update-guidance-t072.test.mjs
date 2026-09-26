@@ -1,11 +1,12 @@
 // T072 browser case: the web-release update guidance, read only, in real Chromium. The
-// owner sets up an instance from the offline bootstrap page and opens the records page:
+// owner sets up an instance from the offline bootstrap page and opens the settings page's
+// 업데이트·복구 panel:
 // no update is pending and no release is recorded. The deployment operator then stops
 // the control plane and runs the update tool (`python -m app.operations.updates`): it
 // refuses while the server runs, prepares an exact request for a target web-release
 // manifest and its image-lock set, and refuses the gate backup because no backup worker
 // answers its handshake (a safe state: nothing changed). The server restarts over the
-// same instance and the records page shows what is true: the pending request with its
+// same instance and that panel shows what is true: the pending request with its
 // exact target, manifest and image-lock digests and epoch, that a verified backup is
 // required and absent, the last refusal naming the missing component, and the operator's
 // next steps. The section is read only: no button, form or file input, and a POST to its
@@ -59,7 +60,7 @@ open(sys.argv[2], "wb").write(lock)
 print(hashlib.sha256(manifest).hexdigest(), hashlib.sha256(lock).hexdigest())
 `;
 
-test('update guidance: operator tool prepares while stopped; the records page shows it read only',
+test('update guidance: operator tool prepares while stopped; the settings page shows it read only',
   { timeout: 180000 }, async t => {
     assert.ok(process.env.CONTROL_PYTHON && process.env.CONTROL_PLAYWRIGHT_MODULE, 'Controlled installed runtimes required; never skip');
     const dir = await mkdtemp(join(tmpdir(), 'deeptwin-update-guidance-'));
@@ -76,7 +77,7 @@ test('update guidance: operator tool prepares while stopped; the records page sh
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
 
-    // 1. the instance as the owner set it up, and the records page before any update
+    // 1. the instance as the owner set it up, and the update panel before any update
     const port = await freePort();
     await page.goto(pathToFileURL(join(root, 'deploy/bootstrap/index.html')).href);
     await page.getByLabel('DeepTwin 포트').fill(String(port));
@@ -101,7 +102,7 @@ test('update guidance: operator tool prepares while stopped; the records page sh
     await page.getByLabel(/^비밀번호/).fill(PASSWORD);
     await page.getByRole('button', { name: '최초 소유자 설정' }).click();
     await page.waitForURL(/work\.html$/);
-    await page.goto(url + 'records.html');
+    await page.goto(url + 'settings.html#settings-update');
     const section = page.locator('#records-update');
     await section.locator('.update-request[data-state="none"]').waitFor();
     assert.match(await section.textContent(), /기록된 릴리스가 없습니다/);
@@ -142,14 +143,14 @@ test('update guidance: operator tool prepares while stopped; the records page sh
     const status = await tool('status', ...common);
     assert.equal(status.result.request.state, 'prepared');
 
-    // 4. the server restarts over the same instance; the records page shows the guidance
+    // 4. the server restarts over the same instance; the update panel shows the guidance
     const again = await start();
     assert.equal(again, url);
     context = await browser.newContext({ viewport: { width: 1100, height: 900 }, storageState: kept });
     page = await context.newPage();
     page.setDefaultTimeout(10000);
     page.on('pageerror', error => errors.push(error.message));
-    await page.goto(url + 'records.html');
+    await page.goto(url + 'settings.html#settings-update');
     const panel = page.locator('#records-update');
     const request = panel.locator('.update-request[data-state="prepared"]');
     await request.waitFor();
@@ -178,6 +179,7 @@ test('update guidance: operator tool prepares while stopped; the records page sh
     assert.equal(answers.body.product_authority, 'read_only');
     assert.equal(answers.body.request.request_id, prepared.result.request_id);
     // the owner's other records still read (nothing was migrated or lost)
+    await page.goto(url + 'records.html');
     await page.locator('#records-logs li').first().waitFor();
     assert.deepEqual(errors, []);
   });

@@ -98,9 +98,14 @@ test('Settings > Extensions: real reads, candidate registration and conflict, re
     assert.equal(await qualification.getAttribute('data-state'), 'unqualified');
     assert.match(await qualification.locator('dd[data-field="prerequisite"]').textContent(), /verified_installation_missing/);
     assert.match(await qualification.locator('dd[data-field="gateway"]').textContent(), /unavailable/);
-    assert.equal(await section.locator('a[data-link="transport-qualification"]').getAttribute('href'), './records.html#records-credentials');
+    assert.equal(await section.locator('a[data-link="transport-qualification"]').getAttribute('href'), './settings.html#records-credentials');
     // the real inventory pages are empty; no slot read means no disable/rollback/release control
     await section.locator('[data-view="slot-list"]').getByText('바인딩 slot 없음').waitFor();
+    // the empty list is drawn before the inventory is read: wait for the three reads themselves (the
+    // settings page now also loads its other panels, so these reads may come a little later)
+    const read = () => ['candidates', 'installations', 'bindings'].every(path => requests.includes(`GET ${base}api/v1/extensions/${path}`));
+    for (let tries = 0; tries < 200 && !read(); tries += 1) await page.waitForTimeout(50);
+    await section.locator('[data-extensions-line][data-state="loaded"]').waitFor();
     for (const path of ['candidates', 'installations', 'bindings']) {
       assert.ok(requests.includes(`GET ${base}api/v1/extensions/${path}`), path);
     }

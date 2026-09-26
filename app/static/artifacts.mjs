@@ -17,6 +17,9 @@
 // the supported session client's adapter (session.mjs) in the shell, a fake
 // in tests.
 
+import { formatBytes, mediaTypeLabel, shortId } from './ui-format.mjs';
+import { technicalDetails } from './ui-parts.mjs';
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const BASE_PATH = /^\/(?:[0-9a-f]{32}\/)?$/;
 export const PREVIEW_KINDS = Object.freeze(['text', 'json', 'table', 'image', 'page_image', 'document_text',
@@ -45,6 +48,8 @@ export const MESSAGES = Object.freeze({
   index_idle: '보관된 모든 실행의 산출물을 여기서 찾을 수 있습니다.',
   index_loading: '산출물 색인을 불러오는 중…',
   index_empty: '조건에 맞는 산출물이 없습니다.',
+  // the listed type is the one the producer declared; the preview reads the bytes themselves
+  declared: '형식은 산출물을 만든 쪽이 밝힌 값입니다. 미리보기는 실제 내용을 보고 보여 줄 방법을 고릅니다.',
 });
 
 export const ERROR_MESSAGES = Object.freeze({
@@ -101,9 +106,14 @@ export function artifactRoutes(basePath = '/') {
 // a human size, spelled out (never colour or an icon alone)
 export function sizeText(bytes) {
   if (!Number.isSafeInteger(bytes) || bytes < 0) fail('size must be a byte count');
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+  return formatBytes(bytes);
+}
+
+// the raw facts of one listed artifact, folded under "기술 정보"
+function artifactTechnical(document, item) {
+  const lines = [['산출물 ID', item.artifactId], ['밝힌 형식', item.mediaType], ['SHA-256', item.sha256]];
+  if (item.runId) lines.unshift(['실행 ID', item.runId]);
+  return technicalDetails(document, lines);
 }
 
 function artifactItem(item) {
@@ -225,9 +235,11 @@ export function createArtifactViewer({ root, document, request, basePath = '/', 
   let previewGeneration = 0;
 
   const status = element('p', MESSAGES.idle, { role: 'status', 'aria-live': 'polite' });
+  const note = element('p', MESSAGES.declared, { class: 'artifact-note' });
+  note.hidden = true;
   const list = element('ul', undefined, { class: 'artifact-list' });
   const viewer = element('section', undefined, { class: 'artifact-viewer', 'aria-label': '산출물 미리보기' });
-  root.replaceChildren(element('h2', '산출물'), status, list, viewer);
+  root.replaceChildren(element('h2', '산출물'), status, note, list, viewer);
 
   function refusal(error) {
     const code = Object.hasOwn(ERROR_MESSAGES, error?.code) ? error.code : 'unavailable';
@@ -237,10 +249,9 @@ export function createArtifactViewer({ root, document, request, basePath = '/', 
 
   function row(item) {
     const entry = element('li', undefined, { 'data-artifact-id': item.artifactId });
-    const label = `${item.role} · ${item.nodeId ?? '노드 미상'} · ${item.mediaType} (선언) · ${sizeText(item.size)}`
+    const label = `${item.role} · ${item.nodeId ?? '노드 미상'} · ${mediaTypeLabel(item.mediaType)} · ${sizeText(item.size)}`
       + (item.available ? '' : ' · 원본 없음');
-    entry.append(element('span', label));
-    entry.append(element('code', item.sha256.slice(0, 12), { title: `SHA-256 ${item.sha256}` }));
+    entry.append(element('span', label, { class: 'artifact-label' }));
     const show = element('button', '미리보기', { type: 'button' });
     show.addEventListener('click', () => preview(item.artifactId).catch(() => {}));
     const download = element('a', '원본 내려받기', { href: routes.content(runId, item.artifactId),
@@ -257,6 +268,7 @@ export function createArtifactViewer({ root, document, request, basePath = '/', 
       edit.addEventListener('click', () => Promise.resolve(onEdit(runId, item)).catch(() => {}));
       entry.append(edit);
     }
+    entry.append(artifactTechnical(document, item));
     return entry;
   }
 
@@ -313,10 +325,12 @@ export function createArtifactViewer({ root, document, request, basePath = '/', 
     status.textContent = MESSAGES.loading;
     list.replaceChildren();
     viewer.replaceChildren();
+    note.hidden = true;
     try {
       const items = artifactList(await request(routes.list(runId), {}));
       if (mine !== generation) return null;
       list.replaceChildren(...items.map(row));
+      note.hidden = items.length === 0;
       status.dataset.state = items.length ? 'listed' : 'empty';
       status.textContent = items.length ? `산출물 ${items.length}개` : MESSAGES.empty;
       return items;
@@ -390,15 +404,16 @@ export function createArtifactIndex({ root, document, request, basePath = '/', o
   const list = element('ul', undefined, { class: 'artifact-index-list' });
   const more = element('button', '더 보기', { type: 'button' });
   more.disabled = true;
-  root.replaceChildren(element('h2', '모든 산출물'), status, select, reload, list, more);
+  const note = element('p', MESSAGES.declared, { class: 'artifact-note' });
+  root.replaceChildren(element('h2', '모든 산출물'), status, select, reload, note, list, more);
 
   function row(item) {
     const entry = element('li', undefined, { 'data-artifact-id': item.artifactId, 'data-run-id': item.runId });
-    entry.append(element('span', `${item.role} · ${item.mediaType} (선언) · ${sizeText(item.size)} · 실행 ${item.runId.slice(0, 8)}`
-      + (item.available ? '' : ' · 원본 없음')));
+    entry.append(element('span', `${item.role} · ${mediaTypeLabel(item.mediaType)} · ${sizeText(item.size)} · 실행 ${shortId(item.runId)}`
+      + (item.available ? '' : ' · 원본 없음'), { class: 'artifact-label' }));
     const open = element('button', '열기', { type: 'button' });
     open.addEventListener('click', () => Promise.resolve(onOpen(item.runId, item.artifactId)).catch(() => {}));
-    entry.append(open);
+    entry.append(open, artifactTechnical(document, item));
     return entry;
   }
 

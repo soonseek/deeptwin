@@ -3,6 +3,7 @@
 
 import { basePathFrom, createSupportedSession } from './session.mjs';
 import { createVersionsPanel } from './versions.mjs';
+import { mountShell } from './ui-shell.mjs';
 
 export async function boot({ document, location, fetch, crypto } = {}) {
   const status = document.getElementById('session-status');
@@ -26,6 +27,7 @@ export async function boot({ document, location, fetch, crypto } = {}) {
 }
 
 if (typeof globalThis.document === 'object' && globalThis.document?.getElementById?.('versions')) {
+  mountShell({ document: globalThis.document, page: 'versions' });
   boot({ document: globalThis.document, location: globalThis.location, crypto: globalThis.crypto,
     fetch: (...args) => globalThis.fetch(...args) }).catch(() => {});
 }

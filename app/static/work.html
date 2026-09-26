@@ -8,31 +8,25 @@
   <link rel="stylesheet" href="./styles.css">
   <script type="module" src="./work.mjs"></script>
 </head>
-<body class="owner-work-page">
-  <div id="app">
-    <header class="app-header">
-      <span class="wordmark" aria-label="DeepTwin">Deep<span>Twin</span></span>
-      <nav class="app-settings" aria-label="설정"><a href="./settings.html">설정</a></nav>
-    </header>
-    <main>
-      <aside class="development-preview" aria-label="개발 미리보기 상태">
-        <strong>개발 미리보기</strong>
-        <p>설명·자료 원본을 저장하고, 원하는 자료만 직접 읽고, Claude 연결로 작업 모델을 만들어 대화나 버튼으로 확인합니다. 마이크 입력과 관리형 실행기 연결은 아직 개발 중입니다.</p>
-      </aside>
-      <div class="space-label"><span class="space-mark" aria-hidden="true"></span> 업무</div>
-      <h1>설명이나 자료로 시작하세요</h1>
+<body class="shell-page page-work">
+  <div id="app" class="app-shell" data-page="work">
+    <main id="main">
+      <header class="page-header">
+        <h1>업무</h1>
+        <p class="page-purpose">맡길 일을 설명하거나 자료로 시작하세요. 작업 모델, 설계 후보 비교, 실행 시작이 이 화면에서 이어집니다.</p>
+      </header>
       <p id="session-status" role="status" aria-live="polite" data-state="">브라우저 세션을 확인하는 중…</p>
       <section id="intake-notice" class="introduction" aria-label="보관과 전송 안내"></section>
       <form id="work-form" class="work-surface" aria-label="업무 설명" method="post" hidden></form>
       <p id="save-status" role="status" aria-live="polite" data-state=""></p>
-      <section id="materials" class="materials" aria-label="자료"></section>
-      <section id="source-readings" class="source-readings" aria-label="자료 읽기"></section>
-      <section id="work-model" class="work-model" aria-label="작업 모델"></section>
-      <section id="work-conversation" class="work-conversation" aria-label="대화"></section>
-      <section id="design-workspace" class="design-workspace" aria-label="설계 후보 비교"></section>
-      <section id="work-run" class="work-run" aria-label="실행 시작"></section>
-      <section id="work-records" class="work-records" aria-label="기록 내보내기"></section>
-      <section id="work-deletion" class="work-deletion" aria-label="원본 삭제"></section>
+      <section id="materials" class="materials card" aria-label="자료"></section>
+      <section id="source-readings" class="source-readings card" aria-label="자료 읽기"></section>
+      <section id="work-model" class="work-model card" aria-label="작업 모델"></section>
+      <section id="work-conversation" class="work-conversation card" aria-label="대화"></section>
+      <section id="design-workspace" class="design-workspace card" aria-label="설계 후보 비교"></section>
+      <section id="work-run" class="work-run card" aria-label="실행 시작"></section>
+      <section id="work-records" class="work-records card" aria-label="기록 내보내기"></section>
+      <section id="work-deletion" class="work-deletion card" aria-label="원본 삭제"></section>
       <nav id="observe-link" aria-label="다른 화면"></nav>
       <footer>
         <p>설명과 자료 원본은 이 인스턴스에 수정본 단위로 남습니다. 미저장 설명은 이 브라우저에 임시 보관되며, 선택한 파일은 이 화면을 닫으면 다시 선택해야 합니다.</p>

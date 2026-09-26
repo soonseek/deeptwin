@@ -1188,6 +1188,10 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   key+digest, slot/selector, coexistence/competition, bind/disable/rollback, history/retention/release and affected
   environments as not supplied, since no route provides them. The staging handoff is description only. This task's
   own checks have not started.
+  2026-09-26 note (not a tick): UI redesign phase 2 landed (docs/ui/2026-09-26-product-ux-redesign.md §11): design
+  tokens with light/dark themes, the shared app shell (navigation, context bar, fold below 1024px), shared parts and
+  display rules, no "개발 미리보기" banners, and the settings page split from the records page. Phases 3–6 and this
+  task's own accessibility/usability checks remain open; no owner review of the screenshots is recorded yet.
 - [ ] T079 Against the frozen T081 candidate, run integrated fault/security/isolation/permissions/secret/license/dependency checks in
   app/tests/test_release_security.py and specs/001-autonomous-release/evidence/security-review.md;
   include random-host/path cookie cross-port and XSS/artifact canaries, forwarding-header spoofing,

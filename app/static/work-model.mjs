@@ -17,7 +17,7 @@ export const MESSAGES = Object.freeze({
   transmission: '만들기를 누르면 저장된 설명과, 자료 목록에서 직접 읽은 자료의 읽힌 글자만 선택한 Claude 모델로 전송됩니다. 읽지 않은 자료의 내용은 전송하지 않습니다.',
   unsaved: '먼저 설명을 저장해야 작업 모델을 만들 수 있습니다.',
   noSources: '원본 자료를 하나 이상 추가해야 작업 모델을 만들 수 있습니다.',
-  noConnection: 'Claude 연결이 준비되지 않았습니다. 기록 화면에서 키를 저장하고 모델 목록을 읽어 주세요.',
+  noConnection: 'Claude 연결이 준비되지 않았습니다. 설정 > 모델 연결에서 키를 저장하고 모델 목록을 읽어 주세요.',
   drafting: '작업 모델을 만드는 중… (보통 수십 초)',
   drafted: '작업 모델 초안입니다. 내용을 확인한 뒤 수락하거나 거절하세요.',
   confirmed: '이 작업 모델을 수락했습니다.',
@@ -31,7 +31,7 @@ export const ERROR_MESSAGES = Object.freeze({
   not_found: '저장된 설명이나 작업 모델을 찾지 못했습니다.',
   conflict: '다른 결정이 이미 기록되었거나, 확인한 초안과 저장된 초안이 다릅니다.',
   sources_required: MESSAGES.noSources,
-  provider_unavailable: 'Claude에 연결하지 못했습니다. 기록 화면에서 키와 모델 목록을 확인해 주세요.',
+  provider_unavailable: 'Claude에 연결하지 못했습니다. 설정 > 모델 연결에서 키와 모델 목록을 확인해 주세요.',
   model_output_invalid: '모델의 답이 작업 모델 형식에 맞지 않아 받아들이지 않았습니다. 다시 만들 수 있습니다.',
   unavailable: '처리하지 못했습니다.',
 });

@@ -17,6 +17,8 @@ import { createInquiryPanel } from './inquiry.mjs';
 import { createRunList } from './run-list.mjs';
 import { createRunPanel } from './run-panel.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
+import { shortId } from './ui-format.mjs';
+import { mountShell } from './ui-shell.mjs';
 
 export const ALTERNATIVE_MOUNT_ID = 'run-alternative';
 export const ALTERNATIVE_FILE_MOUNT_ID = 'run-alternative-file';
@@ -51,7 +53,7 @@ function sessionFailureText(error) {
   return ['unavailable', OFFLINE_MESSAGE];
 }
 
-export async function boot({ document, location, fetch, crypto } = {}) {
+export async function boot({ document, location, fetch, crypto, shell = null } = {}) {
   if (typeof document !== 'object' || document === null || typeof document.getElementById !== 'function'
       || typeof document.createElement !== 'function') fail('a document is required');
   if (typeof fetch !== 'function') fail('a fetch function is required');
@@ -65,6 +67,8 @@ export async function boot({ document, location, fetch, crypto } = {}) {
   const basePath = basePathFrom(location?.pathname);
   const session = createSupportedSession({ fetch, basePath });
   const commandId = () => crypto.randomUUID();
+  // the context bar names only what the page knows: the run the owner picked
+  const showContext = runId => shell?.setContext?.({ extra: [['실행', shortId(runId), runId]] });
   try {
     await session.establish();
   } catch (error) {
@@ -111,7 +115,7 @@ export async function boot({ document, location, fetch, crypto } = {}) {
   const indexRoot = document.getElementById(INDEX_MOUNT_ID);
   const index = indexRoot !== null && typeof indexRoot?.replaceChildren === 'function'
     ? createArtifactIndex({ root: indexRoot, document, basePath, request: session.request,
-      onOpen: (runId, artifactId) => Promise.all([panel.read(runId).catch(() => {}),
+      onOpen: (runId, artifactId) => Promise.all([showContext(runId), panel.read(runId).catch(() => {}),
         artifacts.open(runId, artifactId).catch(() => {}),
         ...(graph === null ? [] : [graph.showRun(runId).catch(() => {})]),
         ...(approvals === null ? [] : [approvals.show(runId).catch(() => {})])]) })
@@ -119,7 +123,7 @@ export async function boot({ document, location, fetch, crypto } = {}) {
   const list = createRunList({
     root: roots.source, document, basePath, request: session.request,
     // each refusal is shown on its own surface
-    onSelect: runId => Promise.all([panel.read(runId).catch(() => {}), artifacts.show(runId).catch(() => {}),
+    onSelect: runId => Promise.all([showContext(runId), panel.read(runId).catch(() => {}), artifacts.show(runId).catch(() => {}),
       ...(graph === null ? [] : [graph.showRun(runId).catch(() => {})]),
       ...(approvals === null ? [] : [approvals.show(runId).catch(() => {})])]),
   });
@@ -162,6 +166,7 @@ export async function bootPage(globals) {
 if (typeof globalThis.document === 'object' && globalThis.document !== null
     && typeof globalThis.document.getElementById === 'function'
     && globalThis.document.getElementById(MOUNT_IDS.panel) !== null) {
-  bootPage({ document: globalThis.document, location: globalThis.location,
+  const shell = mountShell({ document: globalThis.document, page: 'observe' });
+  bootPage({ document: globalThis.document, location: globalThis.location, shell,
     fetch: (...args) => globalThis.fetch(...args), crypto: globalThis.crypto });
 }

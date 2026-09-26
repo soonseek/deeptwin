@@ -63,6 +63,10 @@ MODULES = MappingProxyType({
     "experiments.mjs": JAVASCRIPT,
     "versions-page.mjs": JAVASCRIPT,
     "versions.html": "text/html",
+    "settings-page.mjs": JAVASCRIPT,
+    "ui-shell.mjs": JAVASCRIPT,
+    "ui-parts.mjs": JAVASCRIPT,
+    "ui-format.mjs": JAVASCRIPT,
 })
 PUBLIC_ASSET_PATHS = frozenset("/" + name for name in MODULES)
 _SHELL = "index.html"
