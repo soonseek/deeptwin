@@ -95,7 +95,7 @@ def slot_values(*, provider_id="claude_api", binding_slot_id="provider-primary",
     return key, digest_of(key), selector, scope
 
 
-def _commit(domain, digest, action, build):
+def _commit(domain, digest, action, build, *, retain_head=True):
     service = _writer_service(domain)
     with _writer(), domain._connection(write=True) as db:
         roots = domain._read_roots(db)
@@ -108,11 +108,11 @@ def _commit(domain, digest, action, build):
         return service._append(db, roots, roots.actor, action=action, command_id=str(uuid4()),
                                request_sha256="0" * 64, extension_id=extension_id, key=key, digest=digest,
                                history=history, expected=head, fields=fields, stamp=STAMP,
-                               now_ms=1_758_758_400_000, consume=consume)
+                               now_ms=1_758_758_400_000, consume=consume, retain_head=retain_head)
 
 
 def bind(domain, installations, *, qualification_ref, extension_id="claude-semantic-worker", label="a",
-         slot=None, **slot_changes):
+         slot=None, retain_head=True, **slot_changes):
     """Bind (absent/disabled head) or supersede (active head) with a new verified installation."""
     key, digest, selector, scope = slot or slot_values(**slot_changes)
     verified, tuple_value = verified_installation(domain, installations, extension_id=extension_id,
@@ -134,7 +134,7 @@ def bind(domain, installations, *, qualification_ref, extension_id="claude-seman
                                     if supersede else None),
             "rollback_of_revision": None}, None
 
-    result = _commit(domain, digest, "bind", build)
+    result = _commit(domain, digest, "bind", build, retain_head=retain_head)
     return SimpleNamespace(result=result, key=key, digest=digest, selector=selector, scope=scope,
                            installation=verified, ref=head_ref(result, digest))
 
