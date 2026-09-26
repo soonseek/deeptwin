@@ -17,8 +17,8 @@ repository in usable form.
 | 2 | External instance deployment / operator tooling | instance operator | no | Compose skeleton, bootstrap helper, locks and verifiers, stopped-control-plane operator tools; not deployable |
 | 3 | Server-owned internal CLI / worker implementation artifacts | the server itself | no | control plane and five worker processes; none wired into Compose |
 | 4 | Optional API / SDK integration | automation authors | no (optional) | browser-session API only; SDK/client not yet provided |
-| A | Installable extension-author SDK | extension authors | no | not yet provided |
-| B | Installable HTTP/OpenAPI client | automation authors | no | not yet provided |
+| A | Installable extension-author SDK | extension authors | no | wheel/sdist build and install (2026-09-26); port-schema bindings not yet provided |
+| B | Installable HTTP/OpenAPI client | automation authors | no | wheel/sdist build and install (2026-09-26); no bearer route to call, no parity |
 | C | External operator OCI-extension staging | instance operator | no | provider-port path partially implemented; not provided end to end |
 
 ## 1. Official browser product / control surface
@@ -91,8 +91,9 @@ to open a provider app or CLI.
 - Target: a separately installable, independently versioned `deeptwin_ext` distribution for
   manifests, permitted refinements and read-only, digest-equal bindings to the core-owned
   `extension-ports-v1` schemas. It never authors or registers a core port.
-- **Not yet provided.** `sdk/python/deeptwin_ext/` is a historical, dependency-free source checkpoint
-  with no packaging metadata (its README says so).
+- **Partly provided (2026-09-26).** `sdk/python/deeptwin_ext/` is now its own PEP 517 package root
+  (`deeptwin-ext` 0.1.0, wheel and sdist, installed and tested in a fresh venv). It still ships only
+  the historical manifest/worker-message helpers: no port-schema bindings or refinements yet.
 - See [extension-authoring.md](extension-authoring.md).
 
 ## B. Installable HTTP/OpenAPI client
@@ -100,7 +101,10 @@ to open a provider app or CLI.
 - Target: a separately installable `deeptwin_client` that imports no `app` module and proves parity
   with browser commands (same durable revisions, authority decisions, receipts and event order)
   against the real HTTPS server (T087, repeated on the final distribution in T083).
-- **Not yet provided.**
+- **Partly provided (2026-09-26).** `sdk/python/deeptwin_client/` builds `deeptwin-client` 0.1.0
+  (wheel and sdist). Installed in a fresh venv that cannot import `app`, it reaches the real
+  TLS server's mounted routes, but no route admits a service-client bearer yet (T025), so there
+  is no parity proof.
 
 ## C. External operator OCI-extension staging boundary
 
@@ -131,8 +135,8 @@ own authority.
 | --- | --- | --- |
 | 1 + 3 (core images) | control plane, workers, browser assets, locked third-party components | inventory drafted ([third-party-notices.md](third-party-notices.md)); per-image NOTICE/licence texts and source offers not assembled; images do not exist (T081/T082) |
 | 2 (operator artifacts) | Compose file, bootstrap helper, verifiers, operator tools | Apache-2.0 via the repository licence; upstream files under `deploy/locks/licenses/` keep upstream terms |
-| A (SDK) | `deeptwin_ext` package | not yet provided |
-| B (client) | `deeptwin_client` package | not yet provided |
+| A (SDK) | `deeptwin_ext` package | package root and artifacts build; not released |
+| B (client) | `deeptwin_client` package | package root and artifacts build; not released |
 | C (third-party extensions) | author-supplied images | each author's own licence, recorded as unverified metadata |
 
 ## Verification status

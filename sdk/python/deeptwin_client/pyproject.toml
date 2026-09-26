@@ -1,0 +1,20 @@
+# The HTTP/OpenAPI automation client (ADR-014, T087). A separate package root with its own
+# version; it never imports or ships the DeepTwin core (`app`) and speaks only HTTPS with one
+# bearer credential.
+[build-system]
+requires = []
+build-backend = "deeptwin_build_backend"
+backend-path = ["_build"]
+
+[project]
+name = "deeptwin-client"
+version = "0.1.0"
+description = "DeepTwin HTTPS service client: TLS-verified single-bearer calls to the /api/v1 surface."
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+dependencies = []
+
+[tool.deeptwin-build]
+package-dir = "src"
+packages = ["deeptwin_client"]

@@ -98,7 +98,7 @@ are unrelated to product extensions.
 | `Settings > Extensions` UI | `app/static/extensions.mjs` on `settings.html` | shows exactly what the routes above supply and marks the rest "제공되지 않음" |
 | Port schema artifacts | `schemas/v1/extensions/ports/` | generated; qualification matrices open |
 | Tool path in the extension worker | `app/workers/extension_probe.py`, `app/runtime/extension_attempt_transport.py`, `app/runtime/tools.py` | two code-owned tools (`text_profile`, `text_normalize`) over the bounded artifact stream, with execution-bound approvals; not a third-party path |
-| Historical extension kit | `sdk/python/deeptwin_ext/` | source checkpoint for `extension-manifest-v1`; no packaging metadata; **not** the SDK |
+| Extension kit package root | `sdk/python/deeptwin_ext/` | `deeptwin-ext` wheel/sdist (in-tree PEP 517 backend) carrying the `extension-manifest-v1` helpers; no port-schema bindings yet, so **not** the complete SDK |
 | Examples | `examples/extensions/code_free_lens`, `examples/extensions/pure_text_tool` | inert historical shapes; the tool example is explicitly not a conforming runnable extension |
 | Code-free lens/evaluator definition import | — | not yet provided |
 | Installable `deeptwin_ext` SDK | — | not yet provided (T087) |

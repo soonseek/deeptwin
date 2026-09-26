@@ -32,7 +32,7 @@ the owner on 2026-09-24 ([license-recommendation.md](license-recommendation.md))
 | `app/extensions/` | Core-owned extension port contracts, candidate registry, provider conformance/installation, transport qualification, binding service | partial (T087 open) |
 | `schemas/v1`, `schemas/v2` | Exported JSON Schemas (domain envelopes, route contribution, origin profile, extension ports, deployment, provider installation/conformance) | generated artifacts |
 | `deploy/` | Compose skeleton, build-input locks, manifests, verifiers, canaries, bootstrap helper | candidate, not runtime-qualified |
-| `sdk/python/deeptwin_ext/` | Historical extension-kit source checkpoint | **not** the installable SDK |
+| `sdk/python/deeptwin_ext/`, `sdk/python/deeptwin_client/` | Separate PEP 517 package roots (extension kit, HTTPS client) | installable artifacts build; **not** the complete SDK/client (T087) |
 | `examples/extensions/` | Inert manifest examples | not runnable extensions |
 | `evals/deeptwin/` | Q01 harness, verifiers, frozen calibration/qualification designs | offline; no qualified critic |
 | `control-prototype/`, `prototype/` | Synthetic control prototype and earlier prototype | not release evidence |
