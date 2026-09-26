@@ -55,13 +55,13 @@ _BODY_FIELDS = frozenset({"command_id", "manifest_sha256", "conformance_command_
 # code -> (status, exact owner-facing text, retryability); the owner screen shows the same text
 REFUSALS = {
     "verified_installation_missing": (409, (
-        "검증된 제공자 설치(verified installation)가 없어 전송 매니페스트를 검증하지 않았습니다. "
+        "검증된 제공자 설치가 없어 전송 매니페스트를 검증하지 않았습니다. "
         "먼저 제공자 설치를 검증하고, 그 설치로 제공자 적합성 검사를 실행해 주세요."), NOT_RETRYABLE),
     "conformance_run_missing": (409, (
         "검증된 설치에 대한 제공자 적합성 검사(conformance) 실행이 없어 전송 매니페스트를 검증하지 "
         "않았습니다. 먼저 적합성 검사를 실행해 주세요."), NOT_RETRYABLE),
     "conformance_run_unmatched": (409, (
-        "검증된 설치에서 4개 벡터를 모두 통과한(matched 4/4) 제공자 적합성 검사가 없어 전송 "
+        "검증된 설치에서 4개 벡터를 모두 통과한(4/4) 제공자 적합성 검사가 없어 전송 "
         "매니페스트를 검증하지 않았습니다."), NOT_RETRYABLE),
     "conformance_admission_stale": (409, (
         "적합성 검사 뒤 설치 헤드나 릴리스 소스가 바뀌어 그 검사로는 검증하지 않았습니다. "
