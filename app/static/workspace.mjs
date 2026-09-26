@@ -435,8 +435,9 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
       return;
     }
     if (!creation.available) {
-      parts.push(element('p', CREATION_TEXT.unavailable, { 'data-state': 'not_designable' }),
-        element('p', `사유: ${creation.reason}`, { class: 'design-create-reason' }));
+      const reason = element('details', undefined, { class: 'design-create-reason' });
+      reason.append(element('summary', '서버가 기록한 사유 (원문)'), element('p', `사유: ${creation.reason}`));
+      parts.push(element('p', CREATION_TEXT.unavailable, { 'data-state': 'not_designable' }), reason);
     } else if (model?.state !== 'confirmed' || typeof model?.work_model_id !== 'string') {
       parts.push(element('p', CREATION_TEXT.needsModel, { 'data-state': 'needs_work_model' }));
     } else {

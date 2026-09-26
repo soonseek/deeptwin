@@ -249,7 +249,7 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
     element('p', {}, '원본 저장은 파일 형식 검증이나 내용 이해가 아닙니다. 내용은 자료 읽기에서 자료마다 직접 읽을 때만 읽습니다.'),
     materialStatus, materialList);
   roots.link.replaceChildren(element('a', { href: './observe.html' }, '기록된 실행 관제 화면'),
-    element('a', { href: './records.html' }, '기록·내보내기·백업'));
+    element('span', { 'aria-hidden': 'true' }, ' · '), element('a', { href: './records.html' }, '기록·내보내기·백업'));
 
   let state = store.read();
   const recordsRoot = document.getElementById(RECORDS_MOUNT_ID);

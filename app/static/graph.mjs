@@ -217,6 +217,9 @@ export function createGraphView({ root, document, request = null, basePath = '/'
     const rows = Math.max(1, ...[...positions.values()].map(item => item.row + 1));
     const svg = svgElement('svg');
     svg.setAttribute('viewBox', `0 0 ${columns * COLUMN} ${rows * ROW}`);
+    // drawn at its natural size so a long chain scrolls sideways instead of shrinking unreadably
+    svg.setAttribute('width', String(columns * COLUMN));
+    svg.setAttribute('height', String(rows * ROW));
     svg.setAttribute('role', 'img');
     svg.setAttribute('aria-label', `노드 ${graph.nodes.length}개, 연결 ${graph.edges.length}개`);
     const center = id => {
