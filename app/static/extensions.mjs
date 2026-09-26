@@ -353,7 +353,17 @@ export function slotFacts(value) {
       : NOT_SUPPLIED],
     ['environments', '영향받는 환경', environments === null ? NOT_SUPPLIED
       : `대상 환경 ${environments.target_environment_id ?? '없음(인스턴스 범위)'} · 이 slot의 수정본을 기록한 환경 버전 ${environmentVersionsText(environments.bound_environment_versions)} · 다시 준비가 필요한 환경 ${listText(environments.needs_re_preparation)} (${environments.basis})`],
+    ['reconciliation', '기록 대조(헤드·보존·명령·이벤트)', reconciliationText(value.reconciliation)],
   ];
+}
+
+// the server's check that this slot's head is backed by its retention and command records; an
+// inconsistent slot is refused at dispatch and nothing on this screen repairs it
+function reconciliationText(value) {
+  if (!isObject(value)) return NOT_SUPPLIED;
+  const state = value.state === 'consistent' ? '일치' : '불일치 · 실행 시 이 slot은 거절됨';
+  const findings = Array.isArray(value.findings) && value.findings.length > 0 ? ` · ${value.findings.join(' / ')}` : '';
+  return `${state}${findings} · 시작 시 대조 ${text(value.startup_state)}`;
 }
 
 // each environment version the server says recorded a revision of this slot, as sent; a binding

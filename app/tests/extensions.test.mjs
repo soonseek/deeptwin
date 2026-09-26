@@ -410,6 +410,11 @@ test('a slot read shows the server key, digest, history, coexistence, retention 
   assert.match(facts.coexistence, /review-provider · ext-b/);
   assert.match(facts.competition, /ext-a \(수정본 1\) \/ ext-b \(수정본 2\)/);
   assert.match(facts.environments, /이 slot의 수정본을 기록한 환경 버전 없음 · 다시 준비가 필요한 환경 없음/);
+  assert.equal(facts.reconciliation, NOT_SUPPLIED);
+  const broken = Object.fromEntries(slotFacts(slotRead({ reconciliation: { state: 'inconsistent',
+    findings: ['revision 2: command record missing'], startup_state: 'inconsistent', startup_findings: [],
+    dispatch: 'refused' } })).map(([name, , value]) => [name, value]));
+  assert.equal(broken.reconciliation, '불일치 · 실행 시 이 slot은 거절됨 · revision 2: command record missing · 시작 시 대조 inconsistent');
   const environment = '0f0e0d0c-0b0a-4908-8706-050403020100';
   const marked = Object.fromEntries(slotFacts(slotRead({ affected_environments: {
     target_environment_id: null, needs_re_preparation: [environment], basis: 'environment_records_recorded_binding_revisions',
