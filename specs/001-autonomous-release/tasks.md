@@ -1102,6 +1102,17 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   version/T077); release-v1..v6 preserved byte-identical; execution stays T077
   (evidence/release-designs-t076-2026-09-25.md).
 - [ ] T077 Execute authorized bounded actual-provider/critic/multimodal/lens-controlled comparisons and audit all failures/suspicious passes in specs/001-autonomous-release/evidence/live-qualification.md; lack of applicable authority remains explicit, not waived (SC-001/005/006).
+  2026-09-25/26 SIMULATED dress rehearsal (owner delegation; NOT a release qualification): the T077 dispatcher
+  (`evals/deeptwin/qualification/dispatch.py`, not yet pinned by any design) with a persisted attempt ledger,
+  spent-set marking, USD hard stop journalled via `journal_stop`, crash-resume without re-dispatch and the
+  design's report sections (10 offline tests); two simulated 13-case sets by simulated-author/-reviewer/-sealer
+  (one repository-access Claude session), a `simulated: true` profile with judge separation not established,
+  manifest sha256s committed in bfeca2b before dispatch. Offline `sim-orchard` 39/39 over the fake provider:
+  suite not_judged, gate unqualified. Live `sim-ferry` subset (2 cases x 3, stop 3.00, ≈$1.19 estimated): the
+  honestly declared Claude judge refused by the manifest check; dispatched run suite fail (Q2 false rejections
+  exposing an authoring gap, one output-contract fail), run stopped at the owner cap, gate unqualified. Still open:
+  independent author/reviewer, other-provider judge, owner authority, pinning the dispatcher, manual provider
+  reconciliation (evidence/t077-simulated-rehearsal-2026-09-25.md).
 - [ ] T078 After T087's extension UI and the frozen T081 candidate exist, perform final visual/
   keyboard/screen-reader/360px/1024px/
   wide/IME/three-mode usability checks and actual rendered artifact QA in
