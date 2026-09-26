@@ -1036,6 +1036,141 @@ offline in `app/tests/browser-design.test.mjs`, the single test *"0/1/2/3 presen
 call, an edit re-reviewed and prepared, and cancel — in the real browser"*. It uses scripted
 test-actor turns, with the simulated qualification labelled.
 
+## 2026-09-26 (attempt 7): two live candidates pass, a live selection, the re-review is unresolved
+
+The owner authorized one more live attempt on attempt 6's terms (decisions.md, 2026-09-26,
+"Owner decision after T038 attempt 6"). It has its **own USD 3.00 cap** and its own ledger
+(`attempt7-ledger.json`), 2 requested candidates and USD 1.00 reserved for the re-review. The
+critic contract, the fold and the critic prompts were **not** changed.
+
+### What changed before the run (offline, commit "T038 attempt 7 prep")
+
+- **Generator design rules (i)–(j)** (`app/services/design_live.py`, `_CRITIC_DESIGN_RULES`).
+  They state a property of the graph grammar itself: an artifact edge carries no condition and
+  triggers its target, and a router has no artifact output.
+  - (i) A check's pass decision is a declared **deterministic verdict step in the data path**.
+    It reads the check report (through a join that also carries the checked content and the
+    originals, unaltered). Only when the report's overall verdict field is the passing value
+    does it emit those inputs byte for byte under its own verified-package contract.
+    Otherwise it fails with `fail_run`. The gate and the release read only that package, and
+    no artifact edge crosses from before the verdict step to after it.
+  - (j) A router that decides on a verdict reads the report through its own artifact edge,
+    and its decision fact is the report's overall verdict field. Its passing arm never leads
+    to a node fed from before the router; when the path after the decision needs such
+    artifacts, (i) is used instead.
+  - Rule (e) now points to (i)–(j) for its router option.
+- **Candidate count.** Attempt 6 got 1 of 2 graphs. The output schema said only "between one
+  and the requested number", and the profile forbids renaming one topology. The first-round
+  prompt (not a revision) now asks for the requested number of **structurally different**
+  graphs, returning fewer only when no further structurally different graph satisfies every
+  rule, and gives generic examples of structural variation.
+- **The work (SIMULATED owner, labelled)** (`app/tests/design_specified_work.py`). Condition 3
+  and the work text now state how a fail verdict blocks: a declared model-free decision step
+  reads the report's overall verdict field, and only what it passes on reaches approval and
+  storage. The verifier effect text is unchanged.
+- **Offline tests.** In `test_design_live.py`: the rules and the count rule reach the prompt,
+  with no task wording. In `test_design_specified_work.py`: condition 3's wording;
+  attempt 6's saved answer still replays and is admitted; and a verdict-step rework of
+  attempt 6's graph is admitted, with no crossing artifact edge, and projected for the critic.
+  All of design_live, design_criticism, design_criticism_live, design_arc,
+  design_specified_work, deterministic_tool_bindings, design_generation and graph_contract
+  pass, one file per process, with the key unset.
+
+### Run (`attempt7`, `test_claude_live_design_selection.py`, same product path)
+
+**Settings.** These were the same as attempt 6:
+- `DEEPTWIN_LIVE_WORK=specified`, 2 requested candidates, 1 round;
+- generation cap 28,000 tokens, criticism cap 6,000;
+- USD 1.00 re-review reserve, ceiling USD 5 / 25 per MTok;
+- the catalog's first model, id redacted;
+- no retry and no fallback, and the key was never printed.
+
+**Generation.** The live generation returned **2** graphs, and both were admitted. Both follow
+(i): neither graph has a router.
+- `b9c93c06`: `intake` → `writer` → `draft-join` → `verifier` → `verdict-join` (bundle + report)
+  → `verdict` (deterministic, `fail_run`) → `publish-gate` → `store` (deterministic +
+  `document_create`).
+- `120ba5fe`: the same, plus a deterministic `structure-precheck` on the draft bundle. The
+  verdict step reads both reports.
+
+**Arc criticism.**
+- `b9c93c06`: review **8 × pass**. 1 counterexample (`cx-report-consistency-unchecked`),
+  **rejected**. Verdict **passed**.
+- `120ba5fe`: review **8 × pass**. 2 counterexamples (`cx-overall-verdict-inconsistency`,
+  `cx-verifier-source-via-join`), both **rejected**. Verdict **passed**.
+- The pool presented **2** (passed 2, excluded 0). The run's recorded outcome is `shortfall`
+  only against the pool size of 3. Run `cca40bfa-3752-556e-ae18-863307b7c1d7`.
+- This is **the first live selection pool with presented live candidates**. Attempt 6's two
+  unresolved points (unconditional data into approval; an undeclared routing fact) were not
+  raised again.
+
+**Owner path (SIMULATED owner, the test actor; labelled).**
+- **Selection.** The first presented candidate, `120ba5fe`, was selected through
+  `derivations` (`select`), HTTP 201. That created the derived version `727719dc`.
+- **Live re-review** (`reviews`, HTTP 201; 4 live calls in the owner phase):
+  - review 8 × pass;
+  - `cx-inconsistent-verifier-report` **rejected**;
+  - `cx-unlabeled-bundle-items` **unresolved**. The draft bundle's two text/markdown items carry
+    no declared labels, so whether the handlers keep item identity is not stated.
+  - The re-reviewed version is therefore **`insufficient_evidence`**. The same graph passed in
+    the arc; the live critic's second pass raised a point the first did not.
+- **Preparation without qualification.** Refused: HTTP 409 `not_approvable`, *"only a passed
+  design version is approvable"*. It was refused, but because the version did not pass, not
+  on the qualification check.
+- **Preparation with the SIMULATED qualification.** The view showed
+  `simulated_qualification: true` and `approvable: true` for the environment. The call was
+  still refused with HTTP 409 on the same reason. **Nothing was prepared.**
+- The guard refused nothing.
+
+### Calls (provider-reported; all `completed / end_turn`; no cache tokens; bound = the guard's ceiling-rate bound before the send, incl. the USD 1.00 reserve in the arc phase)
+
+| # | phase | purpose | provider message id | request id | input / output tokens | bound USD | spend USD (ceiling) |
+|---|---|---|---|---|---|---|---|
+| 1 | arc | design_candidate (2 graphs, cap 28,000) | `msg_011CfRdnGt8bLCakBJFJmcAD` | `req_011CfRdnG4H3JTakg71M1fs1` | 10,078 / 12,423 | 1.8109 | 0.3610 |
+| 2 | arc | review (`b9c93c06`): 8 × pass | `msg_011CfRdtpem24kGQisf2uor9` | `req_011CfRdtp43HgUXDTZEwrjw2` | 9,163 / 3,741 | 1.5971 | 0.1393 |
+| 3 | arc | counterexample_proposal (1) | `msg_011CfRdw2VTPe7emrA1LdQju` | `req_011CfRdw1zw1VsMigDmj6N9U` | 10,725 / 2,606 | 1.7500 | 0.1188 |
+| 4 | arc | validity `cx-report-consistency-unchecked`: rejected | `msg_011CfRdxtWnZLJWYj4cwzQvZ` | `req_011CfRdxsQoyKeVLVTsPimGj` | 10,023 / 1,784 | 1.8666 | 0.0947 |
+| 5 | arc | review (`120ba5fe`): 8 × pass | `msg_011CfRdzFMCgW4fkmzpPUUaj` | `req_011CfRdzEkUh2Gp2Wh4J9D63` | 9,664 / 4,247 | 1.9564 | 0.1545 |
+| 6 | arc | counterexample_proposal (2) | `msg_011CfRe2o2Fb3D8tgCCnEbQL` | `req_011CfRe2nYySXmNknyftiT7C` | 11,226 / 3,536 | 2.1245 | 0.1445 |
+| 7 | arc | validity `cx-overall-verdict-inconsistency`: rejected | `msg_011CfRe5HLPo61HvTH48nMsL` | `req_011CfRe5GjgTZ2DcMvv8tiPa` | 10,356 / 1,858 | 2.2645 | 0.0982 |
+| 8 | arc | validity `cx-verifier-source-via-join`: rejected | `msg_011CfRe6dSuDVoF5PbyHAjcx` | `req_011CfRe6cz7Yk183zzZUPEej` | 10,283 / 1,882 | 2.3619 | 0.0985 |
+| 9 | owner | re-review (`727719dc`): 8 × pass | `msg_011CfRe82fvj4SCtzfp8TmiS` | `req_011CfRe81bggtUwxSB97evgD` | 9,664 / 5,072 | 1.4521 | 0.1751 |
+| 10 | owner | counterexample_proposal (2) | `msg_011CfReAzgSv3zM9dFDHFh2T` | `req_011CfReAyvZCtwfpNuL5fAbu` | 11,226 / 3,234 | 1.6408 | 0.1370 |
+| 11 | owner | validity `cx-inconsistent-verifier-report`: rejected | `msg_011CfReDDPk7i3dByi7DMp4z` | `req_011CfReDCtUKZaPvFvLEjmH4` | 10,406 / 2,075 | 1.7741 | 0.1039 |
+| 12 | owner | validity `cx-unlabeled-bundle-items`: unresolved | `msg_011CfReEdsuvEEtK1fAMpgPz` | `req_011CfReEdNuTXXGr4frRZ1kv` | 10,348 / 2,130 | 1.8771 | 0.1050 |
+
+**Spend.** Attempt 7 sent 12 calls, with 123,162 input and 44,588 output tokens. That is
+**USD 1.731 at the ceiling 5 / 25**: 1.210 in the arc and 0.521 in the re-review. This is
+against attempt 7's USD 3.00 cap, leaving USD 1.269 unused. No call was retried or refused.
+
+**Evidence** (under `evidence/t038-live-arc-2026-09-26/`):
+- `attempt7.json` (evidence id `83875e05-0c38-4328-8369-fd036c5a972e`);
+- 12 raw answers `attempt7-NN-<phase>-<stage>[-<purpose>].txt`; the generation answer's sha256
+  is `bdfba8d0…0d38`;
+- `attempt7-ledger.json`.
+
+All were scanned: key-free, with no model id.
+
+**T038 is not ticked.** Real live generation → live critique → a live-presented pool → the
+(simulated) owner's selection → a live re-review all happened, for the first time. But the
+re-reviewed version was `insufficient_evidence`. So both preparations were refused as "only a
+passed design version is approvable":
+- the unqualified refusal did not exercise the qualification check;
+- the preparation with the labelled simulated qualification did not happen.
+
+The full path the task requires (… → refused unqualified preparation → preparation with the
+labelled simulated qualification) therefore did not complete live. The 0/1/2/3, revision and
+cancel paths stay covered offline in `app/tests/browser-design.test.mjs`.
+
+**Analysis.** The two graph-design points attempt 6 left unresolved are gone. Both candidates
+passed live criticism. What remains is one point the re-review raised: aggregate bundles whose
+items are not labelled, so which item is the draft rests on handler behaviour. That points to
+a generic rule for a later attempt: a join's aggregate contract declares each item's role
+(for example, per-item labels or one slot per original). Criticism is also not stable across
+two passes over the identical graph: `120ba5fe` passed, and `727719dc`, its unedited
+selection (the same functional graph under a new version identity), was unresolved. No change was made after the run. A further attempt needs the
+owner's authorization.
+
 ## Not ticked
 
 The 0/1/2/3, revision and cancel paths are exercised in `app/tests/browser-design.test.mjs` with
@@ -1050,7 +1185,12 @@ live-generated candidate that passes live criticism. The 2026-09-26 (latest) arc
 run end to end through the product's routes. All 3 live-generated candidates were rejected by
 live criticism. The improved generation prompt's candidate passed every review finding, but
 two counterexamples failed it and a third stayed unresolved. So no owner selection, re-review
-or (simulated-qualification) preparation took place. In any case none of this is a release
+or (simulated-qualification) preparation took place. Attempt 7 (above) changed that up to the
+re-review. Two live candidates passed live criticism and were presented. The simulated owner
+selected one, and it was re-reviewed live. But the re-review came out `insufficient_evidence`,
+so neither preparation (unqualified, or with the simulated qualification) reached the
+qualification check. T038 stays open for a re-reviewed version that passes and completes both
+preparations. In any case none of this is a release
 qualification: no critic or lens is qualified in production, `V3_VERIFYING_DESIGN_IDS` is empty
 and V3 is unverified (T077).
 
@@ -1090,6 +1230,14 @@ and V3 is unverified (T077).
     counterexamples about binding the routing fact to the report, and about the join's
     unconditional data inputs.
     - Attempt 6's cap has USD 1.965 left, and a further attempt needs the owner's
+      authorization.
+  - Attempt 7 (2026-09-26 (attempt 7), above) added rules (i)–(j) and the count rule. Both
+    live candidates passed live criticism and were presented, and the simulated owner selected
+    one.
+    - The live re-review of the selected version stayed `insufficient_evidence`, on unlabelled
+      bundle items. So both preparations were refused as not approvable, and nothing was
+      prepared.
+    - Attempt 7's cap has USD 1.269 left, and a further attempt needs the owner's
       authorization.
 - Production cannot create a design request: no lens is qualified, so no `DesignSource` is
   configured, and the page and the route say so. A production source would also need the owner's
