@@ -1,7 +1,12 @@
 """Fixed HTTP adapter for the owner's design workspace: the `design-workspace-v1`
 contribution (T037).
 
-- `GET /api/v1/design-requests` lists the design requests this instance serves.
+- `GET /api/v1/design-requests` lists the design requests this instance serves (persisted
+  requests are rebuilt from their stored records first; what cannot be rebuilt is listed
+  with its reason) and whether a request can be created here (`creation`).
+- `POST /api/v1/design-requests` (T038) creates a design request from the owner's accepted
+  work model, only where a qualified lens decision exists, or answers `not_designable`
+  with the exact reason.
 - `GET /api/v1/design-requests/{request_id}` reads one request's honest selection pool:
   presented candidates with their graphs and recorded verdicts, every exclusion with
   its reason, the real count, derived versions, and whether review and preparation
@@ -31,6 +36,7 @@ from starlette.concurrency import run_in_threadpool
 from ..domain.refs import uuid_string
 from ..services.design_workspace import (
     CANCEL_SCHEMA,
+    CREATE_SCHEMA,
     DERIVE_SCHEMA,
     GENERATE_SCHEMA,
     PREPARE_SCHEMA,
@@ -45,7 +51,7 @@ from .wire import WireInputError, WireLimits, parse_json_object, parse_query
 ROOT = "/api/v1/design-requests"
 STATUS = {"invalid_input": 400, "unauthenticated": 401, "access_denied": 403, "not_found": 404,
           "conflict": 409, "not_approvable": 409, "unavailable": 503, "review_unavailable": 503,
-          "generation_unavailable": 503}
+          "generation_unavailable": 503, "not_designable": 409, "not_restorable": 409}
 _LIMITS = WireLimits(max_bytes=8_192, max_depth=3, max_items=16, max_members=8, max_string_bytes=4_096)
 _COMMANDS = {
     "derivations": (DERIVE_SCHEMA, ("schema_version", "command_id", "action", "parent_candidate_ids",
@@ -54,8 +60,11 @@ _COMMANDS = {
     "preparations": (PREPARE_SCHEMA, ("schema_version", "command_id", "candidate_id")),
     "generations": (GENERATE_SCHEMA, ("schema_version", "command_id", "max_rounds")),
     "cancellations": (CANCEL_SCHEMA, ("schema_version", "command_id")),
+    "create": (CREATE_SCHEMA, ("schema_version", "command_id", "work_model_id")),
 }
 MESSAGES = {
+    "not_designable": "A design request cannot be created for this work model",
+    "not_restorable": "This design request cannot be rebuilt from its stored records",
     "review_unavailable": "Design review is not available",
     "not_approvable": "This design cannot be approved or prepared",
     "generation_unavailable": "Design generation is not available",
@@ -86,9 +95,11 @@ def preflight(scope, body):
         except (TypeError, ValueError):
             raise WireInputError("invalid_input") from None
     if len(parts) == 2:
-        if parts[1] not in _COMMANDS or method != "POST":
+        if parts[1] not in _COMMANDS or parts[1] == "create" or method != "POST":
             raise WireInputError("invalid_input")
         _body(parts[1], body)
+    elif not parts and method == "POST":
+        _body("create", body)
     elif method not in {"GET", "HEAD"} or body:
         raise WireInputError("invalid_input")
 
@@ -123,6 +134,14 @@ def create_router(*, service):
     @router.api_route(ROOT, methods=["GET", "HEAD"])
     async def listing(request: Request):
         return await call(service.list, request.state.authenticated_request, head=request.method == "HEAD")
+
+    @router.post(ROOT)
+    async def design_create(request: Request):
+        try:
+            value = _body("create", await request.body())
+        except (WireInputError, ValueError, json.JSONDecodeError):
+            return _error("invalid_input")
+        return await call(service.create, request.state.authenticated_request, value, status_code=201)
 
     @router.api_route(ROOT + "/{request_id}", methods=["GET", "HEAD"])
     async def read(request_id: str, request: Request):

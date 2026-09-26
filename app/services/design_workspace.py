@@ -47,11 +47,19 @@ Commands, each an explicit owner act on a CSRF-verified POST:
   the exact parent graph, and the new candidate — parented to the derivation — is
   criticized from scratch. A merge still has no generation turn that realizes it.
 
-Recorded open: an issued `DesignGenerationRequest` cannot be rebuilt from the store
-(its decisions and compilation authority are not persisted), so a request is served
-only while the host that generated it has registered it with `open_request`. After a
-restart a persisted request answers `not_found` until it is registered again. No
-production path registers one today: the design arc is not yet wired to a route.
+- **create** (`POST /api/v1/design-requests`): the owner creates a design request from
+  their accepted work model through the host's `DesignSource` (`design_requests`) — only
+  where a qualified lens decision exists. The request and its basis (the lens evidence,
+  the functional decision, the exact compilation authority) are persisted. Production
+  configures no source (no lens is qualified), so the command answers `not_designable`
+  with that exact reason, and the list says the same under `creation`.
+- **restore**: a persisted request that is not being served is rebuilt from its stored,
+  verified records by re-running every issuing gate (`design_requests.restore_request`);
+  anything that does not resolve answers `not_restorable` with the exact reason (a
+  request registered by host code with `open_request` and no stored basis stays
+  unrestorable). A refused criticism answer is persisted as a
+  `design_criticism_refusal` record on its candidate (raw answer, bounded, and the exact
+  violation).
 """
 
 from __future__ import annotations
@@ -123,8 +131,11 @@ CANCEL_SCHEMA = "design-generation-cancel-command-v1"
 _RUN_SCHEMA = "design-generation-run-v1"
 MAX_GENERATION_ROUNDS = 3
 _DERIVATION_SCHEMA = "design-derivation-v1"
+CREATE_SCHEMA = "design-request-create-command-v1"
 CODES = frozenset({"invalid_input", "unauthenticated", "access_denied", "not_found", "conflict",
-                   "unavailable", "review_unavailable", "not_approvable", "generation_unavailable"})
+                   "unavailable", "review_unavailable", "not_approvable", "generation_unavailable",
+                   "not_designable", "not_restorable"})
+_MAX_STORED = 256
 _MAX_CHILDREN = 256
 _MAX_REQUESTS = 64
 
@@ -233,6 +244,151 @@ class PersistentDesignWorkspace:
         self._lock = RLock()
         self._requests: dict[str, _Registration] = {}
         self._running: dict[str, Event] = {}
+        self._source = None
+
+    # --- the host's design source (trusted code only; never page input) -------------
+
+    def configure_design_source(self, source):
+        """Let the owner create design requests from a confirmed work model, and let
+        persisted requests be rebuilt after a restart. Production configures none: no
+        lens is qualified, so creation states that reason instead."""
+
+        from .design_requests import DesignSource
+
+        if source is not None and type(source) is not DesignSource:
+            raise TypeError("A DesignSource is required")
+        with self._lock:
+            self._source = source
+
+    def _work_models(self):
+        from .work_models import PersistentWorkModels
+
+        return PersistentWorkModels(self._domain, self._owner, None)
+
+    def _register_from_source(self, request, source):
+        return self.open_request(request, registry=source.registry, critic_qualification=source.critic_qualification,
+                                 criticism_turn=source.criticism_turn, critic_model_id=source.critic_model_id,
+                                 generation_turn=source.generation_turn, generator_model_id=source.generator_model_id)
+
+    def _stored_request(self, request_id):
+        """(record ref, stored request dict) of a persisted request, or None."""
+
+        with self._domain._connection() as db:
+            roots = self._domain._read_roots(db)
+            row = db.execute("SELECT sha256 FROM domain_records WHERE vault_id=? AND kind='decision_record' "
+                             "AND id=? AND version=1", (roots.genesis.id, request_id)).fetchone()
+            if row is None:
+                return None
+            ref = EntityRef("decision_record", request_id, 1, row["sha256"])
+            content = self._domain._load(db, ref, roots)[0].body["content"]
+        if type(content) is not dict or content.get("design_kind") != "design_generation_request":
+            return None
+        return ref, decode_design_refs(content["design"])
+
+    def _restore(self, request_id):
+        """Rebuild a persisted request from its stored, verified records and serve it."""
+
+        from .design_requests import DesignRequestError, restore_request, stored_basis
+
+        stored = self._stored_request(request_id)
+        if stored is None:
+            raise DesignWorkspaceError("not_found")
+        ref, value = stored
+        with self._lock:
+            source = self._source
+        try:
+            request = restore_request(source, self._work_models(), value, stored_basis(self._domain, ref))
+        except DesignRequestError as error:
+            raise DesignWorkspaceError("not_restorable", error.reason) from None
+        self._register_from_source(request, source)
+        with self._lock:
+            return self._requests[request_id]
+
+    def _stored_basis_request_ids(self):
+        """Request ids whose basis is persisted (a basis is parented to its work model)."""
+
+        with self._domain._connection() as db:
+            roots = self._domain._read_roots(db)
+            rows = db.execute(
+                "SELECT DISTINCT e.source_id FROM domain_edges e WHERE e.vault_id=? AND e.source_kind='decision_record' "
+                "AND e.target_kind='work_model' ORDER BY e.source_id LIMIT ?",
+                (roots.genesis.id, _MAX_STORED)).fetchall()
+            found = []
+            for row in rows:
+                record = db.execute("SELECT version, sha256 FROM domain_records WHERE vault_id=? AND "
+                                    "kind='decision_record' AND id=? ORDER BY version DESC LIMIT 1",
+                                    (roots.genesis.id, row["source_id"])).fetchone()
+                loaded = self._domain._load(db, EntityRef("decision_record", row["source_id"], record["version"],
+                                                          record["sha256"]), roots)[0]
+                content = loaded.body.get("content")
+                if type(content) is dict and content.get("design_kind") == "design_request_basis":
+                    found.append(decode_design_refs(content["design"])["request_id"])
+        return found
+
+    def creation(self):
+        from .design_requests import PRODUCTION_REASON
+
+        with self._lock:
+            source = self._source
+        return {"available": source is not None, "reason": None if source is not None else PRODUCTION_REASON,
+                "source": None if source is None else source.label}
+
+    @_closed
+    def create(self, request, payload) -> dict:
+        """The owner creates a design request from their confirmed work model — only where
+        a qualified lens decision exists; otherwise the exact reason is answered."""
+
+        from .design_requests import (
+            PRODUCTION_REASON,
+            DesignRequestError,
+            issue_request,
+            persist_basis,
+            request_id_for,
+        )
+        from .work_models import WorkModelServiceError
+
+        _authenticate_owner(self._owner, request)
+        command = self._command(payload, CREATE_SCHEMA, ("work_model_id",))
+        try:
+            work_model_id = uuid_string(command["work_model_id"])
+        except (DomainContractError, TypeError, ValueError):
+            raise DesignWorkspaceError("invalid_input") from None
+        request_id = request_id_for(command["command_id"])
+        if self._stored_request(request_id) is not None:  # an exact replay creates nothing
+            registration = self._registration(request_id)
+            return self._created(registration, work_model_id)
+        work_models = self._work_models()
+        try:
+            target = work_models.confirmed_target(work_model_id)
+        except WorkModelServiceError:
+            raise DesignWorkspaceError("not_designable", "the owner has not accepted this work model; accept it "
+                                                         "before a design request can be created") from None
+        with self._lock:
+            source = self._source
+        if source is None:
+            raise DesignWorkspaceError("not_designable", PRODUCTION_REASON)
+        try:
+            issued, basis = issue_request(source, target, request_id=request_id)
+        except DesignRequestError as error:
+            raise DesignWorkspaceError("not_designable", error.reason) from None
+        headers = self._headers()
+        from .design_persistence import persist_design_request
+
+        record_ref = persist_design_request(self._domain, issued, **headers)
+        with self._domain._connection() as db:
+            roots = self._domain._read_roots(db)
+            work_model_ref = work_models._record(db, roots, "work_model", work_model_id).ref
+        persist_basis(self._domain, record_ref, work_model_ref, basis, actor_ref=headers["actor_ref"],
+                      created_at_utc=headers["created_at_utc"])
+        self._register_from_source(issued, source)
+        return self._created(self._registration(request_id), work_model_id)
+
+    @staticmethod
+    def _created(registration, work_model_id):
+        request = registration.request
+        return {"schema_version": "design-request-v1", "request_id": request.request_id,
+                "version": request.version, "requested_candidate_count": request.requested_candidate_count,
+                "work_model_id": work_model_id, "design_disposition": request.design_disposition}
 
     # --- host registration (trusted code only; never page input) ------------------
 
@@ -285,7 +441,8 @@ class PersistentDesignWorkspace:
         with self._lock:
             found = self._requests.get(request_id)
         if found is None:
-            raise DesignWorkspaceError("not_found")
+            # a persisted request is rebuilt from its stored, verified records, or refused
+            return self._restore(request_id)
         return found
 
     # --- reading the persisted chain -----------------------------------------------
@@ -508,11 +665,21 @@ class PersistentDesignWorkspace:
     @_closed
     def list(self, request) -> dict:
         self._owner.authenticate_bound(request.session)
+        unrestorable = []
+        for request_id in self._stored_basis_request_ids():
+            with self._lock:
+                if request_id in self._requests:
+                    continue
+            try:
+                self._restore(request_id)
+            except DesignWorkspaceError as error:
+                unrestorable.append({"request_id": request_id, "code": error.code, "reason": error.reason})
         with self._lock:
             registrations = sorted(self._requests.values(), key=lambda item: item.request.request_id)
         return {"requests": [{"request_id": item.request.request_id, "version": item.request.version,
                               "requested_candidate_count": item.request.requested_candidate_count}
-                             for item in registrations]}
+                             for item in registrations],
+                "unrestorable": unrestorable, "creation": self.creation()}
 
     @_closed
     def read(self, request, request_id: str) -> dict:
