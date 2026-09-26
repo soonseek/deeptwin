@@ -12,7 +12,15 @@ consent and the run — goes through the product's own owner routes from the pag
 preparation refused). The run executor is the code-owned test executor compiling under the
 design request's authority, whose handlers forward one synthetic artifact (no model, tool
 or paid call); the owner creates the run budget through `POST /api/v1/budget-policies`
-from the page."""
+from the page.
+
+`--design-source simulated|none` (T038, request creation from the work page): the executor
+is a Claude connection whose transport is an in-process mock answering the work-understanding
+turn with one synthetic work model (no network, key or paid call), so the owner drafts and
+accepts a work model on the page. `simulated` configures the design workspace with the
+TEST-ACTOR `DesignSource` (SIMULATED lens qualification, scripted generator and critic, the
+simulated critic qualification); `none` configures nothing — production's state, where the
+page states why no design request can be created."""
 import argparse
 import base64
 import json
@@ -79,6 +87,7 @@ def main():
     parser.add_argument("--owned-dir", required=True, type=Path)
     parser.add_argument("--unqualified", action="store_true")
     parser.add_argument("--no-executor", action="store_true")
+    parser.add_argument("--design-source", choices=("simulated", "none"))
     args = parser.parse_args()
     owned = args.owned_dir.resolve(strict=True)
     if not owned.is_dir() or any(owned.iterdir()):
@@ -91,9 +100,32 @@ def main():
     configuration = build_bootstrap_configuration(profile=profile, verifier_b64u=derive_capability_verifier(capability))
     initialize_session_root(owned / "root", profile=profile, recovery_epoch=1,
                             expected_uid=os.getuid(), expected_gid=os.getgid())
-    executor = None if args.no_executor else DesignExecutor()
+    executor = None if args.no_executor or args.design_source else DesignExecutor()
+    if args.design_source:
+        import httpx2
+
+        from app.services.claude_run_executor import ClaudeRunExecutor, LiveLimits
+        from app.tests.test_claude_api import Spy, complete_text_stream, model, model_page, response
+        from app.tests.test_claude_design_turn import EFFORTS
+        from app.tests.test_work_models import authored
+
+        answer = authored()
+
+        def responder(request, body):
+            if request.url.path == "/v1/models":
+                return response(request, payload=model_page([model(capabilities=EFFORTS)]))
+            return response(request, body=complete_text_stream(answer), headers={"content-type": "text/event-stream"})
+
+        claude_executor = ClaudeRunExecutor(limits=LiveLimits(max_model_calls=5),
+                                            transport=httpx2.MockTransport(Spy(responder)))
     app = create_app(owned / "data", deployment_config=configuration, session_root_dir=owned / "root",
-                     expected_uid=os.getuid(), expected_gid=os.getgid(), run_executor=executor)
+                     expected_uid=os.getuid(), expected_gid=os.getgid(),
+                     run_executor=claude_executor if args.design_source else executor)
+    if args.design_source == "simulated":
+        from app.tests.design_arc_fixture import actor_source, simulated_qualification
+
+        app.state.first_party_exports["design-workspace.service"].configure_design_source(
+            actor_source(scenario="three", critic_qualification=simulated_qualification()))
     if executor is not None:
         domain = app.state.domain_store
         executor.result = immutable(domain, domain.roots(), "artifact").ref
