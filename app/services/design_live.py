@@ -137,6 +137,27 @@ _OUTPUT_SCHEMA = (
 )
 
 
+# T038 (2026-09-26): the live critic rejected every live candidate on the same two design
+# defects (evidence/t038-live-arc-2026-09-26): downstream nodes re-emitting an artifact
+# contract they received (read by the critic as shared write access) and completion
+# conditions left to the producing node's own responsibility text. The critic contract is
+# unchanged; the generator is told the rules it is judged by.
+_CRITIC_DESIGN_RULES = (
+    " Design rules the critic checks (a candidate that breaks one is rejected): (a) one writer"
+    " per artifact: the critic treats every node with an output slot under an artifact contract as"
+    " a writer of that artifact, so each artifact contract is produced by exactly one node; a node"
+    " that verifies, approves, forwards or releases an artifact emits its own result under its own"
+    " new artifact contract (e.g. approved-script, release-record) and never re-emits a contract it"
+    " received or one another node produces. (b) every entry of the work model's"
+    " completion_conditions, and every risk with mitigation_required, is checked explicitly by a node"
+    " other than the one that produced the checked content: that node's responsibility names the"
+    " condition, its result is its own artifact (e.g. a check report) on the path to the human gate"
+    " or to the completion criterion, and whatever the condition depends on (e.g. a citation map, a"
+    " thumbnail promise) is a declared artifact, not only responsibility text. A node that needs"
+    " artifacts from two predecessors is a join, per the structure rules."
+)
+
+
 def _complete_graph(request: DesignGenerationRequest, graph: object) -> object:
     """Fill the framework-owned top-level fields the model omitted. A value the model
     did supply is kept and must pass the same strict admission as any other field."""
@@ -259,6 +280,7 @@ def render_candidate_prompt(request: DesignGenerationRequest, revision=None) -> 
     profile = design_profile_for(DesignGenerationPurpose.DESIGN_CANDIDATE)
     system = (
         f"{profile.base_instructions}\n{profile.developer_instructions}\n{_OUTPUT_SCHEMA}"
+        + _CRITIC_DESIGN_RULES
         + (_REVISION_SYSTEM if revision is not None else "")
     )
     payload = {

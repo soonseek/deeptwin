@@ -44,7 +44,12 @@ from app.services.claude_run_executor import (
 )
 from app.services.design import create_generation_request
 from app.services.design_persistence import persist_design_request
-from app.tests.design_arc_fixture import SIMULATION, STAMP, _work_model, simulated_qualification
+from app.tests.design_arc_fixture import (
+    SIMULATION,
+    STAMP,
+    _work_model,
+    simulated_qualification,
+)
 from app.tests.test_claude_live_path import claude
 from app.tests.test_design_arc import generate, post, read, work_with_source
 from app.tests.test_design_generation import (
@@ -61,11 +66,12 @@ LEDGER = os.environ.get("DEEPTWIN_LIVE_LEDGER")
 LABEL = os.environ.get("DEEPTWIN_LIVE_ATTEMPT") or "attempt1"
 CATALOG_ONLY = os.environ.get("DEEPTWIN_LIVE_CATALOG_ONLY")
 CAP_USD = 3.00
-MAX_ROUNDS = 3  # one request, up to two supplementation rounds
-GENERATION_OUTPUT_TOKENS = 24_000  # up to three whole graphs in one answer
+MAX_ROUNDS = int(os.environ.get("DEEPTWIN_LIVE_ROUNDS") or 3)  # one request, up to two supplementation rounds
+GENERATION_OUTPUT_TOKENS = int(os.environ.get("DEEPTWIN_LIVE_GENERATION_TOKENS") or 24_000)  # up to 3 graphs
 CRITICISM_OUTPUT_TOKENS = 6_000
 # kept free while the arc runs, so the owner's re-review (≈ 8 calls) can complete
-REREVIEW_RESERVE_USD = 1.00
+REREVIEW_RESERVE_USD = float(os.environ.get("DEEPTWIN_LIVE_RESERVE_USD") or 1.00)
+CANDIDATES = int(os.environ.get("DEEPTWIN_LIVE_CANDIDATES") or 3)
 # at or above the listed per-token price of the model used (USD 4 / 20 per MTok)
 CEILING_INPUT_USD_PER_MTOK = 5.0
 CEILING_OUTPUT_USD_PER_MTOK = 25.0
@@ -179,7 +185,7 @@ def test_one_live_design_arc_to_owner_selection(tmp_path):
         request = create_generation_request(
             target, [decision],
             request_id=str(uuid5(NAMESPACE_URL, f"deeptwin:live-design-selection:{LABEL}:{revision.id}")),
-            requested_candidate_count=3, compilation_authority=design_authority())
+            requested_candidate_count=CANDIDATES, compilation_authority=design_authority())
         persist_design_request(domain, request, actor_ref=roots.actor, access_policy_ref=roots.access_policy,
                                retention_policy_ref=roots.retention_policy, created_at_utc=STAMP)
         guard = Guard(subject)
@@ -250,7 +256,8 @@ def test_one_live_design_arc_to_owner_selection(tmp_path):
             "guard_refusals": guard.refused,
             "spend_usd_at_ceiling_this_attempt": round(guard.spent(), 6),
             "spend_usd_at_ceiling_earlier_attempts": round(guard.prior_usd, 6),
-            "cap_usd": CAP_USD, "rereview_reserve_usd": REREVIEW_RESERVE_USD,
+            "cap_usd": CAP_USD, "rereview_reserve_usd": REREVIEW_RESERVE_USD, "max_rounds": MAX_ROUNDS,
+            "requested_candidate_count": CANDIDATES, "generation_output_tokens": GENERATION_OUTPUT_TOKENS,
             "ceiling_usd_per_mtok": [CEILING_INPUT_USD_PER_MTOK, CEILING_OUTPUT_USD_PER_MTOK],
             "evidence_id": str(uuid4()),
         }

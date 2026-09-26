@@ -1,0 +1,560 @@
+{
+  "label": "attempt1",
+  "model": "<live-catalog-model>",
+  "generation_http_status": 201,
+  "run": {
+    "run_id": "f8c2a7c1-06f8-56bb-836c-7ff721eacd7b",
+    "command_id": "da393d66-9a87-4edd-92e0-f4e027d78c63",
+    "max_rounds": 3,
+    "rounds": 3,
+    "outcome": "shortfall",
+    "model_calls": 19,
+    "generator_model_id": "<live-catalog-model>",
+    "critic_model_id": "<live-catalog-model>",
+    "refusals": [
+      {
+        "reason": "the model boundary failed",
+        "round": 2,
+        "stage": "generation"
+      },
+      {
+        "reason": "the model boundary failed",
+        "round": 3,
+        "stage": "generation"
+      }
+    ],
+    "candidate_ids": [
+      "fd01da78-4538-4e0a-8af6-c93635381616",
+      "bdc3a06d-a1bc-4f02-8f4d-1902a934d01d"
+    ],
+    "unreviewed_candidate_ids": [],
+    "presented_count": 0,
+    "started_at_utc": "2026-09-26T03:44:30.719155Z",
+    "ended_at_utc": "2026-09-26T03:51:04.933904Z"
+  },
+  "pool": {
+    "pool_size": 3,
+    "presented_candidate_ids": [],
+    "presented_count": 0,
+    "passed_count": 0,
+    "candidate_count": 2,
+    "excluded": [
+      {
+        "candidate_id": "bdc3a06d-a1bc-4f02-8f4d-1902a934d01d",
+        "reason": "rejected:review_fail:00000000-0000-4000-8000-000000000221:claim:0,review_fail:00000000-0000-4000-8000-000000000221:effect:research-responsibility,review_fail:shape:disposition,counterexample_fail:cx-writer-mutates-dossier,counterexample_fail:cx-citation-map-undeclared,counterexample_fail:cx-thumbnail-promise-undefined,review_unresolved:work:completion:0,validity_unresolved:cx-post-check-script-writers"
+      },
+      {
+        "candidate_id": "fd01da78-4538-4e0a-8af6-c93635381616",
+        "reason": "rejected:counterexample_fail:cx-thumbnail-no-artifact-no-check,review_unresolved:shape:disposition,validity_unresolved:cx-dossier-overwrite,validity_unresolved:cx-script-post-approval-mutation,validity_unresolved:cx-shared-grant-research-verifier"
+      }
+    ],
+    "supplementation_available": true
+  },
+  "candidates": [
+    {
+      "candidate_id": "bdc3a06d-a1bc-4f02-8f4d-1902a934d01d",
+      "presented": false,
+      "nodes": [
+        [
+          "checker",
+          "agent"
+        ],
+        [
+          "publish-gate",
+          "human_gate"
+        ],
+        [
+          "release",
+          "deterministic"
+        ],
+        [
+          "research",
+          "agent"
+        ],
+        [
+          "writer",
+          "agent"
+        ]
+      ],
+      "verdict": {
+        "status": "rejected",
+        "reasons": [
+          "review_fail:00000000-0000-4000-8000-000000000221:claim:0",
+          "review_fail:00000000-0000-4000-8000-000000000221:effect:research-responsibility",
+          "review_fail:shape:disposition",
+          "counterexample_fail:cx-writer-mutates-dossier",
+          "counterexample_fail:cx-citation-map-undeclared",
+          "counterexample_fail:cx-thumbnail-promise-undefined",
+          "review_unresolved:work:completion:0",
+          "validity_unresolved:cx-post-check-script-writers"
+        ],
+        "source": "persisted_criticism",
+        "model_ids": [
+          "<live-catalog-model>"
+        ],
+        "profile_digests": [
+          "28f52a675164dc79be388082fe29f702fde3788f09cb71680e72cb5662a1c4d6",
+          "4cc25f9e8766f8af6d7770faa446905cff046e0bb7b61d5c95d6e81715de22f6",
+          "c22beb594dd0444253af087f770f3e316e888430390063948db649028c408009",
+          "e2fddbf4be32ced4d15f299cee15b53a93f13ea904923cd55362db5b5283e7e4"
+        ],
+        "call_count": 9,
+        "criticism_record_id": "f97e5e2c-6414-49a1-9646-4a5a65b2066e"
+      }
+    },
+    {
+      "candidate_id": "fd01da78-4538-4e0a-8af6-c93635381616",
+      "presented": false,
+      "nodes": [
+        [
+          "publish-gate",
+          "human_gate"
+        ],
+        [
+          "release",
+          "deterministic"
+        ],
+        [
+          "research",
+          "agent"
+        ],
+        [
+          "verifier",
+          "agent"
+        ],
+        [
+          "writer",
+          "agent"
+        ]
+      ],
+      "verdict": {
+        "status": "rejected",
+        "reasons": [
+          "counterexample_fail:cx-thumbnail-no-artifact-no-check",
+          "review_unresolved:shape:disposition",
+          "validity_unresolved:cx-dossier-overwrite",
+          "validity_unresolved:cx-script-post-approval-mutation",
+          "validity_unresolved:cx-shared-grant-research-verifier"
+        ],
+        "source": "persisted_criticism",
+        "model_ids": [
+          "<live-catalog-model>"
+        ],
+        "profile_digests": [
+          "28f52a675164dc79be388082fe29f702fde3788f09cb71680e72cb5662a1c4d6",
+          "4cc25f9e8766f8af6d7770faa446905cff046e0bb7b61d5c95d6e81715de22f6",
+          "c22beb594dd0444253af087f770f3e316e888430390063948db649028c408009",
+          "e2fddbf4be32ced4d15f299cee15b53a93f13ea904923cd55362db5b5283e7e4"
+        ],
+        "call_count": 7,
+        "criticism_record_id": "1ad2c47b-f212-4066-8ffb-d22461a3d644"
+      }
+    }
+  ],
+  "derivations": [],
+  "owner_path": null,
+  "refusals": [],
+  "calls": [
+    {
+      "n": 1,
+      "phase": "arc",
+      "stage": "generation",
+      "answer_purpose": null,
+      "raw_answer": "attempt1-01-arc-generation.txt",
+      "intent_purpose": "design_candidate",
+      "max_output_tokens": 24000,
+      "effort": "medium",
+      "bound_usd_before_send": 1.6646,
+      "provider_message_id": "msg_011CfRMxZGJXq9sVUFaJiyim",
+      "request_id": "req_011CfRMxYTB2cA2hxtEJHMWV",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 5711,
+        "output_tokens": 7895
+      },
+      "spend_usd_at_ceiling": 0.22593
+    },
+    {
+      "n": 2,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "review",
+      "raw_answer": "attempt1-02-arc-criticism-review.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 1.4333,
+      "provider_message_id": "msg_011CfRN2ukD8DwNMHmfdbRwJ",
+      "request_id": "req_011CfRN2uJAJR66aPRL8ffRe",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 5169,
+        "output_tokens": 3578
+      },
+      "spend_usd_at_ceiling": 0.115295
+    },
+    {
+      "n": 3,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_proposal",
+      "raw_answer": "attempt1-03-arc-criticism-counterexample_proposal.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 1.5622,
+      "provider_message_id": "msg_011CfRN5HN2Qqf7AEGsquZPe",
+      "request_id": "req_011CfRN5GfbdVUGutvQj1D8J",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 6727,
+        "output_tokens": 3955
+      },
+      "spend_usd_at_ceiling": 0.13251
+    },
+    {
+      "n": 4,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt1-04-arc-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 1.6905,
+      "provider_message_id": "msg_011CfRN7wyo37bwWhuo9cBBP",
+      "request_id": "req_011CfRN7vtYxpCjduexpoUh6",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 5880,
+        "output_tokens": 2245
+      },
+      "spend_usd_at_ceiling": 0.085525
+    },
+    {
+      "n": 5,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt1-05-arc-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 1.7737,
+      "provider_message_id": "msg_011CfRN9YNXJDPW2bUAcQxFL",
+      "request_id": "req_011CfRN9XvEfkCRH1YzKhKPW",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 5671,
+        "output_tokens": 1713
+      },
+      "spend_usd_at_ceiling": 0.07118
+    },
+    {
+      "n": 6,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt1-06-arc-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 1.8449,
+      "provider_message_id": "msg_011CfRNAofKRShNQAjcgHkwp",
+      "request_id": "req_011CfRNAo6a87Ec68LrxhGCe",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 5722,
+        "output_tokens": 1640
+      },
+      "spend_usd_at_ceiling": 0.06961
+    },
+    {
+      "n": 7,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "candidate_response",
+      "raw_answer": "attempt1-07-arc-criticism-candidate_response.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 1.9295,
+      "provider_message_id": "msg_011CfRNC1rZR2GbzF6QiFyrG",
+      "request_id": "req_011CfRNC1QGza21FnGYwgzKf",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 6850,
+        "output_tokens": 2037
+      },
+      "spend_usd_at_ceiling": 0.085175
+    },
+    {
+      "n": 8,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt1-08-arc-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.0004,
+      "provider_message_id": "msg_011CfRNDM8xNAriuY5gwUoMB",
+      "request_id": "req_011CfRNDLYz2UbdCEeK1kqCj",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 5762,
+        "output_tokens": 2444
+      },
+      "spend_usd_at_ceiling": 0.08991
+    },
+    {
+      "n": 9,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "review",
+      "raw_answer": "attempt1-09-arc-criticism-review.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.0818,
+      "provider_message_id": "msg_011CfRNF3W85RsKpLfYokSgq",
+      "request_id": "req_011CfRNF33aczjHBiQaxo1go",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 5143,
+        "output_tokens": 2946
+      },
+      "spend_usd_at_ceiling": 0.099365
+    },
+    {
+      "n": 10,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_proposal",
+      "raw_answer": "attempt1-10-arc-criticism-counterexample_proposal.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.1948,
+      "provider_message_id": "msg_011CfRNH38rJC9aQ9f6KqPJk",
+      "request_id": "req_011CfRNH246q9v4ak9trp9Hy",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 6701,
+        "output_tokens": 3747
+      },
+      "spend_usd_at_ceiling": 0.12718
+    },
+    {
+      "n": 11,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt1-11-arc-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.3179,
+      "provider_message_id": "msg_011CfRNKWn4URuYHmLkDyyKF",
+      "request_id": "req_011CfRNKW4trRjDXXdQvm6L3",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 5907,
+        "output_tokens": 1799
+      },
+      "spend_usd_at_ceiling": 0.07451
+    },
+    {
+      "n": 12,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "candidate_response",
+      "raw_answer": "attempt1-12-arc-criticism-candidate_response.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.4107,
+      "provider_message_id": "msg_011CfRNLnBJJ5c6XrAA5Hg6c",
+      "request_id": "req_011CfRNLmVrgr5rnk5YwugQa",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 7299,
+        "output_tokens": 1474
+      },
+      "spend_usd_at_ceiling": 0.073345
+    },
+    {
+      "n": 13,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt1-13-arc-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.4639,
+      "provider_message_id": "msg_011CfRNMkNgUuuBUPc7qeV5z",
+      "request_id": "req_011CfRNMjiUmVpgerAKg2cpx",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 5738,
+        "output_tokens": 2254
+      },
+      "spend_usd_at_ceiling": 0.08504
+    },
+    {
+      "n": 14,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "candidate_response",
+      "raw_answer": "attempt1-14-arc-criticism-candidate_response.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.5657,
+      "provider_message_id": "msg_011CfRNPFg4z1g25tJkhjcwM",
+      "request_id": "req_011CfRNPFGGK9TkHUN8xBpsG",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 7039,
+        "output_tokens": 1805
+      },
+      "spend_usd_at_ceiling": 0.08032
+    },
+    {
+      "n": 15,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt1-15-arc-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.6278,
+      "provider_message_id": "msg_011CfRNQNoyfLKUmuktXxkQr",
+      "request_id": "req_011CfRNQNPfmLWbtXDoQXEyn",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 5650,
+        "output_tokens": 1416
+      },
+      "spend_usd_at_ceiling": 0.06365
+    },
+    {
+      "n": 16,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "candidate_response",
+      "raw_answer": "attempt1-16-arc-criticism-candidate_response.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.7046,
+      "provider_message_id": "msg_011CfRNRNCnPxPkZRykhbkXd",
+      "request_id": "req_011CfRNRMmVWTT6RBTrMpyXm",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 6624,
+        "output_tokens": 1440
+      },
+      "spend_usd_at_ceiling": 0.06912
+    },
+    {
+      "n": 17,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt1-17-arc-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.76,
+      "provider_message_id": "msg_011CfRNSLdZe8m2jSuXdUR7i",
+      "request_id": "req_011CfRNSKKgAjgqJyf821VJ3",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 5572,
+        "output_tokens": 1737
+      },
+      "spend_usd_at_ceiling": 0.071285
+    }
+  ],
+  "guard_refusals": [
+    {
+      "n": 18,
+      "phase": "arc",
+      "stage": "generation",
+      "bound_usd_before_send": 3.2836,
+      "prompt_sha256": "91b15bbb18125053dc8c72083f5bbd187b375b6875178d5163e9ac587fd95a17",
+      "refused": "the cap would be exceeded"
+    },
+    {
+      "n": 18,
+      "phase": "arc",
+      "stage": "generation",
+      "bound_usd_before_send": 3.2836,
+      "prompt_sha256": "91b15bbb18125053dc8c72083f5bbd187b375b6875178d5163e9ac587fd95a17",
+      "refused": "the cap would be exceeded"
+    }
+  ],
+  "spend_usd_at_ceiling_this_attempt": 1.61895,
+  "spend_usd_at_ceiling_earlier_attempts": 0,
+  "cap_usd": 3.0,
+  "rereview_reserve_usd": 1.0,
+  "ceiling_usd_per_mtok": [
+    5.0,
+    25.0
+  ],
+  "evidence_id": "36f31214-ceb6-4fdb-ac48-e4d2398c65c6"
+}
