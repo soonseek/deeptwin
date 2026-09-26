@@ -1,0 +1,10 @@
+{
+  "schema_version": "deeptwin-first-party-route-contribution-v1",
+  "contribution_id": "run-trace-v1",
+  "factory": "app.api.run_trace:create_router",
+  "routes": [
+    {"route_id": "runs.trace", "methods": ["GET", "HEAD"],
+     "path": "/api/v1/runs/{run_id}/trace",
+     "auth_policy": "browser_session", "required_scope": "work.read"}
+  ]
+}

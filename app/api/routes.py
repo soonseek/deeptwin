@@ -303,9 +303,10 @@ def preflight_api_v1(scope, body):
         # the strict decoder; the existing event parser validates duplicates/types.
         if raw_query:
             for pair in raw_query.split(b'&'):
-                parse_query(pair, allowed=('cursor', 'event_type', 'limit'))
+                parse_query(pair, allowed=('cursor', 'event_type', 'limit', 'run_id', 'work_id'))
         event_type = None if path in {'/api/v1/events', '/api/v1/events/stream'} else path.rsplit('/', 1)[1]
         cursor, _, _ = _event_options(Request(scope), path_event_type=event_type)
+        _event_subject(Request(scope))
         if cursor is not None:
             _decode_cursor(cursor)
     elif path == '/api/v1/snapshot' or path.startswith('/api/v1/commands'):
@@ -411,7 +412,7 @@ def _header_singleton(request, name):
 def _event_options(request, *, path_event_type=None):
     pairs = list(request.query_params.multi_items())
     if (sum(len(key) + len(value) for key, value in pairs) > MAX_QUERY_BYTES
-            or any(key not in {"cursor", "event_type", "limit"} for key, _ in pairs)):
+            or any(key not in {"cursor", "event_type", "limit", "run_id", "work_id"} for key, _ in pairs)):
         raise ApiInputError("Event query is invalid")
     cursors = [value for key, value in pairs if key == "cursor"]
     limits = [value for key, value in pairs if key == "limit"]
@@ -434,6 +435,23 @@ def _event_options(request, *, path_event_type=None):
     except EventInvalid as exc:
         raise ApiInputError("Event filter is invalid") from exc
     return cursor, event_types, int(raw_limit)
+
+
+def _event_subject(request):
+    """The optional subject filter of an event read: `run_id` or `work_id`, at most one of
+    them, once, as a canonical UUID (None without either)."""
+    pairs = list(request.query_params.multi_items())
+    runs = [value for key, value in pairs if key == "run_id"]
+    works = [value for key, value in pairs if key == "work_id"]
+    if len(runs) + len(works) > 1:
+        raise ApiInputError("Event subject filter is duplicated")
+    if not runs and not works:
+        return None
+    kind, raw = ("run", runs[0]) if runs else ("work", works[0])
+    try:
+        return kind, uuid_string(raw)
+    except (DomainContractError, TypeError, ValueError) as exc:
+        raise ApiInputError("Event subject filter is invalid") from exc
 
 
 def _page_body(page):
@@ -882,6 +900,7 @@ def create_router(*, components, runtime_dispatch_resolver=None, worker_dispatch
                 after_cursor=cursor,
                 event_types=event_types,
                 limit=limit,
+                subject=_event_subject(request),
             )
             if request.method == "HEAD":
                 return _head_response(
@@ -902,6 +921,7 @@ def create_router(*, components, runtime_dispatch_resolver=None, worker_dispatch
                 after_cursor=cursor,
                 event_types=event_types,
                 limit=limit,
+                subject=_event_subject(request),
             )
             if request.method == "HEAD":
                 return _head_response(
@@ -934,6 +954,7 @@ def create_router(*, components, runtime_dispatch_resolver=None, worker_dispatch
                 after_cursor=cursor,
                 event_types=event_types,
                 limit=limit,
+                subject=_event_subject(request),
             )
             if request.method == "HEAD":
                 return _head_response(

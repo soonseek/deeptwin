@@ -736,13 +736,22 @@ class PersistentRuns:
 
     @_closed
     def read(self, run_id, *, base_path) -> dict:
+        return self.observe_parts(run_id, base_path=base_path)[0]
+
+    @_closed
+    def observe_parts(self, run_id, *, base_path) -> tuple[dict, RunManifest, CompiledGraph]:
+        """(receipt, sealed manifest, compiled graph) of one run, read without executing:
+        the receipt `read` returns, plus the manifest and compilation it was observed
+        against (the trace reader's inputs; never raw graph state)."""
+
         run_id = _uuid(run_id)
         with self._domain._connection() as db:
             roots = self._domain._read_roots(db)
             manifest = self._manifest_by_run(db, roots, run_id)
         if manifest is None:
             raise RunServiceError("not_found")
-        _compiled, scheduler = self._prepare(manifest)
+        compiled, scheduler = self._prepare(manifest)
         outcome = scheduler.observe()  # a read never executes
-        return self._receipt(manifest, outcome, command_id=manifest.command_id,
-                             base_path=base_path)
+        receipt = self._receipt(manifest, outcome, command_id=manifest.command_id,
+                                base_path=base_path)
+        return receipt, manifest, compiled

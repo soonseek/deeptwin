@@ -41,7 +41,7 @@ dot segments; methods, auth policies and scopes come from closed sets; and route
 The composed set is mounted once. There is no runtime route registry and extensions cannot add
 routes.
 
-Current inventory (143 routes in 27 contributions; auth policies: `browser_session`, `browser_session_or_service_bearer`):
+Current inventory (144 routes in 28 contributions; auth policies: `browser_session`, `browser_session_or_service_bearer`):
 
 | Contribution | Routes | Scopes |
 | --- | --- | --- |
@@ -60,6 +60,7 @@ Current inventory (143 routes in 27 contributions; auth policies: `browser_sessi
 | `budget-policies-v1` | budget_policies.list, budget_policies.create (2) | `work.command`, `work.read` |
 | `runs-v1` | runs.create, runs.read, runs.resume, runs.cancel, runs.recover, runs.artifacts, runs.artifact, runs.artifact_content, runs.artifact_preview, runs.artifact_page, runs.artifact_page_image, runs.artifact_drafts, runs.artifact_draft_save, runs.artifact_draft, runs.artifact_draft_freeze, runs.artifact_alternative_file, runs.artifact_draft_differences, runs.alternative_difference, runs.alternative_difference_observe, runs.environments (20) | `work.command`, `work.read` |
 | `artifact-index-v1` | artifacts.index (1) | `work.read` |
+| `run-trace-v1` | runs.trace (1) | `work.read` |
 | `graphs-v1` | graphs.read (1) | `work.read` |
 | `design-workspace-v1` | design_requests.list, design_requests.create, design_requests.read, design_requests.derive, design_requests.review, design_requests.prepare, design_requests.generate, design_requests.cancel (8) | `work.command`, `work.read` |
 | `hypotheses-v1` | hypotheses.read, hypotheses.propose (2) | `work.command`, `work.read` |
@@ -128,6 +129,28 @@ profile; `403 access_denied` for a valid credential without the route's scope; `
 the client, source or route bucket is empty; `400 invalid_input` for a duplicated header. Every other
 route stays browser-session only. Which further routes and scope names a bearer may reach is an open
 owner decision (`evidence/bearer-service-clients-2026-09-26.md`).
+
+## 3b. Run trace and event subject filters (2026-09-26, UI phase 3)
+
+`GET|HEAD /api/v1/runs/{run_id}/trace` (`run-trace-v1`, route `runs.trace`, scope `work.read`) is a
+browser-session read of what one run already recorded; a bearer gets `401` like on every other
+browser-session route. No query and no body are accepted. The response is `run-trace-v1`
+(`contracts/api.md` §2, row "Runtime (implemented 2026-09-26, `run-trace-v1`)"): visits and
+attempts with their times and outcomes, each attempt's own inputs, outputs, tool calls, budget
+reservation and error, the Claude executor's model calls with the provider's token usage, the
+hand-offs the run recorded, the approvals, a time-ordered timeline, the graph's final results and
+where the run stopped. A value the runtime did not record is the string `not_recorded`, and each
+category not recorded is named with its reason in `gaps`. Errors: `400` malformed id, query or body,
+`401` no session, `404` unknown run, `503` executor or ledger unavailable.
+
+`GET|HEAD /api/v1/events`, `/api/v1/events/stream` and `/api/v1/events/{event_type}` accept at most
+one of `run_id` or `work_id` (canonical UUID, once). The filter keeps only events whose own record
+names the subject: `work_id` — an object reference to that work's `work_revision`; `run_id` — the
+run's own `run.started`/`run.stopped` (their correlation is the command that created the run, from
+which the run id is derived) or an object reference to the run or one of its ledger attempts. An
+approval decision carries neither, so it is not matched by `run_id` (the trace lists approvals from
+their records). The subject is part of the cursor's filter identity: a cursor read under one
+subject is refused (`400`) under another or none. Existing cursors are unchanged.
 
 ## 4. Compatibility policy
 

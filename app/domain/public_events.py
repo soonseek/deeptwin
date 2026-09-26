@@ -535,13 +535,37 @@ def _event_cursor_in_transaction(db, *, vault_id, sequence, event_types):
     return _cursor_for(vault_id, stream, sequence, filter_hash)
 
 
+def _subject_filter_hash(filter_hash, subject):
+    """The cursor's filter identity with a subject filter folded in; without one it is
+    the event-type filter's own digest, so existing cursors keep their meaning."""
+    if subject is None:
+        return filter_hash
+    kind, identity = subject
+    if kind not in {"run", "work"}:
+        raise EventInvalid("Event subject filter kind is unknown")
+    try:
+        identity = uuid_string(identity)
+    except DomainContractError as exc:
+        raise EventInvalid("Event subject filter is not a canonical UUID") from exc
+    return sha256(canonical_json({"event_types_sha256": filter_hash, "subject_kind": kind,
+                                  "subject_id": identity})).hexdigest()
+
+
 def _read_events_in_transaction(db, *, vault_id, after_cursor=None,
-                                event_types=(), limit=100):
-    """Read public projections and the matching cursor from one SQLite snapshot."""
+                                event_types=(), limit=100, subject=None, match=None):
+    """Read public projections and the matching cursor from one SQLite snapshot.
+
+    `subject` (`("run"|"work", uuid)`) with its `match(envelope) -> bool` narrows the
+    page to the envelopes the caller's predicate recognises from what each envelope
+    carries (its object references, its correlation); the pair is part of the cursor's
+    filter identity, so a cursor never crosses subjects."""
     _assert_event_schema(db, vault_id)
     if type(limit) is not int or not 1 <= limit <= MAX_PUBLIC_PAGE:
         raise EventInvalid("Public event page must contain 1..100 events")
+    if (subject is None) != (match is None) or (match is not None and not callable(match)):
+        raise EventInvalid("An event subject filter needs exactly its predicate")
     selected_types, filter_hash = _filter(event_types)
+    filter_hash = _subject_filter_hash(filter_hash, subject)
     stream = _event_stream(db, vault_id)
     first = stream["first_available_sequence"]
     if after_cursor is None:
@@ -589,7 +613,8 @@ def _read_events_in_transaction(db, *, vault_id, after_cursor=None,
             raise EventCorrupt("Stored event index differs from its envelope")
         scanned = row["sequence"]
         expected = scanned + 1
-        if not selected_types or envelope.event_type in selected_types:
+        if ((not selected_types or envelope.event_type in selected_types)
+                and (match is None or match(envelope) is True)):
             public.append(envelope.public_view())
             cursors.append(_cursor_for(vault_id, stream, scanned, filter_hash))
             if len(public) == limit:

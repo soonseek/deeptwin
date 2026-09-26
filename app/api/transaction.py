@@ -569,14 +569,45 @@ class RootCommandCoordinator:
                         raise RootTransactionFatal() from None
                 raise
 
-    def read_events(self, *, request, after_cursor=None, event_types=(), limit=100):
+    def _subject_match(self, db, subject):
+        """The predicate of an event subject filter, from what each envelope carries:
+        - `("work", id)`: an object reference to that work's revision record
+          (`work_revision`, whose id is the work id);
+        - `("run", id)`: the run's own `run.started`/`run.stopped` (their correlation is
+          the command that created the run, and a run id is derived from exactly that
+          command), or an object reference to the run or to one of its ledger attempts.
+        Events that carry neither (an approval decision names its own command, not the
+        run) are not matched; nothing is inferred from time or order."""
+        if subject is None:
+            return None
+        kind, identity = subject
+        if kind == "work":
+            return lambda envelope: any(ref.kind == "work_revision" and ref.id == identity
+                                        for ref in envelope.object_refs)
+        from ..services.runs import run_identity
+
+        attempts = frozenset(row[0] for row in db.execute(
+            "SELECT a.id FROM runtime_attempts a JOIN runtime_node_executions e "
+            "ON e.vault_id=a.vault_id AND e.id=a.execution_id WHERE a.vault_id=? AND e.run_id=?",
+            (self.vault_id, identity)))
+
+        def match(envelope):
+            if run_identity(envelope.correlation_id) == identity:
+                return True
+            return any((ref.kind == "run" and ref.id == identity)
+                       or (ref.kind == "attempt" and ref.id in attempts)
+                       for ref in envelope.object_refs)
+        return match
+
+    def read_events(self, *, request, after_cursor=None, event_types=(), limit=100, subject=None):
         """Return one authenticated public-event page from one consistent snapshot."""
         self._assert_component_bindings()
         self._authorized_reader(request)
         with self._domain._connection() as db:
             page = _read_events_in_transaction(
                 db, vault_id=self.vault_id, after_cursor=after_cursor,
-                event_types=event_types, limit=limit,
+                event_types=event_types, limit=limit, subject=subject,
+                match=self._subject_match(db, subject),
             )
         # Do not release a projection if the bound session expired or was revoked
         # while the consistent SQLite snapshot was being materialized.

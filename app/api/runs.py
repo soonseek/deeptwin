@@ -132,7 +132,9 @@ def is_run_path(path: str) -> bool:
     if not path.startswith(PATH + "/") or is_approval_path(path):
         return False
     parts = path[len(PATH) + 1:].split("/")
-    return (len(parts) == 1 or (len(parts) == 2 and parts[1] in {"resume", "cancel", "recover"})
+    # `/{id}/trace` (run-trace-v1) is admitted by this shared preflight too: a read with
+    # no query and no body, served by its own contribution
+    return (len(parts) == 1 or (len(parts) == 2 and parts[1] in {"resume", "cancel", "recover", "trace"})
             or _artifact_parts(parts) is not None or _draft_parts(parts) is not None
             or _is_file_upload(parts) or _is_difference(parts))
 
@@ -294,6 +296,10 @@ def preflight(scope, body, content_type):
                 uuid_string(artifact[0])
             if artifact[1] is not None and artifact[1].startswith("pages/"):
                 page_number(parts[4])
+            return None
+        if len(parts) == 2 and parts[1] == "trace":
+            if method not in {"GET", "HEAD"} or body:
+                raise RunRouteError()
             return None
         if len(parts) == 2:
             if method != "POST" or content_type.split(";", 1)[0] != "application/json":

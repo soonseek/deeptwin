@@ -612,9 +612,9 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
     with TestClient(reopened, base_url=profile.http_origin) as client:
         assert client.get(profile.base_path + "health").status_code == 200
         composition = reopened.state.route_composition
-        assert composition.route_count == 143
+        assert composition.route_count == 144
         assert composition.contribution_ids == ("core-v1", "extension-candidates-v1", "run-approvals-v1",
-            "works-v1", "run-consents-v1", "claude-connection-v1", "backups-v1", "retention-v1", "credentials-v1", "work-models-v1", "source-readings-v1", "conversations-v1", "budget-policies-v1", "runs-v1", "artifact-index-v1", "graphs-v1", "design-workspace-v1", "hypotheses-v1", "inquiries-v1", "versions-v1", "deployment-prepare-v1", "provider-conformance-v1", "provider-installation-v1", "extension-bindings-v1", "browser-grants-v1", "platform-update-v1",
+            "works-v1", "run-consents-v1", "claude-connection-v1", "backups-v1", "retention-v1", "credentials-v1", "work-models-v1", "source-readings-v1", "conversations-v1", "budget-policies-v1", "runs-v1", "artifact-index-v1", "run-trace-v1", "graphs-v1", "design-workspace-v1", "hypotheses-v1", "inquiries-v1", "versions-v1", "deployment-prepare-v1", "provider-conformance-v1", "provider-installation-v1", "extension-bindings-v1", "browser-grants-v1", "platform-update-v1",
             "service-clients-v1")
         assert composition.route_ids == ("events.read", "events.stream", "events.type", "snapshot.read",
             "commands.read", "commands.create", "extensions.candidates.create", "extensions.candidates.list", "extensions.candidates.read",
@@ -642,7 +642,7 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
             "runs.artifact_page", "runs.artifact_page_image", "runs.artifact_drafts", "runs.artifact_draft_save", "runs.artifact_draft",
             "runs.artifact_draft_freeze", "runs.artifact_alternative_file",
             "runs.artifact_draft_differences", "runs.alternative_difference",
-            "runs.alternative_difference_observe", "runs.environments", "artifacts.index",
+            "runs.alternative_difference_observe", "runs.environments", "artifacts.index", "runs.trace",
             "graphs.read", "design_requests.list", "design_requests.create", "design_requests.read", "design_requests.derive",
             "design_requests.review", "design_requests.prepare", "design_requests.generate", "design_requests.cancel", "hypotheses.read", "hypotheses.propose", "inquiries.read", "inquiries.open",
             "inquiries.answer", "inquiries.evidence", "inquiries.judge", "inquiries.audit",
@@ -663,7 +663,7 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
             "browser_grants.revoke", "platform.update.read",
             "service-clients.list", "service-clients.create", "service-clients.read",
             "service-clients.rotate", "service-clients.revoke")
-        assert len(set(composition.route_ids)) == 143
+        assert len(set(composition.route_ids)) == 144
 
 
 def test_live_session_root_pin_rejects_a_different_valid_pair(tmp_path):

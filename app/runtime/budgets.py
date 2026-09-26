@@ -993,6 +993,28 @@ class BudgetBook:
         with self._connection(immediate=True) as db:
             return self._reservation_state_in_transaction(db, request_id)
 
+    def reservation_record(self, request_id):
+        """Read-only: one reservation's stored row (state, the reserved counters, the
+        settled actuals when finalized, the epoch-second stamps) and its session policy's
+        provider mode and currency, or None when this book has none. No clock, session
+        or accounting side effect."""
+        uuid_string(request_id)
+        with self._connection() as db:
+            row = db.execute("SELECT * FROM runtime_budget_reservations WHERE request_id=?",
+                             (request_id,)).fetchone()
+            if row is None:
+                return None
+            session = db.execute("SELECT * FROM runtime_budget_sessions WHERE id=?",
+                                 (row["session_id"],)).fetchone()
+            policy = None if session is None else self._policy(session)
+        names = ("state", "created_at", "dispatched_at", "settled_at", "usage_finality",
+                 *_DIMENSIONS, "api_microunits", *("actual_" + name for name in _DIMENSIONS),
+                 "actual_api_microunits")
+        value = {name: row[name] for name in names}
+        value["provider_mode"] = None if policy is None else policy.provider_mode
+        value["currency"] = None if policy is None else policy.currency
+        return value
+
     def _reserve_and_mark_dispatched_in_transaction(self, db, request):
         """Reserve and dispatch on a caller-owned transaction over this exact DB.
 
