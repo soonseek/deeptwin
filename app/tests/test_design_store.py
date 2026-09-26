@@ -14,6 +14,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.domain.extension_binding import digest_of
 from app.domain.store import DomainStore
 from app.services.design_store import (
     DesignStoreError,
@@ -194,3 +195,35 @@ def test_persist_and_restore_are_strict(vault, decisions):
             restore_environment_state({**good, **tamper})
     assert restore_environment_state(good).as_dict() == good
     del approval, version
+
+
+# -- extension binding revisions a version is prepared with (T087) --------------------
+
+def _binding_revision(label, revision=1):
+    return {"binding_slot_key_digest": digest_of({"slot": label}), "revision": revision,
+            "binding_record_digest": digest_of({"record": label, "revision": revision})}
+
+
+def test_a_version_records_its_exact_binding_revisions_or_keeps_the_v1_shape():
+    approval, _other, state, version, _state2 = prepared_flow()
+    assert version.as_dict()["schema_version"] == "environment-version-v1"
+    assert "extension_binding_revisions" not in version.as_dict()
+    revisions = sorted([_binding_revision("a"), _binding_revision("b", 3)], key=lambda item: item["binding_slot_key_digest"])
+    recorded, _new_state = prepare_environment_version(state, approval, expected_head=state.head,
+                                                       extension_bindings=revisions)
+    value = recorded.as_dict()
+    assert value["schema_version"] == "environment-version-v2"
+    assert value["extension_binding_revisions"] == revisions
+    assert {key: item for key, item in value.items() if key != "extension_binding_revisions"} == {
+        **version.as_dict(), "schema_version": "environment-version-v2"}
+    for bad in (
+        [revisions[1], revisions[0]],  # not sorted by slot
+        [revisions[0], revisions[0]],  # two revisions of one slot
+        [{**revisions[0], "extra": 1}],
+        [{**revisions[0], "revision": 0}],
+        [{**revisions[0], "binding_record_digest": "A" * 64}],
+        "not a list",
+        [revisions[0]] * 257,
+    ):
+        with pytest.raises(EnvironmentContractError):
+            prepare_environment_version(state, approval, expected_head=state.head, extension_bindings=bad)
