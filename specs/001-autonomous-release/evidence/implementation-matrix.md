@@ -52,6 +52,6 @@ task cites is flagged. Test and evidence columns count files that cite the id.
 | SC-009 | 최초 프레임워크 제어 사건 이후 필수 기록 범주를 추출할 수 있고 비밀 유출 검사·사용자 범위 선택·가림·결손 표시를 통과하며 자동 외부 전송이 없다. | 1 | — | 1 | 5 | complete |
 | SC-010 | 최종 보고서가 구현/실제 시험/실사용 평가/렌즈·성장 효과/외부 승인 상태를 구별한다. 필수 외부 승인·기능·시험의 미완료가 있으면 전체 배포 후보 준비 완료를 … | 0 | T085 | 0 | 4 | open |
 
-Requirements: 44 — complete 16, open 28, uncited 0. Tasks: 90 — done 60, open 30.
+Requirements: 44 — complete 16, open 28, uncited 0. Tasks: 90 — done 61, open 29.
 
-Open tasks: T018, T023, T024, T025, T026, T030, T033, T036, T038, T042, T043, T048, T060, T066, T067, T070, T072, T075, T077, T078, T079, T080, T081, T082, T083, T084, T085, T087, T088, T090.
+Open tasks: T018, T023, T024, T025, T026, T030, T033, T036, T038, T042, T043, T048, T066, T067, T070, T072, T075, T077, T078, T079, T080, T081, T082, T083, T084, T085, T087, T088, T090.

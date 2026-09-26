@@ -39,7 +39,7 @@ dot segments; methods, auth policies and scopes come from closed sets; and route
 The composed set is mounted once. There is no runtime route registry and extensions cannot add
 routes.
 
-Current inventory (128 routes in 25 contributions; auth policies: `browser_session`):
+Current inventory (134 routes in 26 contributions; auth policies: `browser_session`):
 
 | Contribution | Routes | Scopes |
 | --- | --- | --- |
@@ -61,6 +61,7 @@ Current inventory (128 routes in 25 contributions; auth policies: `browser_sessi
 | `graphs-v1` | graphs.read (1) | `work.read` |
 | `design-workspace-v1` | design_requests.list, design_requests.read, design_requests.derive, design_requests.review, design_requests.prepare (5) | `work.command`, `work.read` |
 | `hypotheses-v1` | hypotheses.read, hypotheses.propose (2) | `work.command`, `work.read` |
+| `inquiries-v1` | inquiries.read, inquiries.open, inquiries.answer, inquiries.evidence, inquiries.judge, inquiries.audit (6) | `work.command`, `work.read` |
 | `versions-v1` | versions.read, versions.adopt, versions.decide, versions.activate, versions.rollback, versions.tool_effect_boundaries.read, versions.tool_effect_boundaries.decide (7) | `work.command`, `work.read` |
 | `deployment-prepare-v1` | deployment.requests.prepare, deployment.requests.cancel, deployment.requests.read, deployment.requests.receipts.import, deployment.requests.consume, deployment.provider-requests.prepare, deployment.provider-requests.cancel, deployment.provider-requests.read, deployment.provider-requests.receipts, deployment.provider-requests.consume (10) | `deployment.manage`, `deployment.read` |
 | `provider-conformance-v1` | extensions.provider-conformance.execute, extensions.provider-conformance.read, extensions.provider-transport-qualification.read, extensions.provider-transport-qualification.execute (4) | `extension.manage`, `extension.read` |
