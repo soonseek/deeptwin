@@ -10,6 +10,12 @@
 // and shows the server's exact refusal. A verdict is always shown as the recorded
 // conclusion of the critic it names, with that critic's qualification state; nothing
 // here presents a recorded verdict as a live one. All text goes through textContent.
+// T038: where the instance registered a generation turn, the owner runs the design arc
+// (bounded rounds of generation and criticism, `…/generations`) and can cancel it
+// (`…/cancellations`, effective before the next model call); each run's outcome is shown
+// as recorded — filled, an honest shortfall with the real count, or cancelled with the
+// candidates left unreviewed — and an edit is re-reviewed through a revision call. A
+// qualification outside the release designs is labelled a simulation (test-actor).
 
 import { compareGraphs, createGraphView, differenceSummary, focusDifference, unionNodeIds } from './graph.mjs';
 
@@ -27,6 +33,22 @@ export const REVIEW_REASONS = Object.freeze({
   derived_graph_not_generated: '수정·합치기 지시를 반영한 그래프를 만드는 생성 단계가 아직 없어 재검토할 그래프가 없습니다.',
   criticism_did_not_complete: '재검토가 끝나지 않았습니다. 기록된 평가는 없습니다.',
 });
+export const GENERATION_REASONS = Object.freeze({
+  generator_model_not_configured: '이 인스턴스에 설계 생성 모델이 설정되지 않아 후보를 만들 수 없습니다.',
+  critic_model_not_configured: '이 인스턴스에 평가 모델이 설정되지 않아 후보를 만들 수 없습니다.',
+});
+export const RUN_OUTCOMES = Object.freeze({ filled: '기본 3안을 채움', shortfall: '부족', cancelled: '소유자가 취소함' });
+
+// one design-arc run as recorded: its outcome, rounds, model calls, refusals and what stayed unreviewed
+export function generationRunText(run) {
+  const head = run.outcome === 'filled' ? `기본 3안을 채웠습니다 (생성 ${run.rounds}회).`
+    : run.outcome === 'cancelled'
+      ? `소유자가 취소했습니다: 다음 모델 호출 전에 멈췄습니다 (생성 ${run.rounds}회). 평가를 마치지 못한 후보 ${run.unreviewed_candidate_ids.length}개는 제시하지 않습니다.`
+      : `통과한 구조적으로 다른 후보가 ${run.presented_count}개뿐입니다 (생성 ${run.rounds}회 한도). 채워 넣지 않았습니다.`;
+  const refusals = run.refusals.length
+    ? ` 거절된 호출 ${run.refusals.length}개: ${run.refusals.map(item => `${item.round}회차 ${item.stage === 'generation' ? '생성' : '평가'} — ${item.reason}`).join('; ')}.` : '';
+  return `${head} 후보 ${run.candidate_ids.length}개 · 모델 호출 ${run.model_calls}회 · 생성자 ${run.generator_model_id} · 평가자 ${run.critic_model_id}.${refusals}`;
+}
 export const QUALIFICATION_LABELS = Object.freeze({
   qualified: '자격 있음', scoped_pass: '범위 한정 통과(자격 아님)', unqualified: '자격 없음', unknown: '자격 기록 없음',
 });
@@ -69,7 +91,9 @@ export function verdictText(verdict) {
 
 export function qualificationText(preparation) {
   const q = preparation.critic_qualification;
-  return `평가자 구성의 자격: ${QUALIFICATION_LABELS[q.status] ?? q.status} (${q.status}: ${q.reason})`;
+  const simulated = preparation.simulated_qualification
+    ? ' — 시뮬레이션(테스트 행위자) 자격이며 출시 자격이 아닙니다' : '';
+  return `평가자 구성의 자격: ${QUALIFICATION_LABELS[q.status] ?? q.status} (${q.status}: ${q.reason})${simulated}`;
 }
 
 export function createDesignWorkspace({ root, document, request, basePath = '/', commandId } = {}) {
@@ -97,7 +121,9 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
   const summary = element('section', undefined, { class: 'design-pool', 'aria-label': '선택 후보' });
   const compare = element('section', undefined, { class: 'design-compare', 'aria-label': '후보 비교' });
   const derived = element('section', undefined, { class: 'design-derivations', 'aria-label': '새 설계 버전' });
-  root.replaceChildren(element('h2', '설계 후보 비교'), status, picker, summary, compare, derived);
+  const arc = element('section', undefined, { class: 'design-generation', 'aria-label': '후보 생성' });
+  root.replaceChildren(element('h2', '설계 후보 비교'), status, picker, arc, summary, compare, derived);
+  let generating = false;
   picker.hidden = true;
   picker.addEventListener('change', () => show(picker.value).catch(() => {}));
   let view = null;
@@ -122,6 +148,69 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
   function candidate(id) {
     return view.candidates.find(item => item.candidate_id === id)
       ?? view.derivations.map(item => item.reviewed_candidate).find(item => item?.candidate_id === id) ?? null;
+  }
+
+  // --- the design arc: generate, cancel, what each run recorded ---------------------------
+  function renderGeneration() {
+    const generation = view.generation;
+    if (!generation) {
+      arc.replaceChildren();
+      return;
+    }
+    const outcome = element('p', '', { role: 'status', class: 'design-generation-status' });
+    const children = [element('h3', '후보 생성')];
+    if (!generation.available) {
+      children.push(element('p', GENERATION_REASONS[generation.reason] ?? generation.reason, { class: 'design-generation-unavailable' }));
+    } else {
+      const start = button(`후보 생성·평가 실행 (최대 ${generation.max_rounds}회)`, () => runGeneration(outcome, start, stop),
+        { 'data-command': 'generate' });
+      const stop = button('생성 취소', () => cancelGeneration(outcome), { 'data-command': 'cancel' });
+      start.disabled = generating || generation.running;
+      stop.disabled = !(generating || generation.running);
+      children.push(element('p', `생성자 ${generation.generator_model_id} · 평가자 ${generation.critic_model_id}. 한 번에 한 후보씩 평가하며, 취소는 다음 모델 호출 전에 적용됩니다.`),
+        start, stop);
+    }
+    children.push(outcome);
+    const runs = element('ol', undefined, { class: 'design-generation-runs', 'aria-label': '기록된 생성 실행' });
+    for (const run of generation.runs) runs.append(element('li', generationRunText(run), { 'data-outcome': run.outcome }));
+    if (generation.runs.length) children.push(element('h4', '기록된 생성 실행'), runs);
+    arc.replaceChildren(...children);
+  }
+
+  async function runGeneration(outcome, start, stop) {
+    if (generating) return null;
+    generating = true;
+    start.disabled = true;
+    stop.disabled = false;
+    outcome.textContent = '후보를 생성하고 평가하는 중…';
+    outcome.dataset.state = 'running';
+    try {
+      const run = await command('generations', { schema_version: 'design-generation-command-v1',
+        max_rounds: view.generation.max_rounds });
+      generating = false;
+      await show(requestId);
+      say(generationRunText(run), run.outcome);
+      return run;
+    } catch (error) {
+      generating = false;
+      await show(requestId).catch(() => {});
+      say(`후보를 생성하지 않았습니다: ${GENERATION_REASONS[error?.reason] ?? refusal(error)}`, error?.code ?? 'unavailable');
+      return null;
+    }
+  }
+
+  async function cancelGeneration(outcome) {
+    try {
+      const value = await command('cancellations', { schema_version: 'design-generation-cancel-command-v1' });
+      outcome.textContent = value.state === 'cancel_requested'
+        ? '취소를 요청했습니다. 이미 보낸 호출은 되돌릴 수 없고, 다음 모델 호출 전에 멈춥니다.'
+        : '실행 중인 생성이 없습니다.';
+      outcome.dataset.state = value.state;
+      return value;
+    } catch (error) {
+      outcome.textContent = `취소하지 못했습니다: ${refusal(error)}`;
+      return null;
+    }
   }
 
   // --- the pool: presented, exclusions, qualification -----------------------------------
@@ -238,7 +327,7 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
         row.append(element('p', '재검토 필요 · 원본의 평가·승인은 이어지지 않습니다', { class: 'design-re-review' }));
         const review = button('재검토', () => reviewDerivation(item.derivation_id, outcome), { 'data-command': 'review' });
         const reason = !view.review.available ? view.review.reason
-          : item.action !== 'select' ? 'derived_graph_not_generated' : null;
+          : !(view.review.realizes ?? ['select']).includes(item.action) ? 'derived_graph_not_generated' : null;
         review.disabled = reason !== null;
         row.append(review);
         if (reason !== null) row.append(element('p', REVIEW_REASONS[reason] ?? reason, { class: 'design-review-unavailable' }));
@@ -260,6 +349,7 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
     if (!presented.includes(pair.left)) pair.left = presented[0] ?? null;
     if (!presented.includes(pair.right) || pair.right === pair.left) pair.right = presented.find(id => id !== pair.left) ?? null;
     for (const id of [...merging]) if (!presented.includes(id)) merging.delete(id);
+    renderGeneration();
     renderSummary();
     renderCompare();
     renderDerivations();
@@ -303,6 +393,7 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
       return value;
     } catch (error) {
       outcome.textContent = `재검토하지 않았습니다: ${REVIEW_REASONS[error?.reason] ?? refusal(error)}`;
+      outcome.dataset.state = error?.code ?? 'unavailable';
       return null;
     }
   }

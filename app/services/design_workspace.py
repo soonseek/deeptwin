@@ -67,6 +67,7 @@ from ..domain.refs import DomainContractError, EntityRef, canonical_json, uuid_s
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import DomainStore, _writer
 from .critic_qualification import (
+    RELEASE_DESIGN_IDS,
     is_issued_critic_qualification,
     unknown_critic_qualification,
 )
@@ -457,6 +458,10 @@ class PersistentDesignWorkspace:
                 "environment_id": environment_id_for(request.request_id),
                 "critic_qualification": qualification.as_dict(),
                 "approvable": qualification.status == "qualified",
+                # a qualified record outside the release designs is a TEST-ACTOR simulation,
+                # never a release qualification (decisions.md 2026-09-25)
+                "simulated_qualification": (qualification.status == "qualified"
+                                            and qualification.design_id not in RELEASE_DESIGN_IDS),
                 "reason": None if qualification.status == "qualified"
                 else f"the critic configuration is not qualified ({qualification.status}: {qualification.reason})",
             },
