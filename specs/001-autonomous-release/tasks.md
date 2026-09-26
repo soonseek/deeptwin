@@ -771,7 +771,7 @@ eligible lens questions frozen before new evidence → typed candidate or justif
 - [x] T057 [US5] Implement restore/learn/protect typed patch compilation with per-field behavior provenance and semantic/source leak checks in app/runtime/compiler.py and app/tests/test_change_compiler.py; prevent H_phi/current-alternative copying (FR-020/021). Reconcile mandatory supported-inquiry admission with growth §4's system-repair path and make leak checking non-optional before completion. 2026-09-23: leak checking is mandatory on every compilation and growth §4's system-repair path is a second, recorded admission (a `system` hypothesis confirmed over its competitors grounds a `restore` only, over its own confirmation basis) (evidence/change-compiler-admissions-t057.md).
 - [x] T058 [US5] Implement active conditional knowledge registry, authority/scope/time/conflict/revalidation and prompt-derived compilation in app/runtime/memory.py and app/services/knowledge.py; ordinary authorized workflow changes remain possible (FR-021/032).
 - [x] T059 [US5] Run cross-purpose retrieval/prompt/derived-input adversarial tests including hidden heldout and sensitive personal-profile rejection in app/tests/test_growth_firewall.py (G-05, OPS-AC09).
-- [ ] T060 [US5] Connect observation/competing evidence/new questions/change candidates and audit details in app/static/inquiry.mjs, app/api/routes.py and app/tests/browser-inquiry.test.mjs; no forced philosophy quiz or fabricated human answer (UX-AC05/07).
+- [x] T060 [US5] Connect observation/competing evidence/new questions/change candidates and audit details in app/static/inquiry.mjs, app/api/routes.py and app/tests/browser-inquiry.test.mjs; no forced philosophy quiz or fabricated human answer (UX-AC05/07).
   2026-09-23 slice: the observed difference is sealed per frozen alternative and shown with
   hypotheses `not_generated`, inquiry `not_opened`, no change candidate and no input control
   (real-browser case); real hypothesis/inquiry/candidate display waits on a connected generator —
@@ -782,6 +782,18 @@ eligible lens questions frozen before new evidence → typed candidate or justif
   difference, all `proposed` (`hypotheses-v1`, observe-page panel; a live set proposed all five
   families) — evidence/hypotheses-generator-t060-2026-09-24.md. Inquiry opening and confirmation
   still need real evidence.
+  2026-09-26: the inquiry is connected (`inquiries-v1`, 6 routes, installed 128 → 134; observe-page
+  탐구 section). Only the owner opens it; questions freeze first, derived from the hypotheses'
+  predictions and the missing evidence, plus at most four model *proposals* (an answer-shaped
+  output is refused). Owner answers/skips are optional and only the owner's own input (no quiz,
+  nothing filled in); owner evidence is sealed after the freeze; judgments cite it and replay
+  `HypothesisSet.resolve` (competitors first). A confirmed hypothesis yields a restore/learn/protect
+  change candidate *proposal* (never compiled or applied, leak-checked against the owner's wording);
+  the audit shows who/what/when, the model turns by prompt digest and owner-input counts. Proven
+  offline, in real Chromium by a scripted **test actor** (simulation per decisions.md 2026-09-25 —
+  no real user feedback), and by one live question-proposal turn —
+  evidence/inquiry-flow-t060-2026-09-26.md. Not included: compiled candidates/testing (T061+) and
+  the qualified-lens SPLI inquiry (no qualified lens).
 
 ## Phase 8: US6 — Previous queues, product plateau and human promotion (P1)
 

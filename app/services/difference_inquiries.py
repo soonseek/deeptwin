@@ -50,8 +50,14 @@ from .hypotheses import PersistentHypotheses, render_hypothesis_prompt
 from .owner_auth import OwnerAuthError, PersistentOwnerAuthority
 from .run_approvals import _authenticate_owner, _owner_actor_ref
 
-__all__ = ["PersistentDifferenceInquiries", "InquiryServiceError", "derive_questions",
-           "admit_question_proposals", "render_question_prompt", "proposal_for"]
+__all__ = [
+    "InquiryServiceError",
+    "PersistentDifferenceInquiries",
+    "admit_question_proposals",
+    "derive_questions",
+    "proposal_for",
+    "render_question_prompt",
+]
 
 OPEN_SCHEMA = "inquiry-open-command-v1"
 ANSWER_SCHEMA = "inquiry-answer-command-v1"

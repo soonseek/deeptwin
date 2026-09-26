@@ -23,22 +23,28 @@ import httpx2
 import uvicorn
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from app.domain.refs import EntityRef  # noqa: E402
-from app.operations.session_root import initialize_session_root  # noqa: E402
-from app.operations.setup import (  # noqa: E402
+from app.domain.refs import EntityRef
+from app.operations.session_root import initialize_session_root
+from app.operations.setup import (
     OriginProfile,
     build_bootstrap_configuration,
     derive_capability_verifier,
 )
-from app.runtime.budgets import BudgetPolicy  # noqa: E402
-from app.server import create_app  # noqa: E402
-from app.services.claude_run_executor import ClaudeRunExecutor, LiveLimits  # noqa: E402
-from app.services.design_persistence import encode_design_refs  # noqa: E402
-from app.tests.test_claude_api import Spy, complete_text_stream, model, model_page, response  # noqa: E402
-from app.tests.test_claude_design_turn import EFFORTS  # noqa: E402
-from app.tests.test_graph_contract import parse  # noqa: E402
-from app.tests.test_graph_execution import linear_graph  # noqa: E402
-from app.tests.test_server_api_v1 import immutable  # noqa: E402
+from app.runtime.budgets import BudgetPolicy
+from app.server import create_app
+from app.services.claude_run_executor import ClaudeRunExecutor, LiveLimits
+from app.services.design_persistence import encode_design_refs
+from app.tests.test_claude_api import (
+    Spy,
+    complete_text_stream,
+    model,
+    model_page,
+    response,
+)
+from app.tests.test_claude_design_turn import EFFORTS
+from app.tests.test_graph_contract import parse
+from app.tests.test_graph_execution import linear_graph
+from app.tests.test_server_api_v1 import immutable
 
 WRITER_TEXT = "첫 줄\n둘째 줄\n셋째 줄\n"
 COMPETING = json.dumps({"hypotheses": [

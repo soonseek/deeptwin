@@ -15,10 +15,22 @@ from uuid import uuid4
 import httpx2
 
 from app.services.claude_run_executor import ClaudeRunExecutor, LiveLimits
-from app.tests.test_claude_api import Spy, complete_text_stream, model, model_page, response
+from app.tests.test_claude_api import (
+    Spy,
+    complete_text_stream,
+    model,
+    model_page,
+    response,
+)
 from app.tests.test_claude_design_turn import EFFORTS
 from app.tests.test_claude_live_path import messages
-from app.tests.test_hypotheses import COMPETING, WRITER_TEXT, hypotheses_path, observed_difference, propose_body
+from app.tests.test_hypotheses import (
+    COMPETING,
+    WRITER_TEXT,
+    hypotheses_path,
+    observed_difference,
+    propose_body,
+)
 from app.tests.test_runs_api import events, owner_app
 from app.tests.test_web_owner_integration import headers
 
