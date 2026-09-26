@@ -176,6 +176,8 @@ export function createInquiryPanel({ root, document, request, basePath = '/', cr
   }
 
   function codeOf(error) {
+    // the inquiry routes repeat their exact closed code as `reason` (the session keeps only generic codes)
+    if (typeof error?.reason === 'string' && Object.hasOwn(ERROR_MESSAGES, error.reason)) return error.reason;
     return Object.hasOwn(ERROR_MESSAGES, error?.code) ? error.code : 'unavailable';
   }
 
@@ -416,7 +418,7 @@ export function createInquiryPanel({ root, document, request, basePath = '/', cr
       element('h3', '경쟁하는 설명'), ...(generated ? proposed : [element('p', String(value.hypotheses.reason)), families, ...proposed]),
     ];
     if (generated) {
-      const section = element('section', undefined, { 'aria-label': '탐구' });
+      const section = element('section', undefined, { 'aria-label': '탐구', 'data-difference-id': value.difference_ref.id });
       await inquiry(section, value.difference_ref.id);
       body.replaceChildren(...head, section);
     } else {

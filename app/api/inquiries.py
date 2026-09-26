@@ -89,7 +89,9 @@ def preflight(scope, body):
 
 
 def _error(code):
-    return JSONResponse({"code": code, "message": "Inquiry request could not be admitted",
+    # `reason` repeats the closed code: the browser session keeps only its own generic codes
+    # (409 → conflict), and the panel needs the exact reason to say what is missing
+    return JSONResponse({"code": code, "reason": code, "message": "Inquiry request could not be admitted",
                          "retryability": "not_retryable", "affected_refs": [],
                          "correlation_id": str(uuid4())}, status_code=STATUS.get(code, 503))
 
