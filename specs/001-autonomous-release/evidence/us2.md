@@ -559,6 +559,172 @@ Across all three attempts the total is USD 3.686 at ceiling (≈ 2.95 listed).
 completed live: selection, the live re-review, refused unqualified preparation and
 simulated-qualification preparation.
 
+## 2026-09-26 (attempt 4): joins only aggregate, release pinned to the approval — nothing passed
+
+A new owner authorization covered one more live attempt under its **own USD 3.00 cap**. That cap
+is independent of the caps on attempts 1–2 and attempt 3, whose spend is stated separately
+below. The authorization allowed up to 2 candidates if the guard permitted, with USD 1.00 kept
+in reserve for the re-review. It also covered one generation-side change that generalizes
+attempt 3's three rejection reasons. The critic contract, the fold and the critic prompt were
+**not** changed.
+
+### The generation change (`app/services/design_live.py`, `_CRITIC_DESIGN_RULES` (f)–(h))
+
+These are general principles, with no task wording:
+
+- **(f) a join only aggregates.** A join has no model and performs nothing, so it never
+  carries a check, review, approval or release. A check, review or release that needs inputs
+  from several producers is a join followed by an agent or deterministic node that performs
+  it. The join emits its own new aggregate contract, a bundle of the exact, unaltered inputs.
+  The performing node's single triggering predecessor is that join.
+- **(g) release takes exactly what was approved, through the gate's path.** The human gate
+  receives the exact content it approves, with the check reports, and emits it unaltered under
+  its own approved-content contract. The releasing node reads that content from the gate: its
+  artifact edge and its approval edge both come from the same gate. It never takes a fresh copy
+  from the producer or from any node before the gate.
+- **(h) a check reads the artifact in a format it can inspect.** The checked contract's media
+  types are ones the checker's capabilities can read, and the checker's responsibility names
+  the format. If the producer's format is not inspectable, a conversion node before the check
+  emits an inspectable rendition, and the check, the approval and the release all use that
+  same content.
+
+Rule (b)'s last sentence used to say that a node needing artifacts from two predecessors *is* a
+join. It now says such a node is *preceded by* a join, per rule (f).
+
+Test: `test_design_live.py::test_the_generator_is_told_joins_only_aggregate_and_release_is_pinned`
+covers the first-round and the revision prompt. It also checks that rules (f)–(h) use none of
+the task's words (dossier, fact-check, thumbnail, research, script, pdf, video, youtube,
+citation, hook). Offline, the design/generation/profile tests gave 212 passed and 4 skipped.
+
+### Run (`test_claude_live_design_selection.py`, same product path)
+
+**Settings.**
+- `DEEPTWIN_LIVE_ATTEMPT=attempt4`, with its own ledger `attempt4-ledger.json`, so the
+  guard's earlier-attempts term is 0 for this cap.
+- **2 candidates requested** and 1 round, with no supplementation.
+- Output caps: 28,000 tokens for generation and 6,000 for criticism. Before the generation
+  call, the guard's worst-case bound was USD 1.784 including the reserve, so it allowed 2
+  candidates.
+- USD 1.00 re-review reserve held while the arc ran.
+- The guard used ceiling rates of USD 5 / 25 per MTok.
+- The model was the catalog's first; its id is redacted (`<live-catalog-model>`).
+- No retry and no fallback. The key was never printed. The JSON, the ledger and all raw
+  answers were checked key-free.
+
+**Outcome.** Run `15ca5ce4-99af-5f17-82ce-e4ea5c05277f` ended in **`shortfall`**, with 0
+presented of 2.
+- Evidence id: `6b0fb04d-efba-437e-adde-3f53c2c1c817`.
+- There were 0 contract refusals, 0 guard refusals and 0 unreviewed candidates.
+
+**The rules were followed.** The model returned 2 graphs, and the framework admitted both.
+- `2f4cebd8-d984-49fd-b118-8eb480cc13f8`:
+  - research and writer (agents);
+  - **j-fact (join) → fact-check (agent)**, where fact-check reads the join's
+    `fact-check-bundle` (dossier, script draft, citation map);
+  - hook-check (agent);
+  - **j-gate (join)** → `review-bundle` → **publish-gate (human gate)**, which emits
+    `approved-script`;
+  - **publisher (deterministic)**, whose artifact edge and approval edge both come from the
+    gate.
+- `0738d0ac-4d20-4144-923c-4ee6eddc45e3` has the same shape with a single checker:
+  - **j-verify (join) → verifier (agent)**, where the verifier reads a `verification-bundle`
+    (dossier, draft, citation map, thumbnail promise);
+  - j-gate → publish-gate → publisher, as above.
+- In both graphs:
+  - every contract is `text/markdown`, so no check reads a format it cannot inspect;
+  - no join carries a check;
+  - nothing reaches release except through the gate.
+
+**The criticism improved again.** For both candidates:
+- **all 5 review findings passed**: `…221:claim:0`, the effect, `shape:disposition`,
+  `work:completion:0` and `work:completion:1`;
+- **no counterexample was judged valid**, and no response failed.
+
+Each candidate was still excluded as `insufficient_evidence`, on two validity answers that
+stayed **unresolved**.
+
+`2f4cebd8`, criticism record `621f5508-5475-450d-815c-5d99f5640fbb`:
+- `cx-dossier-only-verification` (unresolved). Fact-check compares the script with the
+  dossier only and has no tools, so a dossier that misstates a source would pass. The validity
+  answer says this gap is real. Whether `work:completion:0` demands re-verification against
+  the sources, or only a traceable link through the dossier, it says "is not settled by the
+  criteria text".
+- `cx-counterevidence-dropped` (unresolved). The writer has no obligation to reflect
+  counter-evidence. The review bundle does not carry the dossier, so the gate cannot see what
+  was dropped. The answer calls it "interpretive" whether the effect requires this downstream.
+- `cx-uncited-claim-gap` was judged invalid (rejected).
+
+`0738d0ac`, criticism record `bb1b8310-3de2-4083-a0a6-e7fdf511afa6`:
+- `cx-first30-undefined-duration` (unresolved). The script has no timing markers for the
+  opening segment. The validity answer calls the chain "a plausible risk, not a demonstrated
+  effect".
+- `cx-verifier-shares-research-model` (unresolved). The verifier and research use the same
+  model choice, so a correlated misjudgment is possible. The answer calls it "a possible
+  general risk … not a demonstrated violation".
+- `cx-research-claims-precede-script` was judged invalid (rejected).
+
+**Owner path.** Nothing was presented, so none of the owner steps took place:
+- no selection;
+- no re-review;
+- no preparation, neither the unqualified one (which must be refused) nor the
+  simulated-qualification one.
+
+There was therefore nothing to label.
+
+**Analysis.** Attempt 3's structural defects are gone: neither candidate has a fail verdict.
+What keeps them out now is the critic's `unresolved` on residual risks that the work model's
+criteria do not settle:
+- whether the checker re-verifies against the original sources;
+- whether contrary evidence is used downstream;
+- an unmarked opening segment;
+- whether the checker and the producer are independent models.
+
+These are real properties of the graphs, not critic strictness. The fold correctly treats an
+unresolved counterexample as insufficient evidence.
+
+The next generation-side principles would be:
+- a checker that verifies against a source can itself read the originals that source cites,
+  or a second, independent check does;
+- whatever a check or gate must weigh, such as recorded contrary evidence, is in the bundle it
+  receives;
+- a check that locates part of an artifact has that part declared (marked) by the producer;
+- a checker uses a different model choice from the producer's when the authority offers one.
+
+This attempt made no change after the run.
+
+### Calls (provider-reported; all `completed / end_turn`; no cache tokens; bound = the guard's ceiling-rate bound before the send, including the USD 1.00 reserve)
+
+| # | purpose | provider message id | request id | input / output tokens | bound USD | spend USD (ceiling) |
+|---|---|---|---|---|---|---|
+| 1 | design_candidate (2 graphs, cap 28,000) | `msg_011CfRQg7RwP2r5BCbRkctTy` | `req_011CfRQg6SQB9Z7bRTJMyjB2` | 6,812 / 14,982 | 1.7841 | 0.4086 |
+| 2 | review (`2f4cebd8`): 5 × pass | `msg_011CfRQpX9Rcc16b3GDmrNpU` | `req_011CfRQpWbBfCtCKy7hM8uG6` | 6,788 / 2,884 | 1.6354 | 0.1060 |
+| 3 | counterexample_proposal (3) | `msg_011CfRQrL5imgMJD6P7gf15a` | `req_011CfRQrK3TWu1gesWn52MFu` | 8,348 / 3,658 | 1.7551 | 0.1332 |
+| 4 | validity `cx-dossier-only-verification`: unresolved | `msg_011CfRQtsSvFPf8S5ua81Utj` | `req_011CfRQtry9SPcawvbwHqoCD` | 7,411 / 2,331 | 1.8829 | 0.0953 |
+| 5 | validity `cx-uncited-claim-gap`: rejected | `msg_011CfRQvZL45CW6CG3HxR5qq` | `req_011CfRQvYgcVe55QGvUfLB17` | 7,253 / 1,645 | 1.9764 | 0.0774 |
+| 6 | validity `cx-counterevidence-dropped`: unresolved | `msg_011CfRQwffbKY4o6dSfKrLcc` | `req_011CfRQwfCJRxS3dEvVeLNQ3` | 7,358 / 2,210 | 2.0548 | 0.0920 |
+| 7 | review (`0738d0ac`): 5 × pass | `msg_011CfRQyEFvEAawkEQVQXSMh` | `req_011CfRQyDpdVwE24k9euB3Wa` | 6,287 / 2,772 | 2.1339 | 0.1007 |
+| 8 | counterexample_proposal (3) | `msg_011CfRQzxooTVTMYteCycdy1` | `req_011CfRQzxJnRbJtcQQ4apvPS` | 7,847 / 3,262 | 2.2483 | 0.1208 |
+| 9 | validity `cx-first30-undefined-duration`: unresolved | `msg_011CfRR3Bmi4oj8jtZYnhd8V` | `req_011CfRR3AcFuT3nHThD34vt1` | 6,840 / 1,370 | 2.3626 | 0.0685 |
+| 10 | validity `cx-research-claims-precede-script`: rejected | `msg_011CfRR4BtRwbPKVKJ3Y8qZZ` | `req_011CfRR4BEVnSWe22DmYb5de` | 6,896 / 2,064 | 2.4316 | 0.0861 |
+| 11 | validity `cx-verifier-shares-research-model`: unresolved | `msg_011CfRR5dyrxiXkCepWWumWd` | `req_011CfRR5dZ3vo661o6AbVYEK` | 6,772 / 1,948 | 2.5165 | 0.0826 |
+
+**Spend.** Attempt 4 sent 11 calls, with 78,612 input and 39,126 output tokens. That is about
+USD 1.097 at the listed 4 / 20 and **USD 1.371 at the ceiling 5 / 25**, against this attempt's
+USD 3.00 cap. USD 1.629 of the cap is unused, and it was not spent on a retry.
+
+Earlier attempts are counted separately, each under its own cap:
+- attempts 1–2: USD 2.677 at ceiling (≈ 2.14 listed);
+- attempt 3: USD 1.009 at ceiling (≈ 0.807 listed).
+
+Across all four attempts the total is USD 5.057 at ceiling (≈ 4.04 listed).
+
+**Evidence.** Everything is under `evidence/t038-live-arc-2026-09-26/`: `attempt4.json`,
+`attempt4-ledger.json` and 11 raw answers `attempt4-NN-arc-<stage>-<purpose>.txt`.
+
+**T038 is not ticked.** No live candidate has passed live criticism, so the full path has not
+completed live. That path is selection, the live re-review, the refused unqualified
+preparation and the simulated-qualification preparation.
+
 ## Not ticked
 
 The 0/1/2/3, revision and cancel paths are exercised in `app/tests/browser-design.test.mjs` with
@@ -590,6 +756,15 @@ and V3 is unverified (T077).
     followed by an agent or deterministic node. Release takes the approved content through the
     gate path. Attempt 3's cap has USD 1.991 left, and a further attempt needs the owner's
     authorization.
+  - Those rules were added as (f)–(h), and attempt 4 was run (2026-09-26 (attempt 4), above).
+    - They were followed. Both live candidates passed every review finding, with no valid
+      counterexample.
+    - Each was still excluded on two **unresolved** counterexamples. They concern residual
+      risks the criteria do not settle: checker independence from the source and from the
+      producer's model, contrary evidence the gate cannot see, and an unmarked opening
+      segment.
+    - Attempt 4's cap has USD 1.629 left, and a further attempt needs the owner's
+      authorization.
 - Production cannot create a design request: no lens is qualified, so no `DesignSource` is
   configured, and the page and the route say so. A production source would also need the owner's
   model turns wired from the Claude connection and a production functional-decision step (T030).
