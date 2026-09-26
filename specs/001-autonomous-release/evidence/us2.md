@@ -1171,7 +1171,144 @@ two passes over the identical graph: `120ba5fe` passed, and `727719dc`, its uned
 selection (the same functional graph under a new version identity), was unresolved. No change was made after the run. A further attempt needs the
 owner's authorization.
 
-## Not ticked
+## 2026-09-26 (attempt 8): a passed live re-review, both preparations — the full path live
+
+The owner authorized one more live attempt on exactly the terms of attempts 6 and 7
+(decisions.md, 2026-09-26, "Owner decision after T038 attempt 7"). It has its **own USD 3.00
+cap** and its own ledger (`attempt8-ledger.json`), 2 requested candidates and USD 1.00 reserved
+for the re-review. The critic, its contract, the fold and the critic prompts were **not**
+changed.
+
+### What changed before the run (offline, commit "T038 attempt 8 prep")
+
+- **Generator design rule (k)** (`app/services/design_live.py`, `_CRITIC_DESIGN_RULES`): every
+  item handed on declares its role.
+  - The grammar cannot label items inside a contract. An artifact contract
+    (`app/domain/graph_schema.py`, `ArtifactContract`) declares only `media_types`, `min_items`,
+    `max_items` and `max_total_bytes`; `schema_ref` stays null; a slot carries exactly one
+    contract. So an item's role can only be carried by the slot it travels in.
+  - The rule therefore uses the closest expressible form. A join, and a step that passes several
+    items on unaltered (the verdict step of (i), a gate), declares **one output slot per original
+    item**, each under its own new contract with `min_items`/`max_items` 1, named for the item's
+    role. Each item goes by its own artifact edge to a consumer input slot of that role, and the
+    consumer's responsibility names the slot it reads each item from. Items of different roles
+    never share a multi-item slot or contract.
+  - Rules (f) and (i) now point to (k): the join's and the verdict step's pass-through outputs
+    are per-item slots, not one bundle or "verified-package" contract.
+- **The work (SIMULATED owner, labelled)** is unchanged, including its label.
+- **Offline tests.** In `test_design_live.py`: rule (k) and the (f)/(i) pointers reach the
+  first-round and revision prompts, with no task wording. In `test_design_specified_work.py`:
+  attempt 7's saved answer still replays (both graphs admitted); a one-slot-per-item rework of
+  attempt 7's first graph (draft join, verdict join and verdict step) is admitted, every contract
+  holds one item, and the critic projection carries the per-role contracts. The attempt 5 and 6
+  replay tests still pass. All of design_live, design_criticism, design_arc,
+  design_specified_work, deterministic_tool_bindings, design_generation, graph_contract and
+  design_criticism_live pass, one file per process, with the key unset.
+
+### Run (`attempt8`, `test_claude_live_design_selection.py`, same product path)
+
+**Settings.** The same as attempts 6 and 7:
+- `DEEPTWIN_LIVE_WORK=specified`, 2 requested candidates, 1 round;
+- generation cap 28,000 tokens, criticism cap 6,000;
+- USD 1.00 re-review reserve, ceiling USD 5 / 25 per MTok;
+- the catalog's first model, id redacted;
+- no retry and no fallback, and the key was never printed.
+
+**Generation.** The live generation returned **2** graphs, and both were admitted. Both follow
+rule (k): every contract in both graphs has `max_items` 1, and every join and the verdict step
+hand on one slot per item (`source`, `draft`, `report`, …).
+- `e2f0d731`: `source-intake` → `writer` → `verify-join` (slots `joined-source`,
+  `joined-draft`) → `verifier` → `verdict-join` (slots `report`, `draft`, `source`) → `verdict`
+  (deterministic, slots `verified-draft`, `verified-report`, `verified-source`) → `publish-gate`
+  → `store` (deterministic + `document_create`) → `audit-join` → `store-audit` (deterministic
+  byte-equality audit).
+- `8fdc10cd`: the same, plus a deterministic `structure-precheck`, whose report travels in its
+  own slot through the verdict step.
+
+**Arc criticism.**
+- `e2f0d731`: review **8 × pass**. 2 counterexamples, both **rejected**:
+  `cx-approval-edge-e16-unbound` (the approval edge's id is not among the handoffs, but the gate
+  and the store's approval scope are declared) and `cx-verifier-source-via-join` (the join is
+  declared transformation-free; the verifier reads the source and the draft each in its own
+  slot). Verdict **passed**.
+- `8fdc10cd`: review **8 × pass**. 3 counterexamples: `ce-report-verdict-consistency-unenforced`
+  **rejected**; `ce-approval-edge-mismatch` **unresolved**; the third (`ce-post-hoc-byte-audit`)
+  was **not sent**: the spend guard refused its validity call (bound USD 3.0048 including the
+  USD 1.00 reserve, over the 3.00 cap). The arc recorded the refusal, and the candidate was
+  excluded as `unreviewed`.
+- The pool presented **1** (passed 1, excluded 1 `unreviewed`). The run's recorded outcome is
+  `shortfall` against the pool size of 3. Run `7ca1b161-080a-5ba7-88e5-a8ec7ce1e44e`.
+- Attempt 7's re-review point (`cx-unlabeled-bundle-items`) was not raised again in any of the
+  three criticisms.
+
+**Owner path (SIMULATED owner, the test actor; labelled).** Every step went through the
+workspace routes:
+
+| step | route | HTTP | outcome |
+|---|---|---|---|
+| selection of `e2f0d731` (the one presented) | `derivations` (`select`) | 201 | derivation `628a7039`, derived version `1adbf820`, re-review required |
+| live re-review of `1adbf820` (4 live calls) | `reviews` | 201 | review 8 × pass; `cx-store-audit-after-write` **rejected**; `cx-verifier-source-via-join` **rejected**; verdict **passed** |
+| preparation, no critic qualification | `preparations` | 409 | `not_approvable`: *"the critic configuration is not qualified (unknown: no_suite_record)"*, refused by the **qualification check** |
+| preparation view with the SIMULATED qualification | (read) | 200 | `simulated_qualification: true`, `approvable: true` (test-actor V3-verifying design id) |
+| preparation with the SIMULATED qualification | `preparations` | 201 | `prepared`: environment `a155b153` version 1 over graph `cddc84d0` (sha256 `93bc7207…e8cf`), approval record `e5b54dc6`, `activation: not_activated` |
+
+The preparation rests on the owner-authorized SIMULATED test-actor qualification (decisions.md
+2026-09-25). It is labelled so in the evidence (`simulation`), and it is **not** a release
+qualification.
+
+### Calls (provider-reported; all `completed / end_turn`; no cache tokens; bound = the guard's ceiling-rate bound before the send, incl. the USD 1.00 reserve in the arc phase)
+
+| # | phase | purpose | provider message id | request id | input / output tokens | bound USD | spend USD (ceiling) |
+|---|---|---|---|---|---|---|---|
+| 1 | arc | design_candidate (2 graphs, cap 28,000) | `msg_011CfRfNJREKD36BZafcjLcN` | `req_011CfRfNHdM6pD4JoRxnvYuh` | 10,452 / 21,025 | 1.8173 | 0.5779 |
+| 2 | arc | review (`e2f0d731`): 8 × pass | `msg_011CfRfZMvryfQuYWMMGznz2` | `req_011CfRfZLczFW7g3TTDTnJgQ` | 11,302 / 4,372 | 1.8307 | 0.1658 |
+| 3 | arc | counterexample_proposal (2) | `msg_011CfRfc2QTCPPrEiZSPDo87` | `req_011CfRfc1wAmZZ2N8ejEH6Uz` | 12,864 / 3,956 | 2.0101 | 0.1632 |
+| 4 | arc | validity `cx-approval-edge-e16-unbound`: rejected | `msg_011CfRfesHrREo2u82qy68MC` | `req_011CfRferettKRPdvhJjxYL6` | 11,960 / 2,456 | 2.1679 | 0.1212 |
+| 5 | arc | validity `cx-verifier-source-via-join`: rejected | `msg_011CfRfgZBjbxQY21u7oTw1T` | `req_011CfRfgYihYE8SY6UW9fQph` | 11,916 / 2,003 | 2.2889 | 0.1097 |
+| 6 | arc | review (`8fdc10cd`): 8 × pass | `msg_011CfRfhzyoGmPxadFu3U3Dv` | `req_011CfRfhzMb33p7qkvNskmJo` | 12,373 / 4,000 | 2.4014 | 0.1619 |
+| 7 | arc | counterexample_proposal (3) | `msg_011CfRfkYfLngGZEPhpMvbnc` | `req_011CfRfkXLxa8pS48U88xGMF` | 13,935 / 5,243 | 2.5769 | 0.2008 |
+| 8 | arc | validity `ce-approval-edge-mismatch`: unresolved | `msg_011CfRfp35xuBXQbZV86U24u` | `req_011CfRfp2cSHcSb7APovGL6U` | 12,908 / 2,260 | 2.7706 | 0.1210 |
+| 9 | arc | validity `ce-report-verdict-consistency-unenforced`: rejected | `msg_011CfRfqc86f1L3gQRMKs5Ka` | `req_011CfRfqbXNcgBbEbK17wVKw` | 13,071 / 1,891 | 2.8945 | 0.1126 |
+| — | arc | validity `ce-post-hoc-byte-audit`: **refused by the guard, not sent** | — | — | — | 3.0048 | 0 |
+| 10 | owner | re-review (`1adbf820`): 8 × pass | `msg_011CfRfrz4UUa6XK7WCN4RiR` | `req_011CfRfryZxSZmJEfynvaQ9H` | 11,296 / 4,562 | 1.9869 | 0.1705 |
+| 11 | owner | counterexample_proposal (2) | `msg_011CfRfuju2e9kae5AuRWo4E` | `req_011CfRfuip2ovK7yDicdLLAv` | 12,858 / 4,469 | 2.1710 | 0.1760 |
+| 12 | owner | validity `cx-store-audit-after-write`: rejected | `msg_011CfRfxrppvqA8kZixY7FfD` | `req_011CfRfxr5vQLmeWjtteK1cH` | 11,928 / 1,882 | 2.3426 | 0.1067 |
+| 13 | owner | validity `cx-verifier-source-via-join`: rejected | `msg_011CfRfzCRZYZ5f8jG6NZf7b` | `req_011CfRfzBwnxqmCk81sdA9qu` | 11,899 / 2,596 | 2.4481 | 0.1244 |
+
+**Spend.** Attempt 8 sent 13 calls, with 158,762 input and 60,715 output tokens. That is
+**USD 2.312 at the ceiling 5 / 25**: 1.734 in the arc and 0.578 in the re-review. This is
+against attempt 8's USD 3.00 cap, leaving USD 0.688 unused. No call was retried. The guard
+refused one arc send, and nothing was sent for it. That refusal kept the reserve for the
+re-review, which then completed.
+
+**Evidence** (under `evidence/t038-live-arc-2026-09-26/`):
+- `attempt8.json` (evidence id `b265f2dd-dc1d-49ae-990d-18f6aee109f2`);
+- 13 raw answers `attempt8-NN-<phase>-<stage>[-<purpose>].txt`; the generation answer's sha256
+  is `3f1f504d…3a32a3`;
+- `attempt8-ledger.json`.
+
+All were scanned: key-free, and none contains any model identifier from the live catalog.
+
+**T038 is ticked.** These steps all happened through the product's routes:
+- live generation → live critique → a live-presented pool;
+- the (simulated) owner's selection → a **passed** live re-review;
+- preparation refused for lack of critic qualification;
+- preparation with the labelled simulated qualification.
+
+Live: every model call (generation, criticism, re-review). Simulated and labelled: the owner
+(the test actor's work, lens decision, selection and approval) and the critic qualification
+used for the second preparation. The 0/1/2/3, revision and cancel paths stay covered offline in
+`app/tests/browser-design.test.mjs`, which passed again after the run.
+
+**Analysis.** Both live graphs followed rule (k), and the unlabelled-bundle point did not recur.
+The critic raised one point twice (rejected once, unresolved once): how the critic projection
+cites approval edges. The control notes name an approval edge by its own id, which is not among
+the artifact handoffs. The point did not decide this run. Clarifying it in the critic projection
+would need its own decision, because the critic side was held fixed here. None of this is a
+release qualification: no critic or lens is qualified in production, `V3_VERIFYING_DESIGN_IDS`
+is empty and V3 is unverified (T077).
+
+## Not ticked (history before attempt 8)
 
 The 0/1/2/3, revision and cancel paths are exercised in `app/tests/browser-design.test.mjs` with
 the product's own generation, criticism, persistence and selection code, scripted model turns and
@@ -1194,9 +1331,13 @@ preparations. In any case none of this is a release
 qualification: no critic or lens is qualified in production, `V3_VERIFYING_DESIGN_IDS` is empty
 and V3 is unverified (T077).
 
+Attempt 8 (above) closed this: a live candidate passed live criticism, was selected by the
+simulated owner, passed its live re-review, was refused preparation without qualification, and
+was prepared with the labelled simulated qualification. T038 is ticked on that run.
+
 ## Open
 
-- No live candidate has passed live criticism, so none has been selected or prepared.
+- (Until attempt 8) no live candidate had passed live criticism and been selected and prepared.
   - After the 2026-09-26 (latest) arc, USD 0.323 of its 3.00 cap remains at ceiling rates, which
     is too little for another criticized candidate. A further attempt needs a new owner
     authorization.
@@ -1239,6 +1380,9 @@ and V3 is unverified (T077).
       prepared.
     - Attempt 7's cap has USD 1.269 left, and a further attempt needs the owner's
       authorization.
+  - Attempt 8 (2026-09-26 (attempt 8), above) added rule (k): one slot per handed-on item.
+    The full path completed live, with the simulated owner and the simulated qualification
+    labelled. Attempt 8's cap has USD 0.688 left.
 - Production cannot create a design request: no lens is qualified, so no `DesignSource` is
   configured, and the page and the route say so. A production source would also need the owner's
   model turns wired from the Claude connection and a production functional-decision step (T030).

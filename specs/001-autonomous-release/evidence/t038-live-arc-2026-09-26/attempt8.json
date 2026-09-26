@@ -1,0 +1,2480 @@
+{
+  "label": "attempt8",
+  "model": "<live-catalog-model>",
+  "work": {
+    "scenario": "specified (attempts 5-8): release notes from one stored changelog",
+    "author": "SIMULATED owner (test actor) — attempt 5/6/7 work description, not a real owner's work",
+    "work_model": {
+      "schema_version": "work-model-v1",
+      "work_model_id": "9ee6d627-b990-5ea7-9006-825eb60a8042",
+      "version": 1,
+      "work_revision_ref": {
+        "kind": "work_revision",
+        "id": "48e6c725-69de-5a85-83b1-4f9bc24f9f55",
+        "version": 2,
+        "sha256": "7d87e284648bc70ac8c0e42a72c9109b0d97c980d6b5135865a53365a29b6b7a"
+      },
+      "semantic_origin": "work_understanding",
+      "goals": [
+        "업로드된 변경 기록 원본 한 개로, 원본에 근거가 확인된 버전 2.4.0 공개용 릴리스 노트 한 부를 만든다.",
+        "완료 판정은 completion_conditions만으로 한다. 거기에 없는 속성(문체, 어조, 분량, 번역, 원본 변경 기록 자체의 사실 정확성)은 이 업무의 판정 대상이 아니다. 원본 변경 기록의 내용은 소유자가 책임지는 참값으로 취급하며, 원본 밖의 출처와 다시 대조할 필요가 없다."
+      ],
+      "deliverables": [
+        {
+          "deliverable_id": "release-notes",
+          "description": "승인된 원문 그대로 저장된 버전 2.4.0 릴리스 노트(markdown 한 파일)",
+          "media_types": [
+            "text/markdown"
+          ],
+          "min_items": 1,
+          "max_items": 1,
+          "max_total_bytes": 65536
+        }
+      ],
+      "completion_conditions": [
+        "릴리스 노트(text/markdown)의 모든 항목 줄은 `- [CL-###] `로 시작하고, 그 CL ID는 원본 변경 기록 파일에 있으며 원본에서 `공개: 예`로 표시된 항목이다. 항목 줄에 있는 모든 기능명·수치·버전은 그 줄이 인용한 원본 항목의 설명에 그대로 나온다. 항목 줄이 아닌 줄은 제목 한 줄(`# 2.4.0 릴리스 노트`)뿐이다.",
+        "원본에서 `공개: 예`로 표시된 모든 CL ID가 릴리스 노트에 정확히 한 번 인용되고, `공개: 아니오` 항목의 ID와 내용은 릴리스 노트 어디에도 나오지 않는다.",
+        "앞의 두 조건은 작성 역할이 아닌 검증 역할이 판정한다. 검증 역할은 원본 변경 기록 파일 자체(요약·발췌·작성자의 메모가 아님)와 초안 원문을 둘 다 입력으로 직접 받아 대조하고, 작성 역할과 다른 model choice를 쓴다. 결과는 검증 역할 자신의 application/json 검증 보고서이며, 빈 줄을 뺀 초안의 모든 줄(제목 줄 포함)마다 {line, cited_ids, verdict: pass|fail, reason}, 누락된 공개 ID 목록, 노출된 비공개 ID 목록, 전체 verdict(pass|fail)를 가진다. 전체 verdict는 모든 줄이 pass이고 두 목록이 비어 있을 때만 pass다.",
+        "전체 verdict가 fail이면 그 초안은 승인 단계에 도달하지 않고 실행은 저장·공개 없이 끝난다. 같은 실행 안에서는 어떤 산출물도 재생성·재작성하지 않는다(소유자가 새 실행을 시작한다). 통과 여부는 검증 보고서를 입력으로 직접 받아 그 전체 verdict 필드를 읽는, 모델을 쓰지 않는 선언된 판정 단계가 정한다. 승인 단계와 그 뒤의 역할은 그 판정 단계가 pass일 때만 내보낸 산출물만 입력으로 받으며, 판정 단계 이전 역할의 산출물이 판정 단계를 거치지 않고 승인·저장 단계로 가는 경로는 없다.",
+        "승인자(소유자 한 사람)는 artifact.publish 범위로 승인하며, 승인 단계는 검증을 통과한 초안 원문, 그 초안의 검증 보고서, 원본 변경 기록 파일을 함께 입력으로 받는다. 저장되는 릴리스 노트는 승인 단계가 내보낸 승인본과 바이트 단위로 같다: 승인 뒤 어떤 역할도 내용을 재생성·수정·형식 변환하지 않는다. 저장은 모델을 쓰지 않는 결정적(deterministic) 저장 단계가 수행한다. 그 단계는 승인 단계가 내보낸 승인본만 입력으로 받아 document.create 도구에 바이트 그대로 넘기며, 어떤 모델 역할도 저장하지 않는다."
+      ],
+      "authorities": [
+        {
+          "authority_id": "source-read",
+          "capability": "artifact.read",
+          "scope": "업로드된 변경 기록 원본 파일 changelog-2.4.0.md 하나만 읽는다. 실행 시작 시 프레임워크가 이 파일을 바꾸지 않고 그대로 넘긴다. 웹 조회와 다른 출처는 허용되지 않으며 필요하지 않다.",
+          "effect": "read"
+        },
+        {
+          "authority_id": "notes-store",
+          "capability": "document.create",
+          "scope": "승인된 릴리스 노트 markdown 한 부를 문서 저장소에 새 문서로 저장한다(되돌릴 수 있다). 승인 전에는 저장하지 않는다. 모델 없는 결정적 저장 단계가 document.create 도구로 승인본 바이트를 그대로 저장한다.",
+          "effect": "write"
+        },
+        {
+          "authority_id": "publish-approval",
+          "capability": "artifact.publish",
+          "scope": "소유자 한 사람이 검증을 통과한 릴리스 노트 원문의 저장·공개를 승인한다.",
+          "effect": "human_approval"
+        }
+      ],
+      "risks": [
+        {
+          "risk_id": "unsupported-or-private-line",
+          "description": "원본에 근거하지 않은 내용이나 `공개: 아니오` 항목이 릴리스 노트에 실릴 수 있다. 완료 조건 0–2의 독립 검증과 조건 3의 차단으로 막는다.",
+          "severity": "high",
+          "mitigation_required": true
+        }
+      ],
+      "unknowns": [],
+      "suitability": {
+        "recommended_shape": "multi_agent",
+        "rationale": "작성과 검증을 서로 다른 역할·모델로 분리하고, 사람의 승인과 승인본의 저장을 분리해야 한다.",
+        "evidence_refs": [
+          {
+            "kind": "source",
+            "id": "5b2a0337-5e5d-4c54-8393-302286251a10",
+            "version": 1,
+            "sha256": "2e1a5dbdb7bcab7c1f2e470593c031809059fc9d792cd4ab0248902e63e85ff7"
+          }
+        ]
+      },
+      "source_refs": [
+        {
+          "kind": "source",
+          "id": "5b2a0337-5e5d-4c54-8393-302286251a10",
+          "version": 1,
+          "sha256": "2e1a5dbdb7bcab7c1f2e470593c031809059fc9d792cd4ab0248902e63e85ff7"
+        }
+      ]
+    }
+  },
+  "generation_http_status": 201,
+  "run": {
+    "run_id": "7ca1b161-080a-5ba7-88e5-a8ec7ce1e44e",
+    "command_id": "7082761e-15d6-4c6d-bd77-544b31742c14",
+    "max_rounds": 1,
+    "rounds": 1,
+    "outcome": "shortfall",
+    "model_calls": 10,
+    "generator_model_id": "<live-catalog-model>",
+    "critic_model_id": "<live-catalog-model>",
+    "refusals": [
+      {
+        "candidate_id": "8fdc10cd-408d-493b-b879-cf055ee63c26",
+        "reason": "the model boundary failed during counterexample_validity",
+        "round": 1,
+        "stage": "criticism"
+      }
+    ],
+    "candidate_ids": [
+      "e2f0d731-1a81-4395-9785-1ee3b1ac99c9",
+      "8fdc10cd-408d-493b-b879-cf055ee63c26"
+    ],
+    "unreviewed_candidate_ids": [
+      "8fdc10cd-408d-493b-b879-cf055ee63c26"
+    ],
+    "presented_count": 1,
+    "started_at_utc": "2026-09-26T07:32:48.708080Z",
+    "ended_at_utc": "2026-09-26T07:39:17.588987Z"
+  },
+  "pool": {
+    "pool_size": 3,
+    "presented_candidate_ids": [
+      "e2f0d731-1a81-4395-9785-1ee3b1ac99c9"
+    ],
+    "presented_count": 1,
+    "passed_count": 1,
+    "candidate_count": 2,
+    "excluded": [
+      {
+        "candidate_id": "8fdc10cd-408d-493b-b879-cf055ee63c26",
+        "reason": "unreviewed"
+      }
+    ],
+    "supplementation_available": true
+  },
+  "candidates": [
+    {
+      "candidate_id": "e2f0d731-1a81-4395-9785-1ee3b1ac99c9",
+      "presented": true,
+      "nodes": [
+        [
+          "audit-join",
+          "join"
+        ],
+        [
+          "publish-gate",
+          "human_gate"
+        ],
+        [
+          "source-intake",
+          "deterministic"
+        ],
+        [
+          "store",
+          "deterministic"
+        ],
+        [
+          "store-audit",
+          "deterministic"
+        ],
+        [
+          "verdict",
+          "deterministic"
+        ],
+        [
+          "verdict-join",
+          "join"
+        ],
+        [
+          "verifier",
+          "agent"
+        ],
+        [
+          "verify-join",
+          "join"
+        ],
+        [
+          "writer",
+          "agent"
+        ]
+      ],
+      "verdict": {
+        "status": "passed",
+        "reasons": [],
+        "source": "persisted_criticism",
+        "model_ids": [
+          "<live-catalog-model>"
+        ],
+        "profile_digests": [
+          "28f52a675164dc79be388082fe29f702fde3788f09cb71680e72cb5662a1c4d6",
+          "4cc25f9e8766f8af6d7770faa446905cff046e0bb7b61d5c95d6e81715de22f6",
+          "e2fddbf4be32ced4d15f299cee15b53a93f13ea904923cd55362db5b5283e7e4"
+        ],
+        "call_count": 4,
+        "criticism_record_id": "be759e4f-7689-40e1-a3fa-83d421b80257"
+      }
+    },
+    {
+      "candidate_id": "8fdc10cd-408d-493b-b879-cf055ee63c26",
+      "presented": false,
+      "nodes": [
+        [
+          "audit-join",
+          "join"
+        ],
+        [
+          "publish-gate",
+          "human_gate"
+        ],
+        [
+          "source-intake",
+          "deterministic"
+        ],
+        [
+          "store",
+          "deterministic"
+        ],
+        [
+          "store-audit",
+          "deterministic"
+        ],
+        [
+          "structure-precheck",
+          "deterministic"
+        ],
+        [
+          "verdict",
+          "deterministic"
+        ],
+        [
+          "verdict-join",
+          "join"
+        ],
+        [
+          "verifier",
+          "agent"
+        ],
+        [
+          "verify-join",
+          "join"
+        ],
+        [
+          "writer",
+          "agent"
+        ]
+      ],
+      "verdict": null
+    }
+  ],
+  "derivations": [
+    {
+      "derivation_id": "628a7039-0646-550c-926a-d575793a965a",
+      "action": "select",
+      "parent_candidate_ids": [
+        "e2f0d731-1a81-4395-9785-1ee3b1ac99c9"
+      ],
+      "instruction": null,
+      "re_review_required": false,
+      "inherited_verdict": null,
+      "created_at_utc": "2026-09-26T07:39:17.795935Z",
+      "reviewed_candidate": {
+        "candidate_id": "1adbf820-c757-5c16-a8f5-40f65f189c98",
+        "version": 1,
+        "graph_ref": {
+          "kind": "graph",
+          "id": "cddc84d0-0a98-489b-9042-17688c9c72d0",
+          "version": 1,
+          "sha256": "93bc7207eabde7457808674d220377acaef247f0c3836eb2b304467c513be8cf"
+        },
+        "graph": {
+          "schema_version": "graph-version-v1",
+          "graph_id": "cddc84d0-0a98-489b-9042-17688c9c72d0",
+          "version": 1,
+          "work_model_ref": {
+            "kind": "work_model",
+            "id": "9ee6d627-b990-5ea7-9006-825eb60a8042",
+            "version": 1,
+            "sha256": "c1d83c4b21e6aea8247ee93d477a463a601851d316fe219941257253dbc367d2"
+          },
+          "decision_refs": [
+            {
+              "kind": "design_decision",
+              "id": "00000000-0000-4000-8000-000000000521",
+              "version": 1,
+              "sha256": "d352fa44cf4849f0d70cb99a4a8f79d8652a824f2a4205268a8a417d9a5dee15"
+            }
+          ],
+          "entry_node_ids": [
+            "source-intake"
+          ],
+          "nodes": [
+            {
+              "node_id": "audit-join",
+              "kind": "join",
+              "responsibility": "승인본과 저장된 릴리스 노트를 바꾸지 않고 역할별 슬롯(approved, stored)으로 모은다.",
+              "input_slots": [
+                {
+                  "slot_id": "approved",
+                  "artifact_contract_id": "approved-notes",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "stored",
+                  "artifact_contract_id": "release-notes",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "approved",
+                  "artifact_contract_id": "ajoin-approved",
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "stored",
+                  "artifact_contract_id": "ajoin-stored",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "block_dependants",
+              "config": {
+                "failure_handling": "block",
+                "mode": "all_selected"
+              }
+            },
+            {
+              "node_id": "publish-gate",
+              "kind": "human_gate",
+              "responsibility": "소유자 한 사람이 artifact.publish 범위로, verified-draft 슬롯의 검증 통과 초안 원문을 verified-report 슬롯의 검증 보고서와 verified-source 슬롯의 원본 파일과 함께 보고 저장·공개를 승인한다(완료 조건 4). 승인 시 초안 원문을 바꾸지 않고 approved-notes로 내보낸다.",
+              "input_slots": [
+                {
+                  "slot_id": "verified-draft",
+                  "artifact_contract_id": "verified-draft",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "verified-report",
+                  "artifact_contract_id": "verified-report",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "verified-source",
+                  "artifact_contract_id": "verified-source",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "approved-notes",
+                  "artifact_contract_id": "approved-notes",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "fail_run",
+              "config": {
+                "approval_scopes": [
+                  "artifact.publish"
+                ]
+              }
+            },
+            {
+              "node_id": "source-intake",
+              "kind": "deterministic",
+              "responsibility": "실행 시작 시 프레임워크가 넘긴 업로드 원본 changelog-2.4.0.md 하나를 바이트 그대로 changelog-source 슬롯으로 내보낸다. 웹 조회나 다른 출처는 쓰지 않는다.",
+              "input_slots": [],
+              "output_slots": [
+                {
+                  "slot_id": "source",
+                  "artifact_contract_id": "changelog-source",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "fail_run",
+              "config": {
+                "handler_id": "source-file-passthrough-v1"
+              }
+            },
+            {
+              "node_id": "store",
+              "kind": "deterministic",
+              "responsibility": "모델 없는 결정적 저장 단계: publish-gate가 내보낸 approved-notes 슬롯의 승인본만 받아 document.create 도구에 바이트 그대로 넘겨 문서 저장소에 새 문서로 저장하고, 저장된 문서 바이트를 release-notes로 내보낸다. 내용을 재생성·수정·형식 변환하지 않는다.",
+              "input_slots": [
+                {
+                  "slot_id": "approved-notes",
+                  "artifact_contract_id": "approved-notes",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "release-notes",
+                  "artifact_contract_id": "release-notes",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [
+                {
+                  "kind": "grant",
+                  "id": "00000000-0000-4000-8000-000000000212",
+                  "version": 1,
+                  "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ],
+              "required_approval_scopes": [
+                "artifact.publish"
+              ],
+              "failure_policy": "fail_run",
+              "config": {
+                "handler_id": "byte-exact-document-store-v1",
+                "tool_binding_ids": [
+                  "store-tool"
+                ]
+              }
+            },
+            {
+              "node_id": "store-audit",
+              "kind": "deterministic",
+              "responsibility": "저장 단계와 다른 결정적 점검(완료 조건 4): stored 슬롯의 저장된 릴리스 노트(text/markdown)가 approved 슬롯의 승인본과 바이트 단위로 같은지 비교해 application/json 점검 보고서를 낸다. 다르면 실패(fail_run)한다.",
+              "input_slots": [
+                {
+                  "slot_id": "approved",
+                  "artifact_contract_id": "ajoin-approved",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "stored",
+                  "artifact_contract_id": "ajoin-stored",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "audit-report",
+                  "artifact_contract_id": "store-audit-report",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "fail_run",
+              "config": {
+                "handler_id": "byte-equality-audit-v1"
+              }
+            },
+            {
+              "node_id": "verdict",
+              "kind": "deterministic",
+              "responsibility": "모델 없는 판정 단계(완료 조건 3): report 슬롯의 application/json 검증 보고서의 전체 verdict 필드를 읽는다. 그 값이 pass일 때만 draft 슬롯의 초안 원문, report 슬롯의 보고서, source 슬롯의 원본을 바이트 그대로 verified-draft, verified-report, verified-source 슬롯으로 내보낸다. 그 밖의 경우 아무것도 내보내지 않고 실패하여(fail_run) 저장·공개 없이 실행을 끝낸다. 재생성·재작성은 없다.",
+              "input_slots": [
+                {
+                  "slot_id": "draft",
+                  "artifact_contract_id": "djoin-draft",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "report",
+                  "artifact_contract_id": "djoin-report",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "source",
+                  "artifact_contract_id": "djoin-source",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "verified-draft",
+                  "artifact_contract_id": "verified-draft",
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "verified-report",
+                  "artifact_contract_id": "verified-report",
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "verified-source",
+                  "artifact_contract_id": "verified-source",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "fail_run",
+              "config": {
+                "handler_id": "report-verdict-gate-v1"
+              }
+            },
+            {
+              "node_id": "verdict-join",
+              "kind": "join",
+              "responsibility": "검증 보고서, 검증된 초안 원문, 원본 파일을 바꾸지 않고 역할별 슬롯(report, draft, source)으로 모은다.",
+              "input_slots": [
+                {
+                  "slot_id": "draft",
+                  "artifact_contract_id": "vjoin-draft",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "report",
+                  "artifact_contract_id": "verification-report",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "source",
+                  "artifact_contract_id": "vjoin-source",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "draft",
+                  "artifact_contract_id": "djoin-draft",
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "report",
+                  "artifact_contract_id": "djoin-report",
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "source",
+                  "artifact_contract_id": "djoin-source",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "block_dependants",
+              "config": {
+                "failure_handling": "block",
+                "mode": "all_selected"
+              }
+            },
+            {
+              "node_id": "verifier",
+              "kind": "agent",
+              "responsibility": "작성 역할과 다른 model choice로, 원본 변경 기록 파일 자체(요약·발췌·작성자의 메모가 아님)와 초안 원문을 둘 다 입력으로 직접 받아 대조해 완료 조건 0과 1을 판정한다: 모든 항목 줄이 `- [CL-###] `로 시작하고 그 CL ID가 원본에 있는 `공개: 예` 항목이며 줄의 모든 기능명·수치·버전이 그 항목 설명에 그대로 나오는지, 항목 줄이 아닌 줄이 제목 한 줄(`# 2.4.0 릴리스 노트`)뿐인지, `공개: 예`인 모든 CL ID가 정확히 한 번 인용되는지, `공개: 아니오` 항목의 ID와 내용이 어디에도 나오지 않는지. 결과는 자신의 application/json 검증 보고서이며, 빈 줄을 뺀 초안의 모든 줄(제목 줄 포함)마다 {line, cited_ids, verdict: pass|fail, reason}, 누락된 공개 ID 목록, 노출된 비공개 ID 목록, 전체 verdict(pass|fail)를 가진다. 전체 verdict는 모든 줄이 pass이고 두 목록이 비어 있을 때만 pass다.",
+              "input_slots": [
+                {
+                  "slot_id": "draft",
+                  "artifact_contract_id": "vjoin-draft",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "source",
+                  "artifact_contract_id": "vjoin-source",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "report",
+                  "artifact_contract_id": "verification-report",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "block_dependants",
+              "config": {
+                "model_binding_id": "verifier-model",
+                "required_model_capabilities": [
+                  "text"
+                ],
+                "tool_binding_ids": [],
+                "memory_policy_id": null
+              }
+            },
+            {
+              "node_id": "verify-join",
+              "kind": "join",
+              "responsibility": "원본과 초안을 모아 바꾸지 않고 역할별 슬롯(joined-source, joined-draft)으로 넘긴다.",
+              "input_slots": [
+                {
+                  "slot_id": "draft",
+                  "artifact_contract_id": "draft-notes",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "source",
+                  "artifact_contract_id": "changelog-source",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "joined-draft",
+                  "artifact_contract_id": "vjoin-draft",
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "joined-source",
+                  "artifact_contract_id": "vjoin-source",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "block_dependants",
+              "config": {
+                "failure_handling": "block",
+                "mode": "all_selected"
+              }
+            },
+            {
+              "node_id": "writer",
+              "kind": "agent",
+              "responsibility": "작성 역할: source 슬롯의 원본 변경 기록(text/markdown)만 근거로 `# 2.4.0 릴리스 노트` 제목 한 줄과, `공개: 예` 항목마다 `- [CL-###] `로 시작하는 항목 줄로 된 릴리스 노트 초안(text/markdown)을 한 번 작성한다. `공개: 아니오` 항목은 싣지 않는다.",
+              "input_slots": [
+                {
+                  "slot_id": "source",
+                  "artifact_contract_id": "changelog-source",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "draft",
+                  "artifact_contract_id": "draft-notes",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "fail_run",
+              "config": {
+                "model_binding_id": "writer-model",
+                "required_model_capabilities": [
+                  "text"
+                ],
+                "tool_binding_ids": [],
+                "memory_policy_id": null
+              }
+            }
+          ],
+          "edges": [
+            {
+              "edge_id": "e1",
+              "kind": "artifact",
+              "source_node_id": "source-intake",
+              "target_node_id": "writer",
+              "loop_id": null,
+              "source_output_slot": "source",
+              "target_input_slot": "source",
+              "artifact_contract_id": "changelog-source",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e10",
+              "kind": "artifact",
+              "source_node_id": "verdict-join",
+              "target_node_id": "verdict",
+              "loop_id": null,
+              "source_output_slot": "draft",
+              "target_input_slot": "draft",
+              "artifact_contract_id": "djoin-draft",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e11",
+              "kind": "artifact",
+              "source_node_id": "verdict-join",
+              "target_node_id": "verdict",
+              "loop_id": null,
+              "source_output_slot": "source",
+              "target_input_slot": "source",
+              "artifact_contract_id": "djoin-source",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e12",
+              "kind": "artifact",
+              "source_node_id": "verdict",
+              "target_node_id": "publish-gate",
+              "loop_id": null,
+              "source_output_slot": "verified-draft",
+              "target_input_slot": "verified-draft",
+              "artifact_contract_id": "verified-draft",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e13",
+              "kind": "artifact",
+              "source_node_id": "verdict",
+              "target_node_id": "publish-gate",
+              "loop_id": null,
+              "source_output_slot": "verified-report",
+              "target_input_slot": "verified-report",
+              "artifact_contract_id": "verified-report",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e14",
+              "kind": "artifact",
+              "source_node_id": "verdict",
+              "target_node_id": "publish-gate",
+              "loop_id": null,
+              "source_output_slot": "verified-source",
+              "target_input_slot": "verified-source",
+              "artifact_contract_id": "verified-source",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e15",
+              "kind": "artifact",
+              "source_node_id": "publish-gate",
+              "target_node_id": "store",
+              "loop_id": null,
+              "source_output_slot": "approved-notes",
+              "target_input_slot": "approved-notes",
+              "artifact_contract_id": "approved-notes",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e16",
+              "kind": "approval",
+              "source_node_id": "publish-gate",
+              "target_node_id": "store",
+              "loop_id": null,
+              "approval_scope": "artifact.publish"
+            },
+            {
+              "edge_id": "e17",
+              "kind": "artifact",
+              "source_node_id": "publish-gate",
+              "target_node_id": "audit-join",
+              "loop_id": null,
+              "source_output_slot": "approved-notes",
+              "target_input_slot": "approved",
+              "artifact_contract_id": "approved-notes",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e18",
+              "kind": "artifact",
+              "source_node_id": "store",
+              "target_node_id": "audit-join",
+              "loop_id": null,
+              "source_output_slot": "release-notes",
+              "target_input_slot": "stored",
+              "artifact_contract_id": "release-notes",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e19",
+              "kind": "artifact",
+              "source_node_id": "audit-join",
+              "target_node_id": "store-audit",
+              "loop_id": null,
+              "source_output_slot": "approved",
+              "target_input_slot": "approved",
+              "artifact_contract_id": "ajoin-approved",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e2",
+              "kind": "artifact",
+              "source_node_id": "source-intake",
+              "target_node_id": "verify-join",
+              "loop_id": null,
+              "source_output_slot": "source",
+              "target_input_slot": "source",
+              "artifact_contract_id": "changelog-source",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e20",
+              "kind": "artifact",
+              "source_node_id": "audit-join",
+              "target_node_id": "store-audit",
+              "loop_id": null,
+              "source_output_slot": "stored",
+              "target_input_slot": "stored",
+              "artifact_contract_id": "ajoin-stored",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e3",
+              "kind": "artifact",
+              "source_node_id": "writer",
+              "target_node_id": "verify-join",
+              "loop_id": null,
+              "source_output_slot": "draft",
+              "target_input_slot": "draft",
+              "artifact_contract_id": "draft-notes",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e4",
+              "kind": "artifact",
+              "source_node_id": "verify-join",
+              "target_node_id": "verifier",
+              "loop_id": null,
+              "source_output_slot": "joined-source",
+              "target_input_slot": "source",
+              "artifact_contract_id": "vjoin-source",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e5",
+              "kind": "artifact",
+              "source_node_id": "verify-join",
+              "target_node_id": "verifier",
+              "loop_id": null,
+              "source_output_slot": "joined-draft",
+              "target_input_slot": "draft",
+              "artifact_contract_id": "vjoin-draft",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e6",
+              "kind": "artifact",
+              "source_node_id": "verifier",
+              "target_node_id": "verdict-join",
+              "loop_id": null,
+              "source_output_slot": "report",
+              "target_input_slot": "report",
+              "artifact_contract_id": "verification-report",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e7",
+              "kind": "artifact",
+              "source_node_id": "verify-join",
+              "target_node_id": "verdict-join",
+              "loop_id": null,
+              "source_output_slot": "joined-draft",
+              "target_input_slot": "draft",
+              "artifact_contract_id": "vjoin-draft",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e8",
+              "kind": "artifact",
+              "source_node_id": "verify-join",
+              "target_node_id": "verdict-join",
+              "loop_id": null,
+              "source_output_slot": "joined-source",
+              "target_input_slot": "source",
+              "artifact_contract_id": "vjoin-source",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e9",
+              "kind": "artifact",
+              "source_node_id": "verdict-join",
+              "target_node_id": "verdict",
+              "loop_id": null,
+              "source_output_slot": "report",
+              "target_input_slot": "report",
+              "artifact_contract_id": "djoin-report",
+              "mandatory": true,
+              "multiplicity": "one"
+            }
+          ],
+          "artifact_contracts": [
+            {
+              "artifact_contract_id": "ajoin-approved",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "ajoin-stored",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "approved-notes",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "changelog-source",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 1048576
+            },
+            {
+              "artifact_contract_id": "djoin-draft",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "djoin-report",
+              "media_types": [
+                "application/json"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 1048576
+            },
+            {
+              "artifact_contract_id": "djoin-source",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 1048576
+            },
+            {
+              "artifact_contract_id": "draft-notes",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "release-notes",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "store-audit-report",
+              "media_types": [
+                "application/json"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "verification-report",
+              "media_types": [
+                "application/json"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 1048576
+            },
+            {
+              "artifact_contract_id": "verified-draft",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "verified-report",
+              "media_types": [
+                "application/json"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 1048576
+            },
+            {
+              "artifact_contract_id": "verified-source",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 1048576
+            },
+            {
+              "artifact_contract_id": "vjoin-draft",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "vjoin-source",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 1048576
+            }
+          ],
+          "model_bindings": [
+            {
+              "binding_id": "verifier-model",
+              "model_choice_ref": {
+                "kind": "model_choice",
+                "id": "00000000-0000-4000-8000-000000000215",
+                "version": 1,
+                "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+              },
+              "capabilities": [
+                "text"
+              ]
+            },
+            {
+              "binding_id": "writer-model",
+              "model_choice_ref": {
+                "kind": "model_choice",
+                "id": "00000000-0000-4000-8000-000000000213",
+                "version": 1,
+                "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+              },
+              "capabilities": [
+                "text"
+              ]
+            }
+          ],
+          "tool_bindings": [
+            {
+              "binding_id": "store-tool",
+              "tool_definition_ref": {
+                "kind": "tool_definition",
+                "id": "00000000-0000-4000-8000-000000000216",
+                "version": 1,
+                "sha256": "8888888888888888888888888888888888888888888888888888888888888888"
+              },
+              "grant_ref": {
+                "kind": "grant",
+                "id": "00000000-0000-4000-8000-000000000212",
+                "version": 1,
+                "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+              },
+              "capabilities": [
+                "document.create"
+              ]
+            }
+          ],
+          "memory_policies": [],
+          "grant_refs": [
+            {
+              "kind": "grant",
+              "id": "00000000-0000-4000-8000-000000000212",
+              "version": 1,
+              "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+            }
+          ],
+          "fact_names": [],
+          "observation_contract_ref": {
+            "kind": "observation_contract",
+            "id": "00000000-0000-4000-8000-000000000217",
+            "version": 1,
+            "sha256": "9999999999999999999999999999999999999999999999999999999999999999"
+          },
+          "completion_criteria": [
+            {
+              "criterion_id": "store-byte-audit",
+              "node_id": "store-audit",
+              "output_slot": "audit-report",
+              "artifact_contract_id": "store-audit-report",
+              "min_items": 1
+            },
+            {
+              "criterion_id": "stored-release-notes",
+              "node_id": "store",
+              "output_slot": "release-notes",
+              "artifact_contract_id": "release-notes",
+              "min_items": 1
+            }
+          ],
+          "budget_policy_ref": {
+            "kind": "budget_policy",
+            "id": "00000000-0000-4000-8000-000000000218",
+            "version": 1,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "parent_candidate_ids": [
+          "e2f0d731-1a81-4395-9785-1ee3b1ac99c9"
+        ],
+        "verdict": {
+          "status": "passed",
+          "reasons": [],
+          "source": "persisted_criticism",
+          "model_ids": [
+            "<live-catalog-model>"
+          ],
+          "profile_digests": [
+            "28f52a675164dc79be388082fe29f702fde3788f09cb71680e72cb5662a1c4d6",
+            "4cc25f9e8766f8af6d7770faa446905cff046e0bb7b61d5c95d6e81715de22f6",
+            "e2fddbf4be32ced4d15f299cee15b53a93f13ea904923cd55362db5b5283e7e4"
+          ],
+          "call_count": 4,
+          "criticism_record_id": "fdc9635c-1d5b-4b38-9a91-c7f03ea4dc5a"
+        },
+        "presented": false
+      }
+    }
+  ],
+  "owner_path": {
+    "selected_candidate_id": "e2f0d731-1a81-4395-9785-1ee3b1ac99c9",
+    "derivation_http_status": 201,
+    "derivation": {
+      "derivation_id": "628a7039-0646-550c-926a-d575793a965a",
+      "action": "select",
+      "parent_candidate_ids": [
+        "e2f0d731-1a81-4395-9785-1ee3b1ac99c9"
+      ],
+      "instruction": null,
+      "re_review_required": true,
+      "inherited_verdict": null,
+      "created_at_utc": "2026-09-26T07:39:17.795935Z",
+      "reviewed_candidate": null
+    },
+    "review_http_status": 201,
+    "review": {
+      "derivation_id": "628a7039-0646-550c-926a-d575793a965a",
+      "action": "select",
+      "parent_candidate_ids": [
+        "e2f0d731-1a81-4395-9785-1ee3b1ac99c9"
+      ],
+      "instruction": null,
+      "re_review_required": false,
+      "inherited_verdict": null,
+      "created_at_utc": "2026-09-26T07:39:17.795935Z",
+      "reviewed_candidate": {
+        "candidate_id": "1adbf820-c757-5c16-a8f5-40f65f189c98",
+        "version": 1,
+        "graph_ref": {
+          "kind": "graph",
+          "id": "cddc84d0-0a98-489b-9042-17688c9c72d0",
+          "version": 1,
+          "sha256": "93bc7207eabde7457808674d220377acaef247f0c3836eb2b304467c513be8cf"
+        },
+        "graph": {
+          "schema_version": "graph-version-v1",
+          "graph_id": "cddc84d0-0a98-489b-9042-17688c9c72d0",
+          "version": 1,
+          "work_model_ref": {
+            "kind": "work_model",
+            "id": "9ee6d627-b990-5ea7-9006-825eb60a8042",
+            "version": 1,
+            "sha256": "c1d83c4b21e6aea8247ee93d477a463a601851d316fe219941257253dbc367d2"
+          },
+          "decision_refs": [
+            {
+              "kind": "design_decision",
+              "id": "00000000-0000-4000-8000-000000000521",
+              "version": 1,
+              "sha256": "d352fa44cf4849f0d70cb99a4a8f79d8652a824f2a4205268a8a417d9a5dee15"
+            }
+          ],
+          "entry_node_ids": [
+            "source-intake"
+          ],
+          "nodes": [
+            {
+              "node_id": "audit-join",
+              "kind": "join",
+              "responsibility": "승인본과 저장된 릴리스 노트를 바꾸지 않고 역할별 슬롯(approved, stored)으로 모은다.",
+              "input_slots": [
+                {
+                  "slot_id": "approved",
+                  "artifact_contract_id": "approved-notes",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "stored",
+                  "artifact_contract_id": "release-notes",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "approved",
+                  "artifact_contract_id": "ajoin-approved",
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "stored",
+                  "artifact_contract_id": "ajoin-stored",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "block_dependants",
+              "config": {
+                "failure_handling": "block",
+                "mode": "all_selected"
+              }
+            },
+            {
+              "node_id": "publish-gate",
+              "kind": "human_gate",
+              "responsibility": "소유자 한 사람이 artifact.publish 범위로, verified-draft 슬롯의 검증 통과 초안 원문을 verified-report 슬롯의 검증 보고서와 verified-source 슬롯의 원본 파일과 함께 보고 저장·공개를 승인한다(완료 조건 4). 승인 시 초안 원문을 바꾸지 않고 approved-notes로 내보낸다.",
+              "input_slots": [
+                {
+                  "slot_id": "verified-draft",
+                  "artifact_contract_id": "verified-draft",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "verified-report",
+                  "artifact_contract_id": "verified-report",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "verified-source",
+                  "artifact_contract_id": "verified-source",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "approved-notes",
+                  "artifact_contract_id": "approved-notes",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "fail_run",
+              "config": {
+                "approval_scopes": [
+                  "artifact.publish"
+                ]
+              }
+            },
+            {
+              "node_id": "source-intake",
+              "kind": "deterministic",
+              "responsibility": "실행 시작 시 프레임워크가 넘긴 업로드 원본 changelog-2.4.0.md 하나를 바이트 그대로 changelog-source 슬롯으로 내보낸다. 웹 조회나 다른 출처는 쓰지 않는다.",
+              "input_slots": [],
+              "output_slots": [
+                {
+                  "slot_id": "source",
+                  "artifact_contract_id": "changelog-source",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "fail_run",
+              "config": {
+                "handler_id": "source-file-passthrough-v1"
+              }
+            },
+            {
+              "node_id": "store",
+              "kind": "deterministic",
+              "responsibility": "모델 없는 결정적 저장 단계: publish-gate가 내보낸 approved-notes 슬롯의 승인본만 받아 document.create 도구에 바이트 그대로 넘겨 문서 저장소에 새 문서로 저장하고, 저장된 문서 바이트를 release-notes로 내보낸다. 내용을 재생성·수정·형식 변환하지 않는다.",
+              "input_slots": [
+                {
+                  "slot_id": "approved-notes",
+                  "artifact_contract_id": "approved-notes",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "release-notes",
+                  "artifact_contract_id": "release-notes",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [
+                {
+                  "kind": "grant",
+                  "id": "00000000-0000-4000-8000-000000000212",
+                  "version": 1,
+                  "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ],
+              "required_approval_scopes": [
+                "artifact.publish"
+              ],
+              "failure_policy": "fail_run",
+              "config": {
+                "handler_id": "byte-exact-document-store-v1",
+                "tool_binding_ids": [
+                  "store-tool"
+                ]
+              }
+            },
+            {
+              "node_id": "store-audit",
+              "kind": "deterministic",
+              "responsibility": "저장 단계와 다른 결정적 점검(완료 조건 4): stored 슬롯의 저장된 릴리스 노트(text/markdown)가 approved 슬롯의 승인본과 바이트 단위로 같은지 비교해 application/json 점검 보고서를 낸다. 다르면 실패(fail_run)한다.",
+              "input_slots": [
+                {
+                  "slot_id": "approved",
+                  "artifact_contract_id": "ajoin-approved",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "stored",
+                  "artifact_contract_id": "ajoin-stored",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "audit-report",
+                  "artifact_contract_id": "store-audit-report",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "fail_run",
+              "config": {
+                "handler_id": "byte-equality-audit-v1"
+              }
+            },
+            {
+              "node_id": "verdict",
+              "kind": "deterministic",
+              "responsibility": "모델 없는 판정 단계(완료 조건 3): report 슬롯의 application/json 검증 보고서의 전체 verdict 필드를 읽는다. 그 값이 pass일 때만 draft 슬롯의 초안 원문, report 슬롯의 보고서, source 슬롯의 원본을 바이트 그대로 verified-draft, verified-report, verified-source 슬롯으로 내보낸다. 그 밖의 경우 아무것도 내보내지 않고 실패하여(fail_run) 저장·공개 없이 실행을 끝낸다. 재생성·재작성은 없다.",
+              "input_slots": [
+                {
+                  "slot_id": "draft",
+                  "artifact_contract_id": "djoin-draft",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "report",
+                  "artifact_contract_id": "djoin-report",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "source",
+                  "artifact_contract_id": "djoin-source",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "verified-draft",
+                  "artifact_contract_id": "verified-draft",
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "verified-report",
+                  "artifact_contract_id": "verified-report",
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "verified-source",
+                  "artifact_contract_id": "verified-source",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "fail_run",
+              "config": {
+                "handler_id": "report-verdict-gate-v1"
+              }
+            },
+            {
+              "node_id": "verdict-join",
+              "kind": "join",
+              "responsibility": "검증 보고서, 검증된 초안 원문, 원본 파일을 바꾸지 않고 역할별 슬롯(report, draft, source)으로 모은다.",
+              "input_slots": [
+                {
+                  "slot_id": "draft",
+                  "artifact_contract_id": "vjoin-draft",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "report",
+                  "artifact_contract_id": "verification-report",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "source",
+                  "artifact_contract_id": "vjoin-source",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "draft",
+                  "artifact_contract_id": "djoin-draft",
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "report",
+                  "artifact_contract_id": "djoin-report",
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "source",
+                  "artifact_contract_id": "djoin-source",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "block_dependants",
+              "config": {
+                "failure_handling": "block",
+                "mode": "all_selected"
+              }
+            },
+            {
+              "node_id": "verifier",
+              "kind": "agent",
+              "responsibility": "작성 역할과 다른 model choice로, 원본 변경 기록 파일 자체(요약·발췌·작성자의 메모가 아님)와 초안 원문을 둘 다 입력으로 직접 받아 대조해 완료 조건 0과 1을 판정한다: 모든 항목 줄이 `- [CL-###] `로 시작하고 그 CL ID가 원본에 있는 `공개: 예` 항목이며 줄의 모든 기능명·수치·버전이 그 항목 설명에 그대로 나오는지, 항목 줄이 아닌 줄이 제목 한 줄(`# 2.4.0 릴리스 노트`)뿐인지, `공개: 예`인 모든 CL ID가 정확히 한 번 인용되는지, `공개: 아니오` 항목의 ID와 내용이 어디에도 나오지 않는지. 결과는 자신의 application/json 검증 보고서이며, 빈 줄을 뺀 초안의 모든 줄(제목 줄 포함)마다 {line, cited_ids, verdict: pass|fail, reason}, 누락된 공개 ID 목록, 노출된 비공개 ID 목록, 전체 verdict(pass|fail)를 가진다. 전체 verdict는 모든 줄이 pass이고 두 목록이 비어 있을 때만 pass다.",
+              "input_slots": [
+                {
+                  "slot_id": "draft",
+                  "artifact_contract_id": "vjoin-draft",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "source",
+                  "artifact_contract_id": "vjoin-source",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "report",
+                  "artifact_contract_id": "verification-report",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "block_dependants",
+              "config": {
+                "model_binding_id": "verifier-model",
+                "required_model_capabilities": [
+                  "text"
+                ],
+                "tool_binding_ids": [],
+                "memory_policy_id": null
+              }
+            },
+            {
+              "node_id": "verify-join",
+              "kind": "join",
+              "responsibility": "원본과 초안을 모아 바꾸지 않고 역할별 슬롯(joined-source, joined-draft)으로 넘긴다.",
+              "input_slots": [
+                {
+                  "slot_id": "draft",
+                  "artifact_contract_id": "draft-notes",
+                  "required": true,
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "source",
+                  "artifact_contract_id": "changelog-source",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "joined-draft",
+                  "artifact_contract_id": "vjoin-draft",
+                  "multiplicity": "one"
+                },
+                {
+                  "slot_id": "joined-source",
+                  "artifact_contract_id": "vjoin-source",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "block_dependants",
+              "config": {
+                "failure_handling": "block",
+                "mode": "all_selected"
+              }
+            },
+            {
+              "node_id": "writer",
+              "kind": "agent",
+              "responsibility": "작성 역할: source 슬롯의 원본 변경 기록(text/markdown)만 근거로 `# 2.4.0 릴리스 노트` 제목 한 줄과, `공개: 예` 항목마다 `- [CL-###] `로 시작하는 항목 줄로 된 릴리스 노트 초안(text/markdown)을 한 번 작성한다. `공개: 아니오` 항목은 싣지 않는다.",
+              "input_slots": [
+                {
+                  "slot_id": "source",
+                  "artifact_contract_id": "changelog-source",
+                  "required": true,
+                  "multiplicity": "one"
+                }
+              ],
+              "output_slots": [
+                {
+                  "slot_id": "draft",
+                  "artifact_contract_id": "draft-notes",
+                  "multiplicity": "one"
+                }
+              ],
+              "grant_refs": [],
+              "required_approval_scopes": [],
+              "failure_policy": "fail_run",
+              "config": {
+                "model_binding_id": "writer-model",
+                "required_model_capabilities": [
+                  "text"
+                ],
+                "tool_binding_ids": [],
+                "memory_policy_id": null
+              }
+            }
+          ],
+          "edges": [
+            {
+              "edge_id": "e1",
+              "kind": "artifact",
+              "source_node_id": "source-intake",
+              "target_node_id": "writer",
+              "loop_id": null,
+              "source_output_slot": "source",
+              "target_input_slot": "source",
+              "artifact_contract_id": "changelog-source",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e10",
+              "kind": "artifact",
+              "source_node_id": "verdict-join",
+              "target_node_id": "verdict",
+              "loop_id": null,
+              "source_output_slot": "draft",
+              "target_input_slot": "draft",
+              "artifact_contract_id": "djoin-draft",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e11",
+              "kind": "artifact",
+              "source_node_id": "verdict-join",
+              "target_node_id": "verdict",
+              "loop_id": null,
+              "source_output_slot": "source",
+              "target_input_slot": "source",
+              "artifact_contract_id": "djoin-source",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e12",
+              "kind": "artifact",
+              "source_node_id": "verdict",
+              "target_node_id": "publish-gate",
+              "loop_id": null,
+              "source_output_slot": "verified-draft",
+              "target_input_slot": "verified-draft",
+              "artifact_contract_id": "verified-draft",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e13",
+              "kind": "artifact",
+              "source_node_id": "verdict",
+              "target_node_id": "publish-gate",
+              "loop_id": null,
+              "source_output_slot": "verified-report",
+              "target_input_slot": "verified-report",
+              "artifact_contract_id": "verified-report",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e14",
+              "kind": "artifact",
+              "source_node_id": "verdict",
+              "target_node_id": "publish-gate",
+              "loop_id": null,
+              "source_output_slot": "verified-source",
+              "target_input_slot": "verified-source",
+              "artifact_contract_id": "verified-source",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e15",
+              "kind": "artifact",
+              "source_node_id": "publish-gate",
+              "target_node_id": "store",
+              "loop_id": null,
+              "source_output_slot": "approved-notes",
+              "target_input_slot": "approved-notes",
+              "artifact_contract_id": "approved-notes",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e16",
+              "kind": "approval",
+              "source_node_id": "publish-gate",
+              "target_node_id": "store",
+              "loop_id": null,
+              "approval_scope": "artifact.publish"
+            },
+            {
+              "edge_id": "e17",
+              "kind": "artifact",
+              "source_node_id": "publish-gate",
+              "target_node_id": "audit-join",
+              "loop_id": null,
+              "source_output_slot": "approved-notes",
+              "target_input_slot": "approved",
+              "artifact_contract_id": "approved-notes",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e18",
+              "kind": "artifact",
+              "source_node_id": "store",
+              "target_node_id": "audit-join",
+              "loop_id": null,
+              "source_output_slot": "release-notes",
+              "target_input_slot": "stored",
+              "artifact_contract_id": "release-notes",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e19",
+              "kind": "artifact",
+              "source_node_id": "audit-join",
+              "target_node_id": "store-audit",
+              "loop_id": null,
+              "source_output_slot": "approved",
+              "target_input_slot": "approved",
+              "artifact_contract_id": "ajoin-approved",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e2",
+              "kind": "artifact",
+              "source_node_id": "source-intake",
+              "target_node_id": "verify-join",
+              "loop_id": null,
+              "source_output_slot": "source",
+              "target_input_slot": "source",
+              "artifact_contract_id": "changelog-source",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e20",
+              "kind": "artifact",
+              "source_node_id": "audit-join",
+              "target_node_id": "store-audit",
+              "loop_id": null,
+              "source_output_slot": "stored",
+              "target_input_slot": "stored",
+              "artifact_contract_id": "ajoin-stored",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e3",
+              "kind": "artifact",
+              "source_node_id": "writer",
+              "target_node_id": "verify-join",
+              "loop_id": null,
+              "source_output_slot": "draft",
+              "target_input_slot": "draft",
+              "artifact_contract_id": "draft-notes",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e4",
+              "kind": "artifact",
+              "source_node_id": "verify-join",
+              "target_node_id": "verifier",
+              "loop_id": null,
+              "source_output_slot": "joined-source",
+              "target_input_slot": "source",
+              "artifact_contract_id": "vjoin-source",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e5",
+              "kind": "artifact",
+              "source_node_id": "verify-join",
+              "target_node_id": "verifier",
+              "loop_id": null,
+              "source_output_slot": "joined-draft",
+              "target_input_slot": "draft",
+              "artifact_contract_id": "vjoin-draft",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e6",
+              "kind": "artifact",
+              "source_node_id": "verifier",
+              "target_node_id": "verdict-join",
+              "loop_id": null,
+              "source_output_slot": "report",
+              "target_input_slot": "report",
+              "artifact_contract_id": "verification-report",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e7",
+              "kind": "artifact",
+              "source_node_id": "verify-join",
+              "target_node_id": "verdict-join",
+              "loop_id": null,
+              "source_output_slot": "joined-draft",
+              "target_input_slot": "draft",
+              "artifact_contract_id": "vjoin-draft",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e8",
+              "kind": "artifact",
+              "source_node_id": "verify-join",
+              "target_node_id": "verdict-join",
+              "loop_id": null,
+              "source_output_slot": "joined-source",
+              "target_input_slot": "source",
+              "artifact_contract_id": "vjoin-source",
+              "mandatory": true,
+              "multiplicity": "one"
+            },
+            {
+              "edge_id": "e9",
+              "kind": "artifact",
+              "source_node_id": "verdict-join",
+              "target_node_id": "verdict",
+              "loop_id": null,
+              "source_output_slot": "report",
+              "target_input_slot": "report",
+              "artifact_contract_id": "djoin-report",
+              "mandatory": true,
+              "multiplicity": "one"
+            }
+          ],
+          "artifact_contracts": [
+            {
+              "artifact_contract_id": "ajoin-approved",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "ajoin-stored",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "approved-notes",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "changelog-source",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 1048576
+            },
+            {
+              "artifact_contract_id": "djoin-draft",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "djoin-report",
+              "media_types": [
+                "application/json"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 1048576
+            },
+            {
+              "artifact_contract_id": "djoin-source",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 1048576
+            },
+            {
+              "artifact_contract_id": "draft-notes",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "release-notes",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "store-audit-report",
+              "media_types": [
+                "application/json"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "verification-report",
+              "media_types": [
+                "application/json"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 1048576
+            },
+            {
+              "artifact_contract_id": "verified-draft",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "verified-report",
+              "media_types": [
+                "application/json"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 1048576
+            },
+            {
+              "artifact_contract_id": "verified-source",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 1048576
+            },
+            {
+              "artifact_contract_id": "vjoin-draft",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 65536
+            },
+            {
+              "artifact_contract_id": "vjoin-source",
+              "media_types": [
+                "text/markdown"
+              ],
+              "schema_ref": null,
+              "min_items": 1,
+              "max_items": 1,
+              "max_total_bytes": 1048576
+            }
+          ],
+          "model_bindings": [
+            {
+              "binding_id": "verifier-model",
+              "model_choice_ref": {
+                "kind": "model_choice",
+                "id": "00000000-0000-4000-8000-000000000215",
+                "version": 1,
+                "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+              },
+              "capabilities": [
+                "text"
+              ]
+            },
+            {
+              "binding_id": "writer-model",
+              "model_choice_ref": {
+                "kind": "model_choice",
+                "id": "00000000-0000-4000-8000-000000000213",
+                "version": 1,
+                "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+              },
+              "capabilities": [
+                "text"
+              ]
+            }
+          ],
+          "tool_bindings": [
+            {
+              "binding_id": "store-tool",
+              "tool_definition_ref": {
+                "kind": "tool_definition",
+                "id": "00000000-0000-4000-8000-000000000216",
+                "version": 1,
+                "sha256": "8888888888888888888888888888888888888888888888888888888888888888"
+              },
+              "grant_ref": {
+                "kind": "grant",
+                "id": "00000000-0000-4000-8000-000000000212",
+                "version": 1,
+                "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+              },
+              "capabilities": [
+                "document.create"
+              ]
+            }
+          ],
+          "memory_policies": [],
+          "grant_refs": [
+            {
+              "kind": "grant",
+              "id": "00000000-0000-4000-8000-000000000212",
+              "version": 1,
+              "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+            }
+          ],
+          "fact_names": [],
+          "observation_contract_ref": {
+            "kind": "observation_contract",
+            "id": "00000000-0000-4000-8000-000000000217",
+            "version": 1,
+            "sha256": "9999999999999999999999999999999999999999999999999999999999999999"
+          },
+          "completion_criteria": [
+            {
+              "criterion_id": "store-byte-audit",
+              "node_id": "store-audit",
+              "output_slot": "audit-report",
+              "artifact_contract_id": "store-audit-report",
+              "min_items": 1
+            },
+            {
+              "criterion_id": "stored-release-notes",
+              "node_id": "store",
+              "output_slot": "release-notes",
+              "artifact_contract_id": "release-notes",
+              "min_items": 1
+            }
+          ],
+          "budget_policy_ref": {
+            "kind": "budget_policy",
+            "id": "00000000-0000-4000-8000-000000000218",
+            "version": 1,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "parent_candidate_ids": [
+          "e2f0d731-1a81-4395-9785-1ee3b1ac99c9"
+        ],
+        "verdict": {
+          "status": "passed",
+          "reasons": [],
+          "source": "persisted_criticism",
+          "model_ids": [
+            "<live-catalog-model>"
+          ],
+          "profile_digests": [
+            "28f52a675164dc79be388082fe29f702fde3788f09cb71680e72cb5662a1c4d6",
+            "4cc25f9e8766f8af6d7770faa446905cff046e0bb7b61d5c95d6e81715de22f6",
+            "e2fddbf4be32ced4d15f299cee15b53a93f13ea904923cd55362db5b5283e7e4"
+          ],
+          "call_count": 4,
+          "criticism_record_id": "fdc9635c-1d5b-4b38-9a91-c7f03ea4dc5a"
+        },
+        "presented": false
+      }
+    },
+    "prepare_without_qualification": {
+      "http_status": 409,
+      "body": {
+        "code": "not_approvable",
+        "message": "This design cannot be approved or prepared",
+        "retryability": "not_retryable",
+        "affected_refs": [],
+        "correlation_id": "bc322c8a-9480-4e71-959c-03301840cb01",
+        "reason": "the critic configuration is not qualified (unknown: no_suite_record)"
+      }
+    },
+    "simulated_preparation_view": {
+      "environment_id": "a155b153-482b-5c14-a57c-aad05ab14ed1",
+      "critic_qualification": {
+        "schema_version": "critic-qualification-v1",
+        "configuration_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "status": "qualified",
+        "reason": "release_suite_passed_v3_verified",
+        "design_id": "test-actor-v3-verifying-design",
+        "record_sha256": "40dae046a7a47d8216070179331443a040bbd60b3cad4f1e98181b12ed59541c"
+      },
+      "approvable": true,
+      "simulated_qualification": true,
+      "reason": null
+    },
+    "simulation": {
+      "label": "SIMULATED (test-actor) qualification — not a release qualification",
+      "lens": "fixture evidence verifier (proposed_lens); no production lens is qualified",
+      "critic": "test-actor V3-verifying design id under actor_v3_design; V3 is unverified in production"
+    },
+    "prepare_with_simulated_qualification": {
+      "http_status": 201,
+      "body": {
+        "status": "prepared",
+        "environment_version": {
+          "schema_version": "environment-version-v1",
+          "environment_id": "a155b153-482b-5c14-a57c-aad05ab14ed1",
+          "version": 1,
+          "design_ref": {
+            "kind": "graph",
+            "id": "cddc84d0-0a98-489b-9042-17688c9c72d0",
+            "version": 1,
+            "sha256": "93bc7207eabde7457808674d220377acaef247f0c3836eb2b304467c513be8cf"
+          },
+          "approval_sha": "0f0facf82cb95a80bec5ee21defb695c0a21ea1c25c2cf12390c7d3da7d03785",
+          "status": "prepared"
+        },
+        "environment_ref": {
+          "kind": "environment",
+          "id": "b9ca0ffa-b56d-59f6-aa20-d48afa749cc7",
+          "version": 1,
+          "sha256": "55aae56b8035abe543946c1ad21e226ec6e67ec68f65fbdc3bab66dd4c4f1446"
+        },
+        "approval_ref": {
+          "kind": "decision_record",
+          "id": "e5b54dc6-e5cd-5cb9-a314-3a999bc930be",
+          "version": 1,
+          "sha256": "5dc156c04bb05f8e9cd373f6a5b1023e33e8fec1d04c037f7a5ecaf0cc4f65e8"
+        },
+        "activation": "not_activated"
+      }
+    }
+  },
+  "refusals": [],
+  "calls": [
+    {
+      "n": 1,
+      "phase": "arc",
+      "stage": "generation",
+      "answer_purpose": null,
+      "raw_answer": "attempt8-01-arc-generation.txt",
+      "intent_purpose": "design_candidate",
+      "max_output_tokens": 28000,
+      "effort": "medium",
+      "bound_usd_before_send": 1.8173,
+      "provider_message_id": "msg_011CfRfNJREKD36BZafcjLcN",
+      "request_id": "req_011CfRfNHdM6pD4JoRxnvYuh",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 10452,
+        "output_tokens": 21025
+      },
+      "spend_usd_at_ceiling": 0.577885
+    },
+    {
+      "n": 2,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "review",
+      "raw_answer": "attempt8-02-arc-criticism-review.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 1.8307,
+      "provider_message_id": "msg_011CfRfZMvryfQuYWMMGznz2",
+      "request_id": "req_011CfRfZLczFW7g3TTDTnJgQ",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 11302,
+        "output_tokens": 4372
+      },
+      "spend_usd_at_ceiling": 0.16581
+    },
+    {
+      "n": 3,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_proposal",
+      "raw_answer": "attempt8-03-arc-criticism-counterexample_proposal.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.0101,
+      "provider_message_id": "msg_011CfRfc2QTCPPrEiZSPDo87",
+      "request_id": "req_011CfRfc1wAmZZ2N8ejEH6Uz",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 12864,
+        "output_tokens": 3956
+      },
+      "spend_usd_at_ceiling": 0.16322
+    },
+    {
+      "n": 4,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt8-04-arc-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.1679,
+      "provider_message_id": "msg_011CfRfesHrREo2u82qy68MC",
+      "request_id": "req_011CfRferettKRPdvhJjxYL6",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 11960,
+        "output_tokens": 2456
+      },
+      "spend_usd_at_ceiling": 0.1212
+    },
+    {
+      "n": 5,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt8-05-arc-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.2889,
+      "provider_message_id": "msg_011CfRfgZBjbxQY21u7oTw1T",
+      "request_id": "req_011CfRfgYihYE8SY6UW9fQph",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 11916,
+        "output_tokens": 2003
+      },
+      "spend_usd_at_ceiling": 0.109655
+    },
+    {
+      "n": 6,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "review",
+      "raw_answer": "attempt8-06-arc-criticism-review.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.4014,
+      "provider_message_id": "msg_011CfRfhzyoGmPxadFu3U3Dv",
+      "request_id": "req_011CfRfhzMb33p7qkvNskmJo",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 12373,
+        "output_tokens": 4000
+      },
+      "spend_usd_at_ceiling": 0.161865
+    },
+    {
+      "n": 7,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_proposal",
+      "raw_answer": "attempt8-07-arc-criticism-counterexample_proposal.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.5769,
+      "provider_message_id": "msg_011CfRfkYfLngGZEPhpMvbnc",
+      "request_id": "req_011CfRfkXLxa8pS48U88xGMF",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 13935,
+        "output_tokens": 5243
+      },
+      "spend_usd_at_ceiling": 0.20075
+    },
+    {
+      "n": 8,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt8-08-arc-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.7706,
+      "provider_message_id": "msg_011CfRfp35xuBXQbZV86U24u",
+      "request_id": "req_011CfRfp2cSHcSb7APovGL6U",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 12908,
+        "output_tokens": 2260
+      },
+      "spend_usd_at_ceiling": 0.12104
+    },
+    {
+      "n": 9,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt8-09-arc-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.8945,
+      "provider_message_id": "msg_011CfRfqc86f1L3gQRMKs5Ka",
+      "request_id": "req_011CfRfqbXNcgBbEbK17wVKw",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 13071,
+        "output_tokens": 1891
+      },
+      "spend_usd_at_ceiling": 0.11263
+    },
+    {
+      "n": 10,
+      "phase": "owner",
+      "stage": "criticism",
+      "answer_purpose": "review",
+      "raw_answer": "attempt8-10-owner-criticism-review.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 1.9869,
+      "provider_message_id": "msg_011CfRfrz4UUa6XK7WCN4RiR",
+      "request_id": "req_011CfRfryZxSZmJEfynvaQ9H",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 11296,
+        "output_tokens": 4562
+      },
+      "spend_usd_at_ceiling": 0.17053
+    },
+    {
+      "n": 11,
+      "phase": "owner",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_proposal",
+      "raw_answer": "attempt8-11-owner-criticism-counterexample_proposal.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.171,
+      "provider_message_id": "msg_011CfRfuju2e9kae5AuRWo4E",
+      "request_id": "req_011CfRfuip2ovK7yDicdLLAv",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 12858,
+        "output_tokens": 4469
+      },
+      "spend_usd_at_ceiling": 0.176015
+    },
+    {
+      "n": 12,
+      "phase": "owner",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt8-12-owner-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.3426,
+      "provider_message_id": "msg_011CfRfxrppvqA8kZixY7FfD",
+      "request_id": "req_011CfRfxr5vQLmeWjtteK1cH",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 11928,
+        "output_tokens": 1882
+      },
+      "spend_usd_at_ceiling": 0.10669
+    },
+    {
+      "n": 13,
+      "phase": "owner",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt8-13-owner-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.4481,
+      "provider_message_id": "msg_011CfRfzCRZYZ5f8jG6NZf7b",
+      "request_id": "req_011CfRfzBwnxqmCk81sdA9qu",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 11899,
+        "output_tokens": 2596
+      },
+      "spend_usd_at_ceiling": 0.124395
+    }
+  ],
+  "guard_refusals": [
+    {
+      "n": 10,
+      "phase": "arc",
+      "stage": "criticism",
+      "bound_usd_before_send": 3.0048,
+      "prompt_sha256": "a60e57222f68333879191283540c30d2c7489e8bb6d14b0f3c5fc839cb7c3deb",
+      "refused": "the cap would be exceeded"
+    }
+  ],
+  "replayed_generation": [],
+  "spend_usd_at_ceiling_this_attempt": 2.311685,
+  "spend_usd_at_ceiling_earlier_attempts": 0,
+  "cap_usd": 3.0,
+  "rereview_reserve_usd": 1.0,
+  "max_rounds": 1,
+  "requested_candidate_count": 2,
+  "generation_output_tokens": 28000,
+  "ceiling_usd_per_mtok": [
+    5.0,
+    25.0
+  ],
+  "evidence_id": "b265f2dd-dc1d-49ae-990d-18f6aee109f2"
+}

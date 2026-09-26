@@ -671,7 +671,7 @@ Independent test: fixed synthetic work → real design decisions/candidates → 
   focus with model/tool details, and select/edit/merge/review/prepare commands over re-admitted, re-folded
   stored records (evidence/design-commands-t037-2026-09-25.md). A production design request source (T030/T038),
   generation for edit/merge re-review, and a qualified critic for prepare (T077) remain with those tasks.
-- [ ] T038 [US2] Exercise real generation→critique→selection and 0/1/2/3 valid-candidate/revision/cancel paths in app/tests/browser-design.test.mjs and specs/001-autonomous-release/evidence/us2.md; no fixture scores presented as live (SC-003/SC-005).
+- [x] T038 [US2] Exercise real generation→critique→selection and 0/1/2/3 valid-candidate/revision/cancel paths in app/tests/browser-design.test.mjs and specs/001-autonomous-release/evidence/us2.md; no fixture scores presented as live (SC-003/SC-005).
   2026-09-26: the design arc runs end to end through the product's own route and drivers
   (`POST /api/v1/design-requests/{id}/generations` and `…/cancellations`: bounded rounds of
   generation → persistence → criticism → the honest pool, one `design_generation_run` record per
@@ -699,6 +699,18 @@ Independent test: fixed synthetic work → real design decisions/candidates → 
   `design_request_basis` by re-running every issuing gate, or refused with the reason. Real Chrome:
   `browser-design-request.test.mjs` (SIMULATED source: create from the page, then generate;
   production: the reason, no button). Still not ticked: no live selection of a live-passed candidate.
+  2026-09-26 (attempt 8) ticked: after generator rule (k) (every item a join or the verdict step
+  hands on travels in its own single-item slot; the grammar has no per-item label), ONE owner-
+  authorized live run (`test_claude_live_design_selection.py`, own USD 3.00 cap, USD 2.312 spent
+  at ceiling rates). LIVE: generation (2 graphs), criticism (1 passed and presented; 1 excluded
+  as unreviewed after the guard refused one send), and the re-review of the selected version
+  (passed). Through the product routes: `derivations` select 201, `reviews` 201, `preparations`
+  without qualification 409 (`the critic configuration is not qualified`), `preparations` with
+  the qualification 201 (`prepared`, not activated). SIMULATED and labelled: the owner (test-
+  actor work, lens decision, selection and approval) and the critic qualification of the second
+  preparation, which is not a release qualification. The 0/1/2/3, revision and cancel paths stay
+  offline in `app/tests/browser-design.test.mjs` (passing). Evidence: evidence/us2.md "attempt 8".
+  A production design request source (T030) and a qualified critic (T077) remain with those tasks.
 
 ## Phase 5: US3 — Actual graph execution, tools and artifacts (P1)
 
