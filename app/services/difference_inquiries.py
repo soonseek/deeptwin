@@ -120,7 +120,6 @@ def _closed(method):
         except (InquiryServiceError, OwnerAuthError):
             raise
         except Exception as error:  # noqa: BLE001 - storage/provider errors must not disclose detail
-            import traceback; traceback.print_exc()  # DEBUG
             code = getattr(error, "code", None)
             if type(code) is str and code in {"not_found", "conflict"}:
                 raise InquiryServiceError(code) from None
