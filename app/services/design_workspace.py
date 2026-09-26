@@ -887,7 +887,10 @@ class PersistentDesignWorkspace:
         """The durable extension binding heads this environment version is prepared with
         (`binding_heads.environment_binding_revisions`); a later binding change marks the
         version as needing re-preparation and changes nothing here."""
-        from ..extensions.binding_heads import BindingDispatchRefused, environment_binding_revisions
+        from ..extensions.binding_heads import (
+            BindingDispatchRefused,
+            environment_binding_revisions,
+        )
 
         try:
             return environment_binding_revisions(self._domain, environment_id)

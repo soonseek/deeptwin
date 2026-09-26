@@ -40,7 +40,11 @@ from app.domain.schemas import ImmutableRecord
 from app.services.design import confirm_work_model, create_generation_request
 from app.services.design_persistence import persist_design_request
 from app.tests.design_workspace_fixture import _shapes
-from app.tests.test_design_generation import design_authority, design_decision, proposed_lens
+from app.tests.test_design_generation import (
+    design_authority,
+    design_decision,
+    proposed_lens,
+)
 from app.tests.test_design_orchestration import auto_critic
 from app.tests.test_work_model_confirmation import confirmation, work_model
 

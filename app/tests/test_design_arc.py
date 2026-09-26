@@ -11,7 +11,12 @@ call. The critic qualification is SIMULATED (test-actor); nothing here is live.
 import time
 from uuid import uuid4
 
-from app.tests.design_arc_fixture import CRITIC_ID, GENERATOR_ID, open_scenarios, run_in_thread
+from app.tests.design_arc_fixture import (
+    CRITIC_ID,
+    GENERATOR_ID,
+    open_scenarios,
+    run_in_thread,
+)
 from app.tests.test_claude_live_path import real_work
 from app.tests.test_runs_api import Executor, owner_app
 from app.tests.test_web_owner_integration import headers
