@@ -176,7 +176,7 @@ _CRITIC_DESIGN_RULES = (
     " happens next in the graph, not only in its report; route on a declared verdict fact (a"
     " router whose only onward edge to the join, gate or release is conditioned on the passing"
     " value, while a failing value goes back to revision through a bounded loop or ends the"
-    " run), or give the check a failure_policy that stops its dependants when it finds a"
+    " run, within the limits of rules (i) and (j)), or give the check a failure_policy that stops its dependants when it finds a"
     " problem and have every downstream join use failure_handling block; a report that lists"
     " unverified or failed items must never reach the join, gate or release as if it passed."
     # T038 attempt 3: following (c)-(e) under the one-predecessor structure rule, the
@@ -201,6 +201,48 @@ _CRITIC_DESIGN_RULES = (
     " inspectable by the checker, add a conversion node before the check that emits an"
     " inspectable rendition under its own contract, and the check, the approval and the release"
     " all use that same checked content, never an alternative format the check did not read."
+    # T038 attempt 6: the candidate passed every review finding but stayed unresolved on two
+    # graph-level points: the approval join's artifact inputs came straight from nodes before
+    # the verdict router (only the router's control edge carried the pass condition), and no
+    # node was declared to set the routing fact from the check report. General design rules,
+    # true of the graph grammar itself (an artifact edge carries no condition and triggers its
+    # target; a router has no artifact output), not task wording.
+    " (i) a verdict gates the data, not only the control flow: an artifact edge carries no"
+    " condition and triggers its target, so a condition on one control edge never stops a node"
+    " or join whose other inputs come from nodes before the decision, and a router cannot"
+    " forward artifacts. So no artifact produced before a check's pass decision reaches the"
+    " join, gate or release after that decision except through the decision itself: make the"
+    " decision an explicitly declared deterministic verdict step in the data path. It is the"
+    " only node that reads the check report for the decision (through its own artifact input"
+    " edge, via a join that also carries the exact checked content, and the originals the"
+    " approver must see, unaltered). Its responsibility states the rule: only when the"
+    " report's overall verdict field is the passing value does it emit those inputs, byte for"
+    " byte, under its own new verified-package contract; otherwise it emits nothing and fails"
+    " with failure_policy fail_run, so the run ends and nothing downstream runs. The gate and"
+    " the release read only that verified package (or what the gate emits from it), and no"
+    " artifact edge goes from any node before the verdict step to any node after it. (j) a"
+    " routing fact is set by a declared node from the report: whenever a router decides on a"
+    " check's verdict, it reads the check report through its own artifact input edge from the"
+    " checker, its decision fact is that report's overall verdict field, and its"
+    " responsibility says so; since a router carries no data, a router's passing arm never"
+    " leads to a node, join, gate or release that also takes artifact inputs from before the"
+    " router, and whenever the path after the decision needs such artifacts, use the"
+    " verdict step of (i) instead of a router."
+)
+
+# T038 attempt 6: two candidates were requested and one came back; the output schema only
+# said "between one and the requested number" while the profile forbids renaming one
+# topology as several candidates. The generator is now told to aim for the requested count
+# with genuinely different structures, and when returning fewer is right.
+_CANDIDATE_COUNT_RULE = (
+    " Candidate count: return requested_candidate_count candidates whenever that many"
+    " structurally different graphs satisfy every rule above; return fewer only when no further"
+    " structurally different graph satisfies them all. Candidates differ in structure (the"
+    " nodes' kinds and the edges between them), never only in ids, names or wording; for"
+    " example, one checker for every condition versus several independent checkers, each for"
+    " some conditions, whose reports a join aggregates before the verdict step, or a"
+    " deterministic precheck of the checked format before the model check, each still"
+    " following every rule above. Each candidate is complete on its own."
 )
 
 
@@ -327,7 +369,7 @@ def render_candidate_prompt(request: DesignGenerationRequest, revision=None) -> 
     system = (
         f"{profile.base_instructions}\n{profile.developer_instructions}\n{_OUTPUT_SCHEMA}"
         + _CRITIC_DESIGN_RULES
-        + (_REVISION_SYSTEM if revision is not None else "")
+        + (_REVISION_SYSTEM if revision is not None else _CANDIDATE_COUNT_RULE)
     )
     payload = {
         "generation_request": request.as_dict(),

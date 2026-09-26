@@ -21,7 +21,7 @@ model used; while the arc runs it also keeps a reserve for the owner's re-review
 selection step can complete. A send past the cap is refused (recorded by the arc as a refused
 call, never as a candidate). The drivers never retry; there is no fallback model.
 
-`DEEPTWIN_LIVE_WORK=specified` (attempts 5-6) runs the SAME arc over a DIFFERENT, better-specified
+`DEEPTWIN_LIVE_WORK=specified` (attempts 5-7) runs the SAME arc over a DIFFERENT, better-specified
 work authored by the simulated owner (`design_specified_work`, labelled): explicit completion
 conditions, artifact formats, approver inputs, sources and "nothing is regenerated". Unset, the
 arc runs over the attempts 1–4 work (`design_arc_fixture._work_model`).
@@ -277,7 +277,7 @@ def test_one_live_design_arc_to_owner_selection(tmp_path):
                           "spend_usd_at_ceiling": round(_cost(outcome.get("usage") or {}), 6)})
         observed = {
             "label": LABEL, "model": model,
-            "work": ({"scenario": "specified (attempts 5-6): release notes from one stored changelog",
+            "work": ({"scenario": "specified (attempts 5-7): release notes from one stored changelog",
                       "author": AUTHOR, "work_model": target.work_model.as_dict()}
                      if SPECIFIED else {"scenario": "attempts 1-4 work (YouTube research/script)"}),
             "generation_http_status": response.status_code, "run": run,
