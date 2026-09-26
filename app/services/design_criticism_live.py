@@ -158,6 +158,17 @@ _CITATION_RULE = (
     "An original whose availability is not text has no sections and is never cited; cite the "
     "text document that states the fact instead. In a candidate response, when the given "
     "validity status is not valid, your status must be unresolved."
+    # T038 live diagnosis (2026-09-26): the critic's review cited the criteria document
+    # under the design decision's id (the prefix of the criterion ids) and wrapped its JSON
+    # in a markdown fence; both are refused by the contract, so the prompt states them.
+    " A citation's document_id and version are exactly the id and version fields of the cited "
+    "document as given in the input: the criteria document's id is its own id field (for "
+    "example review:…), never a criterion id or any part of one, and the candidate's is the "
+    "candidate document's id field."
+)
+_OUTPUT_RULE = (
+    "Answer with the JSON object alone: the first character of the answer is { and the last is "
+    "}. No markdown code fence (no ```json), no heading and no text before or after it."
 )
 
 
@@ -322,7 +333,7 @@ def render_criticism_prompt(prepared: PreparedInput) -> tuple[str, str]:
     profile = profile_for(prepared.purpose)
     system = (
         f"{profile.base_instructions}\n{profile.developer_instructions}\n"
-        f"{_CITATION_RULE}\n{prepared.schema_json}"
+        f"{_CITATION_RULE}\n{_OUTPUT_RULE}\n{prepared.schema_json}"
     )
     return system, prepared.prompt
 

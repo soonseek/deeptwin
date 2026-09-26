@@ -322,3 +322,22 @@ def test_the_diagnosis_agrees_with_the_contract_and_bounds_what_it_keeps():
         run_candidate_criticism(candidate, request, registry,
                                 model_turn=ScriptedCritic([RuntimeError("down")]), model_id=MODEL_ID)
     assert type(caught.value) is not CriticismStageRefused
+
+
+def test_the_live_review_causes_are_stated_in_the_prompt_and_still_refused_by_the_contract():
+    """T038 live diagnosis (2026-09-26): the real review answer came in a ```json fence and
+    cited the criteria document under the design decision id. The fix is in the prompt; the
+    contract is unchanged, so both shapes are still refused, each with its exact reason."""
+    from app.services.design_criticism import prepare_candidate_review
+    from app.services.design_criticism_live import render_criticism_prompt
+
+    request, candidate, registry, review, *_rest = driven()
+    system, _user = render_criticism_prompt(prepare_candidate_review(candidate, request))
+    assert "No markdown code fence" in system and "never a criterion id or any part of one" in system
+    fenced = "```json\n" + _json.dumps(review) + "\n```"
+    assert _refused(request, candidate, registry, [fenced]).violation == "json: Expecting value at line 1 column 1"
+    misnamed = _json.loads(_json.dumps(review))
+    decision_id = misnamed["findings"][0]["criterion_id"].split(":")[0]
+    misnamed["findings"][0]["evidence"] = [{"document_id": decision_id, "version": "1", "location": "/items/0"}]
+    assert _refused(request, candidate, registry, [misnamed]).violation.startswith(
+        f"citation is not visible: /findings/0/evidence/0 names document {decision_id!r}")
