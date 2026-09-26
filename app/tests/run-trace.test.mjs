@@ -11,6 +11,8 @@ import {
   timelineRows, traceRoute, traceView,
 } from '../static/run-trace.mjs';
 
+import { costText, ratesText } from '../static/ui-format.mjs';
+
 import { RUN, id, ref, sampleTrace } from './helpers/run-trace-sample.mjs';
 
 test('the trace route is the fixed run route under the deployment base, and nothing else', () => {
@@ -41,10 +43,40 @@ test('the header names the work, the phase in words, the calls and an unrecorded
   assert.equal(untitled.title, `실행 ${RUN.slice(0, 8)}`);
   assert.equal(untitled.duration, null);
   assert.equal(untitled.phaseLabel, '미완료');
+  // a run total may add estimates of either method, so it names the ceiling, not the method
   const estimated = runSummary(sampleTrace({ totals: { ...sampleTrace().totals, tokens_complete: false,
     cost: { state: 'estimate', microunits: 34_000, currency: 'USD' } } }));
-  assert.equal(estimated.cost, '약 $0.034 (예약 상한 기준 추정)');
+  assert.equal(estimated.cost, '약 $0.034 (상한 기준 추정)');
   assert.match(estimated.tokens, /일부 호출은 토큰 기록 없음/);
+});
+
+test('a cost says its basis: settled, an estimate by its method, a subscription, or unknown', () => {
+  const rates = { currency: 'USD', unit: 'microunits_per_million_tokens', input_microunits_per_mtok: 4_000_000,
+    output_microunits_per_mtok: 20_000_000, cache_creation_microunits_per_mtok: null,
+    cache_read_microunits_per_mtok: 400_000 };
+  assert.equal(costText({ state: 'settled', basis: 'budget_settlement', microunits: 9_000, currency: 'USD' }),
+    '$0.009 (정산 기록)');
+  assert.equal(costText({ state: 'estimate', basis: 'reserved_ceiling', method: 'reservation', microunits: 25_000,
+    currency: 'USD' }), '약 $0.025 (예약 상한 기준 추정)');
+  assert.equal(costText({ state: 'estimate', basis: 'reserved_ceiling', method: 'recorded_tokens_at_ceiling_rates',
+    microunits: 6_528, currency: 'USD', rates }), '약 $0.0065 (기록된 토큰 × 설정된 상한 단가 추정)');
+  // an unknown method is still only an estimate, never a settled amount
+  assert.equal(costText({ state: 'estimate', method: 'constructor', microunits: 1_000, currency: 'USD' }),
+    '약 $0.001 (상한 기준 추정)');
+  assert.equal(costText({ state: 'unknown', basis: 'subscription_mode' }), '미확인 (구독 방식: 호출별 금액 없음)');
+  assert.equal(costText({ state: 'unknown', basis: 'not_recorded' }), '미확인');
+  assert.equal(ratesText(rates), '입력 $4 · 출력 $20 · 캐시 읽음 $0.4 (100만 토큰당)');
+  assert.equal(ratesText(null), '기록 없음');
+});
+
+test('a model attempt names the tokens its provider reported in the timeline', () => {
+  const trace = sampleTrace();
+  const second = trace.nodes[2].visits[0].attempts[1];
+  second.budget_reservation.reserved.model_calls = 1;
+  second.tokens = { input: 812, output: 164, cache_creation_input: 0, cache_read_input: 'not_recorded' };
+  const rows = timelineRows(trace);
+  assert.match(rows[3].detail, /입력 812\/출력 164 토큰$/);
+  assert.doesNotMatch(rows[2].detail, /토큰/);  // attempt 1's provider reported none
 });
 
 test('final results come from the graph exit; without them the stop points are named', () => {

@@ -30,7 +30,7 @@ import {
   APPROVAL_STATE_TEXT, EFFECT_CLASS_LABELS, JOURNAL_LABELS, MODEL_CALL_STATE_TEXT, NODE_KIND_LABELS, NOT_RECORDED,
   NOT_RECORDED_LABEL, STOP_REASON_LABELS, TOOL_CALL_STATE_TEXT, TRACE_GAP_LABELS, TRACE_NODE_STATE_TEXT,
   VISIT_STATUS_TEXT, approvalScopeLabel, clockTime, costText, countText, durationText, formatBytes, mediaTypeLabel,
-  shortId, stateText,
+  ratesText, shortId, stateText,
 } from './ui-format.mjs';
 import { el, emptyState, keyValueList, statusChip, tabs, technicalDetails, timeStamp } from './ui-parts.mjs';
 
@@ -612,7 +612,9 @@ export function createRunDetail({
       ['토큰', `입력 ${countText(call.tokens.input)} · 출력 ${countText(call.tokens.output)}`],
       ['시작', stamp(document, call.started_at_utc)], ['끝', stamp(document, call.ended_at_utc)],
       ['걸린 시간', durationText(call.started_at_utc, call.ended_at_utc)],
-      ['비용', `${costText(call.cost)} — ${TRACE_GAP_LABELS.model_cost}`],
+      // the gap's reason only where the cost is actually not recorded
+      ['비용', call.cost?.basis === NOT_RECORDED ? `${costText(call.cost)} — ${TRACE_GAP_LABELS.model_cost}`
+        : costText(call.cost)],
       ['오류', call.error === null ? '없음' : call.error === NOT_RECORDED ? NOT_RECORDED_LABEL
         : `${call.error.category ?? ''} ${call.error.detail_code ?? ''}`.trim()],
     ]);
@@ -625,8 +627,19 @@ export function createRunDetail({
         ['노력 수준', String(call.effort)], ['출력 한도', String(call.max_output_tokens)],
         ['멈춘 이유', String(call.stop_reason)], ['제공자 메시지 ID', String(call.provider_message_id)],
         ['요청 ID', String(call.request_id)], ['출력 기록', refText(call.output_ref)],
-        ['캐시 토큰', `만듦 ${countText(call.tokens.cache_creation_input)} · 읽음 ${countText(call.tokens.cache_read_input)}`]]),
+        ['캐시 토큰', `만듦 ${countText(call.tokens.cache_creation_input)} · 읽음 ${countText(call.tokens.cache_read_input)}`],
+        ...(call.cost?.rates ? [['설정된 상한 단가', ratesText(call.cost.rates)]] : [])]),
     ]);
+  }
+
+  // a model attempt's provider-reported tokens, or why they are not recorded
+  function attemptTokens(attempt) {
+    const reservation = attempt.budget_reservation;
+    if (reservation === NOT_RECORDED || !(reservation?.reserved?.model_calls > 0)) return [];
+    const tokens = attempt.tokens ?? {};
+    const reported = [tokens.input, tokens.output].some(value => Number.isSafeInteger(value));
+    return [['토큰', reported ? `입력 ${countText(tokens.input)} · 출력 ${countText(tokens.output)}`
+      : `${NOT_RECORDED_LABEL} — ${TRACE_GAP_LABELS.attempt_tokens}`]];
   }
 
   function attemptCost(attempt) {
@@ -634,12 +647,19 @@ export function createRunDetail({
     return el(document, 'section', { className: 'trace-item', attrs: { 'aria-label': `시도 ${attempt.attempt_no}의 예약과 비용` } }, [
       el(document, 'h4', { text: `시도 ${attempt.attempt_no}의 예약과 비용` }),
       keyValueList(document, [
+        ...attemptTokens(attempt),
         ['비용', costText(attempt.cost)],
         ['예약', attempt.budget_reservation === NOT_RECORDED ? NOT_RECORDED_LABEL
           : `모델 ${attempt.budget_reservation.reserved.model_calls}회 · 도구 ${attempt.budget_reservation.reserved.tool_calls}회`],
         ['정산', attempt.budget_reservation === NOT_RECORDED || attempt.budget_reservation.settled === NOT_RECORDED ? NOT_RECORDED_LABEL
           : `모델 ${attempt.budget_reservation.settled.model_calls}회 · 도구 ${attempt.budget_reservation.settled.tool_calls}회`],
       ]),
+      ...(attemptTokens(attempt).length ? [technicalDetails(document, [
+        ['응답한 모델', String(attempt.observed_model ?? NOT_RECORDED)],
+        ['제공자 메시지 ID', String(attempt.provider_message_id ?? NOT_RECORDED)],
+        ['요청 ID', String(attempt.request_id ?? NOT_RECORDED)],
+        ['캐시 토큰', `만듦 ${countText(attempt.tokens?.cache_creation_input)} · 읽음 ${countText(attempt.tokens?.cache_read_input)}`]])]
+        : []),
     ]);
   }
 

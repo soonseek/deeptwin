@@ -144,6 +144,13 @@ where the run stopped. A value the runtime did not record is the string `not_rec
 category not recorded is named with its reason in `gaps`. Errors: `400` malformed id, query or body,
 `401` no session, `404` unknown run, `503` executor or ledger unavailable.
 
+Additive fields (2026-09-26, recorded usage): each attempt carries `tokens`, `observed_model`,
+`provider_message_id` and `request_id` (what the provider reported to its transport, or
+`not_recorded`); a `reserved_ceiling` estimate carries `method` (`reservation`, or
+`recorded_tokens_at_ceiling_rates` with the `rates` used); a model call's `cost` is recorded with
+the call (`subscription_mode`, a ceiling-rate estimate, or `not_recorded`). No field was removed or
+renamed; a reader that ignores unknown keys is unaffected.
+
 `GET|HEAD /api/v1/events`, `/api/v1/events/stream` and `/api/v1/events/{event_type}` accept at most
 one of `run_id` or `work_id` (canonical UUID, once). The filter keeps only events whose own record
 names the subject: `work_id` — an object reference to that work's `work_revision`; `run_id` — the

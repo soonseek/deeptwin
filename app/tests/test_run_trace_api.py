@@ -265,12 +265,62 @@ def test_an_api_priced_attempt_states_its_cost_basis(tmp_path):
                                  "currency": "USD"}
         assert second["terminal_outcome"] == "outcome_unknown"
         assert second["error"]["outcome"] == "outcome_unknown"
-        assert second["cost"] == {"state": "estimate", "basis": "reserved_ceiling", "microunits": 25_000,
-                                  "currency": "USD"}
+        assert second["cost"] == {"state": "estimate", "basis": "reserved_ceiling", "method": "reservation",
+                                  "microunits": 25_000, "currency": "USD"}
         assert second["budget_reservation"]["settled"] == "not_recorded"
+        # neither attempt's transport reported provider token counts: said, never zeroed
+        assert first["tokens"]["input"] == second["tokens"]["output"] == "not_recorded"
+        assert "attempt_tokens" in {item["category"] for item in value["gaps"]}
         assert value["totals"]["cost"] == {"state": "estimate", "microunits": 34_000, "currency": "USD"}
         assert value["final_results"] == []
         assert {"node_id": "writer", "state": "failed"} in value["stopped_at"]
+
+
+class ReportingTransport(FlakyTransport):
+    """FlakyTransport whose provider reports its usage with each result (scripted counts,
+    synthetic test-actor data): attempt 1 stops early and fails, attempt 2 succeeds."""
+
+    REPORTS = ({"input_tokens": 812, "output_tokens": 12, "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": None},
+               {"input_tokens": 812, "output_tokens": 164, "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0})
+
+    def __call__(self, permit, request, window):
+        from dataclasses import replace
+
+        from app.runtime.ledger import ProviderUsageReport
+
+        result = super().__call__(permit, request, window)
+        counts = self.REPORTS[len(self.calls) - 1]
+        return replace(result, provider_usage=ProviderUsageReport(
+            **counts, observed_model="synthetic-model-1", provider_message_id=f"msg_synthetic_{len(self.calls)}"))
+
+
+def test_a_model_attempt_shows_the_tokens_its_provider_reported(tmp_path):
+    transport = ReportingTransport(failures=1)
+    executor = AttemptExecutor(transport)
+    with owner_app(tmp_path, executor) as subject:
+        _run_id, run_path = recovered_run(subject, executor, transport)
+        value = trace(subject, run_path).json()
+        first, second = node(value, "writer")["visits"][0]["attempts"]
+        # each attempt carries only what its own provider reported
+        assert first["tokens"] == {"input": 812, "output": 12, "cache_creation_input": 0,
+                                   "cache_read_input": "not_recorded"}
+        assert second["tokens"] == {"input": 812, "output": 164, "cache_creation_input": 0, "cache_read_input": 0}
+        assert first["provider_message_id"] == "msg_synthetic_1"
+        assert second["provider_message_id"] == "msg_synthetic_2"
+        assert second["observed_model"] == "synthetic-model-1" and second["request_id"] == "not_recorded"
+        for attempt in (first, second):
+            assert "provider_usage" in [entry["transition"] for entry in attempt["journal"]]
+            # subscription mode: the run's budget states no money for a call
+            assert attempt["cost"] == {"state": "unknown", "basis": "subscription_mode"}
+        totals = value["totals"]
+        assert (totals["model_calls"], totals["input_tokens"], totals["output_tokens"]) == (2, 1624, 176)
+        assert totals["tokens_complete"] is True
+        categories = {item["category"] for item in value["gaps"]}
+        # the tokens are recorded now, so that gap is gone; hidden reasoning still is never stored
+        assert "attempt_tokens" not in categories and "reasoning" in categories
+        assert "model_cost" not in categories  # no executor model call in this run
 
 
 def test_events_filter_by_run_and_work_from_what_each_event_carries(tmp_path):

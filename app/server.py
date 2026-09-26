@@ -1158,13 +1158,24 @@ def main():
     # the direct-adapter Claude profile: the code-owned run executor, bounded by the
     # operator's non-secret limits (the API key itself is entered by the owner in the
     # browser and kept in server memory only)
-    from .services.claude_run_executor import ClaudeRunExecutor, LiveLimits
+    from .services.claude_run_executor import (
+        ClaudeRunExecutor,
+        LiveLimits,
+        ceiling_rates_from_environment,
+    )
 
     limits = LiveLimits(max_model_calls=int(os.environ.get("DEEPTWIN_LIVE_MAX_MODEL_CALLS", "10")),
                         max_output_tokens=int(os.environ.get("DEEPTWIN_LIVE_MAX_OUTPUT_TOKENS", "512")))
+    # the operator's ceiling rates (non-secret, optional): without them an API-priced
+    # model call's cost is recorded as not known, never guessed
+    try:
+        ceiling_rates = ceiling_rates_from_environment(os.environ)
+    except ValueError as error:
+        parser.error(str(error))
     application = create_app(args.data_dir, deployment_config=configuration,
         session_root_dir=args.session_root_dir, expected_uid=args.expected_uid, expected_gid=args.expected_gid,
-        additional_protected_roots=(config_path.parent,), run_executor=ClaudeRunExecutor(limits=limits),
+        additional_protected_roots=(config_path.parent,),
+        run_executor=ClaudeRunExecutor(limits=limits, ceiling_rates=ceiling_rates),
         recovery_trust_set=trust_set, credential_gateway=credential_gateway,
         document_worker=document_worker, backup_worker=backup_worker, browser_worker=browser_worker)
     uvicorn.run(application, host='0.0.0.0', port=8080, workers=1, reload=False,

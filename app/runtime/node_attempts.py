@@ -47,6 +47,7 @@ from .ledger import (
     DispatchPermit,
     LedgerError,
     OwnerIdentity,
+    ProviderUsageReport,
     ResultObservation,
     RuntimeLedger,
     TransportObservation,
@@ -193,7 +194,10 @@ class AttemptDispatchRequest:
 @dataclass(frozen=True, slots=True)
 class AttemptTransportResult:
     """What a code-owned transport reports for one attempt, in the ledger's
-    result vocabulary; admitted only through `accept_result_and_settle`."""
+    result vocabulary; admitted only through `accept_result_and_settle`.
+    `provider_usage` is what the provider itself reported for a model call (token
+    counts, and the ids the transport observed), or None when it reported none; the
+    ledger journals it with the accepted result and never settles money from it."""
 
     outcome: str
     result_ref: EntityRef | None
@@ -201,6 +205,7 @@ class AttemptTransportResult:
     remote_terminal_observed: str
     reason_code: str
     usage: BudgetUsage | None
+    provider_usage: ProviderUsageReport | None = None
 
     def __post_init__(self):
         if self.outcome not in TERMINAL_OUTCOMES:
@@ -217,6 +222,8 @@ class AttemptTransportResult:
             raise TypeError("Exact BudgetUsage or None required")
         if (self.usage_finality == "final") != (self.usage is not None):
             raise ValueError("Final usage needs exact counters; otherwise none")
+        if self.provider_usage is not None and type(self.provider_usage) is not ProviderUsageReport:
+            raise TypeError("Exact ProviderUsageReport or None required")
 
 
 _UNKNOWN = AttemptTransportResult(
@@ -555,7 +562,7 @@ class NodeAttemptDispatcher:
                 observation = self._observation(attempt_id, result)
             accepted = ledger.accept_result_and_settle(
                 _command_identity(attempt_id, "accept"), observation, budget_book=book,
-                usage=result.usage,
+                usage=result.usage, provider_usage=result.provider_usage,
             )
         finally:
             # an accepted result already revoked the permit; otherwise the

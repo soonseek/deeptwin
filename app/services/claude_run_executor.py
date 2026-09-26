@@ -31,11 +31,27 @@ The scheduler's handlers are:
   this process's `LiveLimits.max_model_calls`.
 - Output tokens per call are bounded by `LiveLimits.max_output_tokens`, by the
   policy's output bytes and by the model's own limit.
+
+**What each call records** (the run trace reads these; nothing is filled in later):
+- the intent, before the send: the run, node and visit, the model named, the output
+  cap and effort, and the ceiling rates that apply to this run (or None);
+- after the send, on the output artifact (a completed call) or the outcome record
+  (anything else): the provider's message id, request id and reported model, its
+  reported token counts (input, output, cache creation, cache read) and the call's
+  cost with its basis:
+  - `subscription_mode` (no money value) when the run's budget is a subscription;
+  - `reserved_ceiling`, an estimate, when the run's budget is API-priced and the host
+    configured `CeilingRates` in the same currency: the recorded token counts at those
+    rates, rounded up. A reported cache token of a class with no configured rate is
+    never priced, so that call's cost is then not recorded;
+  - `not_recorded` otherwise. This executor never settles a call against the budget
+    book, so it never states a settled cost.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -58,7 +74,8 @@ from ..runtime.graph import CompilationAuthority, compile_graph
 from .claude_connection import CHOICE_SCHEMA, ClaudeConnection
 from .run_approvals import _stored_owner_actor_ref
 
-__all__ = ["INTENT_SCHEMA", "OUTPUT_SCHEMA", "ClaudeRunExecutor", "LiveLimits"]
+__all__ = ["INTENT_SCHEMA", "OUTPUT_SCHEMA", "CeilingRates", "ClaudeRunExecutor", "LiveLimits",
+           "ceiling_rates_from_environment"]
 
 OUTPUT_SCHEMA = "claude-model-output-v1"
 SOURCE_SCHEMA = "run-source-text-v1"
@@ -87,6 +104,94 @@ class LiveLimits:
                 raise ValueError("an output token cap is out of bounds")
 
 
+_MAX_RATE = 10 ** 12  # micro-units per million tokens (one million currency units)
+_TOKENS_PER_RATE = 1_000_000
+_RATE_TEXT = re.compile(r"[1-9][0-9]{0,12}")
+# the configured rate of each token class the provider reports, in `CeilingRates`
+_RATED_TOKENS = (("input_tokens", "input_microunits_per_mtok"),
+                 ("output_tokens", "output_microunits_per_mtok"),
+                 ("cache_creation_input_tokens", "cache_creation_microunits_per_mtok"),
+                 ("cache_read_input_tokens", "cache_read_microunits_per_mtok"))
+ESTIMATE_METHOD = "recorded_tokens_at_ceiling_rates"
+_ENVIRONMENT_PREFIX = "DEEPTWIN_LIVE_CEILING_"
+_ENVIRONMENT_NAMES = {"currency": "CURRENCY", "input_microunits_per_mtok": "INPUT_MICROUNITS_PER_MTOK",
+                      "output_microunits_per_mtok": "OUTPUT_MICROUNITS_PER_MTOK",
+                      "cache_creation_microunits_per_mtok": "CACHE_CREATION_MICROUNITS_PER_MTOK",
+                      "cache_read_microunits_per_mtok": "CACHE_READ_MICROUNITS_PER_MTOK"}
+
+
+@dataclass(frozen=True, slots=True)
+class CeilingRates:
+    """The deployment's configured ceiling prices: micro-units of one currency per
+    million tokens of each class. Host configuration only (never page, graph or model
+    input); the executor has none unless the host passes them. A rate is a ceiling the
+    operator chose, not a price this product knows, so a cost made from it is always
+    labelled an estimate. The cache classes are optional: a call that reports a cache
+    token of a class with no rate is never priced."""
+
+    currency: str
+    input_microunits_per_mtok: int
+    output_microunits_per_mtok: int
+    cache_creation_microunits_per_mtok: int | None = None
+    cache_read_microunits_per_mtok: int | None = None
+
+    def __post_init__(self):
+        if type(self.currency) is not str or re.fullmatch(r"[A-Z]{3}", self.currency) is None:
+            raise ValueError("a ceiling rate names an ISO-shaped currency code")
+        for _, name in _RATED_TOKENS:
+            value = getattr(self, name)
+            if value is None and name.startswith("cache_"):
+                continue
+            if type(value) is not int or not 1 <= value <= _MAX_RATE:
+                raise ValueError(f"{name} must be a bounded positive integer")
+
+    def as_dict(self) -> dict:
+        return {"currency": self.currency, "unit": "microunits_per_million_tokens",
+                **{name: getattr(self, name) for _, name in _RATED_TOKENS}}
+
+    def estimate(self, usage) -> int | None:
+        """The recorded token counts at these rates, rounded up to a whole micro-unit;
+        None when the input or output count was not reported, or a reported cache count
+        has no configured rate. A cache count the provider did not report adds nothing."""
+
+        if type(usage) is not dict:
+            return None
+        total = 0
+        for token_name, rate_name in _RATED_TOKENS:
+            count = usage.get(token_name)
+            rate = getattr(self, rate_name)
+            if token_name in ("input_tokens", "output_tokens"):
+                if type(count) is not int or count < 0:
+                    return None
+            elif count is None or count == 0:
+                continue
+            elif type(count) is not int or count < 0 or rate is None:
+                return None
+            total += count * rate
+        return -(-total // _TOKENS_PER_RATE)
+
+
+def ceiling_rates_from_environment(environ) -> CeilingRates | None:
+    """The operator's ceiling rates from non-secret environment settings
+    (`DEEPTWIN_LIVE_CEILING_*`), or None when none is set. A partial or malformed
+    setting refuses: it never falls back to a default or to no rates silently."""
+
+    given = {field: environ.get(_ENVIRONMENT_PREFIX + suffix) for field, suffix in _ENVIRONMENT_NAMES.items()}
+    if all(value is None for value in given.values()):
+        return None
+    if any(given[field] is None for field in ("currency", "input_microunits_per_mtok",
+                                              "output_microunits_per_mtok")):
+        raise ValueError("ceiling rates need a currency and both input and output rates")
+    values = {"currency": given["currency"]}
+    for field, text in given.items():
+        if field == "currency" or text is None:
+            continue
+        if type(text) is not str or _RATE_TEXT.fullmatch(text) is None:
+            raise ValueError(f"{_ENVIRONMENT_PREFIX}{_ENVIRONMENT_NAMES[field]} must be a positive whole number")
+        values[field] = int(text)
+    return CeilingRates(**values)
+
+
 class _NodeRefused(RuntimeError):
     """A handler refusal; the scheduler marks the node failed and keeps the reason private."""
 
@@ -99,15 +204,21 @@ class ClaudeRunExecutor:
     """Built by the host before the app exists; the `claude-connection-v1`
     contribution binds it once to the vault and the owner's connection."""
 
-    def __init__(self, *, limits: LiveLimits | None = None, transport=None, producers=None):
+    def __init__(self, *, limits: LiveLimits | None = None, transport=None, producers=None,
+                 ceiling_rates: CeilingRates | None = None):
         # `transport` is the adapter's HTTP transport seam: None is the real network,
         # a test injects httpx2.MockTransport; it never carries a credential.
         # `producers` maps a deterministic node's `handler_id` to host-owned code
         # `(domain_store, run_id, context) -> EntityRef` sealing that node's artifact;
-        # a graph cannot add one (the host wires it before the app exists)
+        # a graph cannot add one (the host wires it before the app exists).
+        # `ceiling_rates` are the deployment's configured ceiling prices (host wiring
+        # only); without them an API-priced call's cost is not recorded
         if producers is not None and (type(producers) is not dict or not all(
                 type(key) is str and callable(value) for key, value in producers.items())):
             raise TypeError("producers must map handler ids to callables")
+        if ceiling_rates is not None and type(ceiling_rates) is not CeilingRates:
+            raise TypeError("ceiling_rates must be exact CeilingRates or None")
+        self._ceiling_rates = ceiling_rates
         self.transport = transport
         self._producers = dict(producers or {})
         self._domain = None
@@ -346,6 +457,7 @@ class ClaudeRunExecutor:
         if model is None or model.max_tokens is None:
             raise _NodeRefused("model_not_in_current_catalog")
         max_tokens = min(self._limits.max_output_tokens, max(1, policy.max_output_bytes // 4), model.max_tokens)
+        rates = self._rates_for(policy)
         intent_id = str(uuid5(NAMESPACE_URL, f"deeptwin:claude-call:{run_id}:{context.execution_id}"))
         with _writer(), self._domain._connection(write=True) as db:
             roots = self._domain._read_roots(db)
@@ -363,7 +475,8 @@ class ClaudeRunExecutor:
                 retention_policy_ref=roots.retention_policy,
                 content={"schema_version": INTENT_SCHEMA, "run_id": run_id, "node_id": context.node_id,
                          "execution_id": context.execution_id, "model_id": choice["model_id"],
-                         "max_output_tokens": max_tokens, "effort": selection.effort})
+                         "max_output_tokens": max_tokens, "effort": selection.effort,
+                         "ceiling_rates": None if rates is None else rates.as_dict()})
             self._domain._put_in_transaction(db, intent)
         turn = MessageTurn(
             call_id=context.execution_id, agent_id=context.node_id,
@@ -373,15 +486,38 @@ class ClaudeRunExecutor:
                     + f"\nYour output limit is {max_tokens} tokens; finish within it."),
             messages=({"role": "user", "content": prompt},), max_tokens=max_tokens)
         observed, text = self._stream(adapter, turn, snapshot, binding)
+        cost = self._call_cost(policy, rates, observed)
         if observed["state"] != "completed":
-            self._seal_outcome(intent.ref, observed)
+            self._seal_outcome(intent.ref, observed, cost=cost)
             raise _NodeRefused("model_call_not_completed")
         return self._seal_artifact(
             record_id=str(uuid5(NAMESPACE_URL, f"deeptwin:claude-output:{intent_id}")),
             text=text, role="draft", parents=(intent.ref, *inputs),
             content={"schema_version": OUTPUT_SCHEMA, "run_id": run_id, "node_id": context.node_id,
                      "model_id": choice["model_id"], "intent_ref": intent.ref.as_dict(),
-                     "output": json.loads(json.dumps(observed))})
+                     "output": json.loads(json.dumps(observed)), "cost": cost})
+
+    def _rates_for(self, policy):
+        """The configured ceiling rates that apply to a run: only an API-priced budget
+        in the rates' own currency (never a conversion, never a subscription)."""
+
+        rates = self._ceiling_rates
+        if rates is None or policy.provider_mode != "api" or policy.currency != rates.currency:
+            return None
+        return rates
+
+    @staticmethod
+    def _call_cost(policy, rates, observed):
+        """One call's cost and its basis from what was recorded for it (the module
+        docstring's rules); never a settled amount and never a filled-in one."""
+
+        if policy.provider_mode == "subscription":
+            return {"state": "unknown", "basis": "subscription_mode"}
+        microunits = None if rates is None else rates.estimate(observed.get("usage"))
+        if microunits is None:
+            return {"state": "unknown", "basis": "not_recorded"}
+        return {"state": "estimate", "basis": "reserved_ceiling", "method": ESTIMATE_METHOD,
+                "microunits": microunits, "currency": rates.currency, "rates": rates.as_dict()}
 
     @staticmethod
     def _stream(adapter, turn, snapshot, binding):
@@ -414,7 +550,9 @@ class ClaudeRunExecutor:
         }
         return observed, "".join(chunks)
 
-    def _seal_outcome(self, intent_ref, observed):
+    def _seal_outcome(self, intent_ref, observed, *, cost=None):
+        # a run call's outcome carries its cost basis; a design turn has no run budget
+        extra = {} if cost is None else {"cost": cost}
         with _writer(), self._domain._connection(write=True) as db:
             roots = self._domain._read_roots(db)
             record = ImmutableRecord.create(
@@ -422,5 +560,6 @@ class ClaudeRunExecutor:
                 version=1, created_at_utc=_stamp(), actor_ref=roots.actor, parent_refs=(intent_ref,),
                 purpose="operational", access_policy_ref=roots.access_policy,
                 retention_policy_ref=roots.retention_policy,
-                content={"schema_version": OUTCOME_SCHEMA, "intent_ref": intent_ref.as_dict(), **observed})
+                content={"schema_version": OUTCOME_SCHEMA, "intent_ref": intent_ref.as_dict(), **observed,
+                         **extra})
             self._domain._put_in_transaction(db, record)

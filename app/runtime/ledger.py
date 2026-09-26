@@ -95,7 +95,7 @@ JOURNAL_TRANSITIONS = frozenset({
     "reserved", "preflighting", "awaiting_human", "send_intent", "running",
     "validating", "lease_renewed", "cancel_requested", "cancel_terminal",
     "result_accepted", "result_duplicate", "result_late", "recovery_pending",
-    "recovery_terminal", "transport_observed", "response_captured",
+    "recovery_terminal", "transport_observed", "response_captured", "provider_usage",
 })
 
 TRANSPORT_EFFECTS = frozenset({
@@ -107,6 +107,11 @@ _TRANSPORT_MESSAGE_TYPE = re.compile(
     r"[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*\Z"
 )
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+# a provider-named label (its model, message or request id): one bounded printable token
+_PROVIDER_LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,255}\Z")
+_PROVIDER_TOKEN_COUNTS = ("input_tokens", "output_tokens", "cache_creation_input_tokens",
+                          "cache_read_input_tokens")
+_PROVIDER_LABELS = ("observed_model", "provider_message_id", "provider_request_id")
 
 
 class LedgerError(ValueError):
@@ -600,6 +605,48 @@ class TransportObservation:
             return cls(**value)
         except (DomainContractError, TypeError, ValueError) as exc:
             raise CorruptLedger("Persisted transport observation is invalid") from exc
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderUsageReport:
+    """What the provider itself reported for one attempt's model call, as its transport
+    observed it: the token counts and, when the transport holds them, the model the
+    provider named and the provider's own message and request ids. A count the provider
+    did not report is None; nothing here is an estimate, a payload, text or a credential.
+    Journaled once, with the attempt's accepted result (`provider_usage`)."""
+
+    input_tokens: int | None
+    output_tokens: int | None
+    cache_creation_input_tokens: int | None
+    cache_read_input_tokens: int | None
+    observed_model: str | None = None
+    provider_message_id: str | None = None
+    provider_request_id: str | None = None
+
+    def __post_init__(self):
+        counts = [getattr(self, name) for name in _PROVIDER_TOKEN_COUNTS]
+        for name, value in zip(_PROVIDER_TOKEN_COUNTS, counts):
+            if value is not None:
+                _nonnegative(name, value)
+        if all(value is None for value in counts):
+            raise ValueError("A provider usage report names at least one token count")
+        for name in _PROVIDER_LABELS:
+            value = getattr(self, name)
+            if value is not None and (type(value) is not str
+                                      or _PROVIDER_LABEL.fullmatch(value) is None):
+                raise ValueError(f"{name} must be a bounded provider label")
+
+    def as_dict(self):
+        return {name: getattr(self, name) for name in (*_PROVIDER_TOKEN_COUNTS, *_PROVIDER_LABELS)}
+
+    @classmethod
+    def from_dict(cls, value):
+        value = _strict_dict(value, (*_PROVIDER_TOKEN_COUNTS, *_PROVIDER_LABELS),
+                             "provider usage report")
+        try:
+            return cls(**value)
+        except (DomainContractError, TypeError, ValueError) as exc:
+            raise CorruptLedger("Persisted provider usage report is invalid") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -2708,7 +2755,8 @@ class RuntimeLedger:
     def accept_result(self, command_id, observation):
         return self._accept_result(command_id, observation, budget_book=None, usage=None)
 
-    def accept_result_and_settle(self, command_id, observation, *, budget_book, usage):
+    def accept_result_and_settle(self, command_id, observation, *, budget_book, usage,
+                                 provider_usage=None):
         """Accept one terminal result and settle its budget reservation in the one
         transaction this ledger opens (T040): an accepted classification settles
         the attempt's reservation — known usage finalizes, anything short of a
@@ -2721,7 +2769,13 @@ class RuntimeLedger:
         calling the public `accept_result` and `settle` in sequence is not this
         boundary, and only the public `settle` releases a reservation stranded that
         way. The reservation must belong to this attempt alone and to the run's
-        frozen budget session."""
+        frozen budget session.
+
+        `provider_usage` is what the provider reported for this attempt's call (a
+        `ProviderUsageReport`, or None when its transport observed none). It is
+        journaled once, as `provider_usage`, in the same transaction and only with
+        an accepted classification; it is evidence for the trace and never changes
+        the classification, the settlement or the send accounting."""
         if type(budget_book) is not BudgetBook:
             raise TypeError("Exact BudgetBook required")
         if (type(budget_book._domain) is not DomainStore
@@ -2737,10 +2791,14 @@ class RuntimeLedger:
                              "usage retains the reservation and takes none")
         if usage is not None:
             usage = BudgetUsage.create(**usage.as_dict())  # counters refused before any write
+        if provider_usage is not None:
+            if type(provider_usage) is not ProviderUsageReport:
+                raise TypeError("Exact ProviderUsageReport or None required")
+            provider_usage = ProviderUsageReport(**provider_usage.as_dict())  # refused before any write
         return self._accept_result(command_id, observation, budget_book=budget_book,
-                                   usage=usage)
+                                   usage=usage, provider_usage=provider_usage)
 
-    def _accept_result(self, command_id, observation, *, budget_book, usage):
+    def _accept_result(self, command_id, observation, *, budget_book, usage, provider_usage=None):
         if type(observation) is not ResultObservation:
             raise TypeError("accept_result requires an exact ResultObservation")
         if observation.result_ref is not None:
@@ -2750,6 +2808,9 @@ class RuntimeLedger:
         payload_value = {"observation": observation.as_dict()}
         if settling:
             payload_value["usage"] = None if usage is None else usage.as_dict()
+            if provider_usage is not None:
+                # only when reported, so a command recorded before this field replays unchanged
+                payload_value["provider_usage"] = provider_usage.as_dict()
         payload = self._command_payload(payload_value)
         encoded = canonical_json(observation.as_dict())
         semantic = _digest(canonical_json(observation.semantic_dict()))
@@ -2876,6 +2937,10 @@ class RuntimeLedger:
                 self._journal(db, observation.attempt_id, "result_accepted",
                               {"outcome": observation.outcome,
                                "revision": updated["revision"]}, now)
+                if provider_usage is not None:
+                    # at most one per attempt: an attempt accepts exactly one result
+                    self._journal(db, observation.attempt_id, "provider_usage",
+                                  provider_usage.as_dict(), now)
                 self._event(db, "attempt.terminal", "attempt", observation.attempt_id,
                             {"outcome": observation.outcome}, now)
             else:
@@ -3461,6 +3526,23 @@ class RuntimeLedger:
                 "AND attempt_id=? AND sequence>? ORDER BY sequence LIMIT ?",
                 (self.vault_id, attempt_id, after_sequence, limit)).fetchall()
             return [self._journal_snapshot(row) for row in rows]
+
+    def attempt_provider_usage(self, attempt_id):
+        """Read-only: the provider usage journaled with this attempt's accepted result
+        (a `ProviderUsageReport`), or None when its transport reported none."""
+        uuid_string(attempt_id)
+        with self._transaction() as db:
+            if db.execute("SELECT 1 FROM runtime_attempts WHERE vault_id=? AND id=?",
+                          (self.vault_id, attempt_id)).fetchone() is None:
+                raise KeyError(attempt_id)
+            rows = db.execute("SELECT * FROM runtime_attempt_journal WHERE vault_id=? "
+                "AND attempt_id=? AND transition='provider_usage' ORDER BY sequence LIMIT 2",
+                (self.vault_id, attempt_id)).fetchall()
+            if not rows:
+                return None
+            if len(rows) != 1:
+                raise CorruptLedger("Attempt has more than one provider usage report")
+            return ProviderUsageReport.from_dict(self._journal_snapshot(rows[0])["payload"])
 
     @staticmethod
     def _journal_snapshot(row):

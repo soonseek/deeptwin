@@ -66,6 +66,7 @@ export const JOURNAL_LABELS = Object.freeze({
   validating: '검증 중', lease_renewed: '작업 연장', cancel_requested: '취소 요청', cancel_terminal: '취소 끝',
   result_accepted: '결과 받음', result_duplicate: '중복 결과', result_late: '늦은 결과', recovery_pending: '복구 대기',
   recovery_terminal: '복구 끝', transport_observed: '전송 확인', response_captured: '응답 받음',
+  provider_usage: '제공자 사용량 기록',
 });
 // a ToolCall's state (TOOL_CALL_STATES) and the ports' effect classes
 export const TOOL_CALL_STATE_TEXT = Object.freeze({
@@ -97,11 +98,11 @@ export const FEEDBACK_MARK_TONES = Object.freeze({
 });
 // why a trace category is absent (services/run_traces.py GAP_REASONS), in the owner's words
 export const TRACE_GAP_LABELS = Object.freeze({
-  attempt_tokens: '시도 기록에는 예약과 정산만 있고, 제공자가 알린 토큰 수는 없습니다.',
+  attempt_tokens: '이 모델 시도는 전송 경로가 제공자의 토큰 수를 알리지 않아, 예약과 정산만 기록되고 토큰 수는 없습니다.',
   handoff_receipt: '받은 쪽의 수신 확인은 이 실행기가 기록하지 않습니다. 보낸 결과와 받은 수행만 기록됩니다.',
   handler_attempts: '실행기가 직접 처리한 단계는 시도 기록이 없습니다. 결과와 호출 기록은 수행에 붙어 있습니다.',
   handler_error: '직접 처리한 단계가 실패한 이유는 기록하지 않습니다(실패했다는 사실만 남습니다).',
-  model_cost: '이 실행 경로는 모델 호출의 토큰 수는 기록하지만 비용은 기록하지 않습니다.',
+  model_cost: '정산 기록도, 이 실행의 통화로 설정된 상한 단가도 없어 이 모델 호출의 비용은 기록하지 않았습니다(토큰 수는 기록됨).',
   reasoning: '모델의 숨은 추론은 저장하지 않으므로 볼 수 없습니다.',
 });
 
@@ -121,15 +122,34 @@ export function formatMoney(microunits, currency) {
   return currency === 'USD' ? `$${text}` : `${text} ${typeof currency === 'string' ? currency : ''}`.trim();
 }
 
+// how an estimate was made (services/run_traces.py): the reservation set before the send, or
+// the recorded tokens at the deployment's configured ceiling rates; a run total names neither
+const ESTIMATE_METHOD_TEXT = Object.freeze({
+  reservation: '예약 상한 기준 추정', recorded_tokens_at_ceiling_rates: '기록된 토큰 × 설정된 상한 단가 추정',
+});
+
 // a recorded cost in words: an estimate says so, an unrecorded one is "미확인"
 export function costText(cost) {
   if (typeof cost !== 'object' || cost === null) return '미확인';
   const money = formatMoney(cost.microunits, cost.currency);
   if (cost.state === 'settled' && money) return `${money} (정산 기록)`;
-  if (cost.state === 'estimate' && money) return `약 ${money} (예약 상한 기준 추정)`;
+  if (cost.state === 'estimate' && money) {
+    const method = Object.hasOwn(ESTIMATE_METHOD_TEXT, cost.method) ? ESTIMATE_METHOD_TEXT[cost.method] : '상한 기준 추정';
+    return `약 ${money} (${method})`;
+  }
   if (cost.state === 'partial_estimate' && money) return `약 ${money} 이상 (일부 미확인)`;
   if (cost.basis === 'subscription_mode') return '미확인 (구독 방식: 호출별 금액 없음)';
   return '미확인';
+}
+
+// the configured ceiling rates an estimate was made from, per million tokens of each class
+export function ratesText(rates) {
+  if (typeof rates !== 'object' || rates === null) return NOT_RECORDED_LABEL;
+  const parts = [['입력', rates.input_microunits_per_mtok], ['출력', rates.output_microunits_per_mtok],
+    ['캐시 만듦', rates.cache_creation_microunits_per_mtok], ['캐시 읽음', rates.cache_read_microunits_per_mtok]]
+    .filter(([, value]) => Number.isSafeInteger(value))
+    .map(([label, value]) => `${label} ${formatMoney(value, rates.currency)}`);
+  return parts.length ? `${parts.join(' · ')} (100만 토큰당)` : NOT_RECORDED_LABEL;
 }
 
 // a count, or the plain "기록 없음" for a value the runtime did not record

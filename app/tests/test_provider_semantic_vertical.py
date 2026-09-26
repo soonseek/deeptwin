@@ -2202,6 +2202,12 @@ def test_authenticated_semantic_path_is_accepted_by_actual_dispatcher_and_retain
             format_checker=FormatChecker()).iter_errors(terminal["result"])) == []
         derived_attempt = attempt_identity(run.run_id, "writer", 0, 0)
         assert runtime.ledger.get_attempt(derived_attempt)["usage_finality"] == "provisional"
+        # the provider's own reported counts are journaled with the accepted result (the
+        # scripted stream reports no cache counts, so they stay unreported, never zero)
+        from app.runtime.ledger import ProviderUsageReport
+        assert runtime.ledger.attempt_provider_usage(derived_attempt) == ProviderUsageReport(
+            input_tokens=3, output_tokens=2, cache_creation_input_tokens=None,
+            cache_read_input_tokens=None, observed_model="model-1")
         import sqlite3
         with sqlite3.connect(runtime.legacy.path) as db:
             row = db.execute("SELECT state,usage_finality,api_microunits FROM runtime_budget_reservations "

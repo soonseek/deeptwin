@@ -26,6 +26,10 @@ export function sampleTrace(overrides = {}) {
       approval_ref: ref(700 + no, 'action_approval'), requested_at_utc: `2026-09-26T05:00:1${no}.100000Z`,
       settled_at_utc: `2026-09-26T05:00:1${no}.200000Z`, result_ref: outcome === 'succeeded' ? ref(400) : 'not_recorded',
       result_artifacts: [] }],
+    // a tool attempt: no provider reported tokens to it
+    tokens: { input: 'not_recorded', output: 'not_recorded', cache_creation_input: 'not_recorded',
+      cache_read_input: 'not_recorded' },
+    observed_model: 'not_recorded', provider_message_id: 'not_recorded', request_id: 'not_recorded',
     budget_reservation: { state: 'finalized', usage_finality: 'known', reserved: { model_calls: 0, tool_calls: 1,
       output_bytes: 10, api_microunits: 'not_recorded' }, settled: { model_calls: 0, tool_calls: 1, output_bytes: 5,
       api_microunits: 'not_recorded' }, reserved_at_utc: 'not_recorded', settled_at_utc: 'not_recorded' },
