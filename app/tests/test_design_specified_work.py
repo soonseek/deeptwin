@@ -11,6 +11,7 @@ from app.services.design import create_generation_request
 from app.services.design_live import render_candidate_prompt
 from app.tests.design_specified_work import (
     ATTEMPT5_VERIFIER_RESPONSIBILITY,
+    AUTHOR,
     COMPLETION_CONDITIONS,
     SOURCE_TEXT,
     VERIFIER_RESPONSIBILITY,
@@ -136,3 +137,117 @@ def test_a_router_candidate_projects_for_the_critic(tmp_path):
             notes = critic_candidate_projection(candidate)["control"]["notes"]
             assert any('"condition":{"fact":"verification_verdict","op":"eq","value":"pass"}' in note
                        for note in notes), notes
+
+
+_EVIDENCE = "specs/001-autonomous-release/evidence/t038-live-arc-2026-09-26/"
+
+
+def _saved(name):
+    from pathlib import Path
+
+    return (Path(__file__).resolve().parents[2] / _EVIDENCE / name).read_text(encoding="utf-8")
+
+
+def _request(subject, label):
+    revision, sources = specified_work_with_source(subject)
+    target = specified_work_model(subject.app.state.domain_store, revision, sources)
+    registry, lens = proposed_lens(target)
+    return create_generation_request(
+        target, [specified_decision(target, registry, lens)],
+        request_id=str(uuid5(NAMESPACE_URL, f"deeptwin:{label}:{revision.id}")),
+        requested_candidate_count=2, compilation_authority=design_authority())
+
+
+def test_attempt7_condition_3_names_the_declared_verdict_step():
+    """Attempt 7: the simulated owner's condition 3 says how a fail verdict blocks: a declared
+    model-free step reads the report's overall verdict, and only what it passes on reaches
+    approval and storage. The verifier effect (condition 2) is unchanged."""
+
+    condition = COMPLETION_CONDITIONS[3]
+    assert "검증 보고서를 입력으로 직접 받아 그 전체 verdict 필드를 읽는" in condition
+    assert "모델을 쓰지 않는 선언된 판정 단계" in condition
+    assert "판정 단계를 거치지 않고 승인·저장 단계로 가는 경로는 없다" in condition
+    assert "모델 없는 판정 단계" in WORK_TEXT
+    assert "attempt 5/6/7" in AUTHOR and "SIMULATED" in AUTHOR
+
+
+def test_attempt6_saved_answer_still_replays_offline(tmp_path):
+    """Attempt 6's live generation answer (evidence) is still admitted unchanged under the
+    attempt-7 work: its required effect text did not change."""
+
+    from app.services.design_live import run_candidate_generation
+
+    raw = _saved("attempt6-01-arc-generation.txt")
+    with owner_app(tmp_path, Executor()) as subject:
+        request = _request(subject, "attempt6-replay")
+        [candidate] = run_candidate_generation(request, model_turn=lambda _s, _u: raw,
+                                               model_id="replay").candidates
+        assert {"verdict-router", "approval-join", "store"} <= {node.node_id for node in candidate.graph.nodes}
+
+
+def _artifact_edge(edge_id, source, out, target, into, contract, multiplicity="one"):
+    return {"edge_id": edge_id, "kind": "artifact", "source_node_id": source, "target_node_id": target,
+            "loop_id": None, "source_output_slot": out, "target_input_slot": into,
+            "artifact_contract_id": contract, "mandatory": True, "multiplicity": multiplicity}
+
+
+def test_a_declared_verdict_step_in_the_data_path_is_admitted_and_shown_to_the_critic(tmp_path):
+    """Rules (i)-(j) are realizable under the design authority: attempt 6's live graph with its
+    router, halt and unconditional approval join replaced by a join of the checked bundle and
+    the report, then a deterministic verdict step (fail_run) that alone feeds the gate, is
+    admitted; no artifact edge crosses from before the verdict step to after it, and the critic
+    projection carries the step's rule."""
+
+    from app.services.design_criticism import critic_candidate_projection
+    from app.services.design_live import run_candidate_generation
+
+    graph = json.loads(_saved("attempt6-01-arc-generation.txt"))["candidates"][0]["graph"]
+    graph["nodes"] = [node for node in graph["nodes"]
+                      if node["node_id"] not in {"verdict-router", "halt", "approval-join"}]
+    graph["fact_names"] = []
+    package = next(item for item in graph["artifact_contracts"]
+                   if item["artifact_contract_id"] == "approval-package")
+    graph["artifact_contracts"].append({**package, "artifact_contract_id": "verified-approval-package"})
+    out = {"slot_id": "package", "artifact_contract_id": "approval-package", "multiplicity": "many"}
+    graph["nodes"] += [
+        {"node_id": "verdict-join", "kind": "join",
+         "responsibility": "Aggregate only: the exact verification input bundle and the verification report.",
+         "input_slots": [
+             {"slot_id": "bundle", "artifact_contract_id": "verification-input-bundle", "required": True,
+              "multiplicity": "many"},
+             {"slot_id": "report", "artifact_contract_id": "verification-report", "required": True,
+              "multiplicity": "one"}],
+         "output_slots": [out], "grant_refs": [], "required_approval_scopes": [],
+         "failure_policy": "fail_run", "config": {"mode": "all_selected", "failure_handling": "block"}},
+        {"node_id": "verdict-step", "kind": "deterministic",
+         "responsibility": ("Model-free verdict step: read the report's overall verdict field; only when it is "
+                            "pass emit the package byte for byte as the verified approval package; otherwise "
+                            "emit nothing and fail the run."),
+         "input_slots": [{**out, "required": True}],
+         "output_slots": [{"slot_id": "verified", "artifact_contract_id": "verified-approval-package",
+                           "multiplicity": "many"}],
+         "grant_refs": [], "required_approval_scopes": [], "failure_policy": "fail_run",
+         "config": {"handler_id": "report-verdict-pass-through-v1"}},
+    ]
+    for node in graph["nodes"]:
+        if node["node_id"] == "publish-gate":
+            node["input_slots"] = [{"slot_id": "package", "artifact_contract_id": "verified-approval-package",
+                                    "required": True, "multiplicity": "many"}]
+    graph["edges"] = [edge for edge in graph["edges"]
+                      if edge["edge_id"] in {"e1", "e2", "e3", "e4", "e11", "e12"}] + [
+        _artifact_edge("v1", "verify-join", "bundle", "verdict-join", "bundle", "verification-input-bundle", "many"),
+        _artifact_edge("v2", "verifier", "report", "verdict-join", "report", "verification-report"),
+        _artifact_edge("v3", "verdict-join", "package", "verdict-step", "package", "approval-package", "many"),
+        _artifact_edge("v4", "verdict-step", "verified", "publish-gate", "package", "verified-approval-package", "many"),
+    ]
+    answer = json.dumps({"candidates": [{"graph": graph}]}, ensure_ascii=False)
+    with owner_app(tmp_path, Executor()) as subject:
+        request = _request(subject, "attempt7-verdict-step")
+        [candidate] = run_candidate_generation(request, model_turn=lambda _s, _u: answer,
+                                               model_id="offline").candidates
+        nodes = {node.node_id: node for node in candidate.graph.nodes}
+        assert nodes["verdict-step"].kind == "deterministic" and nodes["verdict-step"].failure_policy == "fail_run"
+        before = {"intake", "writer", "verify-join", "verifier", "verdict-join"}
+        for edge in candidate.graph.edges:
+            assert not (edge.source_node_id in before and edge.target_node_id in {"publish-gate", "store"}), edge
+        assert "overall verdict field" in json.dumps(critic_candidate_projection(candidate), ensure_ascii=False)

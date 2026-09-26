@@ -1,4 +1,4 @@
-"""T038 attempts 5–6 — a WELL-SPECIFIED work for the live design arc, authored by the
+"""T038 attempts 5–7 — a WELL-SPECIFIED work for the live design arc, authored by the
 SIMULATED owner (the test actor; decisions.md 2026-09-25, "Independent people").
 
 Attempt 6 (2026-09-26, owner decisions after attempt 5) fixes the author's own two defects
@@ -12,6 +12,12 @@ that attempt 5's live critic exposed (evidence/us2.md "attempt 5"):
   agents): a deterministic node may now bind the `document_create` tool (owner decision
   "Deterministic tool bindings"), and condition 4 and the storage authority say the store is
   that model-free step handing the approved bytes to the tool unchanged.
+Attempt 7 (2026-09-26, the owner's one further attempt) states, in condition 3 and the work
+text, how the simulated owner wants the fail verdict to block: a declared model-free decision
+step reads the verifier report's overall verdict, and only what that step passes on reaches
+approval and storage. Attempt 6's live critic left exactly these two points unresolved (the
+approval join's unconditional data inputs, and no node declared to set the routing fact from
+the report). The verifier effect text is unchanged, so attempt 6's saved answer still replays.
 Attempt 5's verifier text is kept (`ATTEMPT5_VERIFIER_RESPONSIBILITY`) only to replay its
 saved live answer offline.
 
@@ -42,7 +48,7 @@ from app.tests.test_design_generation import value_hash
 from app.tests.design_arc_fixture import STAMP
 from app.tests.test_work_model_confirmation import confirmation
 
-AUTHOR = "SIMULATED owner (test actor) — attempt 5/6 work description, not a real owner's work"
+AUTHOR = "SIMULATED owner (test actor) — attempt 5/6/7 work description, not a real owner's work"
 
 WORK_TEXT = (
     "[시험 행위자(가상 소유자)가 작성한 업무 설명 — 실제 소유자의 업무가 아니다]\n"
@@ -52,7 +58,8 @@ WORK_TEXT = (
     "- 릴리스 노트: text/markdown 한 파일. 항목 줄은 `- [CL-###] 설명` 형식이며 `공개: 예` 항목만, 각각 정확히 한 번 싣는다.\n"
     "- 검증: 작성자가 아닌 검증 역할이, 작성자와 다른 모델로, 원본 파일 자체와 초안을 직접 대조해 "
     "application/json 검증 보고서를 낸다.\n"
-    "- 전체 판정이 fail이면 공개 없이 끝낸다. 같은 실행 안에서 다시 쓰지 않는다.\n"
+    "- 전체 판정이 fail이면 공개 없이 끝낸다. 같은 실행 안에서 다시 쓰지 않는다. 통과 여부는 모델 없는 판정 단계가 "
+    "보고서의 전체 판정을 읽어 정하고, 통과한 것만 그 단계를 거쳐 승인으로 간다.\n"
     "- 승인: 내가 검증을 통과한 초안 원문, 그 보고서, 원본 파일을 함께 보고 승인한다. 승인된 초안이 바이트 그대로 저장된다.\n"
     "- 저장: 모델을 쓰지 않는 결정적 저장 단계가 승인본을 document.create 도구에 바이트 그대로 넘겨 저장한다.\n"
     "- 문체·어조·분량은 판정하지 않는다.\n"
@@ -89,7 +96,10 @@ COMPLETION_CONDITIONS = [
     "pass|fail, reason}, 누락된 공개 ID 목록, 노출된 비공개 ID 목록, 전체 verdict(pass|fail)를 가진다. 전체 "
     "verdict는 모든 줄이 pass이고 두 목록이 비어 있을 때만 pass다.",
     "전체 verdict가 fail이면 그 초안은 승인 단계에 도달하지 않고 실행은 저장·공개 없이 끝난다. 같은 실행 "
-    "안에서는 어떤 산출물도 재생성·재작성하지 않는다(소유자가 새 실행을 시작한다).",
+    "안에서는 어떤 산출물도 재생성·재작성하지 않는다(소유자가 새 실행을 시작한다). 통과 여부는 검증 보고서를 "
+    "입력으로 직접 받아 그 전체 verdict 필드를 읽는, 모델을 쓰지 않는 선언된 판정 단계가 정한다. 승인 단계와 그 "
+    "뒤의 역할은 그 판정 단계가 pass일 때만 내보낸 산출물만 입력으로 받으며, 판정 단계 이전 역할의 산출물이 판정 "
+    "단계를 거치지 않고 승인·저장 단계로 가는 경로는 없다.",
     "승인자(소유자 한 사람)는 artifact.publish 범위로 승인하며, 승인 단계는 검증을 통과한 초안 원문, 그 "
     "초안의 검증 보고서, 원본 변경 기록 파일을 함께 입력으로 받는다. 저장되는 릴리스 노트는 승인 단계가 "
     "내보낸 승인본과 바이트 단위로 같다: 승인 뒤 어떤 역할도 내용을 재생성·수정·형식 변환하지 않는다. 저장은 "

@@ -15,6 +15,7 @@ from app.domain.refs import canonical_json
 from app.generation_profiles import DesignGenerationPurpose, design_profile_for
 from app.services.design import DesignContractError
 from app.services.design_live import (
+    _CANDIDATE_COUNT_RULE,
     _CRITIC_DESIGN_RULES,
     DesignGenerationError,
     GenerationCallRecord,
@@ -143,6 +144,36 @@ def test_the_generator_is_told_joins_only_aggregate_and_release_is_pinned():
     for task_word in ("dossier", "fact-check", "fact check", "thumbnail", "research", "script",
                       "pdf", "video", "youtube", "citation", "hook"):
         assert task_word not in added.lower()
+
+
+def test_the_generator_is_told_verdicts_gate_the_data_and_the_candidate_count():
+    """T038 attempt 7: attempt 6's candidate stayed unresolved on the approval join's
+    unconditional artifact inputs (only a control edge carried the pass condition) and on a
+    routing fact no node was declared to set from the report; and 1 of 2 requested graphs came
+    back. Rules (i)-(j) state the graph grammar's own consequence (an artifact edge carries no
+    condition; a router carries no data), first-round and revision alike; the count rule is
+    first-round only (a revision asks for exactly one). No task wording."""
+    _target, _lens, _decision, request, graph = prepared()
+    system, _user = render_candidate_prompt(request)
+    parent = run_candidate_generation(request, model_turn=scripted_model(model_json(graph))[0],
+                                      model_id=MODEL_ID).candidates[0]
+    revised, _ = render_candidate_prompt(request, revision=(parent, "shorten the pipeline"))
+    for text in (system, revised):
+        assert "(i) a verdict gates the data, not only the control flow" in text
+        assert "an artifact edge carries no condition and triggers its target" in text
+        assert "declared deterministic verdict step in the data path" in text
+        assert "fails with failure_policy fail_run" in text
+        assert "no artifact edge goes from any node before the verdict step to any node after it" in text
+        assert "(j) a routing fact is set by a declared node from the report" in text
+        assert "its decision fact is that report's overall verdict field" in text
+        assert "within the limits of rules (i) and (j)" in text
+    assert "return requested_candidate_count candidates whenever" in system
+    assert "never only in ids, names or wording" in system
+    assert "Candidate count:" not in revised and "Return exactly one candidate" in revised
+    added = _CRITIC_DESIGN_RULES.split("(i)")[1] + _CANDIDATE_COUNT_RULE
+    for task_word in ("changelog", "release note", "cl-", "publish", "document", "markdown",
+                      "dossier", "script", "youtube"):
+        assert task_word not in added.lower(), task_word
 
 
 def test_model_supplies_only_graphs_never_identity_or_call_refs():
