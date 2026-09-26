@@ -447,6 +447,118 @@ Run `21ac3f75-80a5-510b-845e-b86a103144e9`, outcome **`shortfall`**, 0 presented
 The guard refused 2 sends and none went past the cap. USD 0.323 remains at ceiling rates, which
 is not enough for another criticized candidate, so there is no further attempt.
 
+## 2026-09-26 (attempt 3): design-hygiene rules, one more live arc — nothing passed
+
+A new owner authorization covered one more live attempt under its **own USD 3.00 cap**. That cap
+is independent of the cap on attempts 1–2, whose spend is stated separately below. The
+authorization also covered one generation-side change that generalizes attempt 2's three
+rejection reasons. The critic contract, the fold and the critic prompt were **not** changed.
+
+### The generation change (`app/services/design_live.py`, `_CRITIC_DESIGN_RULES` (c)–(e))
+
+These are general principles, with no task wording:
+
+- **(c) a check reads what it verifies.** Every checking node has an artifact input edge for
+  each exact artifact it verifies or compares against. A summary or a map derived from that
+  artifact is not enough.
+- **(d) nothing changes after approval unchecked.** The content a human gate approves is the
+  content released. No node after an approval regenerates, rewrites, reformats or alters it.
+  If a later derived artifact is unavoidable, a node other than its producer re-checks it
+  against the approved content before release, and that report is an input of the release path.
+- **(e) a check that finds unresolved problems blocks.** The findings must decide the graph's
+  path, and a report is not enough. Either a router on a declared verdict fact sends only the
+  passing value onward (a failing value loops back through a bounded loop or ends the run), or
+  the check's failure policy stops its dependants and every downstream join uses
+  `failure_handling block`.
+
+Test: `test_design_live.py::test_the_generator_is_told_the_design_hygiene_rules` covers both
+the first-round and the revision prompt, and checks that rules (c)–(e) use no task words.
+Offline, the design/generation/profile tests gave 568 passed and 4 skipped.
+
+### Run (`test_claude_live_design_selection.py`, same product path)
+
+**Settings.**
+- `DEEPTWIN_LIVE_ATTEMPT=attempt3`, with its own ledger `attempt3-ledger.json`, so the
+  guard's earlier-attempts term is 0 for this cap.
+- 1 candidate requested, 1 round, generation cap 16,000 output tokens, criticism cap 6,000.
+- USD 1.00 re-review reserve held while the arc ran.
+- The guard used ceiling rates of USD 5 / 25 per MTok.
+- The model was the catalog's first; its id is redacted.
+- No retry and no fallback. The key was never printed, and the evidence was checked key-free.
+
+**Outcome.** Run `f1e96834-34df-5ca9-8d54-305f196ab9fa` ended in **`shortfall`**, with 0
+presented of 1.
+- Criticism record: `67da8dc8-5970-4298-a7f5-a8c673860bd6`.
+- Evidence id: `1728bfbb-0005-40f9-83c8-a742ba3d5660`.
+- There were 0 contract refusals and 0 guard refusals.
+
+**Candidate** `7f0c447c-a447-4d4f-b7b0-9aa732ff55f1`:
+- Nodes: research (agent), writer (agent), **fact-check (join)**, hook-check (agent),
+  review-join (join), publish-gate (human gate), **release (join)**.
+- The review passed `…221:claim:0`, the effect, `shape:disposition` and `work:completion:1`.
+  `work:completion:0` stayed **unresolved**.
+- Rejected for:
+  - `counterexample_fail:cx-factcheck-no-agent` (valid, then fail). Fact-check is a **join**:
+    it has no model and no role, yet it is the producer of the fact-check report and carries
+    the semantic check.
+  - `validity_unresolved:cx-script-unpinned-release`. Release reads the script straight from
+    the writer (`e-writer-release-script`), and nothing ties the fact-checked script, the
+    approval and the released script to the same content.
+  - `validity_unresolved:cx-hook-first30-undefined`. The script contract has no timing
+    markers, and the script may be PDF-only for a text-only hook-check.
+- The `cx-gate-no-report-access` counterexample was judged invalid.
+
+**Owner path.** Nothing was presented, so there was **no selection, no re-review and no
+preparation** (neither the refused unqualified one nor the simulated-qualification one), and
+nothing to label.
+
+**Analysis.** Rules (c) and (e) were followed literally:
+- fact-check now reads the dossier, script and citation map;
+- a failure stops its dependants, and the joins use `block`. The validity answer for
+  `cx-gate-no-report-access` confirms that fact-check "fails and halts the run on any
+  unverified claim".
+
+But rule (c) gave the checker inputs from two producers, and the structure rule says a node
+with more than one triggering predecessor must be a join. So the model made the **checker
+itself** a join, which cannot perform a check. It did the same with release, which also has
+two predecessors: the approval and the writer's script. So the new defect comes from how the
+new rules interact with the existing structure rule. It is not critic strictness.
+
+The next generation-side rule would be:
+- a join only aggregates;
+- a check or release that needs several inputs is a join followed by an agent (or
+  deterministic) node;
+- release takes the approved content through the gate path, never from the producer directly.
+
+This attempt made no change after the run.
+
+### Calls (provider-reported; all `completed / end_turn`; no cache tokens; bound = the guard's ceiling-rate bound before the send, including the USD 1.00 reserve)
+
+| # | purpose | provider message id | request id | input / output tokens | bound USD | spend USD (ceiling) |
+|---|---|---|---|---|---|---|
+| 1 | design_candidate (cap 16,000) | `msg_011CfRPj4eUc5ENUdzDU9cpG` | `req_011CfRPj3p7V9ME5eLv9enMg` | 6,391 / 11,192 | 1.4766 | 0.3118 |
+| 2 | review (`7f0c447c`) | `msg_011CfRPrG3mYChkHJvWLUrnF` | `req_011CfRPrFT3mBeGU5AinnZrJ` | 6,553 / 3,112 | 1.5322 | 0.1106 |
+| 3 | counterexample_proposal (4) | `msg_011CfRPtCZETbcGWCdSN7AUW` | `req_011CfRPtBdfCm4Jwf6LcKtWv` | 8,113 / 4,611 | 1.6563 | 0.1558 |
+| 4 | validity `cx-factcheck-no-agent`: valid | `msg_011CfRPwLvLzbagAbaNj59BJ` | `req_011CfRPwLLNNYn5qHwqo5vQs` | 7,104 / 2,163 | 1.8057 | 0.0896 |
+| 5 | response: **fail** | `msg_011CfRPxsSvG8aFT9BkWk3VH` | `req_011CfRPxrytFLiqjibtxxz6s` | 8,646 / 1,646 | 1.9150 | 0.0844 |
+| 6 | validity `cx-script-unpinned-release`: unresolved | `msg_011CfRPywUnkDcTbxLcmJxVN` | `req_011CfRPyw2VaMCB2dqRAWCeM` | 7,058 / 2,140 | 1.9791 | 0.0888 |
+| 7 | validity `cx-gate-no-report-access`: rejected | `msg_011CfRQ1QcD83etLU7FtA841` | `req_011CfRQ1Q9vMCpQLZ6mqgnPW` | 7,037 / 1,869 | 2.0674 | 0.0819 |
+| 8 | validity `cx-hook-first30-undefined`: unresolved | `msg_011CfRQ2fHYNFs9DuQsRDmzD` | `req_011CfRQ2ehZfw2Ff5VFmgi52` | 7,095 / 2,025 | 2.1498 | 0.0861 |
+
+**Spend.** Attempt 3 sent 8 calls, with 57,997 input and 28,758 output tokens. That is about
+USD 0.807 at the listed 4 / 20 and **USD 1.009 at the ceiling 5 / 25**, against this attempt's
+USD 3.00 cap. USD 1.991 of the cap is unused, and it was not spent on a retry.
+
+Attempts 1–2 are counted separately, under the earlier cap: USD 2.677 at ceiling (≈ 2.14 listed).
+Across all three attempts the total is USD 3.686 at ceiling (≈ 2.95 listed).
+
+**Evidence.** Everything is under `evidence/t038-live-arc-2026-09-26/`: `attempt3.json`,
+`attempt3-ledger.json` and 8 raw answers `attempt3-NN-arc-<stage>-<purpose>.txt`.
+
+**T038 is not ticked.** No live candidate has passed live criticism, so the full path has not
+completed live: selection, the live re-review, refused unqualified preparation and
+simulated-qualification preparation.
+
 ## Not ticked
 
 The 0/1/2/3, revision and cancel paths are exercised in `app/tests/browser-design.test.mjs` with
@@ -471,10 +583,13 @@ and V3 is unverified (T077).
   - After the 2026-09-26 (latest) arc, USD 0.323 of its 3.00 cap remains at ceiling rates, which
     is too little for another criticized candidate. A further attempt needs a new owner
     authorization.
-  - The next generation defects to address, from the attempt-2 verdict:
-    - the fact-check needs read access to the research dossier;
-    - nothing may regenerate the script after approval unchecked;
-    - a check that finds unverified claims must block or loop back.
+  - The attempt-2 defects were generalized into rules (c)–(e), and attempt 3 was run
+    (2026-09-26 (attempt 3), above). They were followed. But the checker and the release became
+    **joins**: a node with two predecessors must be a join, and a join cannot check. The next
+    generation-side rule: a join only aggregates, and a multi-input check or release is a join
+    followed by an agent or deterministic node. Release takes the approved content through the
+    gate path. Attempt 3's cap has USD 1.991 left, and a further attempt needs the owner's
+    authorization.
 - Production cannot create a design request: no lens is qualified, so no `DesignSource` is
   configured, and the page and the route say so. A production source would also need the owner's
   model turns wired from the Claude connection and a production functional-decision step (T030).
