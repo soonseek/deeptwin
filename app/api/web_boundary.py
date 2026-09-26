@@ -1,8 +1,11 @@
 """Exact external transport and cheap wire admission before persistent auth."""
+from functools import partial
+
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from ..deployment.prepare_contracts import DeploymentPrepareError
+from ..domain.request_identity import ServiceClientRead
 from ..extensions.candidate_contracts import CandidateError
 from ..extensions.provider_conformance_contracts import ConformanceError
 from ..extensions.provider_installation_contracts import InstallationError
@@ -12,6 +15,11 @@ from ..services.owner_material_upload_lock import UploadLock
 from ..services.run_approvals import RunApprovalError
 from ..services.run_consents import RunConsentError
 from ..services.runs import RunServiceError
+from ..services.service_client_auth import (
+    ServiceClientAuthDenied,
+    ServiceClientRateLimited,
+    ServiceClientScopeDenied,
+)
 from ..services.works import WorkServiceError
 from . import owner_material_upload as material_upload
 from . import provider_installation as installation
@@ -43,6 +51,7 @@ from .runs import (
     run_error,
 )
 from .runs import preflight as run_preflight
+from .service_clients import BEARER_NETWORK_PROFILE
 from .wire import (
     WireInputError,
     WireLimits,
@@ -91,6 +100,60 @@ class WebBoundary:
         except Exception:  # noqa: BLE001 - nothing is answered to a client that is gone
             return
 
+    def _bearer_route(self, scope, fields, method, path):
+        """The declared bearer route for this request, decided before any bearer parsing.
+
+        Without an Authorization header this is None and the request is a browser request.
+        With one, only the portable HTTPS profile over TLS, with no cookie, on a route whose
+        descriptor declares the bearer policy continues; everything else gets the uniform
+        pre-auth denial, so no bearer is ever parsed on plain HTTP or the loopback profile.
+        """
+        if "authorization" not in fields:
+            return None
+        profile = self.authority.profile
+        composition = getattr(scope["app"].state, "route_composition", None)
+        if (profile.mode != BEARER_NETWORK_PROFILE or profile.scheme != "https"
+                or scope.get("scheme") != "https" or "cookie" in fields
+                or composition is None):
+            raise OwnerAuthError("unauthenticated")
+        route = composition.bearer_route(method, path)
+        if route is None:
+            raise OwnerAuthError("unauthenticated")
+        return route
+
+    async def _authorize_bearer(self, scope, raw_headers, route, method):
+        exports = scope["app"].state.first_party_exports
+        authenticator = exports.get("service-clients.authenticator")
+        registry = exports.get("service-clients.registry")
+        if authenticator is None or registry is None:
+            raise OwnerAuthError("unavailable")
+        if method not in {"GET", "HEAD"}:
+            # no declared bearer route is a mutation yet; the read capability cannot carry one
+            raise OwnerAuthError("access_denied")
+        peer = scope.get("client")
+        if not peer or type(peer[0]) is not str:
+            raise OwnerAuthError("access_denied")
+        network_profile = self.authority.profile.mode
+        try:
+            authorized = await run_in_threadpool(
+                authenticator.authorize, raw_headers, tls=scope.get("scheme") == "https",
+                network_profile=network_profile, source_key=peer[0], route_id=route.route_id,
+                required_scope=route.required_scope)
+        except ServiceClientScopeDenied:
+            raise OwnerAuthError("access_denied") from None
+        except ServiceClientRateLimited:
+            raise OwnerAuthError("capacity") from None
+        except ServiceClientAuthDenied:
+            raise OwnerAuthError("unauthenticated") from None
+        finally:
+            raw_headers = None
+        principal = authorized.principal
+        return ServiceClientRead(
+            method, principal.client_id, principal.credential_revision, route.required_scope,
+            route.route_id, partial(registry.verify_current, principal.client_id,
+                                    credential_revision=principal.credential_revision,
+                                    scope=route.required_scope, network_profile=network_profile))
+
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
@@ -123,7 +186,7 @@ class WebBoundary:
                 raise OwnerAuthError("invalid_input")
             fields = parse_singleton_headers(raw_headers, names=("host", "origin", "sec-fetch-site", "cookie",
                 "x-deeptwin-csrf", "content-length", "content-type", "last-event-id",
-                "x-deeptwin-source-metadata", "content-encoding", "range"), required=("host",))
+                "x-deeptwin-source-metadata", "content-encoding", "range", "authorization"), required=("host",))
             if any(name.lower() == b"forwarded" or name.lower().startswith(b"x-forwarded-")
                    or name.lower() in {b"x-original-url", b"x-rewrite-url"} for name, _ in raw_headers):
                 raise OwnerAuthError("access_denied")
@@ -144,6 +207,7 @@ class WebBoundary:
                 raise OwnerAuthError("access_denied")
             path = "/" + path[len(profile.base_path):]
             method = scope["method"]
+            bearer_route = self._bearer_route(scope, fields, method, path)
             candidate_route = path == CANDIDATE_PATH or path.startswith(CANDIDATE_PATH + "/")
             deployment_route = path == DEPLOYMENT_PATH or path.startswith(DEPLOYMENT_PATH + "/")
             provider_route = path == PROVIDER_DEPLOYMENT_PATH or path.startswith(PROVIDER_DEPLOYMENT_PATH + "/")
@@ -159,8 +223,9 @@ class WebBoundary:
             logout = path == "/session/logout" and method == "POST"
             password_change = path == "/session/password" and method == "POST"
             revoke_others = path == "/session/revoke-others" and method == "POST"
-            if method not in {"GET", "HEAD"} and (fields.get("origin") != profile.http_origin
-                                                   or fields.get("sec-fetch-site") != "same-origin"):
+            if bearer_route is None and method not in {"GET", "HEAD"} and (
+                    fields.get("origin") != profile.http_origin
+                    or fields.get("sec-fetch-site") != "same-origin"):
                 raise OwnerAuthError("access_denied")
             if session_route or path in PUBLIC_ASSET_PATHS:
                 parse_query(scope.get("query_string", b""), allowed=())  # no query rides on an asset
@@ -333,7 +398,12 @@ class WebBoundary:
                 preflight_api_v1({**scope, "path": path}, body)
             public = ((path in {"/", "/health"} or path in PUBLIC_ASSET_PATHS)
                       and method in {"GET", "HEAD"}) or establishment
-            if not public and not source_upload and not installation_route:
+            if bearer_route is not None:
+                # an exact TLS bearer on a declared bearer route: no session, no CSRF and
+                # no cookie fallback; the principal never becomes an owner request
+                state["service_client_read"] = await self._authorize_bearer(
+                    scope, raw_headers, bearer_route, method)
+            elif not public and not source_upload and not installation_route:
                 try:
                     state["authenticated_request"] = await run_in_threadpool(
                         self.authority.authenticate_request, method=method, host=fields["host"],

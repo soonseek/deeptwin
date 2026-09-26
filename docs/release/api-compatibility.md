@@ -1,11 +1,13 @@
 # API surface and compatibility (draft)
 
-Date: 2026-09-23 · Updated: 2026-09-25 · Status: **draft for T084**. Normative source: `contracts/api.md` (`api-v1`) and
+Date: 2026-09-23 · Updated: 2026-09-26 · Status: **draft for T084**. Normative source: `contracts/api.md` (`api-v1`) and
 `contracts/verification.md`. This page describes the routes the supported factory (`create_app` in
 `app/server.py`) mounts today and the compatibility rules that apply to them.
 
-The HTTP API currently serves the official browser UI. An installable HTTP/OpenAPI client and
-service-client (bearer) automation are **not yet provided** (see §5).
+The HTTP API serves the official browser UI. Since 2026-09-26 the owner can create scoped
+service clients, and on the portable HTTPS profile a client's bearer can read the public snapshot
+and event routes (§3a). Bearer commands, an OpenAPI document and the extension-specific client
+surface are **not yet provided** (see §5).
 
 ## 1. Route families
 
@@ -39,11 +41,11 @@ dot segments; methods, auth policies and scopes come from closed sets; and route
 The composed set is mounted once. There is no runtime route registry and extensions cannot add
 routes.
 
-Current inventory (138 routes in 26 contributions; auth policies: `browser_session`):
+Current inventory (143 routes in 27 contributions; auth policies: `browser_session`, `browser_session_or_service_bearer`):
 
 | Contribution | Routes | Scopes |
 | --- | --- | --- |
-| `core-v1` | events.read, events.stream, events.type, snapshot.read, commands.read, commands.create (6) | `work.command`, `work.read` |
+| `core-v1` | events.read, events.stream, events.type, snapshot.read, commands.read, commands.create (6) | `events.read`, `snapshot.read`, `work.command`, `work.read` |
 | `extension-candidates-v1` | extensions.candidates.create, extensions.candidates.list, extensions.candidates.read (3) | `extension.manage`, `extension.read` |
 | `run-approvals-v1` | runs.approvals.record, runs.approvals.read, runs.execution_approvals.record, runs.execution_approvals.read (4) | `approval.manage`, `approval.read` |
 | `works-v1` | works.receipt, works.source_upload, works.revision, works.source, works.source_content, works.export_preview, works.export_confirm, works.export_download, works.deletion_preview, works.deletion_confirm, works.create, works.read, works.revise (13) | `work.command`, `work.read` |
@@ -69,6 +71,7 @@ Current inventory (138 routes in 26 contributions; auth policies: `browser_sessi
 | `extension-bindings-v1` | extensions.installations.list, extensions.bindings.list, extensions.bindings.read, extensions.bindings.slot_key, extensions.bindings.bind, extensions.bindings.disable, extensions.bindings.rollback, extensions.bindings.retention_release (8) | `extension.manage`, `extension.read` |
 | `browser-grants-v1` | browser_grants.read, browser_grants.create, browser_grants.revoke (3) | `work.command`, `work.read` |
 | `platform-update-v1` | platform.update.read (1) | `deployment.read` |
+| `service-clients-v1` | service-clients.list, service-clients.create, service-clients.read, service-clients.rotate, service-clients.revoke (5) | `service_client.manage`, `service_client.read` |
 
 The descriptor files are the authoritative list; regenerate this table from them rather than
 editing it by hand.
@@ -92,6 +95,39 @@ editing it by hand.
   Clients branch on `code`, never on `message`.
 - **Mutations** from the browser need the session cookie and the `X-DeepTwin-CSRF` header
   ([security.md](security.md)).
+
+## 3a. Service clients and bearer reads (T025, 2026-09-26)
+
+The owner manages clients through `service-clients-v1`, a browser-session contribution (cookie and,
+for every POST, CSRF):
+
+| Route | Effect |
+| --- | --- |
+| `GET /api/v1/service-clients` | the owner's clients (no secret, no digest) |
+| `POST /api/v1/service-clients` | create `{client_id, name, scopes, allowed_network_profile, expires_at}`; 201 returns the `dt_sc_` secret **once** |
+| `GET /api/v1/service-clients/{client_id}` | one client (no secret) |
+| `POST …/{client_id}/rotate` | `{expected_revision}`; new secret once, the old one stops at once |
+| `POST …/{client_id}/revoke` | `{expected_revision}`; the next bearer request is refused |
+
+Creation is refused (`422 invalid_state`) unless the instance runs the portable HTTPS profile,
+`allowed_network_profile` is exactly that profile, the expiry is at most 24 hours ahead, and every
+scope is one some composed route declares for a bearer.
+
+A route admits a bearer only when its descriptor declares `auth_policy`
+`browser_session_or_service_bearer`; `required_scope` is then the scope the client must hold:
+
+| Route | Bearer scope |
+| --- | --- |
+| `GET\|HEAD /api/v1/snapshot` | `snapshot.read` |
+| `GET\|HEAD /api/v1/events`, `/api/v1/events/stream`, `/api/v1/events/{event_type}` | `events.read` |
+
+A bearer request sends exactly one `Authorization: Bearer dt_sc_…` header over TLS, no cookie and
+no CSRF. Responses: `401 unauthenticated` for a missing, malformed, unknown, expired, rotated or
+revoked credential, for any bearer on a browser-session-only route, and for any bearer on the loopback
+profile; `403 access_denied` for a valid credential without the route's scope; `429 capacity` when
+the client, source or route bucket is empty; `400 invalid_input` for a duplicated header. Every other
+route stays browser-session only. Which further routes and scope names a bearer may reach is an open
+owner decision (`evidence/bearer-service-clients-2026-09-26.md`).
 
 ## 4. Compatibility policy
 
@@ -119,13 +155,15 @@ No formal deprecation window or support period has been decided; that is an open
 - **OpenAPI document.** The supported factory sets `openapi_url=None`, `docs_url=None`,
   `redoc_url=None`. The contract requires a versioned OpenAPI document generated from the same types
   as the UI; it does not exist yet.
-- **Service clients / bearer automation.** `/api/v1/service-clients` is specified but not
-  mounted. Under the contract, bearer calls are portable-HTTPS only; the HTTP loopback profile must
-  not register or parse bearer credentials, with no cookie or plaintext fallback.
-- **Installable HTTP/OpenAPI client** (`deeptwin_client`) with parity proof from a separate process
-  that does not import `app` (T087/T083).
+- **Bearer commands and further bearer routes.** Only the snapshot and event reads admit a bearer
+  (§3a). No command, artifact or extension route does: the contracts name no service-client scope for
+  them (open owner decision).
+- **Client parity for commands.** The installed `deeptwin_client` (separate package, T087) reads
+  the bearer routes over TLS from a process that cannot import `app`, and gets the browser's
+  projection and cursor. Command receipt and event-order parity across restart and concurrency
+  waits on a bearer command route (T087/T083).
 - Contract routes listed in `contracts/api.md` §2 that have no descriptor yet, among them
-  `/service-clients`, the code-free definition import and retirement/uninstall arms of
+  the code-free definition import and retirement/uninstall arms of
   `/extensions`, `/extension-deployment/requests`, the managed-login connection routes (T088) and
   `/speech/sessions` (T024).
 - **Documented deviations.** The artifact routes are served run-scoped

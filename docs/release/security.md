@@ -1,6 +1,6 @@
 # Security model (draft)
 
-Date: 2026-09-23 · Updated: 2026-09-25 · Status: **draft for T084. No security qualification has been performed**; T079
+Date: 2026-09-23 · Updated: 2026-09-26 · Status: **draft for T084. No security qualification has been performed**; T079
 (security qualification against the frozen release candidate) and T083 (two fresh hosts) are open.
 Normative sources: `contracts/api.md` §1 and §5, `contracts/operations.md` §2.2, §3, §5, §8,
 `contracts/runtime.md` §5–6, `contracts/encrypted-credential-custody.md`.
@@ -56,6 +56,34 @@ be completed before any publication.
   open run consents are revoked, and execution-bound approvals decided before the recovery are
   superseded. Rollbacks, skipped epochs and foreign trust sets fail closed. No real signing adapter
   exists yet.
+
+## 3a. Service clients (bearer)
+
+- **Issuance** is an owner command from the browser session with CSRF
+  (`POST /api/v1/service-clients`). The server makes a `dt_sc_` + 32 random bytes (base64url)
+  secret, returns it once in the 201 response (`Cache-Control: no-store`) and stores only its
+  SHA-256 digest in an append-only revision history with a CAS head. Reads, lists and errors never
+  carry the secret or the digest, and the server logs no request header.
+- **Grant.** Expiry is at most 24 hours; the network profile must be the instance's own portable
+  HTTPS profile; scopes must be ones a composed route declares for a bearer (today `snapshot.read`
+  and `events.read`). Scopes that name bootstrap, auth, approval, deployment, recovery, service-client,
+  credential or managed-login authority are refused by the registry.
+- **Where a bearer is parsed.** Only on the portable HTTPS profile over TLS, only with no cookie,
+  and only on a route whose descriptor declares `browser_session_or_service_bearer`. Anywhere else an
+  `Authorization` header gets the uniform `401` before it is parsed, so the loopback profile never
+  parses a bearer and plain HTTP never reaches authentication (the scheme check refuses it first).
+- **Check order.** Exact single header → source and route buckets reserved → durable lookup in one
+  transaction (active head, same credential revision, not expired, same recovery epoch, network
+  profile) with a last-used CAS → client bucket → declared scope (`403` if absent). After the read is
+  materialized the grant is checked again, so a revoke, rotation or expiry committed during the read
+  withholds the response.
+- **Revocation and rotation** take effect on the next request. Owner recovery revokes every client
+  in the reconciliation transaction. Backups never carry service-client tables.
+- **Rate buckets** (client, source, route; independent) are provisional: burst 60, one token per
+  second, 1,024 keys per dimension, 10-minute idle expiry. The contract fixes no numbers; the values
+  are an open owner decision.
+- A bearer read is a read-only capability; no mutation path accepts it, and it never becomes an
+  owner session.
 
 ## 4. No host paths
 

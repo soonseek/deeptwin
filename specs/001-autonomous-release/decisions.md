@@ -741,3 +741,28 @@ and implementation, release, effect, legal and human-acceptance gates remain ope
 
 - **T038:** the owner authorized ONE more live attempt (attempt 8) on exactly the terms of attempts 6 and 7: its own USD 3.00 hard cap and ledger (`attempt8-ledger.json`), 2 candidates requested, USD 1.00 reserved for the re-review, the same token caps (generation 28,000, criticism 6,000) and ceiling rates (USD 5 / 25 per MTok), the same model selection (identifier redacted), no retry and no fallback.
 - **Planned fix (before the run, offline):** attempt 7's live re-review of the selected candidate stayed unresolved on `cx-unlabeled-bundle-items`: a join's aggregate contract held two text/markdown items with no declared role, so which item was the draft rested on handler behaviour. The graph grammar cannot label items inside a contract (an artifact contract declares only media types, item counts and a byte bound, with `schema_ref` null). So a generic generator design rule (k) uses the closest expressible form: every join, and every step that passes several items on unaltered (the verdict step, a gate), hands on one output slot per original item, each under its own single-item artifact contract named for the item's role, and each consumer reads each item from its own named input slot. Rules (f) and (i) point to (k). The critic, its contract, fold and prompts are not changed, and the simulated owner's work text is unchanged. The attempt 5, 6 and 7 replay paths stay intact.
+
+## 2026-09-26 — Open owner decisions from the T025 bearer slice (not decided)
+
+These are recorded as **open, owner decision**. Nothing below is decided; the slice stops at the
+smallest subset the contracts ground (`evidence/bearer-service-clients-2026-09-26.md`).
+
+- **Which routes a bearer may reach (open, owner decision).** `contracts/api.md` §1 says a read,
+  snapshot or SSE needs "an owner session or scoped `ServiceClient`", and that bearer mutations use
+  the same command semantics, but no contract lists the routes or command kinds a service client may
+  reach. The slice admits a bearer only on the public snapshot and event reads
+  (`/api/v1/snapshot`, `/api/v1/events`, `/api/v1/events/stream`, `/api/v1/events/{event_type}`).
+  Commands, command status, artifacts and the extension reads stay browser-session only until the
+  owner decides.
+- **Scope names (open, owner decision).** No contract names service-client scopes
+  (`data-model.md` has only `scope_refs`). The slice uses the two read scopes the existing T025
+  registry grammar already defines, `snapshot.read` and `events.read`. Command scopes
+  (`command:<category>.<action>` in the same grammar), `artifact.read` and any extension-read scope
+  are not grantable: creation accepts only scopes that some composed route declares for a bearer.
+- **Rate-bucket numbers (open, owner decision).** The contracts require independent client, source
+  and route buckets but fix no numbers. The provisional values are burst 60, one token per second,
+  1,024 keys per dimension and a 10-minute idle expiry (`app/api/service_clients.py`).
+- **Status codes used meanwhile.** A bearer on a browser-session-only route, or any bearer on the
+  loopback profile, gets the uniform `401 unauthenticated` before the header is parsed. A valid
+  credential without the route's scope gets `403 access_denied` (`contracts/api.md` §1: "403
+  scope/consent"). Changing either is part of the route decision above.

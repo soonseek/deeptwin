@@ -251,6 +251,17 @@ class RootCommandCoordinator:
             raise CommandInvalid("Command actor is not an authenticated local human")
         return actor
 
+    def _authorized_reader(self, request):
+        """A public read's actor: the owner session, or an admitted service-client read.
+
+        Only the public snapshot/event reads call this; every other read and every command
+        keeps ``_authenticated_actor`` and so remains browser-session only.
+        """
+        from ..domain.request_identity import ServiceClientRead
+        if type(request) is ServiceClientRead:
+            return request.verify()
+        return self._authenticated_actor(request, read=True)
+
     def _assert_transaction(self, db):
         if type(db) is not sqlite3.Connection or not db.in_transaction:
             raise CommandInvalid("Root command requires an active SQLite transaction")
@@ -561,7 +572,7 @@ class RootCommandCoordinator:
     def read_events(self, *, request, after_cursor=None, event_types=(), limit=100):
         """Return one authenticated public-event page from one consistent snapshot."""
         self._assert_component_bindings()
-        self._authenticated_actor(request, read=True)
+        self._authorized_reader(request)
         with self._domain._connection() as db:
             page = _read_events_in_transaction(
                 db, vault_id=self.vault_id, after_cursor=after_cursor,
@@ -569,7 +580,7 @@ class RootCommandCoordinator:
             )
         # Do not release a projection if the bound session expired or was revoked
         # while the consistent SQLite snapshot was being materialized.
-        self._authenticated_actor(request, read=True)
+        self._authorized_reader(request)
         if type(page) is not EventPage:  # pragma: no cover - internal invariant
             raise CommandInvalid("Public event reader returned an invalid page")
         return page

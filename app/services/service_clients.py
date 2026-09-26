@@ -1,7 +1,8 @@
 """Transport-independent, scoped service-client credentials for optional HTTPS clients.
 
-This pure dependency layer intentionally owns no HTTP route and persists no secret. T025 binds
-its records to the durable owner/session store; until then the web server does not expose it.
+This dependency layer owns no HTTP route and persists no secret. The supported factory composes
+`PersistentServiceClientRegistry` through the `service-clients-v1` contribution
+(`app/api/service_clients.py`); the in-memory `ServiceClientRegistry` stays a test contract.
 """
 
 from __future__ import annotations
@@ -1569,6 +1570,32 @@ class PersistentServiceClientRegistry:
             expires_at=record.expires_at,
             credential_revision=record.revision,
         )
+
+    def verify_current(self, client_id, *, credential_revision, scope, network_profile):
+        """Read-only re-check that an authenticated credential still holds its grant.
+
+        Used after a bearer read is materialized, so a revoke, rotation, expiry or recovery
+        committed while the read ran withholds the projection. It never touches last-used.
+        """
+        now = self._now()
+        try:
+            client_id = uuid_string(client_id)
+            with self._store._connection() as db:
+                current, _history = self._history(db, client_id)
+                record, payload, _record_hash = current
+                epoch = self._read_epoch(db)
+        except (KeyError, TypeError, ValueError, CorruptServiceClient, sqlite3.Error):
+            raise ServiceClientDenied("Service client credential is invalid") from None
+        if (
+            record.state != "active"
+            or record.revision != credential_revision
+            or payload["recovery_epoch"] != epoch
+            or now >= record.expires_at
+            or record.allowed_network_profile != network_profile
+            or scope not in record.scopes
+        ):
+            raise ServiceClientDenied("Service client credential is invalid")
+        return Actor(record.client_id, "service_client", "service_credential")
 
     @staticmethod
     def _public(record):

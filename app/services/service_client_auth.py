@@ -23,6 +23,14 @@ class ServiceClientAuthDenied(PermissionError):
     """Non-reflective denial at the external service-client boundary."""
 
 
+class ServiceClientScopeDenied(ServiceClientAuthDenied):
+    """An authenticated client whose grant lacks the route's declared scope (403)."""
+
+
+class ServiceClientRateLimited(ServiceClientAuthDenied):
+    """A bounded client/source/route bucket refused the request (429)."""
+
+
 @dataclass(frozen=True, slots=True)
 class AuthorizedServiceRequest:
     principal: ServiceClientPrincipal
@@ -345,7 +353,7 @@ class ServiceClientAuthenticator:
             raise ServiceClientAuthDenied("service client rate limit is unavailable") from None
         if reservation is None:
             secret = None
-            raise ServiceClientAuthDenied("service client rate limit exceeded")
+            raise ServiceClientRateLimited("service client rate limit exceeded")
         try:
             principal = self._registry.authenticate(
                 secret, network_profile=network_profile,
@@ -376,9 +384,9 @@ class ServiceClientAuthenticator:
                 pass
             raise ServiceClientAuthDenied("service client authentication failed") from None
         if not admitted:
-            raise ServiceClientAuthDenied("service client rate limit exceeded")
+            raise ServiceClientRateLimited("service client rate limit exceeded")
         if required_scope not in principal.scopes:
-            raise ServiceClientAuthDenied("service client scope denied")
+            raise ServiceClientScopeDenied("service client scope denied")
         return AuthorizedServiceRequest(principal=principal, route_id=route_id)
 
 
@@ -387,4 +395,6 @@ __all__ = [
     "IndependentTokenBuckets",
     "ServiceClientAuthDenied",
     "ServiceClientAuthenticator",
+    "ServiceClientRateLimited",
+    "ServiceClientScopeDenied",
 ]
