@@ -176,6 +176,35 @@ def test_the_generator_is_told_verdicts_gate_the_data_and_the_candidate_count():
         assert task_word not in added.lower(), task_word
 
 
+def test_the_generator_is_told_every_handed_on_item_declares_its_role():
+    """T038 attempt 8: attempt 7's selected candidate stayed unresolved on its re-review because
+    a join's aggregate contract held two items with no declared role. The grammar has no
+    per-item label (a contract declares media types, counts and a byte bound only), so rule (k)
+    uses the closest expressible form: one output slot, under its own contract, per item, for
+    joins and for the verdict step's pass-through alike; (f) and (i) point to it. First-round
+    and revision alike; no task wording."""
+    _target, _lens, _decision, request, graph = prepared()
+    system, _user = render_candidate_prompt(request)
+    parent = run_candidate_generation(request, model_turn=scripted_model(model_json(graph))[0],
+                                      model_id=MODEL_ID).candidates[0]
+    revised, _ = render_candidate_prompt(request, revision=(parent, "shorten the pipeline"))
+    for text in (system, revised):
+        assert "(k) every item handed on declares its role" in text
+        assert "an artifact contract has no per-item label" in text
+        assert "one output slot per original item, each under its own new artifact contract" in text
+        assert "min_items 1 and max_items 1" in text
+        assert "the verdict step of (i), a gate" in text
+        assert "Never put items of different roles into one multi-item slot or contract" in text
+        assert "one output slot per input as rule (k) states" in text
+        assert "one output slot per item as rule (k) states" in text
+        assert "(a bundle carrying" not in text
+        assert "new verified-package contract" not in text
+    added = _CRITIC_DESIGN_RULES.split("(k)")[-1]
+    for task_word in ("changelog", "release note", "cl-", "publish", "document", "markdown",
+                      "dossier", "script", "youtube", "draft", "verifier"):
+        assert task_word not in added.lower(), task_word
+
+
 def test_model_supplies_only_graphs_never_identity_or_call_refs():
     _target, _lens, _decision, request, graph = prepared()
     forged = {

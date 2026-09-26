@@ -187,9 +187,9 @@ _CRITIC_DESIGN_RULES = (
     " (f) a join only aggregates: a join has no model and performs nothing, so it never carries a"
     " check, review, approval or release responsibility; a check, review or release that needs"
     " inputs from several producers is a join followed by an agent or deterministic node that"
-    " performs it; the join emits its own new aggregate artifact contract (a bundle carrying"
-    " the exact, unaltered inputs, declared with their media types), and that node's single"
-    " triggering predecessor is the join, from which it reads the bundle. (g) release takes"
+    " performs it; the join emits the exact, unaltered inputs under its own new artifact"
+    " contracts, declared with their media types, one output slot per input as rule (k) states,"
+    " and that node's single triggering predecessor is the join, from which it reads them. (g) release takes"
     " exactly what was approved, through the gate's path: the human gate receives the exact"
     " content it approves (with the check reports) and emits it unaltered under its own"
     " approved-content contract; the releasing node reads that approved content from the gate"
@@ -217,7 +217,8 @@ _CRITIC_DESIGN_RULES = (
     " edge, via a join that also carries the exact checked content, and the originals the"
     " approver must see, unaltered). Its responsibility states the rule: only when the"
     " report's overall verdict field is the passing value does it emit those inputs, byte for"
-    " byte, under its own new verified-package contract; otherwise it emits nothing and fails"
+    " byte, under its own new verified contracts, one output slot per item as rule (k) states;"
+    " otherwise it emits nothing and fails"
     " with failure_policy fail_run, so the run ends and nothing downstream runs. The gate and"
     " the release read only that verified package (or what the gate emits from it), and no"
     " artifact edge goes from any node before the verdict step to any node after it. (j) a"
@@ -228,6 +229,27 @@ _CRITIC_DESIGN_RULES = (
     " leads to a node, join, gate or release that also takes artifact inputs from before the"
     " router, and whenever the path after the decision needs such artifacts, use the"
     " verdict step of (i) instead of a router."
+    # T038 attempt 7: both candidates passed, but the live re-review of the selected one
+    # stayed unresolved because a join's aggregate contract held two items of one media type
+    # with no declared role, so which item was which rested on handler behaviour. The graph
+    # grammar has no per-item label: an artifact contract declares only media types, item
+    # counts and a byte bound (schema_ref stays null), and a slot carries one contract. The
+    # closest expressible form is one slot, under its own contract, per item. General rule,
+    # no task wording.
+    " (k) every item handed on declares its role: an artifact contract has no per-item label,"
+    " name or order (it declares only media_types, min_items, max_items and max_total_bytes, and"
+    " schema_ref stays null), so an item's role is carried only by the slot it travels in."
+    " Whenever a join, or a step that passes several items on unaltered (the verdict step of"
+    " (i), a gate), hands on more than one item, it declares one output slot per original"
+    " item, each under its own new artifact contract with min_items 1 and max_items 1, whose"
+    " slot_id and artifact_contract_id name that item's role (e.g. the source, the checked"
+    " content, the check report); it receives each item in an input slot of the same role, and"
+    " sends each on by its own artifact edge to a consumer input slot of that role, so each"
+    " consumer declares one input slot per item and its responsibility names the slot it reads"
+    " each item from. Never put items of different roles into one multi-item slot or contract"
+    " (a bundle whose max_items is above 1), and never leave a consumer to infer which item is"
+    " which from order, content, media type or handler behaviour; a slot with more than one"
+    " item holds only interchangeable items of one role that no condition refers to singly."
 )
 
 # T038 attempt 6: two candidates were requested and one came back; the output schema only

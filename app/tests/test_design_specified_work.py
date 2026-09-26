@@ -251,3 +251,102 @@ def test_a_declared_verdict_step_in_the_data_path_is_admitted_and_shown_to_the_c
         for edge in candidate.graph.edges:
             assert not (edge.source_node_id in before and edge.target_node_id in {"publish-gate", "store"}), edge
         assert "overall verdict field" in json.dumps(critic_candidate_projection(candidate), ensure_ascii=False)
+
+
+def test_attempt7_saved_answer_still_replays_offline(tmp_path):
+    """Attempt 7's live generation answer (evidence) is still admitted unchanged, both graphs:
+    rule (k) changes only the prompt, never admission."""
+
+    from app.services.design_live import run_candidate_generation
+
+    raw = _saved("attempt7-01-arc-generation.txt")
+    with owner_app(tmp_path, Executor()) as subject:
+        request = _request(subject, "attempt7-replay")
+        candidates = run_candidate_generation(request, model_turn=lambda _s, _u: raw,
+                                              model_id="replay").candidates
+        assert len(candidates) == 2
+        for candidate in candidates:
+            assert {"draft-join", "verdict-join", "verdict", "publish-gate", "store"} <= {
+                node.node_id for node in candidate.graph.nodes}
+
+
+def _slot(slot_id, contract, *, required=None):
+    slot = {"slot_id": slot_id, "artifact_contract_id": contract, "multiplicity": "one"}
+    return slot if required is None else {**slot, "required": required}
+
+
+def test_one_slot_per_item_is_admitted_and_shown_to_the_critic(tmp_path):
+    """Rule (k) is realizable under the design authority: attempt 7's first live graph with
+    every multi-item bundle (the draft join's, the verdict join's and the verdict step's
+    pass-through) replaced by one slot per item, each under its own single-item contract named
+    for the item's role, is admitted; no admitted contract holds more than one item, every
+    consumer reads each item from its own named slot, the verdict step still alone feeds the
+    gate, and the critic projection carries the per-role contracts."""
+
+    from app.services.design_criticism import critic_candidate_projection
+    from app.services.design_live import run_candidate_generation
+
+    graph = json.loads(_saved("attempt7-01-arc-generation.txt"))["candidates"][0]["graph"]
+    items = ["source", "draft", "report"]
+    roles = {"draft-join": ("joined", ["source", "draft"]),
+             "verdict-join": ("verdict-input", items),
+             "verdict": ("verified", items)}
+    media = {"source": ("text/markdown", 1048576), "draft": ("text/markdown", 65536),
+             "report": ("application/json", 1048576)}
+    graph["artifact_contracts"] = [item for item in graph["artifact_contracts"] if item["artifact_contract_id"]
+                                   not in {"draft-bundle", "verdict-input-bundle", "verified-package"}]
+    for prefix, names in roles.values():
+        for name in names:
+            graph["artifact_contracts"].append({
+                "artifact_contract_id": f"{prefix}-{name}", "media_types": [media[name][0]], "schema_ref": None,
+                "min_items": 1, "max_items": 1, "max_total_bytes": media[name][1]})
+    inputs = {"draft-join": [_slot("source", "source-changelog", required=True),
+                             _slot("draft", "draft-notes", required=True)],
+              "verifier": [_slot("source", "joined-source", required=True),
+                           _slot("draft", "joined-draft", required=True)],
+              "verdict-join": [_slot("source", "joined-source", required=True),
+                               _slot("draft", "joined-draft", required=True),
+                               _slot("report", "verification-report", required=True)],
+              "verdict": [_slot(name, f"verdict-input-{name}", required=True) for name in items],
+              "publish-gate": [_slot(name, f"verified-{name}", required=True) for name in items]}
+    for node in graph["nodes"]:
+        if node["node_id"] in inputs:
+            node["input_slots"] = inputs[node["node_id"]]
+        if node["node_id"] in roles:
+            prefix, names = roles[node["node_id"]]
+            node["output_slots"] = [_slot(name, f"{prefix}-{name}") for name in names]
+        if node["node_id"] == "verdict":
+            node["responsibility"] = (
+                "Model-free verdict step: read the report slot's overall verdict field; only when it is exactly pass "
+                "emit the source, draft and report slots byte for byte, each in its own verified slot; otherwise "
+                "emit nothing and fail the run.")
+    edges = [edge for edge in graph["edges"] if edge["edge_id"] in {"e1", "e2", "e3", "e6", "e9", "e10"}]
+    for edge in edges:
+        if edge["edge_id"] == "e6":
+            edge["target_input_slot"] = "report"
+    edges += [
+        _artifact_edge("k1", "draft-join", "source", "verifier", "source", "joined-source"),
+        _artifact_edge("k2", "draft-join", "draft", "verifier", "draft", "joined-draft"),
+        _artifact_edge("k3", "draft-join", "source", "verdict-join", "source", "joined-source"),
+        _artifact_edge("k4", "draft-join", "draft", "verdict-join", "draft", "joined-draft"),
+    ] + [_artifact_edge(f"k5-{name}", "verdict-join", name, "verdict", name, f"verdict-input-{name}")
+         for name in items] + [
+        _artifact_edge(f"k6-{name}", "verdict", name, "publish-gate", name, f"verified-{name}")
+        for name in items]
+    graph["edges"] = edges
+    answer = json.dumps({"candidates": [{"graph": graph}]}, ensure_ascii=False)
+    with owner_app(tmp_path, Executor()) as subject:
+        request = _request(subject, "attempt8-slot-per-item")
+        [candidate] = run_candidate_generation(request, model_turn=lambda _s, _u: answer,
+                                               model_id="offline").candidates
+        assert all(contract.max_items == 1 for contract in candidate.graph.artifact_contracts)
+        nodes = {node.node_id: node for node in candidate.graph.nodes}
+        assert [slot.slot_id for slot in nodes["verifier"].input_slots] == ["draft", "source"]
+        assert [slot.slot_id for slot in nodes["verdict"].output_slots] == ["draft", "report", "source"]
+        before = {"intake", "writer", "draft-join", "verifier", "verdict-join"}
+        for edge in candidate.graph.edges:
+            assert not (edge.source_node_id in before and edge.target_node_id in {"publish-gate", "store"}), edge
+        projected = json.dumps(critic_candidate_projection(candidate), ensure_ascii=False)
+        for contract in ("joined-source", "joined-draft", "verified-draft", "verified-report", "verified-source"):
+            assert contract in projected
+        assert "draft-bundle" not in projected and "verified-package" not in projected

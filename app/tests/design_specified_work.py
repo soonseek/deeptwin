@@ -19,7 +19,8 @@ approval and storage. Attempt 6's live critic left exactly these two points unre
 approval join's unconditional data inputs, and no node declared to set the routing fact from
 the report). The verifier effect text is unchanged, so attempt 6's saved answer still replays.
 Attempt 5's verifier text is kept (`ATTEMPT5_VERIFIER_RESPONSIBILITY`) only to replay its
-saved live answer offline.
+saved live answer offline. Attempt 8 leaves this work unchanged: attempt 7's re-review point
+(unlabelled bundle items) is a graph-design point, addressed by the generic generator rule (k).
 
 This is a DIFFERENT scenario from attempts 1–4 (the YouTube research/script work of
 `test_work_model_confirmation.work_model`). Attempt 4's candidates followed every design
