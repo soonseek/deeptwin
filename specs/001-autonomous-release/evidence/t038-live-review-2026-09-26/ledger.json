@@ -1,0 +1,13 @@
+{
+  "cap_usd": 1.5,
+  "attempts": [
+    {
+      "label": "diagnose",
+      "bound_usd": 0.246585
+    },
+    {
+      "label": "confirm",
+      "bound_usd": 0.704565
+    }
+  ]
+}
