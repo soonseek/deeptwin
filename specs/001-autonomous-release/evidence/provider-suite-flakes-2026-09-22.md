@@ -91,3 +91,58 @@ f28fa0b7b7c0c8ec5876a4ec4052ee961cebb19cb9c57b11e5a28e0850088965  app/tests/test
 
 - No product change: every fix is in test fixtures and test expectations that were wrong about
   timing or transport outcomes; the product's behaviour under load was right each time.
+
+## 2026-09-26 — owned cancel reported as a transport failure (fence secret reread race)
+
+- Symptom: `test_provider_semantic_owned_connection.py::test_owned_cancel_cannot_enter_after_settlement_before_artifact_write`
+  failed about 1 in 6–20 runs alone (also on older bases): after the owner's cancel was
+  accepted the stream reader's `observe` raised `TransportClosed` or
+  `_OwnedConnectionError('owned_connection_unavailable')` instead of `StreamCancelled`.
+- Root cause (reproduced with an instrumented loop, product): the client's one
+  `ExtensionConnection` is rechecked concurrently by the duplex stream reader
+  (`read_duplex` → `recheck`) and the control writer (`write` → `checkpoint` → `recheck`).
+  `PopulatedGenerationFence.recheck_current` rereads the boot secret through
+  `ipc_root._read_exact_secret`, which did `lseek(fd, 0)` + `read(fd, 33)` on the fence's one
+  retained descriptor. The file offset is shared, so two threads interleaving that pair give
+  one of them a 0-byte read → `IpcRootIntegrityError` → `ListenerIntegrityError`; the failing
+  recheck closes the owner. When the reader lost, it surfaced `owned_connection_unavailable`
+  before it could read the already-queued, authenticated accepted-cancel result; when the
+  writer lost, its close made the reader's next read a `TransportClosed`. The worker's order
+  was already right (the control-result frame is written before its close, and the reader
+  drains queued frames before EOF); the dialogue close ordering and the cancel mapping were
+  not the fault, and nothing maps a close to a cancel.
+- Fix (product): `_read_exact_secret` reads with `os.pread(fd, 33, 0)` — positional, never
+  touching the shared offset — keeping the same length and before/after `fstat` identity
+  checks, so concurrent rechecks of one owner cannot misreport a genuine fence. Authentication
+  and the fail-closed recheck are unchanged; an unauthenticated close still surfaces as a
+  transport failure.
+- Tests: `test_ipc_populated_fence.py` gains
+  `test_the_secret_reread_is_positional_and_safe_for_concurrent_rechecks` (offset preserved at 5,
+  recheck from EOF, 4 threads × 200 concurrent rechecks; fails on the old code), and its
+  read-error case patches `os.pread` instead of `os.read` (same fail-closed assertion). In the
+  cancel-gap test the worker's close is asynchronous to both client returns (an accepted cancel
+  is an acknowledgement, not worker cleanup — owned-connection-design-r1 §4.1), which made its
+  unchanged `artifact_write_resumes < server_closed` assertion race (1/50 after the product fix,
+  `'server_closed' is not in list`); it now waits on the existing `server_closed` event after the
+  joins, as the sibling mid-text cancel test already does. No assertion was relaxed, no sleep or
+  retry added.
+- Verification (branch `cancel-race` from `codex/ui-structure` c70049b, one file per process,
+  no other load): the target test **50/50** consecutive; the whole owned-connection file
+  **10/10** consecutive (44 each); `test_provider_semantic_{codec 17, contracts 17,
+  owned_connection 44, records 17, vertical 87, worker 2}` pass (no `test_provider_port_*.py`
+  file exists); `test_ipc_populated_fence.py` 22; ipc/listener neighbours pass
+  (`test_authenticated_gateway_connection` 16, `test_credential_gateway_main` 21,
+  `test_credential_gateway_peercred` 4, `test_extension_channel` 45, `test_extension_listener` 25+1
+  skipped, `test_ipc_metadata_lease` 18, `test_provider_gateway_channel` 3,
+  `test_provider_slot_lifecycle` 96, `test_provider_stage_connection_lifecycle` 203,
+  `deploy/tests/test_ipc_root_initializer` 49, `deploy/tests/test_worker_listener` 23,
+  `test_document_worker_main` 12).
+
+Frozen identities (supersede the entries above and in `ipc-populated-fence-task25-2b.md` for
+these files):
+
+```
+78c8ef9436c4d353451ea090df2566f6ef997b1169a148121aecd6007ebd5a18  app/workers/ipc_root.py
+7036f12f4b460b9f8f9de7f7ce19de82e7d35f456f5c32e0a589ea133433443c  app/tests/test_ipc_populated_fence.py
+6bd7ec591bc06f575c4988c96c8823719d579b65551dd6a5be6dbc5a4ad3e9d6  app/tests/test_provider_semantic_owned_connection.py
+```
