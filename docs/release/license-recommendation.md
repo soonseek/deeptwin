@@ -14,8 +14,9 @@ for the repository** (§3's recommended default). This page keeps the analysis t
 - Added 2026-09-25: per-file licence coverage through `REUSE.toml` (Apache-2.0 default, upstream
   files annotated `LicenseRef-Upstream-Terms` and never relicensed); `reuse lint` is compliant and
   guarded by `app/tests/test_reuse_compliance.py`.
-- Still open: per-image third-party NOTICE and source-offer closure (T081/T082), the
-  inbound-contribution mechanism (§4.2, an owner decision), trademark policy (§4.3), confirmation
+- Decided 2026-09-26: the inbound-contribution mechanism (§4.2) is the Developer Certificate of
+  Origin 1.1 (`DCO`, sign-off checked by `packaging/contributions/dco_check.py`); no CLA.
+- Still open: per-image third-party NOTICE and source-offer closure (T081/T082), trademark policy (§4.3), confirmation
   of ownership (§4.1) and of rights to text quoted in `docs/lenses/`, and publication. Publication
   still needs its own authority; nothing is pushed publicly, tagged or uploaded.
 
@@ -73,7 +74,8 @@ it should be settled first.
 1. **Copyright ownership.** Confirm who owns the existing code, documentation and evidence, and
    whether any part was contributed by others or generated with tools whose terms matter.
 2. **Inbound contribution terms.** Choose a mechanism (e.g. DCO sign-off, or a CLA if relicensing
-   flexibility is wanted). Dual licensing generally needs a CLA.
+   flexibility is wanted). Dual licensing generally needs a CLA. **Decided 2026-09-26: DCO 1.1, no
+   CLA** (so relicensing later needs every contributor's consent).
 3. **Trademark.** Apache-2.0 grants no trademark rights; decide how the "DeepTwin" name may be used.
 4. **Bundled components.** Review MPL-2.0 files (e.g. `certifi`, parts of `orjson` and `tqdm`),
    the Chromium and Debian notices, the Codex closure and the speech model before shipping images.

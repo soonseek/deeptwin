@@ -1194,6 +1194,9 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   push event view or graph canvas to measure; clean hosts (T083) not measured.
   2026-09-25: STT measurement needs a frozen Korean speech fixture and the speech engine; the owner will
   test microphone/STT separately (decisions.md).
+  2026-09-26: the owner skipped the STT measurement (decisions.md). STT latency and quality are
+  reported as not measured (owner skipped), never as passed; T080 covers command, event and graph
+  responsiveness.
 - [ ] T081 Build the reproducible open-source web distribution and versioned service images under
   deploy/ for both ADR-010 profiles. The Portainer CE no-terminal descriptor/workflow must verify an
   immutable source commit plus exact Compose digest (tag is display-only) and service-keyed OCI
@@ -1306,6 +1309,12 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   notices/source offers need the T081 images; the inbound-contribution mechanism is an owner
   decision; rights to text quoted in docs/lenses/ are unverified; the pinned lens file and the
   scrub of content added since 2026-09-23 remain.
+  2026-09-26: the owner chose the Developer Certificate of Origin 1.1 (no CLA) as the inbound mechanism.
+  `DCO` (verbatim, REUSE-annotated under its own terms), the sign-off checker
+  `packaging/contributions/dco_check.py` with `app/tests/test_dco_check.py` (7 tests), and
+  contributing.md / license-recommendation.md updated. No hosted CI runs the check. Still open:
+  per-image notices/source offers (T081), the Compose gaps, the pinned lens file, rights to quoted text,
+  and the scrub of content added since 2026-09-23.
 - [ ] T085 Run full regression plus quickstart.md acceptance, reconcile every checkbox/result and produce specs/001-autonomous-release/evidence/release-report.md separating engineering/live/effect/human/signing readiness and checking final progress/ETA claims against actual task evidence; mark the goal complete only if the latest required delivery is genuinely achieved (FR-034, SC-010).
 
 ## Dependencies and parallel work

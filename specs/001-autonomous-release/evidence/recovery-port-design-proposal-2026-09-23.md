@@ -1,6 +1,10 @@
 # Proposal — the T025 deployment-authority recovery port (2026-09-23)
 
-Status: **proposal only. Nothing here is implemented or approved.** T025 and T072 stay open.
+Status: **approved by the owner on 2026-09-26** (decisions.md, "Owner decisions after T038 attempt 6"),
+as reconciled in `owner-recovery-reconcile-t025-2026-09-25.md`. The approval covers the design only;
+implementation state is in that reconcile record. T025 and T072 stay open.
+
+Original status (2026-09-23): proposal only. Nothing here is implemented or approved.
 
 ## Why this is a proposal and not code
 

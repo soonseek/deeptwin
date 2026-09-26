@@ -729,3 +729,10 @@ and implementation, release, effect, legal and human-acceptance gates remain ope
 
 - **Deterministic tool bindings:** the owner approved allowing deterministic (model-free) nodes to use an approved tool binding, for example a byte-exact store step. The design authority and graph compiler are extended accordingly, with contract review and tests. Tool effects stay governed by the same grants, gates, execution-bound approvals and effect policies as agent tool calls.
 - **T038:** the owner approved one more live attempt (attempt 6, USD 3.00 cap). It uses the corrected verifier wording in the specified work and the deterministic store step.
+
+## 2026-09-26 — Owner decisions after T038 attempt 6
+
+- **T038:** the owner approved one more live attempt (attempt 7, USD 3.00 cap, the same terms as attempt 6). Its preparation addresses attempt 6's two unresolved counterexamples by generic design rules, without weakening the critic.
+- **Owner-recovery design:** the owner approved the T025 deployment-authority recovery design in `evidence/recovery-port-design-proposal-2026-09-23.md`, as reconciled in `evidence/owner-recovery-reconcile-t025-2026-09-25.md`. The approval covers the design only. Items that design lists as open stay open: the real signing adapter, a real deployment recovery, and the separate lifecycle CAS. T025 and T072 are not ticked by this decision.
+- **Inbound contributions (T084):** the Developer Certificate of Origin 1.1, with no CLA. Each submitted commit carries a `Signed-off-by` trailer by its author. The text is in `DCO`, and `packaging/contributions/dco_check.py` checks a range. The consequence is recorded: a later relicensing needs every contributor's consent.
+- **Speech recognition (T080):** the owner skips the STT latency and quality measurement. T080 measures command, event and graph responsiveness only. STT is reported as *not measured (owner skipped)*, never as passed.

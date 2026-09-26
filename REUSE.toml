@@ -22,3 +22,11 @@ path = [
 precedence = "override"
 SPDX-FileCopyrightText = "NOASSERTION"
 SPDX-License-Identifier = "LicenseRef-Upstream-Terms"
+
+# The Developer Certificate of Origin text (inbound mechanism approved 2026-09-26, decisions.md)
+# is kept verbatim under its own terms: copying is allowed, changing it is not.
+[[annotations]]
+path = "DCO"
+precedence = "override"
+SPDX-FileCopyrightText = "2004, 2006 The Linux Foundation and its contributors"
+SPDX-License-Identifier = "LicenseRef-Upstream-Terms"

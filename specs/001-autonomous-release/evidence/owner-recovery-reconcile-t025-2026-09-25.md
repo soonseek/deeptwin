@@ -334,3 +334,5 @@ Observed runs in this worktree:
   holds no record of the owner's approval other than the 2026-09-24 test docstring: nothing in
   `decisions.md`, the tasks, the evidence or the commit messages. It was therefore left
   unchanged, and no approval is recorded here.
+  *2026-09-26:* the owner has since approved the design, and that approval is recorded in `decisions.md`. The proposal's status line
+  was updated. The other open items above are unchanged.

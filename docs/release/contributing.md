@@ -1,24 +1,37 @@
 # Contributing to DeepTwin (draft)
 
-Date: 2026-09-23 · Updated: 2026-09-25 · Status: **draft for T084**. The repository license is Apache-2.0, approved on
+Date: 2026-09-23 · Updated: 2026-09-26 · Status: **draft for T084**. The repository license is Apache-2.0, approved on
 2026-09-24 ([license-recommendation.md](license-recommendation.md)).
 
 ## 0. Licensing status: read this first
 
-The repository is licensed under the **Apache License 2.0** (`LICENSE`, `NOTICE`). Still open:
+The repository is licensed under the **Apache License 2.0** (`LICENSE`, `NOTICE`).
 
-- no inbound-contribution mechanism (for example a Developer Certificate of Origin sign-off or a
-  contributor license agreement) has been chosen. Until one is, contributions are accepted under
-  Apache-2.0 §5 (a contribution intentionally submitted is under the License's terms);
-- per-image third-party notices and source offers are assembled with the release images (T081/T082).
+**Inbound contributions use the Developer Certificate of Origin 1.1** (`DCO`, decided by the owner
+on 2026-09-26). There is no contributor license agreement. Each commit you submit must end with a
+sign-off naming you as its author, which `git commit -s` adds:
+
+    Signed-off-by: Your Name <you@example.org>
+
+By signing off you certify clauses (a)–(d) of `DCO` for that commit; the contribution is under
+Apache-2.0 (§5 of the License). Check a branch before submitting it:
+
+    python packaging/contributions/dco_check.py origin/main..HEAD
+
+The check fails any non-merge commit without a sign-off by its own author (a sign-off by someone
+else, or one quoted in the body rather than the final trailer block, does not count). Commits made
+before the decision are not retroactively signed; the check applies to submitted ranges. No hosted
+CI runs it yet, so a maintainer runs it before accepting a contribution.
+
+Still open: per-image third-party notices and source offers are assembled with the release images
+(T081/T082).
 
 Every tracked file carries licence information through `REUSE.toml` (Apache-2.0 by default;
 upstream files kept for verification under `deploy/locks/` are annotated
 `LicenseRef-Upstream-Terms` and are never relicensed). `reuse lint` must stay compliant; it is
 guarded by `app/tests/test_reuse_compliance.py`. A new upstream file needs its own annotation.
 
-Outside contributions should wait until the inbound mechanism is decided.
-The rest of this page describes the engineering workflow those contributions will follow.
+The rest of this page describes the engineering workflow contributions follow.
 
 ## 1. Governing documents
 
