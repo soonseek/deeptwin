@@ -26,6 +26,12 @@ work authored by the simulated owner (`design_specified_work`, labelled): explic
 conditions, artifact formats, approver inputs, sources and "nothing is regenerated". Unset, the
 arc runs over the attempts 1–4 work (`design_arc_fixture._work_model`).
 
+`DEEPTWIN_LIVE_REPLAY_GENERATION=<raw answer file>` answers the arc's generation turn with an
+EARLIER live generation answer saved in the evidence, sending nothing (no spend, no retry of that
+call); it is recorded as a replay with the file's sha256. Used when a run stopped in the product
+after a completed live generation, so the same live graphs reach live criticism. Criticism, the
+re-review and every other model call stay live.
+
 `DEEPTWIN_LIVE_CATALOG_ONLY=<path>` writes the live catalog's model list to that path (outside
 the evidence) and stops before any paid call. The model is the first one the catalog lists
 unless `DEEPTWIN_LIVE_MODEL` names one; its identifier comes from the provider, never from this
@@ -77,6 +83,7 @@ LEDGER = os.environ.get("DEEPTWIN_LIVE_LEDGER")
 LABEL = os.environ.get("DEEPTWIN_LIVE_ATTEMPT") or "attempt1"
 CATALOG_ONLY = os.environ.get("DEEPTWIN_LIVE_CATALOG_ONLY")
 SPECIFIED = os.environ.get("DEEPTWIN_LIVE_WORK") == "specified"
+REPLAY = os.environ.get("DEEPTWIN_LIVE_REPLAY_GENERATION")
 CAP_USD = 3.00
 MAX_ROUNDS = int(os.environ.get("DEEPTWIN_LIVE_ROUNDS") or 3)  # one request, up to two supplementation rounds
 GENERATION_OUTPUT_TOKENS = int(os.environ.get("DEEPTWIN_LIVE_GENERATION_TOKENS") or 24_000)  # up to 3 graphs
@@ -202,8 +209,20 @@ def test_one_live_design_arc_to_owner_selection(tmp_path):
         persist_design_request(domain, request, actor_ref=roots.actor, access_policy_ref=roots.access_policy,
                                retention_policy_ref=roots.retention_policy, created_at_utc=STAMP)
         guard = Guard(subject)
-        generation = guard.wrap(executor.model_turn(model, purpose="design_candidate"),
-                                GENERATION_OUTPUT_TOKENS, "generation")
+        replays = []
+        if REPLAY:
+            saved = Path(REPLAY).read_text(encoding="utf-8")
+
+            def generation(system, user):  # nothing is sent: an earlier live answer, recorded as such
+                replays.append({"replayed_raw_answer": Path(REPLAY).name,
+                                "sha256": sha256(saved.encode("utf-8")).hexdigest(),
+                                "prompt_sha256": sha256(json.dumps({"system": system, "user": user},
+                                                                   ensure_ascii=False, sort_keys=True)
+                                                        .encode("utf-8")).hexdigest()})
+                return saved
+        else:
+            generation = guard.wrap(executor.model_turn(model, purpose="design_candidate"),
+                                    GENERATION_OUTPUT_TOKENS, "generation")
         criticism = guard.wrap(executor.model_turn(model, purpose="design_criticism",
                                                    max_output_tokens=CRITICISM_OUTPUT_TOKENS),
                                CRITICISM_OUTPUT_TOKENS, "criticism")
@@ -271,6 +290,7 @@ def test_one_live_design_arc_to_owner_selection(tmp_path):
             "refusals": workspace.criticism_refusals(request.request_id),
             "calls": calls,
             "guard_refusals": guard.refused,
+            "replayed_generation": replays,
             "spend_usd_at_ceiling_this_attempt": round(guard.spent(), 6),
             "spend_usd_at_ceiling_earlier_attempts": round(guard.prior_usd, 6),
             "cap_usd": CAP_USD, "rereview_reserve_usd": REREVIEW_RESERVE_USD, "max_rounds": MAX_ROUNDS,
@@ -285,5 +305,5 @@ def test_one_live_design_arc_to_owner_selection(tmp_path):
         assert response.status_code == 201, text[:4000]
         assert guard.prior_usd + guard.spent() <= CAP_USD
         # the arc counts a send the guard refused as a call attempt; nothing was sent for it
-        assert run["model_calls"] == (sum(1 for item in guard.sends if item["phase"] == "arc")
+        assert run["model_calls"] == (len(replays) + sum(1 for item in guard.sends if item["phase"] == "arc")
                                       + sum(1 for item in guard.refused if item["phase"] == "arc"))
