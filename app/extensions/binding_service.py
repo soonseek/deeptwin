@@ -44,6 +44,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from hashlib import sha256
+from uuid import uuid4
 
 from ..domain import extension_binding as values
 from ..domain.extension_binding import (
@@ -169,6 +170,37 @@ class PersistentExtensionBindings:
         self._domain = transport._domain
         self._instance_id = instance_id
         self._resolver = resolver if resolver is not None else self._resolve_transport_qualification
+        self._reconciliation = None
+
+    # -- startup reconciliation -------------------------------------------------------------
+
+    def reconcile_startup(self):
+        """Check every slot's head against its retention, command and event records
+        (`binding_reconciliation`). Every command commits in one transaction, so a crash in the
+        middle of one leaves nothing of it; a finding means records outside that invariant. It is
+        kept for the inspection, the dispatch resolver refuses that slot, and one
+        `recovery.reconciled` event records the count. Nothing is repaired or re-derived."""
+        from .binding_reconciliation import reconcile
+
+        report = reconcile(self._domain, clock_ms=lambda: _now()[2])
+        self._reconciliation = report
+        if report["state"] != "consistent":
+            _now_value, stamp, _ms = _now()
+            with _writer(), self._domain._connection(write=True) as db:
+                roots = self._domain._read_roots(db)
+                _append_event_in_transaction(
+                    db, vault_id=roots.genesis.id, recorded_at_utc=stamp, observed_at_utc=stamp,
+                    actor_kind="system", actor_ref=roots.actor, event_type="recovery.reconciled",
+                    object_refs=(), correlation_id=str(uuid4()), causation_id=None,
+                    status="succeeded" if report["state"] == "inconsistent" else "unknown", error_code=None,
+                    public_metadata={"recovered_count": 0,
+                                     "unknown_count": len(report["inconsistent_slots"])},
+                    private_evidence_refs=(), retention_class="core", policy_ref=roots.access_policy)
+        return report
+
+    @property
+    def reconciliation(self):
+        return self._reconciliation
 
     # -- authentication and storage -------------------------------------------------------
 
@@ -511,8 +543,19 @@ class PersistentExtensionBindings:
                             "holders": [{"extension_id": name, "revisions": revisions}
                                         for name, revisions in holders.items()]},
             "affected_environments": self._affected(db, roots, digest, head, first),
+            "reconciliation": self._slot_reconciliation(db, roots, digest, history),
             "links": {"self": f"/api/v1/extensions/bindings/{digest}"},
         }
+
+    def _slot_reconciliation(self, db, roots, digest, history):
+        from .binding_reconciliation import slot_findings
+
+        findings = slot_findings(db, roots, digest, history)
+        startup = self._reconciliation
+        return {"state": "inconsistent" if findings else "consistent", "findings": findings,
+                "startup_state": None if startup is None else startup["state"],
+                "startup_findings": None if startup is None else startup["inconsistent_slots"].get(digest, []),
+                "dispatch": "refused" if findings else "admitted_when_head_matches"}
 
     @staticmethod
     def _affected(db, roots, digest, head, first):
@@ -563,8 +606,13 @@ class PersistentExtensionBindings:
                     "extension_kind": current["extension_kind"], "retained_rollback_count": retained,
                     "links": {"self": f"/api/v1/extensions/bindings/{digest}"}})
             more = len(ordered) > limit
+        startup = self._reconciliation
         return {"schema_version": SLOT_LIST_SCHEMA, "limit": limit, "items": items,
-                "next_after": items[-1]["binding_slot_key_digest"] if more else None}
+                "next_after": items[-1]["binding_slot_key_digest"] if more else None,
+                "reconciliation": None if startup is None else {
+                    "state": startup["state"], "checked_slots": startup["checked_slots"],
+                    "inconsistent_slot_digests": sorted(startup["inconsistent_slots"]),
+                    "checked_at_ms": startup["checked_at_ms"]}}
 
     def installations(self, request, *, limit=None, after=None):
         """Every extension installation (staged revision 1, verified revision 2) with its trust

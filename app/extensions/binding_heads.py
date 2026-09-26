@@ -98,6 +98,19 @@ class DurableBindingHeads:
             roots = self._store._read_roots(db)
             return read_slot_history(self._store, db, roots, slot_digest)
 
+    def _consistent_history(self, slot_digest):
+        """The slot history, refused when its records break the one-transaction invariant
+        (`binding_reconciliation.slot_findings`): a slot whose head is not backed by its command
+        and retention records is never dispatched."""
+        from .binding_reconciliation import slot_findings
+
+        with self._store._connection() as db:
+            roots = self._store._read_roots(db)
+            history = read_slot_history(self._store, db, roots, slot_digest)
+            if history and slot_findings(db, roots, slot_digest, history):
+                _refuse("binding_unavailable")
+            return history
+
     def resolve(self, *, port, extension_id, installation_digest, qualification_ref,
                 binding_revision_ref, binding_slot_key, binding_slot_key_digest):
         """The durable active head that is exactly the named revision, as the projections the port
@@ -110,7 +123,7 @@ class DurableBindingHeads:
         if named.kind != "extension_binding" or named.id != values.slot_record_id(digest):
             _refuse("binding_revision_unknown")
         try:
-            history = self.history(digest)
+            history = self._consistent_history(digest)
         except StorageError:
             _refuse("binding_unavailable")
         if not history:

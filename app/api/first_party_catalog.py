@@ -13,7 +13,7 @@ from .deployment_prepare import (
     reconcile_prepare_startup,
 )
 from .design_workspace import design_workspace_services
-from .extension_bindings import binding_services
+from .extension_bindings import binding_services, reconcile_binding_startup
 from .extension_candidates import candidate_services
 from .first_party import InstalledContribution, core_services
 from .graphs import graph_services
@@ -223,6 +223,7 @@ INSTALLED = (
         ("extension.manage", "extension.read"),
         requires=("provider-transport-qualification.service",),
         provides=("extension-bindings.service",),
+        startup_reconcile=reconcile_binding_startup,
     ),
     InstalledContribution(
         "browser-grants-v1.json",
