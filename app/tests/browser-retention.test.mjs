@@ -75,7 +75,7 @@ test('retention: per-category state, then preview → consent → cleanup; core 
     assert.match(preview, /정리될 항목 2개/);
     assert.match(preview, /지움: 암호화된 백업 파일 · 남김: 외부 영수증, 동의 기록, 삭제 표시/);
     assert.match(preview, /닿지 않는 것: 이미 내려받은 사본/);
-    assert.match(preview, /어떤 경우에도 지우지 않는 것: 핵심 기록, 삭제 표시, 저장한 원본\(작업 화면에서만 삭제\), 가장 최근 백업/);
+    assert.match(preview, /어떤 경우에도 지우지 않는 것: 핵심 기록, 삭제 표시, 저장한 원본\(업무 화면에서만 삭제\), 가장 최근 백업/);
     const digest = (await panel.locator('.retention-digest').textContent()).replace('미리보기 SHA-256 ', '');
     assert.match(digest, /^[0-9a-f]{64}$/);
     // a preview removes nothing

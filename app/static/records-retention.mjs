@@ -31,7 +31,7 @@ export const KEPT_LABELS = Object.freeze({
 });
 
 export const CLEANUP_LABELS = Object.freeze({
-  not_offered: '정리 대상이 아닙니다', work_screen: '작업 화면의 "원본 삭제"에서 미리보기와 동의를 거쳐 지웁니다',
+  not_offered: '정리 대상이 아닙니다', work_screen: '업무 화면의 "원본 삭제"에서 미리보기와 동의를 거쳐 지웁니다',
   this_screen: '아래에서 미리보기와 동의를 거쳐 정리할 수 있습니다', nothing_stored: '저장된 것이 없어 정리할 것이 없습니다',
 });
 
@@ -63,7 +63,7 @@ export const NOT_REACHED_LABELS = Object.freeze({
 });
 
 export const NEVER_LABELS = Object.freeze({
-  core_records: '핵심 기록', deletion_tombstones: '삭제 표시', originals: '저장한 원본(작업 화면에서만 삭제)',
+  core_records: '핵심 기록', deletion_tombstones: '삭제 표시', originals: '저장한 원본(업무 화면에서만 삭제)',
   newest_backup: '가장 최근 백업',
 });
 

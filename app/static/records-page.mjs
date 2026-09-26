@@ -126,7 +126,8 @@ export async function boot({ document, location, fetch } = {}) {
   const sections = Object.fromEntries(recordsRoutes().map(route => [route.id, route]));
   roots.export.replaceChildren(el(document, 'h2', { text: '내보내기' }), el(document, 'p', { text: MESSAGES.exportHere }),
     el(document, 'p', {}, [el(document, 'a', { text: MESSAGES.exportLink, attrs: { href: './work.html#work-records' } })]),
-    el(document, 'p', { className: 'records-export-note', text: MESSAGES.settingsHere }));
+    el(document, 'p', { className: 'records-export-note', text: MESSAGES.settingsHere }),
+    el(document, 'p', {}, [el(document, 'a', { text: '설정 열기', attrs: { href: './settings.html' } })]));
   const session = createSupportedSession({ fetch, basePath });
   try {
     await session.establish();
