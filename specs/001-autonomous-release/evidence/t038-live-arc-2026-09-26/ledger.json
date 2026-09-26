@@ -8,6 +8,10 @@
     {
       "label": "attempt1",
       "bound_usd": 1.61895
+    },
+    {
+      "label": "attempt2",
+      "bound_usd": 1.057735
     }
   ]
 }

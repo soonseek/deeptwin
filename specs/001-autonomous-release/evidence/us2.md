@@ -17,6 +17,13 @@ closed.
 **Update 2026-09-26 (later): live review diagnosis, restorable requests, creation from the work
 page** — see the section of that name below.
 
+**Update 2026-09-26 (latest): one live design arc to the owner's selection.** Two attempts were
+made under a USD 3.00 cap. Attempt 1 generated 2 candidates live; attempt 2 generated 1 after
+one generation-prompt improvement. All 3 were criticized live with 0 contract refusals, and all 3
+were **rejected**. Nothing was presented, so there was no owner selection, no re-review and no
+preparation. T038 stays **not ticked**. See the section "ONE live design arc to the owner's
+selection".
+
 ## What landed
 
 - **`POST /api/v1/design-requests/{id}/generations`** (`design_requests.generate`,
@@ -270,6 +277,176 @@ because the fixture authority's refs are synthetic.
 - `browser-design.test.mjs`, `browser-design-workspace.test.mjs` and
   `browser-run-start-t048.test.mjs`: 4 passed.
 
+## 2026-09-26 (latest): ONE live design arc to the owner's selection — nothing passed
+
+The owner authorized one more live design arc, end to end through the product's own paths, under
+a hard cap of **USD 3.00 in total**. It covers:
+
+- live generation of up to 3 candidates (one request, up to 2 supplementation rounds);
+- live criticism of each candidate, then pool assembly;
+- if a candidate passes, the owner's selection through the workspace routes: `derivations`
+  select, the derived version, and its mandatory **live** re-review;
+- preparation, first with no critic qualification (it must be refused), then with the
+  SIMULATED test-actor qualification (decisions.md 2026-09-25, independent-person steps). A
+  preparation there would be labelled as resting on that simulation and would not be a release
+  qualification.
+
+Also in the authorization: one prompt-level change to the generation instructions if a clear
+systematic defect appeared, and one more attempt inside the same cap.
+
+**Runner.** `app/tests/test_claude_live_design_selection.py` (`_live_`,
+`DEEPTWIN_LIVE_DESIGN_SELECTION=1`).
+- **Key.** Read from `DEEPTWIN_LIVE_ANTHROPIC_API_KEY` and put into server memory through the
+  owner's connection route. It is never printed or stored, and the evidence is asserted
+  key-free.
+- **Model.** The first model the live catalog listed. Its identifier is redacted from the
+  evidence (`<live-catalog-model>`) and appears in no code or commit. There is no retry and no
+  fallback.
+- **Spend guard.** Before every send, the guard adds up three amounts, all at **ceiling rates of
+  USD 5 / 25 per MTok** in/out (above the model's listed USD 4 / 20):
+  - earlier attempts (read from the ledger);
+  - this attempt's provider-reported usage;
+  - the next call's worst case: its exact prompt length at one token per character, plus its
+    full output cap.
+- **Reserve.** In attempt 1 the guard also held back USD 1.00 while the arc ran, so that the
+  owner's re-review could complete.
+- **Refusals.** A send the guard refuses is recorded by the arc as a refused call.
+- **Raw answers.** Each answer is saved the moment it arrives, before admission, and holds model
+  output only.
+- **Evidence.** Everything is under `evidence/t038-live-arc-2026-09-26/`: `attempt1.json`,
+  `attempt2.json`, 26 raw answers `attemptN-NN-arc-<stage>-<purpose>.txt` and `ledger.json`.
+
+### Attempt 1 (current generation prompt; 3 requested, max 3 rounds, output caps 24,000 / 6,000)
+
+Run `f8c2a7c1-06f8-56bb-836c-7ff721eacd7b`, outcome **`shortfall`**, 3 rounds, 0 presented of 2.
+
+- **Generation.** Round 1 made one live call. The model returned **2** graphs (it may return 1
+  to 3), and the framework admitted both:
+  - `fd01da78-…`: research, verifier, writer, publish-gate (human gate), release (deterministic);
+  - `bdc3a06d-…`: research, writer, checker, publish-gate, release.
+- **Criticism.** Both candidates were criticized live, 8 calls each. All 16 answers were admitted
+  by the contract; there were **0 contract refusals**. Both were **rejected**:
+  - `fd01da78-…`: `counterexample_fail:cx-thumbnail-no-artifact-no-check`,
+    `review_unresolved:shape:disposition` and three `validity_unresolved` (`cx-dossier-overwrite`,
+    `cx-script-post-approval-mutation`, `cx-shared-grant-research-verifier`).
+  - `bdc3a06d-…`: `review_fail` on `…221:claim:0`, `…221:effect:research-responsibility` and
+    `shape:disposition`; `counterexample_fail` on `cx-writer-mutates-dossier`,
+    `cx-citation-map-undeclared` and `cx-thumbnail-promise-undefined`;
+    `review_unresolved:work:completion:0`; `validity_unresolved:cx-post-check-script-writers`.
+- **Supplementation.** Rounds 2 and 3 were **refused by the spend guard**. The bound was USD
+  3.2836 including the reserve, so nothing was sent. The arc recorded them as refused generation
+  calls (`the model boundary failed`). Nothing was presented, so the owner path did not run.
+
+### Analysis (from the saved raw texts and verdicts)
+
+The live critic is **not** too strict here: its findings name real design properties of the
+graphs. The failures are **systematic candidate defects**, and the same two recur in all three
+live candidates so far (the earlier confirmation run included):
+
+1. **Shared write access.** The critic's projection (`design_criticism._artifacts`) lists every
+   node with an output slot under an artifact contract as a *writer* of that artifact. The
+   generator reused contracts downstream:
+   - a gate or release node re-emits the `script` contract it received;
+   - a verifier re-emits the research dossier;
+   - the writer re-emits the dossier to the checker.
+   The critic then reads, correctly, that the gate, release, verifier or writer can alter
+   research output or the approved script. This breaks `…221:claim:0` and the effect, and puts
+   `shape:disposition` in doubt.
+2. **Completion conditions left to responsibility text.** The thumbnail-promise condition
+   ("첫 30초와 썸네일 약속…") and the citation linkage had no checking node other than their
+   producer, and no declared artifact (citation map, thumbnail promise). The earlier
+   confirmation's `cx-thumbnail-unchecked` was the same defect.
+
+The critic contract, the fold and the critic prompt were **not** changed.
+
+### The one prompt-level improvement (generation only)
+
+`app/services/design_live.py` gains `_CRITIC_DESIGN_RULES`, appended to the generation system
+prompt. It tells the generator the rules it is judged by:
+
+- **(a) one writer per artifact:** each contract is produced by exactly one node, and a node
+  that verifies, approves, forwards or releases emits its result under its own new contract;
+- **(b) independent, declared checks:** every completion condition, and every risk with
+  `mitigation_required`, is checked by a node other than its producer, and the check's result
+  and its inputs are declared artifacts. A node with two predecessors is a join.
+
+Admission is unchanged. `test_design_live.py` has a new test that the rules are stated.
+
+### Attempt 2 (improved prompt; 1 requested, 1 round, output caps 12,000 / 6,000, no reserve)
+
+The remaining budget set these limits. After attempt 1, USD 1.381 of the cap was left at
+ceiling rates, which is not enough for a 3-candidate arc plus a re-review (≈ USD 0.7 per
+criticized candidate at ceiling). The reserve was dropped so that the arc could send at all.
+The re-review would therefore have completed only if the budget allowed, and the guard would
+have refused its calls otherwise.
+
+Run `21ac3f75-80a5-510b-845e-b86a103144e9`, outcome **`shortfall`**, 0 presented of 1.
+
+- **Generation.** One live call. The framework admitted `d42f4501-…`: research, writer,
+  fact-check, hook-check (agents), review-join (join), publish-gate (human gate) and release
+  (agent). It has separate `citation-map` and `hook-thumbnail-brief` artifacts and the dossier
+  has a single writer. Both rules were followed.
+- **The review improved.** For the first time, **all 5 review findings passed**:
+  `…221:claim:0`, the effect, `shape:disposition`, `work:completion:0` and `work:completion:1`.
+  The thumbnail counterexample (`ce-first-30s-undefined`) was judged **rejected**, i.e.
+  invalid.
+- **Still rejected**, on deeper defects:
+  - `counterexample_fail:ce-factcheck-no-dossier`: fact-check cannot read the dossier, so an
+    omitted counter-evidence item passes;
+  - `counterexample_fail:ce-release-post-approval-drift`: release regenerates the PDF after
+    approval, and nothing checks it afterwards;
+  - `validity_unresolved:ce-unverified-claims-pass-join`: a fact-check report that lists
+    unverified claims does not block the join.
+  These findings are specific and grounded in the graph, so again they are not critic
+  strictness. 9 calls, 0 refusals, 0 guard refusals. The criticism record is
+  `b204fad0-3654-40d6-aed6-a037ee99b7ec`.
+- **Owner path.** Nothing was presented, so there was **no selection, no re-review and no
+  preparation**, and nothing to label.
+
+### Calls (provider-reported; all `completed / end_turn`; bound = the guard's ceiling-rate bound before the send, attempt 1 including the USD 1.00 reserve)
+
+| attempt | # | purpose | provider message id | request id | input / output tokens | bound USD |
+|---|---|---|---|---|---|---|
+| 1 | 1 | design_candidate (cap 24,000) | `msg_011CfRMxZGJXq9sVUFaJiyim` | `req_011CfRMxYTB2cA2hxtEJHMWV` | 5,711 / 7,895 | 1.6646 |
+| 1 | 2 | review (`fd01da78`) | `msg_011CfRN2ukD8DwNMHmfdbRwJ` | `req_011CfRN2uJAJR66aPRL8ffRe` | 5,169 / 3,578 | 1.4333 |
+| 1 | 3 | counterexample_proposal | `msg_011CfRN5HN2Qqf7AEGsquZPe` | `req_011CfRN5GfbdVUGutvQj1D8J` | 6,727 / 3,955 | 1.5622 |
+| 1 | 4 | counterexample_validity | `msg_011CfRN7wyo37bwWhuo9cBBP` | `req_011CfRN7vtYxpCjduexpoUh6` | 5,880 / 2,245 | 1.6905 |
+| 1 | 5 | counterexample_validity | `msg_011CfRN9YNXJDPW2bUAcQxFL` | `req_011CfRN9XvEfkCRH1YzKhKPW` | 5,671 / 1,713 | 1.7737 |
+| 1 | 6 | counterexample_validity | `msg_011CfRNAofKRShNQAjcgHkwp` | `req_011CfRNAo6a87Ec68LrxhGCe` | 5,722 / 1,640 | 1.8449 |
+| 1 | 7 | candidate_response | `msg_011CfRNC1rZR2GbzF6QiFyrG` | `req_011CfRNC1QGza21FnGYwgzKf` | 6,850 / 2,037 | 1.9295 |
+| 1 | 8 | counterexample_validity | `msg_011CfRNDM8xNAriuY5gwUoMB` | `req_011CfRNDLYz2UbdCEeK1kqCj` | 5,762 / 2,444 | 2.0004 |
+| 1 | 9 | review (`bdc3a06d`) | `msg_011CfRNF3W85RsKpLfYokSgq` | `req_011CfRNF33aczjHBiQaxo1go` | 5,143 / 2,946 | 2.0818 |
+| 1 | 10 | counterexample_proposal | `msg_011CfRNH38rJC9aQ9f6KqPJk` | `req_011CfRNH246q9v4ak9trp9Hy` | 6,701 / 3,747 | 2.1948 |
+| 1 | 11 | counterexample_validity | `msg_011CfRNKWn4URuYHmLkDyyKF` | `req_011CfRNKW4trRjDXXdQvm6L3` | 5,907 / 1,799 | 2.3179 |
+| 1 | 12 | candidate_response | `msg_011CfRNLnBJJ5c6XrAA5Hg6c` | `req_011CfRNLmVrgr5rnk5YwugQa` | 7,299 / 1,474 | 2.4107 |
+| 1 | 13 | counterexample_validity | `msg_011CfRNMkNgUuuBUPc7qeV5z` | `req_011CfRNMjiUmVpgerAKg2cpx` | 5,738 / 2,254 | 2.4639 |
+| 1 | 14 | candidate_response | `msg_011CfRNPFg4z1g25tJkhjcwM` | `req_011CfRNPFGGK9TkHUN8xBpsG` | 7,039 / 1,805 | 2.5657 |
+| 1 | 15 | counterexample_validity | `msg_011CfRNQNoyfLKUmuktXxkQr` | `req_011CfRNQNPfmLWbtXDoQXEyn` | 5,650 / 1,416 | 2.6278 |
+| 1 | 16 | candidate_response | `msg_011CfRNRNCnPxPkZRykhbkXd` | `req_011CfRNRMmVWTT6RBTrMpyXm` | 6,624 / 1,440 | 2.7046 |
+| 1 | 17 | counterexample_validity | `msg_011CfRNSLdZe8m2jSuXdUR7i` | `req_011CfRNSKKgAjgqJyf821VJ3` | 5,572 / 1,737 | 2.7600 |
+| 1 | — | round 2 generation: **guard refused, not sent** | — | — | — | 3.2836 |
+| 1 | — | round 3 generation: **guard refused, not sent** | — | — | — | 3.2836 |
+| 2 | 1 | design_candidate (cap 12,000) | `msg_011CfRNgdPGC8LD1vPSMSnJb` | `req_011CfRNgcnHzEcijyMCt8KVT` | 6,012 / 9,544 | 1.9890 |
+| 2 | 2 | review (`d42f4501`): 5 × pass | `msg_011CfRNne2sj14u2F5uSJuZT` | `req_011CfRNndB2m2XYkShyFRv3A` | 7,391 / 2,697 | 2.1177 |
+| 2 | 3 | counterexample_proposal (4) | `msg_011CfRNpKbfarsXKa8KqaqXd` | `req_011CfRNpK9cxH6WasccT4hoY` | 8,949 / 4,005 | 2.2357 |
+| 2 | 4 | validity `ce-factcheck-no-dossier`: valid | `msg_011CfRNs2T7aHiajN9gchgww` | `req_011CfRNs1RMLGDzSPaxW9KsZ` | 8,066 / 1,855 | 2.3755 |
+| 2 | 5 | response: **fail** | `msg_011CfRNtMWrpVzbR5vWGDuBd` | `req_011CfRNtLqSGptfvCTppSE8x` | 9,458 / 2,044 | 2.4808 |
+| 2 | 6 | validity `ce-unverified-claims-pass-join`: unresolved | `msg_011CfRNugZcYgw9vwJKk5knp` | `req_011CfRNufiWwZk1L6dgp2P6K` | 7,905 / 1,985 | 2.5586 |
+| 2 | 7 | validity `ce-release-post-approval-drift`: valid | `msg_011CfRNw5NbZWyQjumFGaGGX` | `req_011CfRNw4v4MbWmxMY6hKBmN` | 7,879 / 2,200 | 2.6475 |
+| 2 | 8 | response: **fail** | `msg_011CfRNxciXiLpLP4QBnCt3g` | `req_011CfRNxcGjfqaLZt815eVn7` | 9,157 / 1,980 | 2.7589 |
+| 2 | 9 | validity `ce-first-30s-undefined`: rejected | `msg_011CfRNyw9pFemDutbnZWrch` | `req_011CfRNyvWNro9cCXHnzgNh2` | 7,845 / 1,467 | 2.8367 |
+
+**Spend.** 26 calls were sent, with no cache tokens.
+
+| | input tokens | output tokens | listed USD 4 / 20 | ceiling USD 5 / 25 |
+|---|---|---|---|---|
+| Attempt 1 | 103,165 | 44,125 | ≈ 1.295 | 1.619 |
+| Attempt 2 | 72,662 | 27,777 | ≈ 0.846 | 1.058 |
+| **Total** | | | **≈ 2.14** | **2.677** (of the 3.00 cap) |
+
+The guard refused 2 sends and none went past the cap. USD 0.323 remains at ceiling rates, which
+is not enough for another criticized candidate, so there is no further attempt.
+
 ## Not ticked
 
 The 0/1/2/3, revision and cancel paths are exercised in `app/tests/browser-design.test.mjs` with
@@ -280,15 +457,24 @@ confirmation run made 8 critic calls, all admitted, and folded a verdict. But th
 **rejected** the one live candidate, so the pool presented nothing and **no live selection** was
 made. The candidate criticized in that run was also the live-generated graph replayed through
 admission, not a second live generation. T038 therefore stays open for a live selection of a
-live-generated candidate that passes live criticism. In any case none of this is a release
+live-generated candidate that passes live criticism. The 2026-09-26 (latest) arc changed nothing here, although it was
+run end to end through the product's routes. All 3 live-generated candidates were rejected by
+live criticism. The improved generation prompt's candidate passed every review finding, but
+two counterexamples failed it and a third stayed unresolved. So no owner selection, re-review
+or (simulated-qualification) preparation took place. In any case none of this is a release
 qualification: no critic or lens is qualified in production, `V3_VERIFYING_DESIGN_IDS` is empty
 and V3 is unverified (T077).
 
 ## Open
 
-- No live candidate has passed live criticism, so none has been selected or prepared. A further
-  live attempt needs a new owner authorization: by the guard's ceiling accounting, USD 0.549 of
-  this step's 1.50 cap remains (≈ 0.74 at the listed price).
+- No live candidate has passed live criticism, so none has been selected or prepared.
+  - After the 2026-09-26 (latest) arc, USD 0.323 of its 3.00 cap remains at ceiling rates, which
+    is too little for another criticized candidate. A further attempt needs a new owner
+    authorization.
+  - The next generation defects to address, from the attempt-2 verdict:
+    - the fact-check needs read access to the research dossier;
+    - nothing may regenerate the script after approval unchecked;
+    - a check that finds unverified claims must block or loop back.
 - Production cannot create a design request: no lens is qualified, so no `DesignSource` is
   configured, and the page and the route say so. A production source would also need the owner's
   model turns wired from the Claude connection and a production functional-decision step (T030).

@@ -86,6 +86,17 @@ def test_prompt_rendering_is_deterministic_for_one_request():
     assert render_candidate_prompt(request) == render_candidate_prompt(request)
 
 
+def test_the_generator_is_told_the_critics_design_rules():
+    """T038: the two design defects the live critic rejected every live candidate for are
+    stated to the generator (one writer per artifact; completion conditions checked by
+    another node as declared artifacts), in the first-round and the revision prompt alike."""
+    _target, _lens, _decision, request, _graph = prepared()
+    system, _user = render_candidate_prompt(request)
+    assert "one writer per artifact" in system
+    assert "never re-emits a contract it received" in system
+    assert "completion_conditions" in system and "other than the one that produced" in system
+
+
 def test_model_supplies_only_graphs_never_identity_or_call_refs():
     _target, _lens, _decision, request, graph = prepared()
     forged = {
