@@ -354,7 +354,8 @@ def approved_tool_permissions(domain_store, environment_ref) -> EntityRef:
     try:
         environment = domain_store.get(environment_ref).body
         content = decode_design_refs(environment["content"])
-        if content.get("schema_version") != "environment-record-v1" or content.get("status") != "prepared":
+        if (content.get("schema_version") not in ("environment-record-v1", "environment-record-v2")
+                or content.get("status") != "prepared"):
             raise ValueError("environment")
         approval_sha = content["approval_sha"]
         parents = environment["parent_refs"]

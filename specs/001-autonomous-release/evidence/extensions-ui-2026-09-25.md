@@ -7,7 +7,9 @@ through the existing contributions and added no route. The later slice the same 
 (§"Bindings, rollback retention and inventory lists") adds the `extension-bindings-v1`
 contribution and a candidate list route, and wires the screen to them. Branches `extensions-ui`
 (first slice) and `ext-bindings` (later slice), both from `codex/ui-structure` (the later one
-contains f133fb1).
+contains f133fb1). A third slice (2026-09-26, branch `ext-dispatch`, §"Dispatch reads binding
+heads…") makes dispatch read the durable heads, records binding revisions in environment versions,
+registers the contract events and reconciles heads at startup.
 
 ## What landed
 
@@ -197,6 +199,106 @@ synthetic installation records of the browser fixture's binding mode are outside
 journal, so that fixture cannot be restarted and its deployment reads refuse; the cold-reopen
 proof is the qualified pytest case.
 
+## Dispatch reads binding heads, environments record revisions, contract events, startup reconciliation (2026-09-26)
+
+Branch `ext-dispatch` from `codex/ui-structure` (contains 1887129 "T049: close"). Four of the
+open items of the previous section, in that order.
+
+**1. The dispatch path reads the durable slot head.** `app/extensions/binding_heads.py`
+(`DurableBindingHeads.resolve`) resolves a config's `binding_revision_ref` against the durable
+`extension-binding-revision-v1` history of its recomputed slot key: every version re-validated,
+the backward chain checked, the head must be `active` and be exactly the named revision, and its
+extension, installation digest, qualification ref, port and slot key must equal the config's.
+Otherwise it refuses with the head's reason: `binding_slot_absent`, `binding_revision_unknown`,
+`binding_disabled`, `binding_superseded`, `binding_rolled_back` (a rollback re-activates an older
+revision as a *new* revision, so the old ref stays refused), `binding_mismatch`,
+`binding_unavailable`. `ProviderSemanticContextLoader.load` and
+`ProviderSemanticOperationController._authorize_query` (status/cancel) now take the binding
+revision and head projections from it (`provider_semantic_context.durable_binding`), never from
+the caller: `ProviderSemanticAuthority` no longer has `binding_record`/`binding_head_record`; its
+`binding_refs` may carry only `grant_refs` and `credential_handle_refs`, because the durable
+binding revision does not hold them yet (data-model lists "opaque credential/grant refs" on the
+revision; that part is still injected). Absent/disabled/superseded/rolled-back heads are a
+pre-send `permission_denied`; a config that does not join the durable history is an integrity
+failure. The resolved head is part of `ProviderSemanticContext` (`binding_head`), and the
+dispatcher already re-loads the context after the worker proposal and gateway prepare and before
+the gateway commit, so a head move between build and send is refused (gateway exchange cancelled
+`policy_revoked`, local terminal `permission_denied`, no upstream request); the catalog path's
+per-page re-load also compares the head. No other port has a dispatcher, so there is nothing else
+to wire. **Residual window, stated:** a head change after that last re-load and before the
+gateway commit is not fenced (the binding writer lock is not held across the gateway call); this
+is the same window as for grants and the connection pin.
+
+**2. Environment versions record binding revisions.** `prepare_environment_version(...,
+extension_bindings=...)` takes the closed, slot-sorted `{binding_slot_key_digest, revision,
+binding_record_digest}` list; a version with any is `environment-version-v2` and its sealed
+`environment` record is `environment-record-v2` (`extension_binding_revisions`); a version with
+none keeps the v1 shapes byte-for-byte (`browser_grants` accepts both record schemas). The design
+workspace's prepare path reads them from the durable heads
+(`binding_heads.environment_binding_revisions`: every slot whose head is `active` and whose scope
+is this environment or instance-wide). The slot inspection's `affected_environments` now lists
+every environment version that recorded a revision of the slot (`environment_record`,
+`binding_revision`, `latest_prepared`, `uses_current_head`, `needs_re_preparation`) and the
+environments whose latest prepared version needs re-preparation. A binding change marks that state
+only: the command result carries `environments_needing_re_preparation`, the contract event carries
+`affected_environment_count`, and no environment is re-prepared, activated or promoted. The read
+of the heads and the preparation are separate transactions; a head moved in between shows the new
+version as needing re-preparation at once (tested). **Not done:** a new binding for a scope that an
+environment version never recorded does not mark that version; the dispatch path does not yet check
+the run's environment record against the config's binding revision.
+
+**3. Contract event names.** Registered in `app/domain/events.py` (and the audit's
+`extension_binding` coverage): `extension.binding_activated|superseded|disabled|rolled_back` and
+`extension.rollback_retention_created|released|consumed`, exact payloads (kind, trust tier, port,
+purpose, revisions, previous revision or retention state, affected environment count). The public
+allowlist admits only enums/counts (the event-coverage test forbids strings and `key` field
+names), so the exact slot, revision and retention records travel as `object_refs`
+(`extension_binding` refs whose ids derive from the recomputed slot-key digest): a stale event
+names its own slot. They are written in the binding transaction; bind/supersede/disable/rollback
+no longer emit `extension.binding_changed` (still registered for the legacy registry) and a
+release now emits `extension.rollback_retention_released`. `schemas/v1/event-metadata.schema.json` is regenerated (`test_domain_schema_exports`). Atomicity is tested by failing the
+retention event: the supersession, its retention, its command record and its first event all roll
+back. **Deviation:** the contract's payload carries the key, digest and old/new candidate ids;
+here those are the object refs (ids and digests), not payload strings.
+
+**4. Startup reconciliation.** `app/extensions/binding_reconciliation.py` checks every slot at
+startup (the contribution's `startup_reconcile` hook, `reconcile_binding_startup`): each revision's
+command record names exactly that head; each displaced active revision is retained observing the
+new head; each rollback consumed its target's retention; each release has its command record; each
+revision and retention revision has its contract event (earlier `extension.binding_changed` under
+the same command id is accepted). Every command commits in one SQLite transaction, so a crash
+mid-command leaves nothing of it — proven with a real child process that `os._exit`s inside the
+supersession transaction after staging the revision and retention: the reopened store reconciles
+consistent, holds revision 1 and its command only, one event, and the next attempt succeeds.
+Records outside the invariant are reported (never repaired), counted in one `recovery.reconciled`
+event, shown by the slot inspection (`reconciliation`) and the list, and refused by the dispatch
+resolver (`binding_unavailable`), which re-checks the record invariants of the slot at every
+dispatch. **Not done:** qualification expiry and revoked grants are not reconciled here (no durable
+record of either exists for bindings).
+
+**5. Not done.** Durable `ExtensionQualification` records and retire/uninstall. The provider
+port's only evidence is the sealed transport qualification (installation conformance 4/4 and the
+manifest's transport conformance); there is no recorded permission, isolation or secret-handling
+result. A five-check record over that evidence would be `unknown` on three checks and, by the
+data-model rule, not qualified; writing `passed` would be invented evidence, and binding on it
+would retire the only bindable path. Retire/uninstall need the operator deployment request/receipt
+path for extensions. Both stay open.
+
+Screen: the slot view shows each recorded environment version (revision, current head or not,
+latest, needs re-preparation), the environments needing re-preparation, and the record
+reconciliation state; the supply list's environments entry no longer says the list is always empty.
+
+| Case | Surface | Result | Label |
+|---|---|---|---|
+| Route-written heads, every moved head, races | `app/tests/test_extension_binding_dispatch.py` (real `create_app` routes for bind/supersede/disable/rollback; production `_append` over a bare store for three races with three dispatch threads) | **6/6 pass.** Resolves the route-written head; mismatch/unknown/absent refused; superseded, disabled (both the displaced and the disabled revision), rolled back (old refs refused, the new revision resolves); an authority carrying binding fields refused; for disable/supersede/rollback no read that starts after the move commits is admitted; failed retention event rolls back the whole supersession | synthetic, test actor |
+| Head moved between build and send | `app/tests/test_provider_semantic_vertical.py` `binding_*` phases (actual dispatcher, framed worker, credential gateway, controlled upstream) | **4 new phases pass** (87/87 in the file): disabled before dispatch; disabled, superseded and rolled back after the worker proposal and gateway prepare: terminal `failed`/`permission_denied`, no response record, no upstream capture, a fresh load names the reason | synthetic, test actor |
+| Environment revisions | `test_environment_binding_revisions.py` (real design workspace prepare with the qualified test-actor critic), `test_design_store.py` (shape) | **2/2 + 5/5 pass.** Instance-wide and this environment's active heads recorded, another environment's and a disabled head not; v2 record content; inspection lists the version; supersession marks it, no new environment record; rollback still marks; read/prepare race marked at once; v1 shape unchanged without bindings; inexact lists refused | synthetic, test actor |
+| Events | `test_extension_bindings.py` | **7/7 pass**: the nine events of the A/B/disable/rollback/release path in order with exact payloads and object refs | synthetic |
+| Reconciliation | `test_extension_binding_reconciliation.py` | **2/2 pass**: real mid-transaction process death reconciles consistent; withheld retention/command reported with findings, one `recovery.reconciled`, inspection and list show it, dispatch refused | synthetic |
+| Screen | `extensions.test.mjs`, `browser-extensions.test.mjs` | **14/14, 2/2 pass** | synthetic |
+
+Also run on this branch, serially, one file per process: every `test_extension_*.py` and every `test_provider_*.py` except the `_live_`/`live_calibration` files (88 files), plus `test_environments.py`, `test_design_store.py`, `test_domain_events.py`, `test_public_events.py`, `test_event_coverage.py`, `test_web_owner_integration.py`, `test_first_party.py`, `test_first_party_dependencies.py`, `test_environment_records.py`, `test_environment_binding_revisions.py`, `test_design_workspace_api.py`, `test_browser_grants.py`, `test_runs_api.py`, `test_works_api.py`, `test_router_composition.py`, `test_web_shell_assets.py`, `test_deployment_prepare.py`, `test_product_wording_t023.py`: 106 files, 4,445 passed, 4 skipped (pre-existing), and 2 failed in `test_provider_semantic_owned_connection.py` — a timing flake that fails a different case on each run and also fails on the unmodified base commit 1887129 (base: 2 failed, 0 failed, 1 failed over three runs; this branch: 2, 1, 1). Node `extensions.test.mjs` 14/14; browser `browser-extensions.test.mjs` 2/2. Codex paths not run (owner verifies Codex separately). After the schema regeneration, also passed: `test_domain_schema_exports.py`, `test_bootstrap_delivery.py`, `test_deployment_acceptance.py`, `test_deployment_prepare_v2_schema_exports.py`, `test_deployment_receipt_schema_exports.py`, `test_owner_admission.py`, `test_worker_response_capture.py`, `test_graph_execution.py`, `test_paired_execution.py`, `test_promotion_approvals.py` (260 passed).
+
 ## Not done / not driven
 
 - **No verified-installation path in a browser.** The standalone server cannot compose a
@@ -208,18 +310,17 @@ proof is the qualified pytest case.
   the matched/mismatch/incomplete displays. The browser test sees them only as refusals.
   They are unit-tested with reply shapes that follow `parse_installation_reply` and
   `parse_reply`.
-- **T087 routes and records still missing** (after the later slice): durable
+- **T087 routes and records still missing** (after the 2026-09-26 slice): durable
   `ExtensionQualification` records (five checks, expiry, qualification-context heads) for any port,
-  so only the provider port is bindable; selector families other than the provider's; the
-  contract's distinct binding/retention event names (`extension.rollback_retention_*`,
-  superseded/disabled/rolled_back are not registered event types; bind/disable/rollback emit
-  `extension.binding_changed`, a release emits no event); environment versions that bind binding
-  revisions; startup reconciliation of expiry and revoked grants and the dispatch path reading these
-  binding heads (the provider semantic context still takes its binding records as injected
-  authority); retirements, current uninstall, replace and the extension-deployment request
-  projection; qualifications as a route; a list of deployment requests that produced no
-  installation; a code-free lens/evaluator definition import. The screen marks the items that
-  depend on them as not supplied.
+  so only the provider port is bindable; selector families other than the provider's; grant and
+  credential-handle refs on the durable binding revision (still injected at dispatch); the
+  dispatcher checking the run's environment record against its binding revision; marking
+  environments for a newly bound scope they never recorded; reconciliation of qualification expiry
+  and revoked grants; a fence between the last pre-commit re-load and the gateway commit;
+  retirements, current uninstall, replace and the extension-deployment request projection;
+  qualifications as a route; a list of deployment requests that produced no installation; a
+  code-free lens/evaluator definition import. The screen marks the items that depend on them as
+  not supplied.
 - **T078's own acceptance work is not done.** That covers the accessibility, 360/1024/wide,
   IME and three-mode checks and `browser-accessibility.test.mjs`/`ui-review.md`. It is still
   gated on the complete T087 UI and the frozen T081 candidate.

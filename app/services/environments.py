@@ -267,19 +267,30 @@ def record_design_approval(value) -> DesignApproval:
     )
 
 
+BINDING_REVISION_FIELDS = ("binding_slot_key_digest", "revision", "binding_record_digest")
+MAX_BINDING_REVISIONS = 256
+
+
 @dataclass(frozen=True, slots=True, init=False)
 class EnvironmentVersion:
-    """One prepared environment version; prepared is never active."""
+    """One prepared environment version; prepared is never active.
+
+    `extension_bindings` are the exact durable extension binding revisions
+    (`{binding_slot_key_digest, revision, binding_record_digest}`, sorted by slot)
+    that were the active heads for this environment's scope when it was prepared.
+    A version prepared with none keeps the original `environment-version-v1`
+    shape; one that records bindings is `environment-version-v2`."""
 
     environment_id: str
     version: int
     design_ref: EntityRef
     approval_sha: str
     status: str
+    extension_bindings: tuple
     _issuer_token: object = field(repr=False, compare=False)
 
     def as_dict(self) -> dict:
-        return {
+        value = {
             "schema_version": "environment-version-v1",
             "environment_id": self.environment_id,
             "version": self.version,
@@ -287,6 +298,33 @@ class EnvironmentVersion:
             "approval_sha": self.approval_sha,
             "status": self.status,
         }
+        if self.extension_bindings:
+            value["schema_version"] = "environment-version-v2"
+            value["extension_binding_revisions"] = [
+                dict(zip(BINDING_REVISION_FIELDS, item)) for item in self.extension_bindings
+            ]
+        return value
+
+
+def binding_revisions(value) -> tuple:
+    """The closed, slot-sorted list of binding revisions one version records."""
+
+    if type(value) not in (list, tuple) or len(value) > MAX_BINDING_REVISIONS:
+        raise EnvironmentContractError("binding revisions must be a bounded list")
+    result = []
+    for item in value:
+        if type(item) is not dict or set(item) != set(BINDING_REVISION_FIELDS):
+            raise EnvironmentContractError("a binding revision is not exact")
+        slot, revision, digest = (item[name] for name in BINDING_REVISION_FIELDS)
+        if (type(slot) is not str or _SHA256.fullmatch(slot) is None
+                or type(digest) is not str or _SHA256.fullmatch(digest) is None
+                or type(revision) is not int or not 1 <= revision <= 2**53 - 1):
+            raise EnvironmentContractError("a binding revision is not exact")
+        result.append((slot, revision, digest))
+    slots = [item[0] for item in result]
+    if slots != sorted(slots) or len(set(slots)) != len(slots):
+        raise EnvironmentContractError("binding revisions must be one per slot, sorted by slot")
+    return tuple(result)
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -386,8 +424,12 @@ def open_environment(environment_id) -> EnvironmentState:
     )
 
 
-def prepare_environment_version(state, approval, *, expected_head):
-    """Conditionally prepare the exact approved design, or refuse honestly."""
+def prepare_environment_version(state, approval, *, expected_head, extension_bindings=()):
+    """Conditionally prepare the exact approved design, or refuse honestly.
+
+    ``extension_bindings`` are the durable binding revisions this version is
+    prepared with (`binding_revisions`); the caller reads them from the slot
+    heads. Recording them binds nothing and activates nothing."""
 
     if (
         type(state) is not EnvironmentState
@@ -414,6 +456,7 @@ def prepare_environment_version(state, approval, *, expected_head):
         raise EnvironmentContractError("this approval already prepared a version")
     if state.head >= 1_000_000:
         raise EnvironmentContractError("the environment version space is exhausted")
+    bindings = binding_revisions(extension_bindings)
     version = _issue(
         EnvironmentVersion,
         environment_id=state.environment_id,
@@ -423,6 +466,7 @@ def prepare_environment_version(state, approval, *, expected_head):
         # Preparation approves configuration; it never starts work and it
         # never operationally promotes anything.
         status="prepared",
+        extension_bindings=bindings,
         _issuer_token=_ISSUE_TOKEN,
     )
     new_state = _issue(
@@ -436,6 +480,7 @@ def prepare_environment_version(state, approval, *, expected_head):
 
 
 __all__ = [
+    "BINDING_REVISION_FIELDS",
     "DesignApproval",
     "EnvironmentContractError",
     "EnvironmentState",
@@ -443,6 +488,7 @@ __all__ = [
     "is_issued_design_approval",
     "is_issued_environment_state",
     "is_issued_environment_version",
+    "binding_revisions",
     "open_environment",
     "prepare_environment_version",
     "record_design_approval",

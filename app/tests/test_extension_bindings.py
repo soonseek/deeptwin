@@ -16,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.extension_bindings import REFUSALS
-from app.domain.extension_binding import digest_of, scope_fingerprint
+from app.domain.extension_binding import digest_of, retention_record_id, scope_fingerprint, slot_record_id
 from app.domain.refs import DomainContractError
 from app.domain.schemas import ImmutableRecord
 from app.extensions.binding_service import (
@@ -188,9 +188,29 @@ def _records(case):
         return db.execute("SELECT COUNT(*) FROM domain_records WHERE kind='extension_binding'").fetchone()[0]
 
 
+BINDING_EVENT_TYPES = (
+    "extension.binding_activated", "extension.binding_superseded", "extension.binding_disabled",
+    "extension.binding_rolled_back", "extension.rollback_retention_created",
+    "extension.rollback_retention_released", "extension.rollback_retention_consumed")
+
+
 def _events(case):
     response = case.client.get(case.profile.base_path + "api/v1/events", headers=headers(case.profile))
-    return [event for event in response.json()["events"] if event["event_type"] == "extension.binding_changed"]
+    events = response.json()["events"]
+    assert not [event for event in events if event["event_type"] == "extension.binding_changed"]
+    return [event for event in events if event["event_type"] in BINDING_EVENT_TYPES]
+
+
+def _binding_meta(revision, previous, affected=0):
+    return {"extension_kind": "provider", "trust_tier": "runtime_worker", "port_contract_version": "provider-port-v1",
+            "purpose": "operational", "revision": revision, "previous_revision": previous,
+            "affected_environment_count": affected}
+
+
+def _retention_meta(retention, target, binding, previous, state):
+    return {"extension_kind": "provider", "trust_tier": "runtime_worker", "port_contract_version": "provider-port-v1",
+            "purpose": "operational", "retention_revision": retention, "target_revision": target,
+            "binding_revision": binding, "previous_state": previous, "state": state}
 
 
 def test_contribution_is_composed_and_the_wire_is_closed(case):
@@ -294,8 +314,8 @@ def test_bind_compete_coexist_disable_rollback_and_release(case):
                                     "port_contract_version": "provider-port-v1"}
     assert slot["trust_tier"] == "runtime_worker" and slot["extension_kind"] == "provider"
     assert slot["affected_environments"] == {
-        "target_environment_id": None, "bound_environment_versions": [],
-        "basis": "no_environment_version_records_extension_binding_revisions"}
+        "target_environment_id": None, "bound_environment_versions": [], "needs_re_preparation": [],
+        "basis": "environment_records_recorded_binding_revisions"}
     (retention_a,) = slot["rollback_retentions"]
     assert retention_a["retention_head"]["state"] == "retained" and retention_a["rollback_available"] is True
     assert retention_a["release_warning"] == release_warning(retention_a["target_binding_revision_ref"],
@@ -389,10 +409,32 @@ def test_bind_compete_coexist_disable_rollback_and_release(case):
         "binding_slot_key_digest": sibling_digest,
         "expected_current_binding_head": sibling_bound["binding_head"]}), "rollback_target_invalid")
 
+    # one contract event per head move and per retention revision, each committed with its records
     events = _events(case)
-    assert [event["public_metadata"] for event in events] == [
-        {"extension_kind": "provider", "trust_tier": "runtime_worker", "revision": revision}
-        for revision in (1, 1, 2, 3, 4)]
+    assert [(event["event_type"], event["public_metadata"]) for event in events] == [
+        ("extension.binding_activated", _binding_meta(1, 0)),
+        ("extension.binding_activated", _binding_meta(1, 0)),
+        ("extension.binding_superseded", _binding_meta(2, 1)),
+        ("extension.rollback_retention_created", _retention_meta(1, 1, 2, "absent", "retained")),
+        ("extension.binding_disabled", _binding_meta(3, 2)),
+        ("extension.rollback_retention_created", _retention_meta(1, 2, 3, "absent", "retained")),
+        ("extension.binding_rolled_back", _binding_meta(4, 3)),
+        ("extension.rollback_retention_consumed", _retention_meta(2, 1, 4, "retained", "consumed")),
+        ("extension.rollback_retention_released", _retention_meta(2, 2, 4, "retained", "released")),
+    ]
+    # the object refs name the exact slot record (its id derives from the recomputed key digest)
+    slot_id = slot_record_id(digest)
+    rolled_event = events[6]
+    assert rolled_event["object_refs"] == [
+        {"kind": "extension_binding", "id": slot_id, "version": 4, "content_hash": head4["binding_record_digest"]},
+        {"kind": "extension_binding", "id": slot_id, "version": 3, "content_hash": head3["binding_record_digest"]}]
+    assert events[1]["object_refs"][0]["id"] == slot_record_id(sibling["binding_slot_key_digest"]) != slot_id
+    released_event = events[8]
+    assert released_event["object_refs"] == [
+        {"kind": "extension_binding", "id": retention_record_id(digest, target_b), "version": 2,
+         "content_hash": released["new_retention_record_digest"]},
+        {"kind": "extension_binding", "id": slot_id, "version": 2, "content_hash": target_b},
+        {"kind": "extension_binding", "id": slot_id, "version": 4, "content_hash": head4["binding_record_digest"]}]
 
     # the list pages the two slots; the history survives a cold reopen
     listed = _ok(case.get("bindings?limit=1"))

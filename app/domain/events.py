@@ -61,6 +61,12 @@ SERVICE_CLIENT_DENIAL = Field("enum", (
     "conflict", "expiry", "name", "state", "internal",
 ))
 CONFORMANCE_OUTCOME = Field("enum", ("matched", "mismatch", "incomplete"))
+PORT_CONTRACT = Field("enum", ("provider-port-v1", "managed-provider-runner-port-v1",
+    "model-runtime-port-v1", "tool-port-v1", "artifact-codec-port-v1", "evaluator-runtime-port-v1",
+    "storage-port-v1", "credential-vault-port-v1", "export-sink-port-v1"))
+BINDING_PURPOSE = Field("enum", ("operational", "diagnosis", "inquiry_audit", "evaluation_development",
+                                 "evaluation_sealed", "release_evidence"))
+RETENTION_STATE = Field("enum", ("absent", "retained", "released", "consumed"))
 _registry = {}
 
 
@@ -142,10 +148,22 @@ _register("extension.discovered extension.staged extension.verified extension.qu
           extension_kind=EXTENSION_KIND, trust_tier=TRUST_TIER, revision=COUNT)
 _register("extension.binding_changed", extension_kind=EXTENSION_KIND,
           trust_tier=TRUST_TIER, revision=COUNT)
+# data-model.md "Extension lifecycle": one exact event per durable binding-head move and per rollback-
+# retention revision, committed in the binding transaction. The public payload is the allowlist below
+# (kinds, enums, revisions, counts); the exact slot, revision and retention records travel as the event's
+# `object_refs` (`extension_binding` records whose ids derive from the recomputed slot-key digest), so a
+# stale event names its own slot and cannot be applied to a sibling same-port slot.
+_register("extension.binding_activated extension.binding_superseded extension.binding_disabled "
+          "extension.binding_rolled_back", extension_kind=EXTENSION_KIND, trust_tier=TRUST_TIER,
+          port_contract_version=PORT_CONTRACT, purpose=BINDING_PURPOSE, revision=COUNT,
+          previous_revision=COUNT, affected_environment_count=COUNT)
+_register("extension.rollback_retention_created extension.rollback_retention_released "
+          "extension.rollback_retention_consumed", extension_kind=EXTENSION_KIND, trust_tier=TRUST_TIER,
+          port_contract_version=PORT_CONTRACT, purpose=BINDING_PURPOSE, retention_revision=COUNT,
+          target_revision=COUNT, binding_revision=COUNT, previous_state=RETENTION_STATE,
+          state=RETENTION_STATE)
 _register("extension.candidate_registered", extension_kind=EXTENSION_KIND,
-          port_contract_version=Field("enum", ("provider-port-v1", "managed-provider-runner-port-v1",
-              "model-runtime-port-v1", "tool-port-v1", "artifact-codec-port-v1", "evaluator-runtime-port-v1",
-              "storage-port-v1", "credential-vault-port-v1", "export-sink-port-v1")),
+          port_contract_version=PORT_CONTRACT,
           candidate_count=Field("integer", (1, 1)), byte_count=Field("integer", (1, 1114112)))
 _register("extension.compatibility_failed", extension_kind=EXTENSION_KIND,
           trust_tier=TRUST_TIER, revision=COUNT,
@@ -175,13 +193,20 @@ EVENT_REGISTRY = MappingProxyType(_registry)
 del _registry
 
 
+_EXACT = frozenset({
+    "extension.candidate_registered", "provider.conformance_started", "provider.conformance_completed",
+    "extension.binding_activated", "extension.binding_superseded", "extension.binding_disabled",
+    "extension.binding_rolled_back", "extension.rollback_retention_created",
+    "extension.rollback_retention_released", "extension.rollback_retention_consumed",
+})
+
+
 def event_schema(event_type):
     if type(event_type) is not str or event_type not in EVENT_REGISTRY:
         raise DomainContractError("Unregistered event type")
     result = {"type": "object", "properties": {name: field.schema()
             for name, field in EVENT_REGISTRY[event_type].items()}, "additionalProperties": False}
-    if event_type in {"extension.candidate_registered", "provider.conformance_started",
-                      "provider.conformance_completed"}:
+    if event_type in _EXACT:
         result["required"] = list(EVENT_REGISTRY[event_type])
     return result
 
@@ -194,8 +219,7 @@ def event_metadata(event_type, payload):
     fields = EVENT_REGISTRY[event_type]
     if set(payload) - fields.keys():
         raise DomainContractError("Unregistered event metadata field")
-    if event_type in {"extension.candidate_registered", "provider.conformance_started",
-                      "provider.conformance_completed"} and set(payload) != fields.keys():
+    if event_type in _EXACT and set(payload) != fields.keys():
         raise DomainContractError("Event requires exact observations")
     result = {name: fields[name].validate(value) for name, value in payload.items()}
     if event_type == "provider.conformance_completed" and result["matched_count"] > result["completed_count"]:

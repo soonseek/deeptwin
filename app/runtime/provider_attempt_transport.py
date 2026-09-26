@@ -14,7 +14,7 @@ from ..domain.store import DomainStore
 from ..extensions.provider_semantic_context import (ProviderSemanticAdmissionError,
                                                      ProviderSemanticAuthority,
                                                      ProviderSemanticContextLoader,
-                                                     validate_bound_handle)
+                                                     durable_binding, validate_bound_handle)
 from ..extensions.provider_semantic_contracts import (canonical_provider_error,
                                                        canonical_provider_result)
 from ..extensions.port_schema_generator import validate_port_payload
@@ -611,7 +611,8 @@ class ProviderAttemptTransport:
                 raise TimeoutError("catalog deadline elapsed")
             refreshed = self._context_loader.load(now_utc=self._stamp())
             if (refreshed.config != context.config or refreshed.request != context.request
-                    or refreshed.connection != context.connection):
+                    or refreshed.connection != context.connection
+                    or refreshed.binding_head != context.binding_head):
                 raise ValueError("catalog authority changed between pages")
             # write-ahead: reserved and dispatched in one budget transaction before the
             # prepare frame exists; beyond the policy nothing is sent
@@ -801,14 +802,16 @@ class ProviderSemanticOperationController:
         if config_record.get("schema_version") != "provider-semantic-config-v1":
             raise ValueError("query config is not semantic")
         if not historical:
+            binding_record, binding_head_record, _head = durable_binding(
+                self._domain, self._authority, config)
             validate_port_payload("provider-port-v1", "config", config, context={
                 "validated_at": observed_at,
                 "qualification_record": self._authority.qualification_record,
-                "binding_revision_record": self._authority.binding_record,
-                "binding_head_record": self._authority.binding_head_record})
+                "binding_revision_record": binding_record,
+                "binding_head_record": binding_head_record})
             connection_ref = EntityRef.from_dict(config_record["connection_ref"])
             connection = self._domain.get(connection_ref)
-            validate_bound_handle(config=config, binding=self._authority.binding_record,
+            validate_bound_handle(config=config, binding=binding_record,
                 connection_record={"ref": connection_ref.as_dict(),
                     "content": connection.body["content"]},
                 current_connection=self._authority.current_connection)

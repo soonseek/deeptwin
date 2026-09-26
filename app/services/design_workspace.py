@@ -599,7 +599,9 @@ class PersistentDesignWorkspace:
                        "retention_policy_ref": roots.retention_policy, "created_at_utc": decision.decided_at_utc}
             approval_ref = persist_design_approval(self._domain, approval, decisions=self._decisions, **headers)
             state, parent_ref = self._environment_head(environment_id)
-            version, new_state = prepare_environment_version(state, approval, expected_head=state.head)
+            version, new_state = prepare_environment_version(
+                state, approval, expected_head=state.head,
+                extension_bindings=self._binding_revisions(environment_id))
             head_ref = persist_environment_head(self._domain, version, new_state, parent_ref=parent_ref,
                                                 approval_ref=approval_ref, **headers)
             environment_ref = persist_environment_record(self._domain, version, head_ref=head_ref, **headers)
@@ -608,6 +610,17 @@ class PersistentDesignWorkspace:
         return {"status": "prepared", "environment_version": version.as_dict(),
                 "environment_ref": environment_ref.as_dict(), "approval_ref": approval_ref.as_dict(),
                 "activation": "not_activated"}
+
+    def _binding_revisions(self, environment_id):
+        """The durable extension binding heads this environment version is prepared with
+        (`binding_heads.environment_binding_revisions`); a later binding change marks the
+        version as needing re-preparation and changes nothing here."""
+        from ..extensions.binding_heads import BindingDispatchRefused, environment_binding_revisions
+
+        try:
+            return environment_binding_revisions(self._domain, environment_id)
+        except BindingDispatchRefused:
+            raise DesignWorkspaceError("not_approvable", "extension bindings are unavailable") from None
 
     def _environment_head(self, environment_id):
         from .design_store import resume_environment_state

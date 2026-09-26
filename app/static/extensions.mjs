@@ -70,7 +70,7 @@ export const SUPPLY = Object.freeze([
   ['bind', '바인딩·비활성화·롤백', true, '읽은 기대 헤드 그대로 보냄(다르면 409). 검증 기록이 있는 제공자 포트만'],
   ['history', '변경 불가 이력·롤백 보존 상태', true, '모든 바인딩 수정본과 각 롤백 보존 헤드(보존중·해제됨·사용됨)'],
   ['release', '롤백 보존 해제(소유자 전용)', true, '서버 경고를 보여 준 뒤 별도 확인으로만 보냄. 이력은 지워지지 않음'],
-  ['environments', '영향받는 환경', true, 'slot 범위의 대상 환경. 바인딩 수정본을 기록하는 환경 버전은 아직 없어 목록은 비어 있음'],
+  ['environments', '영향받는 환경', true, 'slot 범위의 대상 환경, 이 slot의 수정본을 기록한 환경 버전과 다시 준비가 필요한 환경(상태만 표시, 자동 재준비·승격 없음)'],
   ['trust', '신뢰 등급', true, '후보·설치 목록: 포트 계약이 정한 신뢰 등급(trust_tier_basis=port_contract)'],
   ['staging', '운영자 배치(staging)', true, '설치 목록: 설치를 만든 배포 요청·영수증 참조와 그 요청 읽기. 배치 자체는 운영자 권한'],
   ['platform', '지원 플랫폼 판정', false, '후보의 platforms 신고와 설치된 platform만 보입니다. 호환 판정 경로는 없습니다'],
@@ -352,8 +352,28 @@ export function slotFacts(value) {
         .map(item => `${item.binding_slot_id} · ${item.extension_id} · ${headText(item.head)} · ${item.binding_slot_key_digest}`).join(' / '))
       : NOT_SUPPLIED],
     ['environments', '영향받는 환경', environments === null ? NOT_SUPPLIED
-      : `대상 환경 ${environments.target_environment_id ?? '없음(인스턴스 범위)'} · 이 수정본을 쓰는 환경 버전 ${environments.bound_environment_versions.length === 0 ? '없음' : listText(environments.bound_environment_versions)} (${environments.basis})`],
+      : `대상 환경 ${environments.target_environment_id ?? '없음(인스턴스 범위)'} · 이 slot의 수정본을 기록한 환경 버전 ${environmentVersionsText(environments.bound_environment_versions)} · 다시 준비가 필요한 환경 ${listText(environments.needs_re_preparation)} (${environments.basis})`],
+    ['reconciliation', '기록 대조(헤드·보존·명령·이벤트)', reconciliationText(value.reconciliation)],
   ];
+}
+
+// the server's check that this slot's head is backed by its retention and command records; an
+// inconsistent slot is refused at dispatch and nothing on this screen repairs it
+function reconciliationText(value) {
+  if (!isObject(value)) return NOT_SUPPLIED;
+  const state = value.state === 'consistent' ? '일치' : '불일치 · 실행 시 이 slot은 거절됨';
+  const findings = Array.isArray(value.findings) && value.findings.length > 0 ? ` · ${value.findings.join(' / ')}` : '';
+  return `${state}${findings} · 시작 시 대조 ${text(value.startup_state)}`;
+}
+
+// each environment version the server says recorded a revision of this slot, as sent; a binding
+// change only marks re-preparation (the screen offers no re-prepare or promote act here)
+function environmentVersionsText(value) {
+  if (!Array.isArray(value)) return NOT_SUPPLIED;
+  if (value.length === 0) return '없음';
+  return value.map(item => `${item.environment_id} 버전 ${item.environment_version} · 바인딩 수정본 ${item.binding_revision}`
+    + ` · ${item.uses_current_head === true ? '현재 헤드 사용' : '현재 헤드 아님'}`
+    + `${item.latest_prepared === true ? ' · 최신 준비 버전' : ''}${item.needs_re_preparation === true ? ' · 다시 준비 필요' : ''}`).join(' / ');
 }
 
 // the exact owner act bodies: every key, head and ref is the one the server sent

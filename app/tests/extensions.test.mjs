@@ -348,7 +348,8 @@ function slotRead(overrides = {}) {
     coexisting_slots: [{ binding_slot_key_digest: SIBLING, binding_slot_id: 'review-provider', capability_selector_digest: KEY.capability_selector_digest,
       head: HEAD1, extension_id: 'ext-b' }],
     competition: { current_holder: 'ext-b', holders: [{ extension_id: 'ext-a', revisions: [1] }, { extension_id: 'ext-b', revisions: [2] }] },
-    affected_environments: { target_environment_id: null, bound_environment_versions: [], basis: 'no_environment_version_records_extension_binding_revisions' },
+    affected_environments: { target_environment_id: null, bound_environment_versions: [], needs_re_preparation: [],
+      basis: 'environment_records_recorded_binding_revisions' },
     links: { self: `${API}/bindings/${DIGEST}` }, ...overrides,
   };
 }
@@ -408,7 +409,20 @@ test('a slot read shows the server key, digest, history, coexistence, retention 
   assert.equal(facts.capability_selector, JSON.stringify(SELECTOR));
   assert.match(facts.coexistence, /review-provider · ext-b/);
   assert.match(facts.competition, /ext-a \(수정본 1\) \/ ext-b \(수정본 2\)/);
-  assert.match(facts.environments, /이 수정본을 쓰는 환경 버전 없음/);
+  assert.match(facts.environments, /이 slot의 수정본을 기록한 환경 버전 없음 · 다시 준비가 필요한 환경 없음/);
+  assert.equal(facts.reconciliation, NOT_SUPPLIED);
+  const broken = Object.fromEntries(slotFacts(slotRead({ reconciliation: { state: 'inconsistent',
+    findings: ['revision 2: command record missing'], startup_state: 'inconsistent', startup_findings: [],
+    dispatch: 'refused' } })).map(([name, , value]) => [name, value]));
+  assert.equal(broken.reconciliation, '불일치 · 실행 시 이 slot은 거절됨 · revision 2: command record missing · 시작 시 대조 inconsistent');
+  const environment = '0f0e0d0c-0b0a-4908-8706-050403020100';
+  const marked = Object.fromEntries(slotFacts(slotRead({ affected_environments: {
+    target_environment_id: null, needs_re_preparation: [environment], basis: 'environment_records_recorded_binding_revisions',
+    bound_environment_versions: [{ environment_id: environment, environment_version: 1, environment_record: STAGED,
+      binding_revision: 1, binding_record_digest: TARGET.binding_record_digest, latest_prepared: true,
+      uses_current_head: false, needs_re_preparation: true }] } })).map(([name, , value]) => [name, value]));
+  assert.match(marked.environments, new RegExp(`${environment} 버전 1 · 바인딩 수정본 1 · 현재 헤드 아님 · 최신 준비 버전 · 다시 준비 필요`));
+  assert.match(marked.environments, new RegExp(`다시 준비가 필요한 환경 ${environment}`));
   const { panel, sent, root, view } = panelWith([[200, slotRead()]]);
   await panel.readSlot(DIGEST);
   assert.deepEqual(sent[0].slice(0, 2), [`${API}/bindings/${DIGEST}`, 'GET']);

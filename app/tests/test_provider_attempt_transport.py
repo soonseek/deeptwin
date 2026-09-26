@@ -17,7 +17,8 @@ from app.domain.store import DomainStore
 from app.storage import Store
 from app.runtime.ledger import RuntimeLedger
 from app.workers.credential_contracts import fingerprint
-from app.domain.refs import canonical_json
+from app.domain.refs import EntityRef, canonical_json
+from app.tests.support import durable_binding
 from app.tests.support.provider_semantic_harness import (canonical_provider_config,
     canonical_provider_request)
 
@@ -116,6 +117,16 @@ def query_case_clock():
     FUTURE = _port_time(now + timedelta(seconds=30))
 
 
+INSTALLATIONS = set()
+
+
+@pytest.fixture(autouse=True)
+def durable_installations(monkeypatch):
+    # the durable binding a config names points at a test-admitted verified installation
+    global INSTALLATIONS
+    INSTALLATIONS = durable_binding.admit_test_installations(monkeypatch)
+
+
 def operation_case(tmp_path):
     domain = DomainStore(Store(tmp_path / "vault")); roots = domain.initialize_vault()
     ledger = RuntimeLedger(domain, clock_ms=lambda: 1_000)
@@ -125,7 +136,9 @@ def operation_case(tmp_path):
             created_at_utc=STAMP, actor_ref=roots.actor, parent_refs=parents,
             purpose="operational", access_policy_ref=roots.access_policy,
             retention_policy_ref=roots.retention_policy, content=content))
-    qualification, binding_revision = put({"fixture": "qualification"}), put({"fixture": "binding"})
+    qualification = put({"fixture": "qualification"})
+    bound = durable_binding.bind(domain, INSTALLATIONS, qualification_ref=qualification.as_dict())
+    binding_revision = EntityRef.from_dict(bound.ref)
     purpose, text_policy, compatibility_set = (put({"fixture": name}) for name in
         ("purpose", "text-policy", "compatibility-set"))
     meta = {"command_id": str(uuid4()), "record_id": str(uuid4()), "record_version": 1,
@@ -138,12 +151,13 @@ def operation_case(tmp_path):
         "credential_metadata_sha256": fingerprint(meta)}
     connection = put({"schema_version": "provider-semantic-connection-v1", **pin,
                       "credential_metadata": meta, "credential_record": credential})
-    identity = {"installation_digest": "1" * 64,
+    identity = {"installation_digest": bound.installation.sha256,
         "qualification_ref": qualification.as_dict(),
         "binding_revision_ref": binding_revision.as_dict(), "purpose_ref": purpose.as_dict(),
         "actor_ref": roots.actor.as_dict(), "grant_refs": [],
         "egress_policy_ref": roots.access_policy.as_dict()}
-    config_value = canonical_provider_config(connection.as_dict(), identity=identity)
+    config_value = canonical_provider_config(connection.as_dict(), identity={
+        **identity, **durable_binding.config_identity(bound)})
     parents = tuple(sorted((connection, text_policy, compatibility_set, qualification,
         binding_revision, roots.access_policy), key=lambda item: canonical_json(item.as_dict())))
     config = put({"schema_version": "provider-semantic-config-v1", "config": config_value,
@@ -155,22 +169,12 @@ def operation_case(tmp_path):
     owner_boot = str(uuid4())
     target = seal_operation(domain, config_ref=config, request=target_request,
         core_boot_id=owner_boot, reservation_ref=None, created_at_utc=STAMP)
-    slot = config_value["binding_slot_key"]
-    authority = ProviderSemanticAuthority(binding_record={
-        "ref": binding_revision.as_dict(), "state": "active",
-        "extension_id": config_value["extension_id"],
-        "installation_digest": config_value["installation_digest"],
-        "qualification_ref": qualification.as_dict(),
-        "port_contract_version": "provider-port-v1", "binding_slot_key": slot,
-        "binding_slot_key_digest": config_value["binding_slot_key_digest"],
-        "grant_refs": [], "credential_handle_refs": [connection.as_dict()]},
+    assert config_value["binding_slot_key_digest"] == bound.digest
+    authority = ProviderSemanticAuthority(
+        binding_refs=durable_binding.binding_refs(config_value),
         current_connection=pin, qualification_record={"ref": qualification.as_dict(),
             "status": "qualified", "installation_digest": config_value["installation_digest"],
             "port_contract_version": "provider-port-v1", "expires_at": FUTURE},
-        binding_head_record={"state": "active",
-            "current_binding_revision_ref": binding_revision.as_dict(),
-            "binding_slot_key": slot,
-            "binding_slot_key_digest": config_value["binding_slot_key_digest"]},
         actor_record={"ref": roots.actor.as_dict(), "authenticated": True,
                       "actor_type": "system"},
         purpose_record={"ref": purpose.as_dict(), "active": True,

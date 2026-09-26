@@ -124,6 +124,11 @@ def binding_services(context, *, dependencies):
                                 {"extension-bindings.service": service})
 
 
+def reconcile_binding_startup(own_exports):
+    """Startup: the binding heads reconciled against their retention, command and event records."""
+    own_exports["extension-bindings.service"].reconcile_startup()
+
+
 def _links(value, base_path):
     prefix = base_path.rstrip("/")
 
@@ -209,4 +214,4 @@ def create_router(*, service, base_path):
 
 
 __all__ = ["BINDINGS", "INSTALLATIONS", "MAX_BODY_BYTES", "REFUSALS", "SLOT_KEYS", "binding_services",
-           "create_router", "is_bindings_path", "preflight", "refusal"]
+           "create_router", "is_bindings_path", "preflight", "reconcile_binding_startup", "refusal"]
