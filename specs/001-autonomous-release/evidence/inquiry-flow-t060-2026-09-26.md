@@ -158,7 +158,13 @@ explanations.
 - All node unit tests: 300 passed.
 - The affected Python suites (inquiries, hypotheses, drafts API, composition and route counts,
   domain events, inquiry contract): **907 passed**.
-- The full non-live Python regression: see the T060 note in tasks.md.
+- The full non-live Python regression (337 files, serial, no live key): **9,548 passed,
+  48 skipped, 2 failed** in 1 h 35 min. Both failures are in the provider-semantic worker
+  tests, which this change does not touch:
+  - `test_owned_cancel_waiter_consumes_committed_ack_across_reader_close[before_close]`
+    passed 3 of 3 times when rerun in isolation. The base branch has since landed a fix for
+    it (`afcd4f6`, "positional fence secret reread").
+  - `test_authenticated_semantic_path…[USD-valid-deadline_after_reload]` passed on rerun.
 
 ### Live (`test_claude_live_inquiry_questions.py`, passed)
 
