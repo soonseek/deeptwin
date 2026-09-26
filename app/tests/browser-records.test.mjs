@@ -23,6 +23,7 @@ import { spawn } from 'node:child_process';
 import { base, open, openEditor, saved } from './helpers/alternatives-fixture.mjs';
 import { closeOwnedFixture, waitForOwnedChildOutput } from './helpers/owned-fixture-lifecycle.mjs';
 import { bytesOf, makeBackup, openBackup, unavailable as backupUnavailable } from './helpers/backup-fixture.mjs';
+import { openSettings } from './helpers/settings-page.mjs';
 
 const CANARY = 'CANARY-원문-7f3a9c';
 const PASSWORD = 'synthetic owner passphrase';
@@ -111,7 +112,9 @@ test('export: a work revised after its preview is refused as stale; records page
   await log.locator('li').first().waitFor();
   assert.match(await log.textContent(), /run\.started/);
   assert.match(await log.textContent(), /approval\.decided/);
-  assert.match(await page.locator('#records-backup').textContent(), /백업 워커가 아직 연결되어 있지 않습니다/);
+  // backup and retention live on the settings page and say what this server does
+  await openSettings(page, url, 'settings-backup');
+  await page.locator('#records-backup').getByText('백업 워커가 아직 연결되어 있지 않습니다', { exact: false }).first().waitFor();
   assert.match(await page.locator('#records-retention').textContent(), /자동 삭제는 없습니다/);
   assert.deepEqual(errors, []);
 });
@@ -621,7 +624,7 @@ test('an interrupted restore upload fails its staged restore, leaves the vault u
     const receiptBytes = Buffer.from(JSON.stringify(receipt));
     assert.equal(bundle.length, receipt.ciphertext_size);
 
-    await page.goto(url + 'records.html');
+    await openSettings(page, url, 'settings-backup');
     const panel = page.locator('#records-backup');
     await panel.locator('.backup-worker[data-state="ready"]').waitFor();
     const pick = async () => {
@@ -667,7 +670,7 @@ test('an interrupted restore upload fails its staged restore, leaves the vault u
     assert.equal(work.text, WORK_TEXT);
 
     // resume with a fresh restore: the whole bundle, staged for review
-    await page.goto(url + 'records.html');
+    await openSettings(page, url, 'settings-backup');
     await panel.locator('.backup-worker[data-state="ready"]').waitFor();
     await pick();
     await panel.getByRole('button', { name: '스테이징 영역에 복원' }).click();

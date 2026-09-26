@@ -534,7 +534,7 @@ test('a cancelled receipt names what was closed and never claims the remote work
   // experience.md §9 row 294: the two facts are spelled out separately in the accessible rows
   const rows = accessibleRows(view);
   assert.match(rows[0], /취소 요청됨/);
-  assert.match(rows[0], /새 dispatch 중단/);
+  assert.match(rows[0], /새 작업 보내기 중단/);
   const call = rows.find(row => row.includes(attempt.attempt_id));
   assert.match(call, /^시도 2 /);
   assert.match(call, /게이트 닫힘/);

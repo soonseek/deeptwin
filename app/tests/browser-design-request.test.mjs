@@ -40,7 +40,9 @@ test('with a simulated qualified lens the owner creates a design request from th
   await model.getByRole('button', { name: '작업 모델 만들기', exact: true }).click();
   await model.getByRole('button', { name: '이 작업 모델 수락', exact: true }).click();
   await model.getByText('이 작업 모델을 수락했습니다.').first().waitFor();
-  // the lens source is labelled a simulation; the owner creates the request here
+  // the lens source is labelled a simulation; the owner creates the request here (the work model's
+  // "accepted" line is drawn before the design section re-renders, so wait for the section itself)
+  await creator.getByText('SIMULATED lens qualification', { exact: false }).waitFor();
   assert.match(await creator.textContent(), /SIMULATED lens qualification/);
   await creator.getByRole('button', { name: '이 작업 모델로 설계 요청 만들기', exact: true }).click();
   await workspace.locator('[role=status]').first().filter({ hasText: '을 만들었습니다. 후보는 아직 없습니다.' }).waitFor();

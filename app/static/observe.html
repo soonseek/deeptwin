@@ -4,33 +4,30 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>DeepTwin — 실행 관제</title>
+  <title>DeepTwin — 실행</title>
   <link rel="stylesheet" href="./styles.css">
   <script type="module" src="./observe.mjs"></script>
 </head>
-<body>
-  <div id="app">
-    <header class="app-header">
-      <span class="wordmark" aria-label="DeepTwin 실행 관제">Deep<span>Twin</span></span>
-      <nav class="app-settings" aria-label="설정"><a href="./settings.html">설정</a></nav>
-    </header>
-    <main>
-      <aside class="development-preview" aria-label="개발 미리보기 상태">
-        <strong>개발 미리보기</strong>
-        <p>이 화면은 이미 기록된 실행을 관제합니다. 새 실행은 <a href="./work.html">업무 화면</a>의 “실행 시작”에서 준비된 환경이 있을 때만 시작합니다. 소유자 설정·로그인은 시작 화면에서 합니다. 기록·내보내기·백업 상태는 <a href="./records.html">기록 화면</a>에서 봅니다.</p>
-      </aside>
-      <div class="space-label"><span class="space-mark" aria-hidden="true"></span> 실행 관제</div>
-      <h1>기록된 실행을 살펴봅니다</h1>
+<body class="shell-page page-observe">
+  <div id="app" class="app-shell" data-page="observe">
+    <main id="main">
+      <header class="page-header">
+        <h1>실행</h1>
+        <p class="page-purpose">기록된 실행의 상태, 작업 그래프, 산출물을 봅니다. 새 실행은 <a href="./work.html">업무 화면</a>의 “실행 시작”에서 준비된 환경이 있을 때만 시작합니다.</p>
+      </header>
       <p id="session-status" role="status" aria-live="polite" data-state="">브라우저 세션을 확인하는 중…</p>
-      <section id="run-source" class="run-source" aria-label="관제할 실행 선택"></section>
-      <section id="run-panel" class="run-panel" aria-label="선택한 실행의 상태" data-phase="" data-run-id=""></section>
-      <section id="run-approvals" class="run-approvals" aria-label="선택한 실행의 승인"></section>
-      <section id="run-graph" class="run-graph" aria-label="선택한 실행의 작업 그래프"></section>
-      <section id="run-artifacts" class="run-artifacts" aria-label="선택한 실행의 산출물"></section>
-      <section id="artifact-index" class="artifact-index" aria-label="보관된 모든 산출물"></section>
-      <section id="run-alternative" class="run-alternative" aria-label="내 버전 편집"></section>
-      <section id="run-alternative-file" class="run-alternative" aria-label="대안 파일"></section>
-      <section id="run-inquiry" class="run-inquiry" aria-label="차이와 설명"></section>
+      <section class="run-overview card" aria-labelledby="run-overview-title">
+        <h2 id="run-overview-title">실행 선택</h2>
+        <section id="run-source" class="run-source" aria-label="관제할 실행 선택"></section>
+        <section id="run-panel" class="run-panel" aria-label="선택한 실행의 상태" data-phase="" data-run-id=""></section>
+      </section>
+      <section id="run-approvals" class="run-approvals card" aria-label="선택한 실행의 승인"></section>
+      <section id="run-graph" class="run-graph card" aria-label="선택한 실행의 작업 그래프"></section>
+      <section id="run-artifacts" class="run-artifacts card" aria-label="선택한 실행의 산출물"></section>
+      <section id="artifact-index" class="artifact-index card" aria-label="보관된 모든 산출물"></section>
+      <section id="run-alternative" class="run-alternative card" aria-label="내 버전 편집"></section>
+      <section id="run-alternative-file" class="run-alternative card" aria-label="대안 파일"></section>
+      <section id="run-inquiry" class="run-inquiry card" aria-label="차이와 설명"></section>
       <footer>
         <p>상태는 서버가 기록한 사실에서만 옵니다. 지난 시도는 별도 행으로 남고, 최신 산출물은 과거 시도에 붙지 않습니다.</p>
       </footer>

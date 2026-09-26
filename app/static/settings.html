@@ -6,24 +6,43 @@
   <meta name="color-scheme" content="light dark">
   <title>DeepTwin — 설정</title>
   <link rel="stylesheet" href="./styles.css">
-  <script type="module" src="./settings.mjs"></script>
+  <script type="module" src="./settings-page.mjs"></script>
   <script type="module" src="./browser-grants.mjs"></script>
   <script type="module" src="./extensions.mjs"></script>
 </head>
-<body class="owner-records-page">
-  <div id="app">
-    <header class="app-header">
-      <span class="wordmark" aria-label="DeepTwin">Deep<span>Twin</span></span>
-      <nav class="app-settings" aria-label="설정"><a href="./settings.html" aria-current="page">설정</a></nav>
-    </header>
-    <main>
-      <div class="space-label"><span class="space-mark" aria-hidden="true"></span> 설정</div>
-      <h1>기록·내보내기·백업·보존·계정</h1>
+<body class="shell-page page-settings">
+  <div id="app" class="app-shell" data-page="settings">
+    <main id="main">
+      <header class="page-header">
+        <h1>설정</h1>
+        <p class="page-purpose">계정과 세션, 모델 연결, 실행 한도, 백업·보존, 업데이트, 확장을 관리합니다. 어느 항목도 업무를 끝내기 위한 필수 단계가 아닙니다.</p>
+      </header>
       <p id="session-status" role="status" aria-live="polite" data-state="">브라우저 세션을 확인하는 중…</p>
-      <section id="settings-hub" class="records-section" aria-label="설정 항목"></section>
-      <section id="settings-grants" class="records-section" aria-labelledby="settings-grants-title"></section>
-      <section id="settings-extensions" class="records-section" aria-labelledby="settings-extensions-title"></section>
-      <nav aria-label="다른 화면"><a href="./work.html">업무</a> · <a href="./observe.html">실행 관제</a> · <a href="./records.html">기록</a> · <a href="./versions.html">버전</a></nav>
+      <div class="settings-layout">
+        <nav id="settings-hub" class="settings-nav" aria-label="설정 항목"></nav>
+        <div class="settings-panels">
+          <section id="settings-account" class="settings-panel card" data-settings-panel="account" aria-label="계정과 세션">
+            <section id="records-account" class="records-section" aria-label="계정과 세션"></section>
+          </section>
+          <section id="settings-models" class="settings-panel card" data-settings-panel="models" aria-label="모델 연결">
+            <section id="records-connection" class="records-section" aria-label="Claude 연결"></section>
+            <section id="records-credentials" class="records-section" aria-label="API 자격증명"></section>
+            <p class="settings-panel-note field-note">Codex 구독 연결(관리형 실행기)은 아직 이 화면에서 지원하지 않습니다.</p>
+          </section>
+          <section id="settings-budgets" class="settings-panel card" data-settings-panel="budgets" aria-label="실행 한도">
+            <section id="records-budgets" class="records-section" aria-label="실행 한도"></section>
+          </section>
+          <section id="settings-backup" class="settings-panel card" data-settings-panel="backup" aria-label="백업·보존">
+            <section id="records-backup" class="records-section" aria-label="백업"></section>
+            <section id="records-retention" class="records-section" aria-label="보존과 삭제"></section>
+          </section>
+          <section id="settings-update" class="settings-panel card" data-settings-panel="update" aria-label="업데이트·복구">
+            <section id="records-update" class="records-section" aria-label="업데이트와 복구"></section>
+          </section>
+          <section id="settings-extensions" class="settings-panel card records-section" data-settings-panel="extensions" aria-labelledby="settings-extensions-title"></section>
+          <section id="settings-grants" class="settings-panel card records-section" data-settings-panel="grants" aria-labelledby="settings-grants-title"></section>
+        </div>
+      </div>
     </main>
   </div>
 </body>

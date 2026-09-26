@@ -4,22 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>DeepTwin — 버전</title>
+  <title>DeepTwin — 버전·실험</title>
   <link rel="stylesheet" href="./styles.css">
   <script type="module" src="./versions-page.mjs"></script>
 </head>
-<body class="owner-versions-page">
-  <div id="app">
-    <header class="app-header">
-      <span class="wordmark" aria-label="DeepTwin">Deep<span>Twin</span></span>
-      <nav class="app-settings" aria-label="설정"><a href="./settings.html">설정</a></nav>
-    </header>
-    <main>
-      <div class="space-label"><span class="space-mark" aria-hidden="true"></span> 버전</div>
-      <h1>운영 버전과 후보</h1>
+<body class="shell-page page-versions">
+  <div id="app" class="app-shell" data-page="versions">
+    <main id="main">
+      <header class="page-header">
+        <h1>버전·실험</h1>
+        <p class="page-purpose">운영 중인 환경 버전과 변경 후보, 성장 실험과 비교 라운드를 봅니다. 새 버전은 사람이 승인해야 적용됩니다.</p>
+      </header>
       <p id="session-status" role="status" aria-live="polite" data-state="">브라우저 세션을 확인하는 중…</p>
-      <section id="versions" class="versions" aria-label="버전"></section>
-      <nav aria-label="다른 화면"><a href="./work.html">업무</a> · <a href="./observe.html">실행 관제</a> · <a href="./records.html">기록</a></nav>
+      <section id="versions" class="versions card" aria-label="버전"></section>
     </main>
   </div>
 </body>

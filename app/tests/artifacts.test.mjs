@@ -99,7 +99,14 @@ test('the list shows each artifact with its declared type, size, digest and a do
   assert.equal(items.length, 2);
   assert.equal(asked[0][0], `/${HEX}/api/v1/runs/${RUN}/artifacts`);
   assert.match(root.textContent, /산출물 2개/);
-  assert.match(root.textContent, /report · writer · text\/plain \(선언\) · 2\.0 KiB/);
+  // the owner's words for the declared type, with the declared-not-sniffed limit said once
+  // above the list; the raw type and the full digest stay in each row's technical fold
+  assert.match(root.textContent, /report · writer · 텍스트 · 2\.0 KiB/);
+  assert.match(root.textContent, /chart · writer · 이미지 · 2\.0 KiB/);
+  assert.match(root.textContent, new RegExp(MESSAGES.declared));
+  const folds = root.findAll(el => el.tagName === 'DETAILS');
+  assert.equal(folds.length, 2);
+  assert.match(folds[0].textContent, /^기술 정보산출물 ID11111111-1111-5111-8111-111111111111밝힌 형식text\/plainSHA-256a{64}$/);
   const links = root.findAll(el => el.tagName === 'A');
   assert.equal(links[0].getAttribute('href'), `/${HEX}/api/v1/runs/${RUN}/artifacts/${ART}/content`);
   assert.equal(links[0].getAttribute('download'), 'report-0');

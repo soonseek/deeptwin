@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { closeOwnedFixture, waitForOwnedChildOutput } from './owned-fixture-lifecycle.mjs';
+import { openSettings } from './settings-page.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 export const base = `/${'2'.repeat(32)}/`;
@@ -51,9 +52,9 @@ export async function bytesOf(page, href) {
   return Buffer.from(await page.evaluate(async target => [...new Uint8Array(await (await fetch(target)).arrayBuffer())], href));
 }
 
-// one backup through the records page: the actual preview, a separate consent, then create
+// one backup through the settings page's 백업·보존 panel: the actual preview, a separate consent, then create
 export async function makeBackup(page, url) {
-  await page.goto(url + 'records.html');
+  await openSettings(page, url, 'settings-backup');
   const panel = page.locator('#records-backup');
   await panel.locator('.backup-worker[data-state="ready"]').waitFor();
   await panel.getByRole('button', { name: '백업에 포함될 내용 미리보기' }).click();

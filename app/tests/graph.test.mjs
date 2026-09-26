@@ -51,7 +51,11 @@ test('node details state what the graph says, bindings included', () => {
   assert.equal(lines['종류'], '에이전트');
   assert.equal(lines['책임'], '초안 작성');
   assert.match(lines['모델'], /model_choice:00000000-0000-4000-8000-000000000003 v1 · text/);
-  assert.equal(lines['들어오는 연결'], 'intake (artifact)');
+  // internal terms in the owner's words (ui-format.mjs); the raw config is a technical line
+  assert.equal(lines['들어오는 연결'], 'intake (산출물)');
+  assert.equal(lines['실패 처리'], '실패하면 뒤 단계 멈춤');
+  const intake = nodeDetails(graph, 'intake');
+  assert.deepEqual(intake.find(line => line[0] === '설정'), ['설정', '{"handler_id":"h"}', 'technical']);
   assert.deepEqual(nodeDetails(graph, 'absent'), []);
 });
 
@@ -87,5 +91,15 @@ test('the view draws every node, selecting shows details, and a run shows its re
   assert.match(root.textContent, /실행 상태완료/);
   assert.match(root.textContent, /책임초안 작성/);
   assert.equal(buttons[1].getAttribute('aria-pressed'), 'true');
+  // a deterministic node's handler config is folded under "기술 정보", never in the reading list
+  await buttons[0].dispatch('click');
+  const list = root.findAll(el => el.tagName === 'DL' && el.getAttribute('class') === 'graph-details')[0];
+  assert.doesNotMatch(list.textContent, /handler_id/);
+  assert.match(list.textContent, /실패 처리실패하면 뒤 단계 멈춤/);
+  const fold = root.findAll(el => el.tagName === 'DETAILS');
+  assert.equal(fold.length, 1);
+  assert.match(fold[0].textContent, /^기술 정보설정\{"handler_id":"h"\}$/);
+  await buttons[1].dispatch('click');
+  assert.equal(root.findAll(el => el.tagName === 'DETAILS').length, 0, 'an agent node has no raw config to fold');
   assert.equal(runStates({ outcome: {} }, graph).get('writer'), 'not_visited');
 });

@@ -152,9 +152,10 @@ test('the list reads the snapshot through the injected request and renders one o
   assert.equal(runs.length, 2);
   const options = select().children;
   assert.equal(options[0].value, '');  // the empty choice first: nothing is auto-selected
-  assert.deepEqual(options.slice(1).map(option => [option.value, option.textContent]), [
-    [RUN_A, `${RUN_PHASE_LABELS.created} · ${RUN_A}`],
-    [RUN_B, `${RUN_PHASE_LABELS.cancelled} · ${RUN_B}`],
+  // the option reads the short id; the full id is its value and its title
+  assert.deepEqual(options.slice(1).map(option => [option.value, option.textContent, option.getAttribute('title')]), [
+    [RUN_A, `${RUN_PHASE_LABELS.created} · 실행 ${RUN_A.slice(0, 8)}`, RUN_A],
+    [RUN_B, `${RUN_PHASE_LABELS.cancelled} · 실행 ${RUN_B.slice(0, 8)}`, RUN_B],
   ]);
   assert.equal(select().disabled, false);
   assert.match(status().textContent, /2개/);

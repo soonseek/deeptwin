@@ -1,6 +1,6 @@
 // T073 in a real browser against the real supported server with a REAL backup-crypto
 // worker (app/tests/fixtures/backup_server.py, via helpers/backup-fixture.mjs):
-// - retention: the records page states per category what the server keeps, for how long,
+// - retention: the settings page's 백업·보존 panel states per category what the server keeps, for how long,
 //   that nothing is deleted automatically and what is never offered; the owner makes two
 //   backups and one failed restore, ticks the older backup and the failed restore (the
 //   newest backup cannot be ticked), sees the server's actual cleanup preview, is refused
@@ -8,15 +8,17 @@
 //   older ciphertext is gone (download 404) while its receipt, the newest backup and the
 //   saved work still read back; the cleanup receipt and the `retention.deleted` event are
 //   listed.
-// - settings hub: from every page's header the one settings link opens the hub, which
-//   lists every records/operations entry point with the server's own state, and each
-//   entry opens its section; no entry is a required final step.
+// - settings: from every page's navigation the one settings link opens the settings page,
+//   whose list names every operations section with the server's own state; each entry
+//   opens its own panel; no entry is a required final step; the records page keeps only
+//   the log and the export entry.
 // The owner is a scripted test actor: synthetic evidence of the mechanism, never user
 // evidence. Needs Linux, root and DEEPTWIN_AGE_RUNTIME_ROOT; otherwise skipped with why.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { base, bytesOf, makeBackup, openBackup, unavailable } from './helpers/backup-fixture.mjs';
+import { openSettings } from './helpers/settings-page.mjs';
 
 async function saveWork(page, url, text) {
   await page.goto(url + 'work.html');
@@ -35,7 +37,7 @@ test('retention: per-category state, then preview → consent → cleanup; core 
     const bundle = await bytesOf(page, `${base}api/v1/backups/${newer.backup_id}/ciphertext`);
     const tampered = Buffer.from(bundle);
     tampered[tampered.length >> 1] ^= 0x01;
-    await page.goto(url + 'records.html');
+    await openSettings(page, url, 'settings-backup');
     const backupPanel = page.locator('#records-backup');
     await backupPanel.locator('.backup-worker[data-state="ready"]').waitFor();
     await backupPanel.locator('#restore-receipt').setInputFiles({ name: 'r.receipt.json', mimeType: 'application/json',
@@ -73,7 +75,7 @@ test('retention: per-category state, then preview → consent → cleanup; core 
     assert.match(preview, /정리될 항목 2개/);
     assert.match(preview, /지움: 암호화된 백업 파일 · 남김: 외부 영수증, 동의 기록, 삭제 표시/);
     assert.match(preview, /닿지 않는 것: 이미 내려받은 사본/);
-    assert.match(preview, /어떤 경우에도 지우지 않는 것: 핵심 기록, 삭제 표시, 저장한 원본\(작업 화면에서만 삭제\), 가장 최근 백업/);
+    assert.match(preview, /어떤 경우에도 지우지 않는 것: 핵심 기록, 삭제 표시, 저장한 원본\(업무 화면에서만 삭제\), 가장 최근 백업/);
     const digest = (await panel.locator('.retention-digest').textContent()).replace('미리보기 SHA-256 ', '');
     assert.match(digest, /^[0-9a-f]{64}$/);
     // a preview removes nothing
@@ -111,12 +113,12 @@ test('retention: per-category state, then preview → consent → cleanup; core 
     assert.deepEqual(errors, []);
   });
 
-test('settings hub: one header link on every page opens every entry point, none required',
+test('settings: the shell link on every page opens the one settings page; each section is its own panel, none required',
   { timeout: 180000, skip: unavailable }, async t => {
     const { page, url, errors } = await openBackup(t);
     for (const name of ['work.html', 'observe.html', 'records.html', 'versions.html', 'settings.html']) {
       await page.goto(url + name);
-      const link = page.getByRole('navigation', { name: '설정' }).getByRole('link', { name: '설정' });
+      const link = page.getByRole('navigation', { name: '주 메뉴' }).getByRole('link', { name: '설정' });
       await link.click();
       await page.waitForURL(`${url}settings.html`);
       await page.locator('#settings-hub li[data-entry]').first().waitFor();
@@ -124,27 +126,37 @@ test('settings hub: one header link on every page opens every entry point, none 
     const hub = page.locator('#settings-hub');
     await hub.locator('.settings-state').first().waitFor();
     const entries = await hub.locator('li[data-entry]').evaluateAll(nodes => nodes.map(node => [node.dataset.entry, node.dataset.required]));
-    assert.deepEqual(entries.map(entry => entry[0]), ['logs', 'export', 'backup', 'retention', 'account', 'connection', 'credentials', 'extensions']);
+    assert.deepEqual(entries.map(entry => entry[0]), ['account', 'models', 'budgets', 'backup', 'update', 'extensions', 'grants']);
     assert.ok(entries.every(entry => entry[1] === 'false'), 'no entry is a required step');
     assert.match(await hub.textContent(), /어떤 작업도 마지막에 내보내기를 거치지 않아도 끝납니다/);
     assert.match(await hub.locator('li[data-entry="backup"]').textContent(), /백업 워커 연결됨 · 만든 백업 0개/);
-    assert.match(await hub.locator('li[data-entry="retention"]').textContent(), /자동 삭제 없음 · 지금 정리할 수 있는 항목 0개/);
+    assert.match(await hub.locator('li[data-entry="backup"]').textContent(), /자동 삭제 없음 · 지금 정리할 수 있는 항목 0개/);
     assert.match(await page.locator('#session-status').textContent(), /브라우저 세션이 연결되어 있습니다/);
+    // each entry opens its own panel, in any order; the old records-page sections live here now
     const targets = {
-      logs: ['records.html#records-logs', '#records-logs li, #records-logs [role=status]'],
-      backup: ['records.html#records-backup', '#records-backup .backup-worker[data-state="ready"]'],
-      retention: ['records.html#records-retention', '#records-retention .retention-categories li'],
-      account: ['records.html#records-account', '#records-account h2'],
-      export: ['work.html#work-records', '#work-records'],
-      extensions: ['settings.html#settings-extensions', '#settings-extensions h2'],
+      update: ['#settings-update', '#records-update h2'],
+      backup: ['#settings-backup', '#records-backup .backup-worker[data-state="ready"]'],
+      account: ['#settings-account', '#records-account h2'],
+      models: ['#settings-models', '#records-connection h2'],
+      budgets: ['#settings-budgets', '#records-budgets h2'],
+      extensions: ['#settings-extensions', '#settings-extensions h2'],
+      grants: ['#settings-grants', '#settings-grants h2'],
     };
-    for (const [entry, [target, ready]] of Object.entries(targets)) {
-      await page.goto(url + 'settings.html');
+    for (const [entry, [hash, ready]] of Object.entries(targets)) {
       await hub.locator(`li[data-entry="${entry}"] a`).click();
-      await page.waitForURL(url + target);
+      await page.waitForURL(`${url}settings.html${hash}`);
       await page.locator(ready).first().waitFor();
+      assert.equal(await page.locator('[data-settings-panel]:visible').count(), 1, entry);
     }
-    // the start screen carries the same link
+    await page.locator('#records-retention .retention-categories li').first().waitFor({ state: 'attached' });
+    // the records page keeps the log and the export entry only; export happens on the work screen
+    await page.goto(url + 'records.html');
+    await page.locator('#records-logs li, #records-logs [role=status]').first().waitFor();
+    assert.equal(await page.locator('#records-backup, #records-retention, #records-account, #records-budgets').count(), 0);
+    await page.locator('#records-export').getByRole('link', { name: '업무 화면에서 내보내기' }).click();
+    await page.waitForURL(`${url}work.html#work-records`);
+    await page.locator('#work-records h2').waitFor();
+    // the start screen, outside the shell, carries the same link in its header
     const start = await page.evaluate(async base => (await fetch(base + 'start.html')).text(), base);
     assert.match(start, /<a href="\.\/settings\.html">설정<\/a>/);
     assert.deepEqual(errors, []);

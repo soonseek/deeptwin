@@ -3,7 +3,7 @@
 // entrypoint as a separate process in an empty network namespace under the backup
 // identity, holding the read-only backup-key volume, and the supported app under the
 // control identity; they speak only over the verified `cp-backup` channel. The owner
-// saves a work, opens the records page, sees the ACTUAL backup preview (included
+// saves a work, opens the settings page's 백업·보존 panel, sees the ACTUAL backup preview (included
 // categories with counts, excluded categories with reasons), consents to exactly that
 // preview, creates the backup, downloads the encrypted bundle and its external receipt,
 // then restores them through the restore screen and sees the staged `restored_review`
@@ -19,6 +19,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { CAPABILITY, PASSWORD, base, bytesOf, openBackup, unavailable } from './helpers/backup-fixture.mjs';
+import { openSettings } from './helpers/settings-page.mjs';
 
 const CANARY = 'CANARY-백업-원문-5e1d';
 
@@ -31,7 +32,7 @@ test('backup: actual preview, bound consent, encrypted bundle + receipt, restore
     await page.getByRole('button', { name: '이 인스턴스에 저장' }).click();
     await page.getByText('이 인스턴스에 저장됨 · 수정본', { exact: false }).first().waitFor();
 
-    await page.goto(url + 'records.html');
+    await openSettings(page, url, 'settings-backup');
     const panel = page.locator('#records-backup');
     await panel.locator('.backup-worker[data-state="ready"]').waitFor();
     assert.match(await panel.textContent(), /백업 키는 네트워크가 없는 워커에만 있고/);
@@ -69,7 +70,7 @@ test('backup: actual preview, bound consent, encrypted bundle + receipt, restore
     assert.equal(state.backups[0].consented_preview_sha, previewSha);
 
     // the restore screen: the receipt and the bundle, staged for review
-    await page.goto(url + 'records.html');
+    await openSettings(page, url, 'settings-backup');
     await panel.locator('.backup-worker[data-state="ready"]').waitFor();
     await panel.locator('#restore-receipt').setInputFiles({ name: 'backup.receipt.json', mimeType: 'application/json', buffer: receiptBytes });
     await panel.locator('#restore-bundle').setInputFiles({ name: 'backup.age', mimeType: 'application/octet-stream', buffer: bundle });
@@ -90,7 +91,7 @@ test('backup: actual preview, bound consent, encrypted bundle + receipt, restore
     assert.equal(await page.evaluate(async base => (await fetch(base + 'session')).status, base), 200);
 
     // a tampered bundle against the same receipt is refused and stages nothing
-    await page.goto(url + 'records.html');
+    await openSettings(page, url, 'settings-backup');
     await panel.locator('.backup-worker[data-state="ready"]').waitFor();
     const tampered = Buffer.from(bundle);
     tampered[tampered.length >> 1] ^= 0x01;
@@ -118,7 +119,7 @@ test('portable recovery: the kept identity restores once into staged review and 
     page.on('response', async response => {
       try { seen.push(await response.text()); } catch { /* a download body is not text */ }
     });
-    await page.goto(url + 'records.html');
+    await openSettings(page, url, 'settings-backup');
     const panel = page.locator('#records-backup');
     await panel.locator('.backup-worker[data-state="ready"]').waitFor();
     const input = panel.locator('#restore-recovery-identity');

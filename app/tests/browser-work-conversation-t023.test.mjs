@@ -40,7 +40,7 @@ async function open(t) {
     body: JSON.stringify({ login_name: 'owner', password: 'synthetic owner passphrase', raw_capability_b64u: capability }),
   })).status, { base, capability: Buffer.alloc(32, 'T').toString('base64url') });
   assert.equal(status, 201);
-  // the owner's Claude connection (records page's job; set here through the same routes)
+  // the owner's Claude connection (the settings page's job; set here through the same routes)
   const connected = await page.evaluate(async base => {
     const csrf = (await (await fetch(base + 'session')).json()).csrf_token;
     const post = (path, body) => fetch(base + path, { method: 'POST', body: JSON.stringify(body),
@@ -126,7 +126,7 @@ test('mixed intake, explicit readings and an in-conversation approval that refus
 
 test('the owner authors a run budget: exact finite limits, never an API bill on a subscription', { timeout: 60000 }, async t => {
   const { page, url, errors, external } = await open(t);
-  await page.goto(url + 'records.html');
+  await page.goto(url + 'settings.html#settings-budgets');
   const panel = page.locator('#records-budgets');
   await panel.getByText('저장된 실행 한도가 없습니다.').waitFor();
   assert.equal(await panel.locator('.budget-api').isVisible(), false, 'a subscription budget shows no currency field');

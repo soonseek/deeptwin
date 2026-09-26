@@ -128,7 +128,7 @@ test('the state is closed: core records are always kept and nothing deletes auto
   assert.throws(() => retentionState(offered));
   assert.throws(() => retentionState(stateValue({ items: [{ item_id: 'core:x', eligible: true, bytes: 1 }] })));
   assert.match(categoryText(stateValue().categories[0]), /핵심 기록.*기한 없이 보존 · 자동 삭제 없음 · 12개 · 사건 30개 · 정리 대상이 아닙니다/);
-  assert.match(categoryText(stateValue().categories[2]), /작업 화면의 "원본 삭제"/);
+  assert.match(categoryText(stateValue().categories[2]), /업무 화면의 "원본 삭제"/);
   assert.equal(retentionRoutes(BASE).preview, `${BASE}api/v1/retention/cleanup/preview`);
   assert.throws(() => retentionRoutes('/x/'));
 });

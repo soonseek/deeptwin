@@ -2,7 +2,7 @@
 // bootstrap page (file://, no network) generates the one-time capability and the
 // non-secret deployment block; the real supported server is started from that block
 // alone; the owner types the capability into the first screen, sets up, changes their
-// password on the records page, and ends another browser's session. The raw
+// password on the settings page (계정과 세션), and ends another browser's session. The raw
 // capability is never passed to the server process, and no password is echoed.
 
 import test from 'node:test';
@@ -83,8 +83,8 @@ test('offline bootstrap → first-owner setup → password change → revoke oth
   await other.getByRole('button', { name: '로그인' }).click();
   await other.waitForURL(/work\.html$/);
 
-  // 4. the records page: end the other session, then change the password
-  await page.goto(url + 'records.html');
+  // 4. the settings page's account panel: end the other session, then change the password
+  await page.goto(url + 'settings.html#settings-account');
   await page.getByRole('button', { name: '다른 세션 모두 끝내기' }).click();
   await page.getByText('다른 세션 1개를 끝냈습니다.').waitFor();
   const otherStatus = await other.evaluate(async base => (await fetch(base + 'api/v1/snapshot')).status, url);

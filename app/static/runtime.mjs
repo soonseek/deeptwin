@@ -370,7 +370,7 @@ export function accessibleRows(view) {
   if (typeof view !== 'object' || view === null || !Array.isArray(view.nodes)) fail('view must be a run view');
   const rows = [];
   // experience.md §9 row 294: new dispatch closed and each call's termination, separately
-  if (view.cancellation?.requested) rows.push('취소 요청됨: 새 dispatch 중단');
+  if (view.cancellation?.requested) rows.push('취소 요청됨: 새 작업 보내기 중단');
   // experience.md §7 / UX-AC04: every past attempt stays a distinct row, cancelled or not
   for (const call of view.cancellation?.attempts ?? []) {
     const gate = call.dispatchGate === 'closed' ? '게이트 닫힘' : '게이트 열림';

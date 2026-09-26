@@ -45,7 +45,7 @@
 import { basePathFrom, createSupportedSession } from './session.mjs';
 
 export const EXTENSIONS_MOUNT_ID = 'settings-extensions';
-export const CREDENTIALS_LINK = './records.html#records-credentials';
+export const CREDENTIALS_LINK = './settings.html#records-credentials';
 export const NOT_SUPPLIED = '제공되지 않음(이 서버가 보내지 않음)';
 export const INSTALLATION_MEDIA_TYPE = 'application/vnd.deeptwin.provider-installation-v1';
 export const MAX_CANDIDATE_BYTES = 1048576;

@@ -8,6 +8,9 @@
 // either. A run's node states come only from its recorded outcome. All text goes through
 // textContent; nothing is ever written as markup.
 
+import { NODE_KIND_LABELS, edgeKindLabel, failurePolicyLabel } from './ui-format.mjs';
+import { technicalDetails } from './ui-parts.mjs';
+
 const SVG = 'http://www.w3.org/2000/svg';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const BASE_PATH = /^\/(?:[0-9a-f]{32}\/)?$/;
@@ -16,10 +19,8 @@ const ROW = 96;
 const BOX_W = 200;
 const BOX_H = 64;
 
-export const KIND_LABELS = Object.freeze({
-  agent: '에이전트', deterministic: '정해진 처리', router: '분기', join: '합류', human_gate: '사람 승인',
-  bounded_loop: '제한 반복',
-});
+// node kinds in the owner's words (ui-format.mjs, the one dictionary)
+export const KIND_LABELS = NODE_KIND_LABELS;
 export const STATE_LABELS = Object.freeze({
   completed: '완료', failed: '실패', pending: '대기', awaiting: '승인 대기', not_visited: '미방문',
 });
@@ -74,7 +75,7 @@ export function nodeDetails(graph, nodeId) {
     ['책임', node.responsibility],
     ['입력', node.input_slots.map(slot => `${slot.slot_id} (${slot.artifact_contract_id}${slot.required ? ', 필수' : ''})`).join(', ') || '없음'],
     ['출력', node.output_slots.map(slot => `${slot.slot_id} (${slot.artifact_contract_id})`).join(', ') || '없음'],
-    ['실패 시', node.failure_policy],
+    ['실패 처리', failurePolicyLabel(node.failure_policy)],
     ['필요한 승인', node.required_approval_scopes.join(', ') || '없음'],
     ['권한', node.grant_refs.map(describe).join(', ') || '없음'],
   ];
@@ -87,7 +88,8 @@ export function nodeDetails(graph, nodeId) {
     lines.push(['도구', tools.join(', ') || '없음']);
     lines.push(['기억', config.memory_policy_id ?? '없음']);
   } else {
-    lines.push(['설정', JSON.stringify(config)]);
+    // the raw config (handler ids and the like) is technical detail, folded in the view
+    lines.push(['설정', JSON.stringify(config), 'technical']);
     // 2026-09-26: a deterministic node may call approved tools (e.g. a byte-exact store)
     if (node.kind === 'deterministic' && (config.tool_binding_ids ?? []).length) {
       const tools = config.tool_binding_ids.map(id => graph.tool_bindings.find(item => item.binding_id === id))
@@ -95,8 +97,8 @@ export function nodeDetails(graph, nodeId) {
       lines.push(['도구', tools.join(', ') || '없음']);
     }
   }
-  const incoming = graph.edges.filter(edge => edge.target_node_id === nodeId).map(edge => `${edge.source_node_id} (${edge.kind})`);
-  const outgoing = graph.edges.filter(edge => edge.source_node_id === nodeId).map(edge => `${edge.target_node_id} (${edge.kind})`);
+  const incoming = graph.edges.filter(edge => edge.target_node_id === nodeId).map(edge => `${edge.source_node_id} (${edgeKindLabel(edge.kind)})`);
+  const outgoing = graph.edges.filter(edge => edge.source_node_id === nodeId).map(edge => `${edge.target_node_id} (${edgeKindLabel(edge.kind)})`);
   lines.push(['들어오는 연결', incoming.join(', ') || '없음'], ['나가는 연결', outgoing.join(', ') || '없음']);
   return lines;
 }
@@ -195,7 +197,8 @@ export function createGraphView({ root, document, request = null, basePath = '/'
   const status = element('p', '', { role: 'status', 'aria-live': 'polite' });
   const canvas = element('div', undefined, { class: 'graph-canvas' });
   const details = element('dl', undefined, { class: 'graph-details', 'aria-label': '선택한 노드' });
-  root.replaceChildren(...(title === null ? [] : [element('h2', title)]), status, canvas, details);
+  const technical = element('div', undefined, { class: 'graph-technical' });
+  root.replaceChildren(...(title === null ? [] : [element('h2', title)]), status, canvas, details, technical);
   let current = null;
 
   function select(nodeId) {
@@ -204,7 +207,10 @@ export function createGraphView({ root, document, request = null, basePath = '/'
     const state = current.states?.get(nodeId);
     details.replaceChildren(element('dt', '노드'), element('dd', nodeId),
       ...(state ? [element('dt', '실행 상태'), element('dd', STATE_LABELS[state] ?? state)] : []),
-      ...lines.flatMap(([label, value]) => [element('dt', label), element('dd', String(value))]));
+      ...lines.filter(line => line[2] !== 'technical')
+        .flatMap(([label, value]) => [element('dt', label), element('dd', String(value))]));
+    const folded = lines.filter(line => line[2] === 'technical').map(([label, value]) => [label, String(value)]);
+    technical.replaceChildren(...(folded.length ? [technicalDetails(document, folded)] : []));
     for (const box of canvas.querySelectorAll?.('[data-node]') ?? []) {
       box.setAttribute('aria-pressed', box.getAttribute('data-node') === nodeId ? 'true' : 'false');
     }
@@ -270,6 +276,7 @@ export function createGraphView({ root, document, request = null, basePath = '/'
     }
     canvas.replaceChildren(svg, list);
     details.replaceChildren();
+    technical.replaceChildren();
     status.textContent = `노드 ${graph.nodes.length}개 · 연결 ${graph.edges.length}개. 노드를 고르면 자세한 내용을 봅니다.`;
     status.dataset.state = 'shown';
   }

@@ -55,7 +55,7 @@ async function open(t) {
 test('browser grants: create through the settings form, list with projection and expiry, revoke',
   { timeout: 120000 }, async t => {
     const { page, url, errors, requests } = await open(t);
-    await page.goto(url + 'settings.html');
+    await page.goto(url + 'settings.html#settings-grants');
     const section = page.locator('#settings-grants');
     await section.getByText('아직 만든 브라우저 접근 허가가 없습니다', { exact: false }).waitFor();
     assert.equal(await section.getByRole('heading', { name: '브라우저 접근 허가' }).count(), 1);
