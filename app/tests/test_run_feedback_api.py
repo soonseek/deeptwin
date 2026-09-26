@@ -21,6 +21,7 @@ import pytest
 
 from app.domain.refs import EntityRef
 from app.services.runs import run_identity
+from app.tests.test_graph_execution import linear_graph
 from app.tests.test_run_trace_api import artifact_record, node, recovered_run, trace
 from app.tests.test_runs_api import (
     AttemptExecutor,
@@ -32,7 +33,6 @@ from app.tests.test_runs_api import (
     owner_app,
     post,
 )
-from app.tests.test_graph_execution import linear_graph
 from app.tests.test_web_owner_integration import headers
 
 SCHEMA = "process-feedback-command-v1"
@@ -314,7 +314,12 @@ def test_feedback_is_never_counted_as_an_alternative(tmp_path):
         ref = listed["current"]["run"]["ref"]
     from app.runtime.compiler import compile_change_candidate
     from app.runtime.memory import MemoryCompilationError, compile_knowledge
-    from app.tests.test_change_compiler import EVIDENCE, LEAK, patch_value, supported_inquiry
+    from app.tests.test_change_compiler import (
+        EVIDENCE,
+        LEAK,
+        patch_value,
+        supported_inquiry,
+    )
     from app.tests.test_memory_compilation import compilation_value, entry
 
     value = compilation_value()

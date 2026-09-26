@@ -42,7 +42,13 @@ from hashlib import sha256
 from uuid import NAMESPACE_URL, uuid5
 
 from ..domain.public_events import _append_event_in_transaction
-from ..domain.refs import DomainContractError, EntityRef, ObjectRef, canonical_json, uuid_string
+from ..domain.refs import (
+    DomainContractError,
+    EntityRef,
+    ObjectRef,
+    canonical_json,
+    uuid_string,
+)
 from ..domain.schemas import ImmutableRecord
 from ..domain.store import _writer
 from .owner_auth import OwnerAuthError
