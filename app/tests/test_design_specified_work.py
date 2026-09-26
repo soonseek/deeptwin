@@ -56,9 +56,9 @@ def test_the_attempt6_verifier_effect_states_condition_2_exactly():
     condition = COMPLETION_CONDITIONS[2]
     for clause in ("원본 변경 기록 파일 자체(요약·발췌·작성자의 메모가 아님)와 초안 원문을 둘 다 입력으로 직접 받아",
                    "작성 역할과 다른 model choice",
-                   "빈 줄을 뺀 초안의 모든 줄(제목 줄 포함)마다 {line, cited_ids, verdict: pass|fail, reason}, "
-                   "누락된 공개 ID 목록, 노출된 비공개 ID 목록, 전체 verdict(pass|fail)를 가진다. 전체 verdict는 모든 "
-                   "줄이 pass이고 두 목록이 비어 있을 때만 pass다."):
+                   ("빈 줄을 뺀 초안의 모든 줄(제목 줄 포함)마다 {line, cited_ids, verdict: pass|fail, reason}, "
+                    "누락된 공개 ID 목록, 노출된 비공개 ID 목록, 전체 verdict(pass|fail)를 가진다. 전체 verdict는 모든 "
+                    "줄이 pass이고 두 목록이 비어 있을 때만 pass다.")):
         assert clause in condition and clause in VERIFIER_RESPONSIBILITY, clause
     for clause in ("`- [CL-###] `", "`공개: 예`", "기능명·수치·버전", "`# 2.4.0 릴리스 노트`", "정확히 한 번",
                    "`공개: 아니오` 항목의 ID와 내용"):
