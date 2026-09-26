@@ -1,0 +1,250 @@
+{
+  "label": "attempt5",
+  "model": "<live-catalog-model>",
+  "work": {
+    "scenario": "specified (attempt 5): release notes from one stored changelog",
+    "author": "SIMULATED owner (test actor) — attempt 5 work description, not a real owner's work",
+    "work_model": {
+      "schema_version": "work-model-v1",
+      "work_model_id": "f1c90eb9-4440-5f22-861d-4ba7d5536d10",
+      "version": 1,
+      "work_revision_ref": {
+        "kind": "work_revision",
+        "id": "152c5899-2d53-5d23-acef-e5180d5e0cb1",
+        "version": 2,
+        "sha256": "576f4e9746250a33d237caa52576cc91e05c17c97ff67ca24e91b6ce2e7be04d"
+      },
+      "semantic_origin": "work_understanding",
+      "goals": [
+        "업로드된 변경 기록 원본 한 개로, 원본에 근거가 확인된 버전 2.4.0 공개용 릴리스 노트 한 부를 만든다.",
+        "완료 판정은 completion_conditions만으로 한다. 거기에 없는 속성(문체, 어조, 분량, 번역, 원본 변경 기록 자체의 사실 정확성)은 이 업무의 판정 대상이 아니다. 원본 변경 기록의 내용은 소유자가 책임지는 참값으로 취급하며, 원본 밖의 출처와 다시 대조할 필요가 없다."
+      ],
+      "deliverables": [
+        {
+          "deliverable_id": "release-notes",
+          "description": "승인된 원문 그대로 저장된 버전 2.4.0 릴리스 노트(markdown 한 파일)",
+          "media_types": [
+            "text/markdown"
+          ],
+          "min_items": 1,
+          "max_items": 1,
+          "max_total_bytes": 65536
+        }
+      ],
+      "completion_conditions": [
+        "릴리스 노트(text/markdown)의 모든 항목 줄은 `- [CL-###] `로 시작하고, 그 CL ID는 원본 변경 기록 파일에 있으며 원본에서 `공개: 예`로 표시된 항목이다. 항목 줄에 있는 모든 기능명·수치·버전은 그 줄이 인용한 원본 항목의 설명에 그대로 나온다. 항목 줄이 아닌 줄은 제목 한 줄(`# 2.4.0 릴리스 노트`)뿐이다.",
+        "원본에서 `공개: 예`로 표시된 모든 CL ID가 릴리스 노트에 정확히 한 번 인용되고, `공개: 아니오` 항목의 ID와 내용은 릴리스 노트 어디에도 나오지 않는다.",
+        "앞의 두 조건은 작성 역할이 아닌 검증 역할이 판정한다. 검증 역할은 원본 변경 기록 파일 자체(요약·발췌·작성자의 메모가 아님)와 초안 원문을 둘 다 입력으로 직접 받아 대조하고, 작성 역할과 다른 model choice를 쓴다. 결과는 검증 역할 자신의 application/json 검증 보고서이며, 항목 줄마다 {line, cited_ids, verdict: pass|fail, reason}, 누락된 공개 ID 목록, 노출된 비공개 ID 목록, 전체 verdict(pass|fail)를 가진다. 전체 verdict는 모든 줄이 pass이고 두 목록이 비어 있을 때만 pass다.",
+        "전체 verdict가 fail이면 그 초안은 승인 단계에 도달하지 않고 실행은 저장·공개 없이 끝난다. 같은 실행 안에서는 어떤 산출물도 재생성·재작성하지 않는다(소유자가 새 실행을 시작한다).",
+        "승인자(소유자 한 사람)는 artifact.publish 범위로 승인하며, 승인 단계는 검증을 통과한 초안 원문, 그 초안의 검증 보고서, 원본 변경 기록 파일을 함께 입력으로 받는다. 저장되는 릴리스 노트는 승인 단계가 내보낸 승인본과 바이트 단위로 같다: 승인 뒤 어떤 역할도 내용을 재생성·수정·형식 변환하지 않는다."
+      ],
+      "authorities": [
+        {
+          "authority_id": "source-read",
+          "capability": "artifact.read",
+          "scope": "업로드된 변경 기록 원본 파일 changelog-2.4.0.md 하나만 읽는다. 실행 시작 시 프레임워크가 이 파일을 바꾸지 않고 그대로 넘긴다. 웹 조회와 다른 출처는 허용되지 않으며 필요하지 않다.",
+          "effect": "read"
+        },
+        {
+          "authority_id": "notes-store",
+          "capability": "document.create",
+          "scope": "승인된 릴리스 노트 markdown 한 부를 문서 저장소에 새 문서로 저장한다(되돌릴 수 있다). 승인 전에는 저장하지 않는다.",
+          "effect": "write"
+        },
+        {
+          "authority_id": "publish-approval",
+          "capability": "artifact.publish",
+          "scope": "소유자 한 사람이 검증을 통과한 릴리스 노트 원문의 저장·공개를 승인한다.",
+          "effect": "human_approval"
+        }
+      ],
+      "risks": [
+        {
+          "risk_id": "unsupported-or-private-line",
+          "description": "원본에 근거하지 않은 내용이나 `공개: 아니오` 항목이 릴리스 노트에 실릴 수 있다. 완료 조건 0–2의 독립 검증과 조건 3의 차단으로 막는다.",
+          "severity": "high",
+          "mitigation_required": true
+        }
+      ],
+      "unknowns": [],
+      "suitability": {
+        "recommended_shape": "multi_agent",
+        "rationale": "작성과 검증을 서로 다른 역할·모델로 분리하고, 사람의 승인과 승인본의 저장을 분리해야 한다.",
+        "evidence_refs": [
+          {
+            "kind": "source",
+            "id": "54ae8eab-73b2-4b0a-9422-1a9f19d9d7ad",
+            "version": 1,
+            "sha256": "3734ba38e3d6ca8fe04db04d24a8b766720e4d19f5e77c61c9bc5254bb6ce3bb"
+          }
+        ]
+      },
+      "source_refs": [
+        {
+          "kind": "source",
+          "id": "54ae8eab-73b2-4b0a-9422-1a9f19d9d7ad",
+          "version": 1,
+          "sha256": "3734ba38e3d6ca8fe04db04d24a8b766720e4d19f5e77c61c9bc5254bb6ce3bb"
+        }
+      ]
+    }
+  },
+  "generation_http_status": 503,
+  "run": {
+    "code": "unavailable",
+    "message": "Design workspace request could not be admitted",
+    "retryability": "not_retryable",
+    "affected_refs": [],
+    "correlation_id": "9060f5d9-2721-4f98-817e-3fafa1439d52"
+  },
+  "pool": {
+    "pool_size": 3,
+    "presented_candidate_ids": [],
+    "presented_count": 0,
+    "passed_count": 0,
+    "candidate_count": 2,
+    "excluded": [
+      {
+        "candidate_id": "9bc7c96e-e2ec-4b44-8419-2b146ffbaf39",
+        "reason": "unreviewed"
+      },
+      {
+        "candidate_id": "b83dc074-0611-4895-8c9a-30c60b053ff8",
+        "reason": "unreviewed"
+      }
+    ],
+    "supplementation_available": true
+  },
+  "candidates": [
+    {
+      "candidate_id": "9bc7c96e-e2ec-4b44-8419-2b146ffbaf39",
+      "presented": false,
+      "nodes": [
+        [
+          "halt-no-publish",
+          "deterministic"
+        ],
+        [
+          "intake",
+          "deterministic"
+        ],
+        [
+          "publish-gate",
+          "human_gate"
+        ],
+        [
+          "publisher",
+          "agent"
+        ],
+        [
+          "review-join",
+          "join"
+        ],
+        [
+          "verdict-checker",
+          "deterministic"
+        ],
+        [
+          "verdict-router",
+          "router"
+        ],
+        [
+          "verifier",
+          "agent"
+        ],
+        [
+          "verify-join",
+          "join"
+        ],
+        [
+          "writer",
+          "agent"
+        ]
+      ],
+      "verdict": null
+    },
+    {
+      "candidate_id": "b83dc074-0611-4895-8c9a-30c60b053ff8",
+      "presented": false,
+      "nodes": [
+        [
+          "halt-no-publish",
+          "deterministic"
+        ],
+        [
+          "intake",
+          "deterministic"
+        ],
+        [
+          "publish-gate",
+          "human_gate"
+        ],
+        [
+          "publisher",
+          "agent"
+        ],
+        [
+          "review-join",
+          "join"
+        ],
+        [
+          "verdict-router",
+          "router"
+        ],
+        [
+          "verifier",
+          "agent"
+        ],
+        [
+          "verify-join",
+          "join"
+        ],
+        [
+          "writer",
+          "agent"
+        ]
+      ],
+      "verdict": null
+    }
+  ],
+  "derivations": [],
+  "owner_path": null,
+  "refusals": [],
+  "calls": [
+    {
+      "n": 1,
+      "phase": "arc",
+      "stage": "generation",
+      "answer_purpose": null,
+      "raw_answer": "attempt5-01-arc-generation.txt",
+      "intent_purpose": "design_candidate",
+      "max_output_tokens": 28000,
+      "effort": "medium",
+      "bound_usd_before_send": 1.7919,
+      "provider_message_id": "msg_011CfRRn2YXzEa3teQHpPGgf",
+      "request_id": "req_011CfRRn1gw81Dqtmx2xhf57",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 8291,
+        "output_tokens": 14585
+      },
+      "spend_usd_at_ceiling": 0.40608
+    }
+  ],
+  "guard_refusals": [],
+  "spend_usd_at_ceiling_this_attempt": 0.40608,
+  "spend_usd_at_ceiling_earlier_attempts": 0,
+  "cap_usd": 3.0,
+  "rereview_reserve_usd": 1.0,
+  "max_rounds": 1,
+  "requested_candidate_count": 2,
+  "generation_output_tokens": 28000,
+  "ceiling_usd_per_mtok": [
+    5.0,
+    25.0
+  ],
+  "evidence_id": "2d3910ff-a219-4a0f-9d99-748ca37e6019"
+}

@@ -23,6 +23,7 @@ from ..critic_contract import (
     PreparedInput,
     prepare_input,
 )
+from ..domain.graph_schema import _thaw
 from ..domain.refs import EntityRef, canonical_json
 from .design import (
     DesignCandidate,
@@ -166,7 +167,7 @@ def _control(graph) -> dict:
     for node in graph.nodes:
         if node.kind != "agent":
             notes.append(f"{node.kind}:{node.node_id}:{node.responsibility}")
-            config = dict(node.config)
+            config = _thaw(node.config)
             handler = config.pop("handler_id", None)
             if handler is not None:
                 notes.append(f"handler:{handler}:{node.node_id}")
@@ -183,7 +184,8 @@ def _control(graph) -> dict:
         notes.append(
             f"edge:{edge.kind}:{edge.edge_id}:"
             f"{edge.source_node_id}->{edge.target_node_id}:"
-            + canonical_json(dict(edge.data)).decode("utf-8")
+            # nested values (e.g. a control edge's condition) are frozen mappings
+            + canonical_json(_thaw(edge.data)).decode("utf-8")
         )
     for item in graph.grant_refs:
         notes.append(f"graph_grant:{_ref_string(item)}")
