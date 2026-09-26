@@ -15,6 +15,9 @@
 // approvals.mjs (approvalCommand / executionApprovalCommand) with one fresh
 // command id; the screen never decides anything itself and always re-reads the
 // server after a decision. Server text reaches the DOM through textContent only.
+// UI phase 3 (2026-09-26): each item leads with one readable line (step, attempt, what is
+// asked); the exact run, execution and inputs digest the decision binds stay in the item's
+// "기술 정보" disclosure, unchanged.
 
 import {
   DECISIONS, approvalCommand, approvalRoutes, attemptAuthorized, awaitingHumanView,
@@ -22,6 +25,7 @@ import {
   receiptSummary,
 } from './approvals.mjs';
 import { runRoutes, runView } from './runtime.mjs';
+import { approvalScopeLabel } from './ui-format.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -124,6 +128,13 @@ export function createApprovalScreen({ root, document, basePath = '/', request, 
     alert.textContent = '';
   }
 
+  // the exact subject of a decision, one disclosure away from the readable line
+  function exactSubject(text) {
+    const details = element('details', undefined, { class: 'tech-details approval-exact' });
+    details.append(element('summary', '기술 정보'), element('span', text, { class: 'approval-subject' }));
+    return details;
+  }
+
   function decisionButtons(label, act) {
     return DECISIONS.map(decision => {
       const button = element('button', `${DECISION_LABELS[decision]}: ${label}`, { type: 'button',
@@ -139,8 +150,9 @@ export function createApprovalScreen({ root, document, basePath = '/', request, 
     gates.replaceChildren(...pending.gates.map(gate => {
       const item = element('li', undefined, { 'data-node-id': gate.nodeId, 'data-scope': gate.scope });
       const text = `실행 ${runId} · 노드 ${gate.nodeId} · 범위 ${gate.scope}`;
-      item.append(element('span', text, { class: 'approval-subject' }),
-        ...decisionButtons(`${gate.nodeId}/${gate.scope}`, decision => decideGate(runId, gate, decision)));
+      item.append(element('span', `${gate.nodeId} · ${approvalScopeLabel(gate.scope)}`, { class: 'approval-summary' }),
+        ...decisionButtons(`${gate.nodeId}/${gate.scope}`, decision => decideGate(runId, gate, decision)),
+        exactSubject(text));
       return item;
     }));
     return pending.gates.length;
@@ -150,9 +162,10 @@ export function createApprovalScreen({ root, document, basePath = '/', request, 
     attempts.replaceChildren(...listing.requests.map(entry => {
       const item = element('li', undefined, { 'data-state': entry.state, 'data-attempt': String(entry.attemptNo),
         'data-execution-id': entry.executionId });
-      item.append(element('span', `실행 ${entry.runId} · ${executionApprovalPrompt(entry)}`, { class: 'approval-subject' }),
-        element('span', ` · ${STATE_LABELS[entry.state]}`, { class: 'approval-state' }),
-        element('span', expiryText(entry.expiresAtMs), { class: 'approval-expiry' }));
+      item.append(element('span', `${entry.executionNodeId} 시도 ${entry.attemptNo} · ${approvalScopeLabel(entry.scope)}`,
+        { class: 'approval-summary' }),
+      element('span', ` · ${STATE_LABELS[entry.state]}`, { class: 'approval-state' }),
+      element('span', expiryText(entry.expiresAtMs), { class: 'approval-expiry' }));
       if (entry.state === 'pending') {
         if (isRetryAttempt(listing, entry)) item.append(element('p', MESSAGES.retry, { class: 'approval-retry' }));
         item.append(...decisionButtons(`시도 ${entry.attemptNo}`, decision => decideAttempt(entry, decision)));
@@ -161,6 +174,7 @@ export function createApprovalScreen({ root, document, basePath = '/', request, 
         item.append(element('p', ok ? MESSAGES.authorized : MESSAGES.notAuthorized,
           { class: 'approval-authorized', 'data-authorized': String(ok) }));
       }
+      item.append(exactSubject(`실행 ${entry.runId} · ${executionApprovalPrompt(entry)}`));
       return item;
     }));
     return listing.pending.length;

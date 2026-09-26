@@ -44,3 +44,27 @@ def test_every_graph_term_has_a_label():
     assert _table("NODE_KIND_LABELS") == set(NODE_KINDS)
     assert _table("EDGE_KIND_LABELS") == set(EDGE_KINDS)
     assert _table("FAILURE_POLICY_LABELS") == set(FAILURE_POLICIES)
+
+
+def test_every_run_trace_term_has_a_label():
+    # UI phase 3 (2026-09-26): the run trace's closed vocabularies (services/run_traces.py,
+    # runtime/ledger.py) each have the owner's words, so no raw ledger term reaches a reader
+    from app.runtime.ledger import (
+        JOURNAL_TRANSITIONS,
+        RESULT_REASONS,
+        TERMINAL_OUTCOMES,
+        TOOL_CALL_STATES,
+        TOOL_EFFECT_CLASSES,
+    )
+    from app.services.run_traces import GAP_REASONS
+    from app.services.runs import PHASES
+
+    assert _table("RUN_PHASE_TEXT") == set(PHASES)
+    assert _table("ATTEMPT_OUTCOME_TEXT") == set(TERMINAL_OUTCOMES)
+    assert _table("RESULT_REASON_LABELS") == set(RESULT_REASONS)
+    assert _table("JOURNAL_LABELS") == set(JOURNAL_TRANSITIONS)
+    assert _table("TOOL_CALL_STATE_TEXT") == set(TOOL_CALL_STATES)
+    assert _table("EFFECT_CLASS_LABELS") == set(TOOL_EFFECT_CLASSES)
+    assert _table("TRACE_GAP_LABELS") == set(GAP_REASONS)
+    assert _table("TRACE_NODE_STATE_TEXT") == {"completed", "failed", "pending", "awaiting_approval", "rejected",
+                                               "not_visited"}

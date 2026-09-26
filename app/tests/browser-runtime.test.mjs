@@ -180,6 +180,12 @@ test('producers → consumer over real browser, document and fetch workers, with
       'gather · 합류 · 완료', 'release-gate · 사람 승인 · 승인 대기', 'consumer · 정해진 처리 · 미방문']);
     await graph.getByRole('button', { name: 'page-reader · 에이전트 · 완료' }).click();
     assert.match(await graph.locator('.graph-details').textContent(), /보고서 페이지를 읽는다/);
+    // the run detail (UI phase 3): a selected node lists its own outputs; "실행 전체 보기"
+    // returns to the whole run's list
+    await page.locator('#run-artifacts [role=status][data-state=filtered]', { hasText: '의 산출물 1개' }).waitFor();
+    assert.deepEqual((await page.locator('#run-artifacts li[data-artifact-id] .artifact-label').allTextContents())
+      .map(label => label.split(' · ').slice(0, 2).join(' · ')), ['page_text · page-reader']);
+    await page.locator('#run-selection').getByRole('button', { name: '실행 전체 보기' }).click();
     const panel = page.locator('#run-panel');
     assert.equal(await panel.getAttribute('data-phase'), 'awaiting_human');
     const rowsBefore = await panelRows(page);

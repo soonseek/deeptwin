@@ -18,6 +18,9 @@ const COLUMN = 240;
 const ROW = 96;
 const BOX_W = 200;
 const BOX_H = 64;
+// the vertical layout's spacing: one layer per row, siblings side by side
+const V_COLUMN = 224;
+const V_ROW = 92;
 
 // node kinds in the owner's words (ui-format.mjs, the one dictionary)
 export const KIND_LABELS = NODE_KIND_LABELS;
@@ -27,6 +30,29 @@ export const STATE_LABELS = Object.freeze({
 
 function fail(message) {
   throw Object.assign(new Error(message), { code: 'invalid_input' });
+}
+
+// a box line holds about this many full-width (Hangul/CJK) characters at 13px; narrower
+// characters count as about half. The whole text stays in the node list and the details.
+const BOX_TEXT_UNITS = 14.5;
+
+function charUnits(code) {
+  const wide = code >= 0x1100 && (code <= 0x115f || (code >= 0x2e80 && code <= 0xa4cf)
+    || (code >= 0xac00 && code <= 0xd7a3) || (code >= 0xf900 && code <= 0xfaff) || (code >= 0xff00 && code <= 0xff60));
+  return wide ? 1 : code === 0x20 ? 0.3 : 0.55;
+}
+
+// the text as it fits one box line, cut with "…" (which takes one unit of the line)
+export function fitText(text, units = BOX_TEXT_UNITS) {
+  const value = String(text ?? '');
+  let used = 0;
+  let cut = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    used += charUnits(value.codePointAt(index));
+    if (used <= units - 1) cut = index + 1;
+    if (used > units) return `${value.slice(0, Math.max(1, cut)).trimEnd()}…`;
+  }
+  return value;
 }
 
 function triggering(edge) {
@@ -180,7 +206,15 @@ export function unionNodeIds(left, right) {
   return [...new Set([...left.nodes.map(item => item.node_id), ...right.nodes.map(item => item.node_id)])];
 }
 
-export function createGraphView({ root, document, request = null, basePath = '/', title = '작업 그래프' } = {}) {
+// `onSelect(nodeId)`, when given, is told of the owner's selection (a click or key on a node) so
+// the page can share it with other views; `select(nodeId, { notify: false })` follows a
+// selection made elsewhere without echoing it back. `foldDetails` puts what the graph says about
+// the selected node in a "설계" disclosure (the run detail shows the run's own facts beside it).
+// `direction: 'vertical'` lays the layers out top to bottom (the run detail's narrow column:
+// a chain reads downward instead of scrolling sideways); the default stays left to right.
+export function createGraphView({ root, document, request = null, basePath = '/', title = '작업 그래프',
+  onSelect = null, foldDetails = false, direction = 'horizontal' } = {}) {
+  const vertical = direction === 'vertical';
   if (typeof root?.replaceChildren !== 'function') fail('a root is required');
   if (typeof basePath !== 'string' || !BASE_PATH.test(basePath)) fail('base path is not a deployment base path');
   const api = `${basePath.slice(0, -1)}/api/v1`;
@@ -198,11 +232,27 @@ export function createGraphView({ root, document, request = null, basePath = '/'
   const canvas = element('div', undefined, { class: 'graph-canvas' });
   const details = element('dl', undefined, { class: 'graph-details', 'aria-label': '선택한 노드' });
   const technical = element('div', undefined, { class: 'graph-technical' });
-  root.replaceChildren(...(title === null ? [] : [element('h2', title)]), status, canvas, details, technical);
+  let designFold = null;
+  if (foldDetails) {
+    designFold = element('details', undefined, { class: 'graph-design' });
+    designFold.append(element('summary', '선택한 단계의 설계 보기'), details, technical);
+    designFold.hidden = true;
+  }
+  root.replaceChildren(...(title === null ? [] : [element('h2', title)]), status, canvas,
+    ...(designFold === null ? [details, technical] : [designFold]));
   let current = null;
 
-  function select(nodeId) {
+  function clear() {
+    details.replaceChildren();
+    technical.replaceChildren();
+    if (designFold !== null) designFold.hidden = true;
+    for (const box of canvas.querySelectorAll?.('[data-node]') ?? []) box.setAttribute('aria-pressed', 'false');
+  }
+
+  function select(nodeId, { notify = true } = {}) {
     if (!current) return;
+    if (designFold !== null) designFold.hidden = false;
+    if (notify && typeof onSelect === 'function') onSelect(nodeId);
     const lines = nodeDetails(current.graph, nodeId);
     const state = current.states?.get(nodeId);
     details.replaceChildren(element('dt', '노드'), element('dd', nodeId),
@@ -222,22 +272,28 @@ export function createGraphView({ root, document, request = null, basePath = '/'
     const columns = Math.max(1, ...[...positions.values()].map(item => item.column + 1));
     const rows = Math.max(1, ...[...positions.values()].map(item => item.row + 1));
     const svg = svgElement('svg');
-    svg.setAttribute('viewBox', `0 0 ${columns * COLUMN} ${rows * ROW}`);
-    // drawn at its natural size so a long chain scrolls sideways instead of shrinking unreadably
-    svg.setAttribute('width', String(columns * COLUMN));
-    svg.setAttribute('height', String(rows * ROW));
+    const width = vertical ? rows * V_COLUMN : columns * COLUMN;
+    const height = vertical ? columns * V_ROW : rows * ROW;
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    // drawn at its natural size so a long chain scrolls instead of shrinking unreadably
+    svg.setAttribute('width', String(width));
+    svg.setAttribute('height', String(height));
     svg.setAttribute('role', 'img');
     svg.setAttribute('aria-label', `노드 ${graph.nodes.length}개, 연결 ${graph.edges.length}개`);
     const center = id => {
       const at = positions.get(id);
-      return { x: at.column * COLUMN + 20, y: at.row * ROW + 16 };
+      return vertical ? { x: at.row * V_COLUMN + 16, y: at.column * V_ROW + 12 }
+        : { x: at.column * COLUMN + 20, y: at.row * ROW + 16 };
     };
     for (const edge of graph.edges) {
       const from = center(edge.source_node_id);
       const to = center(edge.target_node_id);
       const line = svgElement('line');
-      for (const [name, value] of Object.entries({ x1: from.x + BOX_W, y1: from.y + BOX_H / 2, x2: to.x,
-        y2: to.y + BOX_H / 2, class: `graph-edge graph-edge-${edge.kind}`, 'data-edge': edge.edge_id })) {
+      const ends = vertical
+        ? { x1: from.x + BOX_W / 2, y1: from.y + BOX_H, x2: to.x + BOX_W / 2, y2: to.y }
+        : { x1: from.x + BOX_W, y1: from.y + BOX_H / 2, x2: to.x, y2: to.y + BOX_H / 2 };
+      for (const [name, value] of Object.entries({ ...ends,
+        class: `graph-edge graph-edge-${edge.kind}`, 'data-edge': edge.edge_id })) {
         line.setAttribute(name, String(value));
       }
       svg.append(line);
@@ -263,7 +319,7 @@ export function createGraphView({ root, document, request = null, basePath = '/'
       title.textContent = `${node.node_id} · ${KIND_LABELS[node.kind] ?? node.kind}`;
       const body = svgElement('text');
       body.setAttribute('x', String(at.x + 10)); body.setAttribute('y', String(at.y + 44));
-      body.textContent = node.responsibility.length > 24 ? `${node.responsibility.slice(0, 23)}…` : node.responsibility;
+      body.textContent = fitText(node.responsibility, BOX_TEXT_UNITS);
       box.append(rect, title, body);
       box.addEventListener?.('click', () => select(node.node_id));
       svg.append(box);
@@ -277,6 +333,7 @@ export function createGraphView({ root, document, request = null, basePath = '/'
     canvas.replaceChildren(svg, list);
     details.replaceChildren();
     technical.replaceChildren();
+    if (designFold !== null) designFold.hidden = true;
     status.textContent = `노드 ${graph.nodes.length}개 · 연결 ${graph.edges.length}개. 노드를 고르면 자세한 내용을 봅니다.`;
     status.dataset.state = 'shown';
   }
@@ -299,5 +356,5 @@ export function createGraphView({ root, document, request = null, basePath = '/'
     }
   }
 
-  return Object.freeze({ show, showRun, select });
+  return Object.freeze({ show, showRun, select, clear });
 }

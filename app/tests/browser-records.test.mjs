@@ -334,7 +334,7 @@ test('export of every produced category: actual preview, bound consent, verified
   await openEditor(page, url, completed.body.run_id);
   await page.getByRole('textbox', { name: '내 버전 텍스트' }).fill(`첫 줄\n${SYNTHETIC.alternative}\n셋째 줄\n`);
   await saved(page, 1);
-  await page.getByRole('button', { name: '분석용으로 고정' }).click();
+  await page.getByRole('button', { name: '차이 살펴보기' }).click();
   await page.getByText('내 근거로 기록했습니다.', { exact: false }).waitFor();
 
   // metadata-only export of every selectable category

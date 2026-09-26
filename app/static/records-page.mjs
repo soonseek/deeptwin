@@ -7,11 +7,14 @@
 // page says so and links there. Backup, retention, update guidance, account, connections,
 // credentials and budgets live on the settings page (settings-page.mjs); they are reachable
 // from every page's navigation, in any order, and none is a required final step.
+// UI phase 3 (2026-09-26): `records.html#run=<id>` (the run detail's "전체 기록에서 이 실행 보기")
+// narrows the log to that run through the server's `run_id` filter, which keeps only the events
+// that carry the run (its start and stop, its attempts); the page says so and offers the full log.
 // All server text reaches the DOM through textContent only.
 
 import { recordsRoutes } from './records.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
-import { eventErrorLabel, eventSentence, eventStatusLabel, eventStatusTone, timeText } from './ui-format.mjs';
+import { eventErrorLabel, eventSentence, eventStatusLabel, eventStatusTone, shortId, timeText } from './ui-format.mjs';
 import { el, emptyState, statusChip, technicalDetails, timeStamp } from './ui-parts.mjs';
 import { mountShell } from './ui-shell.mjs';
 
@@ -29,7 +32,17 @@ export const MESSAGES = Object.freeze({
   exportHere: '내보내기는 업무마다 업무 화면에서 합니다. 실제로 포함될 내용을 먼저 보여 드리고, 동의한 내용만 묶습니다. 내보내기는 선택 사항입니다.',
   exportLink: '업무 화면에서 내보내기',
   settingsHere: '백업·보존, 계정과 세션, 모델 연결, 실행 한도, 업데이트 안내는 설정 화면에 있습니다.',
+  runFilter: '이 실행을 가리키는 사건만 봅니다(실행의 시작·멈춤과 시도). 승인 결정처럼 실행을 직접 가리키지 않는 사건은 전체 기록에 있습니다.',
+  runEmpty: '이 실행을 가리키는 사건이 없습니다.',
 });
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+// the run a `#run=<id>` names, or null
+export function runFilterFrom(hash) {
+  const named = new URLSearchParams(typeof hash === 'string' ? hash.replace(/^#/, '') : '').get('run');
+  return typeof named === 'string' && UUID.test(named) ? named : null;
+}
 
 function fail(message) {
   throw new Error(message);
@@ -69,24 +82,35 @@ function eventItem(document, event, row) {
   ]);
 }
 
-export function createEventLog({ root, document, request, basePath = '/' }) {
+export function createEventLog({ root, document, request, basePath = '/', runId = null }) {
   if (typeof request !== 'function') fail('a request adapter is required');
+  if (runId !== null && (typeof runId !== 'string' || !UUID.test(runId))) fail('run filter is not a run id');
   const events = `${basePath.slice(0, -1)}/api/v1/events`;
   const status = el(document, 'p', { text: MESSAGES.loading, attrs: { role: 'status', 'aria-live': 'polite' } });
   const list = el(document, 'ol', { className: 'event-log', attrs: { 'aria-label': '사건 기록' } });
-  const empty = emptyState(document, { missing: MESSAGES.empty, next: MESSAGES.emptyNext });
+  const empty = runId === null ? emptyState(document, { missing: MESSAGES.empty, next: MESSAGES.emptyNext })
+    : emptyState(document, { missing: MESSAGES.runEmpty });
   empty.hidden = true;
   const more = el(document, 'button', { text: MESSAGES.more, attrs: { type: 'button' } });
   more.hidden = true;
-  root.replaceChildren(el(document, 'h2', { text: '사건 기록' }), status, list, empty, more);
+  const filter = runId === null ? [] : [el(document, 'div', { className: 'records-filter', attrs: { role: 'region', 'aria-label': '기록 거르기' } }, [
+    el(document, 'p', { className: 'records-filter-title', text: `실행 ${shortId(runId)}의 기록만 보는 중`, attrs: { title: runId } }),
+    el(document, 'p', { className: 'records-filter-note', text: MESSAGES.runFilter }),
+    el(document, 'p', { className: 'records-filter-links' }, [
+      el(document, 'a', { text: '전체 기록 보기', attrs: { href: './records.html' } }),
+      el(document, 'a', { text: '이 실행 화면으로 돌아가기', attrs: { href: `./observe.html#run=${runId}` } }),
+    ]),
+  ])];
+  root.replaceChildren(el(document, 'h2', { text: runId === null ? '사건 기록' : '이 실행의 사건 기록' }), ...filter,
+    status, list, empty, more);
   let cursor = null;
   let shown = 0;
 
   async function load() {
     status.dataset.state = 'loading';
     try {
-      const page = await request(events, cursor === null ? { query: { limit: PAGE_SIZE } }
-        : { query: { limit: PAGE_SIZE, cursor } });
+      const query = { limit: PAGE_SIZE, ...(runId === null ? {} : { run_id: runId }), ...(cursor === null ? {} : { cursor }) };
+      const page = await request(events, { query });
       if (!Array.isArray(page?.events)) fail('the event page is malformed');
       const now = Date.now();
       for (const event of page.events) {
@@ -95,7 +119,8 @@ export function createEventLog({ root, document, request, basePath = '/' }) {
       }
       const notes = [];
       if (page.gap !== null && page.gap !== undefined) notes.push(MESSAGES.gap);
-      status.textContent = [shown ? `사건 ${shown}개` : MESSAGES.empty, ...notes].join(' ');
+      status.textContent = [shown ? `사건 ${shown}개` : runId === null ? MESSAGES.empty : MESSAGES.runEmpty,
+        ...notes].join(' ');
       status.dataset.state = page.gap ? 'gap' : 'listed';
       empty.hidden = shown > 0;
       cursor = typeof page.next_cursor === 'string' && page.events.length ? page.next_cursor : null;
@@ -109,7 +134,7 @@ export function createEventLog({ root, document, request, basePath = '/' }) {
   }
 
   more.addEventListener('click', () => load().catch(() => {}));
-  return Object.freeze({ load, get shown() { return shown; } });
+  return Object.freeze({ load, get shown() { return shown; }, runId });
 }
 
 export async function boot({ document, location, fetch } = {}) {
@@ -138,7 +163,8 @@ export async function boot({ document, location, fetch } = {}) {
   }
   roots.session.dataset.state = 'authenticated';
   roots.session.textContent = '브라우저 세션이 연결되어 있습니다.';
-  const log = createEventLog({ root: roots.logs, document, request: session.request, basePath });
+  const log = createEventLog({ root: roots.logs, document, request: session.request, basePath,
+    runId: runFilterFrom(location?.hash) });
   await log.load().catch(() => {});
   return Object.freeze({ established: true, basePath, sections, log });
 }

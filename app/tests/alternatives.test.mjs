@@ -6,7 +6,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  AUTOSAVE_MS, ERROR_MESSAGES, FREEZE_SCHEMA, MESSAGES, SAVE_SCHEMA, createAlternativeEditor, draftRoutes, isEditable,
+  AUTOSAVE_MS, ERROR_MESSAGES, FREEZE_LABEL, FREEZE_SCHEMA, MESSAGES, SAVE_SCHEMA, createAlternativeEditor, draftRoutes,
+  isEditable,
 } from '../static/alternatives.mjs';
 
 const RUN = '00000000-0000-4000-8000-00000000c0c1';
@@ -143,7 +144,7 @@ test('freezing is explicit, saves first, and is partial unless whole review is t
   area.value = 'x\n'; await area.dispatch('input');
   const whole = root.findAll(el => el.getAttribute('id') === 'alternative-reviewed-whole')[0];
   assert.equal(whole.checked, false);
-  await root.findAll(el => el.tagName === 'BUTTON' && el.textContent === '분석용으로 고정')[0].dispatch('click');
+  await root.findAll(el => el.tagName === 'BUTTON' && el.textContent === FREEZE_LABEL)[0].dispatch('click');
   assert.equal(asked[1][1].method, 'POST');  // saved before freezing
   assert.deepEqual(asked[2][1].body, { schema_version: FREEZE_SCHEMA, command_id: asked[2][1].body.command_id,
     expected_revision: 1, reviewed_whole: false });

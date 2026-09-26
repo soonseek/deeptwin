@@ -31,6 +31,136 @@ export const RUN_CONTROL_LABELS = Object.freeze({
   recover: '복구 시도',
 });
 
+// ---- the run trace (GET {base}api/v1/runs/{run}/trace, run-trace-v1; UI phase 3) ----------
+// the value the server writes for a fact the runtime did not record
+export const NOT_RECORDED = 'not_recorded';
+export const NOT_RECORDED_LABEL = '기록 없음';
+
+// the run's phase (app/services/runs.py PHASES) as a chip: words, glyph and tone
+export const RUN_PHASE_TEXT = Object.freeze({
+  created: ['시작 전', 'neutral'], running: ['미완료', 'info'], awaiting_human: ['사람 승인 대기', 'warn'],
+  rejected: ['거절됨', 'error'], cancelled: ['취소됨', 'neutral'], completed: ['완료', 'ok'],
+});
+// a node's state in the trace (services/run_traces.py)
+export const TRACE_NODE_STATE_TEXT = Object.freeze({
+  completed: ['완료', 'ok'], failed: ['실패', 'error'], pending: ['대기', 'info'],
+  awaiting_approval: ['승인 대기', 'warn'], rejected: ['거절됨', 'error'], not_visited: ['미방문', 'neutral'],
+});
+export const VISIT_STATUS_TEXT = Object.freeze({
+  completed: ['완료', 'ok'], failed: ['실패', 'error'], no_result: ['결과 없음', 'warn'],
+});
+// an attempt's terminal outcome (app/runtime/ledger.py TERMINAL_OUTCOMES)
+export const ATTEMPT_OUTCOME_TEXT = Object.freeze({
+  succeeded: ['완료', 'ok'], failed: ['실패', 'error'], denied: ['거부됨', 'error'], timed_out: ['시간 초과', 'error'],
+  cancelled: ['취소됨', 'neutral'], outcome_unknown: ['결과 미상', 'warn'],
+});
+// why an attempt ended (RESULT_REASONS), in the owner's words
+export const RESULT_REASON_LABELS = Object.freeze({
+  provider_terminal: '도구·제공자의 응답으로 끝남', validation_failed: '결과 검증 실패', permission_denied: '권한 거부',
+  deadline: '시간 초과', transport_failure: '전송 실패', transport_unknown: '전송 결과 미상',
+  cancel_requested: '취소 요청', restart_reconciliation: '재시작 뒤 대조',
+});
+// the attempt journal's transitions (JOURNAL_TRANSITIONS)
+export const JOURNAL_LABELS = Object.freeze({
+  reserved: '예약', preflighting: '사전 확인', awaiting_human: '사람 대기', send_intent: '보냄', running: '실행 중',
+  validating: '검증 중', lease_renewed: '작업 연장', cancel_requested: '취소 요청', cancel_terminal: '취소 끝',
+  result_accepted: '결과 받음', result_duplicate: '중복 결과', result_late: '늦은 결과', recovery_pending: '복구 대기',
+  recovery_terminal: '복구 끝', transport_observed: '전송 확인', response_captured: '응답 받음',
+});
+// a ToolCall's state (TOOL_CALL_STATES) and the ports' effect classes
+export const TOOL_CALL_STATE_TEXT = Object.freeze({
+  intent: ['결과 대기', 'info'], succeeded: ['성공', 'ok'], failed: ['실패', 'error'], unknown: ['결과 미상', 'warn'],
+});
+export const EFFECT_CLASS_LABELS = Object.freeze({
+  none: '효과 없음', read: '읽기', write_reversible: '되돌릴 수 있는 쓰기',
+  external_reversible: '되돌릴 수 있는 외부 효과', external_irreversible: '되돌릴 수 없는 외부 효과',
+  instance_critical_secret: '인스턴스 비밀', instance_critical_storage: '인스턴스 저장소',
+});
+// a model call's terminal state as the Claude executor recorded it
+export const MODEL_CALL_STATE_TEXT = Object.freeze({
+  completed: ['완료', 'ok'], failed: ['실패', 'error'], cancelled: ['취소됨', 'neutral'], unknown: ['결과 미상', 'warn'],
+});
+export const APPROVAL_STATE_TEXT = Object.freeze({
+  consumed: ['승인됨', 'ok'], approved: ['승인됨', 'ok'], pending: ['결정 대기', 'warn'], rejected: ['거절됨', 'error'],
+  expired: ['시한 지남', 'neutral'], superseded: ['새 복구로 대체됨', 'neutral'],
+});
+// the stop events of a run (run.stopped reason_code)
+export const STOP_REASON_LABELS = Object.freeze({
+  completed: '완료', cancelled: '취소·거절로 멈춤', infrastructure_failure: '실행 중 실패로 멈춤',
+});
+// why a trace category is absent (services/run_traces.py GAP_REASONS), in the owner's words
+export const TRACE_GAP_LABELS = Object.freeze({
+  attempt_tokens: '시도 기록에는 예약과 정산만 있고, 제공자가 알린 토큰 수는 없습니다.',
+  handoff_receipt: '받은 쪽의 수신 확인은 이 실행기가 기록하지 않습니다. 보낸 결과와 받은 수행만 기록됩니다.',
+  handler_attempts: '실행기가 직접 처리한 단계는 시도 기록이 없습니다. 결과와 호출 기록은 수행에 붙어 있습니다.',
+  handler_error: '직접 처리한 단계가 실패한 이유는 기록하지 않습니다(실패했다는 사실만 남습니다).',
+  model_cost: '이 실행 경로는 모델 호출의 토큰 수는 기록하지만 비용은 기록하지 않습니다.',
+  reasoning: '모델의 숨은 추론은 저장하지 않으므로 볼 수 없습니다.',
+});
+
+export function approvalScopeLabel(scope) {
+  if (typeof scope !== 'string') return '';
+  if (scope === 'release-output') return '결과 내보내기 승인';
+  if (/^tool-[0-9a-f-]{36}$/.test(scope)) return '도구 호출 승인(시도마다)';
+  return scope;
+}
+
+// a count of currency microunits as money; USD shows "$", others their code
+export function formatMoney(microunits, currency) {
+  if (!Number.isSafeInteger(microunits) || microunits < 0) return '';
+  const amount = microunits / 1_000_000;
+  const digits = amount >= 1 ? 2 : amount >= 0.01 ? 3 : 4;
+  const text = amount.toFixed(digits).replace(/0+$/, '').replace(/\.$/, '');
+  return currency === 'USD' ? `$${text}` : `${text} ${typeof currency === 'string' ? currency : ''}`.trim();
+}
+
+// a recorded cost in words: an estimate says so, an unrecorded one is "미확인"
+export function costText(cost) {
+  if (typeof cost !== 'object' || cost === null) return '미확인';
+  const money = formatMoney(cost.microunits, cost.currency);
+  if (cost.state === 'settled' && money) return `${money} (정산 기록)`;
+  if (cost.state === 'estimate' && money) return `약 ${money} (예약 상한 기준 추정)`;
+  if (cost.state === 'partial_estimate' && money) return `약 ${money} 이상 (일부 미확인)`;
+  if (cost.basis === 'subscription_mode') return '미확인 (구독 방식: 호출별 금액 없음)';
+  return '미확인';
+}
+
+// a count, or the plain "기록 없음" for a value the runtime did not record
+export function countText(value, unit = '') {
+  if (value === NOT_RECORDED || value === null || value === undefined) return NOT_RECORDED_LABEL;
+  if (!Number.isSafeInteger(value)) return NOT_RECORDED_LABEL;
+  return `${value.toLocaleString('ko-KR')}${unit}`;
+}
+
+// how long between two recorded stamps; either missing is "기록 없음", never a guess
+export function durationText(start, end) {
+  const from = parseUtc(start);
+  const to = parseUtc(end);
+  if (from === null || to === null) return NOT_RECORDED_LABEL;
+  const ms = Math.max(0, to.getTime() - from.getTime());
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = Math.round(ms / 100) / 10;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}초`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds - minutes * 60);
+  if (minutes < 60) return rest ? `${minutes}분 ${rest}초` : `${minutes}분`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}시간 ${minutes - hours * 60}분`;
+}
+
+// a time of day (HH:MM:SS, local) for a timeline line; the full stamp is the title
+export function clockTime(value) {
+  const date = parseUtc(value);
+  if (date === null) return '';
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+// a [label, tone] pair from one of the tables above; unknown values stay themselves
+export function stateText(table, value) {
+  if (typeof value === 'string' && Object.hasOwn(table, value)) return table[value];
+  return [value === NOT_RECORDED || value === null || value === undefined ? NOT_RECORDED_LABEL : String(value), 'neutral'];
+}
+
 // public event statuses (app/domain/public_events.py STATUSES), spelled out beside a glyph
 export const EVENT_STATUS_LABELS = Object.freeze({
   succeeded: '성공', failed: '실패', cancelled: '취소', pending: '대기', unknown: '결과 미상',
@@ -222,6 +352,9 @@ function eventDetail(type, metadata) {
   const count = value => Number.isSafeInteger(value) && value >= 0;
   if ((type === 'work.created' || type === 'work.revised') && count(metadata.revision)) return ` (수정본 ${metadata.revision})`;
   if (type === 'run.started' && count(metadata.node_count)) return ` (노드 ${metadata.node_count}개)`;
+  if (type === 'run.stopped' && typeof metadata.reason_code === 'string') {
+    return ` (${own(STOP_REASON_LABELS, metadata.reason_code) ?? metadata.reason_code})`;
+  }
   return '';
 }
 

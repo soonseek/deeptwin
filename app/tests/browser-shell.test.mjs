@@ -195,14 +195,19 @@ test('settings holds the sections moved off the records page, one panel at a tim
     await panel.locator('[role=status]', { hasText: runId.slice(0, 8) }).waitFor();
     assert.doesNotMatch(await panel.locator('[role=status]').textContent(), new RegExp(runId));
     assert.match(await panel.locator('.tech-details').textContent(), new RegExp(runId));
-    assert.equal(await panel.getByRole('button', { name: '새 작업 보내기 중단' }).count(), 1);
+    // (UI phase 3: the command row is hidden while no command is available; the label is unchanged)
+    assert.equal(await panel.getByRole('button', { name: '새 작업 보내기 중단', includeHidden: true }).count(), 1);
     // a node's raw handler config is folded; its failure policy reads in words
     await page.locator('#run-graph button[data-node]').nth(5).click();
+    // (UI phase 3: on the run detail the node's design sits in its own disclosure)
+    await page.locator('#run-graph .graph-design > summary').click();
     const details = page.locator('#run-graph .graph-details');
     await details.getByText('실패하면 뒤 단계 멈춤').waitFor();
     assert.doesNotMatch(await details.textContent(), /handler_id|block_dependants/);
     assert.match(await page.locator('#run-graph .tech-details').textContent(), /handler_id/);
-    // an artifact row names its type in words; the declared raw type is folded
+    // an artifact row names its type in words; the declared raw type is folded (UI phase 3:
+    // back to the whole run's list, since a selected node lists only its own outputs)
+    await page.locator('#run-selection').getByRole('button', { name: '실행 전체 보기' }).click();
     const artifact = page.locator('#run-artifacts .artifact-list li').first();
     await artifact.waitFor();
     assert.doesNotMatch(await artifact.locator('.artifact-label').textContent(), /text\/plain|\(선언\)/);

@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { MESSAGES, MOUNT_IDS, PAGE_SIZE, boot, createEventLog, eventRow } from '../static/records-page.mjs';
+import { MESSAGES, MOUNT_IDS, PAGE_SIZE, boot, createEventLog, eventRow, runFilterFrom } from '../static/records-page.mjs';
 
 class FakeElement {
   constructor(tagName) {
@@ -111,6 +111,36 @@ test('the log pages by the server cursor and states gaps', async () => {
   await more.dispatch('click');
   assert.equal(more.hidden, true);  // an empty page ends the paging
   assert.equal(log.shown, 3);
+});
+
+test('`#run=<id>` narrows the log to that run through the server filter and says so', async () => {
+  const RUN = '00000000-0000-4000-8000-00000000aaa1';
+  assert.equal(runFilterFrom(`#run=${RUN}`), RUN);
+  for (const value of ['', '#run=', '#run=x', `#work=${RUN}`, null]) assert.equal(runFilterFrom(value), null);
+  assert.throws(() => createEventLog({ root: new FakeElement('section'), document: { createElement: tag => new FakeElement(tag) },
+    request: async () => ({}), runId: '../x' }), /run filter/);
+  const root = new FakeElement('section');
+  const asked = [];
+  const replies = [{ events: [event(1, { event_type: 'run.started' })], next_cursor: 'c2', gap: null },
+    { events: [], next_cursor: 'c2', gap: null }];
+  const request = async (path, options) => { asked.push([path, options]); return replies.shift(); };
+  const log = createEventLog({ root, document: { createElement: tag => new FakeElement(tag) }, request, runId: RUN });
+  await log.load();
+  assert.deepEqual(asked[0], ['/api/v1/events', { query: { limit: PAGE_SIZE, run_id: RUN } }]);
+  assert.match(root.textContent, /이 실행의 사건 기록/);
+  assert.match(root.textContent, /실행 00000000의 기록만 보는 중/);
+  assert.match(root.textContent, new RegExp(MESSAGES.runFilter.replace(/[()]/g, '\\$&')));
+  const links = root.findAll(el => el.tagName === 'A').map(el => [el.textContent, el.getAttribute('href')]);
+  assert.deepEqual(links, [['전체 기록 보기', './records.html'], ['이 실행 화면으로 돌아가기', `./observe.html#run=${RUN}`]]);
+  // the next page keeps the filter beside the cursor
+  await root.findAll(el => el.tagName === 'BUTTON')[0].dispatch('click');
+  assert.deepEqual(asked[1][1], { query: { limit: PAGE_SIZE, run_id: RUN, cursor: 'c2' } });
+  // a run with no events of its own says that, not that the instance is empty
+  const quiet = new FakeElement('section');
+  const none = createEventLog({ root: quiet, document: { createElement: tag => new FakeElement(tag) },
+    request: async () => ({ events: [], next_cursor: null, gap: null }), runId: RUN });
+  await none.load();
+  assert.match(quiet.textContent, new RegExp(MESSAGES.runEmpty));
 });
 
 test('the page holds only the log and the export entry, and links export to the work screen', async () => {

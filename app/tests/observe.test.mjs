@@ -9,7 +9,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { boot, bootPage, MOUNT_IDS } from '../static/observe.mjs';
+import { boot, bootPage, MOUNT_IDS, runFromHash } from '../static/observe.mjs';
 
 const HEX = '2'.repeat(32);
 const BASE = `/${HEX}/`;
@@ -231,4 +231,12 @@ test('where the page offers the approval mount, a choice also shows the run\'s a
   assert.ok(fetched.includes(`/${HEX}/api/v1/runs/${RUN_A}/approvals/executions`), JSON.stringify(fetched));
   assert.equal(mounted.approvals.runId, RUN_A);
   assert.match(document.elements.get('run-approvals').textContent, /지금 승인할 일이 없습니다/);
+});
+
+test('`#run=<id>` names a run only when it is a canonical run id', () => {
+  assert.equal(runFromHash(`#run=${RUN_A}`), RUN_A);
+  assert.equal(runFromHash(`run=${RUN_A}`), RUN_A);
+  for (const value of ['', '#', '#run=', '#run=../x', `#other=${RUN_A}`, null, undefined, 7]) {
+    assert.equal(runFromHash(value), null, String(value));
+  }
 });

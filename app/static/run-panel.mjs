@@ -64,7 +64,10 @@ export function controlsFor(state) {
   });
 }
 
-export function createRunPanel({ root, document, request, basePath = '/', commandId } = {}) {
+// UI phase 3: the per-node text rows are no longer the screen's primary element (the run detail's
+// graph and timeline are); they stay one disclosure away as the plain-text equivalent, and
+// `onView(view)` tells the page when the server's view of the run changed (after a command).
+export function createRunPanel({ root, document, request, basePath = '/', commandId, onView = null } = {}) {
   if (typeof root !== 'object' || root === null || typeof root.replaceChildren !== 'function'
       || typeof root.setAttribute !== 'function') fail('a root element is required');
   if (typeof document !== 'object' || document === null || typeof document.createElement !== 'function') {
@@ -83,6 +86,8 @@ export function createRunPanel({ root, document, request, basePath = '/', comman
 
   const status = element('p', IDLE_STATUS, { role: 'status', 'aria-live': 'polite' });
   const rows = element('ol', undefined, { 'aria-label': '실행 상태: 노드별 수행과 지난 시도' });
+  const rowsFold = element('details', undefined, { class: 'run-rows' });
+  rowsFold.append(element('summary', '노드별 상태를 글로 보기'), rows);
   const alert = element('p', '', { role: 'alert' });
   alert.hidden = true;
   const buttons = {};
@@ -102,7 +107,7 @@ export function createRunPanel({ root, document, request, basePath = '/', comman
   const tech = element('details', undefined, { class: 'tech-details' });
   tech.append(element('summary', TECHNICAL_SUMMARY), techList);
   tech.hidden = true;
-  root.replaceChildren(status, tech, rows, alert, actions);
+  root.replaceChildren(status, alert, actions, tech, rowsFold);
   root.dataset.phase = '';
   root.dataset.runId = '';
   root.setAttribute('aria-busy', 'false');
@@ -113,15 +118,23 @@ export function createRunPanel({ root, document, request, basePath = '/', comman
   let retained = null;
   let shown = Object.freeze({ busy: false, view: null, error: null });
 
+  let announced = null;
+
   function draw(state) {
     shown = state;
     const view = state.view;
+    const key = view ? `${view.runId}:${view.phase}:${view.cancellation.attempts.length}` : null;
+    if (key !== announced && !state.busy) {
+      announced = key;
+      if (view && typeof onView === 'function') Promise.resolve().then(() => onView(view)).catch(() => {});
+    }
     root.setAttribute('aria-busy', String(state.busy));
     root.dataset.phase = view ? view.phase : '';
     root.dataset.runId = view ? view.runId : '';
     const phaseText = view ? PHASE_STATUS[view.phase] ?? view.phaseLabel : '';
     status.textContent = state.busy ? BUSY_STATUS : view ? `${phaseText} · 실행 ${shortId(view.runId)}` : IDLE_STATUS;
     tech.hidden = !view;
+    rowsFold.hidden = !view;
     techValue.textContent = view ? view.runId : '';
     rows.replaceChildren(...(view ? accessibleRows(view).map(text => element('li', text)) : []));
     if (state.error) {

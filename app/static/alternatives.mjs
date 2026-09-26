@@ -10,6 +10,12 @@
 // owner ticks that they reviewed the whole artifact, because an assembled full
 // preview is not a whole work of theirs. The original is never changed. All text
 // reaches the DOM through textContent or form values, never markup.
+//
+// UI phase 3 (2026-09-26): the editor opens in place, beside the artifact it edits; its
+// title names the artifact, the role and the attempt (`open(runId, artifact, { title })`).
+// While the owner writes, the original stands beside the owner's version on a wide screen
+// (a stylesheet hides it on a narrow one, where the 원본 view shows it). The explicit freeze
+// is named "차이 살펴보기" (UX-D07); what it does is unchanged. "닫기" hands the place back.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const BASE_PATH = /^\/(?:[0-9a-f]{32}\/)?$/;
@@ -29,13 +35,14 @@ export const MESSAGES = Object.freeze({
   unsaved: '저장되지 않은 변경이 있습니다.',
   saving: '저장하는 중…',
   conflict: '다른 화면에서 이 버전을 먼저 저장했습니다. 지금 화면의 내용은 그대로 두었습니다.',
-  frozen: '분석용으로 고정했습니다.',
+  frozen: '이 수정본을 고정했습니다. 차이를 살펴봅니다.',
   unchanged: '원본과 같은 내용은 내 버전으로 고정할 수 없습니다.',
   noReason: '이유나 지시를 적지 않아도 됩니다.',
   partial: '바꾼 줄·칸만 내 근거로 기록합니다. 나머지는 검토하지 않은 영역으로 남습니다.',
   whole: '전체를 검토했습니다(선택하면 전체를 내 버전으로 기록합니다).',
 });
 
+export const FREEZE_LABEL = '차이 살펴보기';
 export const ERROR_MESSAGES = Object.freeze({
   invalid_input: '이 산출물은 이 편집기로 고칠 수 없거나 요청 형식이 맞지 않습니다.',
   unauthenticated: '브라우저 세션이 없습니다. 세션을 다시 연결해 주세요.',
@@ -69,7 +76,8 @@ export function isEditable(mediaType) {
   return EDITABLE_MEDIA.includes(mediaType);
 }
 
-export function createAlternativeEditor({ root, document, request, basePath = '/', crypto, schedule, onFrozen } = {}) {
+export function createAlternativeEditor({ root, document, request, basePath = '/', crypto, schedule, onFrozen,
+  onClose } = {}) {
   if (typeof root?.replaceChildren !== 'function') fail('a root is required');
   if (typeof request !== 'function') fail('a request adapter is required');
   if (typeof crypto?.randomUUID !== 'function') fail('a crypto with randomUUID is required');
@@ -105,7 +113,14 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
   const surface = element('div', undefined, { class: 'alternative-surface' });
   const actions = element('div', undefined, { class: 'alternative-actions' });
   const result = element('section', undefined, { class: 'alternative-freeze', 'aria-label': '고정 결과' });
-  root.replaceChildren(element('h2', '내 버전'), element('p', MESSAGES.noReason), status, tabs, surface, actions, result);
+  const heading = element('h2', '내 버전', { class: 'alternative-title' });
+  const close = element('button', '닫기', { type: 'button', class: 'btn btn-quiet alternative-close' });
+  close.hidden = true;
+  close.addEventListener('click', () => closeEditor().catch(() => {}));
+  const head = element('div', undefined, { class: 'alternative-head' });
+  head.append(heading, close);
+  root.replaceChildren(head, element('p', MESSAGES.noReason, { class: 'alternative-rule' }), status, tabs, surface,
+    actions, result);
 
   function say(text, state) {
     status.textContent = text;
@@ -126,11 +141,33 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
     pending = later(() => { pending = null; save().catch(() => {}); }, AUTOSAVE_MS);
   }
 
+  function beside(editor) {
+    // the original read-only beside the owner's version (hidden by the stylesheet on a narrow screen)
+    const side = element('div', undefined, { class: 'alternative-side', 'aria-label': '원본 (읽기 전용)' });
+    side.append(element('p', '원본', { class: 'alternative-side-title' }));
+    if (target.format === 'text') {
+      side.append(element('div', originalContent, { class: 'alternative-original-side' }));
+    } else {
+      const table = element('table', undefined, { class: 'alternative-table alternative-original-side' });
+      for (const row of originalContent) {
+        const tr = element('tr');
+        for (const cell of row) tr.append(element('td', cell));
+        table.append(tr);
+      }
+      side.append(table);
+    }
+    const mine = element('div', undefined, { class: 'alternative-mine' });
+    mine.append(element('p', '내 버전', { class: 'alternative-side-title' }), ...editor);
+    const split = element('div', undefined, { class: 'alternative-split' });
+    split.append(side, mine);
+    return split;
+  }
+
   function renderText() {
     const area = element('textarea', undefined, { rows: '16', 'aria-label': '내 버전 텍스트', spellcheck: 'false' });
     area.value = content;
     area.addEventListener('input', () => edited(area.value));
-    surface.replaceChildren(area);
+    surface.replaceChildren(beside([area]));
   }
 
   function renderTable() {
@@ -158,7 +195,7 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
       edited([...content.map(row => [...row]), Array(width).fill('')]);
       renderTable();
     });
-    surface.replaceChildren(table, addRow);
+    surface.replaceChildren(beside([table, addRow]));
   }
 
   function renderReadOnly(value) {
@@ -208,16 +245,18 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
     if (target.format === 'text') renderText(); else renderTable();
     const reviewed = element('input', undefined, { type: 'checkbox', id: 'alternative-reviewed-whole' });
     reviewed.checked = false;
-    const freezeButton = element('button', '분석용으로 고정', { type: 'button' });
+    const freezeButton = element('button', FREEZE_LABEL, { type: 'button', class: 'btn btn-primary' });
     freezeButton.addEventListener('click', () => freeze(reviewed.checked === true).catch(() => {}));
     actions.replaceChildren(element('p', MESSAGES.partial), reviewed,
       element('label', MESSAGES.whole, { for: 'alternative-reviewed-whole' }), freezeButton);
   }
 
-  async function open(runId, artifact) {
+  async function open(runId, artifact, { title = null } = {}) {
     requireUuid(runId, 'run id');
     if (!isEditable(artifact?.mediaType)) fail('this artifact is not editable here');
     const mine = ++generation;
+    heading.textContent = typeof title === 'string' && title ? `내 버전 — ${title}` : '내 버전';
+    close.hidden = typeof onClose !== 'function';
     if (pending !== null) cancel(pending);
     pending = null;
     say(MESSAGES.loading, 'loading');
@@ -268,7 +307,7 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
         const saved = await request(routes.list(target.runId, target.artifactId), { method: 'POST', body });
         draft = { draftId: saved.draft_id, revision: saved.revision };
         dirty = content !== sent;  // typing during the save keeps the newer text unsaved
-        say(dirty ? MESSAGES.unsaved : `저장됨 (수정본 ${saved.revision})`, dirty ? 'dirty' : 'saved');
+        say(dirty ? MESSAGES.unsaved : `자동 저장됨 (수정본 ${saved.revision})`, dirty ? 'dirty' : 'saved');
         return draft;
       } catch (error) {
         if (refusal(error) === 'conflict') offerRecovery();
@@ -313,6 +352,13 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
     }
   }
 
-  return Object.freeze({ open, save, freeze, show, get view() { return view; },
+  // hand the place back: an unsaved edit is saved first, never dropped
+  async function closeEditor() {
+    if (pending !== null) { cancel(pending); pending = null; }
+    if (dirty && target !== null) await save();
+    if (typeof onClose === 'function') onClose();
+  }
+
+  return Object.freeze({ open, save, freeze, show, close: closeEditor, get view() { return view; },
     get draft() { return draft; }, get dirty() { return dirty; }, get content() { return content; } });
 }

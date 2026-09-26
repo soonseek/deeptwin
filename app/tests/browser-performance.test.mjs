@@ -196,7 +196,10 @@ test('responsiveness under the declared workload', { timeout: 600000 }, async t 
   await picker.waitFor();
   const selectStarted = Date.now();
   await picker.selectOption(runId);
-  await page.locator('#run-panel li, li', { hasText: 'n19' }).first().waitFor();
+  // the run detail (UI phase 3): the header and the graph's node list; the per-node text rows
+  // are folded under the header
+  await page.locator('#run-summary .run-title').waitFor();
+  await page.locator('#run-graph .graph-nodes button[data-node="n19"]').waitFor();
   results.run_view = { nodes: 20, open_wall_ms: Date.now() - selectStarted, long_tasks_ms: await takeSelection() };
 
   // 5. the run's graph view (T037/T048): drawn with all 20 nodes and 40 edges, then selecting

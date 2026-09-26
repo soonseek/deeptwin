@@ -33,6 +33,8 @@ MODULES = MappingProxyType({
     "session.mjs": JAVASCRIPT,
     "run-panel.mjs": JAVASCRIPT,
     "run-list.mjs": JAVASCRIPT,
+    "run-trace.mjs": JAVASCRIPT,
+    "run-detail.mjs": JAVASCRIPT,
     "artifacts.mjs": JAVASCRIPT,
     "alternatives.mjs": JAVASCRIPT,
     "alternative-file.mjs": JAVASCRIPT,

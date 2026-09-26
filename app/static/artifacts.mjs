@@ -224,7 +224,13 @@ function builder(document) {
   };
 }
 
-export function createArtifactViewer({ root, document, request, basePath = '/', onEdit, onAlternativeFile } = {}) {
+// `title` null leaves the heading to the page (the run detail's 산출물 tab names it).
+// `filter(ids, …)` narrows the loaded list to one selection's artifacts (UI phase 3: selecting a
+// node shows THAT node's artifacts); `onEdit(runId, item, context)` and
+// `onAlternativeFile(runId, item, context)` get `context.slot`, the place beside the list where
+// the page opens the owner's version in place, and `context.anchor`, the artifact's row.
+export function createArtifactViewer({ root, document, request, basePath = '/', onEdit, onAlternativeFile,
+  title = '산출물' } = {}) {
   if (typeof root !== 'object' || root === null || typeof root.replaceChildren !== 'function') fail('a root element is required');
   if (typeof document !== 'object' || document === null || typeof document.createElement !== 'function') fail('a document is required');
   if (typeof request !== 'function') fail('an injected request function is required');
@@ -233,13 +239,17 @@ export function createArtifactViewer({ root, document, request, basePath = '/', 
   let runId = null;
   let generation = 0;
   let previewGeneration = 0;
+  let loaded = [];
+  let filtering = null;  // { ids, label, nodeId, editContext } or null for the whole run
+  let producerOf = null;  // artifact id -> the node whose visit first recorded it (the run trace)
 
   const status = element('p', MESSAGES.idle, { role: 'status', 'aria-live': 'polite' });
   const note = element('p', MESSAGES.declared, { class: 'artifact-note' });
   note.hidden = true;
   const list = element('ul', undefined, { class: 'artifact-list' });
+  const editorSlot = element('div', undefined, { class: 'editor-slot artifact-editor-slot' });
   const viewer = element('section', undefined, { class: 'artifact-viewer', 'aria-label': '산출물 미리보기' });
-  root.replaceChildren(element('h2', '산출물'), status, note, list, viewer);
+  root.replaceChildren(...(title === null ? [] : [element('h2', title)]), status, note, list, editorSlot, viewer);
 
   function refusal(error) {
     const code = Object.hasOwn(ERROR_MESSAGES, error?.code) ? error.code : 'unavailable';
@@ -249,7 +259,10 @@ export function createArtifactViewer({ root, document, request, basePath = '/', 
 
   function row(item) {
     const entry = element('li', undefined, { 'data-artifact-id': item.artifactId });
-    const label = `${item.role} · ${item.nodeId ?? '노드 미상'} · ${mediaTypeLabel(item.mediaType)} · ${sizeText(item.size)}`
+    // a filtered list names the selected node: one result forwarded by several steps is
+    // listed once by the run, under whichever visit the server met first
+    const nodeId = filtering?.nodeId ?? producerOf?.[item.artifactId] ?? item.nodeId;
+    const label = `${item.role} · ${nodeId ?? '노드 미상'} · ${mediaTypeLabel(item.mediaType)} · ${sizeText(item.size)}`
       + (item.available ? '' : ' · 원본 없음');
     entry.append(element('span', label, { class: 'artifact-label' }));
     const show = element('button', '미리보기', { type: 'button' });
@@ -257,19 +270,53 @@ export function createArtifactViewer({ root, document, request, basePath = '/', 
     const download = element('a', '원본 내려받기', { href: routes.content(runId, item.artifactId),
       download: `${item.role}-${item.ordinal}`, rel: 'noopener' });
     entry.append(show, download);
+    const context = () => ({ slot: editorSlot, anchor: entry,
+      title: filtering?.editContext ? filtering.editContext.title(item.role) : `${item.role} (${item.nodeId ?? '노드 미상'})` });
     if (typeof onAlternativeFile === 'function') {
       // any format may be answered with the owner's own file (alternative-file.mjs)
       const answer = element('button', '대안 파일 올리기', { type: 'button' });
-      answer.addEventListener('click', () => Promise.resolve(onAlternativeFile(runId, item)).catch(() => {}));
+      answer.addEventListener('click', () => Promise.resolve(onAlternativeFile(runId, item, context())).catch(() => {}));
       entry.append(answer);
     }
     if (typeof onEdit === 'function' && EDITABLE.has(item.mediaType)) {
       const edit = element('button', '내 버전 편집', { type: 'button' });
-      edit.addEventListener('click', () => Promise.resolve(onEdit(runId, item)).catch(() => {}));
+      edit.addEventListener('click', () => Promise.resolve(onEdit(runId, item, context())).catch(() => {}));
       entry.append(edit);
     }
     entry.append(artifactTechnical(document, item));
     return entry;
+  }
+
+  function renderList() {
+    const items = filtering === null ? loaded : loaded.filter(item => filtering.ids.includes(item.artifactId));
+    list.replaceChildren(...items.map(row));
+    note.hidden = items.length === 0;
+    if (filtering === null) {
+      status.dataset.state = items.length ? 'listed' : 'empty';
+      status.textContent = items.length ? `산출물 ${items.length}개` : MESSAGES.empty;
+    } else {
+      status.dataset.state = items.length ? 'filtered' : 'filtered-empty';
+      status.textContent = items.length ? `${filtering.label ?? '선택한 단계의'} 산출물 ${items.length}개`
+        : `${filtering.label ?? '선택한 단계의'} 산출물이 없습니다.`;
+    }
+    // a preview of an artifact outside the narrowed list is not left beside it
+    const previewed = viewer.dataset.artifactId;
+    if (previewed && !items.some(item => item.artifactId === previewed)) {
+      previewGeneration += 1;
+      viewer.replaceChildren();
+      viewer.dataset.artifactId = '';
+    }
+    return items;
+  }
+
+  function filter(ids, options = {}) {
+    if (ids !== null && (!Array.isArray(ids) || ids.some(id => typeof id !== 'string' || !UUID.test(id)))) {
+      fail('filter ids must be artifact ids');
+    }
+    filtering = ids === null ? null : Object.freeze({ ids: [...ids], label: options.label ?? null,
+      nodeId: options.nodeId ?? null, editContext: options.editContext ?? null });
+    if (options.producers !== undefined) producerOf = options.producers;
+    return runId === null ? [] : renderList();
   }
 
   function pageNavigation(view, artifactId) {
@@ -315,24 +362,25 @@ export function createArtifactViewer({ root, document, request, basePath = '/', 
       : [];
     viewer.replaceChildren(...parts, facts, fidelity, ...digest);
     viewer.dataset.kind = view.kind;
+    viewer.dataset.artifactId = artifactId;
   }
 
-  async function show(nextRunId) {
+  async function show(nextRunId, { keepFilter = false } = {}) {
     runId = requireUuid(nextRunId, 'run id');
     const mine = ++generation;
     previewGeneration += 1;
+    if (!keepFilter) filtering = null;
     status.dataset.state = 'loading';
     status.textContent = MESSAGES.loading;
     list.replaceChildren();
     viewer.replaceChildren();
+    viewer.dataset.artifactId = '';
     note.hidden = true;
     try {
       const items = artifactList(await request(routes.list(runId), {}));
       if (mine !== generation) return null;
-      list.replaceChildren(...items.map(row));
-      note.hidden = items.length === 0;
-      status.dataset.state = items.length ? 'listed' : 'empty';
-      status.textContent = items.length ? `산출물 ${items.length}개` : MESSAGES.empty;
+      loaded = items;
+      renderList();
       return items;
     } catch (error) {
       if (mine === generation) refusal(error);
@@ -378,7 +426,8 @@ export function createArtifactViewer({ root, document, request, basePath = '/', 
     return preview(artifactId);
   }
 
-  return Object.freeze({ show, preview, showPage, open, get runId() { return runId; } });
+  return Object.freeze({ show, preview, showPage, open, filter, editorSlot,
+    get runId() { return runId; }, get items() { return loaded; }, get filtered() { return filtering !== null; } });
 }
 
 export function createArtifactIndex({ root, document, request, basePath = '/', onOpen } = {}) {

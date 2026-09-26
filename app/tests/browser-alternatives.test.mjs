@@ -34,7 +34,7 @@ test('three views, autosave, refresh and freeze on a real run artifact', { timeo
   await page.getByText('저장된 내 버전을 이어서 편집합니다. (수정본 1)').waitFor();
   assert.equal(await page.getByRole('textbox', { name: '내 버전 텍스트' }).inputValue(), '첫 줄\n고친 둘째 줄\n셋째 줄\n');
   // freezing is explicit; the changed line alone is the evidence
-  await page.getByRole('button', { name: '분석용으로 고정' }).click();
+  await page.getByRole('button', { name: '차이 살펴보기' }).click();
   await page.getByText('바꾼 부분 1곳을 내 근거로 기록했습니다.', { exact: false }).waitFor();
   assert.deepEqual(errors, []);
 });

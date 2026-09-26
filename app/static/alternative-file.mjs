@@ -110,7 +110,7 @@ const FIELDS = Object.freeze({
   time_range: [['start', '시작 (초)'], ['end', '끝 (초)']],
 });
 
-export function createAlternativeFileForm({ root, document, request, basePath = '/', crypto, onFrozen } = {}) {
+export function createAlternativeFileForm({ root, document, request, basePath = '/', crypto, onFrozen, onClose } = {}) {
   if (typeof root?.replaceChildren !== 'function') fail('a root is required');
   if (typeof request !== 'function') fail('a request adapter is required');
   if (typeof crypto?.randomUUID !== 'function') fail('a crypto with randomUUID is required');
@@ -128,15 +128,24 @@ export function createAlternativeFileForm({ root, document, request, basePath = 
 
   const status = element('p', '', { role: 'status', 'aria-live': 'polite' });
   const body = element('div');
-  root.replaceChildren(element('h2', '대안 파일'), status, body);
+  // UI phase 3: the form opens in place beside the artifact it answers; its title names it
+  const heading = element('h2', '대안 파일', { class: 'alternative-title' });
+  const close = element('button', '닫기', { type: 'button', class: 'btn btn-quiet alternative-close' });
+  close.hidden = true;
+  close.addEventListener('click', () => { if (typeof onClose === 'function') onClose(); });
+  const head = element('div', undefined, { class: 'alternative-head' });
+  head.append(heading, close);
+  root.replaceChildren(head, status, body);
 
   function say(text, state) {
     status.textContent = text;
     status.dataset.state = state;
   }
 
-  function open(runId, artifact) {
+  function open(runId, artifact, { title = null } = {}) {
     if (typeof runId !== 'string' || !UUID.test(runId) || !UUID.test(artifact?.artifactId ?? '')) fail('an artifact is required');
+    heading.textContent = typeof title === 'string' && title ? `대안 파일 — ${title}` : '대안 파일';
+    close.hidden = typeof onClose !== 'function';
     const kind = selectorKind(artifact.mediaType);
     target = { runId, artifactId: artifact.artifactId, kind, mediaType: artifact.mediaType };
     selectors = [];

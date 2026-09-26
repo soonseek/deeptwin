@@ -215,6 +215,64 @@ def test_a_handler_run_trace_reports_its_final_result_and_unrecorded_attempts(tm
         assert value["work"]["title"] == "not_recorded"  # a fixture revision carries no text
 
 
+class ApiPricedTransport:
+    """Attempt 1 is settled with the amount its transport reported; attempt 2 never
+    answers (an unknown outcome retains its whole reservation)."""
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, permit, request, window):
+        from app.runtime import node_attempts as na
+        from app.runtime.budgets import BudgetUsage
+
+        self.calls.append(request.attempt_id)
+        if len(self.calls) == 1:
+            usage = BudgetUsage.create(model_calls=1, tool_calls=0, node_visits=1, loop_rounds=0,
+                                       output_bytes=10, candidates=0, api_microunits=9_000)
+            return na.AttemptTransportResult(
+                outcome="failed", result_ref=None, usage_finality="final",
+                remote_terminal_observed="failed", reason_code="provider_terminal", usage=usage)
+        raise RuntimeError("synthetic transport fault")
+
+
+def test_an_api_priced_attempt_states_its_cost_basis(tmp_path):
+    from dataclasses import replace
+
+    from app.runtime.budgets import BudgetPolicy
+    from app.tests.test_server_api_v1 import immutable
+
+    transport = ApiPricedTransport()
+    executor = AttemptExecutor(transport)
+    with owner_app(tmp_path, executor) as subject:
+        policy = BudgetPolicy.create(
+            profile="execution", provider_mode="api", currency="USD", max_api_microunits=200_000,
+            max_model_calls=3, max_tool_calls=5, max_node_visits=7, max_loop_rounds=2, max_output_bytes=1_000,
+            max_concurrency=2, max_wall_seconds=60, max_candidates=1)
+        subject.refs.budget = immutable(subject.domain, subject.domain.roots(), "budget_policy",
+                                        content=policy.domain_content()).ref
+        bind_attempts(subject, executor)
+        executor.bindings = {"writer": replace(executor.bindings["writer"], api_microunits=25_000)}
+        executor.result = artifact_record(subject.domain, "합성 원자료\n", role="source")
+        body = command(subject, graph_record(subject, linear_graph()))
+        assert post(subject, body).status_code == 503
+        run_path = subject.path + "/" + run_identity(body["command_id"])
+        assert post(subject, {"command_id": str(uuid4())}, run_path + "/recover").status_code == 503
+        value = trace(subject, run_path).json()
+        first, second = node(value, "writer")["visits"][0]["attempts"]
+        # the settled amount of attempt 1, the reserved ceiling of the unanswered attempt 2
+        assert first["cost"] == {"state": "settled", "basis": "budget_settlement", "microunits": 9_000,
+                                 "currency": "USD"}
+        assert second["terminal_outcome"] == "outcome_unknown"
+        assert second["error"]["outcome"] == "outcome_unknown"
+        assert second["cost"] == {"state": "estimate", "basis": "reserved_ceiling", "microunits": 25_000,
+                                  "currency": "USD"}
+        assert second["budget_reservation"]["settled"] == "not_recorded"
+        assert value["totals"]["cost"] == {"state": "estimate", "microunits": 34_000, "currency": "USD"}
+        assert value["final_results"] == []
+        assert {"node_id": "writer", "state": "failed"} in value["stopped_at"]
+
+
 def test_events_filter_by_run_and_work_from_what_each_event_carries(tmp_path):
     from app.domain.public_events import _append_event_in_transaction
     from app.domain.refs import ObjectRef
