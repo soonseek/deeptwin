@@ -8,9 +8,14 @@ cancel stopping the arc before its next model call. ONE live run (real generatio
 criticism for one request) went through the same route over the owner's Claude connection.**
 The deterministic cases use scripted TEST-ACTOR model turns and a SIMULATED qualification; they
 are never presented as live, and none of this is a release qualification (decisions.md
-2026-09-25). T038 is **not ticked**: the live critic's answer was refused by the contract, so no
-live verdict or live selection exists yet (see "Not ticked"); the release qualification is T077
-and stays open; the product gate stays closed.
+2026-09-25). T038 is **not ticked**: a live critique now completes (2026-09-26, later — the
+first run's contract refusal was diagnosed and its cause fixed in the critic prompt), but the live
+critic rejected the one live candidate, so nothing was presented and no live selection exists
+(see "Not ticked"); the release qualification is T077 and stays open; the product gate stays
+closed.
+
+**Update 2026-09-26 (later): live review diagnosis, restorable requests, creation from the work
+page** — see the section of that name below.
 
 ## What landed
 
@@ -106,25 +111,189 @@ USD 10/50 per MTok in/out).
   MTok) that is **USD ≈ 0.19**; the guard's ceiling bound was USD 0.48. No guard refusal. Total
   live spend for T038: **USD ≈ 0.19 of the 3.00 cap** (one attempt).
 - The raw model text was not saved (only digests are sealed), so why the review violated the
-  contract is not established; that and a complete live verdict remain open (see Open).
+  contract was not established then; it is diagnosed in the update below.
+
+## 2026-09-26 (later): live review diagnosis, restorable requests, creation from the work page
+
+### 1. The live review's contract failure: diagnosed, fixed in the prompt
+
+- **Persisted diagnosis.** A completed critic answer the contract refuses now raises
+  `CriticismStageRefused` (`app/services/design_criticism_live.py`). The closed message is kept
+  (`the review response violates the contract`), and two things go with it: the model's own
+  answer (up to 64,000 UTF-8 bytes, with a truncation flag; model output only, never the prompt,
+  a key or a header) and the exact rule it broke. The rule comes from
+  `diagnose_contract_violation`, which replays the pinned contract's own checks.
+  `app/critic_contract.py` is pinned by the release FROZEN manifests and was **not edited**; the
+  contract still reduces every reason to one message. Any disagreement with `parse_response` is
+  reported, never resolved in the answer's favour. The workspace persists a
+  `design_criticism_refusal` record on the candidate before the refusal propagates. The run's
+  refusal entry carries `purpose`, `violation` and `refusal_record_id`, and
+  `criticism_refusals(request_id)` reads them back.
+- **Replay.** The first run's raw review text could not be recovered: only digests had been
+  sealed, and its store was a test temporary. So ONE new live review of a freshly generated
+  candidate was run (`app/tests/test_claude_live_design_review.py`, `_live_`). It read the key
+  from `DEEPTWIN_LIVE_ANTHROPIC_API_KEY`, never printed, and used the first model the live
+  catalog listed. The hard cap was **USD 1.50 in total** across attempts, checked before every
+  send against a ledger of earlier attempts at ceiling rates of USD 5 / 25 per MTok (above the
+  listed USD 4 / 20).
+- **Root cause: two contract rules the prompt did not state.**
+  1. The critic wrapped its JSON answer in a markdown code fence (`json` fence). This is the
+     first violation: `json: Expecting value at line 1 column 1`.
+  2. Inside the answer, it cited the criteria document under the design decision's id (the
+     prefix of the criterion ids, `00000000-…-221`) instead of the criteria document's own `id`
+     field (`review:…`). The contract refuses that citation as not visible. The model even noted
+     the right id in its own uncertainty.
+  The general profile does say "Return only the JSON…", but neither rule was stated where the
+  critic reads the citation rules.
+- **Fix, in the prompt only** (like the earlier `_CITATION_RULE` fix): `_CITATION_RULE` now
+  states that a citation's `document_id` and `version` are exactly the cited document's own `id`
+  and `version` fields: the criteria document's own id, never a criterion id or part of one. A new
+  `_OUTPUT_RULE` states that the answer is the JSON object alone: first character `{`, last `}`,
+  no fence. The contract validation is unchanged: a fenced answer and a misnamed citation are
+  still refused, each with its exact reason (tested).
+- **Confirmation.** The same live-generated graph was replayed offline through the product's
+  own admission (its raw generation answer had been saved first). There was no model call, and
+  the framework gave it a new identity. It was then criticized live once more with the fixed
+  prompt, and **every stage completed and was admitted by the contract**: the review, a
+  counterexample proposal with 4 counterexamples, 4 validity calls and 2 candidate responses, with
+  0 refusals. The folded verdict is **rejected** (`counterexample_fail:cx-thumbnail-unchecked`,
+  `validity_unresolved:cx-downstream-writers-mutate-bundle`). The live critic judged that the
+  candidate never checks the thumbnail (a completion condition), and one validity stayed
+  unresolved. The pool therefore presents **0 of 1** (excluded: `rejected:…`), so **no live
+  selection was possible**: the owner-selection step in the test runs only when the pool presents
+  a candidate.
+
+| run | call | purpose | provider message id | request id | state / stop | input / output tokens |
+|---|---|---|---|---|---|---|
+| diagnose | 1 | design_candidate (cap 10,000) | `msg_011CfRKCbGPV4WqkjQHvPqPE` | `req_011CfRKCaUm4iyapGe7ioiQF` | completed / end_turn | 5,707 / 4,214 |
+| diagnose | 2 | review (cap 6,000), **refused**: `json: Expecting value at line 1 column 1` | `msg_011CfRKF5v8KnVEpndGR1iwa` | `req_011CfRKF5RbwqUwvxLzKifN4` | completed / end_turn | 4,985 / 3,511 |
+| confirm | 1 | review: all 5 findings `pass` | `msg_011CfRKPzKHAWkGCYb3dGMVQ` | `req_011CfRKPyeLkBgNngqwENx7e` | completed / end_turn | 5,111 / 2,723 |
+| confirm | 2 | counterexample proposal (4) | `msg_011CfRKReBcm4RTHEL2ZTqhL` | `req_011CfRKRdjLAKjRqw3mTuYEj` | completed / end_turn | 6,666 / 3,620 |
+| confirm | 3 | validity `cx-thumbnail-unchecked`: valid | `msg_011CfRKU8xJUPnPykTQTSJVj` | `req_011CfRKU8Vm3pUe5XzNzstz3` | completed / end_turn | 5,751 / 2,093 |
+| confirm | 4 | response: **fail** | `msg_011CfRKVdbkuGXJLXL7swk2y` | `req_011CfRKVcznUoEh7dQwCb6RU` | completed / end_turn | 7,092 / 2,233 |
+| confirm | 5 | validity `cx-post-write-citation-unverified`: valid | `msg_011CfRKX77FqKhXuiDYQpwRM` | `req_011CfRKX6akStNx4FGGX2aRd` | completed / end_turn | 5,733 / 2,117 |
+| confirm | 6 | response: mitigate | `msg_011CfRKYUCYQ3xu4KuVazpSe` | `req_011CfRKYTmjwgc8dTbbJwsiL` | completed / end_turn | 7,103 / 2,080 |
+| confirm | 7 | validity `cx-downstream-writers-mutate-bundle`: unresolved | `msg_011CfRKZwMCpZDop2w3pQbmZ` | `req_011CfRKZv5KCHnptY76nuFgk` | completed / end_turn | 5,622 / 1,724 |
+| confirm | 8 | validity `cx-shared-model-research-writer`: rejected | `msg_011CfRKbETPgEgAX1EaembcP` | `req_011CfRKbDhz5xhi1cijJeLXy` | completed / end_turn | 5,655 / 1,846 |
+
+- Run ids:
+  - diagnose: `64ce2464-e658-5500-ba8e-eb1dc4004022` (candidate `a399df0b-…`, refusal record
+    `55c22f07-9039-5db1-b40e-b3fc2023a9c7`);
+  - confirm: `60e31d3a-cbad-5ddd-bc3b-ff1245da1f95` (candidate `60d566fb-…`, criticism record
+    `c4cde83f-8a09-4b5a-9aa9-aee76a536a96`, 8 critic calls plus 1 replayed generation).
+- **Spend:** 59,425 input + 26,161 output tokens over 10 calls. At the listed price (USD 4 / 20
+  per MTok) the diagnosis run cost ≈ USD 0.197 and the confirmation ≈ USD 0.564, **≈ USD 0.76 of
+  the 1.50 cap in total**. The guard's ceiling-rate bound was USD 0.951, and it refused no send.
+  The earlier 2026-09-26 run (USD ≈ 0.19) was under its own, separate 3.00 authorization.
+- Evidence, model identity redacted: `evidence/t038-live-review-2026-09-26/` holds
+  `diagnose.json`, `confirm.json`, the refused raw review `diagnose-02-criticism.txt`, the eight
+  confirmation answers and the spend `ledger.json`.
+- Variance: in the diagnosis run, the same critic's (refused) review had failed the candidate on
+  its `shape:disposition` criterion. In the confirmation, its review passed every criterion and
+  the counterexample chain rejected the candidate instead. One confirmation does not measure the
+  critic, and nothing here is a qualification.
+
+### 2. Design requests are restorable after a restart
+
+`app/services/design_requests.py`: creating a request persists one immutable
+`design_request_basis` record beside the request record. Its parents are the request record and
+the work-model record. It holds:
+
+- the lens evidence each lens decision was issued from, and the lens decisions' audit;
+- the functional decision's exact content;
+- the exact compilation authority;
+- the requested count.
+
+`restore_request` rebuilds a request **only** by re-running every issuing gate over stored,
+verified records:
+
+1. the confirmed target, from the stored work model and the owner's stored confirmation
+   (`PersistentWorkModels.confirmed_target`);
+2. each lens decision, re-issued by the host's lens registry with its own evidence verifier (the
+   audit must be equal and the decision still `proposed`);
+3. `accept_design_decision`;
+4. `CompilationAuthority.from_trusted` (the digest must be equal);
+5. `create_generation_request`.
+
+The re-issued request must equal the stored record byte for byte. The workspace rebuilds a
+persisted request on read and on list. Anything that does not resolve answers `not_restorable`
+with the exact reason, and the list shows it under `unrestorable`. A request registered by host
+code with `open_request` and no stored basis stays unrestorable. The compilation authority is
+verified by its digest against the request; its refs are not re-resolved against the store,
+because the fixture authority's refs are synthetic.
+
+### 3. Creating a request from the work page, only where a qualified lens decision exists
+
+- **The route.** `POST /api/v1/design-requests` (`design_requests.create`,
+  `design-request-create-command-v1 {command_id, work_model_id}`). Routes go from 137 to **138**
+  installed; the pins and docs/release/api-compatibility.md are updated. It creates a request
+  from the owner's **accepted** work model through the host's `DesignSource`, which is trusted
+  code supplying the lens registry, lens evidence, functional decision, authority and turns.
+  - A work model the owner has not accepted answers `not_designable`.
+  - Lens decisions that are not `proposed` answer `not_designable` with each lens's state and
+    reason (e.g. `L-P032-01 abstained (qualification_record_untrusted)`).
+  - An exact replay creates nothing new.
+- **Production configures no source.** `GET /api/v1/design-requests` answers
+  `creation: {available: false, reason}`, and the command answers `not_designable` with exactly:
+  *no qualified lens decision exists for this work model: no lens is qualified in this
+  installation (every lens is a document candidate and no qualification record has been issued),
+  so a design request cannot be created*.
+- **The page.** The work page's design workspace (`app/static/workspace.mjs`, `설계 요청 만들기`)
+  shows that sentence in Korean with the exact reason, and no button. With a source configured,
+  it first asks for an accepted work model, then offers `이 작업 모델로 설계 요청 만들기`, names the
+  source (the test actor's is labelled `SIMULATED lens qualification`) and shows the new request.
+
+### Tests (offline, this update)
+
+- `test_design_criticism_live.py`: 7 passed, 3 of them new (the raw answer and exact violation
+  per stage; the bounded keep and diagnosis/contract agreement; the two live causes stated in the
+  prompt and still refused).
+- `test_design_arc.py`: 5 passed, 1 new (a refused review answer persisted with its violation).
+- `test_design_requests.py`: 3 passed, all new:
+  - production's exact refusal;
+  - creation only from an accepted work model and a qualified lens;
+  - create → generate → **restart**. After the restart the request is refused without a source,
+    refused when the verifier no longer trusts the qualification, and rebuilt with the source
+    (same pool, then select and re-review).
+- Regression: all `test_design_*.py`, `test_environments.py`, `test_web_owner_integration.py`,
+  `test_first_party.py` (138 installed + example), `test_criticism_run_persistence.py`,
+  `test_critic_lens_pipeline.py` and `test_work_models.py`: 252 passed, 2 live files skipped.
+- node: `workspace.test.mjs` 12 passed (2 new); work, work-model, work-conversation and
+  run-start 45 passed.
+- Real Chrome, **`app/tests/browser-design-request.test.mjs`: 2 passed.**
+  - With the SIMULATED source (`design_arc_server.py --design-source simulated`): the owner
+    drafts the work model (mocked transport) and accepts it on the work page, creates the request
+    from the page, and generates. 3 candidates are presented, every verdict names the scripted
+    critic, and the request is served again after a reload.
+  - With no source (`--design-source none`, production's state): the page states the exact
+    reason and offers no button.
+- `browser-design.test.mjs`, `browser-design-workspace.test.mjs` and
+  `browser-run-start-t048.test.mjs`: 4 passed.
 
 ## Not ticked
 
 The 0/1/2/3, revision and cancel paths are exercised in `app/tests/browser-design.test.mjs` with
 the product's own generation, criticism, persistence and selection code, scripted model turns and
-the simulation labelled; no fixture verdict is presented as live. But T038 says *real*
-generation → critique → selection: the one authorized live run produced a real accepted candidate
-and a real critic call whose answer the contract refused, so there is no live verdict and no live
-selection. T038 therefore stays open for a live critique that completes and a live selection (and,
-in any case, none of this is a release qualification: no critic or lens is qualified in
-production, `V3_VERIFYING_DESIGN_IDS` is empty and V3 is unverified; T077).
+the simulation labelled; no fixture verdict is presented as live. T038 says *real*
+generation → critique → selection. After this update a live critique **completes**: the
+confirmation run made 8 critic calls, all admitted, and folded a verdict. But the live critic
+**rejected** the one live candidate, so the pool presented nothing and **no live selection** was
+made. The candidate criticized in that run was also the live-generated graph replayed through
+admission, not a second live generation. T038 therefore stays open for a live selection of a
+live-generated candidate that passes live criticism. In any case none of this is a release
+qualification: no critic or lens is qualified in production, `V3_VERIFYING_DESIGN_IDS` is empty
+and V3 is unverified (T077).
 
 ## Open
 
-- The live critic's review did not satisfy the contract in the one authorized attempt, so no live
-  verdict exists yet for a live candidate; no live candidate has been selected or prepared.
-- No production path registers a design request with generation/criticism turns: the host still
-  has to call `open_request` (the owner's Claude connection is not wired to the workspace by a
-  route), and a request is not restorable after a restart (T037's open item).
+- No live candidate has passed live criticism, so none has been selected or prepared. A further
+  live attempt needs a new owner authorization: by the guard's ceiling accounting, USD 0.549 of
+  this step's 1.50 cap remains (≈ 0.74 at the listed price).
+- Production cannot create a design request: no lens is qualified, so no `DesignSource` is
+  configured, and the page and the route say so. A production source would also need the owner's
+  model turns wired from the Claude connection and a production functional-decision step (T030).
+  The test actor's source is SIMULATED.
+- A request registered by host code without a stored basis (the older fixtures) is not
+  restorable.
 - A merge has no generation turn that realizes it.
 - Preparation stays impossible in production (T077).

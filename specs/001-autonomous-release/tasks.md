@@ -617,6 +617,13 @@ Independent test: fixed synthetic work → real design decisions/candidates → 
   goal/completion/authority/risk/unknown confirmation, single/deterministic suitability, immutable
   accepted target and rejection of fixed three-template substitution or onboarding-as-feedback
   (FR-003–005).
+  2026-09-26 (note, T038): the confirmation → lens decisions → request path is wired to a route.
+  `POST /api/v1/design-requests` issues a request from the owner's accepted work model (the stored
+  confirmation) through a host `DesignSource`, only when its lens decisions are `proposed` (qualified
+  and supported). The request's basis is persisted, so it is rebuilt after a restart by re-running
+  every issuing gate (`app/services/design_requests.py`, `app/tests/test_design_requests.py`).
+  Production has no source: no lens is qualified and no production step produces the functional
+  design decision, so creation states that reason (evidence/us2.md). Not ticked by this note.
 - [x] T031 [US2] Complete B4 lifecycle deadline/cancel from preflight through actual owned process termination in app/codex_understanding.py, app/codex_rpc.py and app/tests/test_provider_lifecycle.py; retain B1 prepared-input contract (verification §5).
 - [x] T032 [US2] Bind counterexample/validity/candidate-response exact hashes and parent provenance in app/critic_audit.py and app/tests/test_critic_lineage.py; reject forged cross-call evidence (B4).
 - [ ] T033 [US2] Build the real isolated Q01 harness adapter/environment under evals/deeptwin/tasks/v01-q01/ and evals/deeptwin/harness/ after reading eval-engineering implementation/environment references; preserve exact Task truth and keep verifier/World Skill/secrets out of agent inputs (B4). 2026-09-24 (open): project-owned task.toml/instruction.md/environment (10 frozen, label-free development cases) and evals/deeptwin/harness/ drive review→proposal→validity→response through a caller `(system, user) -> str` transport over the product render_criticism_prompt + OfflineRunner/Ledger (authored-counterexample lineage added to app/critic_audit.py), with per-call hash manifests, fresh per-trial state, pre-dispatch leak scan and a readiness check on the same read path; offline tests only (evidence/q01-harness-verifier-t033-t034-2026-09-24.md). Stays open: the eval-engineering references are not present in this checkout, isolation is accidental-use prevention (not an OS sandbox), Harbor is not adopted and no live trial ran.
@@ -678,6 +685,20 @@ Independent test: fixed synthetic work → real design decisions/candidates → 
   real critic's review refused by the contract, so 0 presented and no live verdict
   (evidence/us2.md). Not ticked: no live critique has completed and no live selection exists; no
   production path registers a request with the owner's turns; T077 stays open.
+  2026-09-26 (later): the refused live review was diagnosed. A refused criticism stage now
+  persists its raw answer (bounded) and the exact violation (`design_criticism_refusal`); the pinned
+  contract is unedited. ONE new live review (`test_claude_live_design_review.py`, cap USD 1.50) found
+  the causes: a ```json fence around the answer, and the criteria document cited under the design
+  decision's id. Both are now stated in the critic prompt (`_CITATION_RULE`, `_OUTPUT_RULE`), and the
+  contract still refuses both. The confirmation re-review of the same live-generated graph completed
+  all 8 stages with no refusal; its verdict was **rejected** (a valid counterexample the candidate
+  fails), so 0 were presented and no live selection was made. Spend ≈ USD 0.76 of 1.50.
+  Design requests are now created from the owner's accepted work model (`POST /api/v1/design-requests`,
+  routes 138) only where a qualified lens decision exists. Production answers `not_designable` with
+  the exact reason, and the work page shows it. Requests are rebuilt after a restart from a stored
+  `design_request_basis` by re-running every issuing gate, or refused with the reason. Real Chrome:
+  `browser-design-request.test.mjs` (SIMULATED source: create from the page, then generate;
+  production: the reason, no button). Still not ticked: no live selection of a live-passed candidate.
 
 ## Phase 5: US3 — Actual graph execution, tools and artifacts (P1)
 
