@@ -124,3 +124,49 @@ def compiled_tool_gated():
     from app.tests.test_graph_contract import compile_value
 
     return compile_value(tool_gated_graph(), compilation_authority=tool_authority())
+
+
+# 2026-09-26 owner decision (deterministic tool bindings): the same test-actor tool bound
+# to a DETERMINISTIC node — a byte-exact store step after the gate — instead of an agent.
+STORE = "publish"
+STORE_HANDLER = "byte-exact-store-v1"
+
+
+def deterministic_tool_gated_graph():
+    """`linear_graph()` whose deterministic `publish` node is the tool caller: the writer
+    binds no tool, a human gate (`tool-gate`) between writer and publish supplies the
+    tool's approval scope, and publish's config names the `source-read` binding."""
+    from app.tests.test_graph_contract import (
+        approval_edge,
+        artifact_edge,
+        input_slot,
+        node,
+        output_slot,
+        ref,
+    )
+    from app.tests.test_graph_execution import linear_graph
+
+    raw = linear_graph()
+    writer = next(item for item in raw["nodes"] if item["node_id"] == "writer")
+    writer["config"]["tool_binding_ids"] = []
+    store = next(item for item in raw["nodes"] if item["node_id"] == STORE)
+    store["responsibility"] = "승인된 산출물을 바이트 그대로 저장한다"
+    store["config"] = {"handler_id": STORE_HANDLER, "tool_binding_ids": ["source-read"]}
+    store["grant_refs"] = [ref("grant", 6)]
+    store["required_approval_scopes"] = [SCOPE]
+    raw["nodes"].insert(2, node(GATE, "human_gate", "사람이 저장 도구 호출을 시도마다 승인한다",
+                                inputs=[input_slot("candidate", "text-document")],
+                                outputs=[output_slot("approved", "text-document")],
+                                config={"approval_scopes": [SCOPE]}))
+    raw["edges"] = [edge for edge in raw["edges"] if edge["edge_id"] != "e2"] + [
+        artifact_edge("e2a", "writer", "draft", GATE, "candidate", "text-document"),
+        artifact_edge("e2b", GATE, "approved", STORE, "approved", "text-document"),
+        approval_edge("e6", GATE, STORE, SCOPE),
+    ]
+    return raw
+
+
+def compiled_deterministic_tool_gated():
+    from app.tests.test_graph_contract import compile_value
+
+    return compile_value(deterministic_tool_gated_graph(), compilation_authority=tool_authority())

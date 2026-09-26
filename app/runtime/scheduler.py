@@ -670,9 +670,21 @@ def build_scheduler(
         _require(attempts.ledger is ledger, "attempt dispatcher must share the run ledger")
         attempts.require_compiled_context(compiled)
         for node_id in sorted(attempts.node_ids):
+            if kinds.get(node_id) == "deterministic":
+                # 2026-09-26 owner decision: a deterministic node is attempt-bound only to
+                # call one of its own compiled tool bindings through a compiled tool
+                # transport — never a model attempt under a model-free node
+                transport = attempts.transport_for(node_id)
+                selected = (transport.compiled_tool_binding
+                            if isinstance(transport, CompiledToolTransport) else None)
+                _require(
+                    selected is not None and selected.node_id == node_id,
+                    f"a deterministic node binds only its compiled tool transport: {node_id}",
+                )
+                continue
             _require(
                 kinds.get(node_id) == "agent",
-                f"attempt binding requires an agent node: {node_id}",
+                f"attempt binding requires an agent or tool-bound deterministic node: {node_id}",
             )
     loop_members = {
         member for _, members, _ in compiled.loop_regions for member in members

@@ -47,6 +47,21 @@ Each has stable local ID, responsibility, input/output contracts, failure policy
 to tools/models/memory as applicable. Tools invoked inside an agent appear as child executions
 in the same trace; rendering a tool node does not falsely imply a separately reasoning agent.
 
+*2026-09-26 note (owner decision, decisions.md "Deterministic tool bindings"):* a
+`deterministic` node's config is `{handler_id}` or `{handler_id, tool_binding_ids}`; an empty
+list is omitted from the canonical form, so a tool-free node keeps its earlier bytes and digest.
+The compiler validates a deterministic node's tool bindings exactly as an agent's: each is a
+declared, used binding to an authority-held `ToolDefinition` with its authoritative grant and
+capabilities, the grant is in the node's grant set, and an external-family tool's approval
+scope is required on the node with one exact human-gate path; the compiled `tool_effects` and
+`CompiledToolBinding`s name the deterministic node. At runtime the node reaches its tool only as
+an attempt-bound visit through the same `NodeAttemptDispatcher` and a compiled tool transport
+bound to that node and binding: the grant, the per-attempt execution-bound (v2) approval, the
+budget claim, the ToolCall record and the send intent are one ledger claim as for an agent, and
+a deterministic node may not be attempt-bound to anything but its own compiled tool transport
+(no model attempt under a model-free node). Paired re-evaluation isolates its recorded effects
+through the same tool-effect boundaries. No model is introduced; handler IDs stay code-owned.
+
 Edge kinds: `artifact`, `control`, `approval`, `observation`. Artifact edges specify source
 output slot, receiver input slot, mandatory/optional, multiplicity and exact accepted MIME/
 schema types. Control edges express order/conditions; observations do not trigger execution.

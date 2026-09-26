@@ -532,10 +532,20 @@ def _validate_structure(graph):
                 required_grants.update(memory.write_grant_refs)
             if not required_grants <= set(node.grant_refs):
                 raise GraphContractError("Agent bindings exceed its node grant set")
+        elif node.kind == "deterministic":
+            # 2026-09-26 owner decision: a deterministic node's tool bindings obey the agent
+            # rules exactly (known binding, its grant within the node's grant set)
+            required_grants = set()
+            for binding_id in node.config.get("tool_binding_ids", ()):
+                if binding_id not in tools:
+                    raise GraphContractError("Deterministic node references an unknown tool binding")
+                required_grants.add(tools[binding_id].grant_ref)
+            if not required_grants <= set(node.grant_refs):
+                raise GraphContractError("Deterministic tool bindings exceed its node grant set")
 
     used_models = {node.config["model_binding_id"] for node in graph.nodes if node.kind == "agent"}
-    used_tools = {binding_id for node in graph.nodes if node.kind == "agent"
-                  for binding_id in node.config["tool_binding_ids"]}
+    used_tools = {binding_id for node in graph.nodes if node.kind in {"agent", "deterministic"}
+                  for binding_id in node.config.get("tool_binding_ids", ())}
     used_memories = {node.config["memory_policy_id"] for node in graph.nodes if node.kind == "agent"
                      and node.config["memory_policy_id"] is not None}
     used_grants = {grant for node in graph.nodes for grant in node.grant_refs}
@@ -853,6 +863,10 @@ def structural_diversity_projection(graph):
             }
         if node.kind in {"join", "human_gate"}:
             return {}
+        if node.kind == "deterministic":
+            # binding IDs are names; a deterministic node's tools are projected
+            # through the permission axis by their definition and grant signatures
+            return {"handler_id": config["handler_id"]}
         return config
 
     def node_sig(node, alias):
@@ -1021,8 +1035,10 @@ def structural_diversity_projection(graph):
                 }
             else:
                 # Other join modes / human_gate / deterministic-handler configs carry no
-                # fact names or IDs, and their branch order is not semantic.
-                placed = config
+                # fact names or IDs, and their branch order is not semantic. A deterministic
+                # node's tool binding IDs are names (its tools are in the permission axis).
+                placed = {key: value for key, value in config.items()
+                          if key != "tool_binding_ids"}
             evaluation_placement.append((node_signature[node.node_id], node.kind, placed))
     for criterion in graph.completion_criteria:
         evaluation_placement.append((

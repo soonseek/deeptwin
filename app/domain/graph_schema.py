@@ -343,8 +343,21 @@ def _node_config(kind, value, facts):
                 "required_model_capabilities": sorted(caps),
                 "tool_binding_ids": sorted(tools), "memory_policy_id": memory}
     if kind == "deterministic":
-        _strict(value, {"handler_id"}, "deterministic config")
-        return {"handler_id": _text(value["handler_id"], "handler ID", 128, qualified=True)}
+        # 2026-09-26 owner decision: a deterministic (model-free) node may name approved
+        # tool bindings (e.g. a byte-exact store step). The field is optional and, when
+        # empty, omitted from the canonical form, so a tool-free node keeps its exact
+        # earlier bytes and digest. The bindings are validated like an agent's.
+        if type(value) is dict and "tool_binding_ids" in value:
+            _strict(value, {"handler_id", "tool_binding_ids"}, "deterministic config")
+        else:
+            _strict(value, {"handler_id"}, "deterministic config")
+        config = {"handler_id": _text(value["handler_id"], "handler ID", 128, qualified=True)}
+        tools = [_text(item, "tool binding ID", 64, local=True)
+                 for item in _list(value.get("tool_binding_ids", []), "tool bindings", 64)]
+        _unique(tools, lambda item: item, "tool binding ID")
+        if tools:
+            config["tool_binding_ids"] = sorted(tools)
+        return config
     if kind == "router":
         _strict(value, {"decision_fact", "allowed_values"}, "router config")
         fact = _text(value["decision_fact"], "router decision fact", 64, local=True)

@@ -85,6 +85,8 @@ _EXAMPLE_GRAPH = {
          "artifact_contract_id": "text-document", "min_items": 1},
     ],
 }
+# 2026-09-26 owner decision: a deterministic node may name tool bindings (runtime.md §2);
+# the grammar below tells the generator so, under the same grant and approval rules.
 _OUTPUT_SCHEMA = (
     'Return exactly one JSON object of the form {"candidates": [{"graph": '
     "<functional-graph-object>}, ...]} with between one and the requested number of "
@@ -95,7 +97,9 @@ _OUTPUT_SCHEMA = (
     "router, join, human_gate, bounded_loop; node failure_policy is one of fail_run, "
     "block_dependants, continue_optional; slot and edge multiplicity is one or many. Node "
     "config by kind: agent {model_binding_id, required_model_capabilities, tool_binding_ids, "
-    "memory_policy_id (a memory policy id or null)}; deterministic {handler_id}; router "
+    "memory_policy_id (a memory policy id or null)}; deterministic {handler_id} or {handler_id, "
+    "tool_binding_ids} (a model-free step that calls approved tools, e.g. a byte-exact store; "
+    "its tools follow the same grant and approval rules as an agent's); router "
     "{decision_fact (declared in fact_names), allowed_values}; join {mode: all_selected, "
     "failure_handling} or {mode: any_success, failure_handling, tie_break: branch_id_lexical} "
     "or {mode: collect, min_selected, max_selected, failure_handling}, with failure_handling "
@@ -118,7 +122,8 @@ _OUTPUT_SCHEMA = (
     "nodes have none; every node is reachable from an entry; each required input slot has "
     "exactly one mandatory producing artifact edge, from an existing output slot under the "
     "same artifact contract. Each binding, memory policy and graph grant is used; an agent's "
-    "grant_refs include the grants of its tool bindings and memory policy; graph grant_refs "
+    "or deterministic node's grant_refs include the grants of its tool bindings and memory "
+    "policy; graph grant_refs "
     "are exactly the grants used. A node with required_approval_scopes receives exactly one "
     "approval edge per scope, from a human_gate whose approval_scopes contain it, and approval "
     "edges go nowhere else; a node bound to a tool listed in tool_approval_scopes requires that "

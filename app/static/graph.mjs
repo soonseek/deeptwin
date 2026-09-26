@@ -88,6 +88,12 @@ export function nodeDetails(graph, nodeId) {
     lines.push(['기억', config.memory_policy_id ?? '없음']);
   } else {
     lines.push(['설정', JSON.stringify(config)]);
+    // 2026-09-26: a deterministic node may call approved tools (e.g. a byte-exact store)
+    if (node.kind === 'deterministic' && (config.tool_binding_ids ?? []).length) {
+      const tools = config.tool_binding_ids.map(id => graph.tool_bindings.find(item => item.binding_id === id))
+        .filter(Boolean).map(item => `${item.binding_id} → ${describe(item.tool_definition_ref)}`);
+      lines.push(['도구', tools.join(', ') || '없음']);
+    }
   }
   const incoming = graph.edges.filter(edge => edge.target_node_id === nodeId).map(edge => `${edge.source_node_id} (${edge.kind})`);
   const outgoing = graph.edges.filter(edge => edge.source_node_id === nodeId).map(edge => `${edge.target_node_id} (${edge.kind})`);

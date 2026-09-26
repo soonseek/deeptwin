@@ -273,7 +273,8 @@ class VisitAttempt:
 
 
 class NodeAttemptDispatcher:
-    """Binds agent nodes to ledger attempts; built only by `build`."""
+    """Binds agent nodes (and, since 2026-09-26, tool-bound deterministic nodes through
+    their compiled tool transport) to ledger attempts; built only by `build`."""
 
     __slots__ = ("_bindings", "_book", "_ledger", "_owner", "_retry", "_transports")
 
