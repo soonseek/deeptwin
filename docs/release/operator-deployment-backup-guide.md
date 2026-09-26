@@ -92,6 +92,16 @@ HTTPS 서버)과 주소를 확인하고, 브라우저 안에서 최초 설정 �
 격리 경계가 아니다(`evidence/claude-direct-live-path-2026-09-24.md`). 릴리스 경로인 자격증명
 게이트웨이 경유 전송(T090/T087)은 아직 실행에 쓰이지 않는다.
 
+**상한 단가(선택, 2026-09-26).** 실행 기록 화면이 API 요금 방식 예산의 모델 호출 비용을
+**추정**으로 보여 주려면, 운영자가 비밀이 아닌 상한 단가를 정한다:
+`DEEPTWIN_LIVE_CEILING_CURRENCY`(예: `USD`), `DEEPTWIN_LIVE_CEILING_INPUT_MICROUNITS_PER_MTOK`,
+`DEEPTWIN_LIVE_CEILING_OUTPUT_MICROUNITS_PER_MTOK`(100만 토큰당 micro-unit, 양의 정수), 필요하면
+`DEEPTWIN_LIVE_CEILING_CACHE_CREATION_MICROUNITS_PER_MTOK`, `DEEPTWIN_LIVE_CEILING_CACHE_READ_MICROUNITS_PER_MTOK`.
+하나도 정하지 않으면 비용은 "기록 없음"으로 남는다. 일부만 정하거나 형식이 틀리면 서버가 시작하지
+않는다. 이 값은 운영자가 고른 상한이며 제품이 아는 실제 가격이 아니다. 추정은 호출마다 기록된 토큰
+수에 호출 당시의 상한 단가를 곱해 올림한 값이고, 예산 통화와 같은 통화일 때만 쓰인다. 단가가 없는
+캐시 토큰이 보고된 호출은 추정하지 않는다. 구독 방식 예산에서는 금액을 적지 않는다.
+
 ## 3. 초기화 작업(init job)의 규칙
 
 root/key를 만드는 작업은 장기 실행 서비스와 분리된 일회성 작업이며 배포 권한만 실행한다.
