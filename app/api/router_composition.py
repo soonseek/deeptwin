@@ -24,6 +24,10 @@ _SCHEMA_VERSION = "deeptwin-first-party-route-contribution-v1"
 _MAX_IDENTIFIER_LENGTH = 128
 _MAX_FACTORY_LENGTH = 256
 _MAX_ROUTE_PATH_LENGTH = 1_024
+# The one descriptor policy under which a route also admits an exact TLS service-client
+# bearer (contracts/api.md §1); every other policy is browser-session only.
+SERVICE_BEARER_POLICY = "browser_session_or_service_bearer"
+_TEMPLATE_SEGMENT = re.compile(r"^\{[a-z_][a-z0-9_]*\}$")
 
 
 class RouteCompositionError(RuntimeError):
@@ -51,6 +55,41 @@ class CompositionReceipt:
     contribution_ids: tuple[str, ...]
     route_ids: tuple[str, ...]
     route_count: int
+    # every declared route in composition order; the web boundary reads each route's
+    # declared auth policy/scope from here, never from request input
+    routes: tuple[RouteDeclaration, ...] = ()
+
+    def bearer_route(self, method: str, path: str) -> RouteDeclaration | None:
+        """The declared bearer-admitting route for an exact method and routed path.
+
+        Admits only when every declared route matching the pair admits a bearer under one
+        scope, so a browser-only route can never be reached through an overlapping template.
+        """
+        matches = [route for route in self.routes
+                   if method in route.methods and _path_matches(route.path, path)]
+        if (not matches or any(route.auth_policy != SERVICE_BEARER_POLICY for route in matches)
+                or len({route.required_scope for route in matches}) != 1):
+            return None
+        return matches[0]
+
+    def bearer_scopes(self) -> tuple[str, ...]:
+        return tuple(sorted({route.required_scope for route in self.routes
+                             if route.auth_policy == SERVICE_BEARER_POLICY}))
+
+
+def _path_matches(template: str, path: object) -> bool:
+    if type(path) is not str:
+        return False
+    expected, actual = template.split("/"), path.split("/")
+    if len(expected) != len(actual):
+        return False
+    for want, have in zip(expected, actual):
+        if _TEMPLATE_SEGMENT.fullmatch(want):
+            if not have:
+                return False
+        elif want != have:
+            return False
+    return True
 
 
 def _closed_string_set(values: Sequence[str], *, label: str) -> frozenset[str]:
@@ -354,11 +393,13 @@ class FirstPartyRouteComposer:
             contribution_ids=tuple(contribution_ids),
             route_ids=tuple(route_ids),
             route_count=len(route_ids),
+            routes=tuple(route for value in contributions for route in value.routes),
         )
         return self._receipt
 
 
 __all__ = [
+    "SERVICE_BEARER_POLICY",
     "CompositionReceipt",
     "FirstPartyRouteComposer",
     "RouteCompositionError",

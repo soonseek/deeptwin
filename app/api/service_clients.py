@@ -1,16 +1,32 @@
-"""Service-client command adapters and the owner-only durable lifecycle routes."""
+"""Service-client command adapters and the owner-only durable lifecycle routes.
 
+`service_client_services` is the build-installed `service-clients-v1` contribution: the
+owner creates (secret shown once), lists, reads, rotates and revokes durable scoped
+clients from an authenticated browser session with CSRF. The same contribution publishes
+the bearer authenticator the web boundary uses for routes whose descriptor declares
+`browser_session_or_service_bearer`, and only on the portable HTTPS profile.
+"""
+
+import re
+import secrets
+import time
 from uuid import uuid4
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
+from ..domain.refs import uuid_string
+from ..domain.request_identity import AuthenticatedRequest
 from ..domain.schemas import Actor
 from ..services.command_clients import (
     CommandPrincipal,
     CommandService,
     CommandServiceDenied,
+)
+from ..services.service_client_auth import (
+    IndependentTokenBuckets,
+    ServiceClientAuthenticator,
 )
 from ..services.service_clients import (
     CorruptServiceClient,
@@ -194,13 +210,125 @@ def _public(record):
     }
 
 
-def create_router(*, registry, verify_owner):
-    """Build the passive fixed route contribution used by the core composer."""
+PATH = "/api/v1/service-clients"
+# the only network profile on which a bearer is ever admitted (contracts/api.md §1, ADR-010)
+BEARER_NETWORK_PROFILE = "portable_https"
+_CREATE_FIELDS = ("client_id", "name", "scopes", "allowed_network_profile", "expires_at")
+_CLIENT_PATH = re.compile(r"^/api/v1/service-clients/([^/]+)(?:/(rotate|revoke))?$")
+# Provisional bounded rate buckets (contracts/api.md requires independent client, source
+# and route buckets but fixes no numbers; recorded as an open owner decision).
+RATE_CAPACITY = 60
+RATE_REFILL_INTERVAL_MS = 1_000
+RATE_MAX_KEYS = 1_024
+RATE_IDLE_TTL_MS = 600_000
+
+
+def is_service_clients_path(path):
+    return path == PATH or path.startswith(PATH + "/")
+
+
+def preflight(scope, body):
+    """Cheap exact wire admission before any auth state, storage or entropy is touched."""
+    path, method = scope["path"], scope["method"]
+    raw_query = scope.get("query_string", b"")
+    if path == PATH:
+        if method == "GET":
+            parse_query(raw_query, allowed=("cursor", "limit"), max_bytes=1_024)
+            if body:
+                raise WireInputError("invalid request wire format")
+            return
+        if method != "POST":
+            raise WireInputError("invalid request wire format")
+        parse_query(raw_query, allowed=())
+        parse_json_object(body, required=_CREATE_FIELDS, field_types={
+            "client_id": str, "name": str, "scopes": list,
+            "allowed_network_profile": str, "expires_at": int,
+        }, limits=_LIFECYCLE_LIMITS)
+        return
+    match = _CLIENT_PATH.fullmatch(path)
+    if match is None:
+        raise WireInputError("invalid request wire format")
+    parse_query(raw_query, allowed=())
+    try:
+        uuid_string(match.group(1))
+    except (TypeError, ValueError):
+        raise WireInputError("invalid request wire format") from None
+    if match.group(2) is None:
+        if method != "GET" or body:
+            raise WireInputError("invalid request wire format")
+        return
+    if method != "POST":
+        raise WireInputError("invalid request wire format")
+    parse_json_object(body, required=("expected_revision",),
+                      field_types={"expected_revision": int}, limits=_LIFECYCLE_LIMITS)
+
+
+def service_client_services(context):
+    """The fixed `service-clients-v1` contribution bound to the deployment's own profile."""
+    from ..services.owner_auth import OwnerAuthError
+    from .first_party import ContributionServices
+
+    authority = context.owner_authority
+    network_profile = authority.profile.mode
+
+    def verify_owner(candidate):
+        if type(candidate) is not AuthenticatedRequest or (
+                not candidate.is_read and not candidate.csrf_verified):
+            raise OwnerAuthError("unauthenticated")
+        return authority.authenticate_bound(candidate.session)
+
+    registry = PersistentServiceClientRegistry(
+        context.domain_store._legacy_store,
+        verify_owner=verify_owner,
+        # recovery revokes every client inside the deployment reconciliation transaction
+        verify_recovery=lambda _candidate: False,
+        clock=lambda: time.time_ns() // 1_000_000_000,
+        random_bytes=secrets.token_bytes,
+    )
+    authenticator = ServiceClientAuthenticator(
+        registry=registry,
+        limiter=IndependentTokenBuckets(
+            clock_ms=lambda: time.monotonic_ns() // 1_000_000,
+            capacity=RATE_CAPACITY,
+            refill_interval_ms=RATE_REFILL_INTERVAL_MS,
+            max_keys_per_dimension=RATE_MAX_KEYS,
+            idle_ttl_ms=RATE_IDLE_TTL_MS,
+        ),
+    )
+    return ContributionServices(
+        create_router(registry=registry, verify_owner=verify_owner,
+                      network_profile=network_profile),
+        {"service-clients.registry": registry,
+         "service-clients.authenticator": authenticator},
+    )
+
+
+def create_router(*, registry, verify_owner, network_profile=None):
+    """Build the passive fixed route contribution used by the core composer.
+
+    With ``network_profile`` (the supported factory), a client can be created only on the
+    portable HTTPS profile, bound to exactly that profile, and granted only scopes some
+    composed route declares for a bearer; nothing else could ever admit it.
+    """
     if type(registry) is not PersistentServiceClientRegistry:
         raise TypeError("service-client routes require the persistent registry")
     if not callable(verify_owner):
         raise TypeError("service-client routes require owner verification")
+    if network_profile is not None and type(network_profile) is not str:
+        raise TypeError("service-client routes require the deployment network profile")
     router = APIRouter()
+
+    def grantable(request, value):
+        if network_profile is None:
+            return True
+        composition = getattr(request.app.state, "route_composition", None)
+        scopes = () if composition is None else composition.bearer_scopes()
+        return (
+            network_profile == BEARER_NETWORK_PROFILE
+            and value["allowed_network_profile"] == network_profile
+            and bool(value["scopes"])
+            and all(type(item) is str and item in scopes for item in value["scopes"])
+        )
 
     @router.get("/api/v1/service-clients")
     async def list_clients(request: Request):
@@ -257,6 +385,8 @@ def create_router(*, registry, verify_owner):
         )
         if value is None:
             return _error(400, "invalid_input", "클라이언트 요청 형식을 확인해 주세요.")
+        if not grantable(request, value):
+            return _error(422, "invalid_state", "클라이언트를 만들 수 없습니다.")
         try:
             issued = await run_in_threadpool(
                 registry.issue,
@@ -366,8 +496,13 @@ def create_router(*, registry, verify_owner):
 
 
 __all__ = [
+    "BEARER_NETWORK_PROFILE",
+    "PATH",
     "BrowserCommandSurface",
     "HeadlessCommandSurface",
     "ServiceRequestDenied",
     "create_router",
+    "is_service_clients_path",
+    "preflight",
+    "service_client_services",
 ]

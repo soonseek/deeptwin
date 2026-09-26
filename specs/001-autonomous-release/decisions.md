@@ -748,3 +748,28 @@ and implementation, release, effect, legal and human-acceptance gates remain ope
 - **Frontend technology:** keep browser-native ES modules with no build step (plan.md). Add a design system on top: tokens, layout parts and formatters. A small build-free library, such as Preact+htm vendored as files so CSP `script-src 'self'` holds, may be evaluated later if composition becomes painful. Next.js and Vite+React are not adopted. Next.js's inline scripts conflict with the CSP. Its build-time base path conflicts with the per-instance random base path. It would also add a Node service and npm supply chain to the release.
 - **Process feedback:** beyond the owner's own version of an artifact or hand-off, the owner may add an optional mark (`ok` or `needs_attention`) and an optional memo. The mark and memo can apply to a run as a whole or to one node's exact visit and attempt. No explanation is ever required (FR-016). A mark or memo is not an alternative and is never counted as one (UX-AC05). Exploration uses it only as an owner-supplied observation, never as ground truth.
 - **Mockups:** no separate mockup. Screens are built in the real app against the real server with synthetic (test-actor) data. Each step is reviewed by the owner from screenshots.
+
+## 2026-09-26 — Open owner decisions from the T025 bearer slice (not decided)
+
+These are recorded as **open, owner decision**. Nothing below is decided; the slice stops at the
+smallest subset the contracts ground (`evidence/bearer-service-clients-2026-09-26.md`).
+
+- **Which routes a bearer may reach (open, owner decision).** `contracts/api.md` §1 says a read,
+  snapshot or SSE needs "an owner session or scoped `ServiceClient`", and that bearer mutations use
+  the same command semantics, but no contract lists the routes or command kinds a service client may
+  reach. The slice admits a bearer only on the public snapshot and event reads
+  (`/api/v1/snapshot`, `/api/v1/events`, `/api/v1/events/stream`, `/api/v1/events/{event_type}`).
+  Commands, command status, artifacts and the extension reads stay browser-session only until the
+  owner decides.
+- **Scope names (open, owner decision).** No contract names service-client scopes
+  (`data-model.md` has only `scope_refs`). The slice uses the two read scopes the existing T025
+  registry grammar already defines, `snapshot.read` and `events.read`. Command scopes
+  (`command:<category>.<action>` in the same grammar), `artifact.read` and any extension-read scope
+  are not grantable: creation accepts only scopes that some composed route declares for a bearer.
+- **Rate-bucket numbers (open, owner decision).** The contracts require independent client, source
+  and route buckets but fix no numbers. The provisional values are burst 60, one token per second,
+  1,024 keys per dimension and a 10-minute idle expiry (`app/api/service_clients.py`).
+- **Status codes used meanwhile.** A bearer on a browser-session-only route, or any bearer on the
+  loopback profile, gets the uniform `401 unauthenticated` before the header is parsed. A valid
+  credential without the route's scope gets `403 access_denied` (`contracts/api.md` §1: "403
+  scope/consent"). Changing either is part of the route decision above.

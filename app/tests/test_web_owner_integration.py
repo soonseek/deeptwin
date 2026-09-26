@@ -612,9 +612,10 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
     with TestClient(reopened, base_url=profile.http_origin) as client:
         assert client.get(profile.base_path + "health").status_code == 200
         composition = reopened.state.route_composition
-        assert composition.route_count == 138
+        assert composition.route_count == 143
         assert composition.contribution_ids == ("core-v1", "extension-candidates-v1", "run-approvals-v1",
-            "works-v1", "run-consents-v1", "claude-connection-v1", "backups-v1", "retention-v1", "credentials-v1", "work-models-v1", "source-readings-v1", "conversations-v1", "budget-policies-v1", "runs-v1", "artifact-index-v1", "graphs-v1", "design-workspace-v1", "hypotheses-v1", "inquiries-v1", "versions-v1", "deployment-prepare-v1", "provider-conformance-v1", "provider-installation-v1", "extension-bindings-v1", "browser-grants-v1", "platform-update-v1")
+            "works-v1", "run-consents-v1", "claude-connection-v1", "backups-v1", "retention-v1", "credentials-v1", "work-models-v1", "source-readings-v1", "conversations-v1", "budget-policies-v1", "runs-v1", "artifact-index-v1", "graphs-v1", "design-workspace-v1", "hypotheses-v1", "inquiries-v1", "versions-v1", "deployment-prepare-v1", "provider-conformance-v1", "provider-installation-v1", "extension-bindings-v1", "browser-grants-v1", "platform-update-v1",
+            "service-clients-v1")
         assert composition.route_ids == ("events.read", "events.stream", "events.type", "snapshot.read",
             "commands.read", "commands.create", "extensions.candidates.create", "extensions.candidates.list", "extensions.candidates.read",
             "runs.approvals.record", "runs.approvals.read",
@@ -659,8 +660,10 @@ def test_composition_failure_releases_all_serving_ownership(tmp_path, monkeypatc
             "extensions.bindings.list", "extensions.bindings.read", "extensions.bindings.slot_key",
             "extensions.bindings.bind", "extensions.bindings.disable", "extensions.bindings.rollback",
             "extensions.bindings.retention_release", "browser_grants.read", "browser_grants.create",
-            "browser_grants.revoke", "platform.update.read")
-        assert len(set(composition.route_ids)) == 138
+            "browser_grants.revoke", "platform.update.read",
+            "service-clients.list", "service-clients.create", "service-clients.read",
+            "service-clients.rotate", "service-clients.revoke")
+        assert len(set(composition.route_ids)) == 143
 
 
 def test_live_session_root_pin_rejects_a_different_valid_pair(tmp_path):

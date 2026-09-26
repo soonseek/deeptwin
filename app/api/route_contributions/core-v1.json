@@ -3,10 +3,10 @@
   "contribution_id": "core-v1",
   "factory": "app.api.routes:create_router",
   "routes": [
-    {"route_id":"events.read","methods":["GET","HEAD"],"path":"/api/v1/events","auth_policy":"browser_session","required_scope":"work.read"},
-    {"route_id":"events.stream","methods":["GET","HEAD"],"path":"/api/v1/events/stream","auth_policy":"browser_session","required_scope":"work.read"},
-    {"route_id":"events.type","methods":["GET","HEAD"],"path":"/api/v1/events/{event_type}","auth_policy":"browser_session","required_scope":"work.read"},
-    {"route_id":"snapshot.read","methods":["GET","HEAD"],"path":"/api/v1/snapshot","auth_policy":"browser_session","required_scope":"work.read"},
+    {"route_id":"events.read","methods":["GET","HEAD"],"path":"/api/v1/events","auth_policy":"browser_session_or_service_bearer","required_scope":"events.read"},
+    {"route_id":"events.stream","methods":["GET","HEAD"],"path":"/api/v1/events/stream","auth_policy":"browser_session_or_service_bearer","required_scope":"events.read"},
+    {"route_id":"events.type","methods":["GET","HEAD"],"path":"/api/v1/events/{event_type}","auth_policy":"browser_session_or_service_bearer","required_scope":"events.read"},
+    {"route_id":"snapshot.read","methods":["GET","HEAD"],"path":"/api/v1/snapshot","auth_policy":"browser_session_or_service_bearer","required_scope":"snapshot.read"},
     {"route_id":"commands.read","methods":["GET","HEAD"],"path":"/api/v1/commands/{command_id}","auth_policy":"browser_session","required_scope":"work.read"},
     {"route_id":"commands.create","methods":["POST"],"path":"/api/v1/commands","auth_policy":"browser_session","required_scope":"work.command"}
   ]

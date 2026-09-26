@@ -277,6 +277,19 @@ def _authenticated(request, *, read):
     return value
 
 
+def _public_reader(request, *, scope):
+    """The owner session, or a service-client read admitted for exactly this scope."""
+    from ..domain.request_identity import ServiceClientRead
+    state = request.scope.get("state", {})
+    value = state.get("service_client_read")
+    if value is not None:
+        if (type(value) is not ServiceClientRead or value.scope != scope
+                or state.get("authenticated_request") is not None):
+            raise RequestDenied("Authenticated request required")
+        return value
+    return _authenticated(request, read=True)
+
+
 def preflight_api_v1(scope, body):
     """Pure shared-wire admission before the supported boundary reads auth state."""
     from .views import _decode_cursor
@@ -370,6 +383,10 @@ def preflight_api_v1(scope, body):
     from .budget_policies import preflight as budget_policies_preflight
     if is_budget_policies_path(path):
         budget_policies_preflight(scope, body)
+    from .service_clients import is_service_clients_path
+    from .service_clients import preflight as service_clients_preflight
+    if is_service_clients_path(path):
+        service_clients_preflight(scope, body)
     if path == '/api/v1/commands' and scope['method'] == 'POST':
         fields = ('schema_version', 'command_id', 'command_type', 'target', 'expected_revision', 'target_hash', 'args')
         value = parse_json_object(body, required=fields, limits=WireLimits(max_bytes=131072))
@@ -432,7 +449,7 @@ def _page_body(page):
 def _snapshot(root, request):
     """Materialize public state and its tail cursor in one SQLite read snapshot."""
     root._assert_component_bindings()
-    root._authenticated_actor(request, read=True)
+    root._authorized_reader(request)
     with root._domain._connection() as db:
         _assert_event_schema(db, root.vault_id)
         counts = {
@@ -505,7 +522,7 @@ def _snapshot(root, request):
             "state": {"works": works, "runs": runs, "attempts": attempts},
             "links": {"events": "/api/v1/events"},
         }
-    root._authenticated_actor(request, read=True)
+    root._authorized_reader(request)
     return value
 
 
@@ -858,7 +875,7 @@ def create_router(*, components, runtime_dispatch_resolver=None, worker_dispatch
     @app.api_route("/api/v1/events", methods=["GET", "HEAD"])
     def events_v1(request: Request):
         try:
-            authenticated = _authenticated(request, read=True)
+            authenticated = _public_reader(request, scope="events.read")
             cursor, event_types, limit = _event_options(request)
             page = root.read_events(
                 request=authenticated,
@@ -878,7 +895,7 @@ def create_router(*, components, runtime_dispatch_resolver=None, worker_dispatch
     @app.api_route("/api/v1/events/stream", methods=["GET", "HEAD"])
     def event_stream_v1(request: Request):
         try:
-            authenticated = _authenticated(request, read=True)
+            authenticated = _public_reader(request, scope="events.read")
             cursor, event_types, limit = _event_options(request)
             page = root.read_events(
                 request=authenticated,
@@ -908,7 +925,7 @@ def create_router(*, components, runtime_dispatch_resolver=None, worker_dispatch
     def events_by_type_v1(event_type: str, request: Request):
         """Path-filtered JSON surface used by durable command receipt links."""
         try:
-            authenticated = _authenticated(request, read=True)
+            authenticated = _public_reader(request, scope="events.read")
             cursor, event_types, limit = _event_options(
                 request, path_event_type=event_type,
             )
@@ -932,7 +949,7 @@ def create_router(*, components, runtime_dispatch_resolver=None, worker_dispatch
         try:
             if request.query_params:
                 raise ApiInputError("Snapshot query fields are not accepted")
-            authenticated = _authenticated(request, read=True)
+            authenticated = _public_reader(request, scope="snapshot.read")
             snapshot = _snapshot(root, authenticated)
             if request.method == "HEAD":
                 return _head_response(cursor=snapshot["event_cursor"])

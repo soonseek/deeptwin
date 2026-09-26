@@ -26,6 +26,7 @@ from .retention import retention_services
 from .run_approvals import approval_services
 from .run_consents import consent_services
 from .runs import run_services
+from .service_clients import service_client_services
 from .source_readings import reading_services
 from .versions import version_services
 from .work_models import work_model_services
@@ -36,8 +37,8 @@ INSTALLED = (
         "core-v1.json",
         "app.api.routes:create_router",
         core_services,
-        ("browser_session",),
-        ("work.read", "work.command"),
+        ("browser_session", "browser_session_or_service_bearer"),
+        ("work.read", "work.command", "events.read", "snapshot.read"),
     ),
     InstalledContribution(
         "extension-candidates-v1.json",
@@ -250,5 +251,13 @@ INSTALLED = (
         ("browser_session",),
         ("deployment.read",),
         provides=("platform-update.guidance",),
+    ),
+    InstalledContribution(
+        "service-clients-v1.json",
+        "app.api.service_clients:create_router",
+        service_client_services,
+        ("browser_session",),
+        ("service_client.manage", "service_client.read"),
+        provides=("service-clients.registry", "service-clients.authenticator"),
     ),
 )
