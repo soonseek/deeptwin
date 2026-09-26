@@ -1,0 +1,360 @@
+{
+  "label": "attempt6",
+  "model": "<live-catalog-model>",
+  "work": {
+    "scenario": "specified (attempts 5-6): release notes from one stored changelog",
+    "author": "SIMULATED owner (test actor) — attempt 5/6 work description, not a real owner's work",
+    "work_model": {
+      "schema_version": "work-model-v1",
+      "work_model_id": "cba79978-f8df-5efa-a54f-7cfc3e52f962",
+      "version": 1,
+      "work_revision_ref": {
+        "kind": "work_revision",
+        "id": "ac7d89a7-ef9c-5e03-bae0-e1242025d7a7",
+        "version": 2,
+        "sha256": "6554b5aae021dafe67f0b294312cd10b5bafd8a011e87af835407513942c08d1"
+      },
+      "semantic_origin": "work_understanding",
+      "goals": [
+        "업로드된 변경 기록 원본 한 개로, 원본에 근거가 확인된 버전 2.4.0 공개용 릴리스 노트 한 부를 만든다.",
+        "완료 판정은 completion_conditions만으로 한다. 거기에 없는 속성(문체, 어조, 분량, 번역, 원본 변경 기록 자체의 사실 정확성)은 이 업무의 판정 대상이 아니다. 원본 변경 기록의 내용은 소유자가 책임지는 참값으로 취급하며, 원본 밖의 출처와 다시 대조할 필요가 없다."
+      ],
+      "deliverables": [
+        {
+          "deliverable_id": "release-notes",
+          "description": "승인된 원문 그대로 저장된 버전 2.4.0 릴리스 노트(markdown 한 파일)",
+          "media_types": [
+            "text/markdown"
+          ],
+          "min_items": 1,
+          "max_items": 1,
+          "max_total_bytes": 65536
+        }
+      ],
+      "completion_conditions": [
+        "릴리스 노트(text/markdown)의 모든 항목 줄은 `- [CL-###] `로 시작하고, 그 CL ID는 원본 변경 기록 파일에 있으며 원본에서 `공개: 예`로 표시된 항목이다. 항목 줄에 있는 모든 기능명·수치·버전은 그 줄이 인용한 원본 항목의 설명에 그대로 나온다. 항목 줄이 아닌 줄은 제목 한 줄(`# 2.4.0 릴리스 노트`)뿐이다.",
+        "원본에서 `공개: 예`로 표시된 모든 CL ID가 릴리스 노트에 정확히 한 번 인용되고, `공개: 아니오` 항목의 ID와 내용은 릴리스 노트 어디에도 나오지 않는다.",
+        "앞의 두 조건은 작성 역할이 아닌 검증 역할이 판정한다. 검증 역할은 원본 변경 기록 파일 자체(요약·발췌·작성자의 메모가 아님)와 초안 원문을 둘 다 입력으로 직접 받아 대조하고, 작성 역할과 다른 model choice를 쓴다. 결과는 검증 역할 자신의 application/json 검증 보고서이며, 빈 줄을 뺀 초안의 모든 줄(제목 줄 포함)마다 {line, cited_ids, verdict: pass|fail, reason}, 누락된 공개 ID 목록, 노출된 비공개 ID 목록, 전체 verdict(pass|fail)를 가진다. 전체 verdict는 모든 줄이 pass이고 두 목록이 비어 있을 때만 pass다.",
+        "전체 verdict가 fail이면 그 초안은 승인 단계에 도달하지 않고 실행은 저장·공개 없이 끝난다. 같은 실행 안에서는 어떤 산출물도 재생성·재작성하지 않는다(소유자가 새 실행을 시작한다).",
+        "승인자(소유자 한 사람)는 artifact.publish 범위로 승인하며, 승인 단계는 검증을 통과한 초안 원문, 그 초안의 검증 보고서, 원본 변경 기록 파일을 함께 입력으로 받는다. 저장되는 릴리스 노트는 승인 단계가 내보낸 승인본과 바이트 단위로 같다: 승인 뒤 어떤 역할도 내용을 재생성·수정·형식 변환하지 않는다. 저장은 모델을 쓰지 않는 결정적(deterministic) 저장 단계가 수행한다. 그 단계는 승인 단계가 내보낸 승인본만 입력으로 받아 document.create 도구에 바이트 그대로 넘기며, 어떤 모델 역할도 저장하지 않는다."
+      ],
+      "authorities": [
+        {
+          "authority_id": "source-read",
+          "capability": "artifact.read",
+          "scope": "업로드된 변경 기록 원본 파일 changelog-2.4.0.md 하나만 읽는다. 실행 시작 시 프레임워크가 이 파일을 바꾸지 않고 그대로 넘긴다. 웹 조회와 다른 출처는 허용되지 않으며 필요하지 않다.",
+          "effect": "read"
+        },
+        {
+          "authority_id": "notes-store",
+          "capability": "document.create",
+          "scope": "승인된 릴리스 노트 markdown 한 부를 문서 저장소에 새 문서로 저장한다(되돌릴 수 있다). 승인 전에는 저장하지 않는다. 모델 없는 결정적 저장 단계가 document.create 도구로 승인본 바이트를 그대로 저장한다.",
+          "effect": "write"
+        },
+        {
+          "authority_id": "publish-approval",
+          "capability": "artifact.publish",
+          "scope": "소유자 한 사람이 검증을 통과한 릴리스 노트 원문의 저장·공개를 승인한다.",
+          "effect": "human_approval"
+        }
+      ],
+      "risks": [
+        {
+          "risk_id": "unsupported-or-private-line",
+          "description": "원본에 근거하지 않은 내용이나 `공개: 아니오` 항목이 릴리스 노트에 실릴 수 있다. 완료 조건 0–2의 독립 검증과 조건 3의 차단으로 막는다.",
+          "severity": "high",
+          "mitigation_required": true
+        }
+      ],
+      "unknowns": [],
+      "suitability": {
+        "recommended_shape": "multi_agent",
+        "rationale": "작성과 검증을 서로 다른 역할·모델로 분리하고, 사람의 승인과 승인본의 저장을 분리해야 한다.",
+        "evidence_refs": [
+          {
+            "kind": "source",
+            "id": "900d92f1-aa3e-4d34-aadc-48bf00628bab",
+            "version": 1,
+            "sha256": "dde6e0b9a9801d37b2a2240b428521af96f03671af08924242bf617c692e8b13"
+          }
+        ]
+      },
+      "source_refs": [
+        {
+          "kind": "source",
+          "id": "900d92f1-aa3e-4d34-aadc-48bf00628bab",
+          "version": 1,
+          "sha256": "dde6e0b9a9801d37b2a2240b428521af96f03671af08924242bf617c692e8b13"
+        }
+      ]
+    }
+  },
+  "generation_http_status": 201,
+  "run": {
+    "run_id": "fa2d8f13-9cb9-524b-8e10-2251c0ffbd1e",
+    "command_id": "588c72de-6644-4f9c-8cee-be70944aeaed",
+    "max_rounds": 1,
+    "rounds": 1,
+    "outcome": "shortfall",
+    "model_calls": 7,
+    "generator_model_id": "<live-catalog-model>",
+    "critic_model_id": "<live-catalog-model>",
+    "refusals": [],
+    "candidate_ids": [
+      "ff39eef8-c9b9-4c2e-ab97-42447fc74ff1"
+    ],
+    "unreviewed_candidate_ids": [],
+    "presented_count": 0,
+    "started_at_utc": "2026-09-26T05:53:30.031903Z",
+    "ended_at_utc": "2026-09-26T05:57:39.095207Z"
+  },
+  "pool": {
+    "pool_size": 3,
+    "presented_candidate_ids": [],
+    "presented_count": 0,
+    "passed_count": 0,
+    "candidate_count": 1,
+    "excluded": [
+      {
+        "candidate_id": "ff39eef8-c9b9-4c2e-ab97-42447fc74ff1",
+        "reason": "insufficient_evidence:validity_unresolved:cx-fail-verdict-reaches-approval-via-data-handoff,validity_unresolved:cx-verdict-fact-unbound-to-report"
+      }
+    ],
+    "supplementation_available": true
+  },
+  "candidates": [
+    {
+      "candidate_id": "ff39eef8-c9b9-4c2e-ab97-42447fc74ff1",
+      "presented": false,
+      "nodes": [
+        [
+          "approval-join",
+          "join"
+        ],
+        [
+          "halt",
+          "deterministic"
+        ],
+        [
+          "intake",
+          "deterministic"
+        ],
+        [
+          "publish-gate",
+          "human_gate"
+        ],
+        [
+          "store",
+          "deterministic"
+        ],
+        [
+          "verdict-router",
+          "router"
+        ],
+        [
+          "verifier",
+          "agent"
+        ],
+        [
+          "verify-join",
+          "join"
+        ],
+        [
+          "writer",
+          "agent"
+        ]
+      ],
+      "verdict": {
+        "status": "insufficient_evidence",
+        "reasons": [
+          "validity_unresolved:cx-fail-verdict-reaches-approval-via-data-handoff",
+          "validity_unresolved:cx-verdict-fact-unbound-to-report"
+        ],
+        "source": "persisted_criticism",
+        "model_ids": [
+          "<live-catalog-model>"
+        ],
+        "profile_digests": [
+          "28f52a675164dc79be388082fe29f702fde3788f09cb71680e72cb5662a1c4d6",
+          "4cc25f9e8766f8af6d7770faa446905cff046e0bb7b61d5c95d6e81715de22f6",
+          "e2fddbf4be32ced4d15f299cee15b53a93f13ea904923cd55362db5b5283e7e4"
+        ],
+        "call_count": 6,
+        "criticism_record_id": "928f30ca-c35b-4dec-8478-df3a5111d265"
+      }
+    }
+  ],
+  "derivations": [],
+  "owner_path": null,
+  "refusals": [],
+  "calls": [
+    {
+      "n": 1,
+      "phase": "arc",
+      "stage": "generation",
+      "answer_purpose": null,
+      "raw_answer": "attempt6-01-arc-generation.txt",
+      "intent_purpose": "design_candidate",
+      "max_output_tokens": 28000,
+      "effort": "medium",
+      "bound_usd_before_send": 1.7978,
+      "provider_message_id": "msg_011CfRXo4ScPwCTKxoTgEdqB",
+      "request_id": "req_011CfRXo3YnF46mHXuLRBha3",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 9197,
+        "output_tokens": 10556
+      },
+      "spend_usd_at_ceiling": 0.309885
+    },
+    {
+      "n": 2,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "review",
+      "raw_answer": "attempt6-02-arc-criticism-review.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 1.5449,
+      "provider_message_id": "msg_011CfRXuuzoH8XsqtaQdcu7S",
+      "request_id": "req_011CfRXuuPLhEEbH26ERQYVy",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 8856,
+        "output_tokens": 4317
+      },
+      "spend_usd_at_ceiling": 0.152205
+    },
+    {
+      "n": 3,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_proposal",
+      "raw_answer": "attempt6-03-arc-criticism-counterexample_proposal.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 1.7107,
+      "provider_message_id": "msg_011CfRXxSApFavw8UmBb2WkE",
+      "request_id": "req_011CfRXxREGGF8Xhe3sRsV6J",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 10417,
+        "output_tokens": 4783
+      },
+      "spend_usd_at_ceiling": 0.17166
+    },
+    {
+      "n": 4,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt6-04-arc-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 1.8788,
+      "provider_message_id": "msg_011CfRY1YpkQNVdYq9DickJf",
+      "request_id": "req_011CfRY1YHkZ4UsLr5Hd9M6H",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 9643,
+        "output_tokens": 2612
+      },
+      "spend_usd_at_ceiling": 0.113515
+    },
+    {
+      "n": 5,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt6-05-arc-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 1.9904,
+      "provider_message_id": "msg_011CfRY3LFmQkcvQD8uy8SNF",
+      "request_id": "req_011CfRY3KqD6N5L61E3dwW2X",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 9482,
+        "output_tokens": 1870
+      },
+      "spend_usd_at_ceiling": 0.09416
+    },
+    {
+      "n": 6,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt6-06-arc-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.0854,
+      "provider_message_id": "msg_011CfRY4bxrKpv7p4MLNuUra",
+      "request_id": "req_011CfRY4bX43WdRacd7GVVdE",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 9562,
+        "output_tokens": 2089
+      },
+      "spend_usd_at_ceiling": 0.100035
+    },
+    {
+      "n": 7,
+      "phase": "arc",
+      "stage": "criticism",
+      "answer_purpose": "counterexample_validity",
+      "raw_answer": "attempt6-07-arc-criticism-counterexample_validity.txt",
+      "intent_purpose": "design_criticism",
+      "max_output_tokens": 6000,
+      "effort": "medium",
+      "bound_usd_before_send": 2.1831,
+      "provider_message_id": "msg_011CfRY65W5wnJygw1ftWSec",
+      "request_id": "req_011CfRY64jSYs8brh5PTFrXy",
+      "state": "completed",
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 9380,
+        "output_tokens": 1852
+      },
+      "spend_usd_at_ceiling": 0.0932
+    }
+  ],
+  "guard_refusals": [],
+  "replayed_generation": [],
+  "spend_usd_at_ceiling_this_attempt": 1.03466,
+  "spend_usd_at_ceiling_earlier_attempts": 0,
+  "cap_usd": 3.0,
+  "rereview_reserve_usd": 1.0,
+  "max_rounds": 1,
+  "requested_candidate_count": 2,
+  "generation_output_tokens": 28000,
+  "ceiling_usd_per_mtok": [
+    5.0,
+    25.0
+  ],
+  "evidence_id": "f8c21eca-599f-49d9-9f6b-5af26c2edbe9"
+}
