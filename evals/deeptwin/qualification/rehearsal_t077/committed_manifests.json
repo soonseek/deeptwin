@@ -1,0 +1,45 @@
+{
+ "schema": "t077-rehearsal-committed-manifests-1",
+ "simulated": true,
+ "statement": "SIMULATED dress rehearsal (owner delegation 2026-09-25): these manifest sha256s are committed before any dispatch as release-v7 pre_dispatch.freeze requires. Not a release qualification.",
+ "out_dir": "/home/user/deeptwin-t077-rehearsal",
+ "manifests": [
+  {
+   "label": "offline",
+   "path": "/home/user/deeptwin-t077-rehearsal/manifests/offline-sim-orchard.json",
+   "sha256": "1b6022d11a8fb2043d98e488351e635e292a6de4d0446333c9365ad51c08918f"
+  },
+  {
+   "label": "live_same_family_judge",
+   "path": "/home/user/deeptwin-t077-rehearsal/manifests/live-sim-ferry-same-family-judge.json",
+   "sha256": "93bc0273eb524b58ecf99aa65ef027fcef27d173f2627ff1b6f1c918a9ebacd4"
+  },
+  {
+   "label": "live",
+   "path": "/home/user/deeptwin-t077-rehearsal/manifests/live-sim-ferry.json",
+   "sha256": "1157d37c79f16d3cbe48264ab57baec162328f5808ee9fd8f1fb1cede24684b3"
+  }
+ ],
+ "sets": [
+  {
+   "world": "sim-orchard",
+   "task_dir": "/home/user/deeptwin-t077-rehearsal/sets/sim-orchard/task",
+   "expectations_path": "/home/user/deeptwin-t077-rehearsal/sets/sim-orchard/expectations.json",
+   "sealed_dataset_sha256": "df80862420e78245eee7c3918b4c9b7b19b66d83740031de1d305bed2d11c4a6",
+   "sealed_expectations_sha256": "989648854926c29966ef317f595309d6e11125ff8f2683def5537dd9b2c689b2",
+   "case_count": 13
+  },
+  {
+   "world": "sim-ferry",
+   "task_dir": "/home/user/deeptwin-t077-rehearsal/sets/sim-ferry/task",
+   "expectations_path": "/home/user/deeptwin-t077-rehearsal/sets/sim-ferry/expectations.json",
+   "sealed_dataset_sha256": "4d5f991bc6d25166b7f101c8884132cd4c0e964c243941528334436783e2ba4a",
+   "sealed_expectations_sha256": "c1fc468adc87193b95b5ef5046181e3d8fc2be900b1c598bf3d2a3237e21aaa2",
+   "case_count": 13
+  }
+ ],
+ "profile": {
+  "path": "evals/deeptwin/qualification/rehearsal_t077/simulated_independence_profile.json",
+  "sha256": "c66885571a0d3c6c5be00fcea89508c3a8b3c79522ec146c168ea529c7ef1e6d"
+ }
+}
