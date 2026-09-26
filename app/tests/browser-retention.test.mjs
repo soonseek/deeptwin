@@ -126,11 +126,12 @@ test('settings: the shell link on every page opens the one settings page; each s
     const hub = page.locator('#settings-hub');
     await hub.locator('.settings-state').first().waitFor();
     const entries = await hub.locator('li[data-entry]').evaluateAll(nodes => nodes.map(node => [node.dataset.entry, node.dataset.required]));
-    assert.deepEqual(entries.map(entry => entry[0]), ['account', 'models', 'budgets', 'backup', 'update', 'extensions', 'grants']);
+    assert.deepEqual(entries.map(entry => entry[0]), ['account', 'models', 'budgets', 'backup', 'update', 'extensions',
+      'service-clients', 'grants']);
     assert.ok(entries.every(entry => entry[1] === 'false'), 'no entry is a required step');
     assert.match(await hub.textContent(), /어떤 작업도 마지막에 내보내기를 거치지 않아도 끝납니다/);
-    assert.match(await hub.locator('li[data-entry="backup"]').textContent(), /백업 워커 연결됨 · 만든 백업 0개/);
-    assert.match(await hub.locator('li[data-entry="backup"]').textContent(), /자동 삭제 없음 · 지금 정리할 수 있는 항목 0개/);
+    assert.match(await hub.locator('li[data-entry="backup"]').textContent(), /백업 0개/);
+    assert.match(await hub.locator('li[data-entry="backup"]').textContent(), /정리 가능 0개 · 자동 삭제 없음/);
     assert.match(await page.locator('#session-status').textContent(), /브라우저 세션이 연결되어 있습니다/);
     // each entry opens its own panel, in any order; the old records-page sections live here now
     const targets = {

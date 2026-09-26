@@ -514,6 +514,10 @@ export async function boot({ document, location, fetch, crypto, storage, shell =
   }
 
   function saveStatus(text, code, { reopen = false } = {}) {
+    // UI phase 6: the line is a polite live region; the same words written again on every
+    // keystroke would be read again, so an unchanged line is left alone
+    if (!reopen && roots.save.dataset.state === code && roots.save.textContent === text
+        && roots.save.children?.length === 1) return;
     roots.save.replaceChildren(element('span', {}, text));
     roots.save.dataset.state = code;
     if (reopen && state.work_id) {

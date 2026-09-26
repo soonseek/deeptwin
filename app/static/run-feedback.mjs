@@ -208,12 +208,14 @@ export function savedText(item, now = Date.now()) {
 
 // `onSave({ mark, memo })` and `onClear()` resolve once the server recorded the revision (the
 // caller re-renders the control through `show`); a refusal rejects with the server's code
-export function createFeedbackControl({ document, idPrefix, onSave, onClear, onHistory = null, now = () => Date.now() } = {}) {
+export function createFeedbackControl({ document, idPrefix, onSave, onClear, onHistory = null, now = () => Date.now(),
+  level = 4 } = {}) {
   if (typeof document?.createElement !== 'function') fail('a document is required');
   if (typeof idPrefix !== 'string' || !/^[a-z][a-z0-9-]*$/.test(idPrefix)) fail('an id prefix is required');
   if (typeof onSave !== 'function' || typeof onClear !== 'function') fail('save and clear are required');
   const memoId = `${idPrefix}-memo`;
-  const title = el(document, 'h4', { className: 'feedback-title' });
+  // the heading level follows where the control sits (UI phase 6: no skipped level)
+  const title = el(document, `h${Math.min(6, Math.max(2, level))}`, { className: 'feedback-title' });
   const hint = el(document, 'p', { className: 'feedback-hint', text: MESSAGES.hint });
   const buttons = Object.fromEntries(MARKS.map(mark => {
     const button = el(document, 'button', { className: 'feedback-mark', attrs: { type: 'button', 'data-mark': mark,
@@ -269,7 +271,8 @@ export function createFeedbackControl({ document, idPrefix, onSave, onClear, onH
   let note = null;      // a one-off message (cleared, a refusal) until the next edit
 
   function say(text, state, when = null) {
-    status.textContent = text;
+    // a polite live region: unchanged words are not written (and so not read) again
+    if (status.textContent !== text) status.textContent = text;
     status.dataset.state = state;
     if (when) status.setAttribute('title', when); else status.removeAttribute?.('title');
   }
@@ -317,6 +320,7 @@ export function createFeedbackControl({ document, idPrefix, onSave, onClear, onH
 
   async function act(run, pending) {
     if (busy) return null;
+    const pressed = document.activeElement ?? null;
     busy = true;
     save.disabled = true;
     clear.disabled = true;
@@ -330,6 +334,11 @@ export function createFeedbackControl({ document, idPrefix, onSave, onClear, onH
     } finally {
       busy = false;
       refresh();
+      // the button pressed may now be disabled (nothing left to save) or gone (nothing left to
+      // clear): the keyboard moves to the mark on screen instead of falling to the page body
+      if (pressed !== null && (pressed === save || pressed === clear) && (pressed.disabled || pressed.hidden)) {
+        (buttons[mark] ?? buttons.ok).focus?.();
+      }
     }
   }
 

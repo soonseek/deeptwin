@@ -148,7 +148,7 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
 
   function beside(editor) {
     // the original read-only beside the owner's version (hidden by the stylesheet on a narrow screen)
-    const side = element('div', undefined, { class: 'alternative-side', 'aria-label': '원본 (읽기 전용)' });
+    const side = element('div', undefined, { class: 'alternative-side', role: 'group', 'aria-label': '원본 (읽기 전용)' });
     side.append(element('p', '원본', { class: 'alternative-side-title' }));
     if (target.format === 'text') {
       side.append(element('div', originalContent, { class: 'alternative-original-side' }));

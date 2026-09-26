@@ -282,11 +282,18 @@ export function createGraphView({ root, document, request = null, basePath = '/'
     applyMarkers();
   }
 
+  // the drawn box says it is selected with data-selected (an SVG group takes no pressed
+  // state); the node's list button, the keyboard's way in, carries aria-pressed
+  function setSelected(box, on) {
+    const isButton = box.tagName === 'BUTTON' || box.tagName === 'button';
+    box.setAttribute(isButton ? 'aria-pressed' : 'data-selected', on ? 'true' : 'false');
+  }
+
   function clear() {
     details.replaceChildren();
     technical.replaceChildren();
     if (designFold !== null) designFold.hidden = true;
-    for (const box of canvas.querySelectorAll?.('[data-node]') ?? []) box.setAttribute('aria-pressed', 'false');
+    for (const box of canvas.querySelectorAll?.('[data-node]') ?? []) setSelected(box, false);
   }
 
   function select(nodeId, { notify = true } = {}) {
@@ -301,9 +308,7 @@ export function createGraphView({ root, document, request = null, basePath = '/'
         .flatMap(([label, value]) => [element('dt', label), element('dd', String(value))]));
     const folded = lines.filter(line => line[2] === 'technical').map(([label, value]) => [label, String(value)]);
     technical.replaceChildren(...(folded.length ? [technicalDetails(document, folded)] : []));
-    for (const box of canvas.querySelectorAll?.('[data-node]') ?? []) {
-      box.setAttribute('aria-pressed', box.getAttribute('data-node') === nodeId ? 'true' : 'false');
-    }
+    for (const box of canvas.querySelectorAll?.('[data-node]') ?? []) setSelected(box, box.getAttribute('data-node') === nodeId);
   }
 
   function show(graph, { states = null } = {}) {
@@ -338,8 +343,10 @@ export function createGraphView({ root, document, request = null, basePath = '/'
       }
       svg.append(line);
     }
-    // nodes as keyboard-reachable buttons beside the drawing, in layer order
+    // nodes as keyboard-reachable buttons beside the drawing, in layer order; each is a tab
+    // stop, and the arrow keys (Home/End too) also move between them (UI phase 6)
     const list = element('ol', undefined, { class: 'graph-nodes', 'aria-label': '노드' });
+    const buttons = [];
     const ordered = [...graph.nodes].sort((a, b) => {
       const pa = positions.get(a.node_id); const pb = positions.get(b.node_id);
       return pa.column - pb.column || pa.row - pb.row;
@@ -351,6 +358,7 @@ export function createGraphView({ root, document, request = null, basePath = '/'
       const box = svgElement('g');
       box.setAttribute('class', `graph-node graph-node-${node.kind}${state ? ` graph-state-${state}` : ''}`);
       box.setAttribute('data-node', node.node_id);
+      box.setAttribute('data-selected', 'false');
       const rect = svgElement('rect');
       for (const [name, value] of Object.entries({ x: at.x, y: at.y, width: BOX_W, height: BOX_H, rx: 8 })) {
         rect.setAttribute(name, String(value));
@@ -368,6 +376,15 @@ export function createGraphView({ root, document, request = null, basePath = '/'
       const button = element('button', `${node.node_id} · ${KIND_LABELS[node.kind] ?? node.kind}${state ? ` · ${STATE_LABELS[state]}` : ''}`,
         { type: 'button', 'data-node': node.node_id, 'aria-pressed': 'false' });
       button.addEventListener('click', () => select(node.node_id));
+      button.addEventListener('keydown', event => {
+        const index = buttons.indexOf(button);
+        const to = { ArrowDown: index + 1, ArrowRight: index + 1, ArrowUp: index - 1, ArrowLeft: index - 1,
+          Home: 0, End: buttons.length - 1 }[event.key];
+        if (to === undefined || to < 0 || to >= buttons.length) return;
+        event.preventDefault?.();
+        buttons[to].focus?.();
+      });
+      buttons.push(button);
       item.append(button);
       list.append(item);
     }

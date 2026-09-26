@@ -237,3 +237,31 @@ def test_plain_http_to_the_portable_profile_is_refused_before_auth(tmp_path):
         response = client.get("/api/v1/snapshot", headers=bearer(CANARY))
         assert response.status_code == 403
         assert response.json()["code"] == "access_denied"
+
+
+def test_the_settings_panel_offers_exactly_the_grantable_scopes_and_expiries(portable):
+    # UI phase 6 (설정 > 서비스 클라이언트, app/static/service-clients.mjs): the panel offers only the
+    # scopes a composed route declares for a bearer, under the server's own expiry limit, bound to
+    # the portable profile; it is a catalogued public asset. A new bearer scope without a label in
+    # the panel (or a label for a scope no route grants) makes this fail instead of drifting.
+    import re
+    from pathlib import Path
+
+    from app.api.assets import MODULES
+    from app.services.service_clients import MAX_SERVICE_CLIENT_TTL_SECONDS
+
+    app, *_ = portable
+    source = (Path(__file__).resolve().parents[1] / "static" / "service-clients.mjs").read_text(encoding="utf-8")
+    assert MODULES["service-clients.mjs"] == "application/javascript"
+    block = re.search(r"export const GRANTABLE_SCOPES = Object\.freeze\(\{(.*?)\}\);", source, re.DOTALL)
+    assert block is not None
+    offered = set(re.findall(r"'([a-z_.]+)':", block.group(1)))
+    assert offered == set(app.state.route_composition.bearer_scopes())
+    hours = [int(value) for value in re.findall(r"hours: (\d+)", source)]
+    assert hours and max(hours) * 3600 < MAX_SERVICE_CLIENT_TTL_SECONDS
+    assert re.search(r"MAX_SERVER_TTL_SECONDS = 86_400;", source) and MAX_SERVICE_CLIENT_TTL_SECONDS == 86_400
+    assert f"NETWORK_PROFILE = '{service_client_api.BEARER_NETWORK_PROFILE}'" in source
+    # the code (comments aside) writes no markup and touches no browser storage
+    code = "\n".join(line for line in source.splitlines() if not line.lstrip().startswith("//"))
+    for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "localStorage", "sessionStorage", "document.write"):
+        assert sink not in code, sink

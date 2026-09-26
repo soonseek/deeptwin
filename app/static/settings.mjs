@@ -24,6 +24,8 @@ export const SETTINGS_ENTRIES = Object.freeze([
   Object.freeze({ id: 'backup', label: '백업·보존', href: '#settings-backup', panel: 'settings-backup' }),
   Object.freeze({ id: 'update', label: '업데이트·복구', href: '#settings-update', panel: 'settings-update' }),
   Object.freeze({ id: 'extensions', label: '확장', href: '#settings-extensions', panel: 'settings-extensions' }),
+  // UI phase 6: the owner's scoped Bearer clients (T025 service-clients-v1)
+  Object.freeze({ id: 'service-clients', label: '서비스 클라이언트', href: '#settings-service-clients', panel: 'settings-service-clients' }),
   Object.freeze({ id: 'grants', label: '브라우저 권한', href: '#settings-grants', panel: 'settings-grants' }),
 ]);
 
@@ -34,9 +36,10 @@ export const HUB_MESSAGES = Object.freeze({
   failed: '설정 상태를 불러오지 못했습니다.',
 });
 
+// UI phase 6: one short line per fact in the left list; the panel itself says the rest
+// (why a missing worker means no backup, that nothing is deleted automatically)
 const WORKER_LINES = Object.freeze({
-  ready: '백업 워커 연결됨', not_configured: '백업 워커 없음(백업을 만들 수 없음)',
-  key_unavailable: '백업 키 볼륨 없음', unreachable: '백업 워커에 연결하지 못함',
+  not_configured: '백업 워커 없음', key_unavailable: '백업 키 볼륨 없음', unreachable: '백업 워커 응답 없음',
 });
 
 // every entry is available everywhere and none is required: the list never sequences them
@@ -51,11 +54,11 @@ export function hubStateLines({ backups, retention } = {}) {
   const lines = {};
   if (backups && typeof backups === 'object') {
     const made = Array.isArray(backups.backups) ? backups.backups.length : 0;
-    lines.backup = `${WORKER_LINES[backups.worker] ?? WORKER_LINES.unreachable} · 만든 백업 ${made}개`;
+    lines.backup = backups.worker === 'ready' ? `백업 ${made}개` : (WORKER_LINES[backups.worker] ?? WORKER_LINES.unreachable);
   }
   if (retention && typeof retention === 'object' && Array.isArray(retention.items)) {
     const eligible = retention.items.filter(item => item?.eligible === true).length;
-    lines.retention = `자동 삭제 없음 · 지금 정리할 수 있는 항목 ${eligible}개`;
+    lines.retention = `정리 가능 ${eligible}개 · 자동 삭제 없음`;
   }
   return lines;
 }

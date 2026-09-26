@@ -62,6 +62,17 @@ export function traceView(payload) {
 }
 
 // the run header's facts
+// the context bar's mode badge (ui-shell.mjs MODE_LABELS) from what the ledger froze in the
+// run spec: a live run is an operating run, an isolated-comparison run is an isolated
+// experiment round. A replay, a snapshot, an older trace without the field or an unrecorded
+// value names no mode: the badge stays empty rather than guessed (UI phase 6).
+export const RUN_MODE_BADGES = Object.freeze({ live: 'operating', 'isolated-comparison': 'isolated_experiment' });
+
+export function traceMode(trace) {
+  const mode = trace?.run_mode;
+  return typeof mode === 'string' && Object.hasOwn(RUN_MODE_BADGES, mode) ? RUN_MODE_BADGES[mode] : null;
+}
+
 export function runSummary(trace) {
   const [phaseLabel, tone] = stateText(RUN_PHASE_TEXT, trace.phase);
   const title = recorded(trace.work?.title) ? trace.work.title : `실행 ${shortId(trace.run_id)}`;

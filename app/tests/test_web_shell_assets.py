@@ -78,6 +78,7 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "work.mjs": "application/javascript",
         "work.html": "text/html",
         "settings-page.mjs": "application/javascript",
+        "service-clients.mjs": "application/javascript",
         "ui-shell.mjs": "application/javascript",
         "ui-parts.mjs": "application/javascript",
         "ui-format.mjs": "application/javascript",
@@ -409,7 +410,8 @@ def test_every_supported_page_is_relative_catalogued_csp_clean_and_carries_no_pr
 
 
 def test_the_shell_parts_never_write_markup():
-    for name in ("ui-shell.mjs", "ui-parts.mjs", "ui-format.mjs", "settings-page.mjs", "records-page.mjs"):
+    for name in ("ui-shell.mjs", "ui-parts.mjs", "ui-format.mjs", "settings-page.mjs", "records-page.mjs",
+                 "service-clients.mjs"):
         source = (STATIC / name).read_text(encoding="utf-8")
         for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"):
             assert sink not in source, (name, sink)

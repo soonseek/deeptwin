@@ -22,6 +22,7 @@ import { createRunDetail } from './run-detail.mjs';
 import { createRunList } from './run-list.mjs';
 import { createRunPanel } from './run-panel.mjs';
 import { createRunTable } from './run-summaries.mjs';
+import { traceMode } from './run-trace.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
 import { shortId } from './ui-format.mjs';
 import { mountShell } from './ui-shell.mjs';
@@ -121,8 +122,9 @@ export async function boot({ document, location, fetch, crypto, shell = null, hi
   let loading = Promise.resolve(null);
 
   // the context bar names only what the page knows: the run the owner picked and, once its
-  // trace is read, the work it ran for
-  const showContext = (runId, work = null) => shell?.setContext?.({ work, extra: [['실행', shortId(runId), runId]] });
+  // trace is read, the work it ran for and (UI phase 6) the run's mode as its trace records it
+  const showContext = (runId, work = null, mode = null) => shell?.setContext?.({ work, mode,
+    extra: [['실행', shortId(runId), runId]] });
 
   // ---- the owner's version and the alternative file, opened in place ------------------------------
   const parking = detailRoots.parking;
@@ -146,14 +148,33 @@ export async function boot({ document, location, fetch, crypto, shell = null, hi
     }
   }
 
-  let editing = null;  // the context the owner's version was opened in (its title, slot and step)
+  let editing = null;  // the context the owner's version was opened in (its title, slot, step and opener)
+  let differenceOpener = null;  // the control that opened the difference view
+
+  // UI phase 6: a surface opened in place takes the keyboard to its heading; closing it hands
+  // the keyboard back to the control that opened it (or, if that is gone, the run's heading)
+  function focusHeading(surface) {
+    const heading = surface?.querySelector?.('h2, h3');
+    if (!heading) return;
+    heading.setAttribute('tabindex', '-1');
+    heading.focus?.({ preventScroll: true });
+  }
+
+  function returnFocus(opener) {
+    const usable = opener && opener.isConnected !== false && typeof opener.focus === 'function'
+      && !opener.closest?.('[hidden]') && opener.disabled !== true;
+    if (usable) opener.focus();
+    else focusHeading(detailRoots.summary);
+  }
 
   function inPlace(surface, opener) {
     return async (runId, item, context = {}) => {
+      const invoker = document.activeElement ?? null;
       placeIn(surface, context);
-      editing = { surface, context };
+      editing = { surface, context, invoker };
       const opened = await opener(runId, item, { title: context?.title ?? null });
       surface.scrollIntoView?.({ block: 'nearest' });
+      focusHeading(surface);
       return opened;
     };
   }
@@ -168,8 +189,14 @@ export async function boot({ document, location, fetch, crypto, shell = null, hi
   const differenceRoot = mount(document, DIFFERENCE_MOUNT_ID);
   const difference = differenceRoot !== null
     ? createDifferenceView({ root: differenceRoot, document, basePath, request: session.request, crypto,
-      // closing the view hands its place back; the editor above it stays where it is
-      onClose: hasDetail ? () => parking?.append?.(differenceRoot) : null,
+      // closing the view hands its place back; the editor above it stays where it is, and the
+      // keyboard returns to the control that opened the view
+      onClose: hasDetail ? () => {
+        const opener = differenceOpener;
+        differenceOpener = null;
+        parking?.append?.(differenceRoot);
+        returnFocus(opener);
+      } : null,
       onSelectStep: target => {
         detail?.select(target, { focus: true, reveal: true });
         document.getElementById('run-process')?.scrollIntoView?.({ block: 'start' });
@@ -185,10 +212,12 @@ export async function boot({ document, location, fetch, crypto, shell = null, hi
     onFrozen = (runId, artifactId, alternativeId, texts = null) => {
       const context = editing?.context ?? {};
       const slot = editing?.surface?.parentNode;
+      differenceOpener = document.activeElement ?? null;
       if (hasDetail && slot && typeof slot.append === 'function' && slot !== parking) slot.append(differenceRoot);
       const shown = difference.show({ runId, artifactId, alternativeId, title: context.title ?? null, texts,
         segment: detail?.segment(context.segment) ?? null });
       differenceRoot.scrollIntoView?.({ block: 'start' });
+      focusHeading(differenceRoot);
       return shown;
     };
   } else if (inquiry !== null) {
@@ -202,13 +231,21 @@ export async function boot({ document, location, fetch, crypto, shell = null, hi
   const fileRoot = mount(document, ALTERNATIVE_FILE_MOUNT_ID);
   if (alternativeRoot) surfaces.push(alternativeRoot);
   if (fileRoot) surfaces.push(fileRoot);
+  // closing an editor parks it (and a difference view under it) and returns the keyboard
+  const closeInPlace = surface => () => {
+    const opener = editing?.surface === surface ? editing.invoker : null;
+    park(surface);
+    if (differenceRoot) park(differenceRoot);
+    differenceOpener = null;
+    returnFocus(opener);
+  };
   const editor = alternativeRoot !== null
     ? createAlternativeEditor({ root: alternativeRoot, document, basePath, request: session.request, crypto, onFrozen,
-      onClose: hasDetail ? () => { park(alternativeRoot); if (differenceRoot) park(differenceRoot); } : undefined })
+      onClose: hasDetail ? closeInPlace(alternativeRoot) : undefined })
     : null;
   const fileForm = fileRoot !== null
     ? createAlternativeFileForm({ root: fileRoot, document, basePath, request: session.request, crypto, onFrozen,
-      onClose: hasDetail ? () => { park(fileRoot); if (differenceRoot) park(differenceRoot); } : undefined })
+      onClose: hasDetail ? closeInPlace(fileRoot) : undefined })
     : null;
   const openEditor = editor === null ? undefined
     : hasDetail ? inPlace(alternativeRoot, (runId, item, options) => editor.open(runId, item, options))
@@ -236,6 +273,7 @@ export async function boot({ document, location, fetch, crypto, shell = null, hi
   // the parts are shown only when the sealed revision is the one the drafts read returns
   async function showDifference(runId, item, context, found) {
     if (difference === null) return null;
+    differenceOpener = document.activeElement ?? null;
     const slot = context?.slot;
     for (const surface of surfaces) park(surface);
     if (hasDetail && slot && typeof slot.append === 'function') {
@@ -258,6 +296,7 @@ export async function boot({ document, location, fetch, crypto, shell = null, hi
     const shown = difference.show({ runId, artifactId: item.artifactId, alternativeId: found.alternativeId,
       title: context?.title ?? null, texts, segment: detail?.segment(context?.segment) ?? null });
     differenceRoot.scrollIntoView?.({ block: 'start' });
+    focusHeading(differenceRoot);
     return shown;
   }
 
@@ -300,7 +339,9 @@ export async function boot({ document, location, fetch, crypto, shell = null, hi
       ...(approvals === null ? [] : [approvals.show(runId).catch(() => {})])];
     if (detail !== null) {
       loading = detail.show(runId, { artifactsLoad: listed }).then(trace => {
-        if (trace && trace.run_id === current) showContext(runId, trace.work?.title === 'not_recorded' ? null : trace.work?.title);
+        if (trace && trace.run_id === current) {
+          showContext(runId, trace.work?.title === 'not_recorded' ? null : trace.work?.title, traceMode(trace));
+        }
         return trace;
       }).catch(() => null);
       reads.push(loading);

@@ -15,14 +15,14 @@
     <main id="main">
       <header class="page-header">
         <h1>설정</h1>
-        <p class="page-purpose">계정과 세션, 모델 연결, 실행 한도, 백업·보존, 업데이트, 확장을 관리합니다. 어느 항목도 업무를 끝내기 위한 필수 단계가 아닙니다.</p>
+        <p class="page-purpose">계정과 세션, 모델 연결, 실행 한도, 백업·보존, 업데이트, 확장, 서비스 클라이언트를 관리합니다. 어느 항목도 업무를 끝내기 위한 필수 단계가 아닙니다.</p>
       </header>
       <p id="session-status" role="status" aria-live="polite" data-state="">브라우저 세션을 확인하는 중…</p>
       <div class="settings-layout">
         <nav id="settings-hub" class="settings-nav" aria-label="설정 항목"></nav>
         <div class="settings-panels">
           <section id="settings-account" class="settings-panel card" data-settings-panel="account" aria-label="계정과 세션">
-            <section id="records-account" class="records-section" aria-label="계정과 세션"></section>
+            <section id="records-account" class="records-section"></section>
           </section>
           <section id="settings-models" class="settings-panel card" data-settings-panel="models" aria-label="모델 연결">
             <section id="records-connection" class="records-section" aria-label="Claude 연결"></section>
@@ -30,7 +30,7 @@
             <p class="settings-panel-note field-note">Codex 구독 연결(관리형 실행기)은 아직 이 화면에서 지원하지 않습니다.</p>
           </section>
           <section id="settings-budgets" class="settings-panel card" data-settings-panel="budgets" aria-label="실행 한도">
-            <section id="records-budgets" class="records-section" aria-label="실행 한도"></section>
+            <section id="records-budgets" class="records-section"></section>
           </section>
           <section id="settings-backup" class="settings-panel card" data-settings-panel="backup" aria-label="백업·보존">
             <section id="records-backup" class="records-section" aria-label="백업"></section>
@@ -40,6 +40,10 @@
             <section id="records-update" class="records-section" aria-label="업데이트와 복구"></section>
           </section>
           <section id="settings-extensions" class="settings-panel card records-section" data-settings-panel="extensions" aria-labelledby="settings-extensions-title"></section>
+          <section id="settings-service-clients" class="settings-panel card" data-settings-panel="service-clients" aria-labelledby="settings-service-clients-title">
+            <h2 id="settings-service-clients-title">서비스 클라이언트</h2>
+            <div id="service-clients" class="records-section"></div>
+          </section>
           <section id="settings-grants" class="settings-panel card records-section" data-settings-panel="grants" aria-labelledby="settings-grants-title"></section>
         </div>
       </div>

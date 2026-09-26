@@ -70,6 +70,7 @@ MODULES = MappingProxyType({
     "versions-page.mjs": JAVASCRIPT,
     "versions.html": "text/html",
     "settings-page.mjs": JAVASCRIPT,
+    "service-clients.mjs": JAVASCRIPT,
     "ui-shell.mjs": JAVASCRIPT,
     "ui-parts.mjs": JAVASCRIPT,
     "ui-format.mjs": JAVASCRIPT,

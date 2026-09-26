@@ -91,7 +91,7 @@ export function createRunPanel({ root, document, request, basePath = '/', comman
   const alert = element('p', '', { role: 'alert' });
   alert.hidden = true;
   const buttons = {};
-  const actions = element('div', undefined, { 'aria-label': '실행 명령' });
+  const actions = element('div', undefined, { role: 'group', 'aria-label': '실행 명령' });
   for (const name of Object.keys(CONTROL_LABELS)) {
     const button = element('button', CONTROL_LABELS[name]);
     button.type = 'button';

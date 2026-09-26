@@ -24,6 +24,8 @@
 // - 기간 has no server filter, so it is applied here over the pages read so far, and the page says so.
 // The filter lives in the address (`#run=…`, `#work=…`, `&kind=…`, `&period=…`), so a link opens
 // it and a reload keeps it. The artifact index follows a run or work filter.
+// UI phase 6: a change of the hash alone (the back and forward buttons, an in-page link, an edited
+// address) reads the log again under the filter the new hash names.
 // All server text reaches the DOM through textContent only.
 
 import { createArtifactIndex } from './artifacts.mjs';
@@ -306,20 +308,29 @@ export function createFilterBar({ root, document, filter = {}, works = [], runs 
   }
 
   // a run the list never offered (a link to a run older than the list) is kept as its own option
-  for (const [select, id] of [[runSelect, filter.runId], [workSelect, filter.workId]]) {
-    if (id && select.value !== id) {
-      select.append(el(document, 'option', { text: `${select === runSelect ? '실행' : '업무'} ${shortId(id)}`, attrs: { value: id } }));
-      select.value = id;
+  function adopt(next) {
+    workSelect.value = next.workId ?? '';
+    runSelect.value = next.runId ?? '';
+    kindSelect.value = next.kind ?? '';
+    periodSelect.value = next.period ?? '';
+    for (const [select, id] of [[runSelect, next.runId], [workSelect, next.workId]]) {
+      if (id && select.value !== id) {
+        select.append(el(document, 'option', { text: `${select === runSelect ? '실행' : '업무'} ${shortId(id)}`, attrs: { value: id } }));
+        select.value = id;
+      }
     }
+    describe(value());
   }
-  describe(value());
-  return Object.freeze({ root: form, value, selects: { work: workSelect, run: runSelect, kind: kindSelect, period: periodSelect },
+  adopt(filter);
+  return Object.freeze({ root: form, value, set: adopt, selects: { work: workSelect, run: runSelect, kind: kindSelect, period: periodSelect },
     setRunLabel(id, label) {
       for (const option of runSelect.querySelectorAll?.('option') ?? []) if (option.value === id) option.textContent = label;
     } });
 }
 
-export async function boot({ document, location, fetch, history = null } = {}) {
+const sameFilter = (a, b) => ['runId', 'workId', 'kind', 'period'].every(key => (a?.[key] ?? null) === (b?.[key] ?? null));
+
+export async function boot({ document, location, fetch, history = null, events = null } = {}) {
   if (typeof document?.getElementById !== 'function') fail('a document is required');
   if (typeof fetch !== 'function') fail('a fetch function is required');
   const roots = {};
@@ -418,6 +429,14 @@ export async function boot({ document, location, fetch, history = null } = {}) {
     return log;
   }
   await show();
+  // a hash-only change names another filter: the bar follows it and the log is read again
+  events?.addEventListener?.('hashchange', () => {
+    const next = filterFrom(location?.hash);
+    if (sameFilter(next, filter)) return;
+    filter = next;
+    bar.set(next);
+    show().catch(() => {});
+  });
   return Object.freeze({ established: true, basePath, sections, get log() { return log; }, index, bar,
     get filter() { return filter; } });
 }
@@ -426,7 +445,7 @@ if (typeof globalThis.document === 'object' && globalThis.document !== null
     && typeof globalThis.document.getElementById === 'function'
     && globalThis.document.getElementById(MOUNT_IDS.logs) !== null) {
   mountShell({ document: globalThis.document, page: 'records' });
-  boot({ document: globalThis.document, location: globalThis.location, history: globalThis.history,
+  boot({ document: globalThis.document, location: globalThis.location, history: globalThis.history, events: globalThis,
     fetch: (...args) => globalThis.fetch(...args) }).catch(() => {
     const status = globalThis.document.getElementById(MOUNT_IDS.session);
     if (status) status.textContent = '이 화면을 준비하지 못했습니다.';

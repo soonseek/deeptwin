@@ -11,9 +11,12 @@
   --color-panel-muted: #eef3f3;
   --color-line: #d4dfe1;
   --color-line-strong: #b4c6ca;
+  /* the edge of a text field or select: 3:1 against the panels it sits on (WCAG 1.4.11) */
+  --color-field-line: #7a8f95;
   --color-ink: #152a30;
   --color-muted: #52666d;
-  --color-accent: #087f83;
+  /* UI phase 6: a shade darker so links, tabs and pressed states pass 4.5:1 on every light surface */
+  --color-accent: #07777b;
   --color-accent-strong: #066468;
   --color-accent-soft: #e2f2f1;
   --color-on-accent: #ffffff;
@@ -98,6 +101,7 @@
     --color-panel-muted: #1a2930;
     --color-line: #2b3e45;
     --color-line-strong: #3e5760;
+    --color-field-line: #5f7b85;
     --color-ink: #e3edef;
     --color-muted: #a2b6bc;
     --color-accent: #5ecfca;
@@ -520,7 +524,7 @@ footer p { margin: 6px 0; }
 :where(.app-shell main) input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), :where(.app-shell main) select, :where(.app-shell main) textarea {
   max-width: 100%; min-height: 36px;
   padding: 6px 10px;
-  border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm);
+  border: 1px solid var(--color-field-line); border-radius: var(--radius-sm);
   background: var(--color-panel); color: var(--color-ink);
   font-size: var(--text-sm);
   vertical-align: middle;
@@ -697,7 +701,7 @@ a.btn:hover { border-color: var(--color-accent); color: var(--color-accent); }
 .selection-error { border-left: 3px solid var(--color-error); background: var(--color-error-soft); color: var(--color-ink); }
 .past-attempt { border-left: 3px solid var(--color-info); }
 .run-selection .tabs { margin-top: var(--space-3); }
-.run-selection .tabs-list { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+.run-selection .tabs-list { flex-wrap: wrap; }
 .run-selection .tabs-list .tab { flex: 0 0 auto; margin: 0; padding-inline: 10px; white-space: nowrap; }
 .selection-lead:empty { display: none; }
 .selection-lead { max-width: none; margin: 0 0 var(--space-2); color: var(--color-muted); font-size: var(--text-sm); }
@@ -762,7 +766,7 @@ table.alternative-original-side { display: table; white-space: normal; }
 .graph-state-failed rect { stroke: var(--graph-failed); stroke-width: 2; }
 .graph-state-awaiting rect { stroke: #f4cb73; stroke-dasharray: 5 3; }
 .graph-state-pending rect, .graph-state-not_visited rect { stroke-dasharray: 3 3; }
-.graph-node[aria-pressed="true"] rect { fill: var(--graph-selected); stroke: var(--graph-accent); stroke-width: 3; }
+.graph-node[data-selected="true"] rect { fill: var(--graph-selected); stroke: var(--graph-accent); stroke-width: 3; }
 .graph-nodes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 176px), 1fr)); gap: 6px; margin: var(--space-3) 0 0; padding: 0 !important; list-style: none; }
 .graph-nodes button { width: 100%; text-align: left; }
 .graph-nodes li { margin: 0; }
@@ -1007,7 +1011,7 @@ table.alternative-original-side { display: table; white-space: normal; }
 .app-shell main .work-step-body h3:first-child { margin-top: 0; }
 /* inside a step the description surface is part of the step card, not another card */
 .page-work .work-step .work-surface { margin: 0 0 var(--space-2); padding: 0; border: 0; box-shadow: none; background: transparent; }
-.page-work .work-step #work-description { min-height: 140px; padding: var(--space-3); border: 1px solid var(--color-line-strong); border-radius: var(--radius-md); background: var(--color-panel); }
+.page-work .work-step #work-description { min-height: 140px; padding: var(--space-3); border: 1px solid var(--color-field-line); border-radius: var(--radius-md); background: var(--color-panel); }
 .page-work .work-step #save-status { margin: 0 0 var(--space-3); }
 .app-shell main .step-action { font-weight: 700; }
 .work-model-basis, .work-model-older { max-width: none; font-size: var(--text-sm); }
@@ -1025,7 +1029,8 @@ table.alternative-original-side { display: table; white-space: normal; }
 .run-start-picker-label { color: var(--color-muted); }
 .run-start-consent { display: flex; align-items: flex-start; gap: var(--space-2); margin: var(--space-4) 0 var(--space-2); }
 .run-start-consent input { margin-top: 3px !important; }
-.app-shell main .run-start-refresh { margin-top: var(--space-2); }
+/* a quiet button on its own line: its words line up with the text above it (UI phase 6) */
+.app-shell main .run-start-refresh { margin: var(--space-2) 0 0; padding-inline: 0; }
 .work-side { display: grid; gap: var(--space-4); align-content: start; min-width: 0; }
 .work-side > .card { margin: 0; padding: var(--space-4); }
 .app-shell main .work-side h2 { font-size: var(--text-md); }
@@ -1071,7 +1076,8 @@ table.alternative-original-side { display: table; white-space: normal; }
 
 /* records filters (records.html) */
 .records-filters { display: grid; gap: var(--space-2); margin: 0 0 var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-line); border-radius: var(--radius-md); background: var(--color-panel-muted); }
-.records-filter-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: var(--space-2) var(--space-3); }
+/* two columns as soon as two selects fit (a 320px screen included), four on a wide one */
+.records-filter-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 104px), 1fr)); gap: var(--space-2) var(--space-3); }
 .records-filter-fields label { display: grid; gap: 2px; color: var(--color-muted); font-size: var(--text-xs); font-weight: 650; }
 .records-filter-fields select { width: 100%; margin: 0; }
 .records-filter-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
@@ -1096,13 +1102,57 @@ table.alternative-original-side { display: table; white-space: normal; }
 .feedback-history .time-stamp { margin-left: var(--space-1); }
 
 /* ==========================================================================
+   UI phase 6: 설정 > 서비스 클라이언트 (service-clients.mjs)
+   ========================================================================== */
+#settings-service-clients > h2 { margin-bottom: var(--space-2); }
+#service-clients > .field-note { max-width: var(--prose-max); color: var(--color-muted); }
+.service-clients-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-4); margin: var(--space-4) 0 var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--color-line); }
+.service-clients-count { max-width: none !important; margin: 0 !important; font-weight: 650; }
+.app-shell main .service-clients-bar button { margin: 0; }
+.service-clients-notice { max-width: none !important; }
+.service-client-list { display: grid; gap: var(--space-3); margin: 0 0 var(--space-5); padding: 0 !important; list-style: none; }
+.service-client-list:empty { display: none; }
+.service-client { margin: 0 !important; padding: var(--space-3) var(--space-4); border: 1px solid var(--color-line); border-radius: var(--radius-md); background: var(--color-panel); }
+.service-client[data-state="revoked"] { background: var(--color-panel-muted); }
+.service-client-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.app-shell main .service-client-name { margin: 0; font-size: var(--text-md); overflow-wrap: anywhere; }
+.service-client-facts { margin-top: var(--space-2); }
+.service-client-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.app-shell main .service-client-actions button { margin: 0; }
+.service-client-actions:empty { display: none; }
+.service-client-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-3); padding: var(--space-3); border-left: 3px solid var(--color-warn); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: var(--color-warn-soft); }
+.service-client-confirm > p { flex-basis: 100%; max-width: none !important; margin: 0 !important; color: var(--color-ink); font-size: var(--text-sm); }
+.app-shell main .service-client-confirm button { margin: 0; }
+.service-client-secret { margin: var(--space-3) 0; padding: var(--space-4); border: 1px solid var(--color-warn); border-left-width: 4px; border-radius: var(--radius-md); background: var(--color-warn-soft); }
+.app-shell main .service-client-secret h3 { margin: 0 0 var(--space-2); }
+.service-client-secret .secret-warning { max-width: none; margin: 0 0 var(--space-3); color: var(--color-ink); font-weight: 600; }
+.secret-row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin: var(--space-1) 0 var(--space-2); }
+.app-shell main .secret-row input { flex: 1 1 18rem; min-width: 0; margin: 0; font-family: var(--font-mono); font-size: var(--text-sm); }
+.app-shell main .secret-row button { margin: 0; }
+.secret-copy-status { max-width: none; margin: 0 0 var(--space-2); }
+.service-clients-refusal { margin: var(--space-3) 0; }
+.service-clients-refusal .refusal-headline { margin: 0; font-weight: 700; }
+.service-clients-refusal > p { max-width: none; margin: var(--space-1) 0 0; color: var(--color-ink); }
+.service-clients-refusal .tech-details { color: var(--color-ink); }
+.service-client-form { display: grid; gap: var(--space-3); max-width: 640px; padding-top: var(--space-4); border-top: 1px solid var(--color-line); }
+.app-shell main .service-client-form h3 { margin: 0; }
+.service-client-field label { display: block; }
+.service-client-field input, .service-client-field select { display: block; width: min(100%, 360px); margin: var(--space-1) 0 0; }
+.service-client-field .field-note { margin: var(--space-1) 0 0; font-size: var(--text-xs); }
+.service-client-scopes { margin: 0 !important; }
+.service-client-scopes label { display: flex !important; }
+.service-client-form-error:empty { display: none; }
+.service-client-form-error { margin: 0; color: var(--color-error); font-weight: 650; }
+.app-shell main .service-client-form button[type="submit"] { justify-self: start; margin: 0; }
+
+/* ==========================================================================
    Start screen (outside the shell)
    ========================================================================== */
 .start-page main { max-width: 640px; padding-top: var(--space-6); }
 .start-page h1 { margin-top: var(--space-2); font-size: var(--text-2xl); }
 .start-page .page-purpose { margin-bottom: var(--space-5); }
 .start-form { display: grid; gap: var(--space-2); padding: var(--space-5) var(--space-6); border: 1px solid var(--color-line); border-radius: var(--radius-lg); background: var(--color-panel); box-shadow: var(--shadow-sm); }
-.start-form input { min-height: 40px; padding: 8px 10px; border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm); background: var(--color-panel); color: var(--color-ink); }
+.start-form input { min-height: 40px; padding: 8px 10px; border: 1px solid var(--color-field-line); border-radius: var(--radius-sm); background: var(--color-panel); color: var(--color-ink); }
 .start-form button[type="submit"] { justify-self: start; margin-top: var(--space-2); border-color: var(--color-accent); background: var(--color-accent); color: var(--color-on-accent); font-weight: 700; }
 .start-page footer { margin: var(--space-6) 0 0; }
 
@@ -1142,7 +1192,7 @@ table.alternative-original-side { display: table; white-space: normal; }
   .settings-entries .settings-state { display: none; }
   .settings-nav .settings-no-final-step { margin: var(--space-2) 0 0; }
   .records-layout { grid-template-columns: minmax(0, 1fr); }
-  .records-layout > #records-export { position: static; order: -1; }
+  .records-layout > #records-export { position: static; }
 }
 
 @media (max-width: 600px) {
@@ -1163,4 +1213,5 @@ table.alternative-original-side { display: table; white-space: normal; }
   .original-list li { align-items: flex-start; }
   #settings-extensions dl { grid-template-columns: 1fr; }
   .start-form { padding: var(--space-4); }
+  .records-filters { padding: var(--space-3); }
 }

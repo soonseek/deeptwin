@@ -4,6 +4,8 @@
 // the new CSRF value from the answer. Passwords live only in the form fields: they
 // are never stored, logged or echoed, and the fields are cleared after every attempt.
 
+import { technicalDetails } from './ui-parts.mjs';
+
 export const MIN_PASSWORD_SCALARS = 15;
 
 export const MESSAGES = Object.freeze({
@@ -703,7 +705,8 @@ export function createCredentialsPanel({ root, document, fetch, basePath = '/', 
 
 export const TRANSPORT_QUALIFICATION_MESSAGES = Object.freeze({
   intro: '게이트웨이는 제공자 전송 매니페스트의 검증을 채택하기 전까지 저장된 키로 어떤 요청도 보내지 않습니다. 검증에는 검증된 제공자 설치에서 4개 벡터를 모두 통과한 적합성 검사와, 이 매니페스트를 로컬 모의 제공자에 대고 오프라인으로 돌리는 전송 적합성 검사가 필요합니다. 검증하는 동안 실제 제공자에게는 아무것도 보내지 않습니다.',
-  manifest: digest => `전송 매니페스트 SHA-256: ${digest}`,
+  // UI phase 6: the digest reads short; the full value is one fold away under "기술 정보"
+  manifest: digest => `전송 매니페스트 SHA-256: ${String(digest).slice(0, 12)}…`,
   requirement: '요구 조건: 검증된 설치에서 4개 벡터를 모두 통과한(4/4) 적합성 검사, 그 설치의 헤드와 릴리스 소스가 검사 뒤 그대로일 것, 오프라인 전송 적합성 검사 4/4.',
   prerequisite: Object.freeze({
     met: run => `충족: 검증된 설치에서 4/4로 통과한 적합성 검사가 있습니다 (실행 ${run}).`,
@@ -830,9 +833,11 @@ export function createTransportQualificationPanel({ root, document, fetch, baseP
     facts.dataset.prerequisite = value.prerequisite;
     facts.dataset.gateway = value.gateway.state;
     const prerequisite = TRANSPORT_QUALIFICATION_MESSAGES.prerequisite[value.prerequisite];
+    const manifest = element('li', TRANSPORT_QUALIFICATION_MESSAGES.manifest(value.manifest_sha256),
+      { 'data-manifest-sha256': value.manifest_sha256 });
+    manifest.append(technicalDetails(document, [['전송 매니페스트 SHA-256', value.manifest_sha256]]));
     facts.replaceChildren(
-      element('li', TRANSPORT_QUALIFICATION_MESSAGES.manifest(value.manifest_sha256),
-        { 'data-manifest-sha256': value.manifest_sha256 }),
+      manifest,
       element('li', TRANSPORT_QUALIFICATION_MESSAGES.requirement),
       element('li', typeof prerequisite === 'function' ? prerequisite(value.eligible_conformance.command_id)
         : prerequisite, { 'data-prerequisite': value.prerequisite }),

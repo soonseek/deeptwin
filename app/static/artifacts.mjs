@@ -293,14 +293,13 @@ export function createArtifactViewer({ root, document, request, basePath = '/', 
     const items = filtering === null ? loaded : loaded.filter(item => filtering.ids.includes(item.artifactId));
     list.replaceChildren(...items.map(row));
     note.hidden = items.length === 0;
-    if (filtering === null) {
-      status.dataset.state = items.length ? 'listed' : 'empty';
-      status.textContent = items.length ? `산출물 ${items.length}개` : MESSAGES.empty;
-    } else {
-      status.dataset.state = items.length ? 'filtered' : 'filtered-empty';
-      status.textContent = items.length ? `${filtering.label ?? '선택한 단계의'} 산출물 ${items.length}개`
-        : `${filtering.label ?? '선택한 단계의'} 산출물이 없습니다.`;
-    }
+    // the line is a polite live region: the same words are not written (and read) again
+    const [state, text] = filtering === null
+      ? [items.length ? 'listed' : 'empty', items.length ? `산출물 ${items.length}개` : MESSAGES.empty]
+      : [items.length ? 'filtered' : 'filtered-empty', items.length ? `${filtering.label ?? '선택한 단계의'} 산출물 ${items.length}개`
+        : `${filtering.label ?? '선택한 단계의'} 산출물이 없습니다.`];
+    status.dataset.state = state;
+    if (status.textContent !== text) status.textContent = text;
     // a preview of an artifact outside the narrowed list is not left beside it
     const previewed = viewer.dataset.artifactId;
     if (previewed && !items.some(item => item.artifactId === previewed)) {

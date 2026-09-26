@@ -153,3 +153,16 @@ test('pending approvals, attempt options and error text are spelled out', () => 
   assert.equal(errorText('not_recorded'), '오류: 기록 없음');
   assert.equal(errorText(null), '');
 });
+
+// UI phase 6: the context bar's mode badge comes only from the trace's own `run_mode` (the
+// ledger's frozen run spec); a replay, a snapshot or an older trace without it names no mode
+test('the run mode badge is the trace\'s recorded mode or nothing', async () => {
+  const { RUN_MODE_BADGES, traceMode } = await import('../static/run-trace.mjs');
+  assert.deepEqual({ ...RUN_MODE_BADGES }, { live: 'operating', 'isolated-comparison': 'isolated_experiment' });
+  assert.equal(traceMode({ run_mode: 'live' }), 'operating');
+  assert.equal(traceMode({ run_mode: 'isolated-comparison' }), 'isolated_experiment');
+  for (const value of ['replay', 'snapshot', 'not_recorded', undefined, null, 'operating', 7]) {
+    assert.equal(traceMode({ run_mode: value }), null, String(value));
+  }
+  assert.equal(traceMode(null), null);
+});

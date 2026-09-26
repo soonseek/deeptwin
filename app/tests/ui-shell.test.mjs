@@ -84,6 +84,7 @@ function page({ narrow = false } = {}) {
     createElementNS: (_ns, tag) => new FakeElement(tag),
     addEventListener: (type, listener) => docListeners.set(type, [...(docListeners.get(type) ?? []), listener]),
     key(key) { for (const listener of docListeners.get('keydown') ?? []) listener({ key, preventDefault() {} }); },
+    keyListeners: type => docListeners.get(type) ?? [],
   };
   const window = { matchMedia: () => media };
   return { app, main, document, window, media, resize(matches) { media.matches = matches; for (const l of mediaListeners) l(); } };
@@ -181,4 +182,50 @@ test('narrow screens: the menu button opens the drawer, Escape closes it and foc
   shell.open();
   document.key('Escape');
   assert.equal(shell.isOpen, true);
+});
+
+// UI phase 6: the open drawer keeps the keyboard: Tab past its last stop returns to its first and
+// Shift+Tab before its first goes to its last; the skip link sleeps with the rest of the page;
+// the context bar is a named region, so nothing sits outside a landmark
+test('narrow screens: Tab and Shift+Tab wrap inside the open drawer; the skip link is inert too', () => {
+  const { app, document, window } = page({ narrow: true });
+  Object.defineProperty(document, 'activeElement', { get: () => focused });
+  const keys = [];
+  const press = (key, shiftKey = false) => {
+    let prevented = false;
+    document.keyListeners('keydown').forEach(listener => listener({ key, shiftKey, preventDefault() { prevented = true; } }));
+    keys.push([key, shiftKey, prevented]);
+    return prevented;
+  };
+  const shell = mountShell({ document, page: 'records', window });
+  // the drawer's stops in document order (the fake answers the one selector the shell asks)
+  shell.nav.querySelectorAll = selector => {
+    assert.equal(selector, 'a[href], button');
+    return shell.nav.findAll(child => (child.tagName === 'A' && child.getAttribute('href') !== null) || child.tagName === 'BUTTON');
+  };
+  assert.equal(app.findAll(node => node.getAttribute('class') === 'context-bar')[0].getAttribute('role'), 'region');
+  shell.open();
+  const skip = app.findAll(node => node.getAttribute('class') === 'skip-link')[0];
+  assert.equal(skip.inert, true, 'the skip link is inert while the drawer is open');
+  const stops = shell.nav.querySelectorAll('a[href], button');
+  assert.deepEqual(stops.map(node => node.textContent), ['DeepTwin', '메뉴 닫기', '업무', '실행', '버전·실험', '기록', '설정']);
+  // from the last stop, Tab goes round to the first; from the first, Shift+Tab to the last
+  stops.at(-1).focus();
+  assert.equal(press('Tab'), true);
+  assert.equal(focused, stops[0]);
+  assert.equal(press('Tab', true), true);
+  assert.equal(focused, stops.at(-1));
+  // in between, the browser moves focus itself
+  stops[2].focus();
+  assert.equal(press('Tab'), false);
+  assert.equal(press('Tab', true), false);
+  assert.equal(focused, stops[2]);
+  // focus somehow outside the drawer is brought back in
+  focused = null;
+  assert.equal(press('Tab'), true);
+  assert.equal(focused, stops[0]);
+  shell.close();
+  assert.equal(skip.inert, false);
+  focused = stops.at(-1);
+  assert.equal(press('Tab'), false, 'a closed drawer does not hold the keyboard');
 });

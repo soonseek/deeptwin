@@ -4,8 +4,8 @@
 // holds it), and, with the owner's session, mounts the operations sections that used to sit
 // on the records page — account and session, the Claude connection, the gateway's API
 // credentials with their transport qualification, run budgets, backup, retention and the
-// read-only update guidance. The modules are unchanged; only the page that mounts them
-// moved. Browser grants and extensions boot from their own modules on this page. Backup and
+// read-only update guidance, and (UI phase 6) the owner's service clients
+// (service-clients.mjs). The modules are unchanged; only the page that mounts them moved. Browser grants and extensions boot from their own modules on this page. Backup and
 // retention say only what this server actually does: no backup is claimed where no backup
 // worker is connected, and nothing is deleted automatically. All server text reaches the
 // DOM through textContent only.
@@ -16,6 +16,7 @@ import { createClaudeConnection } from './claude-connection.mjs';
 import { createBackupPanel } from './records-backup.mjs';
 import { createRetentionPanel } from './records-retention.mjs';
 import { createUpdatePanel } from './records-update.mjs';
+import { SERVICE_CLIENTS_MOUNT_ID, createServiceClientsPanel } from './service-clients.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
 import { HUB_MESSAGES, SETTINGS_ENTRIES, SETTINGS_MOUNT_ID, SETTINGS_STATUS_ID, hubStateLines, renderSettingsHub } from './settings.mjs';
 import { mountShell } from './ui-shell.mjs';
@@ -158,6 +159,11 @@ export async function bootSettings({ document, location, fetch, crypto = globalT
   const updateRoot = mount(document, UPDATE_MOUNT_ID);
   const update = updateRoot ? createUpdatePanel({ root: updateRoot, document, basePath, request: session.request }) : null;
   if (update !== null) await update.load().catch(() => {});
+  const clientsRoot = mount(document, SERVICE_CLIENTS_MOUNT_ID);
+  const serviceClients = clientsRoot && typeof crypto?.randomUUID === 'function'
+    ? createServiceClientsPanel({ root: clientsRoot, document, basePath, request: session.request, crypto,
+      pageProtocol: location?.protocol ?? '', heading: false }) : null;
+  if (serviceClients !== null) await serviceClients.load().catch(() => {});
   const prefix = basePath.slice(0, -1);
   const [backups, retained] = await Promise.all([
     session.request(`${prefix}/api/v1/backups`).catch(() => null),
@@ -166,7 +172,7 @@ export async function bootSettings({ document, location, fetch, crypto = globalT
   const lines = hubStateLines({ backups, retention: retained });
   drawHub(lines);
   return Object.freeze({ established: true, basePath, lines, account, connection, credentials, transport, budgets,
-    backup, retention, update });
+    backup, retention, update, serviceClients });
 }
 
 if (typeof globalThis.document === 'object' && globalThis.document !== null

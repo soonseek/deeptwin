@@ -157,7 +157,8 @@ export function createRunDetail({
     return earlierRevisions(answer?.history, target, last);
   }
 
-  const runControl = canRecord ? createFeedbackControl({ document, idPrefix: 'feedback-run',
+  // the whole result's control sits right under "최종 결과" (h2), the step's under the step (h3)
+  const runControl = canRecord ? createFeedbackControl({ document, idPrefix: 'feedback-run', level: 3,
     onSave: value => recordFeedback(runTarget(), { action: 'set', ...value }),
     onClear: () => recordFeedback(runTarget(), { action: 'clear' }),
     onHistory: last => earlierFor(runTarget(), last) }) : null;
@@ -468,7 +469,13 @@ export function createRunDetail({
     }
     const node = view.node;
     const clear = el(document, 'button', { text: '실행 전체 보기', className: 'btn btn-quiet selection-clear', attrs: { type: 'button' } });
-    clear.addEventListener('click', () => select({ nodeId: null }));
+    clear.addEventListener('click', () => {
+      select({ nodeId: null });
+      // the button goes with the step it cleared: the keyboard lands on the new heading
+      const title = selectionHead.querySelector?.('.selection-title');
+      title?.setAttribute('tabindex', '-1');
+      title?.focus?.({ preventScroll: true });
+    });
     const [stateLabel, tone] = stateText(TRACE_NODE_STATE_TEXT, node.state);
     selectionHead.replaceChildren(
       el(document, 'div', { className: 'selection-kicker-row' }, [el(document, 'p', { className: 'selection-kicker', text: '선택' }), clear]),
@@ -504,7 +511,17 @@ export function createRunDetail({
         attemptNo: Number(attemptPick.value) }));
       items.push(el(document, 'label', { className: 'picker' }, [el(document, 'span', { text: '시도' }), attemptPick]));
     }
+    // switching the visit or attempt redraws the pickers: the keyboard stays on the one it used
+    const active = document.activeElement ?? null;
+    const held = active !== null && typeof pickers.contains === 'function' && pickers.contains(active)
+      ? active.getAttribute?.('aria-label') : null;
     pickers.replaceChildren(...items);
+    if (held) {
+      for (const item of items) {
+        const pick = item.querySelector?.('select');
+        if (pick?.getAttribute('aria-label') === held) pick.focus?.();
+      }
+    }
     const notes = [];
     if (!view.visit) notes.push(el(document, 'p', { className: 'selection-note', text: '이 단계는 아직 수행되지 않았습니다.' }));
     else if (!view.attempts.length) notes.push(el(document, 'p', { className: 'selection-note', text: MESSAGES.noAttempts }));

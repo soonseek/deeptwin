@@ -158,7 +158,8 @@ test('settings holds the sections moved off the records page, one panel at a tim
     assert.equal(await page.locator('[data-settings-panel]:visible').count(), 1, 'one panel at a time');
     assert.equal(await page.locator('#settings-hub a[aria-current="true"]').textContent(), '계정과 세션');
     const entries = await page.locator('#settings-hub li[data-entry] > a').allTextContents();
-    assert.deepEqual(entries, ['계정과 세션', '모델 연결', '실행 한도', '백업·보존', '업데이트·복구', '확장', '브라우저 권한']);
+    assert.deepEqual(entries, ['계정과 세션', '모델 연결', '실행 한도', '백업·보존', '업데이트·복구', '확장', '서비스 클라이언트',
+      '브라우저 권한']);
     await page.getByRole('link', { name: '모델 연결' }).click();
     await page.waitForURL(`${url}settings.html#settings-models`);
     await page.locator('#records-connection h2').waitFor();
@@ -170,10 +171,10 @@ test('settings holds the sections moved off the records page, one panel at a tim
     await page.reload();
     await page.locator('#records-retention h2').waitFor();
     assert.equal(await page.locator('#settings-hub a[aria-current="true"]').textContent(), '백업·보존');
-    assert.equal(await panels.count(), 7);
+    assert.equal(await panels.count(), 8);
     // the context bar says only what the page knows: the run the owner picked
     await page.goto(url + 'observe.html');
-    const bar = page.getByRole('group', { name: '현재 맥락' });
+    const bar = page.getByRole('region', { name: '현재 맥락' });
     assert.equal(await bar.isVisible(), false, 'nothing picked, nothing shown');
     const runId = await page.evaluate(async ({ base, seed }) => {
       const session = await (await fetch(base + 'session')).json();
@@ -189,8 +190,15 @@ test('settings holds the sections moved off the records page, one panel at a tim
     await page.reload();
     await openRunFromList(page, runId);
     await bar.waitFor();
-    assert.equal((await bar.textContent()).trim(), `실행${runId.slice(0, 8)}`);
-    assert.doesNotMatch(await bar.textContent(), /운영|설계 검토|격리 실험|과거 기록/, 'no mode is guessed');
+    assert.match((await bar.textContent()).trim(), new RegExp(`실행${runId.slice(0, 8)}`));
+    // (UI phase 6) the mode badge comes only from the run's own trace: the ledger froze this run
+    // as `live`, an operating run; nothing else is guessed
+    const trace = await page.evaluate(async ({ base, runId }) => (await fetch(`${base}api/v1/runs/${runId}/trace`)).json(), { base, runId });
+    assert.equal(trace.run_mode, 'live');
+    await bar.locator('.mode-badge[data-mode="operating"]').waitFor();
+    assert.equal(await bar.locator('.mode-badge').count(), 1);
+    assert.equal((await bar.locator('.mode-badge').textContent()).trim(), '운영');
+    assert.doesNotMatch(await bar.textContent(), /설계 검토|격리 실험|과거 기록/, 'no other mode is guessed');
     // the run's status names the short id, the full one is one fold away; cancel says what it does
     const panel = page.locator('#run-panel');
     await panel.locator('[role=status]', { hasText: runId.slice(0, 8) }).waitFor();
@@ -215,7 +223,7 @@ test('settings holds the sections moved off the records page, one panel at a tim
     assert.match(await page.locator('#run-artifacts').textContent(), /형식은 산출물을 만든 쪽이 밝힌 값입니다/);
     // the work page names a work only once it is saved: its first written line and its revision
     await page.goto(url + 'work.html');
-    const workBar = page.getByRole('group', { name: '현재 맥락' });
+    const workBar = page.getByRole('region', { name: '현재 맥락' });
     await page.locator('#work-description').waitFor();
     assert.equal(await workBar.isVisible(), false, 'an unsaved work names nothing');
     await page.locator('#work-description').fill('화요일 공간 안내문 만들기\n자세한 설명은 둘째 줄에');

@@ -191,11 +191,13 @@ export function createRunTable({ root, document, request, basePath = '/', summar
     }
     tr.dataset.state = 'read';
     tr.dataset.phase = value.phase;
+    // two runs of one work share a title: the link is described by its own run's line (UI phase 6)
+    const subId = `run-row-${runId}-sub`;
     const link = el(document, 'a', { text: value.title, className: 'run-link',
-      attrs: { href: linkTo(runId), 'data-run-id': runId, title: runId } });
+      attrs: { href: linkTo(runId), 'data-run-id': runId, title: runId, 'aria-describedby': subId } });
     const sub = `실행 ${shortId(runId)}${value.workRevision ? ` · 업무 수정본 ${value.workRevision}` : ''}`;
     tr.replaceChildren(
-      cell(document, 'work', [link, el(document, 'span', { className: 'run-cell-sub', text: sub })]),
+      cell(document, 'work', [link, el(document, 'span', { className: 'run-cell-sub', text: sub, attrs: { id: subId } })]),
       textCell(document, 'environment', '—'),
       cell(document, 'status', [statusChip(document, { tone: value.tone, label: value.phaseLabel })]),
       cell(document, 'started', [value.startedAt ? timeStamp(document, value.startedAt) : el(document, 'span', { text: '—' })]),

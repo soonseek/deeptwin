@@ -121,3 +121,42 @@ test('feedback markers are drawn on the node and spelled beside its button, neve
   const other = root.findAll(el => el.tagName === 'BUTTON' && el.getAttribute('data-node') === 'intake')[0];
   assert.equal(other.getAttribute('data-feedback'), null);
 });
+
+// UI phase 6: the drawing marks its selected box with data-selected (an SVG group takes no
+// pressed state); the node buttons carry aria-pressed, and the arrow keys and Home/End move the
+// keyboard between them in layer order
+test('the drawn box is marked data-selected, the buttons aria-pressed; the arrow keys walk the nodes', async () => {
+  let focused = null;
+  const root = new FakeElement('section');
+  const view = createGraphView({ root, document, request: null });
+  view.show(graph);
+  const buttons = root.findAll(el => el.tagName === 'BUTTON');
+  for (const button of buttons) button.focus = () => { focused = button; };
+  const boxes = root.findAll(el => el.tagName === 'G' && el.getAttribute('data-node') !== null);
+  assert.ok(boxes.every(box => box.getAttribute('aria-pressed') === null && box.getAttribute('data-selected') === 'false'));
+  await buttons[1].dispatch('click');
+  assert.equal(buttons[1].getAttribute('aria-pressed'), 'true');
+  assert.deepEqual(boxes.map(box => [box.getAttribute('data-node'), box.getAttribute('data-selected')]),
+    [['intake', 'false'], ['writer', 'true'], ['review', 'false'], ['publish', 'false']]);
+  assert.ok(boxes.every(box => box.getAttribute('aria-pressed') === null));
+  const key = (button, name) => {
+    let prevented = false;
+    for (const listener of button.listeners.get('keydown') ?? []) listener({ key: name, preventDefault() { prevented = true; } });
+    return prevented;
+  };
+  assert.equal(key(buttons[0], 'ArrowDown'), true);
+  assert.equal(focused, buttons[1]);
+  key(buttons[1], 'ArrowRight');
+  assert.equal(focused, buttons[2]);
+  key(buttons[2], 'ArrowUp');
+  assert.equal(focused, buttons[1]);
+  key(buttons[1], 'End');
+  assert.equal(focused, buttons.at(-1));
+  key(buttons.at(-1), 'Home');
+  assert.equal(focused, buttons[0]);
+  // the ends do not wrap, and other keys are left alone
+  focused = null;
+  assert.equal(key(buttons[0], 'ArrowUp'), false);
+  assert.equal(key(buttons[0], 'Enter'), false);
+  assert.equal(focused, null);
+});

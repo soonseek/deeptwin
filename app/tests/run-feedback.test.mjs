@@ -339,3 +339,41 @@ test('UI phase 5: "이전 기록 N건" counts the earlier revisions and lists th
   control.show({ heading: '이 결과 전체', item: history[0], last: history[0] });
   assert.equal(control.history.hidden, true);
 });
+
+// UI phase 6: the status line is a polite live region — unchanged words are not written again
+// (a screen reader would read them again); after a save or a clear the pressed button is
+// disabled or gone, so the keyboard moves to the mark on screen instead of the page body; the
+// heading level follows where the control sits
+test('the control keeps the keyboard after a save and never rewrites the same status words', async () => {
+  let focused = null;
+  const writes = [];
+  let control;
+  const doc = { createElement: tag => {
+    const node = new FakeElement(tag);
+    node.focus = () => { focused = node; };
+    return node;
+  } };
+  Object.defineProperty(doc, 'activeElement', { get: () => focused });
+  control = createFeedbackControl({ document: doc, idPrefix: 'feedback-run', level: 3, now: () => Date.parse('2026-09-26T05:13:00Z'),
+    onSave: async value => { control.show({ heading: '이 결과 전체', item: item({ scope: 'run' }, 1, value) }); },
+    onClear: async () => { control.show({ heading: '이 결과 전체', item: null }); } });
+  assert.equal(control.root.find(node => node.hasClass('feedback-title')).tagName, 'H3');
+  assert.equal(createFeedbackControl({ document: doc, idPrefix: 'feedback-step', onSave: async () => {}, onClear: async () => {} })
+    .root.find(node => node.hasClass('feedback-title')).tagName, 'H4');
+  const status = control.status;
+  let text = '';
+  Object.defineProperty(status, 'textContent', { get: () => text, set: value => { writes.push(String(value)); text = String(value); } });
+  control.show({ heading: '이 결과 전체' });
+  control.show({ heading: '이 결과 전체' });
+  control.show({ heading: '이 결과 전체' });
+  assert.deepEqual(writes, [MESSAGES.none], 'the same words are written once');
+  await control.buttons.needs_attention.dispatch('click');
+  focused = control.save;
+  await control.save.dispatch('click');
+  assert.equal(control.save.disabled, true);
+  assert.equal(focused, control.buttons.needs_attention, 'the keyboard moves to the pressed mark');
+  focused = control.clear;
+  await control.clear.dispatch('click');
+  assert.equal(control.clear.hidden, true);
+  assert.equal(focused, control.buttons.ok, 'with no mark left, to the first mark');
+});

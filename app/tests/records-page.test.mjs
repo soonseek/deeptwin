@@ -231,3 +231,49 @@ test('UI phase 5: the filter reads from the hash, and kind and period narrow the
   assert.equal(root.findAll(el => el.tagName === 'H2').length, 0);
   assert.equal(root.findAll(el => el.tagName === 'LI' && el.getAttribute('data-event-type')).length, 1);
 });
+
+// UI phase 6: a change of the hash alone (the back button, an in-page link) reads the log again
+// under the filter the new hash names, and the filter bar follows it
+test('a hash-only change re-reads the log under the new filter', async () => {
+  const { FILTER_MOUNT_ID, LOG_MOUNT_ID } = await import('../static/records-page.mjs');
+  const { EVENT_GROUPS } = await import('../static/ui-format.mjs');
+  const nodes = Object.fromEntries([...Object.values(MOUNT_IDS), FILTER_MOUNT_ID, LOG_MOUNT_ID].map(id => [id, new FakeElement('section')]));
+  const document = { getElementById: id => nodes[id] ?? null, createElement: tag => new FakeElement(tag) };
+  const reads = [];
+  const fetch = async target => {
+    const url = new URL(target, 'http://instance.test');
+    let body = { events: [event(1)], next_cursor: 'c1', gap: null };
+    if (url.pathname === '/session') body = { state: 'authenticated', csrf_token: 'c'.repeat(32) };
+    else if (url.pathname === '/api/v1/snapshot') body = { state: { runs: [] } };
+    else if (url.pathname === '/api/v1/events') {
+      const types = url.searchParams.getAll('event_type');
+      if (!(types.length === 1 && types[0] === 'work.created')) reads.push(url.search);
+      if (url.searchParams.get('cursor') === 'c1') body = { events: [], next_cursor: 'c1', gap: null };
+    }
+    return { ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => body };
+  };
+  const listeners = [];
+  const location = { pathname: '/records.html', hash: '' };
+  const events = { addEventListener: (type, listener) => { if (type === 'hashchange') listeners.push(listener); } };
+  const page = await boot({ document, location, fetch, events });
+  assert.equal(page.established, true);
+  const before = reads.length;
+  assert.ok(before >= 1);
+  assert.doesNotMatch(reads.at(-1), /event_type/);
+  // the back button (or a link on this page) lands on #kind=work: the log is read again, narrowed
+  location.hash = '#kind=work';
+  for (const listener of listeners) listener();
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(reads.length > before, 'the log was read again');
+  const group = EVENT_GROUPS.find(item => item.id === 'work');
+  const asked = new URLSearchParams(reads[before]);
+  assert.deepEqual(asked.getAll('event_type'), [...group.types]);
+  assert.equal(page.filter.kind, 'work');
+  assert.equal(page.bar.selects.kind.value, 'work');
+  // the same hash again reads nothing more
+  const after = reads.length;
+  for (const listener of listeners) listener();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(reads.length, after);
+});

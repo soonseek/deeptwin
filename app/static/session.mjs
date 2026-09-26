@@ -71,6 +71,12 @@ function refusal(payload, status) {
   const error = Object.assign(new Error(message), { code: partition(payload, status), status });
   // a refusal may name its exact reason (e.g. the design workspace's not-approvable reason); plain text only
   if (typeof payload?.reason === 'string' && payload.reason.length <= 512) error.reason = payload.reason;
+  // UI phase 6: the server's own code (even one outside the closed partition above, such as
+  // `invalid_state`) and its correlation id, for a "기술 정보" fold; plain bounded text only
+  if (typeof payload?.code === 'string' && /^[a-z][a-z_]{0,63}$/.test(payload.code)) error.serverCode = payload.code;
+  if (typeof payload?.correlation_id === 'string' && /^[0-9a-f-]{36}$/.test(payload.correlation_id)) {
+    error.correlationId = payload.correlation_id;
+  }
   return error;
 }
 

@@ -50,7 +50,8 @@ class FakeElement {
 
 test('the settings sub-navigation lists every operations section, none required', () => {
   const hub = settingsHub();
-  assert.deepEqual(hub.map(entry => entry.id), ['account', 'models', 'budgets', 'backup', 'update', 'extensions', 'grants']);
+  assert.deepEqual(hub.map(entry => entry.id), ['account', 'models', 'budgets', 'backup', 'update', 'extensions',
+    'service-clients', 'grants']);
   assert.ok(hub.every(entry => entry.required === false && entry.available === 'everywhere' && entry.exportRequired === false));
   // in-page links: each opens its own panel on this page, in any order
   assert.ok(hub.every(entry => entry.href === `#${entry.panel}`));
@@ -64,8 +65,12 @@ test('the settings sub-navigation lists every operations section, none required'
   assert.match(root.textContent, new RegExp(HUB_MESSAGES.noFinalStep));
   // backup and retention share the 백업·보존 panel, so its entry carries both state lines
   const backup = root.findAll(el => el.getAttribute('data-entry') === 'backup')[0];
-  assert.match(backup.textContent, /백업 워커 연결됨 · 만든 백업 2개/);
-  assert.match(backup.textContent, /자동 삭제 없음 · 지금 정리할 수 있는 항목 1개/);
+  // (UI phase 6: the lines are short; the panel keeps the full sentences)
+  assert.match(backup.textContent, /백업 2개/);
+  assert.match(backup.textContent, /정리 가능 1개 · 자동 삭제 없음/);
+  // a worker that is not ready never shows a count as if backups could be made
+  assert.equal(hubStateLines({ backups: { worker: 'not_configured', backups: [] } }).backup, '백업 워커 없음');
+  assert.equal(hubStateLines({ backups: { worker: 'mystery', backups: [] } }).backup, '백업 워커 응답 없음');
 });
 
 test('every signed-in page reaches settings from the shell; the start screen keeps its header link', () => {

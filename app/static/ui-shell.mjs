@@ -4,8 +4,10 @@
 // environment version and the mode badge (운영 / 설계 검토 / 격리 실험 / 과거 기록,
 // experience.md §4). A page fills the bar only with what it actually knows; with nothing
 // known the bar is hidden, and an unknown mode is never shown. Below 1024px the navigation
-// folds behind a menu button: it opens as a drawer, the rest of the page is inert while it
-// is open, Escape or the close button shuts it and focus returns to the menu button. The
+// folds behind a menu button: it opens as a drawer, the rest of the page (the skip link
+// too) is inert while it is open, Tab and Shift+Tab wrap inside it, Escape or the close
+// button shuts it and focus returns to the menu button. The context bar is a named region
+// (UI phase 6), so nothing on the page sits outside a landmark. The
 // start screen (setup and login) stays outside the shell. Links are relative, so the shell
 // works under the instance's random base path. Text goes in through textContent only.
 
@@ -109,13 +111,13 @@ export function mountShell({ document, page, window = globalThis.window } = {}) 
     type: 'button', 'aria-expanded': 'false', 'aria-controls': NAV_ID, 'aria-label': SHELL_TEXT.openLabel } },
   [icon(document, 'menu'), element(document, 'span', { text: SHELL_TEXT.open })]);
   const topbar = element(document, 'header', { className: 'shell-topbar' }, [menu,
-    element(document, 'a', { className: 'shell-brand', attrs: { href: './work.html' } },
+    element(document, 'a', { className: 'shell-brand', attrs: { href: './work.html', 'aria-label': SHELL_TEXT.brand } },
       [element(document, 'span', { text: 'Deep' }), element(document, 'span', { className: 'shell-brand-light', text: 'Twin' })])]);
   const close = element(document, 'button', { className: 'shell-close-button', attrs: { type: 'button' } },
     [icon(document, 'close'), element(document, 'span', { text: SHELL_TEXT.close })]);
   const nav = element(document, 'nav', { className: 'shell-nav', attrs: { id: NAV_ID, 'aria-label': SHELL_TEXT.nav } }, [
     element(document, 'div', { className: 'shell-nav-head' }, [
-      element(document, 'a', { className: 'shell-brand', attrs: { href: './work.html' } },
+      element(document, 'a', { className: 'shell-brand', attrs: { href: './work.html', 'aria-label': SHELL_TEXT.brand } },
         [element(document, 'span', { text: 'Deep' }), element(document, 'span', { className: 'shell-brand-light', text: 'Twin' })]),
       close,
     ]),
@@ -124,14 +126,17 @@ export function mountShell({ document, page, window = globalThis.window } = {}) 
     navList(document, SHELL_SECONDARY, page, 'shell-nav-list shell-nav-secondary'),
   ]);
   const backdrop = element(document, 'div', { className: 'shell-backdrop', attrs: { 'aria-hidden': 'true' } });
-  const context = element(document, 'div', { className: 'context-bar', attrs: { role: 'group', 'aria-label': SHELL_TEXT.context } });
+  const context = element(document, 'div', { className: 'context-bar', attrs: { role: 'region', 'aria-label': SHELL_TEXT.context } });
   context.hidden = true;
   for (const node of [skip, topbar, nav, backdrop, context]) app.insertBefore(node, main);
   main.setAttribute('tabindex', '-1');
 
   const media = typeof window?.matchMedia === 'function' ? window.matchMedia(NARROW_QUERY) : null;
   const narrow = () => media?.matches === true;
-  const outside = () => [topbar, context, main];
+  const outside = () => [skip, topbar, context, main];
+  // the drawer's own stops, in order: Tab past the last returns to the first (and back)
+  const stops = () => [...(nav.querySelectorAll?.('a[href], button') ?? [])]
+    .filter(node => !node.hidden && node.inert !== true);
 
   function setOpen(open, { restoreFocus = true } = {}) {
     const wasOpen = app.dataset.navOpen === 'true';
@@ -149,9 +154,22 @@ export function mountShell({ document, page, window = globalThis.window } = {}) 
   close.addEventListener('click', () => setOpen(false));
   backdrop.addEventListener('click', () => setOpen(false));
   document.addEventListener?.('keydown', event => {
-    if (event.key === 'Escape' && app.dataset.navOpen === 'true' && narrow()) {
+    if (app.dataset.navOpen !== 'true' || !narrow()) return;
+    if (event.key === 'Escape') {
       event.preventDefault?.();
       setOpen(false);
+    } else if (event.key === 'Tab') {
+      const inside = stops();
+      if (inside.length === 0) return;
+      const active = document.activeElement ?? null;
+      const index = inside.indexOf(active);
+      if (event.shiftKey && index <= 0) {
+        event.preventDefault?.();
+        inside.at(-1).focus?.();
+      } else if (!event.shiftKey && (index === -1 || index === inside.length - 1)) {
+        event.preventDefault?.();
+        inside[0].focus?.();
+      }
     }
   });
   // widening the window past the breakpoint shows the rail: the drawer state is dropped

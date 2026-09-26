@@ -68,6 +68,10 @@ test('the unqualified read names the digest, the requirement and the missing pre
   assert.deepEqual(sent.map(([path, method]) => [path, method]), [[PATH, 'GET']]);
   const text = facts.textContent;
   assert.ok(text.includes(TRANSPORT_QUALIFICATION_MESSAGES.manifest(DIGEST)));
+  // (UI phase 6) the digest reads short; the full value sits in the "기술 정보" fold beside it
+  assert.equal(TRANSPORT_QUALIFICATION_MESSAGES.manifest(DIGEST), `전송 매니페스트 SHA-256: ${DIGEST.slice(0, 12)}…`);
+  const fold = facts.findAll(el => el.tagName === 'DETAILS')[0];
+  assert.ok(fold.textContent.includes(`기술 정보전송 매니페스트 SHA-256${DIGEST}`));
   assert.ok(text.includes(TRANSPORT_QUALIFICATION_MESSAGES.requirement));
   assert.ok(text.includes(TRANSPORT_QUALIFICATION_MESSAGES.prerequisite.verified_installation_missing));
   assert.ok(text.includes(TRANSPORT_QUALIFICATION_MESSAGES.unsealed));

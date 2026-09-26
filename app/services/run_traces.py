@@ -249,6 +249,19 @@ class PersistentRunTraces:
                           "duration_ms": _recorded(envelope.public_metadata.get("duration_ms"))})
         return stops
 
+    def _run_mode(self, run_id):
+        """The run's mode as the ledger froze it in the run spec (`live`, `replay`, `snapshot`,
+        `isolated-comparison`; UI phase 6: the run screen's mode badge), or `not_recorded` when
+        the ledger holds no run row for it. Read, never inferred."""
+
+        from ..runtime.ledger import RUN_MODES
+
+        try:
+            mode = self._ledger.get_run(run_id)["spec"]["mode"]
+        except (KeyError, TypeError):
+            return NOT_RECORDED
+        return mode if mode in RUN_MODES else NOT_RECORDED
+
     def _policy_currency(self, manifest):
         record = self._record(manifest.inputs["budget_policy_ref"])
         try:
@@ -667,6 +680,7 @@ class PersistentRunTraces:
             "graph_digest": receipt["graph_digest"],
             "work": self._work(manifest),
             "budget_mode": mode,
+            "run_mode": self._run_mode(run_id),
             "started_at_utc": _utc_ms(manifest.started_at_ms),
             "ended_at_utc": _recorded(ended),
             "stops": stops,
