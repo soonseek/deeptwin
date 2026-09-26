@@ -124,6 +124,55 @@ class PersistedGenerationResult:
     candidate_record_refs: tuple[EntityRef, ...]
 
 
+def _stored_request(domain_store, request) -> EntityRef | None:
+    """The request's record when an earlier round already stored it: a later round
+    reuses exactly that record (a request is one record, whenever it was first
+    stored); a stored request with any other content is refused."""
+
+    with domain_store._connection() as db:
+        roots = domain_store._read_roots(db)
+        row = db.execute(
+            "SELECT sha256 FROM domain_records WHERE vault_id=? AND kind='decision_record' AND id=? AND version=?",
+            (roots.genesis.id, request.request_id, request.version),
+        ).fetchone()
+    if row is None:
+        return None
+    ref = EntityRef("decision_record", request.request_id, request.version, row["sha256"])
+    content = domain_store.get(ref).body.get("content")
+    if (type(content) is not dict or content.get("design_kind") != "design_generation_request"
+            or canonical_json(content.get("design")) != canonical_json(encode_design_refs(request.as_dict()))):
+        raise DesignPersistenceError("another record already holds this request identity")
+    return ref
+
+
+def persist_design_request(
+    domain_store: DomainStore,
+    request: DesignGenerationRequest,
+    *,
+    actor_ref: EntityRef,
+    access_policy_ref: EntityRef,
+    retention_policy_ref: EntityRef,
+    created_at_utc: str,
+) -> EntityRef:
+    """Persist one issued request before any generation round (idempotent)."""
+
+    if type(domain_store) is not DomainStore or type(request) is not DesignGenerationRequest:
+        raise DesignPersistenceError("exact store and request are required")
+    existing = _stored_request(domain_store, request)
+    if existing is not None:
+        return existing
+    try:
+        record = ImmutableRecord.create(
+            kind="decision_record", id=request.request_id, version=request.version,
+            created_at_utc=created_at_utc, actor_ref=actor_ref, parent_refs=(), purpose="operational",
+            access_policy_ref=access_policy_ref, retention_policy_ref=retention_policy_ref,
+            content={"design_kind": "design_generation_request", "design": encode_design_refs(request.as_dict())},
+        )
+        return domain_store.put(record)
+    except (TypeError, ValueError, StorageError) as exc:
+        raise DesignPersistenceError("the design request could not be stored") from exc
+
+
 def persist_generation_result(
     domain_store: DomainStore,
     request: DesignGenerationRequest,
@@ -178,7 +227,7 @@ def persist_generation_result(
                 "the design chain record could not be stored"
             ) from exc
 
-    request_ref = store(
+    request_ref = _stored_request(domain_store, request) or store(
         "decision_record",
         request.request_id,
         request.version,
@@ -501,5 +550,6 @@ __all__ = [
     "encode_design_refs",
     "persist_candidate_criticism",
     "persist_criticism_run",
+    "persist_design_request",
     "persist_generation_result",
 ]

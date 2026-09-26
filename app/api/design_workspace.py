@@ -11,6 +11,11 @@ contribution (T037).
 - `POST …/reviews` re-reviews one derived version, only through a configured critic.
 - `POST …/preparations` attempts approval and environment preparation of one exact
   reviewed design, or answers the exact refusal.
+- `POST …/generations` (T038) runs the design arc — bounded rounds of generation and
+  criticism through the host's registered model turns — or answers
+  `generation_unavailable` with the reason.
+- `POST …/cancellations` (T038) asks a running generation to stop before its next
+  model call.
 
 The shared `/api/v1` preflight admits each body exactly before auth; commands are
 CSRF-verified owner acts (the service re-checks the live session).
@@ -25,7 +30,9 @@ from starlette.concurrency import run_in_threadpool
 
 from ..domain.refs import uuid_string
 from ..services.design_workspace import (
+    CANCEL_SCHEMA,
     DERIVE_SCHEMA,
+    GENERATE_SCHEMA,
     PREPARE_SCHEMA,
     REVIEW_SCHEMA,
     DesignWorkspaceError,
@@ -37,17 +44,21 @@ from .wire import WireInputError, WireLimits, parse_json_object, parse_query
 
 ROOT = "/api/v1/design-requests"
 STATUS = {"invalid_input": 400, "unauthenticated": 401, "access_denied": 403, "not_found": 404,
-          "conflict": 409, "not_approvable": 409, "unavailable": 503, "review_unavailable": 503}
+          "conflict": 409, "not_approvable": 409, "unavailable": 503, "review_unavailable": 503,
+          "generation_unavailable": 503}
 _LIMITS = WireLimits(max_bytes=8_192, max_depth=3, max_items=16, max_members=8, max_string_bytes=4_096)
 _COMMANDS = {
     "derivations": (DERIVE_SCHEMA, ("schema_version", "command_id", "action", "parent_candidate_ids",
                                     "instruction")),
     "reviews": (REVIEW_SCHEMA, ("schema_version", "command_id", "derivation_id")),
     "preparations": (PREPARE_SCHEMA, ("schema_version", "command_id", "candidate_id")),
+    "generations": (GENERATE_SCHEMA, ("schema_version", "command_id", "max_rounds")),
+    "cancellations": (CANCEL_SCHEMA, ("schema_version", "command_id")),
 }
 MESSAGES = {
     "review_unavailable": "Design review is not available",
     "not_approvable": "This design cannot be approved or prepared",
+    "generation_unavailable": "Design generation is not available",
 }
 
 
@@ -132,4 +143,6 @@ def create_router(*, service):
     router.post(ROOT + "/{request_id}/derivations")(command("derivations", service.derive))
     router.post(ROOT + "/{request_id}/reviews")(command("reviews", service.review))
     router.post(ROOT + "/{request_id}/preparations")(command("preparations", service.prepare))
+    router.post(ROOT + "/{request_id}/generations")(command("generations", service.generate))
+    router.post(ROOT + "/{request_id}/cancellations")(command("cancellations", service.cancel))
     return router

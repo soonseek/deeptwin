@@ -24,6 +24,7 @@ from .design import (
     DesignCandidate,
     DesignGenerationRequest,
     accept_design_candidates,
+    is_accepted_candidate,
 )
 
 MAX_MODEL_RESPONSE_CHARS = 1_048_576
@@ -221,14 +222,44 @@ class DesignGenerationResult:
     call_record: GenerationCallRecord = field(repr=False)
 
 
-def render_candidate_prompt(request: DesignGenerationRequest) -> tuple[str, str]:
-    """Render the deterministic (system, user) prompt pair for one request."""
+MAX_REVISION_INSTRUCTION_BYTES = 4096
+_REVISION_SYSTEM = (
+    " Revision: the payload's `revision` names one accepted parent graph of this request and the"
+    " owner's instruction. Return exactly one candidate: the parent graph changed so that it follows"
+    " the instruction, still realizing every required effect and every rule above. Do not copy the"
+    " parent unchanged."
+)
+
+
+def _revision(request, revision):
+    """The (parent candidate, instruction) of an owner's edit, checked: the parent is an
+    accepted candidate of THIS request and the instruction is bounded owner text."""
+
+    if revision is None:
+        return None
+    if type(revision) is not tuple or len(revision) != 2:
+        raise DesignGenerationError("a revision is (accepted parent candidate, instruction)")
+    parent, instruction = revision
+    if not is_accepted_candidate(parent) or parent.generation_request_ref != request.request_ref:
+        raise DesignGenerationError("a revision parent must be an accepted candidate of this request")
+    if (type(instruction) is not str or not instruction.strip()
+            or len(instruction.encode("utf-8")) > MAX_REVISION_INSTRUCTION_BYTES):
+        raise DesignGenerationError("a revision instruction is bounded non-empty text")
+    return parent, instruction
+
+
+def render_candidate_prompt(request: DesignGenerationRequest, revision=None) -> tuple[str, str]:
+    """Render the deterministic (system, user) prompt pair for one request; with a
+    `revision` (an owner's edit of one accepted candidate) the payload also carries the
+    parent graph and the owner's instruction, and exactly one candidate is asked for."""
 
     if type(request) is not DesignGenerationRequest:
         raise DesignGenerationError("a framework-issued generation request is required")
+    revision = _revision(request, revision)
     profile = design_profile_for(DesignGenerationPurpose.DESIGN_CANDIDATE)
     system = (
         f"{profile.base_instructions}\n{profile.developer_instructions}\n{_OUTPUT_SCHEMA}"
+        + (_REVISION_SYSTEM if revision is not None else "")
     )
     payload = {
         "generation_request": request.as_dict(),
@@ -252,6 +283,11 @@ def render_candidate_prompt(request: DesignGenerationRequest) -> tuple[str, str]
             if item.approval_scope is not None
         ],
     }
+    if revision is not None:
+        parent, instruction = revision
+        payload["requested_candidate_count"] = 1
+        payload["revision"] = {"parent_candidate_id": parent.candidate_id,
+                               "parent_graph": parent.graph.as_dict(), "instruction": instruction}
     return system, canonical_json(payload).decode("utf-8")
 
 
@@ -290,8 +326,13 @@ def run_candidate_generation(
     model_turn,
     model_id: str,
     call_id: str | None = None,
+    revision=None,
 ) -> DesignGenerationResult:
-    """Run one bounded generation call and admit its graphs through the authority."""
+    """Run one bounded generation call and admit its graphs through the authority.
+
+    With `revision=(parent, instruction)` the call realizes an owner's edit: exactly one
+    graph is admitted, as a new candidate whose parent is that exact accepted candidate;
+    it carries no verdict and must be criticized from scratch."""
 
     if type(request) is not DesignGenerationRequest:
         raise DesignGenerationError("a framework-issued generation request is required")
@@ -299,12 +340,13 @@ def run_candidate_generation(
         raise DesignGenerationError("an exact bounded model identity is required")
     if not callable(model_turn):
         raise DesignGenerationError("a callable model boundary is required")
-    system, user = render_candidate_prompt(request)
+    revision = _revision(request, revision)
+    system, user = render_candidate_prompt(request, revision)
     try:
         raw = model_turn(system, user)
     except Exception as exc:
         raise DesignGenerationError("the model boundary failed") from exc
-    graphs = _parse_model_graphs(raw, request.requested_candidate_count)
+    graphs = _parse_model_graphs(raw, 1 if revision is not None else request.requested_candidate_count)
     record = GenerationCallRecord(
         call_id=call_id if call_id is not None else str(uuid4()),
         version=1,
@@ -325,9 +367,12 @@ def run_candidate_generation(
             "candidate_id": str(uuid4()),
             "version": 1,
             "generation_request_ref": request.request_ref.as_dict(),
-            "parent_candidate_refs": [],
+            "parent_candidate_refs": [] if revision is None else [revision[0].candidate_ref.as_dict()],
             "generation_call_refs": [record.call_ref.as_dict()],
-            "graph": _complete_graph(request, graph),
+            # a revision is a new design version: the framework mints its identity even
+            # when the model echoes the parent's
+            "graph": (_complete_graph(request, graph) if revision is None or type(graph) is not dict
+                      else {**_complete_graph(request, graph), "graph_id": str(uuid4()), "version": 1}),
         }
         for graph in graphs
     ]
@@ -337,6 +382,7 @@ def run_candidate_generation(
 
 __all__ = [
     "MAX_MODEL_RESPONSE_CHARS",
+    "MAX_REVISION_INSTRUCTION_BYTES",
     "DesignGenerationError",
     "DesignGenerationResult",
     "GenerationCallRecord",

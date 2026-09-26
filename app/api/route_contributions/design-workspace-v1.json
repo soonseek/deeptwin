@@ -17,6 +17,12 @@
      "auth_policy": "browser_session", "required_scope": "work.command"},
     {"route_id": "design_requests.prepare", "methods": ["POST"],
      "path": "/api/v1/design-requests/{request_id}/preparations",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "design_requests.generate", "methods": ["POST"],
+     "path": "/api/v1/design-requests/{request_id}/generations",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "design_requests.cancel", "methods": ["POST"],
+     "path": "/api/v1/design-requests/{request_id}/cancellations",
      "auth_policy": "browser_session", "required_scope": "work.command"}
   ]
 }

@@ -29,6 +29,24 @@ Commands, each an explicit owner act on a CSRF-verified POST:
   (`critic_qualification.V3_VERIFYING_DESIGN_IDS` is empty), so in production this
   command always answers that refusal.
 
+- **generate** (T038): runs the design arc for the request — one bounded generation
+  call per round through the host's registered generation turn, every accepted
+  candidate persisted and criticized through the registered critic turn, the pool
+  re-assembled after each round — until three structurally different passed
+  candidates are presented or the owner's round limit (1..3) is reached. A refused
+  generation or criticism call is recorded as a refusal of that round, never as a
+  candidate; a shortfall ends as the real count. Each run persists one
+  `design_generation_run` record (outcome, rounds, model calls, refusals, the
+  candidates it produced and those left unreviewed). Without both turns the command
+  answers `generation_unavailable` with the reason.
+- **cancel** (T038): the owner stops a running generation. It takes effect before the
+  next model call: a call already sent is not recalled, what completed stays recorded,
+  and a candidate whose criticism did not finish stays unreviewed (never presented).
+- An **edit** derivation is re-reviewed through the same generation turn: one revision
+  call (`run_candidate_generation(revision=...)`) realizes the owner's instruction on
+  the exact parent graph, and the new candidate — parented to the derivation — is
+  criticized from scratch. A merge still has no generation turn that realizes it.
+
 Recorded open: an issued `DesignGenerationRequest` cannot be rebuilt from the store
 (its decisions and compilation authority are not persisted), so a request is served
 only while the host that generated it has registered it with `open_request`. After a
@@ -42,7 +60,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import wraps
 from hashlib import sha256
-from threading import RLock
+from threading import Event, RLock
 from uuid import NAMESPACE_URL, uuid5
 
 from ..domain.refs import DomainContractError, EntityRef, canonical_json, uuid_string
@@ -58,11 +76,13 @@ from .design import (
     accept_design_candidates,
 )
 from .design_criticism import DesignCriticismError, fold_candidate_criticism
+from .design_live import DesignGenerationError, run_candidate_generation
 from .design_persistence import (
     DesignPersistenceError,
     decode_design_refs,
     encode_design_refs,
     persist_criticism_run,
+    persist_generation_result,
 )
 from .design_review import (
     DERIVATION_ACTIONS,
@@ -83,7 +103,9 @@ from .owner_decisions import OwnerDecisionError, PersistentOwnerDecisions
 from .run_approvals import _authenticate_owner, _owner_actor_ref
 
 __all__ = [
+    "CANCEL_SCHEMA",
     "DERIVE_SCHEMA",
+    "GENERATE_SCHEMA",
     "PREPARE_SCHEMA",
     "REVIEW_SCHEMA",
     "DesignWorkspaceError",
@@ -95,9 +117,13 @@ __all__ = [
 DERIVE_SCHEMA = "design-derivation-command-v1"
 REVIEW_SCHEMA = "design-review-command-v1"
 PREPARE_SCHEMA = "design-prepare-command-v1"
+GENERATE_SCHEMA = "design-generation-command-v1"
+CANCEL_SCHEMA = "design-generation-cancel-command-v1"
+_RUN_SCHEMA = "design-generation-run-v1"
+MAX_GENERATION_ROUNDS = 3
 _DERIVATION_SCHEMA = "design-derivation-v1"
 CODES = frozenset({"invalid_input", "unauthenticated", "access_denied", "not_found", "conflict",
-                   "unavailable", "review_unavailable", "not_approvable"})
+                   "unavailable", "review_unavailable", "not_approvable", "generation_unavailable"})
 _MAX_CHILDREN = 256
 _MAX_REQUESTS = 64
 
@@ -148,6 +174,32 @@ def _derivation_id(command_id: str) -> str:
     return str(uuid5(NAMESPACE_URL, f"deeptwin:design-derivation:{command_id}"))
 
 
+def _run_id(command_id: str) -> str:
+    return str(uuid5(NAMESPACE_URL, f"deeptwin:design-generation-run:{command_id}"))
+
+
+class _Cancelled(RuntimeError):
+    """The owner cancelled before this model call was sent."""
+
+
+class _Counted:
+    """A model turn that counts the calls it sends and refuses to send once the owner
+    has cancelled (a call already sent is never recalled)."""
+
+    def __init__(self, turn, cancel: Event):
+        self._turn = turn
+        self._cancel = cancel
+        self.calls = 0
+        self.stopped = False
+
+    def __call__(self, system, user):
+        if self._cancel.is_set():
+            self.stopped = True
+            raise _Cancelled("cancelled by the owner")
+        self.calls += 1
+        return self._turn(system, user)
+
+
 @dataclass(frozen=True, slots=True)
 class _Registration:
     request: DesignGenerationRequest
@@ -156,6 +208,8 @@ class _Registration:
     critic_qualification: object | None
     criticism_turn: object | None
     critic_model_id: str | None
+    generation_turn: object | None = None
+    generator_model_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,12 +231,16 @@ class PersistentDesignWorkspace:
         self._decisions = PersistentOwnerDecisions(domain_store, owner_authority)
         self._lock = RLock()
         self._requests: dict[str, _Registration] = {}
+        self._running: dict[str, Event] = {}
 
     # --- host registration (trusted code only; never page input) ------------------
 
     def open_request(self, request, *, registry=None, critic_qualification=None,
-                     criticism_turn=None, critic_model_id=None):
-        """Serve one issued request whose record is already persisted in this vault."""
+                     criticism_turn=None, critic_model_id=None, generation_turn=None,
+                     generator_model_id=None):
+        """Serve one issued request whose record is already persisted in this vault.
+        A `generation_turn` (with its model identity) lets the owner run the design arc
+        and re-review edits; it needs the critic turn too."""
 
         if type(request) is not DesignGenerationRequest:
             raise TypeError("A framework-issued design generation request is required")
@@ -191,12 +249,16 @@ class PersistentDesignWorkspace:
         if (criticism_turn is None) != (critic_model_id is None) or (
                 criticism_turn is not None and (not callable(criticism_turn) or registry is None)):
             raise TypeError("A critic turn needs its model identity and the lens registry")
+        if (generation_turn is None) != (generator_model_id is None) or (
+                generation_turn is not None and (not callable(generation_turn) or criticism_turn is None)):
+            raise TypeError("A generation turn needs its model identity and a critic turn")
         record = self._request_record(request)
         with self._lock:
             if request.request_id not in self._requests and len(self._requests) >= _MAX_REQUESTS:
                 raise ValueError("Too many open design requests")
             self._requests[request.request_id] = _Registration(
-                request, record, registry, critic_qualification, criticism_turn, critic_model_id)
+                request, record, registry, critic_qualification, criticism_turn, critic_model_id,
+                generation_turn, generator_model_id)
         return record
 
     def _request_record(self, request) -> EntityRef:
@@ -386,7 +448,11 @@ class PersistentDesignWorkspace:
                if item.candidate.candidate_id not in presented_ids],
             "derivations": [self._derivation_view(record, design, item) for record, design, item in derived],
             "review": {"available": review_reason is None, "reason": review_reason,
-                       "critic_model_id": registration.critic_model_id},
+                       "critic_model_id": registration.critic_model_id,
+                       # an edit is realized by the generation turn; a merge has none yet
+                       "realizes": (["select", "edit"] if registration.generation_turn is not None
+                                    else ["select"])},
+            "generation": self._generation_view(registration),
             "preparation": {
                 "environment_id": environment_id_for(request.request_id),
                 "critic_qualification": qualification.as_dict(),
@@ -395,6 +461,32 @@ class PersistentDesignWorkspace:
                 else f"the critic configuration is not qualified ({qualification.status}: {qualification.reason})",
             },
         }
+
+    def _generation_view(self, registration):
+        reason = ("generator_model_not_configured" if registration.generation_turn is None
+                  else None)
+        with self._domain._connection() as db:
+            roots = self._domain._read_roots(db)
+            runs = self._children(db, roots, registration.record_ref, "decision_record", "design_generation_run")
+        with self._lock:
+            running = self._running.get(registration.request.request_id)
+        return {
+            "available": reason is None, "reason": reason,
+            "generator_model_id": registration.generator_model_id,
+            "critic_model_id": registration.critic_model_id,
+            "max_rounds": MAX_GENERATION_ROUNDS,
+            "running": running is not None,
+            "cancel_requested": running is not None and running.is_set(),
+            "runs": sorted((self._run_view(record, design) for record, design in runs),
+                           key=lambda item: item["started_at_utc"]),
+        }
+
+    @staticmethod
+    def _run_view(record, design):
+        return {"run_id": record.ref.id, **{name: design[name] for name in (
+            "command_id", "max_rounds", "rounds", "outcome", "model_calls", "generator_model_id",
+            "critic_model_id", "refusals", "candidate_ids", "unreviewed_candidate_ids", "presented_count",
+            "started_at_utc", "ended_at_utc")}}
 
     def _derivation_view(self, record, design, reviewed):
         return {
@@ -505,6 +597,8 @@ class PersistentDesignWorkspace:
         if registration.criticism_turn is None:
             # no critic model turn is configured: nothing is reviewed, nothing is shown as a review
             raise DesignWorkspaceError("review_unavailable", "critic_model_not_configured")
+        if design["action"] == "edit" and registration.generation_turn is not None:
+            return self._review_edit(registration, record, design, reviewed)
         if design["action"] != "select":
             raise DesignWorkspaceError("review_unavailable", "derived_graph_not_generated")
         request_value = registration.request
@@ -547,6 +641,179 @@ class PersistentDesignWorkspace:
         _loaded, derived = self._load(registration)
         record, design, reviewed = next(entry for entry in derived if entry[0].ref.id == record.ref.id)
         return self._derivation_view(record, design, reviewed)
+
+    def _headers(self):
+        with self._domain._connection() as db:
+            roots = self._domain._read_roots(db)
+        return {"actor_ref": roots.actor, "access_policy_ref": roots.access_policy,
+                "retention_policy_ref": roots.retention_policy, "created_at_utc": _stamp()}
+
+    def _put(self, kind, identifier, parents, design_kind, design, headers):
+        return self._domain.put(ImmutableRecord.create(
+            kind=kind, id=identifier, version=1, parent_refs=tuple(parents), purpose="operational",
+            content={"design_kind": design_kind, "design": encode_design_refs(design)}, **headers))
+
+    def _criticize(self, registration, candidate, candidate_ref, turn, headers):
+        from .design_criticism_live import run_candidate_criticism
+
+        run = run_candidate_criticism(candidate, registration.request, registration.registry,
+                                      model_turn=turn, model_id=registration.critic_model_id)
+        persist_criticism_run(self._domain, candidate_ref, candidate, registration.request,
+                              registration.registry, run, **headers)
+
+    def _review_edit(self, registration, record, design, reviewed):
+        """Realize the owner's edit instruction on the exact parent through one revision
+        generation call, then criticize the new candidate from scratch."""
+
+        request_value = registration.request
+        headers = self._headers()
+        if reviewed is None:
+            with self._domain._connection() as db:
+                roots = self._domain._read_roots(db)
+                parent_record = self._domain._load(db, EntityRef.from_dict(record.body["parent_refs"][0]), roots)[0]
+                parent_stored = decode_design_refs(parent_record.body["content"]["design"])
+                parent = self._restore_candidate(db, roots, request_value, parent_record, parent_stored)
+            try:
+                result = run_candidate_generation(request_value, model_turn=registration.generation_turn,
+                                                  model_id=registration.generator_model_id,
+                                                  revision=(parent, design["instruction"]))
+            except (DesignGenerationError, DesignContractError) as error:
+                raise DesignWorkspaceError("review_unavailable",
+                                           f"revision_not_generated: {str(error)[:300]}") from None
+            candidate = result.candidates[0]
+            # the revision call hangs off the derivation (not the request), so the pool never
+            # counts it; the new candidate is the derivation's own
+            call_ref = self._put("decision_record", result.call_record.call_id, (record.ref,),
+                                 "design_generation_call", result.call_record.as_dict(), headers)
+            graph_ref = self._put("graph", candidate.graph.graph_id, (call_ref,), "functional_graph",
+                                  candidate.graph.as_dict(), headers)
+            candidate_ref = self._put("design_candidate", candidate.candidate_id, (graph_ref, record.ref),
+                                      "design_candidate", candidate.as_dict(), headers)
+        else:
+            candidate, candidate_ref = reviewed.candidate, reviewed.record_ref
+        try:
+            self._criticize(registration, candidate, candidate_ref, registration.criticism_turn, headers)
+        except (DesignCriticismError, DesignPersistenceError):
+            raise DesignWorkspaceError("review_unavailable", "criticism_did_not_complete") from None
+        _loaded, derived = self._load(registration)
+        record, design, reviewed = next(entry for entry in derived if entry[0].ref.id == record.ref.id)
+        return self._derivation_view(record, design, reviewed)
+
+    @_closed
+    def generate(self, request, request_id: str, payload) -> dict:
+        """Run the design arc for this request: bounded rounds of real generation and
+        criticism through the registered turns, until three are presented or the limit."""
+
+        _authenticate_owner(self._owner, request)
+        command = self._command(payload, GENERATE_SCHEMA, ("max_rounds",))
+        registration = self._registration(request_id)
+        max_rounds = command["max_rounds"]
+        if type(max_rounds) is not int or not 1 <= max_rounds <= MAX_GENERATION_ROUNDS:
+            raise DesignWorkspaceError("invalid_input")
+        if registration.generation_turn is None:
+            raise DesignWorkspaceError("generation_unavailable", "generator_model_not_configured")
+        run_id = _run_id(command["command_id"])
+        existing = self._stored_run(registration, run_id)
+        if existing is not None:
+            if existing["max_rounds"] != max_rounds:
+                raise DesignWorkspaceError("conflict")
+            return existing
+        cancel = Event()
+        with self._lock:
+            if request_id in self._running:
+                raise DesignWorkspaceError("conflict", "a generation is already running for this request")
+            self._running[request_id] = cancel
+        try:
+            return self._run_arc(registration, command, run_id, max_rounds, cancel)
+        finally:
+            with self._lock:
+                self._running.pop(request_id, None)
+
+    def _stored_run(self, registration, run_id):
+        with self._domain._connection() as db:
+            roots = self._domain._read_roots(db)
+            for record, design in self._children(db, roots, registration.record_ref, "decision_record",
+                                                 "design_generation_run"):
+                if record.ref.id == run_id:
+                    return self._run_view(record, design)
+        return None
+
+    def _run_arc(self, registration, command, run_id, max_rounds, cancel):
+        request_value = registration.request
+        started = _stamp()
+        generator = _Counted(registration.generation_turn, cancel)
+        critic = _Counted(registration.criticism_turn, cancel)
+        rounds, refusals, produced, unreviewed = 0, [], [], []
+        cancelled = False
+        presented = self._view(registration)["pool"]["presented_count"]
+        while rounds < max_rounds and presented < SELECTION_POOL_SIZE and not cancelled:
+            if cancel.is_set():
+                cancelled = True
+                break
+            rounds += 1
+            try:
+                result = run_candidate_generation(request_value, model_turn=generator,
+                                                  model_id=registration.generator_model_id)
+            except (DesignGenerationError, DesignContractError) as error:
+                if generator.stopped:
+                    cancelled = True
+                    rounds -= 1  # nothing was sent in this round
+                    break
+                refusals.append({"round": rounds, "stage": "generation", "reason": str(error)[:300]})
+                continue
+            headers = self._headers()
+            persisted = persist_generation_result(self._domain, request_value, result, **headers)
+            for candidate, record_ref in zip(result.candidates, persisted.candidate_record_refs, strict=True):
+                produced.append(candidate.candidate_id)
+                if cancelled or cancel.is_set():
+                    cancelled = True
+                    unreviewed.append(candidate.candidate_id)
+                    continue
+                try:
+                    self._criticize(registration, candidate, record_ref, critic, headers)
+                except (DesignCriticismError, DesignPersistenceError) as error:
+                    unreviewed.append(candidate.candidate_id)
+                    if critic.stopped:
+                        cancelled = True
+                        continue
+                    refusals.append({"round": rounds, "stage": "criticism", "candidate_id": candidate.candidate_id,
+                                     "reason": str(error)[:300]})
+            presented = self._view(registration)["pool"]["presented_count"]
+        outcome = "cancelled" if cancelled else "filled" if presented >= SELECTION_POOL_SIZE else "shortfall"
+        design = {
+            "schema_version": _RUN_SCHEMA, "command_id": command["command_id"], "max_rounds": max_rounds,
+            "rounds": rounds, "outcome": outcome, "model_calls": generator.calls + critic.calls,
+            "generator_model_id": registration.generator_model_id,
+            "critic_model_id": registration.critic_model_id, "refusals": refusals,
+            "candidate_ids": produced, "unreviewed_candidate_ids": unreviewed, "presented_count": presented,
+            "started_at_utc": started, "ended_at_utc": _stamp(),
+        }
+        self._put("decision_record", run_id, (registration.record_ref,), "design_generation_run", design,
+                  self._headers())
+        return self._stored_run(registration, run_id)
+
+    @_closed
+    def cancel(self, request, request_id: str, payload) -> dict:
+        """The owner stops a running generation before its next model call."""
+
+        _authenticate_owner(self._owner, request)
+        self._command(payload, CANCEL_SCHEMA, ())
+        self._registration(request_id)
+        with self._lock:
+            running = self._running.get(request_id)
+            if running is not None:
+                running.set()
+        return {"schema_version": "design-generation-cancel-v1",
+                "state": "cancel_requested" if running is not None else "not_running",
+                "running": running is not None}
+
+    def cancel_requested(self, request_id: str) -> bool:
+        """Whether the owner has asked the running generation of this request to stop
+        (host code and test-actor turns read it; never page input)."""
+
+        with self._lock:
+            running = self._running.get(request_id)
+        return running is not None and running.is_set()
 
     @_closed
     def prepare(self, request, request_id: str, payload) -> dict:
