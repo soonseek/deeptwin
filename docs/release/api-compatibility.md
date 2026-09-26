@@ -211,6 +211,20 @@ field was removed or renamed, and a reader that ignores unknown keys is unaffect
   one alternative per command (freezing the same revision again seals another one); the run screen
   uses the list to reopen an existing difference after a reload instead of freezing again.
 
+## 3e. The run's recorded mode on the run trace (2026-09-26, UI phase 6)
+
+No route was added (146 routes in 29 contributions stay). One response gains one field; nothing was
+removed or renamed, and a reader that ignores unknown keys is unaffected.
+
+- `GET /api/v1/runs/{run_id}/trace` (`run-trace-v1`) gains `run_mode`: the `mode` the runtime ledger
+  froze in the run's spec (`live`, `replay`, `snapshot` or `isolated-comparison`), or `not_recorded`
+  when the ledger holds no run row for it. It is read, never inferred. The run screen shows the mode
+  badge from it: `live` is 운영 and `isolated-comparison` is 격리 실험; any other value shows no badge.
+  Every run the runs service starts is `live`; paired comparison rounds run in their own ledger and
+  are not listed by the runs routes.
+- The settings page's 서비스 클라이언트 panel uses the existing `service-clients-v1` routes (§3a)
+  unchanged.
+
 ## 4. Compatibility policy
 
 From `contracts/api.md`:
