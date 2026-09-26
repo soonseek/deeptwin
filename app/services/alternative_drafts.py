@@ -497,10 +497,10 @@ class PersistentAlternativeDrafts:
                                      "요청할 때만 Claude 연결로 만든다. 아직 만들지 않았고, 어느 설명도 "
                                      "확인되지 않았다."},
             "inquiry": {"state": "not_opened",
-                        "reason": "확인된 판단 가설과 서로 갈리는 설명이 있을 때만 질문·반대 예측을 먼저 "
-                                  "고정한다. 지금은 그 전제가 없어 질문하지 않는다."},
+                        "reason": "탐구는 경쟁 설명이 있은 뒤 소유자가 직접 열 때만 열린다. 열면 질문과 "
+                                  "구별 예측을 새 근거보다 먼저 고정하고, 질문은 모두 답하지 않아도 된다."},
             "change_candidates": {"state": "none",
-                                  "reason": "실제 증거로 뒷받침된 설명이 없어 변경 후보를 만들지 않았다."},
+                                  "reason": "소유자가 근거를 들어 확인한 설명이 없어 변경 후보를 만들지 않았다."},
         }
 
     def _alternative_record(self, db, roots, alternative_id):
