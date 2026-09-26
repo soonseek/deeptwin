@@ -234,7 +234,48 @@ test('the tools and models tab shows the model call with its tokens, the unknown
   assert.match(calls.textContent, /모델 호출/);
   assert.match(calls.textContent, /입력 812 · 출력 164/);
   assert.match(calls.textContent, /미확인/);
+  // the not-recorded cost says why, in the owner's words
+  assert.match(calls.textContent, /상한 단가도 없어 이 모델 호출의 비용은 기록하지 않았습니다/);
   assert.match(calls.textContent, /숨은 추론은 저장하지 않으므로/);
+});
+
+test('a model call priced at the configured ceiling is labelled an estimate with its rates, never a charge', async () => {
+  const { trace } = twoAttemptTrace();
+  const call = trace.nodes[1].visits[0].model_calls[0];
+  call.cost = { state: 'estimate', basis: 'reserved_ceiling', method: 'recorded_tokens_at_ceiling_rates',
+    microunits: 6_528, currency: 'USD', rates: { currency: 'USD', unit: 'microunits_per_million_tokens',
+      input_microunits_per_mtok: 4_000_000, output_microunits_per_mtok: 20_000_000,
+      cache_creation_microunits_per_mtok: null, cache_read_microunits_per_mtok: null } };
+  const { detail, roots } = mounted({ trace });
+  await detail.show(RUN);
+  detail.select({ nodeId: 'writer' }, { tab: 'calls' });
+  const text = panel(roots, 'calls').textContent;
+  assert.match(text, /약 \$0\.0065 \(기록된 토큰 × 설정된 상한 단가 추정\)/);
+  assert.match(text, /입력 \$4 · 출력 \$20 \(100만 토큰당\)/);
+  assert.doesNotMatch(text, /비용은 기록하지 않았습니다/);
+  assert.doesNotMatch(text, /정산 기록/);
+  // a subscription run's call states its basis instead
+  call.cost = { state: 'unknown', basis: 'subscription_mode' };
+  const subscription = mounted({ trace });
+  await subscription.detail.show(RUN);
+  subscription.detail.select({ nodeId: 'writer' }, { tab: 'calls' });
+  assert.match(panel(subscription.roots, 'calls').textContent, /미확인 \(구독 방식: 호출별 금액 없음\)/);
+});
+
+test('a model attempt shows the tokens its provider reported, or says they are not recorded', async () => {
+  const { trace } = twoAttemptTrace();
+  const [first, second] = trace.nodes[2].visits[0].attempts;
+  for (const attempt of [first, second]) attempt.budget_reservation.reserved.model_calls = 1;
+  second.tokens = { input: 812, output: 164, cache_creation_input: 0, cache_read_input: 0 };
+  second.observed_model = 'synthetic-model-1';
+  const { detail, roots } = mounted({ trace });
+  await detail.show(RUN);
+  detail.select({ nodeId: 'publish', attemptNo: 2 }, { tab: 'calls' });
+  const latest = panel(roots, 'calls').textContent;
+  assert.match(latest, /시도 2의 예약과 비용.*토큰입력 812 · 출력 164/s);
+  assert.match(latest, /synthetic-model-1/);
+  detail.select({ nodeId: 'publish', attemptNo: 1 }, { tab: 'calls' });
+  assert.match(panel(roots, 'calls').textContent, /토큰기록 없음 — 이 모델 시도는 전송 경로가 제공자의 토큰 수를 알리지 않아/);
 });
 
 test('the timeline shares the selection: its entry selects the attempt and is marked pressed', async () => {

@@ -128,6 +128,10 @@ export function timelineRows(trace) {
       ({ label: detail, tone } = outcome);
       if (attempt?.error) detail = errorText(attempt.error);
       if (attempt?.tool_calls?.length) detail += ` · 도구 호출 ${attempt.tool_calls.length}회`;
+      // a model attempt's tokens, only when its provider reported them
+      if (Number.isSafeInteger(attempt?.tokens?.input) || Number.isSafeInteger(attempt?.tokens?.output)) {
+        detail += ` · 입력 ${countText(attempt.tokens.input)}/출력 ${countText(attempt.tokens.output)} 토큰`;
+      }
     } else if (entry.kind === 'model_call') {
       const call = visit?.model_calls[0] ?? null;
       [detail, tone] = stateText(MODEL_CALL_STATE_TEXT, entry.status);

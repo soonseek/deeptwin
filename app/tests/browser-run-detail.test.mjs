@@ -6,8 +6,10 @@
 // step's attempt 1 shows its own inputs and error and none of attempt 2's outputs; the tools
 // and models tab shows the tool call and the model call with its tokens; another node shows
 // its own artifacts; "내 버전" opens in place from the final result and autosaves; and a run
-// waiting at the gate shows the approval banner and the node marker. Synthetic evidence of
-// the mechanism, never user evidence; no provider is called and no key is read.
+// waiting at the gate shows the approval banner and the node marker, and — under its
+// API-priced budget — its model call's cost as an estimate from the recorded tokens at the
+// fixture's configured ceiling rates. Synthetic evidence of the mechanism, never user
+// evidence; no provider is called and no key is read.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -108,12 +110,13 @@ test('the run detail: final result first, attempts kept apart, calls with tokens
     await page.getByRole('tab', { name: '도구·모델' }).click();
     assert.match(await calls.locator('.call-item').textContent(), /publish · 시도 2/);
 
-    // the writer: the model call with its recorded tokens and an honest unknown cost
+    // the writer: the model call with its recorded tokens and its cost basis — this run's budget
+    // is a subscription, so no per-call money is claimed
     await node(page, 'writer').click();
     await calls.locator('.call-item', { hasText: '모델 호출' }).waitFor();
     const model = calls.locator('.call-item', { hasText: '모델 호출' });
     assert.match(await model.textContent(), /입력 812 · 출력 164/);
-    assert.match(await model.textContent(), /미확인/);
+    assert.match(await model.textContent(), /미확인 \(구독 방식: 호출별 금액 없음\)/);
     assert.match(await model.textContent(), /숨은 추론은 저장하지 않으므로 볼 수 없습니다/);
 
     // a different node shows THAT node's artifacts
@@ -150,6 +153,17 @@ test('the run detail: final result first, attempts kept apart, calls with tokens
       assert.match(await page.locator('#run-banner').textContent(), /tool-gate/);
       assert.match(await node(page, 'tool-gate').textContent(), /승인 대기/);
       await page.locator('#run-final', { hasText: '아직 최종 결과가 없습니다.' }).waitFor();
+      // this run's budget is API-priced: its model call's cost is an estimate from the recorded
+      // tokens at the fixture's configured ceiling rates, labelled as such, never a charge
+      assert.match(await page.locator('#run-summary .run-stats').textContent(), /약 \$0\.0065 \(상한 기준 추정\)/);
+      await node(page, 'writer').click();
+      await page.getByRole('tab', { name: '도구·모델' }).click();
+      const estimated = panel(page, 'calls').locator('.call-item', { hasText: '모델 호출' });
+      await estimated.waitFor();
+      assert.match(await estimated.textContent(), /입력 812 · 출력 164/);
+      assert.match(await estimated.textContent(), /약 \$0\.0065 \(기록된 토큰 × 설정된 상한 단가 추정\)/);
+      assert.match(await estimated.textContent(), /입력 \$4 · 출력 \$20 \(100만 토큰당\)/);
+      assert.doesNotMatch(await estimated.textContent(), /정산 기록/);
       await page.getByRole('button', { name: '승인 화면 열기' }).click();
       await page.locator('#run-approvals button').first().waitFor();
       assert.deepEqual(errors, []);

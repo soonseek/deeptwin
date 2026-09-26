@@ -18,10 +18,14 @@ catalog and chooses its model, saves a work, and runs the graph
       → publish (정해진 처리 + 도구: attempt 1 fails, the owner's recovery makes attempt 2)
       → report (정해진 처리: the final report artifact)
 
-approving the gate and each tool attempt and recovering once, so run A completes. A second
-run B stops at the gate (awaiting the owner). It announces TRACE_SEED= (both run ids) and
-TRACE_URL=. Every value is synthetic test-actor data; nothing here stands in for a person,
-and DEEPTWIN_LIVE_ANTHROPIC_API_KEY is never read.
+approving the gate and each tool attempt and recovering once, so run A completes under a
+subscription budget (its model call's cost basis is `subscription_mode`, no money). A second
+run B, under an API-priced budget in the currency of the fixture's configured ceiling rates,
+stops at the gate (awaiting the owner); its model call's cost is an estimate from the
+recorded tokens at those rates. It announces TRACE_SEED= (both run ids) and TRACE_URL=.
+Every value is synthetic test-actor data — the scripted usage and the ceiling rates are this
+fixture's own configuration, never a real price — nothing here stands in for a person, and
+DEEPTWIN_LIVE_ANTHROPIC_API_KEY is never read.
 """
 import argparse
 import base64
@@ -59,7 +63,7 @@ from app.runtime.graph import CompilationAuthority, compile_graph  # noqa: E402
 from app.runtime.ledger import OwnerIdentity  # noqa: E402
 from app.server import create_app  # noqa: E402
 from app.services.claude_connection import CHOICE_SCHEMA  # noqa: E402
-from app.services.claude_run_executor import ClaudeRunExecutor, LiveLimits  # noqa: E402
+from app.services.claude_run_executor import CeilingRates, ClaudeRunExecutor, LiveLimits  # noqa: E402
 from app.services.design_persistence import encode_design_refs  # noqa: E402
 from app.tests.fixtures import tool_gate_server as gate_fixture  # noqa: E402
 from app.tests.support.tool_gate import (  # noqa: E402
@@ -100,6 +104,10 @@ DRAFT = ("# 화요일 공간 안내\n\n"
          "문의는 운영팀에 해 주세요.\n")
 # the scripted provider's reported usage (what the executor records, never a real count)
 INPUT_TOKENS, OUTPUT_TOKENS = 812, 164
+# this fixture's own host configuration of ceiling rates (synthetic, never a real price):
+# micro-units per million tokens; run B's call is estimated at 812 x 4 + 164 x 20 micro-units
+CEILING_RATES = CeilingRates(currency="USD", input_microunits_per_mtok=4_000_000,
+                             output_microunits_per_mtok=20_000_000)
 
 
 def scripted_stream(text):
@@ -290,15 +298,19 @@ def seed(app, profile, capability, executor, tool_state):
     domain = app.state.domain_store
     work_ref = EntityRef.from_dict(work["ref"])
     roots = domain.roots()
-    policy = BudgetPolicy.create(
-        profile="execution", provider_mode="subscription", max_model_calls=4, max_tool_calls=6,
-        max_node_visits=16, max_loop_rounds=2, max_output_bytes=MAX_REPLY_BYTES + MAX_INPUT_BYTES,
-        max_concurrency=2, max_wall_seconds=3_600, max_candidates=1)
+    limits = {"max_model_calls": 4, "max_tool_calls": 6, "max_node_visits": 16, "max_loop_rounds": 2,
+              "max_output_bytes": MAX_REPLY_BYTES + MAX_INPUT_BYTES, "max_concurrency": 2,
+              "max_wall_seconds": 3_600, "max_candidates": 1}
+    policy = BudgetPolicy.create(profile="execution", provider_mode="subscription", **limits)
+    # run B's API-priced budget, in the currency of the fixture's configured ceiling rates
+    api_policy = BudgetPolicy.create(profile="execution", provider_mode="api", currency=CEILING_RATES.currency,
+                                     max_api_microunits=1_000_000, **limits)
     executor.refs.update({
         "envelope": immutable(domain, roots, "execution_envelope").ref,
         "profile": immutable(domain, roots, "runtime_profile").ref,
         "observation": immutable(domain, roots, "observation_contract").ref,
         "budget": immutable(domain, roots, "budget_policy", content=policy.domain_content()).ref,
+        "api_budget": immutable(domain, roots, "budget_policy", content=api_policy.domain_content()).ref,
     })
     executor.book = app.state.budget_book
     graph = immutable(domain, roots, "graph", content={
@@ -308,11 +320,12 @@ def seed(app, profile, capability, executor, tool_state):
     inputs = {"graph_ref": graph.as_dict(), "work_revision_ref": work_ref.as_dict(),
               "environment_ref": environment.as_dict(), "budget_policy_ref": executor.refs["budget"].as_dict()}
 
-    def start():
+    def start(budget_ref=executor.refs["budget"]):
+        named = {**inputs, "budget_policy_ref": budget_ref.as_dict()}
         status, consent = post("api/v1/run-consents", {"schema_version": "run-consent-command-v1",
-                                                       "command_id": str(uuid4()), **inputs})
+                                                       "command_id": str(uuid4()), **named})
         assert status == 201, consent
-        status, receipt = post("api/v1/runs", {"command_id": str(uuid4()), **inputs, "consent_ref": consent["ref"]})
+        status, receipt = post("api/v1/runs", {"command_id": str(uuid4()), **named, "consent_ref": consent["ref"]})
         assert status == 201, receipt
         assert receipt["phase"] == "awaiting_human" and receipt["outcome"]["awaiting_human"], receipt
         return receipt["run_id"]
@@ -346,7 +359,7 @@ def seed(app, profile, capability, executor, tool_state):
     approve_attempt(run_a, 2)
     status, receipt = command(run_a, "recover")
     assert status == 200 and receipt["phase"] == "completed", receipt
-    run_b = start()  # a second run waiting on the owner at the gate
+    run_b = start(executor.refs["api_budget"])  # a second, API-priced run waiting on the owner at the gate
     return {"run_id": run_a, "waiting_run_id": run_b, "work_id": work_ref.id, "label": LABEL}
 
 
@@ -370,7 +383,7 @@ def main():
     initialize_session_root(owned / "root", profile=profile, recovery_epoch=1,
                             expected_uid=os.getuid(), expected_gid=os.getgid())
     claude = ClaudeRunExecutor(limits=LiveLimits(max_model_calls=4, max_output_tokens=512),
-                               transport=httpx2.MockTransport(Spy(responder)))
+                               transport=httpx2.MockTransport(Spy(responder)), ceiling_rates=CEILING_RATES)
     executor = TraceExecutor(claude, {})
     # installed as the product's exact Claude executor (so the connection keeps the scripted
     # transport); its compilation and scheduling are this fixture's host wiring

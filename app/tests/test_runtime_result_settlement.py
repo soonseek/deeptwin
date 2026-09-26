@@ -30,6 +30,7 @@ from app.runtime.ledger import (
     ExecutionSpec,
     LedgerError,
     OwnerIdentity,
+    ProviderUsageReport,
     ResultObservation,
 )
 from app.storage import Store
@@ -369,3 +370,118 @@ def test_deadline_quarantine_settles_the_dispatched_reservation_unknown(tmp_path
     assert audit_count(subject, request.request_id) == audits
     with pytest.raises(ReservationConflict):
         subject.book.settle(request.request_id, usage_finality="unknown")
+
+
+# --- provider-reported usage (2026-09-26: the run trace's attempt tokens) -----------------
+
+def report(**changes):
+    """What a scripted provider reported for one call: synthetic test-actor values."""
+
+    values = {"input_tokens": 812, "output_tokens": 164, "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0, "observed_model": "synthetic-model-1",
+              "provider_message_id": "msg_synthetic_1", "provider_request_id": None}
+    return ProviderUsageReport(**{**values, **changes})
+
+
+def transitions(subject, attempt_id):
+    return [entry["transition"] for entry in subject.ledger.attempt_journal(attempt_id)]
+
+
+def test_provider_usage_is_journaled_once_with_the_accepted_result(tmp_path):
+    subject, attempt, request, _ = dispatched(tmp_path)
+    accepted = observation(subject, attempt.attempt_id)
+    command_id = identifier()
+    outcome = subject.ledger.accept_result_and_settle(
+        command_id, accepted, budget_book=subject.book, usage=usage(), provider_usage=report())
+    assert outcome["classification"] == "accepted"
+    # the settlement is the budget book's own: provider token counts never change it
+    assert outcome["settlement"] == {
+        "request_id": request.request_id, "state": "finalized", "usage_finality": "known",
+    }
+    assert budget_row(subject, request.request_id)["actual_model_calls"] == 1
+    assert subject.ledger.attempt_provider_usage(attempt.attempt_id) == report()
+    journal = transitions(subject, attempt.attempt_id)
+    assert journal.count("provider_usage") == 1
+    assert journal.index("provider_usage") == journal.index("result_accepted") + 1
+    # an exact replay returns the stored outcome and journals nothing more
+    audits = audit_count(subject, request.request_id)
+    assert subject.ledger.accept_result_and_settle(
+        command_id, accepted, budget_book=subject.book, usage=usage(), provider_usage=report()) == outcome
+    assert transitions(subject, attempt.attempt_id).count("provider_usage") == 1
+    assert audit_count(subject, request.request_id) == audits
+    # the same command naming other counts is another command, refused
+    with pytest.raises(LedgerError):
+        subject.ledger.accept_result_and_settle(command_id, accepted, budget_book=subject.book,
+                                                usage=usage(), provider_usage=report(output_tokens=1))
+    # a duplicate or late observation never adds or replaces the attempt's report
+    duplicate = subject.ledger.accept_result_and_settle(
+        identifier(), replace(accepted, observation_id=identifier()), budget_book=subject.book,
+        usage=usage(), provider_usage=report(input_tokens=1))
+    assert duplicate["classification"] == "duplicate"
+    late = subject.ledger.accept_result_and_settle(
+        identifier(), observation(subject, attempt.attempt_id, outcome="failed", result_ref=None,
+                                  usage_finality="unknown", remote_terminal_observed="failed",
+                                  reason_code="provider_terminal"),
+        budget_book=subject.book, usage=None, provider_usage=report(input_tokens=2))
+    assert late["classification"] == "late"
+    assert subject.ledger.attempt_provider_usage(attempt.attempt_id) == report()
+    assert transitions(subject, attempt.attempt_id).count("provider_usage") == 1
+
+
+def test_an_attempt_whose_transport_reported_no_usage_keeps_none(tmp_path):
+    subject, attempt, _request, _ = dispatched(tmp_path)
+    subject.ledger.accept_result_and_settle(
+        identifier(), observation(subject, attempt.attempt_id), budget_book=subject.book, usage=usage())
+    assert subject.ledger.attempt_provider_usage(attempt.attempt_id) is None
+    assert "provider_usage" not in transitions(subject, attempt.attempt_id)
+    # the command is exactly what it was before this field existed, so an old command replays
+    [row] = command_rows(subject, "accept_result_and_settle")
+    assert b"provider_usage" not in bytes(row["payload"])
+    with pytest.raises(KeyError):
+        subject.ledger.attempt_provider_usage(identifier())
+
+
+def test_a_provider_usage_report_is_checked_before_any_write(tmp_path):
+    subject, attempt, request, _ = dispatched(tmp_path)
+    with pytest.raises(TypeError):
+        subject.ledger.accept_result_and_settle(
+            identifier(), observation(subject, attempt.attempt_id), budget_book=subject.book,
+            usage=usage(), provider_usage=report().as_dict())
+    assert subject.ledger.get_attempt(attempt.attempt_id)["terminal_outcome"] is None
+    assert budget_row(subject, request.request_id)["state"] == "dispatched"
+    assert command_rows(subject, "accept_result_and_settle") == []
+    # never an empty, negative, non-integer or free-text report
+    for changes in ({"input_tokens": None, "output_tokens": None, "cache_creation_input_tokens": None,
+                     "cache_read_input_tokens": None},
+                    {"output_tokens": -1}, {"input_tokens": True}, {"input_tokens": 1.5},
+                    {"observed_model": "two words"}, {"provider_message_id": "m" * 300},
+                    {"provider_request_id": ""}):
+        with pytest.raises(ValueError):
+            report(**changes)
+    with pytest.raises(ledger_module.CorruptLedger):
+        ProviderUsageReport.from_dict({**report().as_dict(), "cost": 1})
+    # a count the provider did not report stays None
+    assert report(cache_read_input_tokens=None).as_dict()["cache_read_input_tokens"] is None
+
+
+def test_an_existing_ledger_upgrades_through_the_offline_migration_with_its_usage(tmp_path, monkeypatch):
+    """No runtime schema changes: the journal's closed transition vocabulary grew by one
+    entry. A historical (v1) ledger holding a provider usage entry migrates to v2 through
+    the offline operation with the entry preserved, and the v2 history verification
+    accepts it on repeat."""
+
+    from app.runtime.ledger_schema import LEDGER_V2_SHA256
+    from app.tests.test_runtime_ledger_migration import lock_for, migrate, v1_producer
+
+    v1_producer(monkeypatch)
+    subject, attempt, _request, _ = dispatched(tmp_path)
+    subject.ledger.accept_result_and_settle(identifier(), observation(subject, attempt.attempt_id),
+                                            budget_book=subject.book, usage=usage(), provider_usage=report())
+    monkeypatch.undo()
+    lock_for(subject.legacy)
+    assert migrate(subject.legacy, subject.domain.vault_id)["state"] == "migrated"
+    with sqlite3.connect(subject.legacy.path) as db:
+        assert db.execute("SELECT version,sha256 FROM runtime_migrations WHERE component='ledger' "
+                          "ORDER BY version").fetchall()[-1] == (2, LEDGER_V2_SHA256)
+    assert subject.ledger.attempt_provider_usage(attempt.attempt_id) == report()
+    assert migrate(subject.legacy, subject.domain.vault_id)["state"] == "already_current"

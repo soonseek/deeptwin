@@ -34,8 +34,27 @@ from ..workers.provider_semantic_codec import (CatalogTraversal, advance_catalog
                                                 ProviderSemanticError)
 from ..workers import broker
 from .budgets import BudgetBook
-from .ledger import ConsumedDispatchWindow, DispatchPermit, RuntimeLedger
+from .ledger import ConsumedDispatchWindow, DispatchPermit, ProviderUsageReport, RuntimeLedger
 from .node_attempts import AttemptDispatchRequest, AttemptTransportResult, attempt_identity
+
+
+def _provider_usage(usage, observed_model):
+    """The provider's own token counts from the normalized usage (a count it did not
+    report stays None), with the model it named; None when it reported no count.
+    Evidence only: it never raises, so it can never change the attempt's outcome."""
+
+    counts = {}
+    for name in ("input_tokens", "output_tokens", "cache_creation_input_tokens",
+                 "cache_read_input_tokens"):
+        field = usage.get(name) if type(usage) is dict else None
+        counts[name] = (field["value"] if type(field) is dict and field.get("state") == "value"
+                        and type(field.get("value")) is int else None)
+    for model in (observed_model, None):
+        try:
+            return ProviderUsageReport(**counts, observed_model=model)
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 class _NotSentPage:
@@ -540,7 +559,8 @@ class ProviderAttemptTransport:
         if self._controller is not None:
             self._controller.finish(context.operation_ref, terminal)
         return AttemptTransportResult("succeeded", terminal, "provisional", "succeeded",
-                                      "provider_terminal", None)
+                                      "provider_terminal", None,
+                                      _provider_usage(core_normalized.usage, normalized.observed_model))
 
     def execute_catalog(self):
         """Run one admitted catalog through both authenticated ports and seal its graph."""

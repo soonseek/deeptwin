@@ -15,9 +15,12 @@ to fill a gap, and nothing is executed, sent or re-read from a provider:
 - the budget book's reservation of each attempt (reserved counters, the settled actuals
   once finalized): a reserved currency amount is the conservative ceiling set before the
   send, shown as an estimate, never as a charge;
+- the provider usage the ledger journaled with an attempt's accepted result (the token
+  counts the provider reported to that attempt's transport, and the ids it observed);
 - the Claude executor's call records for a handler-run model node (the intent sealed
-  before the send, the output or outcome sealed after, with the provider's reported model
-  and token usage); that executor records no cost, so a cost is `unknown`;
+  before the send, the output or outcome sealed after, with the provider's reported model,
+  ids and token usage, and the call's cost with its basis: an estimate from the recorded
+  tokens at the deployment's configured ceiling rates, subscription mode, or not recorded);
 - the owner's approval records (gate decisions and execution-bound decisions of each
   attempt) and the run's public stop events.
 
@@ -29,6 +32,7 @@ record read here. Owner session only.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from functools import wraps
 from uuid import NAMESPACE_URL, uuid5
@@ -51,17 +55,29 @@ _OUTPUT_SCHEMA = "claude-model-output-v1"
 _OUTCOME_SCHEMA = "claude-call-outcome-v1"
 _TITLE_CHARS = 120
 _MAX_EVENT_ROWS = 10_000
+# an estimate's method: the reserved amount set before the send, or the recorded tokens at
+# the deployment's configured ceiling rates (claude_run_executor.ESTIMATE_METHOD)
+_RESERVATION_METHOD = "reservation"
+_CEILING_RATES_METHOD = "recorded_tokens_at_ceiling_rates"
+_RATE_FIELDS = ("input_microunits_per_mtok", "output_microunits_per_mtok",
+                "cache_creation_microunits_per_mtok", "cache_read_microunits_per_mtok")
+_TOKEN_NAMES = (("input", "input_tokens"), ("output", "output_tokens"),
+                ("cache_creation_input", "cache_creation_input_tokens"),
+                ("cache_read_input", "cache_read_input_tokens"))
 # why a category is absent, in one closed vocabulary (the UI words them)
 GAP_REASONS = {
-    "attempt_tokens": "a model attempt through the attempt ledger records its budget reservation "
-                      "and settlement, not the provider's token counts",
+    "attempt_tokens": "a sent model attempt whose transport reported no provider token counts "
+                      "with its accepted result: its reservation and settlement are recorded, "
+                      "its tokens are not",
     "handoff_receipt": "the run records the parent visits and their exact results at dispatch; "
                        "a receiver acknowledgment of a hand-off is not recorded by this runtime",
     "handler_attempts": "a visit run in-process by the executor's handler has no ledger attempt; "
                         "its result and any call records are listed on the visit",
     "handler_error": "a handler failure is kept private by the scheduler (the node failed, "
                      "nothing else is recorded)",
-    "model_cost": "the Claude executor records the provider's token usage but no cost",
+    "model_cost": "a model call with no settlement and no ceiling rate configured in the run's "
+                  "API currency (or recorded before its cost basis was): its tokens are recorded, "
+                  "its cost is not",
     "reasoning": "hidden model reasoning is never stored",
 }
 
@@ -105,6 +121,43 @@ def _utc_seconds(value):
 
 def _recorded(value):
     return NOT_RECORDED if value is None else value
+
+
+def _token_counts(usage):
+    """The provider's reported counts by trace name (a count it did not report, or a
+    malformed one, is `not_recorded`)."""
+
+    usage = usage if type(usage) is dict else {}
+    return {name: (usage.get(key) if type(usage.get(key)) is int and usage.get(key) >= 0 else NOT_RECORDED)
+            for name, key in _TOKEN_NAMES}
+
+
+def _money(value):
+    return type(value) is int and value >= 0
+
+
+def _call_cost(value, mode):
+    """A model call's recorded cost, re-checked against its closed shapes. A call recorded
+    before its executor recorded a cost basis states the run's subscription mode when the
+    run's budget is a subscription, else `not_recorded`: nothing is priced here."""
+
+    if type(value) is dict:
+        state, basis = value.get("state"), value.get("basis")
+        if (state, basis) in {("unknown", "subscription_mode"), ("unknown", NOT_RECORDED)}:
+            return {"state": state, "basis": basis}
+        rates = value.get("rates")
+        if (state == "estimate" and basis == "reserved_ceiling"
+                and value.get("method") == _CEILING_RATES_METHOD and _money(value.get("microunits"))
+                and type(value.get("currency")) is str and re.fullmatch(r"[A-Z]{3}", value["currency"])
+                and type(rates) is dict and rates.get("currency") == value["currency"]
+                and all(rates.get(name) is None or _money(rates.get(name)) for name in _RATE_FIELDS)):
+            return {"state": "estimate", "basis": "reserved_ceiling", "method": _CEILING_RATES_METHOD,
+                    "microunits": value["microunits"], "currency": value["currency"],
+                    "rates": {"currency": rates["currency"], "unit": "microunits_per_million_tokens",
+                              **{name: rates.get(name) for name in _RATE_FIELDS}}}
+    if mode == "subscription":
+        return {"state": "unknown", "basis": "subscription_mode"}
+    return {"state": "unknown", "basis": NOT_RECORDED}
 
 
 class PersistentRunTraces:
@@ -232,7 +285,7 @@ class PersistentRunTraces:
             cost = {"state": "settled", "basis": "budget_settlement",
                     "microunits": row["actual_api_microunits"], "currency": row["currency"]}
         elif type(row["api_microunits"]) is int and row["api_microunits"] > 0:
-            cost = {"state": "estimate", "basis": "reserved_ceiling",
+            cost = {"state": "estimate", "basis": "reserved_ceiling", "method": _RESERVATION_METHOD,
                     "microunits": row["api_microunits"], "currency": row["currency"]}
         else:
             cost = {"state": "unknown", "basis": NOT_RECORDED}
@@ -282,6 +335,10 @@ class PersistentRunTraces:
                      "remote_terminal_observed": row["remote_terminal_observed"]}
         journal = [{"transition": entry["transition"], "at_utc": _utc_ms(entry["at_ms"])}
                    for entry in self._ledger.attempt_journal(attempt_id)]
+        # what the provider reported to this attempt's transport, journaled with its
+        # accepted result; an attempt whose transport reported none keeps `not_recorded`
+        reported = self._ledger.attempt_provider_usage(attempt_id)
+        usage = {} if reported is None else reported.as_dict()
         return {
             "attempt_id": attempt_id, "attempt_no": trace_attempt.attempt_no,
             "phase": row["phase"], "terminal_outcome": _recorded(outcome),
@@ -299,14 +356,18 @@ class PersistentRunTraces:
             "outputs": self._artifacts(result_ref),
             "error": error,
             "tool_calls": self._tool_calls(compiled, node_id, attempt_id),
+            "tokens": _token_counts(usage),
+            "observed_model": _recorded(usage.get("observed_model")),
+            "provider_message_id": _recorded(usage.get("provider_message_id")),
+            "request_id": _recorded(usage.get("provider_request_id")),
             "budget_reservation": reservation,
             "cost": cost,
             "journal": journal,
         }
 
-    def _model_calls(self, run_id, execution_id):
+    def _model_calls(self, run_id, execution_id, mode):
         """The Claude executor's call records for one visit (at most one per visit: a
-        replayed visit never calls again)."""
+        replayed visit never calls again). `mode` is the run budget's provider mode."""
 
         intent_id = str(uuid5(NAMESPACE_URL, f"deeptwin:claude-call:{run_id}:{execution_id}"))
         intent = self._record_by_id("decision_record", intent_id)
@@ -319,25 +380,20 @@ class PersistentRunTraces:
         output = self._record_by_id("artifact", str(uuid5(NAMESPACE_URL, f"deeptwin:claude-output:{intent_id}")))
         outcome = self._record_by_id("decision_record",
                                      str(uuid5(NAMESPACE_URL, f"deeptwin:claude-outcome:{intent_id}")))
-        observed, ended, inputs, output_ref = None, NOT_RECORDED, NOT_RECORDED, None
+        observed, ended, inputs, output_ref, recorded_cost = None, NOT_RECORDED, NOT_RECORDED, None, None
         if output is not None and output.body["content"].get("schema_version") == _OUTPUT_SCHEMA:
             observed = output.body["content"].get("output")
+            recorded_cost = output.body["content"].get("cost")
             ended = output.body["created_at_utc"]
             output_ref = output.ref
             inputs = [ref for ref in output.body.get("parent_refs", [])
                       if EntityRef.from_dict(ref) != intent.ref]
         elif outcome is not None and outcome.body["content"].get("schema_version") == _OUTCOME_SCHEMA:
             observed = outcome.body["content"]
+            recorded_cost = observed.get("cost")
             ended = outcome.body["created_at_utc"]
         observed = observed if type(observed) is dict else {}
-        usage = observed.get("usage")
-        tokens = {"input": NOT_RECORDED, "output": NOT_RECORDED,
-                  "cache_creation_input": NOT_RECORDED, "cache_read_input": NOT_RECORDED}
-        if type(usage) is dict:
-            tokens = {"input": _recorded(usage.get("input_tokens")),
-                      "output": _recorded(usage.get("output_tokens")),
-                      "cache_creation_input": _recorded(usage.get("cache_creation_input_tokens")),
-                      "cache_read_input": _recorded(usage.get("cache_read_input_tokens"))}
+        tokens = _token_counts(observed.get("usage"))
         failure = observed.get("failure")
         return [{
             "call_id": intent_id,
@@ -357,7 +413,7 @@ class PersistentRunTraces:
             "ended_at_utc": ended,
             "inputs": inputs,
             "output_ref": NOT_RECORDED if output_ref is None else output_ref.as_dict(),
-            "cost": {"state": "unknown", "basis": NOT_RECORDED},
+            "cost": _call_cost(recorded_cost, mode),
             "reasoning": "not_stored",
             "provider_message_id": _recorded(observed.get("provider_message_id")),
             "request_id": _recorded(observed.get("request_id")),
@@ -448,7 +504,7 @@ class PersistentRunTraces:
             visit_no = visits_seen.get(execution.node_id, 0) + 1
             visits_seen[execution.node_id] = visit_no
             attempts = [self._attempt(compiled, execution.node_id, item) for item in execution.attempts]
-            model_calls = self._model_calls(run_id, execution.execution_id)
+            model_calls = self._model_calls(run_id, execution.execution_id, mode)
             if not attempts:
                 gaps.add("handler_attempts")
             inputs = []
@@ -493,8 +549,14 @@ class PersistentRunTraces:
                 if (reserved != NOT_RECORDED and reserved["reserved"]["model_calls"] > 0
                         and attempt["sent_at_utc"] != NOT_RECORDED):
                     totals["model_calls"] += 1  # a sent model attempt is one model call
-                    totals["tokens_complete"] = False  # a ledger attempt records no tokens
-                    gaps.add("attempt_tokens")
+                    gaps.add("reasoning")
+                    for name, key in (("input", "input_tokens"), ("output", "output_tokens")):
+                        if type(attempt["tokens"][name]) is int:
+                            totals[key] += attempt["tokens"][name]
+                        else:
+                            # its transport reported no provider count: said, not zeroed
+                            totals["tokens_complete"] = False
+                            gaps.add("attempt_tokens")
                 cost = attempt["cost"]
                 totals["cost_states"].add(cost["state"])
                 if cost["state"] in {"estimate", "settled"}:
@@ -502,8 +564,14 @@ class PersistentRunTraces:
                     totals["cost_currency"] = cost["currency"]
             for call in model_calls:
                 totals["model_calls"] += 1
-                gaps.update({"model_cost", "reasoning"})
-                totals["cost_states"].add("unknown")
+                gaps.add("reasoning")
+                cost = call["cost"]
+                if cost["basis"] == NOT_RECORDED:
+                    gaps.add("model_cost")
+                totals["cost_states"].add(cost["state"])
+                if cost["state"] == "estimate":
+                    totals["cost_microunits"] += cost["microunits"]
+                    totals["cost_currency"] = cost["currency"]
                 for name, key in (("input", "input_tokens"), ("output", "output_tokens")):
                     if type(call["tokens"][name]) is int:
                         totals[key] += call["tokens"][name]
