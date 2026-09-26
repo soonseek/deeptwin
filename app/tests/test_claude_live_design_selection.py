@@ -21,6 +21,11 @@ model used; while the arc runs it also keeps a reserve for the owner's re-review
 selection step can complete. A send past the cap is refused (recorded by the arc as a refused
 call, never as a candidate). The drivers never retry; there is no fallback model.
 
+`DEEPTWIN_LIVE_WORK=specified` (attempt 5) runs the SAME arc over a DIFFERENT, better-specified
+work authored by the simulated owner (`design_specified_work`, labelled): explicit completion
+conditions, artifact formats, approver inputs, sources and "nothing is regenerated". Unset, the
+arc runs over the attempts 1–4 work (`design_arc_fixture._work_model`).
+
 `DEEPTWIN_LIVE_CATALOG_ONLY=<path>` writes the live catalog's model list to that path (outside
 the evidence) and stops before any paid call. The model is the first one the catalog lists
 unless `DEEPTWIN_LIVE_MODEL` names one; its identifier comes from the provider, never from this
@@ -50,6 +55,12 @@ from app.tests.design_arc_fixture import (
     _work_model,
     simulated_qualification,
 )
+from app.tests.design_specified_work import (
+    AUTHOR,
+    specified_decision,
+    specified_work_model,
+    specified_work_with_source,
+)
 from app.tests.test_claude_live_path import claude
 from app.tests.test_design_arc import generate, post, read, work_with_source
 from app.tests.test_design_generation import (
@@ -65,6 +76,7 @@ EVIDENCE = Path(os.environ.get("DEEPTWIN_LIVE_EVIDENCE_DIR") or ".")
 LEDGER = os.environ.get("DEEPTWIN_LIVE_LEDGER")
 LABEL = os.environ.get("DEEPTWIN_LIVE_ATTEMPT") or "attempt1"
 CATALOG_ONLY = os.environ.get("DEEPTWIN_LIVE_CATALOG_ONLY")
+SPECIFIED = os.environ.get("DEEPTWIN_LIVE_WORK") == "specified"
 CAP_USD = 3.00
 MAX_ROUNDS = int(os.environ.get("DEEPTWIN_LIVE_ROUNDS") or 3)  # one request, up to two supplementation rounds
 GENERATION_OUTPUT_TOKENS = int(os.environ.get("DEEPTWIN_LIVE_GENERATION_TOKENS") or 24_000)  # up to 3 graphs
@@ -176,12 +188,13 @@ def test_one_live_design_arc_to_owner_selection(tmp_path):
         model = MODEL or listed[0]
         assert model in listed, "the chosen model is not in the live catalog"
         EVIDENCE.mkdir(parents=True, exist_ok=True)
-        revision, sources = work_with_source(subject)
+        revision, sources = (specified_work_with_source if SPECIFIED else work_with_source)(subject)
         domain = subject.app.state.domain_store
         roots = domain.roots()
-        target = _work_model(domain, revision, sources)
+        target = (specified_work_model if SPECIFIED else _work_model)(domain, revision, sources)
         registry, lens = proposed_lens(target)
-        decision = design_decision(target, registry, lens, carry_value=True)
+        decision = (specified_decision(target, registry, lens) if SPECIFIED
+                    else design_decision(target, registry, lens, carry_value=True))
         request = create_generation_request(
             target, [decision],
             request_id=str(uuid5(NAMESPACE_URL, f"deeptwin:live-design-selection:{LABEL}:{revision.id}")),
@@ -244,7 +257,11 @@ def test_one_live_design_arc_to_owner_selection(tmp_path):
                                                                "stop_reason", "usage")},
                           "spend_usd_at_ceiling": round(_cost(outcome.get("usage") or {}), 6)})
         observed = {
-            "label": LABEL, "model": model, "generation_http_status": response.status_code, "run": run,
+            "label": LABEL, "model": model,
+            "work": ({"scenario": "specified (attempt 5): release notes from one stored changelog",
+                      "author": AUTHOR, "work_model": target.work_model.as_dict()}
+                     if SPECIFIED else {"scenario": "attempts 1-4 work (YouTube research/script)"}),
+            "generation_http_status": response.status_code, "run": run,
             "pool": final["pool"],
             "candidates": [{"candidate_id": item["candidate_id"], "presented": item["presented"],
                             "nodes": [(node["node_id"], node["kind"]) for node in item["graph"]["nodes"]],
