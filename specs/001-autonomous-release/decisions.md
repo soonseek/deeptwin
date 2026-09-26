@@ -729,3 +729,7 @@ and implementation, release, effect, legal and human-acceptance gates remain ope
 
 - **Deterministic tool bindings:** the owner approved allowing deterministic (model-free) nodes to use an approved tool binding, for example a byte-exact store step. The design authority and graph compiler are extended accordingly, with contract review and tests. Tool effects stay governed by the same grants, gates, execution-bound approvals and effect policies as agent tool calls.
 - **T038:** the owner approved one more live attempt (attempt 6, USD 3.00 cap). It uses the corrected verifier wording in the specified work and the deterministic store step.
+
+## 2026-09-26 — Owner decision after T038 attempt 6
+
+- **T038:** the owner authorized ONE more live attempt (attempt 7) on the same terms as attempt 6: its own USD 3.00 hard cap and ledger, 2 candidates requested, USD 1.00 reserved for the re-review, the same token caps and ceiling rates, the same model selection (identifier redacted), no retry and no fallback. Before the run, attempt 6's two unresolved graph-design points (the approval join's unconditional data inputs; no node declared to set the routing verdict from the report) are addressed through generic generator design rules and the simulated owner's work description, without changing the critic, its contract, fold or prompts.
