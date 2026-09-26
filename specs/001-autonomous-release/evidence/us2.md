@@ -922,6 +922,120 @@ refused call, an edit re-reviewed and prepared, and cancel — in the real brows
 scripted test-actor turns and the simulated qualification labelled. The live half of T038 is
 still open.
 
+## 2026-09-26 (attempt 6): corrected work and a deterministic store step — nothing passed
+
+The owner authorized one more live attempt (decisions.md, 2026-09-26, "Owner decisions after
+T038 attempt 5"). It has its **own USD 3.00 cap** and its own ledger
+(`attempt6-ledger.json`), and allows up to 2 candidates with USD 1.00 reserved for the
+re-review. The critic contract, the fold and the critic prompt were **not** changed.
+
+### What changed before the run
+
+- **Product: deterministic tool bindings** (owner decision). A deterministic (model-free) node
+  may now name approved tool bindings. The graph schema accepts
+  `{handler_id, tool_binding_ids}`. The compiler validates those bindings against the
+  authority exactly as it does for an agent's.
+  - At runtime the node reaches its tool only through the same attempt dispatcher and
+    compiled tool transport as an agent. Grants, per-attempt execution-bound approvals, budget
+    claims and ToolCall records all go through that path.
+  - Contract note: `contracts/runtime.md` §2 (dated). Tests:
+    `app/tests/test_deterministic_tool_bindings.py`.
+  - The generation grammar (`design_live._OUTPUT_SCHEMA`) now states the option.
+  - The critic projection lists a deterministic node's tool binding as a control note, with
+    its definition, operations and grant. Graphs without such a binding project
+    byte-identically.
+- **The work (SIMULATED owner, labelled)** fixes its author's own two attempt-5 defects
+  (`app/tests/design_specified_work.py`).
+  - The required `verifier` responsibility now states completion condition 2 exactly: inputs,
+    model separation, report fields and the verdict rule. It also names every clause of
+    conditions 0 and 1. The report covers every non-empty draft line, the title included.
+  - Condition 4 and the storage authority now say the store is a model-free deterministic
+    step. It hands the approved bytes to `document.create` unchanged.
+  - Offline tests in `test_design_specified_work.py` check the alignment. They also check
+    that a deterministic store bound to the authority's `document_create` tool is admitted and
+    is shown to the critic.
+
+### Run (`attempt6`, `test_claude_live_design_selection.py`, same product path)
+
+**Settings.**
+- `DEEPTWIN_LIVE_WORK=specified`.
+- 2 requested candidates, 1 round, generation cap 28,000 tokens, criticism cap 6,000.
+- USD 1.00 re-review reserve; ceiling USD 5 / 25 per MTok.
+- The catalog's first model (id redacted).
+- No retry and no fallback. The key was never printed.
+
+**Generation.** The live generation returned **1** graph, which was admitted. The storing role
+is now a **deterministic** node `store` bound to `document_create`, the first live use of the new
+binding. The graph's nodes are:
+- `intake` (deterministic);
+- `writer` (agent, …213);
+- `verify-join` → `verifier` (agent, …215);
+- `verdict-router`, with pass → `approval-join` → `publish-gate` (human gate) → `store`
+  (deterministic + tool), and fail → `halt` (deterministic).
+
+**Criticism of `ff39eef8`.**
+- **Review: all 8 findings pass.** These are claim, effect, disposition and completion 0–4,
+  including condition 2's inputs, model and report, and condition 4's model-free store.
+- **Counterexamples (4):**
+  - Two were **rejected** by the validity judge:
+    - `cx-verifier-input-mediated-by-join`: the join is declared transformation-free;
+    - `cx-gate-output-not-constrained-to-verified-bytes`: the deterministic store stores only
+      the gate's approved version.
+  - Both attempt-5 defects are therefore gone: no verifier-text finding, and no
+    model-driven-storage finding.
+  - Two stayed **unresolved**:
+    - `cx-fail-verdict-reaches-approval-via-data-handoff`: `approval-join`'s data handoffs from
+      the verifier and bundle are unconditional, and only control edge e6 carries
+      `verification_verdict eq pass`.
+    - `cx-verdict-fact-unbound-to-report`: no node is declared to emit the routing fact from
+      the report's overall verdict.
+  - Neither was proven, and neither was refuted from what the candidate declares.
+
+**Outcome.** Run `fa2d8f13-9cb9-524b-8e10-2251c0ffbd1e` ended in **`shortfall`**, 0 of 1
+presented. The candidate was excluded as `insufficient_evidence`, with 2 unresolved validity
+judgements. Evidence id: `f8c21eca-599f-49d9-9f6b-5af26c2edbe9`.
+
+**Owner path.** Nothing was presented, so none of the owner steps took place: no selection, no
+re-review, no unqualified preparation (which must be refused) and no simulated-qualification
+preparation. The simulated qualification was **not used**. The guard refused nothing.
+
+**Analysis.** The two author defects are fixed, and the live critic no longer raises them. The
+remaining open points are about **how the graph binds its routing fact to the verifier's report**
+and whether a join's unconditional data inputs can bypass the router. Both are generation/graph
+questions. The critic itself left them undecided: not a failure, and not a pass. No change was
+made after the run. A further attempt needs the owner's authorization.
+
+### Calls (provider-reported; all `completed / end_turn`; no cache tokens; bound = the guard's ceiling-rate bound before the send, incl. the USD 1.00 reserve)
+
+| # | purpose | provider message id | request id | input / output tokens | bound USD | spend USD (ceiling) |
+|---|---|---|---|---|---|---|
+| 1 | design_candidate (1 graph, cap 28,000) | `msg_011CfRXo4ScPwCTKxoTgEdqB` | `req_011CfRXo3YnF46mHXuLRBha3` | 9,197 / 10,556 | 1.7978 | 0.3099 |
+| 2 | review (`ff39eef8`): 8 × pass | `msg_011CfRXuuzoH8XsqtaQdcu7S` | `req_011CfRXuuPLhEEbH26ERQYVy` | 8,856 / 4,317 | 1.5449 | 0.1522 |
+| 3 | counterexample_proposal (4) | `msg_011CfRXxSApFavw8UmBb2WkE` | `req_011CfRXxREGGF8Xhe3sRsV6J` | 10,417 / 4,783 | 1.7107 | 0.1717 |
+| 4 | validity `cx-fail-verdict-reaches-approval-via-data-handoff`: unresolved | `msg_011CfRY1YpkQNVdYq9DickJf` | `req_011CfRY1YHkZ4UsLr5Hd9M6H` | 9,643 / 2,612 | 1.8788 | 0.1135 |
+| 5 | validity `cx-verdict-fact-unbound-to-report`: unresolved | `msg_011CfRY3LFmQkcvQD8uy8SNF` | `req_011CfRY3KqD6N5L61E3dwW2X` | 9,482 / 1,870 | 1.9904 | 0.0942 |
+| 6 | validity `cx-verifier-input-mediated-by-join`: rejected | `msg_011CfRY4bxrKpv7p4MLNuUra` | `req_011CfRY4bX43WdRacd7GVVdE` | 9,562 / 2,089 | 2.0854 | 0.1000 |
+| 7 | validity `cx-gate-output-not-constrained-to-verified-bytes`: rejected | `msg_011CfRY65W5wnJygw1ftWSec` | `req_011CfRY64jSYs8brh5PTFrXy` | 9,380 / 1,852 | 2.1831 | 0.0932 |
+
+**Spend.** Attempt 6 sent 7 calls, with 66,537 input and 28,079 output tokens. That is
+**USD 1.035 at the ceiling 5 / 25**, against attempt 6's USD 3.00 cap, leaving USD 1.965 unused.
+No call was retried or refused. Earlier attempts are counted separately under their own caps.
+
+**Evidence** (under `evidence/t038-live-arc-2026-09-26/`):
+- `attempt6.json`;
+- 7 raw answers `attempt6-NN-arc-<stage>[-<purpose>].txt`; the generation answer's sha256 is
+  `d6b7028f…af1f`;
+- `attempt6-ledger.json`.
+
+All were checked key-free, with no model id.
+
+**T038 is not ticked.** No live candidate passed live criticism. So there was no owner
+selection, no live re-review of a derived version, and no refused-unqualified or
+simulated-qualification preparation. The 0/1/2/3, revision and cancel paths remain exercised
+offline in `app/tests/browser-design.test.mjs`, the single test *"0/1/2/3 presented, a refused
+call, an edit re-reviewed and prepared, and cancel — in the real browser"*. It uses scripted
+test-actor turns, with the simulated qualification labelled.
+
 ## Not ticked
 
 The 0/1/2/3, revision and cancel paths are exercised in `app/tests/browser-design.test.mjs` with
@@ -970,6 +1084,13 @@ and V3 is unverified (T077).
     - Part came from byte-identical storage that the authority cannot guarantee, because storage
       happens only through a tool, and tools bind only to agents.
     - Attempt 5's cap has USD 1.204 left, and a further attempt needs the owner's authorization.
+  - Attempt 6 (2026-09-26 (attempt 6), above) fixed both author defects and used the new
+    deterministic store binding. The live candidate passed all 8 review findings, and 2 of its
+    4 counterexamples were rejected. It was excluded as `insufficient_evidence` on 2 unresolved
+    counterexamples about binding the routing fact to the report, and about the join's
+    unconditional data inputs.
+    - Attempt 6's cap has USD 1.965 left, and a further attempt needs the owner's
+      authorization.
 - Production cannot create a design request: no lens is qualified, so no `DesignSource` is
   configured, and the page and the route say so. A production source would also need the owner's
   model turns wired from the Claude connection and a production functional-decision step (T030).
