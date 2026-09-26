@@ -154,7 +154,7 @@ _CRITIC_DESIGN_RULES = (
     " condition, its result is its own artifact (e.g. a check report) on the path to the human gate"
     " or to the completion criterion, and whatever the condition depends on (e.g. a citation map, a"
     " thumbnail promise) is a declared artifact, not only responsibility text. A node that needs"
-    " artifacts from two predecessors is a join, per the structure rules."
+    " artifacts from two predecessors is preceded by a join, per the structure rules and rule (f)."
     # T038 attempt 2: the candidate passed every review finding and was rejected on three
     # deeper defects (a checker that could not read what it verified; content regenerated
     # after approval with no re-check; a check report of unresolved problems that did not
@@ -174,6 +174,28 @@ _CRITIC_DESIGN_RULES = (
     " run), or give the check a failure_policy that stops its dependants when it finds a"
     " problem and have every downstream join use failure_handling block; a report that lists"
     " unverified or failed items must never reach the join, gate or release as if it passed."
+    # T038 attempt 3: following (c)-(e) under the one-predecessor structure rule, the
+    # candidate made the checker and the release themselves joins (a join has no model and
+    # performs nothing), let the release read a fresh copy from the producer, and gave a
+    # text-only checker an artifact that could be in a format it cannot read. General
+    # principles only, no task wording.
+    " (f) a join only aggregates: a join has no model and performs nothing, so it never carries a"
+    " check, review, approval or release responsibility; a check, review or release that needs"
+    " inputs from several producers is a join followed by an agent or deterministic node that"
+    " performs it; the join emits its own new aggregate artifact contract (a bundle carrying"
+    " the exact, unaltered inputs, declared with their media types), and that node's single"
+    " triggering predecessor is the join, from which it reads the bundle. (g) release takes"
+    " exactly what was approved, through the gate's path: the human gate receives the exact"
+    " content it approves (with the check reports) and emits it unaltered under its own"
+    " approved-content contract; the releasing node reads that approved content from the gate"
+    " (its artifact edge and its approval edge come from the same gate) and never takes a fresh"
+    " copy, or any artifact edge, from the original producer or any node before the gate. (h) a"
+    " check reads the artifact in a format it can inspect: declare the format the checker"
+    " consumes (the checked contract's media_types are ones the checker's required capabilities"
+    " can read, and its responsibility names that format); if the producer's format is not"
+    " inspectable by the checker, add a conversion node before the check that emits an"
+    " inspectable rendition under its own contract, and the check, the approval and the release"
+    " all use that same checked content, never an alternative format the check did not read."
 )
 
 

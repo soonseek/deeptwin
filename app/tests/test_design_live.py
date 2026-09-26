@@ -121,6 +121,30 @@ def test_the_generator_is_told_the_design_hygiene_rules():
         assert task_word not in rules.split("(c)")[1]
 
 
+def test_the_generator_is_told_joins_only_aggregate_and_release_is_pinned():
+    """T038 attempt 4: attempt 3's candidate made its checker and its release joins, let the
+    release read a fresh copy from the producer, and checked a format the checker could not
+    read. Rules (f)-(h) state the general remedy to the generator, first-round and revision
+    alike, without the task's own wording."""
+    _target, _lens, _decision, request, graph = prepared()
+    system, _user = render_candidate_prompt(request)
+    parent = run_candidate_generation(request, model_turn=scripted_model(model_json(graph))[0],
+                                      model_id=MODEL_ID).candidates[0]
+    revised, _ = render_candidate_prompt(request, revision=(parent, "shorten the pipeline"))
+    for text in (system, revised):
+        assert "(f) a join only aggregates" in text
+        assert "is a join followed by an agent or deterministic node that performs it" in text
+        assert "(g) release takes exactly what was approved, through the gate's path" in text
+        assert "never takes a fresh copy" in text
+        assert "(h) a check reads the artifact in a format it can inspect" in text
+        assert "add a conversion node before the check" in text
+        assert "is a join, per the structure rules." not in text
+    added = _CRITIC_DESIGN_RULES.split("(f)")[1]
+    for task_word in ("dossier", "fact-check", "fact check", "thumbnail", "research", "script",
+                      "pdf", "video", "youtube", "citation", "hook"):
+        assert task_word not in added.lower()
+
+
 def test_model_supplies_only_graphs_never_identity_or_call_refs():
     _target, _lens, _decision, request, graph = prepared()
     forged = {
