@@ -347,6 +347,10 @@ def preflight_api_v1(scope, body):
     from .hypotheses import preflight as hypotheses_preflight
     if is_hypotheses_path(path):
         hypotheses_preflight(scope, body)
+    from .inquiries import is_inquiries_path
+    from .inquiries import preflight as inquiries_preflight
+    if is_inquiries_path(path):
+        inquiries_preflight(scope, body)
     from .work_models import is_work_models_path
     from .work_models import preflight as work_models_preflight
     if is_work_models_path(path):

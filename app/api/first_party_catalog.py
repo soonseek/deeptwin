@@ -18,6 +18,7 @@ from .extension_candidates import candidate_services
 from .first_party import InstalledContribution, core_services
 from .graphs import graph_services
 from .hypotheses import hypothesis_services
+from .inquiries import inquiry_services
 from .platform_update import platform_update_services
 from .provider_conformance import conformance_services
 from .provider_installation import installation_services
@@ -177,6 +178,15 @@ INSTALLED = (
         ("work.command", "work.read"),
         requires=("alternative-drafts.service",),
         provides=("hypotheses.service",),
+    ),
+    InstalledContribution(
+        "inquiries-v1.json",
+        "app.api.inquiries:create_router",
+        inquiry_services,
+        ("browser_session",),
+        ("work.command", "work.read"),
+        requires=("alternative-drafts.service", "hypotheses.service"),
+        provides=("inquiries.service",),
     ),
     InstalledContribution(
         "versions-v1.json",

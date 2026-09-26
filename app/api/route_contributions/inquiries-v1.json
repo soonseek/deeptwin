@@ -1,0 +1,25 @@
+{
+  "schema_version": "deeptwin-first-party-route-contribution-v1",
+  "contribution_id": "inquiries-v1",
+  "factory": "app.api.inquiries:create_router",
+  "routes": [
+    {"route_id": "inquiries.read", "methods": ["GET", "HEAD"],
+     "path": "/api/v1/inquiries/{difference_id}",
+     "auth_policy": "browser_session", "required_scope": "work.read"},
+    {"route_id": "inquiries.open", "methods": ["POST"],
+     "path": "/api/v1/inquiries/{difference_id}",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "inquiries.answer", "methods": ["POST"],
+     "path": "/api/v1/inquiries/{difference_id}/answers",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "inquiries.evidence", "methods": ["POST"],
+     "path": "/api/v1/inquiries/{difference_id}/evidence",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "inquiries.judge", "methods": ["POST"],
+     "path": "/api/v1/inquiries/{difference_id}/judgments",
+     "auth_policy": "browser_session", "required_scope": "work.command"},
+    {"route_id": "inquiries.audit", "methods": ["GET", "HEAD"],
+     "path": "/api/v1/inquiries/{difference_id}/audit",
+     "auth_policy": "browser_session", "required_scope": "work.read"}
+  ]
+}
