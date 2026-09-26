@@ -273,7 +273,7 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   const workModel = workModelRoot !== null && typeof workModelRoot?.replaceChildren === 'function'
     ? createWorkModel({ root: workModelRoot, document, basePath, request: session.request, crypto,
       work: () => ({ work_id: state.work_id ?? null, revision: state.revision ?? null, sources: savedSources.length }),
-      onChange: () => conversation?.refreshReferences() })
+      onChange: () => { conversation?.refreshReferences(); design?.refreshCreation(); } })
     : null;
   const readingsRoot = document.getElementById(READINGS_MOUNT_ID);
   const readings = readingsRoot !== null && typeof readingsRoot?.replaceChildren === 'function'
@@ -301,7 +301,7 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   const designRoot = document.getElementById(DESIGN_WORKSPACE_MOUNT_ID);
   const design = designRoot !== null && typeof designRoot?.replaceChildren === 'function'
     ? createDesignWorkspace({ root: designRoot, document, basePath, request: session.request,
-      commandId: () => crypto.randomUUID() })
+      commandId: () => crypto.randomUUID(), workModel: () => workModel?.view ?? null })
     : null;
   const runRoot = document.getElementById(RUN_START_MOUNT_ID);
   const runStart = runRoot !== null && typeof runRoot?.replaceChildren === 'function'

@@ -268,3 +268,46 @@ test('an edit is re-reviewable when the generation turn realizes it; a simulated
     critic_qualification: { status: 'qualified', reason: 'suite_pass' } }), /시뮬레이션\(테스트 행위자\) 자격이며 출시 자격이 아닙니다/);
   assert.doesNotMatch(qualificationText(viewData().preparation), /시뮬레이션/);
 });
+
+test('T038: without a qualified lens the create section states the exact reason and offers no button', async () => {
+  const reason = 'no qualified lens decision exists for this work model: no lens is qualified in this installation';
+  const root = new FakeElement('section');
+  const workspace = createDesignWorkspace({ root, document, commandId: () => id(1),
+    workModel: () => ({ work_model_id: id(7), state: 'confirmed' }),
+    request: async () => ({ requests: [], unrestorable: [{ request_id: id(8), code: 'not_restorable', reason: 'the stored basis does not belong to this request' }],
+      creation: { available: false, reason, source: null } }) });
+  await workspace.load();
+  const text = root.textContent;
+  assert.match(text, /설계 요청을 만들 수 없습니다\. 자격을 갖춘 렌즈 결정이 없기 때문입니다/);
+  assert.ok(text.includes(`사유: ${reason}`));
+  assert.match(text, /다시 만들지 못했습니다: the stored basis does not belong to this request/);
+  assert.equal(buttons(root, 'create-request').length, 0);
+});
+
+test('T038: with a qualified lens and an accepted work model the owner creates a request and it is shown', async () => {
+  const calls = [];
+  let created = false;
+  let model = null;
+  const request = async (path, options = {}) => {
+    calls.push([path, options]);
+    if (options.method === 'POST') { created = true; return { request_id: REQUEST, version: 1, requested_candidate_count: 3 }; }
+    if (path.endsWith('/design-requests')) {
+      return { requests: created ? [{ request_id: REQUEST, version: 1, requested_candidate_count: 3 }] : [], unrestorable: [],
+        creation: { available: true, reason: null, source: 'test-actor (SIMULATED lens qualification)' } };
+    }
+    return viewData();
+  };
+  const root = new FakeElement('section');
+  const workspace = createDesignWorkspace({ root, document, request, commandId: () => id(9), workModel: () => model });
+  await workspace.load();
+  assert.match(root.textContent, /수락한 작업 모델이 있어야 설계 요청을 만들 수 있습니다/);
+  assert.equal(buttons(root, 'create-request').length, 0);
+  model = { work_model_id: id(7), state: 'confirmed' };
+  workspace.refreshCreation();
+  assert.match(root.textContent, /SIMULATED lens qualification/);
+  await buttons(root, 'create-request')[0].dispatch('click');
+  const post = calls.find(([, options]) => options.method === 'POST');
+  assert.deepEqual(post[1].body, { schema_version: 'design-request-create-command-v1', command_id: id(9), work_model_id: id(7) });
+  assert.ok(calls.some(([path]) => path.endsWith(`/design-requests/${REQUEST}`)));
+  assert.match(root.textContent, /통과한 구조적으로 다른 후보 2개/);
+});

@@ -16,6 +16,10 @@
 // as recorded — filled, an honest shortfall with the real count, or cancelled with the
 // candidates left unreviewed — and an edit is re-reviewed through a revision call. A
 // qualification outside the release designs is labelled a simulation (test-actor).
+// T038: the owner creates a design request from the accepted work model on this page
+// (`POST design-requests`) — only where the instance has a qualified lens decision; where
+// it has none (production: no lens is qualified) the section states that exact reason and
+// offers no button. A persisted request the instance cannot rebuild is listed with why.
 
 import { compareGraphs, createGraphView, differenceSummary, focusDifference, unionNodeIds } from './graph.mjs';
 
@@ -36,6 +40,12 @@ export const REVIEW_REASONS = Object.freeze({
 export const GENERATION_REASONS = Object.freeze({
   generator_model_not_configured: '이 인스턴스에 설계 생성 모델이 설정되지 않아 후보를 만들 수 없습니다.',
   critic_model_not_configured: '이 인스턴스에 평가 모델이 설정되지 않아 후보를 만들 수 없습니다.',
+});
+export const CREATE_SCHEMA = 'design-request-create-command-v1';
+export const CREATION_TEXT = Object.freeze({
+  unavailable: '이 인스턴스에서는 설계 요청을 만들 수 없습니다. 자격을 갖춘 렌즈 결정이 없기 때문입니다.',
+  needsModel: '수락한 작업 모델이 있어야 설계 요청을 만들 수 있습니다. 위의 작업 모델을 만들고 수락해 주세요.',
+  ready: '수락한 작업 모델로 설계 요청을 만듭니다. 이 인스턴스의 렌즈 결정은 다음 출처입니다:',
 });
 export const RUN_OUTCOMES = Object.freeze({ filled: '기본 3안을 채움', shortfall: '부족', cancelled: '소유자가 취소함' });
 
@@ -96,7 +106,7 @@ export function qualificationText(preparation) {
   return `평가자 구성의 자격: ${QUALIFICATION_LABELS[q.status] ?? q.status} (${q.status}: ${q.reason})${simulated}`;
 }
 
-export function createDesignWorkspace({ root, document, request, basePath = '/', commandId } = {}) {
+export function createDesignWorkspace({ root, document, request, basePath = '/', commandId, workModel = () => null } = {}) {
   if (typeof root?.replaceChildren !== 'function') fail('a root is required');
   if (typeof request !== 'function') fail('a request adapter is required');
   if (typeof commandId !== 'function') fail('a command id source is required');
@@ -122,7 +132,10 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
   const compare = element('section', undefined, { class: 'design-compare', 'aria-label': '후보 비교' });
   const derived = element('section', undefined, { class: 'design-derivations', 'aria-label': '새 설계 버전' });
   const arc = element('section', undefined, { class: 'design-generation', 'aria-label': '후보 생성' });
-  root.replaceChildren(element('h2', '설계 후보 비교'), status, picker, arc, summary, compare, derived);
+  const creator = element('section', undefined, { class: 'design-create', 'aria-label': '설계 요청 만들기' });
+  root.replaceChildren(element('h2', '설계 후보 비교'), status, creator, picker, arc, summary, compare, derived);
+  let listed = null;
+  let creating = false;
   let generating = false;
   picker.hidden = true;
   picker.addEventListener('change', () => show(picker.value).catch(() => {}));
@@ -411,10 +424,56 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
     }
   }
 
-  // the requests this instance serves; the first is shown
-  async function load() {
+  // --- creating a request from the accepted work model (T038) -----------------------------
+  function renderCreation() {
+    const parts = [element('h3', '설계 요청 만들기')];
+    const creation = listed?.creation;
+    const model = workModel();
+    const outcome = element('p', '', { role: 'status', class: 'design-create-status' });
+    if (!creation) {
+      creator.replaceChildren();
+      return;
+    }
+    if (!creation.available) {
+      parts.push(element('p', CREATION_TEXT.unavailable, { 'data-state': 'not_designable' }),
+        element('p', `사유: ${creation.reason}`, { class: 'design-create-reason' }));
+    } else if (model?.state !== 'confirmed' || typeof model?.work_model_id !== 'string') {
+      parts.push(element('p', CREATION_TEXT.needsModel, { 'data-state': 'needs_work_model' }));
+    } else {
+      parts.push(element('p', `${CREATION_TEXT.ready} ${creation.source}`),
+        button('이 작업 모델로 설계 요청 만들기', () => createRequest(model.work_model_id, outcome),
+          { 'data-command': 'create-request' }));
+    }
+    for (const item of listed.unrestorable ?? []) {
+      parts.push(element('p', `설계 요청 ${item.request_id.slice(0, 8)}을 저장된 기록에서 다시 만들지 못했습니다: ${item.reason}`,
+        { 'data-state': 'not_restorable' }));
+    }
+    parts.push(outcome);
+    creator.replaceChildren(...parts);
+  }
+
+  async function createRequest(workModelId, outcome) {
+    if (creating) return null;
+    creating = true;
+    outcome.textContent = '설계 요청을 만드는 중…';
+    try {
+      const created = await request(api, { method: 'POST', body: { schema_version: CREATE_SCHEMA, command_id: commandId(),
+        work_model_id: workModelId } });
+      await load(created.request_id);
+      say(`설계 요청 ${created.request_id.slice(0, 8)}을 만들었습니다. 후보는 아직 없습니다.`, 'created');
+      return created;
+    } catch (error) {
+      outcome.textContent = `만들지 않았습니다: ${refusal(error)}`;
+      outcome.dataset.state = error?.code ?? 'unavailable';
+      return null;
+    } finally {
+      creating = false;
+    }
+  }
+
+  // the requests this instance serves; the first (or the one named) is shown
+  async function load(preferred = null) {
     say('설계 요청을 확인하는 중…', 'loading');
-    let listed;
     try {
       listed = await request(api, {});
     } catch (error) {
@@ -424,6 +483,7 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
     picker.replaceChildren(...listed.requests.map(item => element('option', `설계 요청 ${item.request_id.slice(0, 8)}`,
       { value: item.request_id })));
     picker.hidden = listed.requests.length < 2;
+    renderCreation();
     if (!listed.requests.length) {
       summary.replaceChildren();
       compare.replaceChildren();
@@ -431,8 +491,11 @@ export function createDesignWorkspace({ root, document, request, basePath = '/',
       say('이 인스턴스에 비교할 설계 요청이 없습니다.', 'empty');
       return null;
     }
-    return show(listed.requests[0].request_id);
+    const chosen = listed.requests.find(item => item.request_id === preferred) ?? listed.requests[0];
+    picker.value = chosen.request_id;
+    return show(chosen.request_id);
   }
 
-  return Object.freeze({ load, show, derive, review: reviewDerivation, prepare: prepareCandidate });
+  return Object.freeze({ load, show, derive, review: reviewDerivation, prepare: prepareCandidate,
+    create: createRequest, refreshCreation: renderCreation });
 }
