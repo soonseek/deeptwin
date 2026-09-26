@@ -17,6 +17,7 @@ import copy
 import os
 import pickle
 import stat
+import threading
 
 import pytest
 
@@ -310,17 +311,57 @@ def test_the_fence_never_outputs_the_secret_and_fails_closed_on_read_errors(
         ipc_root.acquire_generation(layout) as generation,
         retain(layout, generation) as fence,
     ):
-        original = os.read
+        original = os.pread
 
-        def broken(fd, size):
+        def broken(fd, size, offset):
             raise OSError("disk")
 
-        monkeypatch.setattr(ipc_root.os, "read", broken)
+        monkeypatch.setattr(ipc_root.os, "pread", broken)
         with pytest.raises(ipc_root.IpcRootError) as failure:
             fence.recheck_current()
         assert "a" * 8 not in repr(failure.value) and "disk" not in str(failure.value)
-        monkeypatch.setattr(ipc_root.os, "read", original)
+        monkeypatch.setattr(ipc_root.os, "pread", original)
         fence.recheck_current()
+
+
+def test_the_secret_reread_is_positional_and_safe_for_concurrent_rechecks(layout):
+    """One owner is rechecked by its duplex reader and a control writer at once.
+
+    The reread must neither use nor move the shared descriptor offset: an
+    lseek/read pair interleaved by two threads yields a short read that is
+    misreported as an integrity failure (the owned semantic cancel race).
+    """
+
+    ipc_root.initialize_pair_root(layout, entropy=lambda size: b"a" * size)
+    with (
+        ipc_root.acquire_generation(layout) as generation,
+        retain(layout, generation) as fence,
+    ):
+        os.lseek(fence._secret_fd, 5, os.SEEK_SET)
+        fence.recheck_current()
+        assert os.lseek(fence._secret_fd, 0, os.SEEK_CUR) == 5
+        os.lseek(fence._secret_fd, 0, os.SEEK_END)
+        fence.recheck_current()
+
+        failures = []
+        barrier = threading.Barrier(4)
+
+        def recheck_many():
+            barrier.wait()
+            for _ in range(200):
+                try:
+                    fence.recheck_current()
+                except BaseException as error:  # noqa: BLE001 - asserted below
+                    failures.append(error)
+                    return
+
+        threads = [threading.Thread(target=recheck_many) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(30)
+        assert not any(thread.is_alive() for thread in threads)
+        assert failures == []
 
 
 def test_the_fence_holds_the_shared_lock_through_the_generation(layout):

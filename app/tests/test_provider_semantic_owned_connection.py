@@ -736,6 +736,10 @@ def test_owned_cancel_cannot_enter_after_settlement_before_artifact_write(
         reader.join(3)
         controller.join(3)
         assert not reader.is_alive() and not controller.is_alive()
+        # An accepted cancel is an acknowledgement, not worker cleanup completion
+        # (owned-connection-design-r1 §4.1): the worker's close after its result
+        # frame is asynchronous to both client returns, so order it explicitly.
+        assert server_closed.wait(2), timeline
         assert controller_lock_mode == ["blocked"], timeline
         assert len(reader_errors) == 1 and type(reader_errors[0]) is StreamCancelled
         assert control_errors == []
