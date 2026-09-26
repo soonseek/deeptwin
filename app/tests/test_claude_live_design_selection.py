@@ -261,5 +261,5 @@ def test_one_live_design_arc_to_owner_selection(tmp_path):
         assert response.status_code == 201, text[:4000]
         assert guard.prior_usd + guard.spent() <= CAP_USD
         # the arc counts a send the guard refused as a call attempt; nothing was sent for it
-        assert run["model_calls"] == (sum(1 for item in calls if item["phase"] == "arc")
+        assert run["model_calls"] == (sum(1 for item in guard.sends if item["phase"] == "arc")
                                       + sum(1 for item in guard.refused if item["phase"] == "arc"))
