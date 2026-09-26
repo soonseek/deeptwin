@@ -1197,6 +1197,10 @@ unmet features to out-of-scope. Empirical user/effect/signing evidence stays sep
   2026-09-26: the owner skipped the STT measurement (decisions.md). STT latency and quality are
   reported as not measured (owner skipped), never as passed; T080 covers command, event and graph
   responsiveness.
+  2026-09-26: the graph view is now measured in the same test: 20 nodes and 40 edges drawn, and node
+  selection within one frame (p95 17.0 ms), with no long task. Command ack p95 181.5 ms and event
+  p95 48.2 ms on the re-run (evidence/performance.md, performance-2026-09-26.json). Still open: the
+  measurement on the clean deployment hosts (T083), and a live push event view, which is not built.
 - [ ] T081 Build the reproducible open-source web distribution and versioned service images under
   deploy/ for both ADR-010 profiles. The Portainer CE no-terminal descriptor/workflow must verify an
   immutable source commit plus exact Compose digest (tag is display-only) and service-keyed OCI

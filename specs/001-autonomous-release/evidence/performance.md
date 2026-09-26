@@ -50,3 +50,27 @@ Timings are taken inside the page with `performance.now()`. Main-thread long tas
   recognition-accuracy claim stay unverified.
 - The run is a single session on one host, with the server on the same machine. The declared
   clean deployment hosts (T083) are not measured.
+
+## 2026-09-26 re-run: the graph view
+
+The run's graph view (`graph.mjs` on the observe page, T037/T048) now exists, and the test measures it
+(step 5). It draws the run's 20 nodes and 40 edges, then clicks every node and waits for the next
+frame, checking that the details name that node. The re-run is in
+[performance-2026-09-26.json](performance-2026-09-26.json). It used the same host and workload.
+
+| Measure | Samples | p50 | p95 | max | Plan target |
+| --- | --- | --- | --- | --- | --- |
+| Command acknowledgment | 30 | 148.2 ms | **181.5 ms** | 181.7 ms | p95 < 500 ms |
+| Core event visible after commit | 30 | 40.0 ms | **48.2 ms** | 49.1 ms | p95 < 1 s |
+| Records log: each next page (50 rows) | 21 | 49.5 ms | 49.7 ms | 66.2 ms | none stated |
+| Graph view: node selection until the next frame shows its details | 20 | 16.6 ms | **17.0 ms** | 17.1 ms | none stated (no long task > 200 ms) |
+| Long tasks while typing / opening the run / selecting every graph node | 1 each | none observed (run open 1,343 ms wall) | | | none > 200 ms |
+
+The selection timing is bounded below by the frame interval (about 16.7 ms). It shows that
+selection completes within one frame, not a finer latency. The graph is drawn once per run
+open; there is no live-updating graph.
+
+**Speech recognition:** on 2026-09-26 the owner skipped the STT measurement (decisions.md). STT
+latency and recognition quality are **not measured** and are not claimed. The "no graph canvas"
+note above is superseded by this section. The event-visibility caveat is unchanged: there is
+still no push view. The clean deployment hosts (T083) are still not measured.

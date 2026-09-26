@@ -8,7 +8,8 @@
 //     read-your-writes delay a reader sees, not a live UI update);
 //   - the 1,000-event records log: first page, then every "다음 기록 보기" page until all
 //     1,000 seeded events are listed;
-//   - main-thread long tasks while typing and while opening the 20-node / 40-edge run.
+//   - main-thread long tasks while typing and while opening the 20-node / 40-edge run;
+//   - the run's graph view: all nodes and edges drawn, and selecting each node.
 // Results (with browser, CPU, memory and sample counts) are written as JSON to
 // DEEPTWIN_PERF_OUT when set. The plan's targets are asserted: ack p95 < 500 ms, event
 // p95 < 1 s, no long task > 200 ms in the measured interactions.
@@ -198,12 +199,36 @@ test('responsiveness under the declared workload', { timeout: 600000 }, async t 
   await page.locator('#run-panel li, li', { hasText: 'n19' }).first().waitFor();
   results.run_view = { nodes: 20, open_wall_ms: Date.now() - selectStarted, long_tasks_ms: await takeSelection() };
 
+  // 5. the run's graph view (T037/T048): drawn with all 20 nodes and 40 edges, then selecting
+  // each node until its details name it
+  const graphRoot = page.locator('#run-graph');
+  await graphRoot.locator('svg g[data-node]').nth(19).waitFor();
+  const drawn = await graphRoot.evaluate(root => ({
+    nodes: root.querySelectorAll('svg g[data-node]').length, edges: root.querySelectorAll('svg line[data-edge]').length }));
+  assert.deepEqual(drawn, { nodes: 20, edges: 40 });
+  const takeGraph = await watchLongTasks(page);
+  const selectMs = await graphRoot.evaluate(async root => {
+    const timings = [];
+    for (const button of root.querySelectorAll('button[data-node]')) {
+      const started = performance.now();
+      button.click();
+      await new Promise(resolve => requestAnimationFrame(() => resolve()));
+      if (!root.querySelector('.graph-details dd')?.textContent?.includes(button.dataset.node)) {
+        throw new Error(`details do not name ${button.dataset.node}`);
+      }
+      timings.push(performance.now() - started);
+    }
+    return timings;
+  });
+  results.graph_view = { ...drawn, node_selection_to_next_frame_ms: stats(selectMs), long_tasks_ms: await takeGraph() };
+
   if (process.env.DEEPTWIN_PERF_OUT) await writeFile(process.env.DEEPTWIN_PERF_OUT, JSON.stringify(results, null, 2));
   console.log(JSON.stringify(results, null, 1));
   assert.deepEqual(errors, []);
   assert.ok(results.command_acknowledgment_ms.p95 < 500, `ack p95 ${results.command_acknowledgment_ms.p95} ms`);
   assert.ok(results.event_visible_after_commit_ms.p95 < 1000, `event p95 ${results.event_visible_after_commit_ms.p95} ms`);
-  for (const [label, tasks] of [['typing', results.typing.long_tasks_ms], ['run view', results.run_view.long_tasks_ms]]) {
+  for (const [label, tasks] of [['typing', results.typing.long_tasks_ms], ['run view', results.run_view.long_tasks_ms],
+    ['graph view', results.graph_view.long_tasks_ms]]) {
     assert.ok(tasks.every(duration => duration <= 200), `${label} long tasks ${tasks.join(', ')} ms`);
   }
 });
