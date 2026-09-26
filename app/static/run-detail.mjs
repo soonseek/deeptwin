@@ -8,11 +8,23 @@
 //   only its own facts) and the tabs 입력 / 산출물 / 전달 / 도구·모델 / 기록.
 // The graph view and the artifact viewer are the existing modules, passed in. Every string
 // reaches the DOM through textContent or an attribute; raw ids and digests sit in "기술 정보".
+//
+// UI phase 4 (§5.3, §6): process feedback. With a command id source (`commandId`) the final
+// result block carries "이 결과 전체" feedback and the selection panel the same control for the
+// selected node's exact attempt (run-feedback.mjs): 괜찮음 / 확인 필요 toggles, an optional memo,
+// an explicit save with its saved state, and a clear. The header says how many steps carry which
+// mark, and the graph and the timeline mark the steps and attempts that have feedback. No reason
+// is asked for, and feedback is never an alternative. `segment(target)` names the run segment an
+// artifact came from, for the difference view (difference-view.mjs).
 
 import { artifactRoutes, coverageText, MESSAGES as ARTIFACT_MESSAGES, previewView } from './artifacts.mjs';
 import {
-  attemptOptionText, errorText, finalResults, pendingApprovals, resolveSelection, runSummary, selectionView,
-  timelineRows, traceRoute, traceView,
+  createFeedbackControl, feedbackCommand, feedbackFor, feedbackIndex, feedbackRoute, feedbackSummary, nodeMarkers,
+  runTarget, stepMarker, stepTarget, targetKey,
+} from './run-feedback.mjs';
+import {
+  attemptOptionText, differenceSegment, errorText, finalResults, pendingApprovals, resolveSelection, runSummary,
+  selectionView, timelineRows, traceRoute, traceView,
 } from './run-trace.mjs';
 import {
   APPROVAL_STATE_TEXT, EFFECT_CLASS_LABELS, JOURNAL_LABELS, MODEL_CALL_STATE_TEXT, NODE_KIND_LABELS, NOT_RECORDED,
@@ -32,6 +44,8 @@ export const MESSAGES = Object.freeze({
   noFinal: '아직 최종 결과가 없습니다.',
   finalLead: '그래프의 끝 단계가 만든 산출물입니다. 내 버전을 만들거나 과정에서 어떻게 만들어졌는지 볼 수 있습니다.',
   wholeRun: '실행 전체',
+  wholeResult: '이 결과 전체',
+  wholeRunFeedback: '이 실행 전체',
   wholeRunHint: '그래프나 타임라인에서 단계를 고르면 그 단계의 수행과 시도를 봅니다.',
   noAttempts: '시도 기록 없음 — 실행기가 직접 처리한 단계입니다.',
   pastAttempt: '지난 시도입니다. 이 시도가 남긴 것만 보이며, 뒤 시도의 산출물은 여기에 붙지 않습니다.',
@@ -68,7 +82,7 @@ function refText(value) {
 
 export function createRunDetail({
   document, request, basePath = '/', roots, graph = null, artifacts = null,
-  onEdit = null, onAlternativeFile = null, onOpenApprovals = null, onSelectionChange = null,
+  onEdit = null, onAlternativeFile = null, onOpenApprovals = null, onSelectionChange = null, commandId = null,
 } = {}) {
   if (typeof document?.createElement !== 'function') fail('a document is required');
   if (typeof request !== 'function') fail('a request adapter is required');
@@ -82,6 +96,8 @@ export function createRunDetail({
   let generation = 0;
   let artifactsReady = Promise.resolve(null);
   let pending = null;  // a pick made while this run's trace is still being read
+  let feedbackIdx = new Map();  // the latest feedback revision of every target of this run
+  let current = null;           // the selection view the panel shows
 
   // ---- process views: graph | timeline over one selection -------------------------------------
   const graphPanel = el(document, 'div', { className: 'process-panel' });
@@ -101,7 +117,41 @@ export function createRunDetail({
   if (roots.artifactsMount) panels.outputs.append(outputsLead, roots.artifactsMount);
   const detailTabs = tabs(document, { label: '선택한 단계의 기록', idPrefix: 'detail', selected: 'outputs',
     items: DETAIL_TABS.map(([id, label]) => ({ id, label, panel: panels[id] })) });
-  roots.selection.replaceChildren(selectionHead, pickers, selectionNotes, detailTabs.root);
+
+  // ---- process feedback (UI phase 4): the whole result, and the selected exact attempt --------
+  const canRecord = typeof commandId === 'function';
+  const runFeedbackMount = el(document, 'div', { className: 'final-feedback' });
+  const stepFeedbackMount = el(document, 'div', { className: 'selection-feedback' });
+  stepFeedbackMount.hidden = true;
+  let stepTargetShown = null;
+
+  async function recordFeedback(target, body) {
+    const mine = runId;
+    const route = feedbackRoute(basePath, mine);
+    const { revision } = feedbackFor(feedbackIdx, target);
+    const command = feedbackCommand({ commandId: commandId(), target, expectedRevision: revision, ...body });
+    try {
+      const answer = await request(route, { method: 'POST', body: command });
+      if (mine === runId && trace !== null) applyFeedback(answer.current, target);
+      return answer.recorded;
+    } catch (error) {
+      // a stale screen: the server's latest state replaces the draft, the reason stays on screen
+      if (error?.code === 'conflict' && mine === runId && trace !== null) {
+        try { applyFeedback((await request(route, {})).current, target); } catch { /* the refusal is shown */ }
+      }
+      throw error;
+    }
+  }
+
+  const runControl = canRecord ? createFeedbackControl({ document, idPrefix: 'feedback-run',
+    onSave: value => recordFeedback(runTarget(), { action: 'set', ...value }),
+    onClear: () => recordFeedback(runTarget(), { action: 'clear' }) }) : null;
+  const stepControl = canRecord ? createFeedbackControl({ document, idPrefix: 'feedback-step',
+    onSave: value => recordFeedback(stepTargetShown, { action: 'set', ...value }),
+    onClear: () => recordFeedback(stepTargetShown, { action: 'clear' }) }) : null;
+  if (runControl) runFeedbackMount.append(runControl.root);
+  if (stepControl) stepFeedbackMount.append(stepControl.root);
+  roots.selection.replaceChildren(selectionHead, pickers, selectionNotes, stepFeedbackMount, detailTabs.root);
 
   function nodeKindLabel(node) {
     return NODE_KIND_LABELS[node.kind] ?? node.kind;
@@ -136,8 +186,22 @@ export function createRunDetail({
     for (const stop of trace.stops) {
       technical.push([`멈춤 기록 (${STOP_REASON_LABELS[stop.reason] ?? stop.reason})`, `${stop.at_utc} · ${stop.reason}`]);
     }
-    roots.summary.replaceChildren(titleRow, meta, stats, technicalDetails(document, technical));
+    roots.summary.replaceChildren(titleRow, meta, stats, feedbackLine, technicalDetails(document, technical));
     if (roots.summary.dataset) roots.summary.dataset.phase = trace.phase;
+    renderFeedbackSummary();
+  }
+
+  // "피드백: 결과 전체: 확인 필요 · 확인 필요 2개 단계" — what the owner marked, in one line
+  const feedbackLine = el(document, 'p', { className: 'run-feedback-summary', attrs: { 'aria-label': '내가 남긴 피드백' } });
+  function renderFeedbackSummary() {
+    const summary = feedbackSummary(trace?.feedback);
+    feedbackLine.hidden = !summary.any;
+    if (!summary.any) {
+      feedbackLine.replaceChildren();
+      return;
+    }
+    feedbackLine.replaceChildren(el(document, 'span', { className: 'stat-label', text: '내 피드백' }),
+      ...summary.parts.map(part => statusChip(document, { tone: part.tone, label: part.label })));
   }
 
   function renderBanner() {
@@ -200,7 +264,7 @@ export function createRunDetail({
     const listed = { artifactId: item.artifactId, role: item.role, nodeId: item.nodeId, ordinal: item.ordinal,
       mediaType: item.mediaType, size: item.size, sha256: item.sha256, available: true };
     const context = { title: `${item.role} (${item.responsibility} · ${item.attemptNo ? `시도 ${item.attemptNo}` : `수행 ${item.visitNo}`})`,
-      slot, anchor: card };
+      slot, anchor: card, segment: { nodeId: item.nodeId, visitNo: item.visitNo, attemptNo: item.attemptNo } };
     if (typeof onEdit === 'function') {
       const edit = el(document, 'button', { text: '내 버전 만들기', className: 'btn btn-primary', attrs: { type: 'button' } });
       edit.addEventListener('click', () => Promise.resolve(onEdit(runId, listed, context)).catch(() => {}));
@@ -229,9 +293,10 @@ export function createRunDetail({
   function renderFinal() {
     const view = finalResults(trace);
     const heading = el(document, 'h2', { text: '최종 결과', attrs: { id: 'run-final-title' } });
+    renderRunFeedback(view.items.length > 0, { keepDraft: true });
     if (view.items.length) {
       roots.final.replaceChildren(heading, el(document, 'p', { className: 'section-lead', text: MESSAGES.finalLead }),
-        ...view.items.map(finalCard));
+        ...view.items.map(finalCard), runFeedbackMount);
       return;
     }
     const where = el(document, 'ul', { className: 'stopped-list', attrs: { 'aria-label': '멈춘 지점' } },
@@ -243,7 +308,62 @@ export function createRunDetail({
       }));
     const next = view.stopped.length ? '실행이 멈춘 지점입니다. 단계를 고르면 그 단계의 시도와 오류를 봅니다.'
       : '끝 단계가 아직 결과를 기록하지 않았습니다.';
-    roots.final.replaceChildren(heading, emptyState(document, { missing: MESSAGES.noFinal, next, action: view.stopped.length ? where : null }));
+    roots.final.replaceChildren(heading, emptyState(document, { missing: MESSAGES.noFinal, next, action: view.stopped.length ? where : null }),
+      runFeedbackMount);
+  }
+
+  // "이 결과 전체" (or, without a final result, "이 실행 전체"): the run-level feedback
+  let runHeading = MESSAGES.wholeResult;
+  function renderRunFeedback(hasResult = runHeading === MESSAGES.wholeResult, { keepDraft = false } = {}) {
+    runHeading = hasResult ? MESSAGES.wholeResult : MESSAGES.wholeRunFeedback;
+    runFeedbackMount.hidden = runControl === null;
+    runControl?.show({ heading: runHeading, item: feedbackFor(feedbackIdx, runTarget()).item, keepDraft });
+  }
+
+  // the selected step's exact attempt (or a visit without attempts); none for the whole run
+  function stepTargetOf(view) {
+    if (view.scope === 'run' || !view.visit) return null;
+    return stepTarget(view.nodeId, view.visitNo, view.attempts.length ? view.attemptNo : null);
+  }
+
+  function stepHeading(view, target) {
+    const visit = view.node.visits.length > 1 ? `수행 ${target.visit_no} · ` : '';
+    const which = target.attempt_no ? `${visit}시도 ${target.attempt_no}` : `수행 ${target.visit_no}`;
+    return `이 단계: ${view.node.responsibility} · ${which}`;
+  }
+
+  function renderStepFeedback(view, { keepDraft = false } = {}) {
+    const target = stepControl === null ? null : stepTargetOf(view);
+    stepFeedbackMount.hidden = target === null;
+    if (target === null) {
+      stepTargetShown = null;
+      return;
+    }
+    const same = stepTargetShown !== null && JSON.stringify(stepTargetShown) === JSON.stringify(target);
+    stepTargetShown = target;
+    stepControl.show({ heading: stepHeading(view, target), item: feedbackFor(feedbackIdx, target).item,
+      keepDraft: keepDraft && same });
+  }
+
+  // a recorded revision (or the server's latest after a conflict) redraws every place it shows;
+  // the control that saved shows the saved state, any other keeps an edit its owner is making
+  function applyFeedback(currentFeedback, savedTarget = null) {
+    trace.feedback = currentFeedback;
+    feedbackIdx = feedbackIndex(currentFeedback);
+    const savedKey = savedTarget === null ? null : targetKey(savedTarget);
+    renderFeedbackSummary();
+    renderRunFeedback(undefined, { keepDraft: savedKey !== 'run' });
+    if (current !== null) {
+      const shown = stepTargetOf(current);
+      renderStepFeedback(current, { keepDraft: shown === null || savedKey !== targetKey(shown) });
+    }
+    renderTimeline();
+    markTimeline();
+    markGraph();
+  }
+
+  function markGraph() {
+    if (graph !== null && typeof graph.mark === 'function') graph.mark(nodeMarkers(trace?.feedback));
   }
 
   // ---- timeline -----------------------------------------------------------------------------------
@@ -258,6 +378,16 @@ export function createRunDetail({
       el(document, 'span', { className: 'timeline-node', text: row.responsibility }),
       el(document, 'span', { className: 'timeline-what', text: `${row.nodeId} · ${row.text}` }),
       statusChip(document, { tone: row.tone, label: row.detail }));
+      // the owner's feedback on this exact attempt (or on a visit that has no attempts)
+      const marker = row.kind === 'attempt' ? stepMarker(feedbackIdx, row.nodeId, row.visitNo, row.attemptNo)
+        : row.kind === 'visit' ? stepMarker(feedbackIdx, row.nodeId, row.visitNo, null) : null;
+      if (marker !== null) {
+        button.setAttribute('data-feedback', marker.kind);
+        button.append(el(document, 'span', { className: 'feedback-marker', attrs: { 'data-kind': marker.kind,
+          title: marker.label } }, [
+          el(document, 'span', { text: marker.glyph, attrs: { 'aria-hidden': 'true' } }),
+          el(document, 'span', { className: 'visually-hidden', text: marker.label })]));
+      }
       button.addEventListener('click', () => select({ nodeId: row.nodeId, visitNo: row.visitNo,
         attemptNo: row.kind === 'attempt' ? row.attemptNo : null }, { reveal: true }));
       list.append(el(document, 'li', {}, [button]));
@@ -394,7 +524,8 @@ export function createRunDetail({
     if (artifacts !== null) {
       const label = view.scope === 'run' ? null : view.scope === 'attempt' ? `시도 ${view.attemptNo}의` : `수행 ${view.visitNo}의`;
       const editContext = view.scope === 'run' ? null : { nodeId: view.nodeId,
-        title: role => `${role} (${view.node.responsibility} · ${view.attemptNo ? `시도 ${view.attemptNo}` : `수행 ${view.visitNo}`})` };
+        title: role => `${role} (${view.node.responsibility} · ${view.attemptNo ? `시도 ${view.attemptNo}` : `수행 ${view.visitNo}`})`,
+        segment: { nodeId: view.nodeId, visitNo: view.visitNo, attemptNo: view.attemptNo } };
       artifactsReady.then(() => artifacts.filter(view.scope === 'run' ? null : view.outputIds,
         { label, nodeId: view.nodeId, editContext, producers: producers() })).catch(() => {});
     }
@@ -583,7 +714,9 @@ export function createRunDetail({
 
   function renderSelection({ focus = false } = {}) {
     const view = selectionView(trace, selection);
+    current = view;
     renderHead(view);
+    renderStepFeedback(view, { keepDraft: true });
     renderInputs(view);
     renderOutputs(view);
     renderHandoffs(view);
@@ -621,6 +754,10 @@ export function createRunDetail({
       trace = null;
       pending = null;
       selection = Object.freeze({ nodeId: null, visitNo: null, attemptNo: null });
+      // another run's unsaved feedback draft never carries over
+      stepTargetShown = null;
+      runControl?.show({ heading: runHeading });
+      stepControl?.show({});
     }
     runId = nextRunId;
     const mine = ++generation;
@@ -630,12 +767,14 @@ export function createRunDetail({
       const value = traceView(await request(traceRoute(basePath, nextRunId), {}));
       if (mine !== generation) return null;
       trace = value;
+      feedbackIdx = feedbackIndex(trace.feedback);
       const keep = selection.nodeId !== null ? resolveSelection(trace, selection) : null;
       selection = keep ?? Object.freeze({ nodeId: null, visitNo: null, attemptNo: null });
       renderSummary();
       renderBanner();
       renderFinal();
       renderTimeline();
+      markGraph();
       const picked = pending;
       pending = null;
       if (picked !== null) select(picked.next, picked.options);
@@ -654,12 +793,17 @@ export function createRunDetail({
     trace = null;
     runId = null;
     pending = null;
+    feedbackIdx = new Map();
+    current = null;
     selection = Object.freeze({ nodeId: null, visitNo: null, attemptNo: null });
   }
 
   return Object.freeze({
     show, select, reset, selectTab: id => detailTabs.select(id, { notify: false }),
     selectView: id => viewTabs.select(id, { notify: false }),
+    // the run segment an artifact came from (the difference view's first screen), or null
+    segment: target => differenceSegment(trace, target ?? {}),
     get trace() { return trace; }, get selection() { return selection; }, get runId() { return runId; },
+    get feedback() { return trace?.feedback ?? null; },
   });
 }

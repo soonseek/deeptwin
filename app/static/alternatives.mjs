@@ -333,6 +333,8 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
     if (pending !== null) { cancel(pending); pending = null; }
     if (dirty || draft === null) await save({ asNew: false });
     if (draft === null) { say(MESSAGES.unchanged, 'invalid_input'); return null; }
+    // the content of the exact revision frozen below (unknown when the owner kept typing)
+    const frozenContent = dirty ? null : content;
     try {
       const frozen = await request(routes.freeze(target.runId, target.artifactId, draft.draftId), {
         method: 'POST', body: { schema_version: FREEZE_SCHEMA, command_id: crypto.randomUUID(),
@@ -343,7 +345,12 @@ export function createAlternativeEditor({ root, document, request, basePath = '/
         element('p', scope), element('p', '영향 범위는 따로 조사합니다.'));
       say(MESSAGES.frozen, 'frozen');
       if (typeof onFrozen === 'function') {
-        Promise.resolve(onFrozen(target.runId, target.artifactId, frozen.alternative_ref.id)).catch(() => {});
+        // the exact two contents this freeze compared ride along for the difference view's parts
+        // (UI phase 4): the original as recorded and the saved revision just frozen
+        Promise.resolve(onFrozen(target.runId, target.artifactId, frozen.alternative_ref.id, {
+          format: frozenContent === null ? null : target.format, original: originalContent, mine: frozenContent,
+          revision: draft.revision,
+        })).catch(() => {});
       }
       return frozen;
     } catch (error) {

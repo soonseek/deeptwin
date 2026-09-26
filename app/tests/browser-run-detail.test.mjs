@@ -155,3 +155,124 @@ test('the run detail: final result first, attempts kept apart, calls with tokens
       assert.deepEqual(errors, []);
     });
   });
+
+// UI phase 4 (§5.3–§5.5, §6): process feedback and "차이 살펴보기" on the same fixture. The test
+// actor marks the whole result 확인 필요 with no memo, marks the store step's attempt 1 괜찮음 with
+// a memo, reloads and finds both (the graph and timeline markers, the header line), clears one,
+// then freezes a changed 내 버전 of the final result and reads the difference view in place:
+// the changed line, the step that made the artifact and the unreviewed area — with nothing sent
+// to a model. Synthetic test-actor data; no provider is called and no key is read.
+test('process feedback persists with its markers, and 차이 살펴보기 opens in place without a model call',
+  { timeout: 150000 }, async t => {
+    const { page, url, seed, errors } = await open(t);
+    const posted = [];
+    const failures = [];
+    page.on('request', request => {
+      if (request.method() === 'POST') {
+        posted.push({ path: new URL(request.url()).pathname, headers: request.headers(), body: request.postData() });
+      }
+    });
+    page.on('response', response => {
+      if (response.status() >= 400) failures.push(`${response.status()} ${response.request().method()} ${new URL(response.url()).pathname}`);
+    });
+    await openRun(page, url, seed.run_id);
+    const runBox = page.locator('#run-final [data-feedback-for="feedback-run"]');
+    const stepBox = page.locator('#run-selection [data-feedback-for="feedback-step"]');
+    await runBox.locator('.feedback-title', { hasText: '이 결과 전체' }).waitFor();
+    assert.match(await runBox.textContent(), /이유를 적지 않아도 됩니다/);
+
+    // the whole result: 확인 필요, no memo, an explicit save
+    await runBox.getByRole('button', { name: '확인 필요', exact: true }).click();
+    assert.equal(await runBox.getByRole('button', { name: '확인 필요', exact: true }).getAttribute('aria-pressed'), 'true');
+    await runBox.getByRole('button', { name: '저장', exact: true }).click();
+    await runBox.locator('.feedback-status', { hasText: '저장됨 · 방금 전' }).waitFor();
+    const first = posted.find(item => item.path.endsWith(`/api/v1/runs/${seed.run_id}/feedback`));
+    const csrf = await page.evaluate(async base => (await (await fetch(base + 'session')).json()).csrf_token,
+      new URL(url).pathname);
+    assert.equal(first.headers['x-deeptwin-csrf'], csrf);
+    const firstBody = JSON.parse(first.body);
+    assert.deepEqual({ ...firstBody, command_id: undefined }, { schema_version: 'process-feedback-command-v1',
+      command_id: undefined, action: 'set', target: { scope: 'run' }, expected_revision: 0, mark: 'needs_attention', memo: null });
+    await page.locator('#run-summary .run-feedback-summary', { hasText: '결과 전체: 확인 필요' }).waitFor();
+
+    // the store step, attempt 1: 괜찮음 with a memo
+    await node(page, 'publish').click();
+    await page.getByRole('combobox', { name: '시도 선택' }).selectOption('1');
+    await stepBox.locator('.feedback-title', { hasText: '이 단계: 승인된 안내문을 저장 도구로 기록한다 · 시도 1' }).waitFor();
+    await stepBox.getByRole('button', { name: '괜찮음', exact: true }).click();
+    await stepBox.getByRole('button', { name: '메모 쓰기' }).click();
+    const memo = 'test-actor: 시도 1은 초안을 제대로 받았습니다. 실패는 도구 쪽 문제로 보입니다.';
+    await stepBox.getByRole('textbox', { name: /메모/ }).fill(memo);
+    await stepBox.getByRole('button', { name: '저장', exact: true }).click();
+    await stepBox.locator('.feedback-status', { hasText: '저장됨' }).waitFor();
+    const second = JSON.parse(posted.filter(item => item.path.endsWith('/feedback')).at(-1).body);
+    assert.deepEqual(second.target, { scope: 'step', node_id: 'publish', visit_no: 1, attempt_no: 1 });
+    assert.deepEqual([second.mark, second.memo], ['ok', memo]);
+
+    // a reload finds both, with the markers and the header line
+    await openRun(page, url, seed.run_id);
+    await runBox.locator('.feedback-status', { hasText: '저장됨' }).waitFor();
+    assert.equal(await runBox.getByRole('button', { name: '확인 필요', exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await runBox.getByRole('button', { name: '괜찮음', exact: true }).getAttribute('aria-pressed'), 'false');
+    const header = page.locator('#run-summary .run-feedback-summary');
+    assert.match(await header.textContent(), /결과 전체: 확인 필요/);
+    assert.match(await header.textContent(), /괜찮음 1개 단계/);
+    await page.locator('#run-graph g[data-node="publish"][data-feedback="ok"]').waitFor({ state: 'attached' });
+    assert.match(await node(page, 'publish').textContent(), /피드백: 괜찮음/);
+    assert.equal(await page.locator('#run-graph g[data-feedback]').count(), 1);
+    await page.getByRole('tab', { name: '타임라인' }).click();
+    const row = page.locator('#run-timeline button.timeline-entry[data-node="publish"][data-attempt="1"]');
+    assert.equal(await row.getAttribute('data-feedback'), 'ok');
+    assert.equal(await page.locator('#run-timeline button.timeline-entry[data-node="publish"][data-attempt="2"]')
+      .getAttribute('data-feedback'), null);
+    await row.click();
+    await stepBox.locator('.feedback-title', { hasText: '시도 1' }).waitFor();
+    assert.equal(await stepBox.getByRole('textbox', { name: /메모/ }).inputValue(), memo);
+    assert.equal(await stepBox.getByRole('button', { name: '괜찮음', exact: true }).getAttribute('aria-pressed'), 'true');
+
+    // clearing one is a new revision: the marker goes, the history stays
+    await stepBox.getByRole('button', { name: '지우기' }).click();
+    await stepBox.locator('.feedback-status', { hasText: '피드백을 지웠습니다' }).waitFor();
+    assert.equal(await page.locator('#run-timeline button.timeline-entry[data-feedback]').count(), 0);
+    assert.doesNotMatch(await header.textContent(), /괜찮음 1개 단계/);
+    const listed = await page.evaluate(async runId => {
+      const base = location.pathname.replace(/[^/]*$/, '');
+      return (await fetch(`${base}api/v1/runs/${runId}/feedback`)).json();
+    }, seed.run_id);
+    assert.equal(listed.current.run.mark, 'needs_attention');
+    assert.deepEqual(listed.current.steps.map(item => [item.target.node_id, item.state]), [['publish', 'cleared']]);
+    assert.equal(listed.history.length, 3);
+    assert.ok(!posted.some(item => /"reason"/.test(item.body ?? '')), 'no reason is ever sent');
+    await page.getByRole('tab', { name: '그래프' }).click();
+
+    // 내 버전 of the final result, one line changed, then 차이 살펴보기 — in place, no model call
+    const final = page.locator('#run-final .final-result');
+    await final.getByRole('button', { name: '내 버전 만들기' }).click();
+    const area = page.getByRole('textbox', { name: '내 버전 텍스트' });
+    await area.fill((await area.inputValue()).replace('3층 세미나실', '4층 큰 회의실'));
+    await page.locator('#run-alternative [role=status]', { hasText: '자동 저장됨 (수정본 1)' }).waitFor();
+    const before = posted.length;
+    await page.getByRole('button', { name: '차이 살펴보기' }).click();
+    const view = page.locator('#run-final #run-difference');
+    await view.locator('.difference-status', { hasText: '관측한 차이입니다' }).waitFor();
+    assert.equal(await page.locator('#run-inquiry.run-inquiry').count(), 0, 'the detached card is gone');
+    const shown = await view.textContent();
+    assert.match(shown, /차이 살펴보기 — report \(최종 안내문을 보고서로 묶는다 · 수행 1\)/);
+    assert.match(shown, /관측된 차이 1개/);
+    assert.match(await view.locator('.difference-part').first().textContent(), /3층 세미나실/);
+    assert.match(await view.locator('.difference-part-mine').textContent(), /4층 큰 회의실/);
+    assert.match(await view.locator('.difference-segment').textContent(), /“최종 안내문을 보고서로 묶는다” \(report\)/);
+    assert.match(await view.locator('.difference-segment').textContent(), /앞 단계 “승인된 안내문을 저장 도구로 기록한다”\(publish\) 시도 2/);
+    assert.match(await view.locator('.difference-scope').textContent(),
+      /내가 바꾼 1곳이 근거입니다\. 바꾸지 않은 부분은 검토하지 않은 영역으로 남고, 영향 범위는 따로 조사합니다\./);
+    assert.match(shown, /소유자가 요청할 때만 Claude 연결로 만든다/);
+    await view.getByRole('button', { name: '과정에서 이 단계 보기' }).waitFor();
+    // the freeze and the one observation are the only commands; nothing asked a model anything
+    const sent = posted.slice(before).map(item => item.path);
+    assert.ok(sent.some(path => path.endsWith('/freeze')), JSON.stringify(sent));
+    assert.ok(sent.some(path => path.endsWith('/difference')), JSON.stringify(sent));
+    assert.deepEqual(sent.filter(path => /hypotheses|model-choice|inquiries|connections/.test(path)), []);
+    // the difference read before the observation is the only refusal the journey saw
+    assert.deepEqual(failures.filter(item => !/^404 GET .*\/alternatives\/[0-9a-f-]+\/difference$/.test(item)), []);
+    assert.deepEqual(errors, []);
+  });

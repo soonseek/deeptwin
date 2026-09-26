@@ -103,3 +103,21 @@ test('the view draws every node, selecting shows details, and a run shows its re
   assert.equal(root.findAll(el => el.tagName === 'DETAILS').length, 0, 'an agent node has no raw config to fold');
   assert.equal(runStates({ outcome: {} }, graph).get('writer'), 'not_visited');
 });
+
+// UI phase 4: the owner's feedback marks its node — a badge with its words on the drawn box and
+// the words beside the node's list button; markers given before the graph is drawn still apply
+test('feedback markers are drawn on the node and spelled beside its button, never by colour alone', () => {
+  const root = new FakeElement('section');
+  const view = createGraphView({ root, document, request: null });
+  view.mark(new Map([['writer', { kind: 'needs_attention', glyph: '!', label: '피드백: 확인 필요' }]]));
+  view.show(graph);
+  const box = root.findAll(el => el.tagName === 'G' && el.getAttribute('data-node') === 'writer')[0];
+  assert.equal(box.getAttribute('data-feedback'), 'needs_attention');
+  const badge = box.findAll(el => (el.getAttribute('class') ?? '').includes('graph-feedback'))[0];
+  assert.equal(badge.getAttribute('class'), 'graph-feedback graph-feedback-needs_attention');
+  assert.match(badge.textContent, /피드백: 확인 필요!/);  // the <title> words and the glyph
+  const button = root.findAll(el => el.tagName === 'BUTTON' && el.getAttribute('data-node') === 'writer')[0];
+  assert.equal(button.textContent, 'writer · 에이전트 · 피드백: 확인 필요');
+  const other = root.findAll(el => el.tagName === 'BUTTON' && el.getAttribute('data-node') === 'intake')[0];
+  assert.equal(other.getAttribute('data-feedback'), null);
+});

@@ -58,7 +58,7 @@ test('media types become Korean labels; parameters and case never change them; o
 
 test('every public event type has a topic and a past-tense sentence; the status decides which is shown', () => {
   const types = Object.keys(EVENT_TEXT);
-  assert.equal(types.length, 117);
+  assert.equal(types.length, 118);  // UI phase 4 added feedback.recorded
   for (const type of types) {
     const entry = EVENT_TEXT[type];
     assert.ok(Array.isArray(entry) && entry.length === 2, type);
@@ -145,4 +145,34 @@ test('time: the server stamp parsed to the millisecond, shown local to the secon
   assert.deepEqual({ ...timeText(stamp, at(180)) },
     { relative: '3분 전', absolute: '2026-09-26 00:04:05', iso: '2026-09-25T15:04:05.123Z' });
   assert.deepEqual({ ...timeText('bad', at(0)) }, { relative: '', absolute: '', iso: '' });
+});
+
+// UI phase 4: a stop reads as what it means for the run, and the feedback event names its target
+test('a run.stopped chip is the run outcome; a feedback event says what was marked, never the memo', async () => {
+  const { RUN_STOP_OUTCOME_TEXT, runStopOutcome, FEEDBACK_MARK_LABELS } = await import('../static/ui-format.mjs');
+  const stop = reason => ({ event_type: 'run.stopped', status: 'succeeded', public_metadata: { reason_code: reason } });
+  assert.deepEqual({ ...runStopOutcome(stop('infrastructure_failure')) }, { label: '실패로 멈춤', tone: 'error' });
+  assert.deepEqual({ ...runStopOutcome(stop('completed')) }, { label: '완료', tone: 'ok' });
+  assert.deepEqual({ ...runStopOutcome(stop('cancelled')) }, { label: '취소·거절로 멈춤', tone: 'neutral' });
+  // a failure is never "완료" or "성공", and every closed reason has words
+  for (const [reason, [label, tone]] of Object.entries(RUN_STOP_OUTCOME_TEXT)) {
+    assert.deepEqual({ ...runStopOutcome(stop(reason)) }, { label, tone });
+    if (reason !== 'completed') assert.ok(label !== '완료' && label !== '성공', reason);
+  }
+  assert.deepEqual({ ...runStopOutcome(stop('new_reason')) }, { label: '멈춤 (new_reason)', tone: 'warn' });
+  assert.deepEqual({ ...runStopOutcome({ event_type: 'run.stopped', status: 'succeeded', public_metadata: {} }) },
+    { label: '멈춤 (이유 기록 없음)', tone: 'warn' });
+  // a stop whose own record failed keeps the record's status; other events are not stops
+  assert.equal(runStopOutcome({ ...stop('completed'), status: 'failed' }), null);
+  assert.equal(runStopOutcome({ event_type: 'run.started', status: 'succeeded' }), null);
+  assert.deepEqual({ ...FEEDBACK_MARK_LABELS }, { ok: '괜찮음', needs_attention: '확인 필요' });
+  const feedback = metadata => eventSentence({ event_type: 'feedback.recorded', status: 'succeeded', public_metadata: metadata }).text;
+  assert.equal(feedback({ scope: 'run', mark: 'needs_attention', memo: false, cleared: false, revision: 1 }),
+    '과정 피드백을 남겼습니다 (실행 전체 · 확인 필요)');
+  assert.equal(feedback({ scope: 'step', mark: 'ok', memo: true, cleared: false, revision: 2 }),
+    '과정 피드백을 남겼습니다 (단계 · 괜찮음 · 메모)');
+  assert.equal(feedback({ scope: 'step', mark: 'none', memo: true, cleared: false, revision: 1 }),
+    '과정 피드백을 남겼습니다 (단계 · 메모)');
+  assert.equal(feedback({ scope: 'step', mark: 'none', memo: false, cleared: true, revision: 3 }),
+    '과정 피드백을 남겼습니다 (단계 · 지움)');
 });

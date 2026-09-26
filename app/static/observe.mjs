@@ -15,6 +15,7 @@ import { createAlternativeFileForm } from './alternative-file.mjs';
 import { createApprovalScreen } from './approval-screen.mjs';
 import { createAlternativeEditor } from './alternatives.mjs';
 import { createArtifactIndex, createArtifactViewer } from './artifacts.mjs';
+import { createDifferenceView } from './difference-view.mjs';
 import { createGraphView } from './graph.mjs';
 import { createInquiryPanel } from './inquiry.mjs';
 import { createRunDetail } from './run-detail.mjs';
@@ -27,6 +28,8 @@ import { mountShell } from './ui-shell.mjs';
 export const ALTERNATIVE_MOUNT_ID = 'run-alternative';
 export const ALTERNATIVE_FILE_MOUNT_ID = 'run-alternative-file';
 export const INQUIRY_MOUNT_ID = 'run-inquiry';
+// UI phase 4: "차이 살펴보기" opens in place under the artifact the owner answered
+export const DIFFERENCE_MOUNT_ID = 'run-difference';
 export const GRAPH_MOUNT_ID = 'run-graph';
 export const APPROVALS_MOUNT_ID = 'run-approvals';
 export const INDEX_MOUNT_ID = 'artifact-index';
@@ -68,6 +71,12 @@ function sessionFailureText(error) {
 export function runFromHash(hash) {
   const named = new URLSearchParams(typeof hash === 'string' ? hash.replace(/^#/, '') : '').get('run');
   return typeof named === 'string' && UUID.test(named) ? named : null;
+}
+
+// `#run=<id>&artifact=<id>` (the records page's artifact index) also names one artifact to preview
+export function artifactFromHash(hash) {
+  const named = new URLSearchParams(typeof hash === 'string' ? hash.replace(/^#/, '') : '').get('artifact');
+  return runFromHash(hash) !== null && typeof named === 'string' && UUID.test(named) ? named : null;
 }
 
 function mount(document, id) {
@@ -134,9 +143,12 @@ export async function boot({ document, location, fetch, crypto, shell = null, hi
     }
   }
 
+  let editing = null;  // the context the owner's version was opened in (its title, slot and step)
+
   function inPlace(surface, opener) {
     return async (runId, item, context = {}) => {
       placeIn(surface, context);
+      editing = { surface, context };
       const opened = await opener(runId, item, { title: context?.title ?? null });
       surface.scrollIntoView?.({ block: 'nearest' });
       return opened;
@@ -146,27 +158,54 @@ export async function boot({ document, location, fetch, crypto, shell = null, hi
   const panel = createRunPanel({ root: roots.panel, document, basePath, request: session.request, commandId,
     onView: view => refreshAfter(view) });
   // the owner's in-place editor, the alternative-file form and the observed difference
-  // mount only where the page offers their surfaces (T052/T053/T060)
-  const inquiryRoot = document.getElementById(INQUIRY_MOUNT_ID);
+  // mount only where the page offers their surfaces (T052/T053/T060). UI phase 4: the difference
+  // view ("차이 살펴보기") opens in place, right under the editor it came from, with the related
+  // run segment from the trace and the inquiry inside it; a page with only the older
+  // `run-inquiry` card keeps that card.
+  const differenceRoot = mount(document, DIFFERENCE_MOUNT_ID);
+  const difference = differenceRoot !== null
+    ? createDifferenceView({ root: differenceRoot, document, basePath, request: session.request, crypto,
+      // closing the view hands its place back; the editor above it stays where it is
+      onClose: hasDetail ? () => parking?.append?.(differenceRoot) : null,
+      onSelectStep: target => {
+        detail?.select(target, { focus: true, reveal: true });
+        document.getElementById('run-process')?.scrollIntoView?.({ block: 'start' });
+      } })
+    : null;
+  if (differenceRoot !== null) surfaces.push(differenceRoot);
+  const inquiryRoot = difference === null ? document.getElementById(INQUIRY_MOUNT_ID) : null;
   const inquiry = inquiryRoot !== null && typeof inquiryRoot?.replaceChildren === 'function'
     ? createInquiryPanel({ root: inquiryRoot, document, basePath, request: session.request, crypto })
     : null;
-  const onFrozen = inquiry === null ? undefined : (runId, artifactId, alternativeId) => {
-    const shown = inquiry.show(runId, artifactId, alternativeId);
-    inquiryRoot.scrollIntoView?.({ block: 'start' });
-    return shown;
-  };
+  let onFrozen;
+  if (difference !== null) {
+    onFrozen = (runId, artifactId, alternativeId, texts = null) => {
+      const context = editing?.context ?? {};
+      const slot = editing?.surface?.parentNode;
+      if (hasDetail && slot && typeof slot.append === 'function' && slot !== parking) slot.append(differenceRoot);
+      const shown = difference.show({ runId, artifactId, alternativeId, title: context.title ?? null, texts,
+        segment: detail?.segment(context.segment) ?? null });
+      differenceRoot.scrollIntoView?.({ block: 'start' });
+      return shown;
+    };
+  } else if (inquiry !== null) {
+    onFrozen = (runId, artifactId, alternativeId) => {
+      const shown = inquiry.show(runId, artifactId, alternativeId);
+      inquiryRoot.scrollIntoView?.({ block: 'start' });
+      return shown;
+    };
+  }
   const alternativeRoot = mount(document, ALTERNATIVE_MOUNT_ID);
   const fileRoot = mount(document, ALTERNATIVE_FILE_MOUNT_ID);
   if (alternativeRoot) surfaces.push(alternativeRoot);
   if (fileRoot) surfaces.push(fileRoot);
   const editor = alternativeRoot !== null
     ? createAlternativeEditor({ root: alternativeRoot, document, basePath, request: session.request, crypto, onFrozen,
-      onClose: hasDetail ? () => park(alternativeRoot) : undefined })
+      onClose: hasDetail ? () => { park(alternativeRoot); if (differenceRoot) park(differenceRoot); } : undefined })
     : null;
   const fileForm = fileRoot !== null
     ? createAlternativeFileForm({ root: fileRoot, document, basePath, request: session.request, crypto, onFrozen,
-      onClose: hasDetail ? () => park(fileRoot) : undefined })
+      onClose: hasDetail ? () => { park(fileRoot); if (differenceRoot) park(differenceRoot); } : undefined })
     : null;
   const openEditor = editor === null ? undefined
     : hasDetail ? inPlace(alternativeRoot, (runId, item, options) => editor.open(runId, item, options))
@@ -191,7 +230,7 @@ export async function boot({ document, location, fetch, crypto, shell = null, hi
       onDecided: runId => panel.read(runId) })
     : null;
   if (hasDetail) {
-    detail = createRunDetail({ document, request: session.request, basePath, graph, artifacts,
+    detail = createRunDetail({ document, request: session.request, basePath, graph, artifacts, commandId,
       roots: { summary: detailRoots.summary, banner: detailRoots.banner, final: detailRoots.final,
         views: detailRoots.views, graphMount: graphRoot, timeline: detailRoots.timeline,
         selection: detailRoots.selection, artifactsMount: roots.artifacts },
@@ -267,8 +306,14 @@ export async function boot({ document, location, fetch, crypto, shell = null, hi
     ? createArtifactIndex({ root: indexRoot, document, basePath, request: session.request,
       onOpen: (runId, artifactId) => openRun(runId, { preview: artifactId }) })
     : null;
+  // `#run=<id>&artifact=<id>` previews that artifact once, when its run opens
+  let namedPreview = artifactFromHash(location?.hash);
   const list = createRunList({ root: roots.source, document, basePath, request: session.request,
-    onSelect: runId => openRun(runId) });
+    onSelect: runId => {
+      const preview = namedPreview !== null && runFromHash(location?.hash) === runId ? namedPreview : null;
+      namedPreview = null;
+      return openRun(runId, { preview });
+    } });
   try {
     await list.refresh();
     // `#run=<id>` (the work page's link to the run it started; an asset takes no query)
@@ -282,7 +327,13 @@ export async function boot({ document, location, fetch, crypto, shell = null, hi
   if (typeof events?.addEventListener === 'function') {
     events.addEventListener('hashchange', () => {
       const named = runFromHash(location?.hash);
+      namedPreview = artifactFromHash(location?.hash);
       if (named && named !== current) list.select(named);
+      else if (named && namedPreview !== null) {
+        const preview = namedPreview;
+        namedPreview = null;
+        artifacts.open(named, preview).catch(() => {});
+      }
     });
   }
   if (index !== null) {

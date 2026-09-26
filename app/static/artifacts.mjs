@@ -270,8 +270,10 @@ export function createArtifactViewer({ root, document, request, basePath = '/', 
     const download = element('a', '원본 내려받기', { href: routes.content(runId, item.artifactId),
       download: `${item.role}-${item.ordinal}`, rel: 'noopener' });
     entry.append(show, download);
+    // the step the artifact came from rides along for the difference view (UI phase 4)
     const context = () => ({ slot: editorSlot, anchor: entry,
-      title: filtering?.editContext ? filtering.editContext.title(item.role) : `${item.role} (${item.nodeId ?? '노드 미상'})` });
+      title: filtering?.editContext ? filtering.editContext.title(item.role) : `${item.role} (${item.nodeId ?? '노드 미상'})`,
+      segment: filtering?.editContext?.segment ?? (item.nodeId ? { nodeId: item.nodeId } : null) });
     if (typeof onAlternativeFile === 'function') {
       // any format may be answered with the owner's own file (alternative-file.mjs)
       const answer = element('button', '대안 파일 올리기', { type: 'button' });
@@ -430,11 +432,14 @@ export function createArtifactViewer({ root, document, request, basePath = '/', 
     get runId() { return runId; }, get items() { return loaded; }, get filtered() { return filtering !== null; } });
 }
 
-export function createArtifactIndex({ root, document, request, basePath = '/', onOpen } = {}) {
+// UI phase 4: on the records page the index lives apart from any one run; `linkTo(runId,
+// artifactId)` then makes each row a link to that run's own screen with the artifact previewed
+// (`observe.html#run=…&artifact=…`) instead of an in-page open
+export function createArtifactIndex({ root, document, request, basePath = '/', onOpen, linkTo = null } = {}) {
   if (typeof root !== 'object' || root === null || typeof root.replaceChildren !== 'function') fail('a root element is required');
   if (typeof document !== 'object' || document === null || typeof document.createElement !== 'function') fail('a document is required');
   if (typeof request !== 'function') fail('an injected request function is required');
-  if (typeof onOpen !== 'function') fail('an open callback is required');
+  if (typeof onOpen !== 'function' && typeof linkTo !== 'function') fail('an open callback is required');
   const routes = artifactRoutes(basePath);
   const element = builder(document);
   let generation = 0;
@@ -460,8 +465,13 @@ export function createArtifactIndex({ root, document, request, basePath = '/', o
     const entry = element('li', undefined, { 'data-artifact-id': item.artifactId, 'data-run-id': item.runId });
     entry.append(element('span', `${item.role} · ${mediaTypeLabel(item.mediaType)} · ${sizeText(item.size)} · 실행 ${shortId(item.runId)}`
       + (item.available ? '' : ' · 원본 없음'), { class: 'artifact-label' }));
-    const open = element('button', '열기', { type: 'button' });
-    open.addEventListener('click', () => Promise.resolve(onOpen(item.runId, item.artifactId)).catch(() => {}));
+    let open;
+    if (typeof linkTo === 'function') {
+      open = element('a', '실행 화면에서 열기', { href: linkTo(item.runId, item.artifactId), class: 'btn btn-secondary' });
+    } else {
+      open = element('button', '열기', { type: 'button' });
+      open.addEventListener('click', () => Promise.resolve(onOpen(item.runId, item.artifactId)).catch(() => {}));
+    }
     entry.append(open, artifactTechnical(document, item));
     return entry;
   }

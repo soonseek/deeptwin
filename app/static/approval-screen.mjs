@@ -25,7 +25,7 @@ import {
   receiptSummary,
 } from './approvals.mjs';
 import { runRoutes, runView } from './runtime.mjs';
-import { approvalScopeLabel } from './ui-format.mjs';
+import { absoluteTime, approvalScopeLabel } from './ui-format.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -39,10 +39,17 @@ export const STATE_LABELS = Object.freeze({
   expired: '만료됨 — 요청 시한이 지나 이 시도는 허가되지 않으며 다시 결정할 수 없습니다',
 });
 
-// the ask's server-set expiry as the owner reads it (UTC, to the second)
+// the ask's server-set expiry as the owner reads it: this device's local time, to the second
+// (ui-format.mjs, the one display rule; UI phase 4 — it read as UTC before)
 export function expiryText(expiresAtMs) {
-  if (expiresAtMs === null || expiresAtMs === undefined) return '';
-  return ` · 시한 ${new Date(expiresAtMs).toISOString().slice(0, 19).replace('T', ' ')} UTC`;
+  if (!Number.isSafeInteger(expiresAtMs)) return '';
+  const local = absoluteTime(new Date(expiresAtMs));
+  return local ? ` · 시한 ${local}` : '';
+}
+
+// UI phase 4: with nothing to decide the card is one line ("이 실행의 승인 기록 2건 · 보기")
+export function foldText(recordCount) {
+  return recordCount > 0 ? `이 실행의 승인 기록 ${recordCount}건 · 보기` : '이 실행에는 결정할 승인이 없습니다';
 }
 
 export const MESSAGES = Object.freeze({
@@ -103,8 +110,30 @@ export function createApprovalScreen({ root, document, basePath = '/', request, 
   const attempts = element('ul', undefined, { class: 'approval-executions', 'aria-label': '실행별 승인 요청' });
   const refresh = element('button', '승인 요청 다시 읽기', { type: 'button' });
   refresh.disabled = true;
-  root.replaceChildren(element('h2', '승인'), status, alert, element('h3', '게이트 승인'), gates,
-    element('h3', '실행 시도 승인'), attempts, refresh);
+  // with nothing pending the card folds to one line; the owner opens it to see the records
+  const fold = element('button', '', { type: 'button', class: 'approval-fold', 'aria-expanded': 'false',
+    'aria-controls': 'approval-body' });
+  fold.hidden = true;
+  const body = element('div', undefined, { class: 'approval-body', id: 'approval-body' });
+  body.append(status, alert, element('h3', '게이트 승인'), gates, element('h3', '실행 시도 승인'), attempts, refresh);
+  // the fold sits after the body: folded, the body is hidden and the line follows the heading
+  root.replaceChildren(element('h2', '승인'), body, fold);
+  let folded = false;
+  let opened = false;  // the owner opened the records (or just decided): it stays open for this run
+
+  function setFolded(value, count = 0) {
+    folded = value;
+    fold.hidden = !value;
+    body.hidden = value && !opened;
+    fold.textContent = foldText(count);
+    fold.disabled = count === 0;
+    fold.setAttribute('aria-expanded', value && opened ? 'true' : 'false');
+    if (root.dataset) root.dataset.folded = value && !opened ? 'true' : 'false';
+  }
+  fold.addEventListener('click', () => {
+    opened = !opened;
+    setFolded(folded, Number(fold.dataset?.count ?? 0));
+  });
 
   let current = null; // run id shown
   let generation = 0;
@@ -183,6 +212,7 @@ export function createApprovalScreen({ root, document, basePath = '/', request, 
   async function show(runId, { keepAlert = false } = {}) {
     if (typeof runId !== 'string' || !UUID.test(runId)) fail('run id is not a canonical UUID');
     const mine = ++generation;
+    if (runId !== current) opened = false;
     current = runId;
     refresh.disabled = true;
     if (!keepAlert) clearAlert();
@@ -201,10 +231,14 @@ export function createApprovalScreen({ root, document, basePath = '/', request, 
     else attempts.replaceChildren();
     const failed = [gateRead, attemptRead].find(result => result.status === 'rejected');
     if (failed) {
+      setFolded(false);
       refused(failed.reason);
       say(open ? `결정할 일 ${open}개가 있습니다. 일부 요청은 읽지 못했습니다.` : MESSAGES.idle, 'unavailable');
       throw failed.reason;
     }
+    const records = attemptRead.value.requests.length;
+    if (fold.dataset) fold.dataset.count = String(records);
+    setFolded(open === 0 && !keepAlert, records);
     say(open ? `결정할 일 ${open}개가 있습니다.` : MESSAGES.none, open ? 'pending' : 'none');
     return Object.freeze({ gates: gateRead.value.awaiting, listing: attemptRead.value });
   }
@@ -212,6 +246,7 @@ export function createApprovalScreen({ root, document, basePath = '/', request, 
   async function decide(runId, send, recorded) {
     if (busy || current !== runId) return null;
     busy = true;
+    opened = true;  // the owner is deciding here: the card stays open afterwards
     clearAlert();
     say(MESSAGES.sending, 'sending');
     let value = null;

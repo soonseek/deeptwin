@@ -3,8 +3,8 @@
 // the other a DOCX). The observe page previews the PDF as the page image the isolated
 // document worker — a separate process reached over the cp-document frame channel —
 // rendered, pages to page 2 and back, shows the DOCX as the worker's extracted text, and
-// the vault-wide index lists all three artifacts across both runs, filters them by type and
-// opens any listed one in the viewer. Scripted test actor only: synthetic evidence of the
+// the vault-wide index (on the records page since UI phase 4) lists all three artifacts across
+// both runs, filters them by type and opens any listed one on its run's screen, in the viewer. Scripted test actor only: synthetic evidence of the
 // mechanism, never user evidence.
 
 import test from 'node:test';
@@ -109,8 +109,12 @@ test('a PDF page rendered by the isolated worker, page navigation, DOCX text and
   await viewer.getByText('전체 3쪽 중 2쪽 표시', { exact: false }).waitFor();
   await viewer.screenshot({ path: join(tmpdir(), 'deeptwin-t045-pdf-page.png') });
 
-  // the vault-wide index lists every run's artifacts and opens any one
-  const index = page.locator('#artifact-index');
+  // the vault-wide index lists every run's artifacts and opens any one. UI phase 4: it lives on the
+  // records page (the run page shows only its own run); a row opens its run's screen with the
+  // artifact previewed
+  assert.equal(await page.locator('#artifact-index').count(), 0);
+  await page.goto(url + 'records.html');
+  const index = page.locator('#artifacts');
   await index.getByText('산출물 3개 중 3개 표시', { exact: false }).waitFor();
   await index.getByRole('combobox', { name: '산출물 형식 필터' }).selectOption('application/pdf');
   await index.getByText('산출물 1개 중 1개 표시', { exact: false }).waitFor();
@@ -118,14 +122,15 @@ test('a PDF page rendered by the isolated worker, page navigation, DOCX text and
   await index.getByText('산출물 3개 중 3개 표시', { exact: false }).waitFor();
   const draft = index.locator('li', { hasText: 'draft ·' });
   assert.match(await draft.textContent(), new RegExp(`실행 ${runIds[1].slice(0, 8)}`));
-  await draft.getByRole('button', { name: '열기' }).click();
+  await index.screenshot({ path: join(tmpdir(), 'deeptwin-t045-index.png') });
+  await draft.getByRole('link', { name: '실행 화면에서 열기' }).click();
   await viewer.getByText('브라우저 확인용 문서 본문', { exact: true }).waitFor();
   assert.match(await viewer.textContent(), /본문 문단 1개, 표 0개\(셀 0개\)의 텍스트/);
   assert.match(await page.locator('#run-artifacts').textContent(), /산출물 1개/);
   // and back to the PDF of the first run, from the index
-  await index.locator('li', { hasText: 'paper ·' }).getByRole('button', { name: '열기' }).click();
+  await page.goto(url + 'records.html');
+  await index.locator('li', { hasText: 'paper ·' }).getByRole('link', { name: '실행 화면에서 열기' }).click();
   await viewer.getByText('전체 3쪽 중 1쪽 표시', { exact: false }).waitFor();
   await imageLoaded(page, '#run-artifacts img.artifact-page[data-page="1"]');
-  await index.screenshot({ path: join(tmpdir(), 'deeptwin-t045-index.png') });
   assert.deepEqual(errors, []);
 });

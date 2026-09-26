@@ -28,7 +28,8 @@ test('a frozen alternative shows its observed difference and no invented explana
   await page.getByRole('textbox', { name: '내 버전 텍스트' }).fill('첫 줄\n고친 둘째 줄\n셋째 줄\n');
   await saved(page, 1);
   await page.getByRole('button', { name: '차이 살펴보기' }).click();
-  const panel = page.locator('#run-inquiry');
+  // UI phase 4: the difference opens in place ("차이 살펴보기"), the inquiry inside it
+  const panel = page.locator('#run-difference');
   await panel.getByText('관측된 차이 1개').waitFor();
   const text = await panel.textContent();
   assert.match(text, /원본 2–2행이 대안 2–2행으로 바뀌었다/);
@@ -109,7 +110,8 @@ test('test-actor: difference → explanations → inquiry → answer, skip, evid
   await page.getByRole('textbox', { name: '내 버전 텍스트' }).fill('첫 줄\n고친 둘째 줄\n셋째 줄\n');
   await saved(page, 1);
   await page.getByRole('button', { name: '차이 살펴보기' }).click();
-  const panel = page.locator('#run-inquiry');
+  // UI phase 4: the difference opens in place ("차이 살펴보기"), the inquiry inside it
+  const panel = page.locator('#run-difference');
   await panel.getByText('관측된 차이 1개').waitFor();
   // competing explanations only on the test actor's explicit request (scripted offline turn)
   await panel.getByRole('button', { name: '경쟁 설명 만들기' }).click();

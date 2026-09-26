@@ -241,6 +241,46 @@ export function createGraphView({ root, document, request = null, basePath = '/'
   root.replaceChildren(...(title === null ? [] : [element('h2', title)]), status, canvas,
     ...(designFold === null ? [details, technical] : [designFold]));
   let current = null;
+  // UI phase 4: the owner's feedback per node (run-feedback.mjs nodeMarkers): a small badge on the
+  // drawn box with its words in a <title>, and the words beside the node's list button
+  let markers = new Map();
+
+  function applyMarkers() {
+    if (!current) return;
+    for (const box of canvas.querySelectorAll?.('[data-node]') ?? []) {
+      const nodeId = box.getAttribute('data-node');
+      const marker = markers.get(nodeId) ?? null;
+      for (const old of box.querySelectorAll?.('.graph-feedback') ?? []) old.remove?.();
+      if (marker === null) box.removeAttribute?.('data-feedback');
+      else box.setAttribute('data-feedback', marker.kind);
+      if (marker === null) continue;
+      if (box.tagName === 'BUTTON' || box.tagName === 'button') {
+        const words = element('span', ` · ${marker.label}`, { class: 'graph-feedback graph-node-feedback' });
+        box.append(words);
+        continue;
+      }
+      const at = current.centers?.get(nodeId);
+      if (!at) continue;
+      const badge = svgElement('g');
+      badge.setAttribute('class', `graph-feedback graph-feedback-${marker.kind}`);
+      const dot = svgElement('circle');
+      for (const [name, value] of Object.entries({ cx: at.x + BOX_W - 14, cy: at.y + 14, r: 9 })) dot.setAttribute(name, String(value));
+      const glyph = svgElement('text');
+      for (const [name, value] of Object.entries({ x: at.x + BOX_W - 14, y: at.y + 18, 'text-anchor': 'middle' })) {
+        glyph.setAttribute(name, String(value));
+      }
+      glyph.textContent = marker.glyph;
+      const words = svgElement('title');
+      words.textContent = marker.label;
+      badge.append(words, dot, glyph);
+      box.append(badge);
+    }
+  }
+
+  function mark(next) {
+    markers = next instanceof Map ? new Map(next) : new Map();
+    applyMarkers();
+  }
 
   function clear() {
     details.replaceChildren();
@@ -267,7 +307,7 @@ export function createGraphView({ root, document, request = null, basePath = '/'
   }
 
   function show(graph, { states = null } = {}) {
-    current = { graph, states };
+    current = { graph, states, centers: new Map() };
     const positions = layers(graph);
     const columns = Math.max(1, ...[...positions.values()].map(item => item.column + 1));
     const rows = Math.max(1, ...[...positions.values()].map(item => item.row + 1));
@@ -306,6 +346,7 @@ export function createGraphView({ root, document, request = null, basePath = '/'
     });
     for (const node of ordered) {
       const at = center(node.node_id);
+      current.centers.set(node.node_id, at);
       const state = states?.get(node.node_id) ?? null;
       const box = svgElement('g');
       box.setAttribute('class', `graph-node graph-node-${node.kind}${state ? ` graph-state-${state}` : ''}`);
@@ -336,6 +377,7 @@ export function createGraphView({ root, document, request = null, basePath = '/'
     if (designFold !== null) designFold.hidden = true;
     status.textContent = `노드 ${graph.nodes.length}개 · 연결 ${graph.edges.length}개. 노드를 고르면 자세한 내용을 봅니다.`;
     status.dataset.state = 'shown';
+    applyMarkers();
   }
 
   // the run's own graph with its recorded node states
@@ -356,5 +398,5 @@ export function createGraphView({ root, document, request = null, basePath = '/'
     }
   }
 
-  return Object.freeze({ show, showRun, select, clear });
+  return Object.freeze({ show, showRun, select, clear, mark });
 }

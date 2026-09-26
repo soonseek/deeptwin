@@ -9,7 +9,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { boot, bootPage, MOUNT_IDS, runFromHash } from '../static/observe.mjs';
+import { artifactFromHash, boot, bootPage, MOUNT_IDS, runFromHash } from '../static/observe.mjs';
 
 const HEX = '2'.repeat(32);
 const BASE = `/${HEX}/`;
@@ -238,5 +238,15 @@ test('`#run=<id>` names a run only when it is a canonical run id', () => {
   assert.equal(runFromHash(`run=${RUN_A}`), RUN_A);
   for (const value of ['', '#', '#run=', '#run=../x', `#other=${RUN_A}`, null, undefined, 7]) {
     assert.equal(runFromHash(value), null, String(value));
+  }
+});
+
+// UI phase 4: the records page's artifact index links to `#run=<id>&artifact=<id>`
+test('`#run=<id>&artifact=<id>` names one artifact of that run to preview, and nothing without the run', () => {
+  const ARTIFACT = '00000000-0000-4000-8000-00000000a0a1';
+  assert.equal(runFromHash(`#run=${RUN_A}&artifact=${ARTIFACT}`), RUN_A);
+  assert.equal(artifactFromHash(`#run=${RUN_A}&artifact=${ARTIFACT}`), ARTIFACT);
+  for (const value of [`#artifact=${ARTIFACT}`, `#run=${RUN_A}&artifact=x`, `#run=${RUN_A}`, null]) {
+    assert.equal(artifactFromHash(value), null, String(value));
   }
 });

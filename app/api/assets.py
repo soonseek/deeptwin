@@ -35,6 +35,8 @@ MODULES = MappingProxyType({
     "run-list.mjs": JAVASCRIPT,
     "run-trace.mjs": JAVASCRIPT,
     "run-detail.mjs": JAVASCRIPT,
+    "run-feedback.mjs": JAVASCRIPT,
+    "difference-view.mjs": JAVASCRIPT,
     "artifacts.mjs": JAVASCRIPT,
     "alternatives.mjs": JAVASCRIPT,
     "alternative-file.mjs": JAVASCRIPT,

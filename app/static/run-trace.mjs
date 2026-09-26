@@ -6,7 +6,8 @@
 
 import {
   ATTEMPT_OUTCOME_TEXT, MODEL_CALL_STATE_TEXT, NOT_RECORDED, RESULT_REASON_LABELS, RUN_PHASE_TEXT,
-  TRACE_NODE_STATE_TEXT, VISIT_STATUS_TEXT, costText, countText, durationText, shortId, stateText,
+  TOOL_CALL_STATE_TEXT, TRACE_NODE_STATE_TEXT, VISIT_STATUS_TEXT, costText, countText, durationText, shortId,
+  stateText,
 } from './ui-format.mjs';
 
 export const TRACE_SCHEMA = 'run-trace-v1';
@@ -54,6 +55,9 @@ export function traceView(payload) {
   if (typeof payload.totals !== 'object' || payload.totals === null) fail('trace totals are missing', 'unavailable');
   if (typeof payload.approvals !== 'object' || !Array.isArray(payload.approvals?.gates)
       || !Array.isArray(payload.approvals?.executions)) fail('trace approvals are malformed', 'unavailable');
+  // the owner's process feedback (UI phase 4): optional, but a present one has its shape
+  if (payload.feedback !== undefined && (typeof payload.feedback !== 'object' || payload.feedback === null
+      || !Array.isArray(payload.feedback.steps))) fail('trace feedback is malformed', 'unavailable');
   return payload;
 }
 
@@ -222,6 +226,35 @@ export function pendingApprovals(trace) {
     .map(item => Object.freeze({ nodeId: item.execution_node_id, gateId: item.node_id, scope: item.approval_scope,
       attemptNo: item.attempt_no }));
   return Object.freeze([...gates, ...executions]);
+}
+
+// UI phase 4 (§5.5): the run segment an artifact the owner answered came from — the step, its
+// visit and attempt, the exact inputs it received and its tool and model calls — for the
+// difference view's first screen. Only what the trace recorded; an unknown step is null.
+export function differenceSegment(trace, { nodeId = null, visitNo = null, attemptNo = null } = {}) {
+  if (trace === null || typeof nodeId !== 'string') return null;
+  const view = selectionView(trace, { nodeId, visitNo, attemptNo });
+  if (view.scope === 'run' || view.visit === null) return null;
+  const inputs = view.inputs.map(input => Object.freeze({
+    nodeId: input.from_node_id, responsibility: nodeLabel(trace, input.from_node_id),
+    attemptNo: recorded(input.from_attempt_no) ? input.from_attempt_no : null,
+    roles: Object.freeze(input.artifacts.map(item => item.role)),
+  }));
+  const models = view.modelCalls.map(entry => Object.freeze({
+    label: recorded(entry.call.model_label) ? entry.call.model_label : null,
+    tokens: `입력 ${countText(entry.call.tokens.input)} · 출력 ${countText(entry.call.tokens.output)} 토큰`,
+    state: stateText(MODEL_CALL_STATE_TEXT, entry.call.state)[0],
+  }));
+  const tools = view.toolCalls.map(entry => Object.freeze({
+    toolId: entry.call.tool_id, attemptNo: entry.attemptNo,
+    state: stateText(TOOL_CALL_STATE_TEXT, entry.call.state)[0],
+  }));
+  return Object.freeze({
+    nodeId: view.nodeId, responsibility: view.node.responsibility, kind: view.node.kind,
+    visitNo: view.visitNo, attemptNo: view.attemptNo, attempts: view.attempts.length,
+    inputs: Object.freeze(inputs), models: Object.freeze(models), tools: Object.freeze(tools),
+    error: view.error ? errorText(view.error) : null,
+  });
 }
 
 // "시도 1 (실패)", "시도 2 (완료, 최신)"

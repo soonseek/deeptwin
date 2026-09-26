@@ -143,7 +143,8 @@ test('a gated external tool call waits for the owner\'s decision of its exact at
   assert.equal(await first.locator('.approval-subject').textContent(),
     `실행 ${approveRun.runId} · ${GATE}/${approveRun.scope}: 실행 ${approveRun.executionId} (노드 writer) `
     + `시도 1 — 입력 sha256 ${inputsDigest(OK_TEXT)}`);
-  assert.match(await first.locator('.approval-expiry').textContent(), /시한 \d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC/);
+  // the local time of this device, to the second (UI phase 4: it read as UTC before)
+  assert.match(await first.locator('.approval-expiry').textContent(), /시한 \d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/);
   assert.equal(await panel.getAttribute('data-phase'), 'awaiting_human');
   await first.getByRole('button', { name: '승인: 시도 1' }).click();
   await screen.getByText('이 시도에 대한 결정을 기록했습니다.').waitFor();

@@ -790,6 +790,105 @@ table.alternative-original-side { display: table; white-space: normal; }
 .artifact-note { color: var(--color-muted); font-size: var(--text-xs); }
 
 /* ==========================================================================
+   UI phase 4: process feedback (a mark and a memo) and "차이 살펴보기"
+   ========================================================================== */
+.final-feedback:not([hidden]) { margin-top: var(--space-4); }
+.selection-feedback:not([hidden]) { margin-top: var(--space-3); }
+.feedback-box { display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-line); border-radius: var(--radius-md); background: var(--color-panel-muted); }
+.feedback-box[data-state="saved"] { border-color: var(--color-line-strong); }
+.feedback-head { display: grid; gap: 2px; }
+.app-shell main .feedback-title { margin: 0; color: var(--color-ink); font-size: var(--text-sm); font-weight: 700; word-break: keep-all; }
+.feedback-hint { max-width: none; margin: 0; color: var(--color-muted); font-size: var(--text-xs); }
+.feedback-marks { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.app-shell main .feedback-mark { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; margin: 0; padding: 4px 14px; border: 1px solid var(--color-line-strong); border-radius: var(--radius-pill); background: var(--color-panel); color: var(--color-ink); font-size: var(--text-sm); font-weight: 600; }
+.feedback-glyph { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid currentColor; font-size: 11px; line-height: 1; }
+.app-shell main .feedback-mark[data-tone="ok"][aria-pressed="true"] { border-color: var(--color-ok); background: var(--color-ok-soft); color: var(--color-ok); box-shadow: inset 0 0 0 1px var(--color-ok); }
+.app-shell main .feedback-mark[data-tone="warn"][aria-pressed="true"] { border-color: var(--color-warn); background: var(--color-warn-soft); color: var(--color-warn); box-shadow: inset 0 0 0 1px var(--color-warn); }
+.app-shell main .feedback-mark[data-tone="ok"][aria-pressed="true"] .feedback-glyph { border-color: var(--color-ok); background: var(--color-ok); color: var(--color-on-ok); }
+.app-shell main .feedback-mark[data-tone="warn"][aria-pressed="true"] .feedback-glyph { border-color: var(--color-warn); background: var(--color-warn); color: var(--color-on-warn); }
+.app-shell main .feedback-memo-toggle { min-height: 36px; margin: 0; font-size: var(--text-sm); }
+.feedback-memo { display: grid; gap: var(--space-1); }
+.feedback-memo label { color: var(--color-muted); font-size: var(--text-xs); font-weight: 650; }
+.feedback-memo textarea { width: 100%; min-height: 4.5rem; margin: 0; font-size: var(--text-sm); }
+.feedback-count { margin: 0; color: var(--color-muted); font-size: var(--text-xs); text-align: right; }
+.feedback-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.feedback-actions button { min-height: 34px; margin: 0; padding: 4px 14px; font-size: var(--text-sm); }
+.feedback-status { max-width: none; margin: 0; color: var(--color-muted); font-size: var(--text-sm); }
+.feedback-status[data-state="saved"], .feedback-status[data-state="cleared"] { color: var(--color-ok); font-weight: 650; }
+.feedback-status[data-state="dirty"] { color: var(--color-warn); font-weight: 650; }
+.feedback-status[data-state="conflict"], .feedback-status[data-state="unavailable"], .feedback-status[data-state="too_large"],
+.feedback-status[data-state="invalid"], .feedback-status[data-state="invalid_input"], .feedback-status[data-state="not_found"] { color: var(--color-error); font-weight: 650; }
+.run-feedback-summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-2) 0 0; font-size: var(--text-sm); }
+.run-feedback-summary .status-chip { font-size: var(--text-sm); white-space: normal; }
+/* a step or attempt the owner left feedback on: a badge on the graph box, a mark on the row */
+.graph-feedback circle { stroke: var(--graph-bg); stroke-width: 2; }
+.graph-feedback text { font-size: 11px !important; font-weight: 800; }
+.graph-feedback-needs_attention circle { fill: #f4cb73; }
+.graph-feedback-needs_attention text { fill: #2a1d00 !important; }
+.graph-feedback-ok circle { fill: #6bd49a; }
+.graph-feedback-ok text { fill: #0b2415 !important; }
+.graph-feedback-memo circle { fill: var(--graph-muted); }
+.graph-feedback-memo text { fill: #0a1417 !important; }
+.graph-node-feedback { color: #f4cb73; font-weight: 700; }
+.graph-nodes button[data-feedback="ok"] .graph-node-feedback { color: #6bd49a; }
+.graph-nodes button[data-feedback="memo"] .graph-node-feedback { color: var(--graph-muted); }
+.app-shell main .timeline-entry { position: relative; }
+.feedback-marker { position: absolute; top: -6px; right: -6px; display: inline-grid; place-items: center; width: 20px; height: 20px; border: 2px solid var(--color-panel); border-radius: 50%; background: var(--color-muted); color: var(--color-panel); font-size: 11px; font-weight: 800; line-height: 1; }
+.feedback-marker[data-kind="needs_attention"] { background: var(--color-warn); color: var(--color-on-warn); }
+.feedback-marker[data-kind="ok"] { background: var(--color-ok); color: var(--color-on-ok); }
+/* the approvals card folds to one line when nothing waits for the owner */
+.app-shell main .approval-fold { display: inline-flex; align-items: center; min-height: 34px; margin: 0; padding: 4px 12px; border-radius: var(--radius-pill); background: var(--color-panel-muted); color: var(--color-ink); font-size: var(--text-sm); font-weight: 600; }
+.run-approvals[data-folded="true"] { padding-block: var(--space-3); }
+.run-approvals[data-folded="true"] > h2 { display: inline; margin: 0 var(--space-3) 0 0; font-size: var(--text-md); }
+.run-elsewhere { max-width: none; margin: var(--space-2) 0 0; color: var(--color-muted); font-size: var(--text-sm); }
+/* 차이 살펴보기: what differs and where in the run, in place under the artifact */
+.run-difference { display: grid; gap: var(--space-3); margin-top: var(--space-3); border-color: var(--color-info); }
+.difference-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.app-shell main .difference-title { margin: 0; font-size: var(--text-md); word-break: keep-all; }
+.difference-head button { margin: 0; }
+.difference-lead, .difference-status { max-width: none; margin: 0; color: var(--color-muted); font-size: var(--text-sm); }
+.difference-scope { max-width: none; margin: 0; padding: var(--space-2) var(--space-3); border-left: 4px solid var(--color-warn); border-radius: var(--radius-sm); background: var(--color-warn-soft); color: var(--color-ink); font-size: var(--text-sm); font-weight: 600; }
+.difference-scope:empty { display: none; }
+.difference-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
+@media (min-width: 900px) {
+  .difference-grid { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+}
+.difference-observed, .difference-segment, .difference-detail, .difference-explain { min-width: 0; padding: var(--space-3) var(--space-4); border: 1px solid var(--color-line); border-radius: var(--radius-md); background: var(--color-panel); }
+.difference-detail:empty { display: none; }
+.app-shell main .difference-observed h4, .app-shell main .difference-segment h4, .app-shell main .difference-detail h4, .app-shell main .difference-explain h4 { margin: 0 0 var(--space-2); font-size: var(--text-sm); }
+.difference-list { display: grid; gap: var(--space-1); margin: 0; padding: 0 !important; list-style: none; }
+.difference-list li { margin: 0; }
+.app-shell main .difference-pick { width: 100%; min-height: 36px; margin: 0; padding: 6px 12px; text-align: left; font-size: var(--text-sm); }
+.app-shell main .difference-pick[aria-pressed="true"] { border-color: var(--color-info); background: var(--color-info-soft); color: var(--color-ink); font-weight: 650; }
+.difference-uncertainty, .difference-note, .difference-description { max-width: none; margin: var(--space-2) 0 0; color: var(--color-muted); font-size: var(--text-xs); }
+.difference-description { color: var(--color-ink); font-size: var(--text-sm); }
+.difference-step { max-width: none; margin: 0 0 var(--space-2); font-size: var(--text-sm); }
+.difference-segment .kv-list { margin: 0; font-size: var(--text-sm); }
+.difference-segment button { margin: 0; }
+.difference-parts { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); margin-top: var(--space-2); }
+@media (min-width: 720px) { .difference-parts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.difference-part { margin: 0; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-line); border-left: 4px solid var(--color-error); border-radius: var(--radius-sm); background: var(--color-error-soft); }
+.difference-part-mine { border-left-color: var(--color-ok); background: var(--color-ok-soft); }
+.difference-part figcaption { margin-bottom: var(--space-1); color: var(--color-muted); font-size: var(--text-xs); font-weight: 700; }
+.difference-lines { display: grid; margin: 0; padding: 0 !important; list-style: none; font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.7; }
+.difference-lines li { display: grid; grid-template-columns: 2.5em 1.2em minmax(0, 1fr); margin: 0; }
+.difference-no { color: var(--color-muted); text-align: right; padding-right: var(--space-1); font-variant-numeric: tabular-nums; }
+.difference-line { white-space: pre-wrap; overflow-wrap: anywhere; }
+.difference-context { margin-top: var(--space-2); }
+.difference-context > summary { color: var(--color-muted); font-size: var(--text-sm); }
+.difference-unified { margin-top: var(--space-1); padding: var(--space-2); border: 1px solid var(--color-line); border-radius: var(--radius-sm); background: var(--color-panel-muted); }
+.difference-unified li[data-mark="-"] { background: var(--color-error-soft); }
+.difference-unified li[data-mark="+"] { background: var(--color-ok-soft); }
+.difference-explain > [role="status"] { margin: 0 0 var(--space-2); color: var(--color-muted); font-size: var(--text-sm); }
+/* the view's own status already says what was observed; the panel's line speaks for its own work */
+.difference-explain > [role="status"][data-state="observed"] { display: none; }
+.difference-explain h5 { margin: var(--space-3) 0 var(--space-1); font-size: var(--text-sm); }
+.difference-explain p, .difference-explain li, .difference-explain label { max-width: none; font-size: var(--text-sm); }
+.difference-explain ul, .difference-explain ol { margin-top: var(--space-1); }
+/* the vault-wide artifact index now lives on the records page */
+.records-section.artifact-index { margin-top: var(--space-5); }
+
+/* ==========================================================================
    Design workspace (work page, T037)
    ========================================================================== */
 .design-workspace { margin-top: 0; }

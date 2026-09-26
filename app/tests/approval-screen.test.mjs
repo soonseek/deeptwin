@@ -9,8 +9,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  ERROR_MESSAGES, MESSAGES, STATE_LABELS, createApprovalScreen, isRetryAttempt,
+  ERROR_MESSAGES, MESSAGES, STATE_LABELS, createApprovalScreen, foldText, isRetryAttempt,
 } from '../static/approval-screen.mjs';
+
+process.env.TZ = 'Asia/Seoul';
 import { executionRequestsView } from '../static/approvals.mjs';
 
 const HEX = '2'.repeat(32);
@@ -233,9 +235,38 @@ test('an expired ask offers no decision and every ask shows its server-set time 
   assert.ok(rows[0].textContent.includes(STATE_LABELS.expired));
   assert.equal(rows[0].findAll(el => el.tagName === 'BUTTON').length, 0);
   assert.match(rows[0].textContent, new RegExp(MESSAGES.notAuthorized));
-  assert.match(rows[0].textContent, /시한 2026-09-25 12:30:05 UTC/);
+  // the local time of this device (Asia/Seoul here), never a bare UTC stamp (UI phase 4)
+  assert.match(rows[0].textContent, /시한 2026-09-25 21:30:05/);
+  assert.doesNotMatch(rows[0].textContent, /UTC/);
   // the attempt after an expired one is its own ask and needs a new decision
   assert.match(rows[1].textContent, new RegExp(MESSAGES.retry));
   assert.equal(rows[1].findAll(el => el.tagName === 'BUTTON').length, 2);
   assert.match(root.textContent, /결정할 일 1개가 있습니다/);
+});
+
+// UI phase 4: nothing to decide folds the card to one line; the records stay one click away
+test('with nothing pending the card is one line that opens the records; a pending ask keeps it open', async () => {
+  assert.equal(foldText(2), '이 실행의 승인 기록 2건 · 보기');
+  assert.equal(foldText(0), '이 실행에는 결정할 승인이 없습니다');
+  const { root, approvals } = screen({ [READ]: [runReceipt({ awaiting: [] })],
+    [LIST]: [listing([ask(1, 'approved'), ask(2, 'approved')])] });
+  await approvals.show(RUN);
+  const fold = root.findAll(el => el.getAttribute('class') === 'approval-fold')[0];
+  const body = root.findAll(el => el.getAttribute('class') === 'approval-body')[0];
+  assert.equal(fold.hidden, false);
+  assert.equal(fold.textContent, '이 실행의 승인 기록 2건 · 보기');
+  assert.equal(body.hidden, true);
+  assert.equal(root.dataset.folded, 'true');
+  assert.equal(fold.getAttribute('aria-expanded'), 'false');
+  await fold.dispatch('click');
+  assert.equal(body.hidden, false);
+  assert.equal(fold.getAttribute('aria-expanded'), 'true');
+  // the records are all there, unchanged: two decided attempts, authorized
+  assert.equal(items(root, 'approval-executions').length, 2);
+  const pending = screen({ [READ]: [runReceipt()], [LIST]: [listing([])] });
+  await pending.approvals.show(RUN);
+  const open = pending.root.findAll(el => el.getAttribute('class') === 'approval-fold')[0];
+  assert.equal(open.hidden, true);
+  assert.equal(pending.root.findAll(el => el.getAttribute('class') === 'approval-body')[0].hidden, false);
+  assert.match(pending.root.textContent, /결정할 일 1개가 있습니다/);
 });

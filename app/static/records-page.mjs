@@ -10,16 +10,32 @@
 // UI phase 3 (2026-09-26): `records.html#run=<id>` (the run detail's "전체 기록에서 이 실행 보기")
 // narrows the log to that run through the server's `run_id` filter, which keeps only the events
 // that carry the run (its start and stop, its attempts); the page says so and offers the full log.
+// UI phase 4 (2026-09-26):
+// - a `run.stopped` row's chip says what the stop means for the run (완료, 실패로 멈춤, …); the
+//   event's own status only says the stop was recorded, so it moves beside the other raw fields;
+// - "다음 기록 보기" shows only while more of the log exists: a short page is followed to the
+//   log's end (a filtered read may scan past events that are not the run's) and the button hides
+//   when the server's cursor stops moving;
+// - "모든 산출물" (the vault-wide artifact index) lives here, each row linking to its run's screen
+//   with the artifact previewed; the run screen shows only its own run.
 // All server text reaches the DOM through textContent only.
 
+import { createArtifactIndex } from './artifacts.mjs';
 import { recordsRoutes } from './records.mjs';
 import { basePathFrom, createSupportedSession } from './session.mjs';
-import { eventErrorLabel, eventSentence, eventStatusLabel, eventStatusTone, shortId, timeText } from './ui-format.mjs';
+import {
+  eventErrorLabel, eventSentence, eventStatusLabel, eventStatusTone, runStopOutcome, shortId, timeText,
+} from './ui-format.mjs';
 import { el, emptyState, statusChip, technicalDetails, timeStamp } from './ui-parts.mjs';
 import { mountShell } from './ui-shell.mjs';
 
 export const MOUNT_IDS = Object.freeze({ session: 'session-status', logs: 'records-logs', export: 'records-export' });
+// the page's optional vault-wide artifact index (UI phase 4)
+export const INDEX_MOUNT_ID = 'artifacts';
 export const PAGE_SIZE = '50';
+// how many reads one "next page" may take to fill a page or reach the log's end (each read
+// scans at most 500 events on the server)
+export const MAX_READS_PER_PAGE = 40;
 
 export const MESSAGES = Object.freeze({
   loading: '기록을 불러오는 중…',
@@ -56,19 +72,24 @@ export function eventRow(event, now = Date.now()) {
   }
   const refs = Array.isArray(event.object_refs) ? event.object_refs.length : 0;
   const sentence = eventSentence(event);
-  const status = eventStatusLabel(event.status);
+  const recorded = eventStatusLabel(event.status);
   const error = typeof event.error_code === 'string' ? event.error_code : null;
   const time = timeText(event.observed_at_utc, now);
   const meta = `관련 기록 ${refs}개${error ? ` · 오류: ${eventErrorLabel(error)}` : ''}`;
+  // a stop's chip is the run's outcome; the record's own status is only that it was recorded
+  const outcome = runStopOutcome(event);
+  const status = outcome ? outcome.label : recorded;
   return Object.freeze({
     sequence: event.sequence, type: event.event_type, known: sentence.known, sentence: sentence.text,
-    status, tone: eventStatusTone(event.status), error, refs, meta, time,
+    status, tone: outcome ? outcome.tone : eventStatusTone(event.status), error, refs, meta, time,
+    recorded, outcome: outcome !== null,
     text: `${sentence.text} · ${status} · ${meta} · ${time.absolute || event.observed_at_utc}`,
   });
 }
 
 function eventItem(document, event, row) {
   const technical = [['사건 종류', row.type], ['순번', String(row.sequence)], ['기록 시각(UTC)', event.observed_at_utc]];
+  if (row.outcome) technical.push(['사건 기록 상태', row.recorded]);
   if (typeof event.event_id === 'string') technical.push(['사건 ID', event.event_id]);
   if (row.error) technical.push(['오류 코드', row.error]);
   return el(document, 'li', { attrs: { 'data-sequence': String(row.sequence), 'data-event-type': row.type } }, [
@@ -106,25 +127,44 @@ export function createEventLog({ root, document, request, basePath = '/', runId 
   let cursor = null;
   let shown = 0;
 
+  // one page for the owner: read on from the cursor until the page is full or the log ends. A
+  // short read is not the end by itself (a filtered read may scan past other events); the end is
+  // a read that returns nothing and leaves the server's cursor where it was.
   async function load() {
     status.dataset.state = 'loading';
     try {
-      const query = { limit: PAGE_SIZE, ...(runId === null ? {} : { run_id: runId }), ...(cursor === null ? {} : { cursor }) };
-      const page = await request(events, { query });
-      if (!Array.isArray(page?.events)) fail('the event page is malformed');
-      const now = Date.now();
-      for (const event of page.events) {
-        list.append(eventItem(document, event, eventRow(event, now)));
-        shown += 1;
+      const want = Number(PAGE_SIZE);
+      let collected = 0;
+      let reads = 0;
+      let ended = false;
+      let gap = false;
+      let page = null;
+      while (collected < want && reads < MAX_READS_PER_PAGE) {
+        const from = cursor;
+        const query = { limit: String(want - collected), ...(runId === null ? {} : { run_id: runId }),
+          ...(from === null ? {} : { cursor: from }) };
+        page = await request(events, { query });
+        reads += 1;
+        if (!Array.isArray(page?.events)) fail('the event page is malformed');
+        const now = Date.now();
+        for (const event of page.events) {
+          list.append(eventItem(document, event, eventRow(event, now)));
+          shown += 1;
+          collected += 1;
+        }
+        if (page.gap !== null && page.gap !== undefined) gap = true;
+        const next = typeof page.next_cursor === 'string' ? page.next_cursor : null;
+        if (next === null || (page.events.length === 0 && next === from)) {
+          ended = true;
+          break;
+        }
+        cursor = next;
       }
-      const notes = [];
-      if (page.gap !== null && page.gap !== undefined) notes.push(MESSAGES.gap);
       status.textContent = [shown ? `사건 ${shown}개` : runId === null ? MESSAGES.empty : MESSAGES.runEmpty,
-        ...notes].join(' ');
-      status.dataset.state = page.gap ? 'gap' : 'listed';
+        ...(gap ? [MESSAGES.gap] : [])].join(' ');
+      status.dataset.state = gap ? 'gap' : 'listed';
       empty.hidden = shown > 0;
-      cursor = typeof page.next_cursor === 'string' && page.events.length ? page.next_cursor : null;
-      more.hidden = cursor === null;
+      more.hidden = ended;
       return page;
     } catch (error) {
       status.textContent = error?.code === 'unauthenticated' ? MESSAGES.unauthenticated : MESSAGES.failed;
@@ -165,8 +205,14 @@ export async function boot({ document, location, fetch } = {}) {
   roots.session.textContent = '브라우저 세션이 연결되어 있습니다.';
   const log = createEventLog({ root: roots.logs, document, request: session.request, basePath,
     runId: runFilterFrom(location?.hash) });
-  await log.load().catch(() => {});
-  return Object.freeze({ established: true, basePath, sections, log });
+  // every run's artifacts in one list; each opens on its own run's screen
+  const indexRoot = document.getElementById(INDEX_MOUNT_ID);
+  const index = indexRoot !== null && typeof indexRoot?.replaceChildren === 'function'
+    ? createArtifactIndex({ root: indexRoot, document, basePath, request: session.request,
+      linkTo: (runId, artifactId) => `./observe.html#run=${runId}&artifact=${artifactId}` })
+    : null;
+  await Promise.all([log.load().catch(() => {}), index?.refresh().catch(() => {})]);
+  return Object.freeze({ established: true, basePath, sections, log, index });
 }
 
 if (typeof globalThis.document === 'object' && globalThis.document !== null

@@ -91,26 +91,70 @@ test('each listed event keeps its raw type, sequence and UTC stamp in the techni
 });
 
 test('the log pages by the server cursor and states gaps', async () => {
+  // UI phase 4: a full page offers the next one; a short read is followed until the page is
+  // full or the server's cursor stops moving (the log's end), and only then the button hides
   const root = new FakeElement('section');
   const asked = [];
+  const full = Array.from({ length: Number(PAGE_SIZE) }, (_, index) => event(index + 1));
   const replies = [
-    { events: [event(1), event(2)], next_cursor: 'c2', gap: null },
-    { events: [event(3)], next_cursor: 'c3', gap: { from: 1 } },
+    { events: full, next_cursor: 'c2', gap: null },
+    { events: [event(51)], next_cursor: 'c3', gap: { from: 1 } },
     { events: [], next_cursor: 'c3', gap: null },
   ];
   const request = async (path, options) => { asked.push([path, options]); return replies.shift(); };
   const log = createEventLog({ root, document: { createElement: tag => new FakeElement(tag) }, request, basePath: `/${'a'.repeat(32)}/` });
   await log.load();
   assert.deepEqual(asked[0], [`/${'a'.repeat(32)}/api/v1/events`, { query: { limit: PAGE_SIZE } }]);
-  assert.match(root.textContent, /사건 2개/);
+  assert.equal(asked.length, 1);
+  assert.match(root.textContent, /사건 50개/);
   const more = root.findAll(el => el.tagName === 'BUTTON')[0];
   assert.equal(more.hidden, false);
   await more.dispatch('click');
   assert.deepEqual(asked[1][1], { query: { limit: PAGE_SIZE, cursor: 'c2' } });
   assert.match(root.textContent, new RegExp(MESSAGES.gap));
-  await more.dispatch('click');
-  assert.equal(more.hidden, true);  // an empty page ends the paging
-  assert.equal(log.shown, 3);
+  // the short read was followed once more: nothing new and the cursor stayed, so the log ended
+  assert.deepEqual(asked[2][1], { query: { limit: String(Number(PAGE_SIZE) - 1), cursor: 'c3' } });
+  assert.equal(more.hidden, true);
+  assert.equal(log.shown, 51);
+});
+
+test('a short filtered log shows no "next" button once the server has nothing more', async () => {
+  const RUN = '00000000-0000-4000-8000-00000000aaa1';
+  const root = new FakeElement('section');
+  const asked = [];
+  // a filtered read may scan past other events: the second read returns one more of the run's
+  // own, the third nothing with the cursor unmoved
+  const replies = [{ events: [event(1, { event_type: 'run.started' })], next_cursor: 'c2', gap: null },
+    { events: [event(9, { event_type: 'run.stopped' })], next_cursor: 'c9', gap: null },
+    { events: [], next_cursor: 'c9', gap: null }];
+  const request = async (path, options) => { asked.push([path, options]); return replies.shift(); };
+  const log = createEventLog({ root, document: { createElement: tag => new FakeElement(tag) }, request, runId: RUN });
+  await log.load();
+  assert.equal(log.shown, 2);
+  assert.deepEqual(asked.map(([, options]) => options.query.cursor ?? null), [null, 'c2', 'c9']);
+  assert.ok(asked.every(([, options]) => options.query.run_id === RUN));
+  assert.equal(root.findAll(el => el.tagName === 'BUTTON')[0].hidden, true);
+});
+
+test('a failure stop reads as the run failing, never as "성공"; the record status stays in the fold', () => {
+  const failed = eventRow(event(4, { event_type: 'run.stopped', public_metadata: { reason_code: 'infrastructure_failure' } }));
+  assert.equal(failed.status, '실패로 멈춤');
+  assert.equal(failed.tone, 'error');
+  assert.equal(failed.recorded, '성공');
+  assert.doesNotMatch(failed.text, /성공/);
+  const done = eventRow(event(5, { event_type: 'run.stopped', public_metadata: { reason_code: 'completed' } }));
+  assert.deepEqual([done.status, done.tone], ['완료', 'ok']);
+  const root = new FakeElement('section');
+  const log = createEventLog({ root, document: { createElement: tag => new FakeElement(tag) },
+    request: async () => ({ events: [event(4, { event_type: 'run.stopped', public_metadata: { reason_code: 'infrastructure_failure' } })],
+      next_cursor: null, gap: null }) });
+  return log.load().then(() => {
+    const row = root.findAll(el => el.tagName === 'LI')[0];
+    const reading = row.children.filter(child => child.tagName !== 'DETAILS').map(child => child.textContent).join(' ');
+    assert.match(reading, /실패로 멈춤/);
+    assert.doesNotMatch(reading, /성공/);
+    assert.match(row.findAll(el => el.tagName === 'DETAILS')[0].textContent, /사건 기록 상태성공/);
+  });
 });
 
 test('`#run=<id>` narrows the log to that run through the server filter and says so', async () => {
@@ -132,9 +176,9 @@ test('`#run=<id>` narrows the log to that run through the server filter and says
   assert.match(root.textContent, new RegExp(MESSAGES.runFilter.replace(/[()]/g, '\\$&')));
   const links = root.findAll(el => el.tagName === 'A').map(el => [el.textContent, el.getAttribute('href')]);
   assert.deepEqual(links, [['전체 기록 보기', './records.html'], ['이 실행 화면으로 돌아가기', `./observe.html#run=${RUN}`]]);
-  // the next page keeps the filter beside the cursor
-  await root.findAll(el => el.tagName === 'BUTTON')[0].dispatch('click');
-  assert.deepEqual(asked[1][1], { query: { limit: PAGE_SIZE, run_id: RUN, cursor: 'c2' } });
+  // the read that follows a short page keeps the filter beside the cursor; the log then ended
+  assert.deepEqual(asked[1][1], { query: { limit: String(Number(PAGE_SIZE) - 1), run_id: RUN, cursor: 'c2' } });
+  assert.equal(root.findAll(el => el.tagName === 'BUTTON')[0].hidden, true);
   // a run with no events of its own says that, not that the instance is empty
   const quiet = new FakeElement('section');
   const none = createEventLog({ root: quiet, document: { createElement: tag => new FakeElement(tag) },

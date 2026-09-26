@@ -95,11 +95,16 @@ export function differenceRoute(basePath, runId, artifactId, alternativeId) {
   return `${basePath.slice(0, -1)}/api/v1/runs/${runId}/artifacts/${artifactId}/alternatives/${alternativeId}/difference`;
 }
 
-export function createInquiryPanel({ root, document, request, basePath = '/', crypto = null } = {}) {
+// `embedded` (UI phase 4): the panel sits inside the difference view (difference-view.mjs), which
+// shows the observed differences, the scope and the related run segment itself; the panel then
+// carries only the explanations, the inquiry and the change candidates, and `showValue` renders
+// from the difference the view already read (no second read, no second observation).
+export function createInquiryPanel({ root, document, request, basePath = '/', crypto = null, embedded = false } = {}) {
   if (typeof root?.replaceChildren !== 'function') fail('a root is required');
   if (typeof request !== 'function') fail('a request adapter is required');
   if (typeof basePath !== 'string' || !BASE_PATH.test(basePath)) fail('base path is not a deployment base path');
   const api = `${basePath.slice(0, -1)}/api/v1`;
+  const H3 = embedded ? 'h5' : 'h3';  // inside the difference view the panel is one level down
   let busy = false;
 
   function element(tag, text, attributes = {}) {
@@ -111,7 +116,8 @@ export function createInquiryPanel({ root, document, request, basePath = '/', cr
 
   const status = element('p', MESSAGES.idle, { role: 'status', 'aria-live': 'polite' });
   const body = element('div');
-  root.replaceChildren(element('h2', '차이와 설명'), status, body);
+  root.replaceChildren(embedded ? element('h4', '설명과 탐구', { class: 'difference-subtitle' }) : element('h2', '차이와 설명'),
+    status, body);
   let target = null;
 
   function say(text, state) {
@@ -267,7 +273,7 @@ export function createInquiryPanel({ root, document, request, basePath = '/', cr
   }
 
   function candidateList(state) {
-    const nodes = [element('h3', '변경 후보')];
+    const nodes = [element(H3, '변경 후보')];
     const conclusions = state.no_change_conclusions ?? [];
     if (!state.change_candidates.length && !conclusions.length) {
       nodes.push(element('p', MESSAGES.noCandidate));
@@ -326,7 +332,7 @@ export function createInquiryPanel({ root, document, request, basePath = '/', cr
   }
 
   async function closedInquiry(section, differenceId, state) {
-    const nodes = [element('h3', '탐구'), element('p', MESSAGES.inquiryClosed), element('p', MESSAGES.noQuiz)];
+    const nodes = [element(H3, '탐구'), element('p', MESSAGES.inquiryClosed), element('p', MESSAGES.noQuiz)];
     if (state.can_open && crypto !== null && typeof crypto.randomUUID === 'function') {
       const select = await modelPicker('inquiry-model');
       const start = element('button', '탐구 열기', { type: 'button' });
@@ -391,12 +397,12 @@ export function createInquiryPanel({ root, document, request, basePath = '/', cr
       }
     });
     section.replaceChildren(
-      element('h3', '탐구'), element('p', `질문 고정: ${state.frozen_at}`), element('p', MESSAGES.optional),
+      element(H3, '탐구'), element('p', `질문 고정: ${state.frozen_at}`), element('p', MESSAGES.optional),
       questions, element('p', `답하지 않은 질문 ${state.unanswered_count}개`),
-      element('h3', '근거'), evidence, ...evidenceForm(section, differenceId),
-      element('h3', '판단'), element('p', MESSAGES.confirmNeeds), judgments,
+      element(H3, '근거'), evidence, ...evidenceForm(section, differenceId),
+      element(H3, '판단'), element('p', MESSAGES.confirmNeeds), judgments,
       ...candidateList(state), element('p', String(state.spli?.reason ?? '')),
-      element('h3', '감사'), showAudit, auditRoot,
+      element(H3, '감사'), showAudit, auditRoot,
     );
   }
 
@@ -413,9 +419,10 @@ export function createInquiryPanel({ root, document, request, basePath = '/', cr
     const proposed = await explanations(value);
     const generated = proposed.length > 0 && proposed[0].textContent === MESSAGES.proposed;
     const head = [
-      element('h3', `관측된 차이 ${value.observations.length}개`), observations, ...uncertainties,
-      element('p', `${scope} ${MESSAGES.unreviewed}`),
-      element('h3', '경쟁하는 설명'), ...(generated ? proposed : [element('p', String(value.hypotheses.reason)), families, ...proposed]),
+      ...(embedded ? [] : [element(H3, `관측된 차이 ${value.observations.length}개`), observations, ...uncertainties,
+        element('p', `${scope} ${MESSAGES.unreviewed}`)]),
+      element(embedded ? 'h5' : 'h3', '경쟁하는 설명'),
+      ...(generated ? proposed : [element('p', String(value.hypotheses.reason)), families, ...proposed]),
     ];
     if (generated) {
       const section = element('section', undefined, { 'aria-label': '탐구', 'data-difference-id': value.difference_ref.id });
@@ -423,8 +430,8 @@ export function createInquiryPanel({ root, document, request, basePath = '/', cr
       body.replaceChildren(...head, section);
     } else {
       body.replaceChildren(...head,
-        element('h3', '질문'), element('p', String(value.inquiry.reason)), element('p', MESSAGES.noQuiz),
-        element('h3', '변경 후보'), element('p', String(value.change_candidates.reason)));
+        element(H3, '질문'), element('p', String(value.inquiry.reason)), element('p', MESSAGES.noQuiz),
+        element(H3, '변경 후보'), element('p', String(value.change_candidates.reason)));
     }
     if (!generated) say('차이를 기록했습니다. 원인은 아직 해석하지 않았습니다.', 'observed');
   }
@@ -450,5 +457,18 @@ export function createInquiryPanel({ root, document, request, basePath = '/', cr
     }
   }
 
-  return Object.freeze({ show });
+  // the difference another view already read (the observation is sealed once, by that view)
+  async function showValue(value) {
+    body.replaceChildren();
+    try {
+      await render(value);
+      return value;
+    } catch (error) {
+      const code = Object.hasOwn(ERROR_MESSAGES, error?.code) ? error.code : 'unavailable';
+      say(ERROR_MESSAGES[code], code);
+      throw error;
+    }
+  }
+
+  return Object.freeze({ show, showValue });
 }
