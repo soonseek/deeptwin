@@ -335,10 +335,14 @@ def _open_regular_at(
 
 
 def _read_exact_secret(descriptor: int) -> bytes:
+    # A retained fence descriptor is shared by every thread that rechecks the
+    # same owner (a duplex reader and a concurrent control writer).  A
+    # positional read never touches the shared file offset, so concurrent
+    # rechecks cannot interleave an lseek/read pair and observe a short read
+    # that would be misreported as a fence integrity failure.
     try:
         before = os.fstat(descriptor)
-        os.lseek(descriptor, 0, os.SEEK_SET)
-        value = os.read(descriptor, broker.AUTH_SECRET_BYTES + 1)
+        value = os.pread(descriptor, broker.AUTH_SECRET_BYTES + 1, 0)
         after = os.fstat(descriptor)
     except OSError:
         raise IpcRootIntegrityError() from None
