@@ -254,7 +254,7 @@ test('Settings > Extensions bindings: slot read, stale head, rollback, warned re
     assert.equal(await dd('capability_selector').textContent(), JSON.stringify(server.capability_selector));
     assert.match(await dd('coexistence').textContent(), /review-provider · ext-b/);
     assert.match(await dd('competition').textContent(), /ext-a \(수정본 1\) \/ ext-b \(수정본 2\)/);
-    assert.match(await dd('environments').textContent(), /이 수정본을 쓰는 환경 버전 없음/);
+    assert.match(await dd('environments').textContent(), /이 slot의 수정본을 기록한 환경 버전 없음 · 다시 준비가 필요한 환경 없음/);
     assert.equal(await slot.locator('[data-revision]').count(), 2);
     assert.equal(await slot.locator('[data-retention-target="1"]').getAttribute('data-state'), 'retained');
 
