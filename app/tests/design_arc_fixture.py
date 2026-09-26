@@ -212,6 +212,87 @@ def seed_for_work(app, work_id, *, scenarios=SCENARIOS, qualified=True):
             "requests": {name: item["request"].request_id for name, item in opened.items()}}
 
 
+def decision_value(lens):
+    """The functional decision `design_decision` accepts (the fixture's one effect)."""
+
+    from app.tests.test_design_generation import value_hash
+
+    responsibility = "공개 출처를 탐색하고 주장별 근거와 반증을 원형 링크로 정리한다."
+    return {
+        "decision_id": "00000000-0000-4000-8000-000000000221", "version": 1,
+        "functional_claims": ["조사 산출물과 작성 산출물의 책임을 분리한다."],
+        "proposed_effects": [{
+            "effect_id": "research-responsibility", "axis": "responsibility",
+            "target": {"kind": "node", "id": "research", "field": "responsibility"},
+            "expected_value_sha256": value_hash(responsibility),
+            "rationale": "근거와 반증을 작성자의 서술 편의와 분리한다.",
+            "contributing_lens_refs": [str(lens.lens_ref)],
+        }],
+        "conflicts": [], "abstentions": [],
+    }
+
+
+def lens_evidence(target, *, qualification_hash=None):
+    """The SIMULATED lens evidence `proposed_lens` issues its decision from."""
+
+    from app.services.lenses import ApplicabilityAssessment, LensQualification, LensRegistry, RouteEvidence
+    from app.tests.test_design_generation import QUALIFICATION_HASH, ROOT
+
+    item = LensRegistry.from_markdown(ROOT / "docs/lenses/definition-candidates.md",
+                                      ROOT / "docs/lenses/composition-contract.md").get("L-P032-01")
+    route = RouteEvidence.create(
+        path="initial_design", scope_hash=target.work_model_ref.sha256,
+        work_revision_hash=target.work_model.work_revision_ref.sha256, purpose_confirmed=True,
+        deliverables_confirmed=True, completion_confirmed=True, observable_conditions=True,
+        authorized_source_hashes=tuple(value.sha256 for value in target.work_model.source_refs))
+    assessment = ApplicabilityAssessment.create(lens_ref=item.ref, status="supported", evidence_hashes=("e" * 64,))
+    qualification = LensQualification.create(lens_ref=item.ref, path="initial_design",
+                                             scope_hash=target.work_model_ref.sha256, status="qualified",
+                                             qualification_record_hash=qualification_hash or QUALIFICATION_HASH)
+    return [(item.ref, route, assessment, qualification)]
+
+
+class PayloadGenerator(ScriptedGenerator):
+    """The scenario's scripted rounds, built from the request the payload names (so a
+    source can serve any request it issued, before or after a restart)."""
+
+    def __init__(self, scenario):
+        super().__init__([])
+        self.scenario = scenario
+
+    def __call__(self, system, user):
+        from types import SimpleNamespace
+
+        if not self.rounds:
+            issued = json.loads(user)["generation_request"]
+            target = SimpleNamespace(work_model_ref=EntityRef.from_dict(issued["work_model_ref"]))
+            decision = SimpleNamespace(decision_ref=EntityRef.from_dict(issued["decision_refs"][0]))
+            self.rounds = _rounds(self.scenario, target, decision)
+        return super().__call__(system, user)
+
+
+def actor_source(*, scenario="three", qualified=True, verifier=None, critic_qualification=None):
+    """A TEST-ACTOR `DesignSource` (SIMULATED lens qualification by the fixture evidence
+    verifier; scripted generator and critic). `qualified=False` gives lens evidence whose
+    qualification record the verifier does not trust (the decision abstains)."""
+
+    from app.services.design_requests import DesignSource
+    from app.services.lenses import LensRegistry
+    from app.tests.test_design_generation import ROOT, FixtureEvidenceVerifier
+
+    registry = LensRegistry.from_markdown(ROOT / "docs/lenses/definition-candidates.md",
+                                          ROOT / "docs/lenses/composition-contract.md",
+                                          evidence_verifier=verifier or FixtureEvidenceVerifier())
+    return DesignSource(
+        registry=registry,
+        lens_evidence=lambda target: lens_evidence(target, qualification_hash=None if qualified else "c" * 64),
+        design_decision=lambda target, lenses: decision_value(lenses[0]),
+        compilation_authority=design_authority, label="test-actor (SIMULATED lens qualification)",
+        criticism_turn=ScriptedCritic(), critic_model_id=CRITIC_ID,
+        generation_turn=PayloadGenerator(scenario), generator_model_id=GENERATOR_ID,
+        critic_qualification=critic_qualification, requested_candidate_count=3)
+
+
 def run_in_thread(function, *args):
     """Start `function(*args)` in a daemon thread; returns (thread, box) with the result."""
 
