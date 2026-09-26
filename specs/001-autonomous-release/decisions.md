@@ -724,3 +724,8 @@ and implementation, release, effect, legal and human-acceptance gates remain ope
 - **Codex verification:** the owner will test the Codex side separately with Codex. The Codex paths (T049, T088, and T042's bridge) are not executed or simulated in this environment and are never reported as passed here.
 - **Microphone:** the owner will test microphone input separately. Real microphone capture (T024, and STT latency and quality in T080) is not exercised here. This moves only the testing; the T024 implementation work stays open.
 - **Independent people:** the owner asked that the steps needing independent people, such as a sealed-set author, a reviewer, a judge or real user feedback, be carried out as a *simulation*. Such runs are labelled simulated/test-actor throughout. Under the frozen release-v7 design they are **not** a release qualification: the actors have repository access and share the critic's model family, so judge separation is not established. The product gate stays closed.
+
+## 2026-09-26 — Owner decisions after T038 attempt 5
+
+- **Deterministic tool bindings:** the owner approved allowing deterministic (model-free) nodes to use an approved tool binding, for example a byte-exact store step. The design authority and graph compiler are extended accordingly, with contract review and tests. Tool effects stay governed by the same grants, gates, execution-bound approvals and effect policies as agent tool calls.
+- **T038:** the owner approved one more live attempt (attempt 6, USD 3.00 cap). It uses the corrected verifier wording in the specified work and the deterministic store step.
