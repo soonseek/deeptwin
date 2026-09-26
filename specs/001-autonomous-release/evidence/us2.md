@@ -725,6 +725,203 @@ Across all four attempts the total is USD 5.057 at ceiling (≈ 4.04 listed).
 completed live. That path is selection, the live re-review, the refused unqualified
 preparation and the simulated-qualification preparation.
 
+## 2026-09-26 (attempt 5): a different, better-specified work — nothing passed
+
+**Attempt 5 uses a DIFFERENT work from attempts 1–4.** Attempts 1–4 all designed the YouTube
+research → script work (`test_work_model_confirmation.work_model`). Attempt 4's two candidates
+followed every design rule and passed every review finding, but were excluded as
+`insufficient_evidence` on unresolved counterexamples about points that work's completion
+conditions left open (must the fact-check consult the originals? how is the first 30 seconds
+marked? may the verifier share the researcher's model?). That pointed at an under-specified work
+description, not at defective candidates. So attempt 5 designs a new work whose conditions can be
+checked. Its results are therefore **not comparable** one-to-one with attempts 1–4.
+
+A new owner authorization covered this attempt under its **own USD 3.00 cap**, with its own
+ledger (`attempt5-ledger.json`). It allowed up to 2 candidates, with USD 1.00 reserved for the
+re-review. The critic contract, the fold, the critic prompt and the generation rules (a)–(h)
+were **not** changed.
+
+### The work (SIMULATED owner — the test actor; labelled)
+
+`app/tests/design_specified_work.py` was authored by the test actor as a simulated owner
+(`AUTHOR`, and the work text starts with `[시험 행위자(가상 소유자)가 작성한 업무 설명 …]`). It is
+not a real owner's work.
+
+The task is to write the public release notes for version 2.4.0 from one stored changelog
+(`changelog-2.4.0.md`, uploaded as the work's only original). The changelog has six entries
+`CL-101…106`, each marked `공개: 예|아니오`.
+
+The work model the critic reads states:
+- **Sources and permissions.** The only source is that file, passed through unchanged; no web.
+  Storage is `document.create` after approval, and one owner approves under `artifact.publish`.
+- **What counts as verified.**
+  - Every item line is `- [CL-###] …`, its ID is a public entry, and every name, number and
+    version on the line appears in that entry.
+  - Every public ID appears exactly once. No private ID or private content appears anywhere.
+  - The only non-item line is the title.
+- **Who verifies, and how.** A verifier role other than the writer compares the **original file
+  itself** with the draft. It uses a **different model choice**.
+- **Report format.** `application/json`, with per line `{line, cited_ids, verdict, reason}`, the
+  missing IDs, the exposed IDs, and the overall verdict. The overall verdict is pass only when
+  every line passes and both lists are empty.
+- **What may be regenerated.** Nothing within a run. A fail ends the run without storing anything.
+- **What the approver sees.** The verified draft, its report and the original file. The stored
+  notes are byte-identical to the approved copy.
+- **Out of scope.** Style, tone, length, translation, and the accuracy of the changelog itself
+  (the owner's ground truth).
+- There are no unknowns, and there is one high risk (unsupported or private line), mitigated by
+  conditions 0–3.
+
+The test actor's decision (same lens `L-P032-01`, fixture-qualified as before) asks for one
+effect: the node `verifier`'s responsibility, verbatim. The authority snapshot
+(`design_authority()`) is unchanged. It offers two model choices, the `browser_read` tool and the
+`document_create` tool, and the `artifact.publish` approval scope.
+
+Offline test: `app/tests/test_design_specified_work.py`. It checks that the work is confirmed
+over a real saved work and stored original, and that the prompt carries its conditions and the
+effect.
+
+### Run 1 (`attempt5`): live generation completed, then the product crashed
+
+**Settings.**
+- Same product path: `test_claude_live_design_selection.py` with `DEEPTWIN_LIVE_WORK=specified`.
+- 2 candidates, 1 round, generation cap 28,000 tokens, criticism cap 6,000.
+- USD 1.00 reserve; ceiling USD 5 / 25 per MTok.
+- The catalog's first model (id redacted).
+- No retry and no fallback. The key was never printed.
+
+**What happened.** The generation call completed with 2 graphs, and both were admitted. Then the
+generation route answered **503 `unavailable`** before any critic call.
+- Cause: `design_criticism._control` serialized a control edge's `condition`, a nested frozen
+  mapping, with `canonical_json`, which raised.
+- Both live graphs use a **router** on a `verification_verdict` fact, which is rule (e)'s first
+  option and the first router in any live candidate so far.
+
+**Fix.** The projection now thaws node configs and edge data before serializing
+(`app/services/design_criticism.py`). This is a crash fix only. The contract, the fold and the
+prompt are unchanged, and a graph without nested values projects byte-identically. Regression
+test: `test_a_router_candidate_projects_for_the_critic`, which replays this answer offline.
+
+### Run 2 (`attempt5b`): the same live graphs, live criticism
+
+The first run's call succeeded, so it was **not re-sent**. The runner's new
+`DEEPTWIN_LIVE_REPLAY_GENERATION` answers the generation turn with the saved live answer
+`attempt5-01-arc-generation.txt` (sha256 `5952d003…dd69`).
+- Nothing is sent and nothing is spent for that turn, and the replay is recorded in
+  `attempt5b.json` → `replayed_generation`.
+- The replayed prompt differs from the original only in framework-minted identities, because
+  the work, request and model ids are new in each test app.
+- Everything else was live, under the same ledger. The guard counted run 1's USD 0.406 as earlier
+  spend.
+
+**Outcome.** Run `9687344d-8552-578a-a1ce-95f7e482b0c3` ended in **`shortfall`**, with 0
+presented of 2.
+- Evidence id: `90785b02-dfd2-46ff-9538-612739c837d3`.
+
+**The graphs (both).** Every node's role:
+- `intake` (deterministic passthrough of the file);
+- `writer` (agent, model choice …213);
+- `verify-join` → `verifier` (agent, model choice …215), reading the bundle of the unaltered file
+  and the draft;
+- `verdict-router` (pass → `review-join`, fail → `halt-no-publish`);
+- `review-join` → `publish-gate` (human gate), whose inputs are the file, the draft and the
+  report, and which emits the approved copy;
+- `publisher` (**agent**, bound to `document_create`).
+
+The second graph adds a deterministic `verdict-checker` that recomputes the verdict from the
+report before the router.
+
+**Candidate `a8b679a2`: rejected.**
+- Review: claim, effect, disposition, and completion 0, 3 and 4 **pass**.
+  - `work:completion:1` is **unresolved**: the verifier does not explicitly check "exactly once",
+    or private *content* beyond private IDs.
+  - `work:completion:2` **fails**: the verifier's responsibility omits `cited_ids` and the rule
+    for the overall verdict.
+- Counterexamples: all 3 were judged **valid** and failed.
+  - `ce-verdict-rule-unbound`: same as the completion 2 failure.
+  - `ce-verifier-scope-gap`: the title-only rule and private content are not checked.
+  - `ce-publisher-model-byte-fidelity`: the storing role is model-driven, and nothing checks that
+    the stored bytes equal the approved copy.
+
+**Candidate `3639d49e`: all 8 review findings passed.**
+- Its first counterexample, `cx-verdict-override`, was judged **valid** and failed. The checker's
+  recomputed verdict never requires the verifier's own overall verdict to be pass.
+- It was therefore headed for rejection. Its other two counterexamples were not judged:
+  `cx-publisher-model-rewrite` and `cx-verifier-indirect-input`.
+- The guard **refused** the next validity call. Its bound was USD 3.038, over the 3.00 cap
+  including the reserve. The criticism was refused, the candidate stays **unreviewed**, and the
+  refusal is recorded in `guard_refusals`.
+
+**Owner path.** Nothing was presented, so none of the owner steps took place:
+- no selection;
+- no re-review;
+- no unqualified preparation (which must be refused);
+- no simulated-qualification preparation.
+
+The simulated qualification was **not used**.
+
+**Analysis.** The better-specified work did what was intended: the critic's verdicts became
+**decisive** (`valid` / `fail`) instead of `unresolved`. The failures are real and checkable:
+- **The test actor's own effect text caused part of it.** The required `verifier` responsibility,
+  which must be copied verbatim, lists the report's content more loosely than condition 2 (no
+  `cited_ids`, no overall-verdict rule). A candidate that realizes the effect exactly is therefore
+  judged against a stricter condition. This is a defect of the attempt-5 work/decision authoring,
+  not of the candidates.
+- **The work conflicts with the authority.** It requires byte-identical storage, but the authority
+  offers storage only as a tool, and tools bind only to agents. So the storing role is necessarily
+  model-driven, which both critics flagged. A work that is fully specified must also be
+  satisfiable under its authority: a code-owned storing handler, or an explicit post-store check
+  against the approved copy.
+- **The verifier's scope must cover every clause of the conditions it owns:** exactly once,
+  private content, the title-only rule.
+
+This attempt made no change after the run.
+
+### Calls (provider-reported; all `completed / end_turn`; no cache tokens; bound = the guard's ceiling-rate bound before the send, incl. the USD 1.00 reserve)
+
+| # | run | purpose | provider message id | request id | input / output tokens | bound USD | spend USD (ceiling) |
+|---|---|---|---|---|---|---|---|
+| 1 | attempt5 | design_candidate (2 graphs, cap 28,000) | `msg_011CfRRn2YXzEa3teQHpPGgf` | `req_011CfRRn1gw81Dqtmx2xhf57` | 8,291 / 14,585 | 1.7919 | 0.4061 |
+| — | attempt5b | design_candidate: **replay of #1**, nothing sent | — | — | — | — | 0 |
+| 2 | attempt5b | review (`a8b679a2`): 6 pass, 1 unresolved, 1 fail | `msg_011CfRSGNNB9kkZqdQyPX3RA` | `req_011CfRSGMa3ZR852emZLyRci` | 8,738 / 4,371 | 1.6376 | 0.1530 |
+| 3 | attempt5b | counterexample_proposal (3) | `msg_011CfRSK4kcDBUuixfS8EQfE` | `req_011CfRSK4Ha6fSbqawP9eJUN` | 10,298 / 3,800 | 1.8042 | 0.1465 |
+| 4 | attempt5b | validity `ce-verdict-rule-unbound`: valid | `msg_011CfRSNh7TezLqrw5JyLxHE` | `req_011CfRSNgXExeZuF76SCA82u` | 9,394 / 1,954 | 1.9459 | 0.0958 |
+| 5 | attempt5b | candidate_response: fail | `msg_011CfRSQ1gCRgifpQwMcfmg4` | `req_011CfRSQ1Dubm4aZVxXhUtir` | 10,516 / 1,591 | 2.0572 | 0.0924 |
+| 6 | attempt5b | validity `ce-verifier-scope-gap`: valid | `msg_011CfRSR3V83qzLDZnMbipTN` | `req_011CfRSR38Xi3pn9yNhW9Fqc` | 9,268 / 2,046 | 2.1321 | 0.0975 |
+| 7 | attempt5b | candidate_response: fail | `msg_011CfRSSYRC2EipXJuBRcsRu` | `req_011CfRSSXSQJWBMTNszU4NQh` | 10,511 / 1,778 | 2.2463 | 0.0970 |
+| 8 | attempt5b | validity `ce-publisher-model-byte-fidelity`: valid | `msg_011CfRSThLF5PmZoPNyf9uQC` | `req_011CfRSTgiXtkZBq8xKqDznP` | 9,289 / 1,957 | 2.3269 | 0.0954 |
+| 9 | attempt5b | candidate_response: fail | `msg_011CfRSV82aQwkRDWxWoQp15` | `req_011CfRSV7ZnrjRmSAnCyjdge` | 10,514 / 1,787 | 2.4391 | 0.0972 |
+| 10 | attempt5b | review (`3639d49e`): 8 × pass | `msg_011CfRSWHmEpphmiPzw18HU4` | `req_011CfRSWHQfGx1gTVjDBtu3T` | 9,168 / 4,550 | 2.5168 | 0.1596 |
+| 11 | attempt5b | counterexample_proposal (3) | `msg_011CfRSZ45Z99FoSukuRjrsv` | `req_011CfRSZ3ULwBkXKibPcGquW` | 10,728 / 3,556 | 2.6900 | 0.1425 |
+| 12 | attempt5b | validity `cx-verdict-override`: valid | `msg_011CfRSbYPCyrVumApHEETcy` | `req_011CfRSbXLCjaoqLFQtP1FLF` | 9,936 / 2,555 | 2.8291 | 0.1136 |
+| 13 | attempt5b | candidate_response: fail | `msg_011CfRSdGjRpyruPEFuGTVGJ` | `req_011CfRSdGCRhTQtBypc5UPGS` | 11,241 / 1,735 | 2.9603 | 0.0996 |
+| — | attempt5b | validity (next counterexample): **refused by the guard**, not sent | — | — | — | 3.0382 | 0 |
+
+**Spend.** Attempt 5 sent 13 calls, with 127,892 input and 46,265 output tokens. That is about
+USD 1.437 at the listed 4 / 20 and **USD 1.796 at the ceiling 5 / 25**: USD 0.406 in run 1 and
+USD 1.390 in run 2. This is against attempt 5's USD 3.00 cap, and USD 1.204 of it is unused. Of
+that, USD 1.00 was the re-review reserve, which was never reached. No call was retried.
+
+Earlier attempts are counted separately, each under its own cap:
+- attempts 1–2: USD 2.677 at ceiling;
+- attempt 3: USD 1.009;
+- attempt 4: USD 1.371.
+
+**Evidence.** Everything is under `evidence/t038-live-arc-2026-09-26/`:
+- run 1: `attempt5.json` (the 503) and `attempt5-01-arc-generation.txt` (the live graphs);
+- run 2: `attempt5b.json` and 12 raw answers `attempt5b-NN-arc-criticism-<purpose>.txt`;
+- the shared ledger `attempt5-ledger.json`.
+
+The JSON, the ledger and all raw answers were checked key-free and contain no model id.
+
+**T038 is not ticked.** Again no live candidate passed live criticism. So there was no owner
+selection, no live re-review of a derived version, and no refused-unqualified or
+simulated-qualification preparation. The 0/1/2/3, revision and cancel paths remain exercised
+offline in `app/tests/browser-design.test.mjs`. That is the single test *"0/1/2/3 presented, a
+refused call, an edit re-reviewed and prepared, and cancel — in the real browser"*, run with
+scripted test-actor turns and the simulated qualification labelled. The live half of T038 is
+still open.
+
 ## Not ticked
 
 The 0/1/2/3, revision and cancel paths are exercised in `app/tests/browser-design.test.mjs` with
@@ -765,6 +962,14 @@ and V3 is unverified (T077).
       segment.
     - Attempt 4's cap has USD 1.629 left, and a further attempt needs the owner's
       authorization.
+  - Attempt 5 (2026-09-26 (attempt 5), above) used a different, better-specified work. The
+    critic's verdicts became decisive: both candidates failed on valid counterexamples, with none
+    unresolved.
+    - Part of the failure came from the test actor's own verbatim effect text, which is looser
+      than condition 2.
+    - Part came from byte-identical storage that the authority cannot guarantee, because storage
+      happens only through a tool, and tools bind only to agents.
+    - Attempt 5's cap has USD 1.204 left, and a further attempt needs the owner's authorization.
 - Production cannot create a design request: no lens is qualified, so no `DesignSource` is
   configured, and the page and the route say so. A production source would also need the owner's
   model turns wired from the Claude connection and a production functional-decision step (T030).
