@@ -18,7 +18,13 @@ from app.tests.design_arc_fixture import actor_source
 from app.tests.test_claude_live_path import connected
 from app.tests.test_design_arc import generate, read
 from app.tests.test_web_owner_integration import bootstrap_client, configured, headers
-from app.tests.test_work_models import authored, confirm_body, draft_body, sourced_work, transport
+from app.tests.test_work_models import (
+    authored,
+    confirm_body,
+    draft_body,
+    sourced_work,
+    transport,
+)
 
 ROOT = "api/v1/design-requests"
 

@@ -820,7 +820,10 @@ class PersistentDesignWorkspace:
             content={"design_kind": design_kind, "design": encode_design_refs(design)}, **headers))
 
     def _criticize(self, registration, candidate, candidate_ref, turn, headers):
-        from .design_criticism_live import CriticismStageRefused, run_candidate_criticism
+        from .design_criticism_live import (
+            CriticismStageRefused,
+            run_candidate_criticism,
+        )
 
         try:
             run = run_candidate_criticism(candidate, registration.request, registration.registry,

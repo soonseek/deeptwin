@@ -105,7 +105,13 @@ def main():
         import httpx2
 
         from app.services.claude_run_executor import ClaudeRunExecutor, LiveLimits
-        from app.tests.test_claude_api import Spy, complete_text_stream, model, model_page, response
+        from app.tests.test_claude_api import (
+            Spy,
+            complete_text_stream,
+            model,
+            model_page,
+            response,
+        )
         from app.tests.test_claude_design_turn import EFFORTS
         from app.tests.test_work_models import authored
 

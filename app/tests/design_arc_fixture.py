@@ -235,7 +235,12 @@ def decision_value(lens):
 def lens_evidence(target, *, qualification_hash=None):
     """The SIMULATED lens evidence `proposed_lens` issues its decision from."""
 
-    from app.services.lenses import ApplicabilityAssessment, LensQualification, LensRegistry, RouteEvidence
+    from app.services.lenses import (
+        ApplicabilityAssessment,
+        LensQualification,
+        LensRegistry,
+        RouteEvidence,
+    )
     from app.tests.test_design_generation import QUALIFICATION_HASH, ROOT
 
     item = LensRegistry.from_markdown(ROOT / "docs/lenses/definition-candidates.md",

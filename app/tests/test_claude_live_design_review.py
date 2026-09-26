@@ -44,7 +44,11 @@ from app.tests.design_arc_fixture import STAMP, _work_model
 from app.tests.test_claude_design_turn import records
 from app.tests.test_claude_live_path import claude
 from app.tests.test_design_arc import generate, post, read, work_with_source
-from app.tests.test_design_generation import design_authority, design_decision, proposed_lens
+from app.tests.test_design_generation import (
+    design_authority,
+    design_decision,
+    proposed_lens,
+)
 from app.tests.test_runs_api import owner_app
 
 KEY = os.environ.get("DEEPTWIN_LIVE_ANTHROPIC_API_KEY")

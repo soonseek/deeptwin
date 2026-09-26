@@ -459,10 +459,10 @@ def run_candidate_criticism(
 __all__ = [
     "CRITICISM_PURPOSES",
     "MAX_REFUSED_RESPONSE_BYTES",
-    "CriticismStageRefused",
-    "diagnose_contract_violation",
     "CriticismCallRecord",
     "CriticismRunResult",
+    "CriticismStageRefused",
+    "diagnose_contract_violation",
     "is_issued_call_record",
     "is_issued_criticism_run",
     "render_criticism_prompt",
