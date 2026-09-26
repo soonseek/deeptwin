@@ -1,4 +1,8 @@
-"""Fixed HTTP adapter for owner-started runs (the connected browser path)."""
+"""Fixed HTTP adapter for owner-started runs (the connected browser path).
+
+`GET|HEAD /api/v1/run-environments/{work_id}` (T048) reads what a run of one work
+can use: the owner's prepared environment versions bound back to their stored graph
+and work revision (`services/run_environments.py`), or exactly why there is none."""
 
 from uuid import uuid4
 
@@ -14,7 +18,9 @@ from ..services.alternative_drafts import (
     DraftError,
     PersistentAlternativeDrafts,
 )
+from ..services.owner_auth import OwnerAuthError
 from ..services.run_artifacts import PersistentRunArtifacts, RunArtifactError
+from ..services.run_environments import PersistentRunEnvironments, RunEnvironmentError
 from ..services.runs import (
     CANCEL_SCHEMA,
     COMMAND_SCHEMA,
@@ -28,6 +34,7 @@ from .run_approvals import is_approval_path
 from .wire import WireInputError, WireLimits, parse_json_object, parse_query
 
 PATH = "/api/v1/runs"
+ENVIRONMENTS_PREFIX = "/api/v1/run-environments/"
 STATUS = {
     "invalid_input": 400,
     "unauthenticated": 401,
@@ -96,6 +103,21 @@ def artifact_error(error):
         },
         status_code=ARTIFACT_STATUS[code],
     )
+
+
+def is_run_environments_path(path: str) -> bool:
+    return path.startswith(ENVIRONMENTS_PREFIX)
+
+
+def environments_preflight(scope, body):
+    parse_query(scope.get("query_string", b""), allowed=())
+    parts = scope["path"][len(ENVIRONMENTS_PREFIX):].split("/")
+    if len(parts) != 1 or scope["method"] not in {"GET", "HEAD"} or body:
+        raise WireInputError("invalid_input")
+    try:
+        uuid_string(parts[0])
+    except (TypeError, ValueError):
+        raise WireInputError("invalid_input") from None
 
 
 def is_run_path(path: str) -> bool:
@@ -305,15 +327,28 @@ def run_services(context, *, dependencies):
     artifacts = PersistentRunArtifacts(context.domain_store, context.owner_authority, runs,
                                        codec=context.document_codec)
     drafts = PersistentAlternativeDrafts(artifacts)
+    environments = PersistentRunEnvironments(context.domain_store, context.owner_authority,
+                                             runs_available=lambda: runs.available)
     return ContributionServices(
-        create_router(runs=runs, artifacts=artifacts, drafts=drafts, base_path=context.base_path),
+        create_router(runs=runs, artifacts=artifacts, drafts=drafts, base_path=context.base_path,
+                      environments=environments),
         {"runs.service": runs, "run-artifacts.service": artifacts,
          "alternative-drafts.service": drafts},
     )
 
 
-def create_router(*, runs, base_path, artifacts=None, drafts=None):
+def create_router(*, runs, base_path, artifacts=None, drafts=None, environments=None):
     router = APIRouter()
+
+    @router.api_route(ENVIRONMENTS_PREFIX + "{work_id}", methods=["GET", "HEAD"])
+    async def run_environments(request: Request, work_id: str):
+        try:
+            if environments is None:
+                raise RunEnvironmentError("unavailable")
+            value = await run_in_threadpool(environments.read, request.state.authenticated_request, work_id)
+            return JSONResponse(value, headers={"Cache-Control": "no-store"})
+        except (RunEnvironmentError, OwnerAuthError) as error:
+            return run_error(RunRouteError(getattr(error, "code", "unavailable")))
 
     async def draft_call(method, *args, status=200, **kwargs):
         try:

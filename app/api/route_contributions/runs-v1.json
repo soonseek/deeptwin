@@ -184,6 +184,16 @@
       "path": "/api/v1/runs/{run_id}/artifacts/{artifact_id}/alternatives/{alternative_id}/difference",
       "auth_policy": "browser_session",
       "required_scope": "work.command"
+    },
+    {
+      "route_id": "runs.environments",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "path": "/api/v1/run-environments/{work_id}",
+      "auth_policy": "browser_session",
+      "required_scope": "work.read"
     }
   ]
 }

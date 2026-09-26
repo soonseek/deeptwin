@@ -335,6 +335,9 @@ def preflight_api_v1(scope, body):
     from .graphs import preflight as graphs_preflight
     if is_graphs_path(path):
         graphs_preflight(scope, body)
+    from .runs import environments_preflight, is_run_environments_path
+    if is_run_environments_path(path):
+        environments_preflight(scope, body)
     from .design_workspace import is_design_workspace_path
     from .design_workspace import preflight as design_workspace_preflight
     if is_design_workspace_path(path):

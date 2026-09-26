@@ -39,7 +39,7 @@ dot segments; methods, auth policies and scopes come from closed sets; and route
 The composed set is mounted once. There is no runtime route registry and extensions cannot add
 routes.
 
-Current inventory (134 routes in 26 contributions; auth policies: `browser_session`):
+Current inventory (137 routes in 26 contributions; auth policies: `browser_session`):
 
 | Contribution | Routes | Scopes |
 | --- | --- | --- |
@@ -56,10 +56,10 @@ Current inventory (134 routes in 26 contributions; auth policies: `browser_sessi
 | `source-readings-v1` | source_readings.list, source_readings.read, source_readings.latest (3) | `work.command`, `work.read` |
 | `conversations-v1` | conversations.read, conversations.message, conversations.propose, conversations.challenge, conversations.approve (5) | `work.command`, `work.read` |
 | `budget-policies-v1` | budget_policies.list, budget_policies.create (2) | `work.command`, `work.read` |
-| `runs-v1` | runs.create, runs.read, runs.resume, runs.cancel, runs.recover, runs.artifacts, runs.artifact, runs.artifact_content, runs.artifact_preview, runs.artifact_page, runs.artifact_page_image, runs.artifact_drafts, runs.artifact_draft_save, runs.artifact_draft, runs.artifact_draft_freeze, runs.artifact_alternative_file, runs.artifact_draft_differences, runs.alternative_difference, runs.alternative_difference_observe (19) | `work.command`, `work.read` |
+| `runs-v1` | runs.create, runs.read, runs.resume, runs.cancel, runs.recover, runs.artifacts, runs.artifact, runs.artifact_content, runs.artifact_preview, runs.artifact_page, runs.artifact_page_image, runs.artifact_drafts, runs.artifact_draft_save, runs.artifact_draft, runs.artifact_draft_freeze, runs.artifact_alternative_file, runs.artifact_draft_differences, runs.alternative_difference, runs.alternative_difference_observe, runs.environments (20) | `work.command`, `work.read` |
 | `artifact-index-v1` | artifacts.index (1) | `work.read` |
 | `graphs-v1` | graphs.read (1) | `work.read` |
-| `design-workspace-v1` | design_requests.list, design_requests.read, design_requests.derive, design_requests.review, design_requests.prepare (5) | `work.command`, `work.read` |
+| `design-workspace-v1` | design_requests.list, design_requests.read, design_requests.derive, design_requests.review, design_requests.prepare, design_requests.generate, design_requests.cancel (7) | `work.command`, `work.read` |
 | `hypotheses-v1` | hypotheses.read, hypotheses.propose (2) | `work.command`, `work.read` |
 | `inquiries-v1` | inquiries.read, inquiries.open, inquiries.answer, inquiries.evidence, inquiries.judge, inquiries.audit (6) | `work.command`, `work.read` |
 | `versions-v1` | versions.read, versions.adopt, versions.decide, versions.activate, versions.rollback, versions.tool_effect_boundaries.read, versions.tool_effect_boundaries.decide (7) | `work.command`, `work.read` |
