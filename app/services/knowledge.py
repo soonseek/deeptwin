@@ -31,6 +31,8 @@ LIFECYCLES = frozenset({
 })
 _DRAFT_KINDS = frozenset({
     "own_alternative", "difference", "hypothesis", "inquiry", "selector",
+    # the owner's process feedback (mark and memo): an observation, not operating memory
+    "process_feedback",
 })
 _PROVENANCE_KINDS = frozenset({
     "comparison_result", "validation_report", "decision_record",

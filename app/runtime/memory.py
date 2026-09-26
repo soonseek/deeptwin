@@ -33,6 +33,8 @@ PROTECTED_REQUIREMENTS = frozenset({
 _FORBIDDEN_REF_KINDS = frozenset({
     # draft/interpretation stores (H_phi, alternatives) — audit material
     "own_alternative", "difference", "hypothesis", "selector", "inquiry",
+    # the owner's process feedback (a mark and a memo): an observation, never a rule
+    "process_feedback",
     # judge/heldout internals — candidate authors never touch them
     "evaluation_dataset", "rubric",
 })

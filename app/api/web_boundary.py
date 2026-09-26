@@ -43,9 +43,11 @@ from .run_consents import ConsentRouteError, consent_error, is_consent_path
 from .run_consents import preflight as consent_preflight
 from .runs import (
     DRAFT_BODY_BYTES,
+    FEEDBACK_BODY_BYTES,
     FILE_BODY_BYTES,
     RunRouteError,
     is_draft_save,
+    is_feedback_write,
     is_file_upload,
     is_run_path,
     run_error,
@@ -278,6 +280,8 @@ class WebBoundary:
                     limit = DRAFT_BODY_BYTES
                 if run_route and is_file_upload(path, method):
                     limit = FILE_BODY_BYTES
+                if run_route and is_feedback_write(path, method):
+                    limit = FEEDBACK_BODY_BYTES
                 if work_route:
                     limit = WORK_BODY_BYTES if method == "POST" else 0
                 if backup_upload:

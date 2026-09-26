@@ -36,7 +36,10 @@ def run_trace_services(context, *, dependencies):
         context.domain_store, context.owner_authority, runs=dependencies["runs.service"],
         approvals=dependencies["run-approvals.service"], ledger=context.components.runtime_ledger,
         budget_book=context.components.budget_book)
-    return ContributionServices(create_router(traces=traces, base_path=context.base_path), {})
+    # the trace reader is shared with the process-feedback contribution (run-feedback-v1),
+    # whose targets must exist in this same trace
+    return ContributionServices(create_router(traces=traces, base_path=context.base_path),
+                                {"run-trace.service": traces})
 
 
 def create_router(*, traces, base_path):

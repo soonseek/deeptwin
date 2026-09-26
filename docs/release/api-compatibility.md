@@ -41,7 +41,7 @@ dot segments; methods, auth policies and scopes come from closed sets; and route
 The composed set is mounted once. There is no runtime route registry and extensions cannot add
 routes.
 
-Current inventory (144 routes in 28 contributions; auth policies: `browser_session`, `browser_session_or_service_bearer`):
+Current inventory (146 routes in 29 contributions; auth policies: `browser_session`, `browser_session_or_service_bearer`):
 
 | Contribution | Routes | Scopes |
 | --- | --- | --- |
@@ -61,6 +61,7 @@ Current inventory (144 routes in 28 contributions; auth policies: `browser_sessi
 | `runs-v1` | runs.create, runs.read, runs.resume, runs.cancel, runs.recover, runs.artifacts, runs.artifact, runs.artifact_content, runs.artifact_preview, runs.artifact_page, runs.artifact_page_image, runs.artifact_drafts, runs.artifact_draft_save, runs.artifact_draft, runs.artifact_draft_freeze, runs.artifact_alternative_file, runs.artifact_draft_differences, runs.alternative_difference, runs.alternative_difference_observe, runs.environments (20) | `work.command`, `work.read` |
 | `artifact-index-v1` | artifacts.index (1) | `work.read` |
 | `run-trace-v1` | runs.trace (1) | `work.read` |
+| `run-feedback-v1` | runs.feedback, runs.feedback_record (2) | `work.command`, `work.read` |
 | `graphs-v1` | graphs.read (1) | `work.read` |
 | `design-workspace-v1` | design_requests.list, design_requests.create, design_requests.read, design_requests.derive, design_requests.review, design_requests.prepare, design_requests.generate, design_requests.cancel (8) | `work.command`, `work.read` |
 | `hypotheses-v1` | hypotheses.read, hypotheses.propose (2) | `work.command`, `work.read` |
@@ -151,6 +152,42 @@ which the run id is derived) or an object reference to the run or one of its led
 approval decision carries neither, so it is not matched by `run_id` (the trace lists approvals from
 their records). The subject is part of the cursor's filter identity: a cursor read under one
 subject is refused (`400`) under another or none. Existing cursors are unchanged.
+
+## 3c. Process feedback on a run (2026-09-26, UI phase 4)
+
+`run-feedback-v1` adds two browser-session routes on one path (a bearer gets `401` before any
+parsing, like on every other browser-session route):
+
+- `GET|HEAD /api/v1/runs/{run_id}/feedback` (`runs.feedback`, scope `work.read`): no query, no body.
+  Response `process-feedback-list-v1`: `run_id`, `memo_max_chars` (4000), `marks`
+  (`ok`, `needs_attention`), `current {run, steps[]}` (the latest revision of every target, a
+  cleared one included with `state: cleared`) and `history[]` (every revision in recorded order).
+  An item is `feedback_id`, `revision`, `target`, `state` (`set`/`cleared`), `mark` (or null),
+  `memo` (or null), `recorded_at_utc`, `ref`. `Cache-Control: no-store`.
+- `POST /api/v1/runs/{run_id}/feedback` (`runs.feedback_record`, scope `work.command`): one
+  `process-feedback-command-v1` command, exactly `schema_version`, `command_id`, `action`
+  (`set`/`clear`), `target` (`{scope: run}` or `{scope: step, node_id, visit_no, attempt_no}`, where
+  `attempt_no` is null only for a visit the executor ran without ledger attempts),
+  `expected_revision` (0 for a target without feedback), `mark` (`ok`/`needs_attention`/null) and
+  `memo` (null, or 1–4,000 characters with a visible character; tabs and line breaks kept, other
+  control characters refused). A set needs a mark or a memo (either alone is complete; no
+  explanation is ever required); a clear carries neither. Answer `201` with the recorded revision,
+  `replayed` and the new `current`.
+- Errors: `400` malformed id, shape, value or an empty set, a clear of nothing; `401` no session or a
+  bearer; `403` no CSRF token or a foreign origin; `404` unknown run, node, visit or attempt;
+  `409` a stale `expected_revision` or a reused command id with another body; `413` a memo over
+  4,000 characters or a body over 64 KiB; `503` storage or the run executor unavailable.
+- A write is the owner-command path: CSRF-verified same-origin POST, one command id (an exact
+  replay returns the same revision), the immutable `process_feedback` record and its public
+  `feedback.recorded` event in one transaction. The event carries `scope`, `mark` (`none` when
+  absent), `memo` (whether one exists), `cleared` and `revision` — never the memo text — and names
+  the run, so `GET /api/v1/events?run_id=` lists it.
+- `run-trace-v1` gains, additively, `feedback {run, steps}` at the top level, `feedback` on every
+  attempt and visit (the current set feedback of that exact target, or null) and `links.feedback`.
+- The work export's `events` category gains, when a run of the work has feedback,
+  `events/run-feedback.json`: every revision as metadata (target, mark, state, memo length), never
+  the memo text. It is never under `alternatives`.
+- Process feedback is not an alternative and is never counted as one (UX-AC05).
 
 ## 4. Compatibility policy
 

@@ -443,6 +443,7 @@ fields, not interchangeable effects. UI may present several together but stores 
 | `DecisionRecord` | execution_ref, decision_kind, result, explicit support_refs, alternatives/uncertainties | externally provided concise basis, not reconstructed hidden chain of thought |
 | `BudgetReservation` / reservations | policy_ref, request_id, maximums, observed_usage, finality, status | reserve before parallel dispatch; unknown spend retains reservation; no reset on restart |
 | `ApprovalChallenge` / challenges | kind, exact_target_ref, action/scope, expected_version, expires_at, nonce, state | one-use authenticated human decision; model cannot mint/resolve approval |
+| `ProcessFeedback` / `process_feedback` records (2026-09-26, UI phase 4, `process-feedback-v1`) | run_id, target (`{scope: run}` or `{scope: step, node_id, visit_no, attempt_no}`), state (`set`/`cleared`), mark (`ok`/`needs_attention`/null), memo (null or ≤4,000-character plain text), command_id, command_digest; record id derived from run + exact target, version = revision; parent = the run manifest (revision 1) or revision n-1 | owner-authored only (CSRF-verified owner command, one command id, `feedback.recorded` in the same transaction); a set carries a mark or a memo, never requires an explanation (FR-016); a change or a clear is a new revision over the exact expected one, nothing is overwritten or deleted; the target exists in the run's own trace (an attempt number only where the visit has ledger attempts); **not an alternative and never counted as one** (UX-AC05): memory compilation, the change compiler and the knowledge registry refuse the kind, no gateway profile carries it, the work export lists it under `events` metadata-only without the memo text; exploration may read it only as an owner-supplied observation, never as ground truth |
 
 `ToolResult` statuses: succeeded/failed/denied/timed_out/cancelled/outcome_unknown. The enclosing
 semantic result's `effect` object is the only effect/outcome truth; an embedded error carries no
@@ -498,7 +499,8 @@ speech.started/segment/stopped/interrupted/raw_unavailable;
 understanding.requested/completed; design.proposed/repaired/selected; review.completed/invalid;
 run.started/stopped; attempt.reserved/dispatched/terminal; tool.requested/terminal;
 artifact.sealed/missing; handoff.delivered/acknowledged; memory.read/written;
-alternative.saved; difference.observed; hypothesis.updated; inquiry.frozen/evidence/declined;
+alternative.saved; feedback.recorded (the owner's process feedback: scope, mark, memo present,
+cleared, revision; never the memo text); difference.observed; hypothesis.updated; inquiry.frozen/evidence/declined;
 lens.selected/composed/abstained; candidate.created/frozen; evaluation.started/result;
 loop.updated/stopped; validation.completed; approval.requested/decided;
 promotion.applied/failed; rollback.applied; retention.changed/pruned/deleted;

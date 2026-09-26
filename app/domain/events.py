@@ -118,6 +118,10 @@ _register("handoff.delivered handoff.acknowledged", artifact_count=COUNT, suppli
 _register("memory.read", considered_count=COUNT, selected_count=COUNT, supplied_count=COUNT)
 _register("memory.written", item_count=COUNT)
 _register("alternative.saved", partial=FLAG, revision=COUNT)
+# the owner's process feedback (services/run_feedback.py): never an alternative, never the memo
+# text — only which target kind, which mark, whether a memo exists, whether it was a clear
+_register("feedback.recorded", scope=Field("enum", ("run", "step")),
+          mark=Field("enum", ("ok", "needs_attention", "none")), memo=FLAG, cleared=FLAG, revision=COUNT)
 _register("difference.observed", difference_count=COUNT)
 _register("hypothesis.updated", revision=COUNT)
 _register("inquiry.frozen", question_count=COUNT, prediction_count=COUNT)
@@ -198,6 +202,7 @@ _EXACT = frozenset({
     "extension.binding_activated", "extension.binding_superseded", "extension.binding_disabled",
     "extension.binding_rolled_back", "extension.rollback_retention_created",
     "extension.rollback_retention_released", "extension.rollback_retention_consumed",
+    "feedback.recorded",
 })
 
 

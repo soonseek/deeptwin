@@ -25,6 +25,7 @@ from .provider_installation import installation_services
 from .retention import retention_services
 from .run_approvals import approval_services
 from .run_consents import consent_services
+from .run_feedback import run_feedback_services
 from .run_trace import run_trace_services
 from .runs import run_services
 from .service_clients import service_client_services
@@ -163,6 +164,16 @@ INSTALLED = (
         ("browser_session",),
         ("work.read",),
         requires=("runs.service", "run-approvals.service"),
+        provides=("run-trace.service",),
+    ),
+    InstalledContribution(
+        "run-feedback-v1.json",
+        "app.api.run_feedback:create_router",
+        run_feedback_services,
+        ("browser_session",),
+        ("work.command", "work.read"),
+        requires=("run-trace.service",),
+        provides=("run-feedback.service",),
     ),
     InstalledContribution(
         "graphs-v1.json",

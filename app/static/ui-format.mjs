@@ -88,6 +88,13 @@ export const APPROVAL_STATE_TEXT = Object.freeze({
 export const STOP_REASON_LABELS = Object.freeze({
   completed: '완료', cancelled: '취소·거절로 멈춤', infrastructure_failure: '실행 중 실패로 멈춤',
 });
+// the owner's process feedback marks (services/run_feedback.py MARKS), with their glyph
+export const FEEDBACK_MARK_LABELS = Object.freeze({
+  ok: '괜찮음', needs_attention: '확인 필요',
+});
+export const FEEDBACK_MARK_TONES = Object.freeze({
+  ok: 'ok', needs_attention: 'warn',
+});
 // why a trace category is absent (services/run_traces.py GAP_REASONS), in the owner's words
 export const TRACE_GAP_LABELS = Object.freeze({
   attempt_tokens: '시도 기록에는 예약과 정산만 있고, 제공자가 알린 토큰 수는 없습니다.',
@@ -241,6 +248,7 @@ export const EVENT_TEXT = Object.freeze({
   'extension.staged': ['확장 설치 대기', '확장을 설치 대기 상태로 두었습니다'],
   'extension.suspended': ['확장 일시 중지', '확장을 일시 중지했습니다'],
   'extension.verified': ['확장 설치 검증', '확장 설치를 검증했습니다'],
+  'feedback.recorded': ['과정 피드백', '과정 피드백을 남겼습니다'],
   'handoff.acknowledged': ['전달물 수신 확인', '전달물 수신을 확인했습니다'],
   'handoff.delivered': ['전달', '다음 단계로 산출물을 전달했습니다'],
   'hypothesis.updated': ['설명 갱신', '차이에 대한 설명을 갱신했습니다'],
@@ -355,7 +363,33 @@ function eventDetail(type, metadata) {
   if (type === 'run.stopped' && typeof metadata.reason_code === 'string') {
     return ` (${own(STOP_REASON_LABELS, metadata.reason_code) ?? metadata.reason_code})`;
   }
+  if (type === 'feedback.recorded') {
+    const where = metadata.scope === 'run' ? '실행 전체' : metadata.scope === 'step' ? '단계' : null;
+    if (metadata.cleared === true) return where ? ` (${where} · 지움)` : ' (지움)';
+    const parts = [where, own(FEEDBACK_MARK_LABELS, metadata.mark), metadata.memo === true ? '메모' : null]
+      .filter(Boolean);
+    return parts.length ? ` (${parts.join(' · ')})` : '';
+  }
   return '';
+}
+
+// what a run.stopped event says about the RUN (app/domain/events.py END_REASON): the event's own
+// status only says the stop was recorded, so a failure stop must never read as "성공"
+export const RUN_STOP_OUTCOME_TEXT = Object.freeze({
+  completed: ['완료', 'ok'], cancelled: ['취소·거절로 멈춤', 'neutral'],
+  infrastructure_failure: ['실패로 멈춤', 'error'], outcome_unknown: ['결과 미상으로 멈춤', 'warn'],
+  budget_exhausted: ['한도 소진으로 멈춤', 'warn'], below_quality_floor: ['품질 하한 미달로 멈춤', 'warn'],
+  plateau: ['개선 정체로 멈춤', 'neutral'], safety_halt: ['안전 정지', 'error'],
+});
+
+// the run a stop event is about, in words and tone, or null for any other event (or a stop
+// whose own record did not succeed: then the record's status is the honest chip)
+export function runStopOutcome(event) {
+  if (event?.event_type !== 'run.stopped' || event.status !== 'succeeded') return null;
+  const reason = event.public_metadata?.reason_code;
+  if (typeof reason !== 'string') return Object.freeze({ label: '멈춤 (이유 기록 없음)', tone: 'warn' });
+  const known = own(RUN_STOP_OUTCOME_TEXT, reason);
+  return Object.freeze(known ? { label: known[0], tone: known[1] } : { label: `멈춤 (${reason})`, tone: 'warn' });
 }
 
 // one human sentence for a public event: `known` is false for a type this page does not

@@ -82,7 +82,7 @@ def test_the_trace_separates_attempts_and_names_what_was_not_recorded(tmp_path):
         assert set(value) == {"schema_version", "run_id", "phase", "graph_ref", "graph_digest", "work",
                               "budget_mode", "started_at_utc", "ended_at_utc", "stops", "totals", "exit",
                               "final_results", "stopped_at", "nodes", "handoffs", "approvals", "timeline",
-                              "gaps", "links"}
+                              "gaps", "links", "feedback"}
         assert sorted(item["node_id"] for item in value["nodes"]) == ["intake", "publish", "writer"]
         # the run's own stop events: the failed execution, then completion; the end is the completion
         assert [stop["reason"] for stop in value["stops"]] == ["infrastructure_failure", "completed"]

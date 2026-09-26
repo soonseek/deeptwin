@@ -61,6 +61,10 @@ _CREATE_FIELDS = (
 DRAFT_BODY_BYTES = 600_000
 # an alternative file travels base64-encoded in its command (4 MiB decoded)
 FILE_BODY_BYTES = 5_600_000 + 8_192
+# a process-feedback command (run-feedback-v1) carries a memo of at most 4,000 characters; the
+# bound leaves room for any JSON escaping of them (a \uXXXX surrogate pair is 12 bytes)
+FEEDBACK_BODY_BYTES = 65_536
+FEEDBACK_FIELDS = ("schema_version", "command_id", "action", "target", "expected_revision", "mark", "memo")
 
 
 class RunRouteError(ValueError):
@@ -134,7 +138,9 @@ def is_run_path(path: str) -> bool:
     parts = path[len(PATH) + 1:].split("/")
     # `/{id}/trace` (run-trace-v1) is admitted by this shared preflight too: a read with
     # no query and no body, served by its own contribution
-    return (len(parts) == 1 or (len(parts) == 2 and parts[1] in {"resume", "cancel", "recover", "trace"})
+    # `/{id}/feedback` (run-feedback-v1) likewise: its GET takes nothing, its POST one command
+    return (len(parts) == 1 or (len(parts) == 2 and parts[1] in {"resume", "cancel", "recover", "trace",
+                                                                 "feedback"})
             or _artifact_parts(parts) is not None or _draft_parts(parts) is not None
             or _is_file_upload(parts) or _is_difference(parts))
 
@@ -172,6 +178,34 @@ def is_draft_save(path: str, method: str) -> bool:
 def is_file_upload(path: str, method: str) -> bool:
     return (method == "POST" and path.startswith(PATH + "/")
             and _is_file_upload(path[len(PATH) + 1:].split("/")))
+
+
+def is_feedback_write(path: str, method: str) -> bool:
+    """`POST /api/v1/runs/{id}/feedback` (run-feedback-v1): a command that may carry a memo."""
+
+    if method != "POST" or not path.startswith(PATH + "/"):
+        return False
+    parts = path[len(PATH) + 1:].split("/")
+    return len(parts) == 2 and parts[1] == "feedback"
+
+
+def feedback_command(body: bytes) -> dict:
+    """The exact process-feedback command shape (the service checks every value)."""
+
+    from ..services.run_feedback import COMMAND_SCHEMA, MAX_MEMO_CHARS
+
+    value = parse_json_object(
+        body, required=FEEDBACK_FIELDS,
+        field_types={"schema_version": str, "command_id": str, "action": str, "target": dict,
+                     "expected_revision": int, "mark": (str, type(None)), "memo": (str, type(None))},
+        limits=WireLimits(max_bytes=FEEDBACK_BODY_BYTES, max_depth=3, max_items=16, max_members=8,
+                          max_string_bytes=FEEDBACK_BODY_BYTES))
+    if value["schema_version"] != COMMAND_SCHEMA:
+        raise RunRouteError()
+    uuid_string(value["command_id"])
+    if type(value["memo"]) is str and len(value["memo"]) > MAX_MEMO_CHARS:
+        raise RunRouteError("too_large")
+    return value
 
 
 def _artifact_parts(parts):
@@ -301,6 +335,14 @@ def preflight(scope, body, content_type):
             if method not in {"GET", "HEAD"} or body:
                 raise RunRouteError()
             return None
+        if len(parts) == 2 and parts[1] == "feedback":
+            if method in {"GET", "HEAD"}:
+                if body:
+                    raise RunRouteError()
+                return None
+            if method != "POST" or content_type.split(";", 1)[0] != "application/json":
+                raise RunRouteError()
+            return feedback_command(body)
         if len(parts) == 2:
             if method != "POST" or content_type.split(";", 1)[0] != "application/json":
                 raise RunRouteError()

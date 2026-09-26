@@ -1618,6 +1618,45 @@
       },
       "type": "object"
     },
+    "feedback.recorded": {
+      "additionalProperties": false,
+      "properties": {
+        "cleared": {
+          "type": "boolean"
+        },
+        "mark": {
+          "enum": [
+            "ok",
+            "needs_attention",
+            "none"
+          ],
+          "type": "string"
+        },
+        "memo": {
+          "type": "boolean"
+        },
+        "revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "scope": {
+          "enum": [
+            "run",
+            "step"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "scope",
+        "mark",
+        "memo",
+        "cleared",
+        "revision"
+      ],
+      "type": "object"
+    },
     "handoff.acknowledged": {
       "additionalProperties": false,
       "properties": {

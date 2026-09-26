@@ -414,7 +414,12 @@ class PersistentRunTraces:
     # ------------------------------------------------------------------ read
 
     @_closed
-    def read(self, request, run_id, *, base_path) -> dict:
+    def read(self, request, run_id, *, base_path, feedback=True) -> dict:
+        """The run's trace. With `feedback` (the route), the owner's process feedback is
+        attached: the run's own at `feedback.run`, each target's latest revision in
+        `feedback.steps`, and on each attempt (or a visit without attempts) its current
+        feedback, or null when it has none or it was cleared (`run_feedback.py`)."""
+
         self._check(request)
         try:
             run_id = uuid_string(run_id)
@@ -586,7 +591,7 @@ class PersistentRunTraces:
         totals.pop("cost_microunits")
         totals.pop("cost_currency")
         timeline.sort(key=lambda item: (item["at_utc"] if item["at_utc"] != NOT_RECORDED else "~"))
-        return {
+        value = {
             "schema_version": TRACE_SCHEMA,
             "run_id": run_id,
             "phase": receipt["phase"],
@@ -610,3 +615,28 @@ class PersistentRunTraces:
                       "run": f"{base_path.rstrip('/')}/api/v1/runs/{run_id}",
                       "events": f"{base_path.rstrip('/')}/api/v1/events?run_id={run_id}"},
         }
+        if feedback:
+            self._attach_feedback(value, run_id, base_path)
+        return value
+
+    def _attach_feedback(self, value, run_id, base_path):
+        """The owner's process feedback beside the facts it is about. It is the owner's own
+        observation (a mark and a memo), never a recorded fact of the run and never an
+        alternative; a cleared target keeps its latest revision in `steps` (state `cleared`)
+        and shows null in place."""
+
+        from .run_feedback import current_feedback
+
+        current = current_feedback(self._domain, run_id)
+        active = {}
+        for item in current["steps"]:
+            if item["state"] == "set":
+                target = item["target"]
+                active[(target["node_id"], target["visit_no"], target["attempt_no"])] = item
+        for node in value["nodes"]:
+            for visit in node["visits"]:
+                visit["feedback"] = active.get((node["node_id"], visit["visit_no"], None))
+                for attempt in visit["attempts"]:
+                    attempt["feedback"] = active.get((node["node_id"], visit["visit_no"], attempt["attempt_no"]))
+        value["feedback"] = current
+        value["links"]["feedback"] = f"{base_path.rstrip('/')}/api/v1/runs/{run_id}/feedback"

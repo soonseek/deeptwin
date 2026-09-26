@@ -34,6 +34,8 @@ CHANGE_KINDS = frozenset({"restore", "learn", "protect"})
 GROUNDS = frozenset({"supported_inquiry", "confirmed_system_hypothesis"})
 _FORBIDDEN_REF_KINDS = frozenset({
     "own_alternative", "difference", "hypothesis", "selector",
+    # the owner's process feedback is an observation, never a candidate's ground
+    "process_feedback",
 })
 _PATCH_FIELDS = ("condition", "action", "exception")
 _ISSUE_TOKEN = object()

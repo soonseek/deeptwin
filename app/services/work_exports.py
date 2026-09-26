@@ -255,14 +255,32 @@ class PersistentWorkExports:
             })
         return sorted(runs, key=lambda run: (run["started_at_utc"], run["run_id"]))
 
+    def _feedback(self, db, roots, runs):
+        """The owner's process feedback on this work's runs (UI phase 4, `run_feedback.py`):
+        every revision, as metadata — the target, the mark, whether a memo exists and its
+        length, a clear — never the memo text. It belongs with the run events: it is an
+        owner-recorded fact about a run like an approval, and never an alternative."""
+
+        from .run_feedback import feedback_history
+
+        found = []
+        for run in runs:
+            for item in feedback_history(self._domain, db, roots, run["run_id"]):
+                found.append({"run_id": run["run_id"], "target": item["target"], "revision": item["revision"],
+                              "state": item["state"], "mark": item["mark"],
+                              "memo_characters": None if item["memo"] is None else len(item["memo"]),
+                              "recorded_at_utc": item["recorded_at_utc"], "memo": "메모 내용 미포함"})
+        return found
+
     @staticmethod
     def _collect(revisions, categories, include_raw, alternatives=(), runs=(), withheld=frozenset(),
-                 sources=(), evaluation=None):
+                 sources=(), evaluation=None, feedback=()):
         """(items with their exact bytes, missing entries), deterministically ordered.
         A revision in `withheld` (a raw original with an unconfirmed secret finding) is
         exported as metadata only, and the omission is stated. `sources` are the attached
         originals' (item, missing) pairs when the owner asked for them; `evaluation` the
-        design/lens/round records of this work (work_export_records)."""
+        design/lens/round records of this work (work_export_records); `feedback` every
+        revision of the owner's process feedback on its runs (metadata only)."""
 
         items, missing = [], []
 
@@ -306,6 +324,12 @@ class PersistentWorkExports:
                 add("events", "events/runs.json", "application/json", _json(list(runs)),
                     mode="metadata_only",
                     label=f"실행 {len(runs)}개 (실패 {failed}개) · 실행 동의 {len(runs)}개 · 승인 결정 {decided}개")
+            if feedback:
+                add("events", "events/run-feedback.json", "application/json", _json({
+                    "rule": ("과정 피드백은 소유자의 선택 표시와 선택 메모다. 대안(내 버전)이 아니며 대안으로 세지 "
+                             "않는다. 메모 내용은 포함하지 않고 길이만 적는다."),
+                    "revisions": list(feedback)}), mode="metadata_only",
+                    label=f"실행 과정 피드백 기록 {len(feedback)}건 (표시와 메모 유무만, 메모 내용 제외)")
         if "artifacts_metadata" in categories:
             sources = sorted({json.dumps(ref, sort_keys=True) for record in revisions
                               for ref in record.body["content"].get("source_refs", [])})
@@ -456,6 +480,7 @@ class PersistentWorkExports:
         revisions = self._revisions(db, roots, work_id)
         alternatives = self._alternatives(db, roots, work_id) if "alternatives" in categories else ()
         runs = self._runs(db, roots, work_id) if "events" in categories else ()
+        feedback = self._feedback(db, roots, runs) if runs else ()
         evaluation = self._evaluation(db, roots, work_id) if "evaluation_evidence" in categories else None
         assessed = []
         if include_sources:
@@ -467,7 +492,7 @@ class PersistentWorkExports:
         sources = [materialize(entry, confirmed=confirmed, codec=self._codec, known=self._known(db),
                                cache=self._cache) for entry in assessed]
         items, missing = self._collect(revisions, categories, include_raw, alternatives, runs, withheld,
-                                       sources, evaluation)
+                                       sources, evaluation, feedback)
         # a redacted copy must never carry what it painted over
         for item in items:
             if item["content_mode"] == "redacted" and any(value.encode("utf-8") in item["data"]

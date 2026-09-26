@@ -68,3 +68,16 @@ def test_every_run_trace_term_has_a_label():
     assert _table("TRACE_GAP_LABELS") == set(GAP_REASONS)
     assert _table("TRACE_NODE_STATE_TEXT") == {"completed", "failed", "pending", "awaiting_approval", "rejected",
                                                "not_visited"}
+
+
+def test_every_run_stop_reason_and_feedback_mark_has_words():
+    # UI phase 4 (2026-09-26): a run.stopped event's chip says what the stop means for the run
+    # (the event's own status only says it was recorded), and each process-feedback mark and
+    # the feedback event's closed payload values have the owner's words
+    from app.domain.events import END_REASON, EVENT_REGISTRY
+    from app.services.run_feedback import MARKS
+
+    assert _table("RUN_STOP_OUTCOME_TEXT") == set(END_REASON.values)
+    assert _table("FEEDBACK_MARK_LABELS") == set(MARKS)
+    assert _table("FEEDBACK_MARK_TONES") == set(MARKS)
+    assert set(EVENT_REGISTRY["feedback.recorded"]["mark"].values) == {*MARKS, "none"}
