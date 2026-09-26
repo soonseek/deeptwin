@@ -244,3 +244,81 @@ def test_malformed_or_misbound_responses_are_typed_refusals():
             candidate, request, registry,
             model_turn=ScriptedCritic([review]), model_id="bad model id!",
         )
+
+
+def _refused(request, candidate, registry, answers):
+    from app.services.design_criticism_live import CriticismStageRefused
+
+    with pytest.raises(CriticismStageRefused) as caught:
+        run_candidate_criticism(candidate, request, registry, model_turn=ScriptedCritic(answers),
+                                model_id=MODEL_ID)
+    return caught.value
+
+
+def test_a_refused_stage_keeps_the_raw_answer_and_the_exact_violation():
+    """T038: the first live design-arc review was refused and only digests were kept, so its
+    cause was unknown. A refused stage now carries the model's own answer (bounded) and the
+    exact rule it broke; the message stays the closed one and nothing becomes a verdict."""
+
+    from hashlib import sha256
+
+    request, candidate, registry, review, proposal, _validity, _response = driven()
+    refused = _refused(request, candidate, registry, ["not json at all"])
+    assert str(refused) == "the review response violates the contract"
+    assert refused.purpose == "review" and refused.raw_text == "not json at all"
+    assert refused.violation.startswith("json: Expecting value")
+    assert refused.response_sha256 == sha256(b"not json at all").hexdigest()
+    assert refused.completed_calls == 0 and refused.truncated is False
+    assert set(refused.as_dict()) >= {"violation", "response_text", "prompt_sha256", "model_id"}
+
+    bad_citation = _json.loads(_json.dumps(review))
+    bad_citation["findings"][-1]["evidence"][0]["location"] = "the research node"
+    last = len(bad_citation["findings"]) - 1
+    refused = _refused(request, candidate, registry, [bad_citation])
+    assert refused.violation.startswith(f"citation is not visible: /findings/{last}/evidence/0")
+    assert "'the research node'" in refused.violation
+    assert _json.loads(refused.raw_text) == bad_citation
+
+    missing = {**review, "findings": review["findings"][:-1]}
+    assert _refused(request, candidate, registry, [missing]).violation.startswith(
+        "rule: finding coverage mismatch: missing [")
+
+    schema = _json.loads(_json.dumps(review))
+    schema["findings"][0]["status"] = "maybe"
+    schema["verdict"] = "pass"
+    violation = _refused(request, candidate, registry, [schema]).violation
+    assert violation.startswith("schema: ") and "findings/0/status" in violation and "verdict" in violation
+
+    unresolved = _json.loads(_json.dumps(review))
+    unresolved["findings"][0]["status"] = "unresolved"
+    assert _refused(request, candidate, registry, [unresolved]).violation == (
+        "rule: unresolved result needs uncertainty (/findings/0)")
+
+    # a later stage: the proposal's lens usage must cover the pack exactly
+    no_lens = {**proposal, "lens_use": []}
+    refused = _refused(request, candidate, registry, [review, no_lens])
+    assert refused.purpose == "counterexample_proposal" and refused.completed_calls == 1
+    assert refused.violation == "rule: lens usage set mismatch"
+
+
+def test_the_diagnosis_agrees_with_the_contract_and_bounds_what_it_keeps():
+    from app.services.design_criticism import prepare_candidate_review
+    from app.services.design_criticism_live import (
+        MAX_REFUSED_RESPONSE_BYTES,
+        CriticismStageRefused,
+        diagnose_contract_violation,
+    )
+
+    request, candidate, registry, review, *_rest = driven()
+    prepared = prepare_candidate_review(candidate, request)
+    assert diagnose_contract_violation(prepared, _json.dumps(review)) is None
+    huge = "가" * (MAX_REFUSED_RESPONSE_BYTES // 2)
+    refused = _refused(request, candidate, registry, [huge])
+    assert refused.truncated is True and refused.raw_bytes == len(huge.encode("utf-8"))
+    assert len(refused.raw_text.encode("utf-8")) <= MAX_REFUSED_RESPONSE_BYTES
+    assert refused.violation == "json: JSON text or byte limit"
+    # a boundary failure (no answer) carries nothing to keep and is not a stage refusal
+    with pytest.raises(DesignCriticismError) as caught:
+        run_candidate_criticism(candidate, request, registry,
+                                model_turn=ScriptedCritic([RuntimeError("down")]), model_id=MODEL_ID)
+    assert type(caught.value) is not CriticismStageRefused

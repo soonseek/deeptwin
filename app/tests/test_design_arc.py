@@ -181,3 +181,43 @@ def test_generation_is_unavailable_without_registered_turns(tmp_path):
         assert refused.status_code == 503 and refused.json()["reason"] == "generator_model_not_configured"
         bad = generate(subject, request.request_id, rounds=4)
         assert bad.status_code == 400
+
+
+def test_a_refused_review_answer_is_persisted_with_its_exact_violation(tmp_path):
+    """T038 diagnosis: a critic answer the contract refuses is recorded as a refusal of that
+    round (the candidate stays unreviewed), and its raw text and the exact rule it broke are
+    persisted on the candidate, so the cause is readable after the run."""
+    import json
+
+    from app.tests.design_arc_fixture import ScriptedCritic
+
+    class Uncited(ScriptedCritic):
+        def __call__(self, system, user):
+            answer = super().__call__(system, user)
+            if "lens_pack" in json.loads(user)["input"]:
+                return answer
+            value = json.loads(answer)
+            value["findings"][0]["evidence"][0]["location"] = "research 노드의 책임 문장"
+            return json.dumps(value, ensure_ascii=False)
+
+    with owner_app(tmp_path, Executor()) as subject:
+        arcs = opened(subject, ("one",))
+        request = arcs["one"]["request"]
+        workspace = subject.app.state.first_party_exports["design-workspace.service"]
+        registration = workspace._requests[request.request_id]
+        workspace.open_request(request, registry=registration.registry, criticism_turn=Uncited(),
+                               critic_model_id=CRITIC_ID, generation_turn=arcs["one"]["generator"],
+                               generator_model_id=GENERATOR_ID)
+        run = generate(subject, request.request_id, rounds=1).json()
+        assert run["presented_count"] == 0 and run["unreviewed_candidate_ids"] == run["candidate_ids"]
+        refusal = run["refusals"][0]
+        assert refusal["stage"] == "criticism" and refusal["purpose"] == "review"
+        assert refusal["reason"] == "the review response violates the contract"
+        assert refusal["violation"].startswith("citation is not visible: /findings/0/evidence/0")
+        stored = workspace.criticism_refusals(request.request_id)
+        assert [item["record_id"] for item in stored] == [refusal["refusal_record_id"]]
+        assert stored[0]["violation"] == refusal["violation"]
+        assert "research 노드의 책임 문장" in stored[0]["response_text"]
+        assert stored[0]["candidate_id"] == run["candidate_ids"][0] and stored[0]["response_truncated"] is False
+        view = read(subject, request.request_id)
+        assert view["pool"]["excluded"] == [{"candidate_id": run["candidate_ids"][0], "reason": "unreviewed"}]

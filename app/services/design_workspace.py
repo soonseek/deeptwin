@@ -634,15 +634,9 @@ class PersistentDesignWorkspace:
         else:
             candidate_ref = reviewed.record_ref
         try:
-            from .design_criticism_live import run_candidate_criticism
-
-            run = run_candidate_criticism(candidate, request_value, registration.registry,
-                                          model_turn=registration.criticism_turn,
-                                          model_id=registration.critic_model_id)
-            persist_criticism_run(self._domain, candidate_ref, candidate, request_value, registration.registry,
-                                  run, **headers)
-        except (DesignCriticismError, DesignPersistenceError):
-            raise DesignWorkspaceError("review_unavailable", "criticism_did_not_complete") from None
+            self._criticize(registration, candidate, candidate_ref, registration.criticism_turn, headers)
+        except (DesignCriticismError, DesignPersistenceError) as error:
+            raise DesignWorkspaceError("review_unavailable", self._incomplete(error)) from None
         _loaded, derived = self._load(registration)
         record, design, reviewed = next(entry for entry in derived if entry[0].ref.id == record.ref.id)
         return self._derivation_view(record, design, reviewed)
@@ -659,12 +653,60 @@ class PersistentDesignWorkspace:
             content={"design_kind": design_kind, "design": encode_design_refs(design)}, **headers))
 
     def _criticize(self, registration, candidate, candidate_ref, turn, headers):
-        from .design_criticism_live import run_candidate_criticism
+        from .design_criticism_live import CriticismStageRefused, run_candidate_criticism
 
-        run = run_candidate_criticism(candidate, registration.request, registration.registry,
-                                      model_turn=turn, model_id=registration.critic_model_id)
+        try:
+            run = run_candidate_criticism(candidate, registration.request, registration.registry,
+                                          model_turn=turn, model_id=registration.critic_model_id)
+        except CriticismStageRefused as refused:
+            # the model's refused answer and the exact rule it broke are persisted before
+            # the refusal propagates: a contract failure stays diagnosable afterwards
+            try:
+                refused.record_id = self._put_refusal(candidate_ref, candidate, refused)
+            except Exception:  # noqa: BLE001 - the refusal itself still propagates
+                refused.record_id = None
+            raise
         persist_criticism_run(self._domain, candidate_ref, candidate, registration.request,
                               registration.registry, run, **headers)
+
+    def _put_refusal(self, candidate_ref, candidate, refused):
+        design = {**refused.as_dict(), "candidate_id": candidate.candidate_id,
+                  "candidate_version": candidate.version}
+        record_id = str(uuid5(NAMESPACE_URL, f"deeptwin:design-criticism-refusal:{candidate_ref.id}:"
+                                             f"{refused.response_sha256}"))
+        with _writer(), self._domain._connection(write=True) as db:
+            roots = self._domain._read_roots(db)
+            existing = db.execute("SELECT 1 FROM domain_records WHERE vault_id=? AND kind='decision_record' "
+                                  "AND id=?", (roots.genesis.id, record_id)).fetchone()
+            if existing is None:
+                self._domain._put_in_transaction(db, ImmutableRecord.create(
+                    kind="decision_record", id=record_id, version=1, created_at_utc=_stamp(),
+                    actor_ref=roots.actor, parent_refs=(candidate_ref,), purpose="operational",
+                    access_policy_ref=roots.access_policy, retention_policy_ref=roots.retention_policy,
+                    content={"design_kind": "design_criticism_refusal", "design": encode_design_refs(design)}))
+        return record_id
+
+    @staticmethod
+    def _incomplete(error):
+        violation = getattr(error, "violation", None)
+        return ("criticism_did_not_complete" if violation is None
+                else f"criticism_did_not_complete: {str(error)[:200]}: {violation}"[:600])
+
+    def criticism_refusals(self, request_id: str) -> list[dict]:
+        """Every persisted refused criticism answer of this request's candidates, with the
+        exact violation (host and test code only; the page reads the run's refusal text)."""
+
+        registration = self._registration(request_id)
+        loaded, derived = self._load(registration)
+        refs = [item.record_ref for item in loaded] + [entry[2].record_ref for entry in derived
+                                                        if entry[2] is not None]
+        found = []
+        with self._domain._connection() as db:
+            roots = self._domain._read_roots(db)
+            for ref in refs:
+                for record, design in self._children(db, roots, ref, "decision_record", "design_criticism_refusal"):
+                    found.append({"record_id": record.ref.id, **design})
+        return found
 
     def _review_edit(self, registration, record, design, reviewed):
         """Realize the owner's edit instruction on the exact parent through one revision
@@ -698,8 +740,8 @@ class PersistentDesignWorkspace:
             candidate, candidate_ref = reviewed.candidate, reviewed.record_ref
         try:
             self._criticize(registration, candidate, candidate_ref, registration.criticism_turn, headers)
-        except (DesignCriticismError, DesignPersistenceError):
-            raise DesignWorkspaceError("review_unavailable", "criticism_did_not_complete") from None
+        except (DesignCriticismError, DesignPersistenceError) as error:
+            raise DesignWorkspaceError("review_unavailable", self._incomplete(error)) from None
         _loaded, derived = self._load(registration)
         record, design, reviewed = next(entry for entry in derived if entry[0].ref.id == record.ref.id)
         return self._derivation_view(record, design, reviewed)
@@ -781,8 +823,12 @@ class PersistentDesignWorkspace:
                     if critic.stopped:
                         cancelled = True
                         continue
-                    refusals.append({"round": rounds, "stage": "criticism", "candidate_id": candidate.candidate_id,
-                                     "reason": str(error)[:300]})
+                    refusal = {"round": rounds, "stage": "criticism", "candidate_id": candidate.candidate_id,
+                               "reason": str(error)[:300]}
+                    if getattr(error, "violation", None) is not None:
+                        refusal.update(violation=error.violation, purpose=error.purpose,
+                                       refusal_record_id=getattr(error, "record_id", None))
+                    refusals.append(refusal)
             presented = self._view(registration)["pool"]["presented_count"]
         outcome = "cancelled" if cancelled else "filled" if presented >= SELECTION_POOL_SIZE else "shortfall"
         design = {
