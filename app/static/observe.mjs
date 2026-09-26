@@ -125,8 +125,9 @@ export async function boot({ document, location, fetch, crypto } = {}) {
   });
   try {
     await list.refresh();
-    // `?run=<id>` (the work page's link to the run it started) selects that run if listed
-    const named = new URLSearchParams(typeof location?.search === 'string' ? location.search : '').get('run');
+    // `#run=<id>` (the work page's link to the run it started; an asset takes no query)
+    // selects that run if the list holds it
+    const named = new URLSearchParams(typeof location?.hash === 'string' ? location.hash.slice(1) : '').get('run');
     if (named) list.select(named);
   } catch {
     // the list's own status names the failure; the session stands

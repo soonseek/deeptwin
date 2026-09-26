@@ -111,7 +111,7 @@ test('consent then start through the owner routes, with the exact inputs, then a
   assert.deepEqual(run.body, { command_id: id(801), ...inputs, consent_ref: ref('run_consent', 60) });
   assert.ok(run.path.endsWith('/api/v1/runs'));
   const link = root.findAll(el => el.tagName === 'A')[0];
-  assert.equal(link.getAttribute('href'), `./observe.html?run=${id(70)}`);
+  assert.equal(link.getAttribute('href'), `./observe.html#run=${id(70)}`);
   assert.match(root.textContent, /실행 00000000을 시작했습니다 · 상태 awaiting_human/);
 });
 

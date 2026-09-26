@@ -148,7 +148,7 @@ export function createRunStart({ root, document, request, basePath = '/', comman
       const run = await request(`${api}/runs`, { method: 'POST',
         body: { command_id: commandId(), ...inputs, consent_ref: consent.ref } });
       outcome.replaceChildren(element('span', `실행 ${short(run.run_id)}을 시작했습니다 · 상태 ${run.phase}. `),
-        element('a', '관제 화면에서 보기', { href: `./observe.html?run=${run.run_id}`, 'data-run': run.run_id }));
+        element('a', '관제 화면에서 보기', { href: `./observe.html#run=${run.run_id}`, 'data-run': run.run_id }));
       outcome.dataset.state = 'started';
       return run;
     } catch (error) {
