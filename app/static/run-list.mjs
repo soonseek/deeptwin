@@ -163,8 +163,17 @@ export function createRunList({ root, document, request, basePath = '/', onSelec
   });
   refresh.addEventListener('click', () => refreshList().catch(() => {}));
 
+  // select one listed run by id (a link from the work page names it); an unlisted id selects nothing
+  function selectRun(runId) {
+    if (!state.runs.some(run => run.runId === runId)) return false;
+    publish({ selected: runId });
+    onSelect(runId);
+    return true;
+  }
+
   return Object.freeze({
     refresh: refreshList,
+    select: selectRun,
     snapshot() { return state; },
   });
 }

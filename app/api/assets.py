@@ -56,6 +56,7 @@ MODULES = MappingProxyType({
     "budget-policy.mjs": JAVASCRIPT,
     "graph.mjs": JAVASCRIPT,
     "workspace.mjs": JAVASCRIPT,
+    "run-start.mjs": JAVASCRIPT,
     "records.html": "text/html",
     "settings.html": "text/html",
     "versions.mjs": JAVASCRIPT,

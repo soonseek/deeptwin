@@ -24,6 +24,7 @@ import { createSourceReadings } from './source-reading.mjs';
 import { createSourceDeletion } from './source-deletion.mjs';
 import { createWorkExport } from './work-export.mjs';
 import { createWorkModel } from './work-model.mjs';
+import { createRunStart } from './run-start.mjs';
 import { createDesignWorkspace } from './workspace.mjs';
 
 export const MOUNT_IDS = Object.freeze({ session: 'session-status', notice: 'intake-notice', form: 'work-form',
@@ -35,6 +36,8 @@ export const DELETION_MOUNT_ID = 'work-deletion';
 export const WORK_MODEL_MOUNT_ID = 'work-model';
 // the design workspace (T037) mounts only where the page offers it
 export const DESIGN_WORKSPACE_MOUNT_ID = 'design-workspace';
+// starting a run of this work from a prepared environment (T048), optional too
+export const RUN_START_MOUNT_ID = 'work-run';
 // the owner's explicit readings of originals and the shared conversation (T023), optional too
 export const READINGS_MOUNT_ID = 'source-readings';
 export const CONVERSATION_MOUNT_ID = 'work-conversation';
@@ -299,6 +302,11 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   const design = designRoot !== null && typeof designRoot?.replaceChildren === 'function'
     ? createDesignWorkspace({ root: designRoot, document, basePath, request: session.request,
       commandId: () => crypto.randomUUID() })
+    : null;
+  const runRoot = document.getElementById(RUN_START_MOUNT_ID);
+  const runStart = runRoot !== null && typeof runRoot?.replaceChildren === 'function'
+    ? createRunStart({ root: runRoot, document, basePath, request: session.request,
+      commandId: () => crypto.randomUUID(), workId: () => state.work_id ?? null })
     : null;
   let activeUpload = null;
 
@@ -644,6 +652,7 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
 
   // after a send: text typed meanwhile stays a browser draft on the revision just saved
   function settled() {
+    runStart?.load().catch(() => {});
     if (area.value === savedValue) {
       keep({ draft_text: undefined, base_revision: undefined });
       saveStatus(savedText(), 'saved');
@@ -728,9 +737,10 @@ export async function boot({ document, location, fetch, crypto, storage } = {}) 
   if (deletion !== null) deletion.load().catch(() => {});
   if (workModel !== null) workModel.load().catch(() => {});
   if (design !== null) design.load().catch(() => {});
+  if (runStart !== null) runStart.load().catch(() => {});
   if (readings !== null) readings.load().catch(() => {});
   if (conversation !== null) conversation.load().catch(() => {});
-  return Object.freeze({ mode, basePath, session, exporter, deletion, workModel, design, readings, conversation });
+  return Object.freeze({ mode, basePath, session, exporter, deletion, workModel, design, runStart, readings, conversation });
 }
 
 // the page's entry: a boot that fails before the exchange still reaches the status line

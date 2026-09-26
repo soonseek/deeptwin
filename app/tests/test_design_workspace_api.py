@@ -63,7 +63,7 @@ def test_the_pool_is_read_back_honestly_with_the_real_count_and_reasons(tmp_path
         graph = shown[roles["base"].candidate_id]["graph"]
         assert graph["model_bindings"] and graph["tool_bindings"]
         assert view["review"] == {"available": False, "reason": "critic_model_not_configured",
-                                  "critic_model_id": None}
+                                  "critic_model_id": None, "realizes": ["select"]}
         assert view["preparation"]["approvable"] is False
         assert view["preparation"]["critic_qualification"]["status"] == "unknown"
         assert view["preparation"]["reason"] == "the critic configuration is not qualified (unknown: no_suite_record)"

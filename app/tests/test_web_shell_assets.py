@@ -58,6 +58,7 @@ def test_the_catalogue_is_exactly_the_shell_modules():
         "budget-policy.mjs": "application/javascript",
         "graph.mjs": "application/javascript",
         "workspace.mjs": "application/javascript",
+        "run-start.mjs": "application/javascript",
         "records.html": "text/html",
         "settings.html": "text/html",
         "versions.mjs": "application/javascript",
