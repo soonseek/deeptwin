@@ -163,6 +163,7 @@ def _control(graph) -> dict:
     for node in graph.nodes:
         if node.kind == "human_gate":
             scopes.update(node.config.get("approval_scopes", ()))
+    tool_bindings = {item.binding_id: item for item in graph.tool_bindings}
     notes = ["entry_nodes:" + ",".join(graph.entry_node_ids)]
     for node in graph.nodes:
         if node.kind != "agent":
@@ -175,6 +176,16 @@ def _control(graph) -> dict:
                 notes.append(
                     f"config:{node.node_id}:"
                     + canonical_json(config).decode("utf-8")
+                )
+            # 2026-09-26: a deterministic node's tool bindings, as an agent role's tools
+            # are rendered (definition, operations, grant); a graph without them projects
+            # byte-identically, and the critic contract itself is unchanged
+            for tool_id in config.get("tool_binding_ids", ()):
+                bound = tool_bindings[tool_id]
+                notes.append(
+                    f"tool:{node.node_id}:{tool_id}:{_ref_string(bound.tool_definition_ref)}"
+                    f":operations:{','.join(bound.capabilities)}"
+                    f":tool_grant:{_ref_string(bound.grant_ref)}"
                 )
         for item in node.grant_refs:
             notes.append(f"node_grant:{node.node_id}:{_ref_string(item)}")

@@ -1,5 +1,19 @@
-"""T038 attempt 5 — a WELL-SPECIFIED work for the live design arc, authored by the
+"""T038 attempts 5–6 — a WELL-SPECIFIED work for the live design arc, authored by the
 SIMULATED owner (the test actor; decisions.md 2026-09-25, "Independent people").
+
+Attempt 6 (2026-09-26, owner decisions after attempt 5) fixes the author's own two defects
+that attempt 5's live critic exposed (evidence/us2.md "attempt 5"):
+- the required `verifier` responsibility was looser than completion condition 2 (no
+  `cited_ids`, no overall-verdict rule, not every clause of conditions 0–1): it now states
+  exactly condition 2's inputs, model separation, report format and verdict rule, and every
+  clause of conditions 0 and 1; condition 2's report covers every non-empty draft line
+  (the title included), so a stray non-item line is a failing line of the report;
+- byte-identical storage was not performable under the authority (tools bound only to
+  agents): a deterministic node may now bind the `document_create` tool (owner decision
+  "Deterministic tool bindings"), and condition 4 and the storage authority say the store is
+  that model-free step handing the approved bytes to the tool unchanged.
+Attempt 5's verifier text is kept (`ATTEMPT5_VERIFIER_RESPONSIBILITY`) only to replay its
+saved live answer offline.
 
 This is a DIFFERENT scenario from attempts 1–4 (the YouTube research/script work of
 `test_work_model_confirmation.work_model`). Attempt 4's candidates followed every design
@@ -28,7 +42,7 @@ from app.tests.test_design_generation import value_hash
 from app.tests.design_arc_fixture import STAMP
 from app.tests.test_work_model_confirmation import confirmation
 
-AUTHOR = "SIMULATED owner (test actor) — attempt 5 work description, not a real owner's work"
+AUTHOR = "SIMULATED owner (test actor) — attempt 5/6 work description, not a real owner's work"
 
 WORK_TEXT = (
     "[시험 행위자(가상 소유자)가 작성한 업무 설명 — 실제 소유자의 업무가 아니다]\n"
@@ -40,6 +54,7 @@ WORK_TEXT = (
     "application/json 검증 보고서를 낸다.\n"
     "- 전체 판정이 fail이면 공개 없이 끝낸다. 같은 실행 안에서 다시 쓰지 않는다.\n"
     "- 승인: 내가 검증을 통과한 초안 원문, 그 보고서, 원본 파일을 함께 보고 승인한다. 승인된 초안이 바이트 그대로 저장된다.\n"
+    "- 저장: 모델을 쓰지 않는 결정적 저장 단계가 승인본을 document.create 도구에 바이트 그대로 넘겨 저장한다.\n"
     "- 문체·어조·분량은 판정하지 않는다.\n"
 )
 
@@ -69,14 +84,17 @@ COMPLETION_CONDITIONS = [
     "ID와 내용은 릴리스 노트 어디에도 나오지 않는다.",
     "앞의 두 조건은 작성 역할이 아닌 검증 역할이 판정한다. 검증 역할은 원본 변경 기록 파일 자체(요약·발췌·"
     "작성자의 메모가 아님)와 초안 원문을 둘 다 입력으로 직접 받아 대조하고, 작성 역할과 다른 model choice를 "
-    "쓴다. 결과는 검증 역할 자신의 application/json 검증 보고서이며, 항목 줄마다 {line, cited_ids, verdict: "
+    "쓴다. 결과는 검증 역할 자신의 application/json 검증 보고서이며, 빈 줄을 뺀 초안의 모든 줄(제목 줄 포함)마다 "
+    "{line, cited_ids, verdict: "
     "pass|fail, reason}, 누락된 공개 ID 목록, 노출된 비공개 ID 목록, 전체 verdict(pass|fail)를 가진다. 전체 "
     "verdict는 모든 줄이 pass이고 두 목록이 비어 있을 때만 pass다.",
     "전체 verdict가 fail이면 그 초안은 승인 단계에 도달하지 않고 실행은 저장·공개 없이 끝난다. 같은 실행 "
     "안에서는 어떤 산출물도 재생성·재작성하지 않는다(소유자가 새 실행을 시작한다).",
     "승인자(소유자 한 사람)는 artifact.publish 범위로 승인하며, 승인 단계는 검증을 통과한 초안 원문, 그 "
     "초안의 검증 보고서, 원본 변경 기록 파일을 함께 입력으로 받는다. 저장되는 릴리스 노트는 승인 단계가 "
-    "내보낸 승인본과 바이트 단위로 같다: 승인 뒤 어떤 역할도 내용을 재생성·수정·형식 변환하지 않는다.",
+    "내보낸 승인본과 바이트 단위로 같다: 승인 뒤 어떤 역할도 내용을 재생성·수정·형식 변환하지 않는다. 저장은 "
+    "모델을 쓰지 않는 결정적(deterministic) 저장 단계가 수행한다. 그 단계는 승인 단계가 내보낸 승인본만 입력으로 "
+    "받아 document.create 도구에 바이트 그대로 넘기며, 어떤 모델 역할도 저장하지 않는다.",
 ]
 
 WORK_MODEL = {
@@ -102,7 +120,8 @@ WORK_MODEL = {
          "effect": "read"},
         {"authority_id": "notes-store", "capability": "document.create",
          "scope": "승인된 릴리스 노트 markdown 한 부를 문서 저장소에 새 문서로 저장한다(되돌릴 수 있다). "
-                  "승인 전에는 저장하지 않는다.",
+                  "승인 전에는 저장하지 않는다. 모델 없는 결정적 저장 단계가 document.create 도구로 승인본 "
+                  "바이트를 그대로 저장한다.",
          "effect": "write"},
         {"authority_id": "publish-approval", "capability": "artifact.publish",
          "scope": "소유자 한 사람이 검증을 통과한 릴리스 노트 원문의 저장·공개를 승인한다.",
@@ -124,9 +143,22 @@ WORK_MODEL = {
     "source_refs": [],
 }
 
-VERIFIER_RESPONSIBILITY = (
+# attempt 5's text (looser than condition 2); kept only to replay attempt 5's live answer
+ATTEMPT5_VERIFIER_RESPONSIBILITY = (
     "초안 원문의 각 항목 줄과 공개 ID 누락·비공개 ID 노출을 원본 변경 기록 파일 자체와 직접 대조해, 줄별 "
     "pass/fail과 이유, 누락 ID, 노출 ID, 전체 verdict를 application/json 검증 보고서로 낸다."
+)
+# attempt 6: exactly completion condition 2 (inputs, model separation, report format and
+# verdict rule) over every clause of conditions 0 and 1
+VERIFIER_RESPONSIBILITY = (
+    "작성 역할과 다른 model choice로, 원본 변경 기록 파일 자체(요약·발췌·작성자의 메모가 아님)와 초안 원문을 "
+    "둘 다 입력으로 직접 받아 대조해 완료 조건 0과 1을 판정한다: 모든 항목 줄이 `- [CL-###] `로 시작하고 그 CL "
+    "ID가 원본에 있는 `공개: 예` 항목이며 줄의 모든 기능명·수치·버전이 그 항목 설명에 그대로 나오는지, 항목 줄이 "
+    "아닌 줄이 제목 한 줄(`# 2.4.0 릴리스 노트`)뿐인지, `공개: 예`인 모든 CL ID가 정확히 한 번 인용되는지, "
+    "`공개: 아니오` 항목의 ID와 내용이 어디에도 나오지 않는지. 결과는 자신의 application/json 검증 보고서이며, "
+    "빈 줄을 뺀 초안의 모든 줄(제목 줄 포함)마다 {line, cited_ids, verdict: pass|fail, reason}, 누락된 공개 ID "
+    "목록, 노출된 비공개 ID 목록, 전체 verdict(pass|fail)를 가진다. 전체 verdict는 모든 줄이 pass이고 두 목록이 "
+    "비어 있을 때만 pass다."
 )
 
 
@@ -148,9 +180,10 @@ def specified_work_model(domain, revision_ref, source_refs):
     return target
 
 
-def specified_decision(target, registry, lens):
+def specified_decision(target, registry, lens, *, responsibility=VERIFIER_RESPONSIBILITY):
     """The test actor's functional decision for this work: the lens `L-P032-01` (a proposal
-    accepted or rejected against observation) as a separate verifier's responsibility."""
+    accepted or rejected against observation) as a separate verifier's responsibility
+    (attempt 6's text by default; attempt 5's only to replay its saved answer)."""
 
     return accept_design_decision(target, [lens], {
         "decision_id": "00000000-0000-4000-8000-000000000521",
@@ -160,8 +193,8 @@ def specified_decision(target, registry, lens):
             "effect_id": "verifier-responsibility",
             "axis": "responsibility",
             "target": {"kind": "node", "id": "verifier", "field": "responsibility"},
-            "expected_value_sha256": value_hash(VERIFIER_RESPONSIBILITY),
-            "expected_value": VERIFIER_RESPONSIBILITY,
+            "expected_value_sha256": value_hash(responsibility),
+            "expected_value": responsibility,
             "rationale": "작성자의 서술을 원본 관찰로 수용·기각하는 판단을 작성자와 다른 역할이 맡게 한다.",
             "contributing_lens_refs": [str(lens.lens_ref)],
         }],
