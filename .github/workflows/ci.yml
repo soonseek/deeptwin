@@ -37,5 +37,8 @@ jobs:
         run: uv run mypy
       - name: 의존 규칙
         run: uv run lint-imports
+        env:
+          # 계약 이름이 한글이다. Windows 콘솔의 기본 인코딩(cp1252)으로는 출력하지 못한다
+          PYTHONIOENCODING: utf-8
       - name: 테스트
         run: uv run pytest
