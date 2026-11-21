@@ -39,6 +39,7 @@ dev = [
     "mypy>=1.13",
     "import-linter>=2.1",
     "types-PyYAML",
+    "hypothesis>=6.170.17",
 ]
 
 [tool.hatch.build.targets.wheel]

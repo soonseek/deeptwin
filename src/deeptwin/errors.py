@@ -49,6 +49,20 @@ class OverBudgetError(DeeptwinError):
         super().__init__("over_budget", message)
 
 
+class UnknownLayerError(DeeptwinError):
+    """`ablate`에 네 층(`instinct`, `tendency`, `priority`, `principle`)이 아닌 이름이 있다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("unknown_layer", message)
+
+
+class UnsupportedExamplePolicyError(DeeptwinError):
+    """스킬의 `example_policy`가 아직 만들지 않은 방식이다. 지금은 `random_signature`만 된다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("unsupported_example_policy", message)
+
+
 class FluidMarkerMissingError(DeeptwinError):
     def __init__(self, message: str) -> None:
         super().__init__("fluid_marker_missing", message)

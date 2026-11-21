@@ -1,0 +1,16 @@
+# 가상 인물의 대표작(good). 안에 빈 줄이 있다. 테스트용으로 지어낸 것이다.
+schema: 1
+id: ex-0002
+layer: instinct
+skill: class-notice
+kind: good
+grade: signature
+text: |
+  이번 주 토요일 수업은 강사 사정으로 쉽니다.
+  보강은 다음 주 화요일 저녁 7시입니다.
+
+  자리는 그대로 두었습니다.
+tags: {purpose: 휴강, channel: email}
+source: past_work
+status: active
+approval: human

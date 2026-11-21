@@ -1,0 +1,13 @@
+# 가상 인물이 서둘러 쓴 글(rushed). 예시 후보가 아니다. 테스트용으로 지어낸 것이다.
+schema: 1
+id: ex-0007
+layer: instinct
+skill: class-notice
+kind: good
+grade: rushed
+text: |
+  5기 모집합니다 12/6 시작
+tags: {purpose: 모집, channel: instagram}
+source: past_work
+status: active
+approval: human

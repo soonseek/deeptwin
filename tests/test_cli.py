@@ -20,6 +20,7 @@ from deeptwin.compose import FLUID_CLOSE, FLUID_OPEN
 from deeptwin.errors import DeeptwinError
 from deeptwin.llm import ClaudeCLIProvider, FakeProvider
 from deeptwin.store.ledger import line_hash
+from deeptwin.store.project import DeepTwin
 
 RUN_FAKE = ("run", "minimal", "task-0001", "--provider", "fake", "--fake-answer", "answer.txt")
 RUN_DEFAULT = ("run", "minimal", "task-0001")
@@ -671,7 +672,7 @@ def test_run_does_not_append_after_a_broken_last_line(in_minimal: Path) -> None:
 
 COMPOSE = ("compose", "class-notice", "task-0001")
 
-RULES_GUIDE = """\
+RULES_GUIDE_WITHOUT_EXAMPLES = """\
 ## 이번 작업의 개인 기준
 
 반드시 지킬 것
@@ -690,13 +691,61 @@ RULES_GUIDE = """\
 - [말투] 존댓말로 쓰되 문장을 짧게 끊는다.
 """
 
-RULES_INJECTED = ["prin-01", "prin-02", "pri-01", "pri-02", "card-0002", "card-0001", "card-0004"]
-RULES_REJECTED = [
+# task-0001의 뽑기 순서는 good이 ex-0003, ex-0002, ex-0001, avoid가 ex-0005, ex-0004다
+# (test_compose.py::test_fixture_composes_with_every_rule이 해시로 확인한다)
+RULES_GUIDE = (
+    RULES_GUIDE_WITHOUT_EXAMPLES
+    + """\
+
+이렇게 쓴다
+4기 수강생 여러분, 마지막 수업은 11월 22일 토요일 오전 10시입니다.
+수료 과제는 수업 전날 밤 12시까지 올려 주세요.
+
+---
+
+이번 주 토요일 수업은 강사 사정으로 쉽니다.
+보강은 다음 주 화요일 저녁 7시입니다.
+
+자리는 그대로 두었습니다.
+
+이렇게는 쓰지 않는다
+역대급 혜택! 지금 아니면 기회가 없어요!!
+"""
+)
+
+RULES_CARDS = ["card-0002", "card-0001", "card-0004"]
+RULES_INJECTED = [
+    "prin-01",
+    "prin-02",
+    "pri-01",
+    "pri-02",
+    *RULES_CARDS,
+    "ex-0003",
+    "ex-0002",
+    "ex-0005",
+]
+RULES_CARDS_REJECTED = [
     {"id": "card-0008", "reason": "lower_layer"},
     {"id": "card-0005", "reason": "conflict"},
     {"id": "card-0007", "reason": "budget"},
     {"id": "card-0003", "reason": "budget"},
 ]
+RULES_REJECTED = [
+    *RULES_CARDS_REJECTED,
+    {"id": "ex-0001", "reason": "budget"},
+    {"id": "ex-0004", "reason": "budget"},
+]
+
+
+def example_lines(root: Path) -> list[str]:
+    """`root`의 예시 글(`text`, `before`, `after`)에 든 빈 줄이 아닌 줄들."""
+    return [
+        line.strip()
+        for e in DeepTwin.open(root).examples()
+        for text in (e.text, e.before, e.after)
+        for line in (text or "").splitlines()
+        if line.strip()
+    ]
 
 
 def data_files(root: Path) -> list[str]:
@@ -721,6 +770,7 @@ def test_compose_json_twice_is_byte_identical(in_rules: Path) -> None:
         "conflicts",
         "guide_hash",
         "context",
+        "ablate",
     ]
     assert body["guide"] == RULES_GUIDE
     assert body["injected"] == RULES_INJECTED
@@ -729,6 +779,7 @@ def test_compose_json_twice_is_byte_identical(in_rules: Path) -> None:
     assert body["conflicts"] == []
     assert body["guide_hash"] == "sha256:" + hashlib.sha256(RULES_GUIDE.encode()).hexdigest()
     assert body["context"] == {"purpose": "모집", "channel": "instagram"}
+    assert body["ablate"] == []
     assert data_files(in_rules) == before
     assert not (in_rules / ".deeptwin" / "ledger.jsonl").exists()
     assert not (in_rules / ".deeptwin" / "runs").exists()
@@ -741,13 +792,120 @@ def test_compose_text_mode(in_rules: Path) -> None:
     guide_hash = "sha256:" + hashlib.sha256(RULES_GUIDE.encode()).hexdigest()
     assert result.stdout == (
         RULES_GUIDE + "\n"
-        "넣은 항목: prin-01, prin-02, pri-01, pri-02, card-0002, card-0001, card-0004\n"
+        "넣은 항목: prin-01, prin-02, pri-01, pri-02, card-0002, card-0001, card-0004, "
+        "ex-0003, ex-0002, ex-0005\n"
+        "뺀 항목: card-0008(lower_layer), card-0005(conflict), card-0007(budget), "
+        "card-0003(budget), ex-0001(budget), ex-0004(budget)\n"
+        "맞는 카드가 없던 판단 지점: schedule\n"
+        f"guide_hash: {guide_hash}\n"
+    )
+    assert result.stderr == ""
+
+
+def test_compose_ablate_instinct_has_no_examples(in_rules: Path) -> None:
+    body = ok_json(invoke(*COMPOSE, "--ablate", "instinct", "--json"), "compose")
+
+    assert body["guide"] == RULES_GUIDE_WITHOUT_EXAMPLES
+    lines = example_lines(in_rules)
+    assert any(line in RULES_GUIDE for line in lines)
+    assert [line for line in lines if line in body["guide"]] == []
+    assert body["injected"] == ["prin-01", "prin-02", "pri-01", "pri-02", *RULES_CARDS]
+    assert body["rejected"] == RULES_CARDS_REJECTED
+    assert body["no_hit"] == ["schedule"]
+    assert body["ablate"] == ["instinct"]
+
+
+@pytest.mark.parametrize(
+    ("options", "ablate"),
+    [
+        (["--ablate", "instinct", "--ablate", "tendency"], ["instinct", "tendency"]),
+        (["--ablate", "tendency", "--ablate", "instinct"], ["tendency", "instinct"]),
+        (
+            ["--ablate", "instinct", "--ablate", "tendency", "--ablate", "instinct"],
+            ["instinct", "tendency"],
+        ),
+    ],
+    ids=["given-order", "other-order", "repeated"],
+)
+def test_compose_ablates_several_layers(
+    in_rules: Path, options: list[str], ablate: list[str]
+) -> None:
+    body = ok_json(invoke(*COMPOSE, *options, "--json"), "compose")
+
+    guide = (
+        "## 이번 작업의 개인 기준\n\n"
+        "반드시 지킬 것\n- 수치를 부풀리지 않는다\n- 수업 날짜와 시간은 숫자로 쓴다\n\n"
+        "부딪칠 때의 순서\n1. 정확함이 재미보다 먼저다\n2. 빠짐없음이 짧음보다 먼저다\n"
+    )
+    assert body["guide"] == guide
+    assert body["injected"] == ["prin-01", "prin-02", "pri-01", "pri-02"]
+    assert body["rejected"] == []
+    assert body["no_hit"] == []
+    assert body["ablate"] == ablate
+    assert body["guide_hash"] == "sha256:" + hashlib.sha256(guide.encode()).hexdigest()
+
+
+def test_compose_same_layer_twice_is_the_same_as_once(in_rules: Path) -> None:
+    once = invoke(*COMPOSE, "--ablate", "instinct", "--json")
+    twice = invoke(*COMPOSE, "--ablate", "instinct", "--ablate", "instinct", "--json")
+
+    assert ok_json(once, "compose")["ablate"] == ["instinct"]
+    assert once.stdout_bytes == twice.stdout_bytes
+
+
+def test_compose_ablate_text_mode_keeps_the_format(in_rules: Path) -> None:
+    result = invoke(*COMPOSE, "--ablate", "instinct", "--ablate", "principle")
+
+    assert result.exit_code == 0, result.output
+    guide = RULES_GUIDE_WITHOUT_EXAMPLES.replace(
+        "반드시 지킬 것\n- 수치를 부풀리지 않는다\n- 수업 날짜와 시간은 숫자로 쓴다\n\n", ""
+    )
+    guide_hash = "sha256:" + hashlib.sha256(guide.encode()).hexdigest()
+    assert result.stdout == (
+        guide + "\n"
+        "넣은 항목: pri-01, pri-02, card-0002, card-0001, card-0004\n"
         "뺀 항목: card-0008(lower_layer), card-0005(conflict), card-0007(budget), "
         "card-0003(budget)\n"
         "맞는 카드가 없던 판단 지점: schedule\n"
         f"guide_hash: {guide_hash}\n"
     )
     assert result.stderr == ""
+
+
+def test_compose_rejects_unknown_layer(in_rules: Path) -> None:
+    message = (
+        "알 수 없는 층입니다: examples. 쓸 수 있는 이름: instinct, tendency, priority, principle"
+    )
+
+    assert (
+        error_json(invoke(*COMPOSE, "--ablate", "examples", "--json"), "compose", "unknown_layer")
+        == message
+    )
+
+    text = invoke(*COMPOSE, "--ablate", "instinct", "--ablate", "examples")
+
+    assert text.exit_code == 1
+    assert text.stdout == ""
+    assert text.stderr == f"오류: {message}\n"
+
+
+def test_compose_unsupported_example_policy_composes_without_examples(in_rules: Path) -> None:
+    config = in_rules / "skills" / "class-notice" / "skill.yaml"
+    config.write_text(
+        config.read_text("utf-8").replace(
+            "example_policy: random_signature", "example_policy: similar"
+        ),
+        encoding="utf-8",
+    )
+
+    message = error_json(invoke(*COMPOSE, "--json"), "compose", "unsupported_example_policy")
+    body = ok_json(invoke(*COMPOSE, "--ablate", "instinct", "--json"), "compose")
+
+    assert message == (
+        "스킬 class-notice의 example_policy는 아직 만들지 않은 방식입니다: similar. "
+        "쓸 수 있는 값: random_signature"
+    )
+    assert body["guide"] == RULES_GUIDE_WITHOUT_EXAMPLES
 
 
 def test_compose_with_nothing_to_put_in(in_rules: Path) -> None:
@@ -933,7 +1091,7 @@ def test_run_ledger_line_matches_compose(in_rules: Path) -> None:
 
     [entry] = ledger(in_rules)
     assert list(entry) == LEDGER_KEYS
-    assert entry["injected"] == composed["injected"] == body["injected"]
+    assert entry["injected"] == composed["injected"] == body["injected"] == RULES_INJECTED
     assert entry["rejected"] == composed["rejected"] == RULES_REJECTED
     assert entry["no_hit"] == composed["no_hit"] == ["schedule"]
     assert entry["conflicts"] == composed["conflicts"] == []

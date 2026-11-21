@@ -1,0 +1,13 @@
+# 가상 인물이 피하는 글(avoid). 테스트용으로 지어낸 것이다.
+schema: 1
+id: ex-0005
+layer: instinct
+skill: class-notice
+kind: avoid
+grade: signature
+text: |
+  역대급 혜택! 지금 아니면 기회가 없어요!!
+tags: {purpose: 모집, channel: instagram}
+source: past_work
+status: active
+approval: human

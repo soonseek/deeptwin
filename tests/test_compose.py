@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -51,9 +52,9 @@ def card_skill(**budget: int) -> Skill:
     )
 
 
-def make_task() -> Task:
+def make_task(task_id: str = "task-0001") -> Task:
     return Task(
-        id="task-0001",
+        id=task_id,
         skill="minimal",
         split="train",
         input="수강료가 얼마인가요?",
@@ -101,6 +102,22 @@ def card(item_id: str, point: str, choose: str, **fields: Any) -> dict[str, Any]
     }
 
 
+def example(item_id: str, **fields: Any) -> dict[str, Any]:
+    """이 스킬의 `active` 대표작 good 예시. 글은 `<id>의 글`이고 `fields`로 바꾼다."""
+    return {
+        "schema": 1,
+        "id": item_id,
+        "layer": "instinct",
+        "skill": "minimal",
+        "kind": "good",
+        "grade": "signature",
+        "text": f"{item_id}의 글",
+        "status": "active",
+        "approval": "human",
+        **fields,
+    }
+
+
 def write_principles(deeptwin: DeepTwin, items: list[dict[str, Any]]) -> None:
     write_yaml(deeptwin.path / "layers" / "principles.yaml", items)
 
@@ -112,6 +129,16 @@ def write_priorities(deeptwin: DeepTwin, items: list[dict[str, Any]]) -> None:
 def write_cards(deeptwin: DeepTwin, items: list[dict[str, Any]]) -> None:
     for item in items:
         write_yaml(deeptwin.path / "layers" / "cards" / f"{item['id']}.yaml", item)
+
+
+def write_examples(deeptwin: DeepTwin, items: list[dict[str, Any]]) -> None:
+    for item in items:
+        write_yaml(deeptwin.path / "layers" / "examples" / f"{item['id']}.yaml", item)
+
+
+def drawn(task_id: str, ids: Iterable[str]) -> list[str]:
+    """계획의 뽑기 순서: `sha256(과제 ID + "\n" + 예시 ID)`의 16진 글 오름차순."""
+    return sorted(ids, key=lambda i: hashlib.sha256(f"{task_id}\n{i}".encode()).hexdigest())
 
 
 def compose_cards(deeptwin: DeepTwin, skill: Skill | None = None, **options: Any) -> Composed:
@@ -679,6 +706,198 @@ def test_rejected_is_in_stage_order_then_score_order(deeptwin: DeepTwin) -> None
     ]
 
 
+# 6단계: 예시
+
+
+GOOD = ["ex-0001", "ex-0002", "ex-0003", "ex-0004"]
+AVOID = ["ex-0005", "ex-0006"]
+
+
+def write_candidates(deeptwin: DeepTwin) -> None:
+    """예시 후보: 대표작 good 넷(`GOOD`)과 avoid 둘(`AVOID`)."""
+    write_examples(
+        deeptwin,
+        [*(example(i) for i in GOOD), *(example(i, kind="avoid") for i in AVOID)],
+    )
+
+
+def example_ids(composed: Composed) -> list[str]:
+    return [i for i in composed.injected if i.startswith("ex-")]
+
+
+def test_draws_two_good_and_one_avoid_among_signature_examples(deeptwin: DeepTwin) -> None:
+    write_candidates(deeptwin)
+    not_candidates = [
+        example("ex-0007", grade="usual"),
+        example("ex-0008", grade="rushed"),
+        example("ex-0009", kind="pair", text=None, before="고치기 전 글", after="고친 뒤 글"),
+        example("ex-0010", status="retired"),
+        example("ex-0011", skill="post-writer"),
+    ]
+    write_examples(deeptwin, not_candidates)
+
+    composed = compose(make_skill(), make_task(), deeptwin, context=CONTEXT)
+
+    good, avoid = drawn("task-0001", GOOD), drawn("task-0001", AVOID)
+    assert composed.injected == [good[0], good[1], avoid[0]]
+    assert reasons(composed) == [(good[2], "budget"), (good[3], "budget"), (avoid[1], "budget")]
+    assert composed.guide == (
+        "## 이번 작업의 개인 기준\n\n"
+        f"이렇게 쓴다\n{good[0]}의 글\n\n---\n\n{good[1]}의 글\n\n"
+        f"이렇게는 쓰지 않는다\n{avoid[0]}의 글\n"
+    )
+    for item in not_candidates:
+        assert item["id"] not in composed.guide
+    assert "고치" not in composed.guide
+
+
+def test_same_task_draws_the_same_examples_twice(deeptwin: DeepTwin) -> None:
+    write_candidates(deeptwin)
+
+    first = compose(make_skill(), make_task(), deeptwin, context=CONTEXT)
+    second = compose(make_skill(), make_task(), deeptwin, context=CONTEXT)
+
+    assert first == second
+    assert first.guide_hash == second.guide_hash
+    assert len(example_ids(first)) == 3
+
+
+def test_draw_order_is_seeded_by_the_task_id(deeptwin: DeepTwin) -> None:
+    write_candidates(deeptwin)
+    picks: set[tuple[str, ...]] = set()
+
+    for task_id in ("task-0001", "task-0002", "task-0003", "task-0004"):
+        composed = compose(make_skill(), make_task(task_id), deeptwin, context=CONTEXT)
+        expected = [*drawn(task_id, GOOD)[:2], drawn(task_id, AVOID)[0]]
+        assert example_ids(composed) == expected
+        picks.add(tuple(expected))
+
+    # 후보가 같아도 과제가 다르면 다른 예시가 뽑힌다
+    assert len(picks) > 1
+
+
+def test_too_few_candidates_fill_only_what_there_is(deeptwin: DeepTwin) -> None:
+    write_examples(
+        deeptwin,
+        [
+            example("ex-0001", text="보강은 다음 주 화요일입니다."),
+            example("ex-0002", kind="avoid", grade="usual"),
+        ],
+    )
+
+    composed = compose(make_skill(), make_task(), deeptwin, context=CONTEXT)
+
+    assert composed.injected == ["ex-0001"]
+    assert composed.rejected == []
+    assert (
+        composed.guide == "## 이번 작업의 개인 기준\n\n이렇게 쓴다\n보강은 다음 주 화요일입니다.\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("limit", "good_count", "avoid_count"),
+    [(-1, 0, 0), (0, 0, 0), (1, 1, 0), (2, 2, 0), (3, 2, 1), (10, 2, 1)],
+)
+def test_examples_cap_cuts_avoid_first(
+    deeptwin: DeepTwin, limit: int, good_count: int, avoid_count: int
+) -> None:
+    write_candidates(deeptwin)
+
+    composed = compose(
+        make_skill(budget={"examples": limit}), make_task(), deeptwin, context=CONTEXT
+    )
+
+    good, avoid = drawn("task-0001", GOOD), drawn("task-0001", AVOID)
+    assert composed.injected == [*good[:good_count], *avoid[:avoid_count]]
+    assert reasons(composed) == [(i, "budget") for i in (*good[good_count:], *avoid[avoid_count:])]
+    assert ("이렇게 쓴다" in composed.guide) == (good_count > 0)
+    assert ("이렇게는 쓰지 않는다" in composed.guide) == (avoid_count > 0)
+    if not good_count:
+        assert composed.guide == ""
+
+
+@pytest.mark.parametrize(
+    ("limit", "goods"),
+    [(1, []), (2, ["ex-0001"]), (2, [])],
+    ids=["cap-1-no-good", "cap-2-one-good", "cap-2-no-good"],
+)
+def test_good_shortfall_leaves_room_for_avoid(
+    deeptwin: DeepTwin, limit: int, goods: list[str]
+) -> None:
+    write_examples(
+        deeptwin,
+        [*(example(i) for i in goods), *(example(i, kind="avoid") for i in AVOID)],
+    )
+
+    composed = compose(
+        make_skill(budget={"examples": limit}), make_task(), deeptwin, context=CONTEXT
+    )
+
+    avoid = drawn("task-0001", AVOID)
+    assert composed.injected == [*goods, avoid[0]]
+    # avoid는 한 지침에 하나까지라 남은 avoid 하나만 budget이다
+    assert reasons(composed) == [(avoid[1], "budget")]
+    assert "이렇게는 쓰지 않는다" in composed.guide
+
+
+def test_examples_follow_cards_in_rejected(deeptwin: DeepTwin) -> None:
+    write_cards(deeptwin, [card("card-0001", "opening", "상한으로 빠진다")])
+    write_candidates(deeptwin)
+
+    composed = compose_cards(deeptwin, skill=card_skill(cards_per_point=0, examples=1))
+
+    good, avoid = drawn("task-0001", GOOD), drawn("task-0001", AVOID)
+    assert composed.injected == [good[0]]
+    assert reasons(composed) == [
+        ("card-0001", "budget"),
+        *((i, "budget") for i in good[1:]),
+        *((i, "budget") for i in avoid),
+    ]
+
+
+def test_examples_that_are_not_candidates_change_nothing(deeptwin: DeepTwin) -> None:
+    write_principles(deeptwin, [principle("prin-01", "수치를 부풀리지 않는다")])
+    write_examples(
+        deeptwin,
+        [
+            example("ex-0001", grade="usual"),
+            example("ex-0002", grade="rushed", kind="avoid"),
+            example("ex-0003", kind="pair", text=None, before="전", after="후"),
+            example("ex-0004", status="dormant"),
+            example("ex-0005", status="candidate", kind="avoid"),
+            example("ex-0006", skill="post-writer"),
+        ],
+    )
+
+    composed = compose(make_skill(), make_task(), deeptwin, context=CONTEXT)
+
+    assert composed.guide == GUIDE_ONE_PRINCIPLE
+    assert composed.injected == ["prin-01"]
+    assert composed.rejected == []
+
+
+@pytest.mark.parametrize("policy", ["similar", "recent"])
+def test_example_policy_other_than_random_signature_is_unsupported(
+    deeptwin: DeepTwin, policy: str
+) -> None:
+    write_principles(deeptwin, [principle("prin-01", "수치를 부풀리지 않는다")])
+    write_candidates(deeptwin)
+    skill = make_skill(example_policy=policy)
+
+    with pytest.raises(DeeptwinError) as info:
+        compose(skill, make_task(), deeptwin, context=CONTEXT)
+
+    assert info.value.code == "unsupported_example_policy"
+    assert info.value.message == (
+        f"스킬 minimal의 example_policy는 아직 만들지 않은 방식입니다: {policy}. "
+        "쓸 수 있는 값: random_signature"
+    )
+    # 예시를 빼면 정책을 보지 않는다
+    composed = compose(skill, make_task(), deeptwin, context=CONTEXT, ablate=("instinct",))
+    assert composed.guide == GUIDE_ONE_PRINCIPLE
+    assert composed.injected == ["prin-01"]
+
+
 # ablate
 
 
@@ -693,6 +912,79 @@ def test_ablate_tendency_leaves_cards_out_and_no_hit_empty(deeptwin: DeepTwin) -
     assert composed.rejected == []
     assert composed.no_hit == []
     assert composed.conflicts == []
+
+
+def test_ablate_instinct_leaves_examples_out(deeptwin: DeepTwin) -> None:
+    write_principles(deeptwin, [principle("prin-01", "수치를 부풀리지 않는다")])
+    write_candidates(deeptwin)
+
+    composed = compose(make_skill(), make_task(), deeptwin, context=CONTEXT, ablate=("instinct",))
+
+    assert composed.guide == GUIDE_ONE_PRINCIPLE
+    assert composed.injected == ["prin-01"]
+    assert composed.rejected == []
+
+
+@pytest.mark.parametrize(
+    ("ablate", "names"),
+    [
+        (("examples",), "examples"),
+        (("instinct", "cards", "examples", "cards"), "cards, examples"),
+    ],
+    ids=["one", "several"],
+)
+def test_unknown_layer_name_is_rejected(
+    deeptwin: DeepTwin, ablate: tuple[str, ...], names: str
+) -> None:
+    write_principles(deeptwin, [principle("prin-01", "수치를 부풀리지 않는다")])
+
+    with pytest.raises(DeeptwinError) as info:
+        compose(make_skill(), make_task(), deeptwin, context=CONTEXT, ablate=ablate)
+
+    assert info.value.code == "unknown_layer"
+    assert info.value.message == (
+        f"알 수 없는 층입니다: {names}. 쓸 수 있는 이름: instinct, tendency, priority, principle"
+    )
+
+
+def layer_items(deeptwin: DeepTwin) -> dict[str, list[tuple[str, list[str]]]]:
+    """층 이름 -> (항목 ID, 그 항목이 지침에 쓰일 수 있는 글의 줄들)."""
+
+    def lines(*texts: str | None) -> list[str]:
+        return [
+            line.strip() for text in texts for line in (text or "").splitlines() if line.strip()
+        ]
+
+    return {
+        "instinct": [(e.id, lines(e.text, e.before, e.after)) for e in deeptwin.examples()],
+        "tendency": [(c.id, lines(c.choose, c.because, c.except_)) for c in deeptwin.cards()],
+        "priority": [(p.id, lines(p.rule)) for p in deeptwin.priorities()],
+        "principle": [(p.id, lines(p.rule)) for p in deeptwin.principles()],
+    }
+
+
+@pytest.mark.acceptance
+@pytest.mark.parametrize("layer", ["instinct", "tendency", "priority", "principle"])
+def test_ablated_layer_leaves_none_of_its_items(rules_copy: Path, layer: str) -> None:
+    """설계서 8.11 수용 테스트 6: `ablate`에 준 계층의 항목은 지침에 하나도 들어가지 않는다."""
+    deeptwin = DeepTwin.open(rules_copy)
+    skill, task = deeptwin.skill("class-notice"), deeptwin.task("task-0001")
+    items = layer_items(deeptwin)
+    ids = {item_id for item_id, _ in items[layer]}
+    texts = [line for _, lines in items[layer] for line in lines]
+
+    full = compose(skill, task, deeptwin, context=task.context or {})
+    ablated = compose(skill, task, deeptwin, context=task.context or {}, ablate=(layer,))
+
+    # 네 층 모두 빼지 않으면 지침에 들어가는 항목이 있다
+    assert ids & set(full.injected)
+    assert any(text in full.guide for text in texts)
+    assert not ids & set(ablated.injected)
+    assert not ids & {r.id for r in ablated.rejected}
+    assert [text for text in texts if text in ablated.guide] == []
+    # 다른 층은 그대로다
+    assert ablated.injected == [i for i in full.injected if i not in ids]
+    assert ablated.rejected == [r for r in full.rejected if r.id not in ids]
 
 
 # 7단계: 표기
@@ -845,6 +1137,90 @@ def test_cards_only_guide_has_no_empty_sections(deeptwin: DeepTwin) -> None:
     )
 
 
+GUIDE_WITH_EXAMPLES = """\
+## 이번 작업의 개인 기준
+
+반드시 지킬 것
+- 수치를 부풀리지 않는다
+
+부딪칠 때의 순서
+1. 정확함이 재미보다 먼저다
+
+판단 지점별 기준
+- [첫 문장] 첫 문장에 휴강 날짜를 쓴다.
+
+이렇게 쓴다
+보강은 다음 주 화요일 저녁 7시입니다.
+자리는 그대로 두었습니다.
+
+---
+
+휴강 소식을 먼저 알리고,
+보강 날짜를 바로 뒤에 씁니다.
+
+이렇게는 쓰지 않는다
+갑작스럽게 죄송합니다!!! 사정이 생겨서요…
+"""
+
+
+def test_examples_follow_cards_in_the_fixed_template(deeptwin: DeepTwin) -> None:
+    write_principles(deeptwin, [principle("prin-01", "수치를 부풀리지 않는다")])
+    write_priorities(deeptwin, [priority("pri-01", "정확함이 재미보다 먼저다")])
+    write_cards(deeptwin, [card("card-0001", "opening", "첫 문장에 휴강 날짜를 쓴다")])
+    write_examples(
+        deeptwin,
+        [
+            example("ex-0001", text="휴강 소식을 먼저 알리고,\n보강 날짜를 바로 뒤에 씁니다.\n"),
+            example(
+                "ex-0002", text="보강은 다음 주 화요일 저녁 7시입니다.\n자리는 그대로 두었습니다.\n"
+            ),
+            example("ex-0003", kind="avoid", text="갑작스럽게 죄송합니다!!! 사정이 생겨서요…\n"),
+        ],
+    )
+    assert drawn("task-0001", ["ex-0001", "ex-0002"]) == ["ex-0002", "ex-0001"]
+
+    composed = compose_cards(deeptwin)
+
+    assert composed.guide == GUIDE_WITH_EXAMPLES
+    assert composed.injected == ["prin-01", "pri-01", "card-0001", "ex-0002", "ex-0001", "ex-0003"]
+
+
+def test_example_text_keeps_inner_lines_and_drops_edge_blank_lines(deeptwin: DeepTwin) -> None:
+    text = "\n  \n  들여 쓴 첫 줄  \n둘째 줄\t\n\n\n넷째 줄 \n \n\n"
+    write_examples(deeptwin, [example("ex-0001", text=text)])
+    [loaded] = deeptwin.examples()
+    assert loaded.text == text
+
+    composed = compose(make_skill(), make_task(), deeptwin, context=CONTEXT)
+
+    assert composed.guide == (
+        "## 이번 작업의 개인 기준\n\n이렇게 쓴다\n  들여 쓴 첫 줄\n둘째 줄\n\n\n넷째 줄\n"
+    )
+
+
+def test_example_from_a_yaml_block_drops_its_final_newline(deeptwin: DeepTwin) -> None:
+    (deeptwin.path / "layers" / "examples" / "ex-0001.yaml").write_text(
+        "schema: 1\n"
+        "id: ex-0001\n"
+        "skill: minimal\n"
+        "kind: good\n"
+        "grade: signature\n"
+        "status: active\n"
+        "approval: human\n"
+        "text: |+\n"
+        "  첫 줄\n"
+        "\n"
+        "  셋째 줄\n"
+        "\n"
+        "\n",
+        encoding="utf-8",
+    )
+
+    composed = compose(make_skill(), make_task(), deeptwin, context=CONTEXT)
+
+    assert composed.guide == "## 이번 작업의 개인 기준\n\n이렇게 쓴다\n첫 줄\n\n셋째 줄\n"
+
+
 # 같은 입력
 
 
@@ -888,6 +1264,9 @@ def test_fixture_composes_with_every_rule(rules_copy: Path) -> None:
 
     composed = compose(deeptwin.skill("class-notice"), task, deeptwin, context=task.context or {})
 
+    good = drawn("task-0001", ["ex-0001", "ex-0002", "ex-0003"])
+    avoid = drawn("task-0001", ["ex-0004", "ex-0005"])
+    assert (good, avoid) == (["ex-0003", "ex-0002", "ex-0001"], ["ex-0005", "ex-0004"])
     assert composed.injected == [
         "prin-01",
         "prin-02",
@@ -896,12 +1275,16 @@ def test_fixture_composes_with_every_rule(rules_copy: Path) -> None:
         "card-0002",
         "card-0001",
         "card-0004",
+        *good[:2],
+        avoid[0],
     ]
     assert reasons(composed) == [
         ("card-0008", "lower_layer"),
         ("card-0005", "conflict"),
         ("card-0007", "budget"),
         ("card-0003", "budget"),
+        (good[2], "budget"),
+        (avoid[1], "budget"),
     ]
     assert composed.no_hit == ["schedule"]
     assert composed.conflicts == []

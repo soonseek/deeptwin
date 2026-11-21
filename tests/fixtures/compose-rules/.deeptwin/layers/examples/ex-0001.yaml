@@ -1,0 +1,14 @@
+# 가상 인물의 대표작(good). 테스트용으로 지어낸 것이다.
+schema: 1
+id: ex-0001
+layer: instinct
+skill: class-notice
+kind: good
+grade: signature
+text: |
+  12월 6일 토요일, 주말 파이썬 교실 5기가 시작합니다.
+  정원은 12명이고, 신청은 11월 30일까지 받습니다.
+tags: {purpose: 모집, channel: instagram}
+source: past_work
+status: active
+approval: human

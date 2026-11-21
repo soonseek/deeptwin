@@ -10,7 +10,7 @@ from typing import Annotated
 import typer
 
 from deeptwin.cli.output import Reply, respond
-from deeptwin.compose import compose, fill_fluid
+from deeptwin.compose import LAYERS, compose, fill_fluid
 from deeptwin.errors import (
     FakeAnswerRequiredError,
     InvalidContextError,
@@ -180,6 +180,18 @@ def compose_guide(
             show_default=False,
         ),
     ] = None,
+    ablate_options: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--ablate",
+            metavar="층",
+            help=(
+                f"빼고 조립할 층({', '.join(LAYERS)}). 여러 번 줄 수 있고, "
+                "같은 층을 두 번 주면 한 번 준 것과 같다."
+            ),
+            show_default=False,
+        ),
+    ] = None,
     as_json: JsonOption = False,
 ) -> None:
     """조립한 지침만 출력한다. 모델을 부르지 않고, 실행 폴더와 원장에도 쓰지 않는다."""
@@ -187,11 +199,13 @@ def compose_guide(
     def action() -> Reply:
         deeptwin = DeepTwin.open(Path.cwd())
         overrides = parse_context_options(context_options or [])
+        # 준 순서는 지키고 겹친 이름은 하나로 친다. 모르는 이름은 compose가 거부한다
+        ablate = tuple(dict.fromkeys(ablate_options or []))
         skill = deeptwin.skill(skill_id)
         task = deeptwin.task(task_id)
         _ensure_task_of_skill(task, skill_id, doing="조립한")
         context = {**(task.context or {}), **overrides}
-        composed = compose(skill, task, deeptwin, context=context)
+        composed = compose(skill, task, deeptwin, context=context, ablate=ablate)
         rejected = ", ".join(f"{r.id}({r.reason})" for r in composed.rejected)
         return Reply(
             result={
@@ -202,6 +216,7 @@ def compose_guide(
                 "conflicts": composed.conflicts,
                 "guide_hash": composed.guide_hash,
                 "context": context,
+                "ablate": list(ablate),
             },
             text="\n".join(
                 [

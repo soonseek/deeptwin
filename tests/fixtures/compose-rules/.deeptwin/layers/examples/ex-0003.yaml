@@ -1,0 +1,14 @@
+# 가상 인물의 대표작(good). 테스트용으로 지어낸 것이다.
+schema: 1
+id: ex-0003
+layer: instinct
+skill: class-notice
+kind: good
+grade: signature
+text: |
+  4기 수강생 여러분, 마지막 수업은 11월 22일 토요일 오전 10시입니다.
+  수료 과제는 수업 전날 밤 12시까지 올려 주세요.
+tags: {purpose: 알림, channel: email}
+source: past_work
+status: active
+approval: human

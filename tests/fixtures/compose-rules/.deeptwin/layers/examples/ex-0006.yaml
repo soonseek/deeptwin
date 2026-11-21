@@ -1,0 +1,13 @@
+# 가상 인물의 보통 글(usual). 대표작이 아니라 예시 후보가 아니다. 테스트용으로 지어낸 것이다.
+schema: 1
+id: ex-0006
+layer: instinct
+skill: class-notice
+kind: good
+grade: usual
+text: |
+  다음 기수도 곧 모집합니다. 관심 있는 분은 연락 주세요.
+tags: {purpose: 모집, channel: email}
+source: past_work
+status: active
+approval: human
