@@ -68,3 +68,17 @@ class ProviderFailedError(DeeptwinError):
 class ProviderTimeoutError(DeeptwinError):
     def __init__(self, message: str) -> None:
         super().__init__("provider_timeout", message)
+
+
+class InvalidFileError(DeeptwinError):
+    """형식이 틀린 파일. 메시지는 줄마다 `<프로젝트 기준 경로>:<줄>: <설명>`이다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("invalid_file", message)
+
+
+class StoreLockedError(DeeptwinError):
+    """다른 쓰기가 `.deeptwin/.lock`을 쥐고 있어 정한 시간 안에 잠금을 잡지 못했다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("store_locked", message)

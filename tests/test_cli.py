@@ -453,3 +453,33 @@ def test_help_lists_commands() -> None:
     assert result.exit_code == 0
     assert "init" in result.stdout
     assert "run" in result.stdout
+
+
+# 형식이 틀린 파일
+
+
+def test_wrong_value_stops_with_file_and_line_then_runs_after_fix(in_minimal: Path) -> None:
+    principles = in_minimal / ".deeptwin" / "layers" / "principles.yaml"
+    good = principles.read_bytes()
+    principles.write_bytes(good.replace(b"kind: never", b"kind: nevr"))
+    invoke("init")
+
+    message = error_json(invoke(*RUN_FAKE, "--json"), "run", "invalid_file")
+    text = invoke(*RUN_FAKE)
+
+    assert message == (
+        ".deeptwin/layers/principles.yaml:5: kind: 쓸 수 있는 값은 'must', 'never'입니다"
+        "(받은 값: 'nevr')"
+    )
+    assert text.exit_code == 1
+    assert text.stdout == ""
+    assert text.stderr == f"오류: {message}\n"
+    assert list((in_minimal / ".deeptwin" / "runs").iterdir()) == []
+    assert not (in_minimal / ".deeptwin" / "ledger.jsonl").exists()
+
+    principles.write_bytes(good)
+    body = ok_json(invoke(*RUN_FAKE, "--json"), "run")
+
+    assert body["run"] == "run-0001"
+    assert body["injected"] == ["prin-01"]
+    assert [e["id"] for e in ledger(in_minimal)] == ["run-0001"]

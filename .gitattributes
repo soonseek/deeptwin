@@ -1,0 +1,2 @@
+# 저장소의 글 파일은 LF로 둔다. Windows에서 받아도 fixture의 줄바꿈이 같다
+* text=auto eol=lf

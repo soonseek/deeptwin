@@ -60,16 +60,30 @@ deeptwin run <스킬 ID> <과제 ID> --provider fake --fake-answer answer.txt
 ## 폴더
 
 ```text
-.deeptwin/            # 개인 데이터. git에 올리지 않는다
-  layers/             # 기준의 네 층(예시, 판단 카드, 우선순위, 원칙)
-  candidates/         # 승인 전 후보
-  tasks/              # 과제(train, sealed, spare)
-  runs/               # 실행마다 SKILL.md 사본, 결과물, 호출 기록(calls.jsonl)
-  ledger.jsonl        # 원장. 추가만 한다
+.deeptwin/                  # 개인 데이터. git에 올리지 않는다
+  layers/                   # 기준의 네 층
+    examples/<ID>.yaml      # 예시(본능). 한 건이 파일 하나
+    cards/<ID>.yaml         # 판단 카드(경향). 한 장이 파일 하나
+    priorities.yaml         # 우선순위 목록. 위에 있을수록 먼저다
+    principles.yaml         # 원칙 목록
+  candidates/<ID>.yaml      # 승인 전 후보. 하나가 파일 하나
+  tasks/<분할>/<ID>.yaml    # 과제. 분할은 train, sealed, spare
+  runs/                     # 실행마다 SKILL.md 사본, 결과물, 호출 기록(calls.jsonl)
+  ledger.jsonl              # 원장. 추가만 한다
 skills/<스킬 ID>/
-  SKILL.md            # 고정 영역과 유동 영역 표시
-  skill.yaml          # 판단 지점, 맥락 축, 상한
+  SKILL.md                  # 고정 영역과 유동 영역 표시
+  skill.yaml                # 판단 지점, 맥락 축, 상한
 ```
+
+모든 파일과 목록 파일의 항목마다 `schema: 1`을 둡니다. 없으면 1로 읽고, 더 큰 값이면 읽지 않습니다. 폴더에 든 파일은 파일 이름이 `id`와 같아야 하고, 과제 파일의 `split`은 든 폴더와 같아야 합니다. 모르는 필드(`x_` 확장 필드 등)는 버리지 않습니다.
+
+형식이 틀린 파일을 읽으면 `invalid_file` 오류로 멈춥니다. 틀린 곳마다 한 줄씩, 프로젝트 루트 기준 경로와 줄 번호를 앞에 붙여 알려 줍니다.
+
+```text
+오류: .deeptwin/layers/principles.yaml:5: kind: 쓸 수 있는 값은 'must', 'never'입니다(받은 값: 'nevr')
+```
+
+층(`layers/`), 과제(`tasks/`), 후보(`candidates/`) 파일은 `.deeptwin/.lock` 잠금을 잡고 원자적으로 쓰고, 원장(`ledger.jsonl`)도 이 잠금 안에서 덧붙입니다. 실행 폴더(`runs/`)의 파일은 그 실행만 쓰므로 잠그지 않습니다. 다른 쓰기가 30초 넘게 잠금을 쥐고 있으면 `store_locked` 오류로 멈춥니다. deeptwin이 다시 쓴 YAML 파일에는 사람이 단 주석이 남지 않습니다.
 
 `SKILL.md`에는 유동 영역 자리를 한 번 표시합니다.
 
