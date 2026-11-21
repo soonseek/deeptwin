@@ -52,11 +52,31 @@ reference:               # 선택. 봉인 과제에는 꼭 있어야 한다
 오류: 과제 task-0101은 봉인 과제라 읽을 수 없습니다. 봉인 과제는 평가에서만 씁니다.
 ```
 
-스킬을 과제 하나로 돌립니다. 조립한 지침을 넣은 `SKILL.md` 사본과 결과물은 `.deeptwin/runs/<실행 ID>/`에 남고, 원본 `SKILL.md`는 바뀌지 않습니다. 실행은 원장(`.deeptwin/ledger.jsonl`)에 한 줄로 남습니다.
+스킬을 과제 하나로 돌립니다. 조립한 지침을 넣은 `SKILL.md` 사본과 결과물은 `.deeptwin/runs/<실행 ID>/`에 남습니다. 원본 `SKILL.md`와 층 파일(`layers/`)은 바뀌지 않고, 카드의 `stats`도 고치지 않습니다. 실행은 원장(`.deeptwin/ledger.jsonl`)에 한 줄로 남습니다.
 
 ```sh
-deeptwin run <스킬 ID> <과제 ID>
+deeptwin run <스킬 ID> <과제 ID> [--context 축=값]... [--ablate 층]...
 ```
+
+맥락과 뺄 층은 `deeptwin compose`와 같은 옵션, 같은 규칙으로 정합니다(아래 `compose` 참고). 같은 과제와 옵션이면 `compose`가 보여 준 조립이 그대로 실행에 쓰이고, 원장 `run` 줄의 `injected`, `rejected`, `no_hit`, `conflicts`, `guide_hash`, `context`가 `deeptwin compose --json`의 결과와 같습니다.
+
+스킬의 `context_axes`에 축이 있는데 맥락이 비었으면 `context_required` 오류로 멈춥니다. 과제 파일에 `context`가 없거나 `context: {}`이고 `--context`도 주지 않은 경우입니다. 스킬에 축이 없으면 빈 맥락으로 돕니다. `deeptwin compose`는 미리 보기라 이 검사를 하지 않습니다.
+
+```text
+오류: 과제 task-0102에 맥락이 없습니다. 과제 파일의 context에 적거나 --context 축=값으로 주세요. 스킬 minimal의 축: purpose(문의, 상담, 기타)
+```
+
+`deeptwin run`은 아래 순서로 봅니다. 어느 단계에서 멈추든 실행 폴더, 원장 줄, 모델 호출이 생기지 않습니다.
+
+1. 스킬과 과제(봉인 과제면 `sealed_access`), 과제와 스킬이 맞는지
+2. 맥락: `--context`의 모양, `context_required`
+3. 조립: `invalid_context`, `unknown_layer`, `over_budget` 등
+4. 원장의 끝 줄: 이어 쓸 `hash`를 얻지 못하면 `ledger_broken`
+5. 공급자: `claude_not_found`, `fake_answer_required`
+
+실행 폴더를 만든 뒤 사본 쓰기나 생성이 실패하면(공급자 오류, 시간 초과, Ctrl-C) 방금 만든 그 실행 폴더를 지우고 원래 오류를 그대로 냅니다. 생성이 끝난 뒤의 실패(결과물 쓰기, 원장 덧붙이기)에는 실행 폴더를 남깁니다. 이미 비용을 낸 호출의 기록이 들어 있기 때문입니다.
+
+`--json` 결과는 `run`, `task`, `split`, `context`, `ablate`, `injected`, `rejected`, `no_hit`, `conflicts`, `guide_hash`, `output`(`.deeptwin/` 기준) 순입니다. 글 모드는 마친 실행, 넣은 항목, 뺀 항목, 맞는 카드가 없던 판단 지점, 결과물을 차례로 씁니다.
 
 기본 공급자는 `claude`입니다. Claude Code의 `claude` 명령을 헤드리스(`claude -p`)로 부릅니다. Claude Code를 설치하고 한 번 로그인해 두기만 하면 되고, API 키는 필요 없습니다. 다만 `claude -p`는 환경 변수 `ANTHROPIC_API_KEY`가 있으면 구독보다 그 키를 먼저 씁니다. 구독으로 돌리려면 그 변수 없이 실행하세요(예: `env -u ANTHROPIC_API_KEY deeptwin run ...`). 부를 때는 도구를 끄고(`--tools ""`) 사용자의 CLAUDE.md, 플러그인, 훅을 빼며(`--safe-mode`) 세션을 저장하지 않습니다. `claude`가 없으면 `claude_not_found` 오류로 멈춥니다.
 
@@ -89,9 +109,9 @@ deeptwin run <스킬 ID> <과제 ID> --provider fake --fake-answer answer.txt
 deeptwin compose <스킬 ID> <과제 ID> [--context 축=값]... [--ablate 층]...
 ```
 
-맥락은 과제 파일의 `context`입니다. `--context 축=값`을 주면 그 축만 덮어씁니다. 여러 번 줄 수 있지만 같은 축은 한 번만 줍니다. 축은 `skill.yaml`의 `context_axes`에 있어야 하고 값은 그 목록에 있어야 합니다. 아니면 `invalid_context` 오류로 멈춥니다. `deeptwin run`은 과제 파일의 `context`만 씁니다.
+맥락은 과제 파일의 `context`입니다. `--context 축=값`을 주면 그 축만 덮어씁니다. 여러 번 줄 수 있지만 같은 축은 한 번만 줍니다. 축은 `skill.yaml`의 `context_axes`에 있어야 하고 값은 그 목록에 있어야 합니다. 아니면 `invalid_context` 오류로 멈춥니다. `deeptwin run`도 같습니다.
 
-`--ablate 층`을 주면 그 층을 빼고 조립합니다. 한 층이 없을 때를 비교해 보는 용도입니다. 층 이름은 `instinct`(예시), `tendency`(판단 카드), `priority`(우선순위), `principle`(원칙) 넷입니다. 여러 번 줄 수 있고, 같은 층을 두 번 주면 한 번 준 것과 같습니다. 뺀 층의 항목은 지침에도, `injected`와 `rejected`에도 남지 않습니다. 다만 `principle`이나 `priority`를 빼도, `conflicts_with`에 `active`인 원칙이나 우선순위의 ID가 든 카드는 그대로 `lower_layer`로 빠집니다(`lower_layer`는 범위나 `ablate`와 상관없이 `active`인지만 봅니다). 모르는 이름을 주면 `unknown_layer` 오류로 멈춥니다. `--json` 결과의 `ablate`에는 준 층이 준 순서대로 한 번씩 남습니다. `deeptwin run`에는 `--ablate`가 없습니다.
+`--ablate 층`을 주면 그 층을 빼고 조립합니다. 한 층이 없을 때를 비교해 보는 용도입니다. 층 이름은 `instinct`(예시), `tendency`(판단 카드), `priority`(우선순위), `principle`(원칙) 넷입니다. 여러 번 줄 수 있고, 같은 층을 두 번 주면 한 번 준 것과 같습니다. 뺀 층의 항목은 지침에도, `injected`와 `rejected`에도 남지 않습니다. 다만 `principle`이나 `priority`를 빼도, `conflicts_with`에 `active`인 원칙이나 우선순위의 ID가 든 카드는 그대로 `lower_layer`로 빠집니다(`lower_layer`는 범위나 `ablate`와 상관없이 `active`인지만 봅니다). 모르는 이름을 주면 `unknown_layer` 오류로 멈춥니다. `--json` 결과의 `ablate`에는 준 층이 준 순서대로 한 번씩 남습니다. `deeptwin run`도 같습니다.
 
 조립은 설계서 8.6의 순서를 따릅니다.
 
@@ -151,9 +171,29 @@ deeptwin compose <스킬 ID> <과제 ID> [--context 축=값]... [--ablate 층]..
 guide_hash: sha256:a9a026daed6fdcf1107edec5f7c2fcf79ba886a115502516999ed24753779fb7
 ```
 
-원장의 `run` 줄에도 `injected` 뒤에 `rejected`, `no_hit`, `conflicts`가 남습니다.
+원장의 `run` 줄은 설계서 8.4의 모양 그대로이고, 키는 아래 순서입니다(한 줄을 읽기 좋게 나눴습니다).
 
-원장의 줄마다 끝에 `prev_hash`와 `hash`가 붙어 앞줄과 이어집니다. `hash`는 `prev_hash`와 그 줄의 나머지 필드(정렬된 JSON)를 이어 SHA-256으로 만들고, 첫 줄의 `prev_hash`는 `sha256:` 뒤에 0이 64개입니다. `deeptwin verify`는 체인을 처음부터 다시 계산해, 손상된 줄마다 줄 번호와 이유를 `ledger_broken` 오류로 알려 줍니다. 원장은 고치지 않습니다. 원장의 마지막 줄에서 `hash`를 얻지 못하면 `deeptwin run`도 줄을 덧붙이지 않고 같은 오류로 멈춥니다. 이때 모델은 이미 부른 뒤라 실행 폴더는 남습니다.
+```json
+{"id": "run-0001", "type": "run", "ts": "2026-11-22T09:12:00+09:00",
+ "skill": "class-notice", "task": "task-0001", "split": "train",
+ "context": {"purpose": "모집", "channel": "instagram"},
+ "injected": ["prin-01", "prin-02", "pri-01", "pri-02", "card-0002", "card-0001", "card-0004", "ex-0003", "ex-0002", "ex-0005"],
+ "rejected": [{"id": "card-0008", "reason": "lower_layer"}, {"id": "card-0005", "reason": "conflict"},
+              {"id": "card-0007", "reason": "budget"}, {"id": "card-0003", "reason": "budget"},
+              {"id": "ex-0001", "reason": "budget"}, {"id": "ex-0004", "reason": "budget"}],
+ "no_hit": ["schedule"], "conflicts": [],
+ "guide_hash": "sha256:a9a026da...", "prompt_version": null,
+ "output": "runs/run-0001/output.md",
+ "prev_hash": "sha256:...", "hash": "sha256:..."}
+```
+
+- `context`는 조립에 쓴 맥락입니다. 과제 파일의 `context` 위에 `--context`를 축마다 덮어쓴 것입니다.
+- `prompt_version`은 지금 늘 `null`입니다. 생성은 아직 프롬프트 자산을 쓰지 않습니다. 키를 미리 두어 자산이 생겨도 줄의 모양이 바뀌지 않습니다.
+- `--ablate`는 원장에 쓰지 않습니다. 뺀 층의 항목은 `injected`에 없고 `guide_hash`가 달라지므로 줄에서 드러납니다.
+
+원장의 줄마다 끝에 `prev_hash`와 `hash`가 붙어 앞줄과 이어집니다. `hash`는 `prev_hash`와 그 줄의 나머지 필드(정렬된 JSON)를 이어 SHA-256으로 만들고, 첫 줄의 `prev_hash`는 `sha256:` 뒤에 0이 64개입니다. `deeptwin verify`는 체인을 처음부터 다시 계산해, 손상된 줄마다 줄 번호와 이유를 `ledger_broken` 오류로 알려 줍니다. 원장은 고치지 않습니다.
+
+`deeptwin run`은 실행 폴더를 만들고 모델을 부르기 전에, 원장의 마지막 줄에서 이어 쓸 `hash`를 얻을 수 있는지 봅니다. 얻지 못하면(반쯤 잘린 줄, `hash`가 없는 줄 등) 덧붙일 때와 같은 `ledger_broken` 오류로 멈추고, 실행 폴더도 모델 호출도 생기지 않습니다. 원장에 남길 수 없는 실행은 돌리지 않습니다. 다만 확인한 뒤 덧붙이기 전에 다른 프로세스가 원장을 망가뜨리면, 줄을 덧붙이지 않고 같은 오류로 멈추며 그때는 실행 폴더가 남습니다.
 
 ```sh
 deeptwin verify
@@ -169,7 +209,7 @@ deeptwin verify
 오류: .deeptwin/tasks/sealed/task-0101.yaml: 기준(reference)이 등록 때와 다릅니다
 ```
 
-해시 체인이 생기기 전 버전(PyPI의 0.0.1)이 쓴 원장 줄에는 `prev_hash`와 `hash`가 없습니다. 그 원장이 있으면 `deeptwin verify`는 손상으로 알리고, `deeptwin run`은 모델을 부른 뒤 `ledger_broken`으로 멈춥니다. 그 `.deeptwin/ledger.jsonl`을 다른 이름으로 옮겨 두면(예: `ledger-old.jsonl`) 다음 실행부터 새 체인이 시작됩니다.
+해시 체인이 생기기 전 버전(PyPI의 0.0.1)이 쓴 원장 줄에는 `prev_hash`와 `hash`가 없습니다. 그 원장이 있으면 `deeptwin verify`는 손상으로 알리고, `deeptwin run`은 실행 폴더를 만들거나 모델을 부르기 전에 `ledger_broken`으로 멈춥니다. 그 `.deeptwin/ledger.jsonl`을 다른 이름으로 옮겨 두면(예: `ledger-old.jsonl`) 다음 실행부터 새 체인이 시작됩니다.
 
 모든 명령은 `--json`을 받습니다. 켜면 stdout에 JSON 객체 하나만 씁니다. 성공하면 종료 코드 0, deeptwin이 알려 주는 오류면 1입니다. 인자가 틀리면 Click 기본 동작대로 종료 코드 2와 글로 된 안내를 내고, JSON은 쓰지 않습니다.
 

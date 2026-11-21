@@ -42,6 +42,13 @@ class InvalidContextError(DeeptwinError):
         super().__init__("invalid_context", message)
 
 
+class ContextRequiredError(DeeptwinError):
+    """스킬에 맥락 축이 있는데 실행에 줄 맥락이 없다. 과제 파일의 `context`도 `--context`도 없다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("context_required", message)
+
+
 class OverBudgetError(DeeptwinError):
     """범위가 맞는 원칙이나 우선순위가 상한보다 많다. 자르지 않고 합치라고 안내한다."""
 

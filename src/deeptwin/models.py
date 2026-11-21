@@ -288,7 +288,9 @@ class Composed(BaseModel):
 class Run(BaseModel):
     """실행 하나의 기록. 원장의 `run` 줄과 같은 모양이다.
 
-    필드 순서는 설계서 8.4를 따른다. `context`와 `prompt_version`은 아직 쓰지 않는다.
+    필드 순서는 설계서 8.4를 따른다. `context`는 조립에 쓴 맥락이다.
+    `prompt_version`은 생성에 쓴 프롬프트 자산의 버전이다. 생성은 아직 프롬프트 자산을 쓰지
+    않으므로 늘 `None`이다. 키를 미리 두어 자산이 생겨도 원장 줄의 모양이 바뀌지 않게 한다.
     """
 
     id: str
@@ -297,11 +299,13 @@ class Run(BaseModel):
     skill: str
     task: str
     split: Split
+    context: Context
     injected: list[str]
     rejected: list[Rejected] = Field(default_factory=list)
     no_hit: list[str] = Field(default_factory=list)
     conflicts: list[list[str]] = Field(default_factory=list)
     guide_hash: str
+    prompt_version: str | None = None
     output: str
 
 

@@ -11,7 +11,7 @@ import pytest
 from filelock import FileLock
 
 from deeptwin.errors import DeeptwinError
-from deeptwin.store.ledger import GENESIS, Damage, LedgerCheck, entries, line_hash
+from deeptwin.store.ledger import GENESIS, Damage, LedgerCheck, entries, line_hash, tail_hash
 from deeptwin.store.project import DeepTwin
 
 ZEROS = "sha256:" + "0" * 64
@@ -233,6 +233,54 @@ def test_last_line_without_hash_is_not_appended_to(deeptwin: DeepTwin) -> None:
         "deeptwin verify로 원장을 확인하세요.",
     ]
     assert ledger_path(deeptwin).read_bytes() == before
+
+
+# 덧붙이기 전 확인
+
+
+def test_tail_hash_is_the_prev_hash_of_the_next_line(deeptwin: DeepTwin) -> None:
+    path = ledger_path(deeptwin)
+    assert tail_hash(path, root=deeptwin.root) == GENESIS
+    path.write_bytes(b"")
+    assert deeptwin.ledger_tail_hash() == GENESIS
+
+    append_three(deeptwin)
+    tail = deeptwin.ledger_tail_hash()
+    deeptwin.append_ledger({"id": "run-0004"})
+
+    assert tail == lines_of(deeptwin)[2]["hash"] == lines_of(deeptwin)[3]["prev_hash"]
+
+
+@pytest.mark.parametrize(
+    "last",
+    [b'{"id": "run-0003"', b'{"id": "run-0003", "type": "run"}', b""],
+    ids=["cut", "line-of-0.0.1", "empty-line"],
+)
+def test_tail_hash_refuses_with_the_same_error_as_append(deeptwin: DeepTwin, last: bytes) -> None:
+    append_three(deeptwin)
+    path = ledger_path(deeptwin)
+    first, second, _ = path.read_bytes().splitlines()
+    path.write_bytes(b"\n".join([first, second, last]) + b"\n")
+    before = path.read_bytes()
+
+    with pytest.raises(DeeptwinError) as checked:
+        deeptwin.ledger_tail_hash()
+    with pytest.raises(DeeptwinError) as appended:
+        deeptwin.append_ledger({"id": "run-0004"})
+
+    assert checked.value.code == appended.value.code == "ledger_broken"
+    assert checked.value.message == appended.value.message
+    assert checked.value.message.startswith(".deeptwin/ledger.jsonl:3: ")
+    assert path.read_bytes() == before
+
+
+def test_tail_hash_waits_for_another_lock_then_gives_up(deeptwin: DeepTwin) -> None:
+    deeptwin.lock_timeout = 0.2
+
+    with FileLock(deeptwin.path / ".lock").acquire(timeout=0), pytest.raises(DeeptwinError) as info:
+        deeptwin.ledger_tail_hash()
+
+    assert info.value.code == "store_locked"
 
 
 # 읽을 수 있는 줄

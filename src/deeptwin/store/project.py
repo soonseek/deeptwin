@@ -370,6 +370,17 @@ class DeepTwin:
         with self.lock():
             return ledger.append(self.path / LEDGER_FILE, entry, root=self.root)
 
+    def ledger_tail_hash(self) -> str:
+        """잠금 안에서 원장의 끝 줄을 읽어 다음에 덧붙일 줄의 `prev_hash`를 돌려준다.
+
+        마지막 줄의 `hash`이고, 원장이 없거나 비었으면 `GENESIS`다. 얻지 못하면
+        `append_ledger`가 덧붙일 때와 같은 `ledger_broken`이다(같은 `ledger.tail_hash`로 본다).
+        원장은 바꾸지 않는다. 모델 호출처럼 비용이 드는 일을 하기 전에, 그 결과를 원장에
+        남길 수 있는지 미리 볼 때 쓴다.
+        """
+        with self.lock():
+            return ledger.tail_hash(self.path / LEDGER_FILE, root=self.root)
+
     def verify_ledger(self) -> ledger.LedgerCheck:
         """잠금 안에서 원장의 해시 체인을 처음부터 다시 계산한다.
 

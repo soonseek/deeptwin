@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -63,7 +64,7 @@ def line_hash(prev_hash: str, body: Mapping[str, Any]) -> str:
 def append(path: Path, entry: Mapping[str, Any], *, root: Path) -> dict[str, Any]:
     """원장 끝에 `entry`를 한 줄로 덧붙이고, 덧붙인 줄(`prev_hash`, `hash`를 붙인 것)을 돌려준다.
 
-    `prev_hash`는 마지막 줄의 `hash`다. 파일이 없거나 비었으면 `GENESIS`다.
+    `prev_hash`는 `tail_hash`다: 마지막 줄의 `hash`, 파일이 없거나 비었으면 `GENESIS`다.
     마지막 줄에서 `hash`를 얻지 못하면 덧붙이지 않고 `ledger_broken`이다. 이유는 `check`와 같다.
     메시지의 경로는 `root` 기준이다.
     """
@@ -73,34 +74,44 @@ def append(path: Path, entry: Mapping[str, Any], *, root: Path) -> dict[str, Any
     # JSON으로 한 번 오가게 한다. 해시는 검사 때 파일에서 읽은 객체로 다시 계산하므로
     # 그 객체와 같은 것으로 만들어야 한다(예: 튜플 -> 목록, 정수 키 -> 글 키)
     body: dict[str, Any] = json.loads(json.dumps(dict(entry), ensure_ascii=False))
-    data = path.read_bytes() if path.exists() else b""
-    lines = _split(data)
-    prev = GENESIS
-    if lines:
-        last = _read(lines[-1])
-        if isinstance(last, str):
-            reason: str | None = last
-        else:
-            reason = _field_problem(last, "hash")
-            if reason is None:
-                prev = last["hash"]
-        if reason is not None:
-            raise ledger_broken(
-                path,
-                root,
-                [Damage(len(lines), reason)],
-                note=(
-                    "원장의 마지막 줄에서 앞줄로 이을 hash를 얻지 못해 줄을 덧붙이지 않았습니다. "
-                    "deeptwin verify로 원장을 확인하세요."
-                ),
-            )
+    prev = tail_hash(path, root=root)
     written = {**body, "prev_hash": prev, "hash": line_hash(prev, body)}
-    if data and not data.endswith(b"\n"):
+    if _ends_without_newline(path):
         # 사람이 고치다 끝 줄바꿈을 지웠다. 마지막 줄 뒤에 이어 쓰지 않게 줄을 바꾼다
         with path.open("ab") as f:
             f.write(b"\n")
     append_jsonl(path, written)
     return written
+
+
+def tail_hash(path: Path, *, root: Path) -> str:
+    """원장 끝에 덧붙일 줄의 `prev_hash`: 마지막 줄에 저장된 `hash`다.
+
+    파일이 없거나 비었으면 `GENESIS`다. 마지막 줄에서 `hash`를 얻지 못하면(읽을 수 없는 줄,
+    `hash`가 없는 0.0.1의 줄 등) `ledger_broken`이다. 이유는 `check`와 같고, 메시지의 경로는
+    `root` 기준이다. `append`가 이 함수로 끝 줄을 읽으므로, 덧붙이기 전에 따로 불러 보면
+    덧붙일 수 있는지 미리 알 수 있다. 파일은 바꾸지 않는다.
+    """
+    lines = _split(path.read_bytes() if path.exists() else b"")
+    if not lines:
+        return GENESIS
+    last = _read(lines[-1])
+    if isinstance(last, str):
+        reason = last
+    elif (problem := _field_problem(last, "hash")) is not None:
+        reason = problem
+    else:
+        stored: str = last["hash"]
+        return stored
+    raise ledger_broken(
+        path,
+        root,
+        [Damage(len(lines), reason)],
+        note=(
+            "원장의 마지막 줄에서 앞줄로 이을 hash를 얻지 못해 줄을 덧붙이지 않았습니다. "
+            "deeptwin verify로 원장을 확인하세요."
+        ),
+    )
 
 
 def check(path: Path) -> LedgerCheck:
@@ -187,6 +198,17 @@ def _split(data: bytes) -> list[bytes]:
     if data.endswith(b"\n"):
         lines.pop()
     return lines
+
+
+def _ends_without_newline(path: Path) -> bool:
+    """파일이 있고 비지 않았는데 줄바꿈으로 끝나지 않으면 참이다. 마지막 바이트만 읽는다."""
+    if not path.exists():
+        return False
+    with path.open("rb") as f:
+        if f.seek(0, os.SEEK_END) == 0:
+            return False
+        f.seek(-1, os.SEEK_END)
+        return f.read(1) != b"\n"
 
 
 def _field_problem(obj: Mapping[str, Any], name: str) -> str | None:

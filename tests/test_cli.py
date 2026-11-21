@@ -5,8 +5,10 @@ from __future__ import annotations
 import functools
 import hashlib
 import json
+import os
 import shutil
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -16,8 +18,8 @@ from typer.testing import CliRunner, Result
 
 import claude_stub
 from deeptwin.cli import main
-from deeptwin.compose import FLUID_CLOSE, FLUID_OPEN
-from deeptwin.errors import DeeptwinError
+from deeptwin.compose import FLUID_CLOSE, FLUID_OPEN, fill_fluid
+from deeptwin.errors import DeeptwinError, ProviderFailedError
 from deeptwin.llm import ClaudeCLIProvider, FakeProvider
 from deeptwin.store.ledger import line_hash
 from deeptwin.store.project import DeepTwin
@@ -32,15 +34,34 @@ LEDGER_KEYS = [
     "skill",
     "task",
     "split",
+    "context",
+    "injected",
+    "rejected",
+    "no_hit",
+    "conflicts",
+    "guide_hash",
+    "prompt_version",
+    "output",
+    "prev_hash",
+    "hash",
+]
+"""원장 `run` 줄의 키와 순서(설계서 8.4)."""
+RUN_KEYS = [
+    "run",
+    "task",
+    "split",
+    "context",
+    "ablate",
     "injected",
     "rejected",
     "no_hit",
     "conflicts",
     "guide_hash",
     "output",
-    "prev_hash",
-    "hash",
 ]
+"""`deeptwin run --json`의 `result` 키와 순서."""
+CHOICE_KEYS = ["injected", "rejected", "no_hit", "conflicts", "guide_hash", "context"]
+"""원장 `run` 줄과 `deeptwin compose --json`의 결과가 같아야 하는 키."""
 CALL_KEYS = [
     "provider",
     "model",
@@ -140,8 +161,16 @@ def test_tracer(in_minimal: Path) -> None:
     assert ok_json(invoke("init", "--json"), "init")["gitignore"] == "added"
     body = ok_json(invoke(*RUN_FAKE, "--json"), "run")
 
+    assert list(body) == RUN_KEYS
     assert body["run"] == "run-0001"
+    assert body["task"] == "task-0001"
+    assert body["split"] == "train"
+    assert body["context"] == {"purpose": "문의"}
+    assert body["ablate"] == []
     assert body["injected"] == ["prin-01"]
+    assert body["rejected"] == []
+    assert body["no_hit"] == ["opening", "tone"]
+    assert body["conflicts"] == []
     assert body["output"] == "runs/run-0001/output.md"
     assert body["guide_hash"].startswith("sha256:")
 
@@ -159,11 +188,13 @@ def test_tracer(in_minimal: Path) -> None:
     assert entry["skill"] == "minimal"
     assert entry["task"] == "task-0001"
     assert entry["split"] == "train"
+    assert entry["context"] == {"purpose": "문의"}
     assert entry["injected"] == ["prin-01"]
     assert entry["rejected"] == []
     assert entry["no_hit"] == ["opening", "tone"]  # minimal에는 카드가 없다
     assert entry["conflicts"] == []
     assert entry["guide_hash"] == body["guide_hash"]
+    assert entry["prompt_version"] is None
     assert entry["output"] == "runs/run-0001/output.md"
     assert entry["prev_hash"] == "sha256:" + "0" * 64
     assert entry["hash"].startswith("sha256:")
@@ -277,10 +308,92 @@ def test_failed_claude_call_leaves_no_records(
 
     error_json(invoke(*RUN_DEFAULT, "--json"), "run", code)
 
-    run_dir = in_minimal / ".deeptwin" / "runs" / "run-0001"
+    # 방금 만든 실행 폴더를 지운다. SKILL.md 사본만 든 폴더가 원장 줄 없이 남지 않는다
+    assert list((in_minimal / ".deeptwin" / "runs").iterdir()) == []
     assert not (in_minimal / ".deeptwin" / "ledger.jsonl").exists()
-    assert not (run_dir / "calls.jsonl").exists()
-    assert not (run_dir / "output.md").exists()
+
+    monkeypatch.setenv("CLAUDE_STUB_MODE", "success")
+    assert ok_json(invoke(*RUN_DEFAULT, "--json"), "run")["run"] == "run-0001"
+    assert [e["id"] for e in ledger(in_minimal)] == ["run-0001"]
+    assert len(calls(in_minimal)) == 1
+
+
+def test_fake_out_of_answers_removes_the_run_folder(
+    in_minimal: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    answering = main.PROVIDERS["fake"]
+    monkeypatch.setitem(main.PROVIDERS, "fake", lambda options: FakeProvider([]))
+    invoke("init")
+
+    message = error_json(invoke(*RUN_FAKE, "--json"), "run", "fake_answers_exhausted")
+
+    assert message == "fake 공급자의 답 0개를 다 썼습니다."
+    assert list((in_minimal / ".deeptwin" / "runs").iterdir()) == []
+    assert not (in_minimal / ".deeptwin" / "ledger.jsonl").exists()
+
+    monkeypatch.setitem(main.PROVIDERS, "fake", answering)
+    assert ok_json(invoke(*RUN_FAKE, "--json"), "run")["run"] == "run-0001"
+
+
+class _Interrupted:
+    """생성 중에 Ctrl-C를 누른 공급자. 부르면 실행 폴더가 있는지 적어 두고 멈춘다."""
+
+    name = "fake"
+
+    def __init__(self, runs: Path) -> None:
+        self.runs = runs
+        self.seen: list[str] = []
+
+    def complete(
+        self, system: str, user: str, *, temperature: float = 0.0, timeout: float = 120
+    ) -> str:
+        self.seen = sorted(p.name for p in self.runs.iterdir())
+        raise KeyboardInterrupt
+
+
+def test_interrupted_generation_removes_the_run_folder(
+    in_minimal: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    invoke("init")
+    interrupted = _Interrupted(in_minimal / ".deeptwin" / "runs")
+    monkeypatch.setitem(main.PROVIDERS, "fake", lambda options: interrupted)
+
+    result = invoke(*RUN_FAKE, "--json")
+
+    assert result.exit_code != 0
+    assert interrupted.seen == ["run-0001"]
+    assert list((in_minimal / ".deeptwin" / "runs").iterdir()) == []
+    assert not (in_minimal / ".deeptwin" / "ledger.jsonl").exists()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or getattr(os, "geteuid", lambda: 1)() == 0,
+    reason="폴더 권한으로 지우기를 막을 수 없다",
+)
+def test_failing_to_remove_the_run_folder_keeps_the_original_error(
+    in_minimal: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    invoke("init")
+    runs = in_minimal / ".deeptwin" / "runs"
+
+    class _LockedOut:
+        name = "fake"
+
+        def complete(
+            self, system: str, user: str, *, temperature: float = 0.0, timeout: float = 120
+        ) -> str:
+            runs.chmod(0o555)  # runs/ 안의 실행 폴더를 지울 수 없게 한다
+            raise ProviderFailedError("가짜 공급자가 실패했습니다.")
+
+    monkeypatch.setitem(main.PROVIDERS, "fake", lambda options: _LockedOut())
+    try:
+        message = error_json(invoke(*RUN_FAKE, "--json"), "run", "provider_failed")
+    finally:
+        runs.chmod(0o755)
+
+    assert message == "가짜 공급자가 실패했습니다."
+    assert [p.name for p in runs.iterdir()] == ["run-0001"]  # 지우지 못했다
+    assert not (in_minimal / ".deeptwin" / "ledger.jsonl").exists()
 
 
 def test_output_keeps_answer_bytes(in_minimal: Path) -> None:
@@ -300,8 +413,13 @@ def test_text_mode_success(in_minimal: Path) -> None:
     result = invoke(*RUN_FAKE)
 
     assert result.exit_code == 0, result.output
-    assert "run-0001 실행을 마쳤습니다." in result.stdout
-    assert ".deeptwin/runs/run-0001/output.md" in result.stdout
+    assert result.stdout == (
+        "run-0001 실행을 마쳤습니다.\n"
+        "넣은 항목: prin-01\n"
+        "뺀 항목: 없음\n"
+        "맞는 카드가 없던 판단 지점: opening, tone\n"
+        "결과물: .deeptwin/runs/run-0001/output.md\n"
+    )
     assert result.stderr == ""
 
 
@@ -656,17 +774,44 @@ def test_verify_before_init(minimal_copy: Path, monkeypatch: pytest.MonkeyPatch)
     assert not (minimal_copy / ".deeptwin").exists()
 
 
-def test_run_does_not_append_after_a_broken_last_line(in_minimal: Path) -> None:
+def without_chain_fields(line: bytes) -> bytes:
+    """해시 체인이 생기기 전 버전(0.0.1)이 쓴 모양의 줄: `prev_hash`와 `hash`가 없다."""
+    entry = json.loads(line)
+    del entry["prev_hash"], entry["hash"]
+    return json.dumps(entry, ensure_ascii=False).encode()
+
+
+@pytest.mark.parametrize(
+    ("damage", "reason"),
+    [
+        (lambda line: line[: len(line) // 2], "JSON으로 읽을 수 없는 줄입니다"),
+        (without_chain_fields, "hash가 없습니다"),
+    ],
+    ids=["cut-in-half", "line-of-0.0.1"],
+)
+def test_run_stops_before_the_model_when_the_last_line_is_broken(
+    in_minimal: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    damage: Callable[[bytes], bytes],
+    reason: str,
+) -> None:
     path = run_three_times(in_minimal)
     first, second, third = ledger_lines(path)
-    write_lines(path, [first, second, third[: len(third) // 2]])
+    write_lines(path, [first, second, damage(third)])
     before = path.read_bytes()
+    runs = in_minimal / ".deeptwin" / "runs"
+    forbid_provider(monkeypatch)
 
     message = error_json(invoke(*RUN_FAKE, "--json"), "run", "ledger_broken")
 
-    assert message.splitlines()[0] == ".deeptwin/ledger.jsonl:3: JSON으로 읽을 수 없는 줄입니다"
-    assert "deeptwin verify" in message
+    # 원장 계층이 덧붙일 때 내는 것과 같은 메시지다
+    assert message.splitlines() == [
+        f".deeptwin/ledger.jsonl:3: {reason}",
+        "원장의 마지막 줄에서 앞줄로 이을 hash를 얻지 못해 줄을 덧붙이지 않았습니다. "
+        "deeptwin verify로 원장을 확인하세요.",
+    ]
     assert path.read_bytes() == before
+    assert sorted(p.name for p in runs.iterdir()) == ["run-0001", "run-0002", "run-0003"]
 
 
 # compose
@@ -1073,30 +1218,234 @@ def test_compose_before_init(rules_copy: Path, monkeypatch: pytest.MonkeyPatch) 
     assert not (rules_copy / ".deeptwin").exists()
 
 
+# run: compose와 같은 조립
+
+
+FAKE_ANSWER = ("--provider", "fake", "--fake-answer", "answer.txt")
+RUN_RULES = ("run", "class-notice", "task-0001", *FAKE_ANSWER)
+RULES_OPTIONS = ("--context", "purpose=휴강", "--ablate", "instinct")
+"""`compose`와 `run`에 함께 주는 옵션. 과제의 맥락은 `purpose: 모집`, `channel: instagram`이다."""
+
+
+def run_rules(root: Path, *options: str) -> dict[str, Any]:
+    """`compose-rules`에서 `task-0001`을 fake로 돌린 `--json` 결과."""
+    (root / "answer.txt").write_text("가짜 공지\n", encoding="utf-8")
+    return ok_json(invoke(*RUN_RULES, *options, "--json"), "run")
+
+
+def choices(body: dict[str, Any]) -> dict[str, Any]:
+    return {key: body[key] for key in CHOICE_KEYS}
+
+
+def forbid_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    """공급자를 만들면 테스트가 실패하게 한다. claude --version도 부르지 않는다는 뜻이다."""
+
+    def no_provider(*args: object) -> None:
+        raise AssertionError("모델을 부르기 전에 멈춰야 하는데 공급자를 만들었다")
+
+    monkeypatch.setattr(main, "make_provider", no_provider)
+
+
+def tree_bytes(folder: Path) -> dict[str, bytes]:
+    return {
+        p.relative_to(folder).as_posix(): p.read_bytes()
+        for p in sorted(folder.rglob("*"))
+        if p.is_file()
+    }
+
+
 def test_run_ledger_line_matches_compose(in_rules: Path) -> None:
-    (in_rules / "answer.txt").write_text("가짜 공지\n", encoding="utf-8")
     composed = ok_json(invoke(*COMPOSE, "--json"), "compose")
 
-    body = ok_json(
-        invoke(
-            "run",
-            "class-notice",
-            "task-0001",
-            "--provider",
-            "fake",
-            "--fake-answer",
-            "answer.txt",
-            "--json",
-        ),
-        "run",
-    )
+    body = run_rules(in_rules)
 
     [entry] = ledger(in_rules)
     assert list(entry) == LEDGER_KEYS
-    assert entry["injected"] == composed["injected"] == body["injected"] == RULES_INJECTED
-    assert entry["rejected"] == composed["rejected"] == RULES_REJECTED
-    assert entry["no_hit"] == composed["no_hit"] == ["schedule"]
-    assert entry["conflicts"] == composed["conflicts"] == []
-    assert entry["guide_hash"] == composed["guide_hash"]
+    assert choices(entry) == choices(composed) == choices(body)
+    assert entry["injected"] == RULES_INJECTED
+    assert entry["rejected"] == RULES_REJECTED
+    assert entry["no_hit"] == ["schedule"]
+    assert entry["conflicts"] == []
+    assert entry["context"] == {"purpose": "모집", "channel": "instagram"}
+    assert entry["prompt_version"] is None
+    assert body["ablate"] == composed["ablate"] == []
     copy = (in_rules / ".deeptwin" / "runs" / "run-0001" / "SKILL.md").read_text("utf-8")
     assert f"{FLUID_OPEN}\n{RULES_GUIDE}{FLUID_CLOSE}" in copy
+
+
+def test_run_with_options_matches_compose_with_the_same_options(in_rules: Path) -> None:
+    options = (*RULES_OPTIONS, "--ablate", "instinct")  # 겹친 층은 하나로 친다
+    composed = ok_json(invoke(*COMPOSE, *options, "--json"), "compose")
+
+    body = run_rules(in_rules, *options)
+
+    [entry] = ledger(in_rules)
+    assert list(entry) == LEDGER_KEYS
+    assert choices(entry) == choices(composed) == choices(body)
+    assert entry["context"] == {"purpose": "휴강", "channel": "instagram"}
+    assert "ablate" not in entry  # 설계서 8.4에 없다. 뺀 층은 injected와 guide_hash로 드러난다
+    assert body["ablate"] == composed["ablate"] == ["instinct"]
+    examples = {example.id for example in DeepTwin.open(in_rules).examples()}
+    assert [i for i in entry["injected"] if i in examples] == []
+    assert [r for r in entry["rejected"] if r["id"] in examples] == []
+    copy = (in_rules / ".deeptwin" / "runs" / "run-0001" / "SKILL.md").read_text("utf-8")
+    assert f"{FLUID_OPEN}\n{composed['guide']}{FLUID_CLOSE}" in copy
+    assert [line for line in example_lines(in_rules) if line in copy] == []
+    assert entry["guide_hash"] != ok_json(invoke(*COMPOSE, "--json"), "compose")["guide_hash"]
+
+
+@pytest.mark.acceptance
+def test_run_writes_the_guide_only_into_the_copy(in_rules: Path) -> None:
+    """원본 SKILL.md와 layers/는 실행 전후로 바이트까지 같고, 지침은 실행 폴더의 사본에만 든다."""
+    skill_md = in_rules / "skills" / "class-notice" / "SKILL.md"
+    layers = in_rules / ".deeptwin" / "layers"
+    original = skill_md.read_bytes()
+    layer_files = tree_bytes(layers)
+    assert any(name.startswith("cards/") for name in layer_files)
+
+    for run_id, options in [("run-0001", ()), ("run-0002", RULES_OPTIONS)]:
+        composed = ok_json(invoke(*COMPOSE, *options, "--json"), "compose")
+        assert run_rules(in_rules, *options)["run"] == run_id
+        copy = in_rules / ".deeptwin" / "runs" / run_id / "SKILL.md"
+        assert copy.read_text("utf-8") == fill_fluid(original.decode("utf-8"), composed["guide"])
+
+    assert skill_md.read_bytes() == original
+    assert tree_bytes(layers) == layer_files  # 카드의 stats도 그대로다
+
+
+def test_run_text_mode_uses_the_compose_wording(in_rules: Path) -> None:
+    composed = invoke(*COMPOSE)
+    (in_rules / "answer.txt").write_text("가짜 공지\n", encoding="utf-8")
+
+    result = invoke(*RUN_RULES)
+
+    assert result.exit_code == 0, result.output
+    # compose의 글 모드 끝 네 줄은 넣은 항목, 뺀 항목, 맞는 카드가 없던 판단 지점, guide_hash다
+    choice_lines = composed.stdout.splitlines()[-4:-1]
+    assert choice_lines[1].startswith("뺀 항목: card-0008(lower_layer)")
+    assert result.stdout.splitlines() == [
+        "run-0001 실행을 마쳤습니다.",
+        *choice_lines,
+        "결과물: .deeptwin/runs/run-0001/output.md",
+    ]
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize(
+    ("options", "code"),
+    [
+        (["--context", "purpose"], "invalid_context"),
+        (["--context", "purpose=없는값"], "invalid_context"),
+        (["--ablate", "cards"], "unknown_layer"),
+    ],
+    ids=["no-equals", "unknown-value", "unknown-layer"],
+)
+def test_run_with_wrong_options_stops_before_the_run_folder(
+    in_minimal: Path, monkeypatch: pytest.MonkeyPatch, options: list[str], code: str
+) -> None:
+    invoke("init")
+    forbid_provider(monkeypatch)
+
+    message = error_json(invoke(*RUN_FAKE, *options, "--json"), "run", code)
+
+    compose_args = ("compose", "minimal", "task-0001", *options, "--json")
+    assert message == error_json(invoke(*compose_args), "compose", code)
+    assert list((in_minimal / ".deeptwin" / "runs").iterdir()) == []
+    assert not (in_minimal / ".deeptwin" / "ledger.jsonl").exists()
+
+
+# run: 맥락이 없는 과제
+
+
+NO_CONTEXT_TASK = """\
+# 가상의 문의 메일. 테스트용으로 지어낸 것이다.
+schema: 1
+id: task-0002
+skill: {skill}
+split: train
+input: 수강료를 알려 주세요.
+"""
+RUN_NO_CONTEXT = ("run", "minimal", "task-0002", *FAKE_ANSWER)
+CONTEXT_REQUIRED = (
+    "과제 task-0002에 맥락이 없습니다. "
+    "과제 파일의 context에 적거나 --context 축=값으로 주세요. "
+    "스킬 minimal의 축: purpose(문의, 상담, 기타)"
+)
+
+
+def write_no_context_task(root: Path, skill: str = "minimal", extra: str = "") -> None:
+    path = root / ".deeptwin" / "tasks" / "train" / "task-0002.yaml"
+    path.write_text(NO_CONTEXT_TASK.format(skill=skill) + extra, encoding="utf-8")
+
+
+@pytest.mark.parametrize("extra", ["", "context: {}\n"], ids=["no-context", "empty-context"])
+def test_run_without_context_stops_before_anything(
+    in_minimal: Path, monkeypatch: pytest.MonkeyPatch, extra: str
+) -> None:
+    invoke("init")
+    write_no_context_task(in_minimal, extra=extra)
+    forbid_provider(monkeypatch)
+    before = data_files(in_minimal)
+
+    message = error_json(invoke(*RUN_NO_CONTEXT, "--json"), "run", "context_required")
+    text = invoke(*RUN_NO_CONTEXT)
+
+    assert message == CONTEXT_REQUIRED
+    assert text.exit_code == 1
+    assert text.stdout == ""
+    assert text.stderr == f"오류: {message}\n"
+    assert list((in_minimal / ".deeptwin" / "runs").iterdir()) == []
+    assert not (in_minimal / ".deeptwin" / "ledger.jsonl").exists()
+    assert data_files(in_minimal) == before
+
+
+def test_run_without_context_is_refused_before_the_provider_options(in_minimal: Path) -> None:
+    """맥락은 공급자보다 먼저 본다. fake에 답 파일이 없어도 context_required가 먼저다."""
+    invoke("init")
+    write_no_context_task(in_minimal)
+
+    result = invoke("run", "minimal", "task-0002", "--provider", "fake", "--json")
+
+    assert error_json(result, "run", "context_required") == CONTEXT_REQUIRED
+
+
+def test_context_required_lists_every_axis_and_compose_still_composes(in_rules: Path) -> None:
+    write_no_context_task(in_rules, skill="class-notice")
+    args = ("run", "class-notice", "task-0002", *FAKE_ANSWER)
+    (in_rules / "answer.txt").write_text("가짜 공지\n", encoding="utf-8")
+
+    message = error_json(invoke(*args, "--json"), "run", "context_required")
+
+    assert message == CONTEXT_REQUIRED.replace(
+        "스킬 minimal의 축: purpose(문의, 상담, 기타)",
+        "스킬 class-notice의 축: purpose(모집, 알림, 휴강), channel(instagram, email)",
+    )
+    assert not (in_rules / ".deeptwin" / "runs").exists()
+    # compose는 미리 보기라 맥락이 비어도 조립한다
+    composed = ok_json(invoke("compose", "class-notice", "task-0002", "--json"), "compose")
+    assert composed["context"] == {}
+
+
+def test_context_option_runs_a_task_without_context(in_minimal: Path) -> None:
+    invoke("init")
+    write_no_context_task(in_minimal)
+
+    body = ok_json(invoke(*RUN_NO_CONTEXT, "--context", "purpose=문의", "--json"), "run")
+
+    [entry] = ledger(in_minimal)
+    assert body["context"] == entry["context"] == {"purpose": "문의"}
+    assert entry["task"] == "task-0002"
+
+
+def test_skill_without_axes_runs_with_an_empty_context(in_minimal: Path) -> None:
+    config = in_minimal / "skills" / "minimal" / "skill.yaml"
+    text = config.read_text("utf-8")
+    config.write_text(text.replace("context_axes:\n  purpose: [문의, 상담, 기타]\n", ""), "utf-8")
+    assert "context_axes" not in config.read_text("utf-8")
+    invoke("init")
+    write_no_context_task(in_minimal)
+
+    body = ok_json(invoke(*RUN_NO_CONTEXT, "--json"), "run")
+
+    [entry] = ledger(in_minimal)
+    assert body["context"] == entry["context"] == {}

@@ -569,6 +569,28 @@ def test_run_with_a_sealed_task_needs_no_provider_options(in_minimal: Path) -> N
     assert not (in_minimal / ".deeptwin" / "runs").exists()
 
 
+@pytest.mark.parametrize(
+    "options",
+    [
+        ("--context", "purpose=상담", "--ablate", "instinct"),
+        ("--context", "purpose"),  # 틀린 옵션이어도 봉인을 먼저 본다
+    ],
+    ids=["good-options", "wrong-option"],
+)
+def test_run_with_a_sealed_task_is_refused_whatever_the_options(
+    in_minimal: Path, options: tuple[str, ...]
+) -> None:
+    add_sealed(in_minimal)
+    before = snapshot(in_minimal)
+
+    result = invoke(*RUN_SEALED, *options, "--json")
+
+    assert error_json(result, "run", "sealed_access") == SEALED_ACCESS
+    keeps_secrets(result)
+    assert snapshot(in_minimal) == before
+    assert not (in_minimal / ".deeptwin" / "runs").exists()
+
+
 def test_compose_with_a_sealed_task_is_refused(in_minimal: Path) -> None:
     add_sealed(in_minimal)
     before = snapshot(in_minimal)
