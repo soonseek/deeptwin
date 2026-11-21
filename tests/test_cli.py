@@ -17,11 +17,24 @@ import claude_stub
 from deeptwin.cli import main
 from deeptwin.compose import FLUID_CLOSE, FLUID_OPEN
 from deeptwin.llm import ClaudeCLIProvider, FakeProvider
+from deeptwin.store.ledger import line_hash
 
 RUN_FAKE = ("run", "minimal", "task-0001", "--provider", "fake", "--fake-answer", "answer.txt")
 RUN_DEFAULT = ("run", "minimal", "task-0001")
 
-LEDGER_KEYS = ["id", "type", "ts", "skill", "task", "split", "injected", "guide_hash", "output"]
+LEDGER_KEYS = [
+    "id",
+    "type",
+    "ts",
+    "skill",
+    "task",
+    "split",
+    "injected",
+    "guide_hash",
+    "output",
+    "prev_hash",
+    "hash",
+]
 CALL_KEYS = [
     "provider",
     "model",
@@ -143,6 +156,8 @@ def test_tracer(in_minimal: Path) -> None:
     assert entry["injected"] == ["prin-01"]
     assert entry["guide_hash"] == body["guide_hash"]
     assert entry["output"] == "runs/run-0001/output.md"
+    assert entry["prev_hash"] == "sha256:" + "0" * 64
+    assert entry["hash"].startswith("sha256:")
 
 
 def test_second_run_is_run_0002(in_minimal: Path) -> None:
@@ -453,6 +468,7 @@ def test_help_lists_commands() -> None:
     assert result.exit_code == 0
     assert "init" in result.stdout
     assert "run" in result.stdout
+    assert "verify" in result.stdout
 
 
 # 형식이 틀린 파일
@@ -483,3 +499,159 @@ def test_wrong_value_stops_with_file_and_line_then_runs_after_fix(in_minimal: Pa
     assert body["run"] == "run-0001"
     assert body["injected"] == ["prin-01"]
     assert [e["id"] for e in ledger(in_minimal)] == ["run-0001"]
+
+
+# 원장 검사
+
+
+def run_three_times(root: Path) -> Path:
+    """`run`을 세 번 돌린 원장의 경로."""
+    invoke("init")
+    for _ in range(3):
+        ok_json(invoke(*RUN_FAKE, "--json"), "run")
+    return root / ".deeptwin" / "ledger.jsonl"
+
+
+def ledger_lines(path: Path) -> list[bytes]:
+    return path.read_bytes().splitlines()
+
+
+def write_lines(path: Path, lines: list[bytes]) -> None:
+    path.write_bytes(b"".join(line + b"\n" for line in lines))
+
+
+def test_verify_whole_ledger(in_minimal: Path) -> None:
+    run_three_times(in_minimal)
+
+    body = ok_json(invoke("verify", "--json"), "verify")
+
+    assert body == {"lines": 3, "head": ledger(in_minimal)[-1]["hash"]}
+
+
+def test_verify_finds_the_changed_middle_line_then_passes_after_undo(in_minimal: Path) -> None:
+    path = run_three_times(in_minimal)
+    good = path.read_bytes()
+    first, second, third = ledger_lines(path)
+    write_lines(path, [first, second.replace(b"run-0002", b"run-0009", 1), third])
+    assert json.loads(ledger_lines(path)[1])["id"] == "run-0009"  # JSON은 그대로 맞다
+
+    message = error_json(invoke("verify", "--json"), "verify", "ledger_broken")
+    text = invoke("verify")
+
+    assert message == ".deeptwin/ledger.jsonl:2: hash가 내용과 맞지 않습니다"
+    assert text.exit_code == 1
+    assert text.stdout == ""
+    assert text.stderr == f"오류: {message}\n"
+
+    path.write_bytes(good)
+    assert ok_json(invoke("verify", "--json"), "verify")["lines"] == 3
+
+
+def test_verify_reports_a_line_that_is_not_json(in_minimal: Path) -> None:
+    path = run_three_times(in_minimal)
+    first, second, third = ledger_lines(path)
+    write_lines(path, [first, second.removeprefix(b"{"), third])
+
+    message = error_json(invoke("verify", "--json"), "verify", "ledger_broken")
+
+    assert message == ".deeptwin/ledger.jsonl:2: JSON으로 읽을 수 없는 줄입니다"
+
+
+def test_verify_catches_a_line_whose_hash_was_rewritten(in_minimal: Path) -> None:
+    path = run_three_times(in_minimal)
+    first, second, third = ledger_lines(path)
+    entry = json.loads(second)
+    entry["task"] = "task-0009"
+    body = {k: v for k, v in entry.items() if k not in ("prev_hash", "hash")}
+    entry["hash"] = line_hash(entry["prev_hash"], body)
+    write_lines(path, [first, json.dumps(entry, ensure_ascii=False).encode(), third])
+
+    message = error_json(invoke("verify", "--json"), "verify", "ledger_broken")
+
+    assert message == ".deeptwin/ledger.jsonl:3: 앞줄의 hash와 이어지지 않습니다"
+
+
+def test_verify_catches_a_deleted_line(in_minimal: Path) -> None:
+    path = run_three_times(in_minimal)
+    first, _, third = ledger_lines(path)
+    write_lines(path, [first, third])
+
+    message = error_json(invoke("verify", "--json"), "verify", "ledger_broken")
+
+    assert message == ".deeptwin/ledger.jsonl:2: 앞줄의 hash와 이어지지 않습니다"
+
+
+@pytest.mark.parametrize("field", ["prev_hash", "hash"])
+def test_verify_reports_a_line_without_chain_field(in_minimal: Path, field: str) -> None:
+    path = run_three_times(in_minimal)
+    first, second, third = ledger_lines(path)
+    entry = json.loads(second)
+    del entry[field]
+    write_lines(path, [first, json.dumps(entry, ensure_ascii=False).encode(), third])
+
+    message = error_json(invoke("verify", "--json"), "verify", "ledger_broken")
+
+    assert message == f".deeptwin/ledger.jsonl:2: {field}가 없습니다"
+
+
+def test_verify_reports_old_lines_without_hashes(in_minimal: Path) -> None:
+    path = run_three_times(in_minimal)
+    old = []
+    for line in ledger_lines(path):
+        entry = json.loads(line)
+        del entry["prev_hash"], entry["hash"]
+        old.append(json.dumps(entry, ensure_ascii=False).encode())
+    write_lines(path, old)
+
+    message = error_json(invoke("verify", "--json"), "verify", "ledger_broken")
+
+    assert message.splitlines() == [
+        f".deeptwin/ledger.jsonl:{number}: {field}가 없습니다"
+        for number in (1, 2, 3)
+        for field in ("prev_hash", "hash")
+    ]
+
+
+def test_verify_empty_ledger(in_minimal: Path) -> None:
+    invoke("init")
+
+    body = ok_json(invoke("verify", "--json"), "verify")
+    text = invoke("verify")
+
+    assert body == {"lines": 0, "head": None}
+    assert not (in_minimal / ".deeptwin" / "ledger.jsonl").exists()
+    assert text.exit_code == 0
+    assert text.stdout == "원장 .deeptwin/ledger.jsonl에 아직 줄이 없습니다.\n"
+
+
+def test_verify_text_mode_success(in_minimal: Path) -> None:
+    run_three_times(in_minimal)
+
+    result = invoke("verify")
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "원장 .deeptwin/ledger.jsonl의 3줄이 모두 해시로 이어져 있습니다.\n"
+    assert result.stderr == ""
+
+
+def test_verify_before_init(minimal_copy: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    shutil.rmtree(minimal_copy / ".deeptwin")
+    monkeypatch.chdir(minimal_copy)
+
+    message = error_json(invoke("verify", "--json"), "verify", "not_initialized")
+
+    assert "deeptwin init" in message
+    assert not (minimal_copy / ".deeptwin").exists()
+
+
+def test_run_does_not_append_after_a_broken_last_line(in_minimal: Path) -> None:
+    path = run_three_times(in_minimal)
+    first, second, third = ledger_lines(path)
+    write_lines(path, [first, second, third[: len(third) // 2]])
+    before = path.read_bytes()
+
+    message = error_json(invoke(*RUN_FAKE, "--json"), "run", "ledger_broken")
+
+    assert message.splitlines()[0] == ".deeptwin/ledger.jsonl:3: JSON으로 읽을 수 없는 줄입니다"
+    assert "deeptwin verify" in message
+    assert path.read_bytes() == before

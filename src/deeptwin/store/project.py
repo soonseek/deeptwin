@@ -26,9 +26,9 @@ from deeptwin.errors import (
     TaskNotFoundError,
 )
 from deeptwin.models import Candidate, Card, Example, Principle, Priority, Skill, Task
+from deeptwin.store import ledger
 from deeptwin.store.files import (
     Problem,
-    append_jsonl,
     invalid_file,
     read_model,
     read_models,
@@ -267,13 +267,23 @@ class DeepTwin:
                 continue
             return run_id
 
-    def append_ledger(self, entry: dict[str, Any]) -> None:
-        """원장(`ledger.jsonl`)에 잠금 안에서 한 줄을 덧붙인다.
+    def append_ledger(self, entry: dict[str, Any]) -> dict[str, Any]:
+        """원장(`ledger.jsonl`)에 잠금 안에서 한 줄을 덧붙이고, 덧붙인 줄을 돌려준다.
 
+        줄 끝에 앞줄과 잇는 `prev_hash`와 그 줄의 `hash`를 붙인다(`store.ledger`).
+        마지막 줄에서 `hash`를 얻지 못하면 덧붙이지 않고 `ledger_broken`이다.
         원장의 줄은 고치거나 지우지 않는다.
         """
         with self.lock():
-            append_jsonl(self.path / LEDGER_FILE, entry)
+            return ledger.append(self.path / LEDGER_FILE, entry, root=self.root)
+
+    def verify_ledger(self) -> ledger.LedgerCheck:
+        """잠금 안에서 원장의 해시 체인을 처음부터 다시 계산한다.
+
+        줄 수, 마지막 줄의 `hash`, 손상 목록(줄, 이유)을 돌려준다. 손상이 있어도 예외를 내지 않는다.
+        """
+        with self.lock():
+            return ledger.check(self.path / LEDGER_FILE)
 
     # 내부
 

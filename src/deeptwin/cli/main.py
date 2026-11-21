@@ -19,7 +19,8 @@ from deeptwin.errors import (
 from deeptwin.llm import ClaudeCLIProvider, FakeProvider, Provider
 from deeptwin.llm.calls import CallRecorder
 from deeptwin.runs import CALLS_FILE, record_run, write_skill_copy
-from deeptwin.store.project import DATA_DIR, DeepTwin
+from deeptwin.store.ledger import ledger_broken
+from deeptwin.store.project import DATA_DIR, LEDGER_FILE, DeepTwin
 
 app = typer.Typer(
     name="deeptwin",
@@ -162,3 +163,25 @@ def run(
         )
 
     respond("run", action, as_json=as_json)
+
+
+@app.command()
+def verify(as_json: JsonOption = False) -> None:
+    """원장(.deeptwin/ledger.jsonl)의 해시 체인을 처음부터 다시 계산해 손상된 줄을 찾는다."""
+
+    def action() -> Reply:
+        deeptwin = DeepTwin.open(Path.cwd())
+        check = deeptwin.verify_ledger()
+        if check.damages:
+            raise ledger_broken(deeptwin.path / LEDGER_FILE, deeptwin.root, check.damages)
+        shown = f"{DATA_DIR}/{LEDGER_FILE}"
+        return Reply(
+            result={"lines": check.lines, "head": check.head},
+            text=(
+                f"원장 {shown}의 {check.lines}줄이 모두 해시로 이어져 있습니다."
+                if check.lines
+                else f"원장 {shown}에 아직 줄이 없습니다."
+            ),
+        )
+
+    respond("verify", action, as_json=as_json)

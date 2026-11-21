@@ -51,6 +51,18 @@ deeptwin run <스킬 ID> <과제 ID> --provider fake --fake-answer answer.txt
 | `seconds` | 호출 하나에 걸린 시간(초, 소수 셋째 자리까지) |
 | `cached` | 캐시에서 꺼낸 답인지. 지금은 늘 `false` |
 
+원장의 줄마다 끝에 `prev_hash`와 `hash`가 붙어 앞줄과 이어집니다. `hash`는 `prev_hash`와 그 줄의 나머지 필드(정렬된 JSON)를 이어 SHA-256으로 만들고, 첫 줄의 `prev_hash`는 `sha256:` 뒤에 0이 64개입니다. `deeptwin verify`는 체인을 처음부터 다시 계산해, 손상된 줄마다 줄 번호와 이유를 `ledger_broken` 오류로 알려 줍니다. 원장은 고치지 않습니다. 원장의 마지막 줄에서 `hash`를 얻지 못하면 `deeptwin run`도 줄을 덧붙이지 않고 같은 오류로 멈춥니다. 이때 모델은 이미 부른 뒤라 실행 폴더는 남습니다.
+
+```sh
+deeptwin verify
+```
+
+```text
+오류: .deeptwin/ledger.jsonl:2: hash가 내용과 맞지 않습니다
+```
+
+해시 체인이 생기기 전 버전(PyPI의 0.0.1)이 쓴 원장 줄에는 `prev_hash`와 `hash`가 없습니다. 그 원장이 있으면 `deeptwin verify`는 손상으로 알리고, `deeptwin run`은 모델을 부른 뒤 `ledger_broken`으로 멈춥니다. 그 `.deeptwin/ledger.jsonl`을 다른 이름으로 옮겨 두면(예: `ledger-old.jsonl`) 다음 실행부터 새 체인이 시작됩니다.
+
 모든 명령은 `--json`을 받습니다. 켜면 stdout에 JSON 객체 하나만 씁니다. 성공하면 종료 코드 0, deeptwin이 알려 주는 오류면 1입니다. 인자가 틀리면 Click 기본 동작대로 종료 코드 2와 글로 된 안내를 내고, JSON은 쓰지 않습니다.
 
 ```json
@@ -69,7 +81,7 @@ deeptwin run <스킬 ID> <과제 ID> --provider fake --fake-answer answer.txt
   candidates/<ID>.yaml      # 승인 전 후보. 하나가 파일 하나
   tasks/<분할>/<ID>.yaml    # 과제. 분할은 train, sealed, spare
   runs/                     # 실행마다 SKILL.md 사본, 결과물, 호출 기록(calls.jsonl)
-  ledger.jsonl              # 원장. 추가만 한다
+  ledger.jsonl              # 원장. 추가만 하고 줄마다 해시로 잇는다
 skills/<스킬 ID>/
   SKILL.md                  # 고정 영역과 유동 영역 표시
   skill.yaml                # 판단 지점, 맥락 축, 상한

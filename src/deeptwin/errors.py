@@ -77,6 +77,13 @@ class InvalidFileError(DeeptwinError):
         super().__init__("invalid_file", message)
 
 
+class LedgerBrokenError(DeeptwinError):
+    """원장의 해시 체인이 끊겼다. 메시지는 손상마다 `.deeptwin/ledger.jsonl:<줄>: <이유>`다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("ledger_broken", message)
+
+
 class StoreLockedError(DeeptwinError):
     """다른 쓰기가 `.deeptwin/.lock`을 쥐고 있어 정한 시간 안에 잠금을 잡지 못했다."""
 
