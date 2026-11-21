@@ -108,3 +108,18 @@ class Run(BaseModel):
     injected: list[str]
     guide_hash: str
     output: str
+
+
+class Call(BaseModel):
+    """모델 호출 하나의 기록. 실행 폴더의 `calls.jsonl` 한 줄과 같은 모양이다(설계서 9.6)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str
+    model: str | None
+    version: str | None
+    prompt_version: str | None
+    input_chars: int
+    output_chars: int
+    seconds: float
+    cached: bool

@@ -53,3 +53,18 @@ class FakeAnswerRequiredError(DeeptwinError):
 class FakeAnswersExhaustedError(DeeptwinError):
     def __init__(self, message: str) -> None:
         super().__init__("fake_answers_exhausted", message)
+
+
+class ClaudeNotFoundError(DeeptwinError):
+    def __init__(self, message: str) -> None:
+        super().__init__("claude_not_found", message)
+
+
+class ProviderFailedError(DeeptwinError):
+    def __init__(self, message: str) -> None:
+        super().__init__("provider_failed", message)
+
+
+class ProviderTimeoutError(DeeptwinError):
+    def __init__(self, message: str) -> None:
+        super().__init__("provider_timeout", message)

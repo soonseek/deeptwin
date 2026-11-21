@@ -16,8 +16,9 @@ from deeptwin.errors import (
     TaskSkillMismatchError,
     UnknownProviderError,
 )
-from deeptwin.llm import FakeProvider, Provider
-from deeptwin.runs import record_run, write_skill_copy
+from deeptwin.llm import ClaudeCLIProvider, FakeProvider, Provider
+from deeptwin.llm.calls import CallRecorder
+from deeptwin.runs import CALLS_FILE, record_run, write_skill_copy
 from deeptwin.store.project import DATA_DIR, DeepTwin
 
 app = typer.Typer(
@@ -48,7 +49,15 @@ def _fake_provider(options: ProviderOptions) -> Provider:
     return FakeProvider([options.fake_answer.read_bytes().decode("utf-8")])
 
 
-PROVIDERS: dict[str, Callable[[ProviderOptions], Provider]] = {"fake": _fake_provider}
+def _claude_provider(options: ProviderOptions) -> Provider:
+    # 실행 파일이 없으면 여기서 claude_not_found가 난다. 실행 폴더를 만들기 전이다
+    return ClaudeCLIProvider()
+
+
+PROVIDERS: dict[str, Callable[[ProviderOptions], Provider]] = {
+    "claude": _claude_provider,
+    "fake": _fake_provider,
+}
 """공급자 이름표. 이름 -> 공급자를 만드는 함수."""
 
 DEFAULT_PROVIDER = "claude"
@@ -98,7 +107,10 @@ def run(
         str,
         typer.Option(
             "--provider",
-            help="모델 공급자 이름. fake는 테스트와 예제 확인용이다.",
+            help=(
+                "모델 공급자 이름. 기본값 claude는 claude CLI를 Claude Code의 구독 로그인으로 "
+                "부른다. fake는 테스트와 예제 확인용이다."
+            ),
         ),
     ] = DEFAULT_PROVIDER,
     fake_answer: Annotated[
@@ -129,7 +141,8 @@ def run(
         skill_copy = fill_fluid(skill.skill_md.read_text(encoding="utf-8"), composed.guide)
         run_id = deeptwin.new_run()
         write_skill_copy(deeptwin, run_id, skill_copy)
-        output = llm.complete(skill_copy, task.input)
+        recorder = CallRecorder(llm, deeptwin.run_dir(run_id) / CALLS_FILE)
+        output = recorder.complete(skill_copy, task.input)
         record = record_run(composed, task, output, deeptwin, run_id=run_id)
         injected = ", ".join(record.injected) or "없음"
         return Reply(

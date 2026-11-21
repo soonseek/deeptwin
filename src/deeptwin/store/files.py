@@ -1,4 +1,4 @@
-"""YAML 읽기·쓰기와 원자적 저장.
+"""YAML 읽기·쓰기, 원자적 저장, JSONL 덧붙이기.
 
 쓰기는 같은 폴더의 임시 파일에 쓴 뒤 `os.replace`로 바꾼다. 쓰다 죽어도 반쯤 쓴 파일이
 남지 않는다. YAML은 키 순서를 지키고 한글을 그대로 쓴다.
@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import stat
@@ -54,3 +55,12 @@ def write_bytes(path: Path, data: bytes) -> None:
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+def append_jsonl(path: Path, entry: dict[str, Any]) -> None:
+    """JSONL 파일 끝에 한 줄을 덧붙이고 fsync한다. 한글은 그대로, 줄바꿈은 LF로 쓴다."""
+    line = json.dumps(entry, ensure_ascii=False) + "\n"
+    with path.open("a", encoding="utf-8", newline="\n") as f:
+        f.write(line)
+        f.flush()
+        os.fsync(f.fileno())

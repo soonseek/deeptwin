@@ -6,8 +6,6 @@
 
 from __future__ import annotations
 
-import json
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,7 +13,7 @@ from typing import Any, Literal
 
 from deeptwin.errors import NotInitializedError, SkillNotFoundError, TaskNotFoundError
 from deeptwin.models import Principle, Skill, Task
-from deeptwin.store.files import read_yaml, write_text
+from deeptwin.store.files import append_jsonl, read_yaml, write_text
 
 DATA_DIR = ".deeptwin"
 """개인 데이터 폴더 이름. 프로젝트 루트에 둔다."""
@@ -149,11 +147,7 @@ class DeepTwin:
 
     def append_ledger(self, entry: dict[str, Any]) -> None:
         """원장(`ledger.jsonl`)에 한 줄을 덧붙인다. 원장의 줄은 고치거나 지우지 않는다."""
-        line = json.dumps(entry, ensure_ascii=False) + "\n"
-        with (self.path / "ledger.jsonl").open("a", encoding="utf-8", newline="\n") as f:
-            f.write(line)
-            f.flush()
-            os.fsync(f.fileno())
+        append_jsonl(self.path / "ledger.jsonl", entry)
 
 
 def _ensure_gitignore(path: Path) -> Literal["added", "present"]:

@@ -7,7 +7,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from deeptwin.compose import compose, fill_fluid
 from deeptwin.errors import DeeptwinError
-from deeptwin.llm import FakeProvider, Provider
+from deeptwin.llm import ClaudeCLIProvider, FakeProvider, Provider
 from deeptwin.models import Composed, Principle, Run, Skill, Task
 from deeptwin.runs import record_run
 from deeptwin.store.project import DeepTwin
@@ -18,6 +18,7 @@ except PackageNotFoundError:  # pragma: no cover - 설치하지 않고 소스에
     __version__ = "0+unknown"
 
 __all__ = [
+    "ClaudeCLIProvider",
     "Composed",
     "DeepTwin",
     "DeeptwinError",

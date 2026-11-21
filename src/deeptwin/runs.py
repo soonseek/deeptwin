@@ -11,6 +11,8 @@ from deeptwin.store.project import DeepTwin
 
 OUTPUT_FILE = "output.md"
 SKILL_COPY_FILE = "SKILL.md"
+CALLS_FILE = "calls.jsonl"
+"""모델 호출마다 한 줄씩 남기는 기록. 필드는 `models.Call`이다."""
 
 
 def write_skill_copy(deeptwin: DeepTwin, run_id: str, skill_md: str) -> Path:
