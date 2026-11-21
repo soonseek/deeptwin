@@ -1,0 +1,98 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "deeptwin"
+version = "0.0.1"
+description = "개인의 판단 기준을 층별 파일로 쌓고, 모델 없이 조립해 스킬의 유동 영역에 넣는 라이브러리"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.7,<3",
+    "pyyaml>=6.0",
+    "filelock>=3.12",
+    "typer>=0.15",
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Natural Language :: Korean",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Repository = "https://github.com/soonseek/deeptwin"
+
+[project.scripts]
+deeptwin = "deeptwin.cli.main:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "import-linter>=2.1",
+    "types-PyYAML",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/deeptwin"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/deeptwin",
+    "tests",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-m", "not live", "--strict-markers"]
+markers = [
+    "live: 실제 모델을 부르는 테스트. 기본 실행에서 빠진다",
+    "acceptance: 설계서 8.11의 수용 테스트",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+# 이 컴퓨터에만 두는 기획·BMad 폴더. git이 없어도 검사에서 뺀다
+extend-exclude = ["_bmad", "_bmad-output", ".claude", "data-raw", "deeptwin_design_v0.1.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["src", "tests"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.importlinter]
+root_package = "deeptwin"
+
+[[tool.importlinter.contracts]]
+name = "조립·모델·저장은 모델 호출 계층(llm)을 import하지 않는다"
+type = "forbidden"
+source_modules = ["deeptwin.compose", "deeptwin.models", "deeptwin.store"]
+forbidden_modules = ["deeptwin.llm"]
+
+[[tool.importlinter.contracts]]
+name = "모델(models)과 오류(errors)는 다른 deeptwin 모듈을 import하지 않는다"
+type = "forbidden"
+source_modules = ["deeptwin.models", "deeptwin.errors"]
+# 와일드카드라서 뒤에 생기는 모듈도 막는다. models와 errors 서로도 금지다
+forbidden_modules = ["deeptwin.*"]

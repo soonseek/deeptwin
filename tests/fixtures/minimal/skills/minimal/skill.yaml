@@ -1,0 +1,16 @@
+schema: 1
+id: minimal
+version: 1
+decision_points:
+  - {id: opening, name: 첫 문장, weight: 2}
+  - {id: tone, name: 말투, weight: 1}
+context_axes:
+  purpose: [문의, 상담, 기타]
+budget:
+  examples: 3
+  cards_per_point: 2
+  cards_total: 7
+  principles_max: 10
+  priorities_max: 5
+example_policy: random_signature
+checks: null

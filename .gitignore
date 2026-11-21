@@ -1,0 +1,26 @@
+.deeptwin/
+data-raw/
+
+# 공개 저장소에는 코드만 올린다 (2026-11-21 결정)
+_bmad/
+_bmad-output/
+.claude/
+skills-lock.json
+deeptwin_design_v0.1.md
+.DS_Store
+
+# 테스트 fixture의 가상 데이터는 올린다
+!tests/fixtures/minimal/.deeptwin/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/

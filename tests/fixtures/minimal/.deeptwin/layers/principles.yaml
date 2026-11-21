@@ -1,0 +1,9 @@
+# 가상 인물의 원칙. 테스트용으로 지어낸 것이다.
+- schema: 1
+  id: prin-01
+  rule: 수치를 부풀리지 않는다
+  kind: never
+  check: null
+  scope: []
+  status: active
+  approval: human
