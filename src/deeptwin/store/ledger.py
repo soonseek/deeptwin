@@ -147,10 +147,28 @@ def check(path: Path) -> LedgerCheck:
     return LedgerCheck(lines=len(lines), head=head, damages=tuple(damages))
 
 
+def entries(path: Path) -> list[tuple[int, dict[str, Any]]]:
+    """원장에서 JSON 객체로 읽을 수 있는 줄을 (1부터 센 줄 번호, 객체)로 돌려준다.
+
+    체인은 보지 않는다. 손상된 줄이어도 JSON 객체면 넣고, 읽을 수 없는 줄은 건너뛴다.
+    파일이 없으면 빈 목록이다. 중복 등록 검사와 봉인 검사가 쓴다.
+    """
+    lines = _split(path.read_bytes() if path.exists() else b"")
+    found: list[tuple[int, dict[str, Any]]] = []
+    for number, raw in enumerate(lines, start=1):
+        obj = _read(raw)
+        if not isinstance(obj, str):
+            found.append((number, obj))
+    return found
+
+
 def ledger_broken(
     path: Path, root: Path, damages: Iterable[Damage], *, note: str = ""
 ) -> LedgerBrokenError:
-    """손상마다 한 줄씩 `<root 기준 POSIX 경로>:<줄>: <이유>`로 쓴 오류. `note`는 맨 끝 줄이다."""
+    """손상마다 한 줄씩 `<root 기준 POSIX 경로>:<줄>: <이유>`로 쓴 오류. `note`는 그 뒤에 붙는다.
+
+    `note`는 여러 줄이어도 된다(`deeptwin verify`는 봉인 검사의 줄들을 붙인다).
+    """
     try:
         shown = path.relative_to(root).as_posix()
     except ValueError:

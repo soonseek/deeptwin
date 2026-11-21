@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from deeptwin.errors import DeeptwinError
+from deeptwin.store.guard import SealedToken
 from deeptwin.store.project import LAYOUT, DeepTwin
 
 FOLDERS = (
@@ -133,7 +134,7 @@ def test_new_run_takes_the_next_number(tmp_path: Path) -> None:
     assert (runs / "run-0008").is_dir()
 
 
-def test_task_looks_in_train_and_spare_only(minimal_copy: Path) -> None:
+def test_task_looks_in_every_split_but_sealed_needs_a_token(minimal_copy: Path) -> None:
     deeptwin = DeepTwin.init(minimal_copy).deeptwin
     tasks = deeptwin.path / "tasks"
     task_file = tasks / "train" / "task-0001.yaml"
@@ -156,9 +157,17 @@ def test_task_looks_in_train_and_spare_only(minimal_copy: Path) -> None:
     )
     with pytest.raises(DeeptwinError) as info:
         deeptwin.task("task-0003")
-    assert info.value.code == "task_not_found"
-    assert ".deeptwin/tasks/train/task-0003.yaml" in info.value.message
-    assert ".deeptwin/tasks/spare/task-0003.yaml" in info.value.message
+    assert info.value.code == "sealed_access"
+    assert info.value.message == (
+        "과제 task-0003은 봉인 과제라 읽을 수 없습니다. 봉인 과제는 평가에서만 씁니다."
+    )
+    assert deeptwin.task("task-0003", token=SealedToken()).split == "sealed"
+
+    with pytest.raises(DeeptwinError) as missing:
+        deeptwin.task("task-0004")
+    assert missing.value.code == "task_not_found"
+    for split in ("train", "sealed", "spare"):
+        assert f".deeptwin/tasks/{split}/task-0004.yaml" in missing.value.message
 
 
 @pytest.mark.parametrize("bad_id", ["../train/task-0001", "", ".", "a/b"])

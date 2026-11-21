@@ -11,7 +11,7 @@ import pytest
 from filelock import FileLock
 
 from deeptwin.errors import DeeptwinError
-from deeptwin.store.ledger import GENESIS, Damage, LedgerCheck, line_hash
+from deeptwin.store.ledger import GENESIS, Damage, LedgerCheck, entries, line_hash
 from deeptwin.store.project import DeepTwin
 
 ZEROS = "sha256:" + "0" * 64
@@ -233,6 +233,27 @@ def test_last_line_without_hash_is_not_appended_to(deeptwin: DeepTwin) -> None:
         "deeptwin verify로 원장을 확인하세요.",
     ]
     assert ledger_path(deeptwin).read_bytes() == before
+
+
+# 읽을 수 있는 줄
+
+
+def test_entries_are_the_readable_lines_with_their_numbers(deeptwin: DeepTwin) -> None:
+    append_three(deeptwin)
+    path = ledger_path(deeptwin)
+    first, _, third = path.read_bytes().splitlines()
+    changed = third.replace(b"run-0003", b"run-0009")
+    path.write_bytes(b"\n".join([first, b"{not json", b"[1]", changed, b""]) + b"\n")
+
+    found = entries(path)
+
+    assert [(number, entry["id"]) for number, entry in found] == [(1, "run-0001"), (4, "run-0009")]
+    # 체인은 보지 않는다. 4번 줄은 hash가 맞지 않아도 읽을 수 있는 줄이다
+    assert Damage(4, "hash가 내용과 맞지 않습니다") in deeptwin.verify_ledger().damages
+
+
+def test_entries_of_a_missing_ledger(deeptwin: DeepTwin) -> None:
+    assert entries(ledger_path(deeptwin)) == []
 
 
 # 잠금

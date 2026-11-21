@@ -2,7 +2,7 @@
 
 개인의 판단 기준을 층별 파일로 쌓고, 작업마다 맞는 기준만 모델 없이 조립해 스킬의 유동 영역에 넣는 Python 라이브러리입니다.
 
-> 아직 초기 단계입니다(0.0.1). 지금은 원칙, 우선순위, 판단 카드, 예시를 조립해 스킬을 한 번 돌리는 길까지 있습니다. 함수 서명과 명령은 0.x 동안 바뀔 수 있습니다.
+> 아직 초기 단계입니다(0.0.1). 지금은 과제를 등록하고, 원칙, 우선순위, 판단 카드, 예시를 조립해 스킬을 한 번 돌리는 길까지 있습니다. 함수 서명과 명령은 0.x 동안 바뀔 수 있습니다.
 
 ## 설치
 
@@ -18,6 +18,38 @@ Python 3.11 이상이 필요합니다.
 
 ```sh
 deeptwin init
+```
+
+과제를 등록합니다. 과제 파일 하나가 과제 하나이고, 등록하면 `.deeptwin/tasks/<분할>/<ID>.yaml`에 쓰이고 원장(`.deeptwin/ledger.jsonl`)에 `task` 줄이 남습니다.
+
+```sh
+deeptwin task add <과제 파일>
+```
+
+```yaml
+# 가상 인물의 문의. 예로 지어낸 것이다.
+schema: 1
+id: task-0101
+skill: minimal
+split: sealed            # train(학습), sealed(봉인), spare(예비)
+input: 수강료를 알려 주세요.
+context:                 # 선택. 축과 값은 스킬의 context_axes에 있어야 한다
+  purpose: 문의
+reference:               # 선택. 봉인 과제에는 꼭 있어야 한다
+  kind: my_version       # my_version, edit이면 text, pick이면 picked와 rejected
+  text: 수강료는 한 달에 십만 원입니다.
+```
+
+- 분할은 등록할 때 한 번 정하고 바꿀 수 없습니다. 같은 ID가 세 분할 폴더 어디에든 있거나 원장에 그 ID의 `task` 줄이 있으면 분할과 상관없이 `task_exists` 오류로 거부하고 아무것도 쓰지 않습니다. 과제 파일을 지워도 원장 줄이 남아 있으니 그 ID는 다시 쓸 수 없습니다.
+- 봉인 과제는 결과물을 만들기 전에 받아 둔 기준(`reference`)이 있어야 합니다. 없으면 `reference_required`입니다. 원장의 `task` 줄에는 기준의 해시(`reference_hash`)가 남습니다. 기준을 정렬된 JSON으로 쓴 것의 SHA-256이고, 학습과 예비 과제는 `null`입니다. 기준의 내용은 출력하지 않습니다.
+- 형식이 틀리면 `invalid_file`(파일과 줄), 스킬이 없으면 `skill_not_found`, 맥락이 스킬과 맞지 않으면 `invalid_context`입니다. `id`에는 영문자, 숫자, `.`, `_`, `-`만 씁니다.
+- 원장을 먼저 덧붙이고 과제 파일을 씁니다. 원장의 마지막 줄이 깨졌으면 `ledger_broken`으로 멈추고 과제 파일도 생기지 않습니다.
+- `--json` 결과는 `task`, `split`, `skill`, `path`(`.deeptwin/` 기준), `reference_hash`입니다.
+
+봉인 과제는 평가에서만 씁니다. 저장 계층이 봉인 토큰 없이 봉인 과제를 읽지 않으므로, `deeptwin run`과 `deeptwin compose`에 봉인 과제를 주면 실행 폴더, 원장 줄, 모델 호출 없이 `sealed_access` 오류로 멈춥니다. 토큰을 내주는 평가 명령은 아직 없습니다.
+
+```text
+오류: 과제 task-0101은 봉인 과제라 읽을 수 없습니다. 봉인 과제는 평가에서만 씁니다.
 ```
 
 스킬을 과제 하나로 돌립니다. 조립한 지침을 넣은 `SKILL.md` 사본과 결과물은 `.deeptwin/runs/<실행 ID>/`에 남고, 원본 `SKILL.md`는 바뀌지 않습니다. 실행은 원장(`.deeptwin/ledger.jsonl`)에 한 줄로 남습니다.
@@ -131,6 +163,12 @@ deeptwin verify
 오류: .deeptwin/ledger.jsonl:2: hash가 내용과 맞지 않습니다
 ```
 
+`deeptwin verify`는 체인 다음에 봉인 과제도 봅니다. 원장의 `task` 줄 가운데 봉인 과제마다 그 파일을 읽어 기준의 해시를 다시 계산하고 등록 때와 견줍니다. 파일이 없거나 읽을 수 없거나 기준이 바뀌었으면, 그리고 `tasks/sealed/`에 있는데 원장에 봉인 과제로 등록되지 않은 파일이 있으면 과제마다 한 줄씩 알립니다. 기준의 내용은 쓰지 않습니다. 해시는 기준(`reference`)만 보므로 `input`, `context`, 주석을 고치거나 기본값(`grade: usual` 등)을 지우는 것은 걸리지 않습니다. 체인은 멀쩡하고 봉인만 문제면 `sealed_changed`이고, 체인도 깨졌으면 `ledger_broken`에 체인 줄 다음으로 봉인 줄이 붙습니다. 통과하면 `--json` 결과에 `lines`, `head`와 함께 검사한 봉인 과제 수 `sealed`가 나옵니다.
+
+```text
+오류: .deeptwin/tasks/sealed/task-0101.yaml: 기준(reference)이 등록 때와 다릅니다
+```
+
 해시 체인이 생기기 전 버전(PyPI의 0.0.1)이 쓴 원장 줄에는 `prev_hash`와 `hash`가 없습니다. 그 원장이 있으면 `deeptwin verify`는 손상으로 알리고, `deeptwin run`은 모델을 부른 뒤 `ledger_broken`으로 멈춥니다. 그 `.deeptwin/ledger.jsonl`을 다른 이름으로 옮겨 두면(예: `ledger-old.jsonl`) 다음 실행부터 새 체인이 시작됩니다.
 
 모든 명령은 `--json`을 받습니다. 켜면 stdout에 JSON 객체 하나만 씁니다. 성공하면 종료 코드 0, deeptwin이 알려 주는 오류면 1입니다. 인자가 틀리면 Click 기본 동작대로 종료 코드 2와 글로 된 안내를 내고, JSON은 쓰지 않습니다.
@@ -149,7 +187,7 @@ deeptwin verify
     priorities.yaml         # 우선순위 목록. 위에 있을수록 먼저다
     principles.yaml         # 원칙 목록
   candidates/<ID>.yaml      # 승인 전 후보. 하나가 파일 하나
-  tasks/<분할>/<ID>.yaml    # 과제. 분할은 train, sealed, spare
+  tasks/<분할>/<ID>.yaml    # 과제. 분할은 train, sealed, spare. sealed는 토큰 없이 읽지 않는다
   runs/                     # 실행마다 SKILL.md 사본, 결과물, 호출 기록(calls.jsonl)
   ledger.jsonl              # 원장. 추가만 하고 줄마다 해시로 잇는다
 skills/<스킬 ID>/

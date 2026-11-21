@@ -150,6 +150,19 @@ def test_higher_schema_points_to_the_schema_line(deeptwin: DeepTwin) -> None:
     ]
 
 
+def test_impossible_date_is_an_invalid_file(deeptwin: DeepTwin) -> None:
+    """PyYAML은 없는 날짜를 ValueError로 낸다. 그것도 invalid_file로 바꾼다."""
+    write(card_path(deeptwin), CARD_YAML + "stats:\n  last_used: 2026-02-30\n")
+
+    with pytest.raises(DeeptwinError) as info:
+        deeptwin.cards()
+
+    assert invalid(info) == [
+        ".deeptwin/layers/cards/card-0001.yaml:1: YAML 문법이 틀렸습니다: "
+        "값으로 읽을 수 없는 날짜나 시각이 있습니다"
+    ]
+
+
 def test_task_split_must_match_its_folder(deeptwin: DeepTwin) -> None:
     path = deeptwin.path / "tasks" / "train" / "task-0001.yaml"
     path.write_bytes(path.read_bytes().replace(b"split: train", b"split: spare"))

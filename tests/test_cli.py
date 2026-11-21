@@ -376,6 +376,7 @@ def test_unknown_task(in_minimal: Path) -> None:
     message = error_json(invoke(*args, "--json"), "run", "task_not_found")
 
     assert ".deeptwin/tasks/train/task-9999.yaml" in message
+    assert ".deeptwin/tasks/sealed/task-9999.yaml" in message
     assert ".deeptwin/tasks/spare/task-9999.yaml" in message
     assert not (in_minimal / ".deeptwin" / "ledger.jsonl").exists()
 
@@ -479,6 +480,7 @@ def test_help_lists_commands() -> None:
     assert "run" in result.stdout
     assert "compose" in result.stdout
     assert "verify" in result.stdout
+    assert "task" in result.stdout
 
 
 # 형식이 틀린 파일
@@ -535,7 +537,7 @@ def test_verify_whole_ledger(in_minimal: Path) -> None:
 
     body = ok_json(invoke("verify", "--json"), "verify")
 
-    assert body == {"lines": 3, "head": ledger(in_minimal)[-1]["hash"]}
+    assert body == {"lines": 3, "head": ledger(in_minimal)[-1]["hash"], "sealed": 0}
 
 
 def test_verify_finds_the_changed_middle_line_then_passes_after_undo(in_minimal: Path) -> None:
@@ -628,7 +630,7 @@ def test_verify_empty_ledger(in_minimal: Path) -> None:
     body = ok_json(invoke("verify", "--json"), "verify")
     text = invoke("verify")
 
-    assert body == {"lines": 0, "head": None}
+    assert body == {"lines": 0, "head": None, "sealed": 0}
     assert not (in_minimal / ".deeptwin" / "ledger.jsonl").exists()
     assert text.exit_code == 0
     assert text.stdout == "원장 .deeptwin/ledger.jsonl에 아직 줄이 없습니다.\n"

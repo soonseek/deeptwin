@@ -87,7 +87,7 @@ def compose(
     `unsupported_example_policy`다.
     """
     _check_ablate(ablate)
-    _check_context(skill, context)
+    check_context(skill, context)
     if "instinct" not in ablate:
         _check_example_policy(skill)
     all_principles = deeptwin.principles()
@@ -167,10 +167,11 @@ def _check_ablate(ablate: Iterable[str]) -> None:
         )
 
 
-def _check_context(skill: Skill, context: Context) -> None:
+def check_context(skill: Skill, context: Context) -> None:
     """맥락의 축마다 `context_axes`에 있는 축이고 그 목록에 있는 값인지 본다.
 
-    틀린 곳마다 한 줄씩, 맥락에 적힌 순서로 알려 준다.
+    틀린 곳이 있으면 `invalid_context`다. 틀린 곳마다 한 줄씩, 맥락에 적힌 순서로 알려 준다.
+    `compose`와 `deeptwin task add`가 쓴다.
     """
     problems: list[str] = []
     for axis, value in context.items():

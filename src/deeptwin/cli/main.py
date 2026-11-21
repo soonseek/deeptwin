@@ -10,7 +10,7 @@ from typing import Annotated
 import typer
 
 from deeptwin.cli.output import Reply, respond
-from deeptwin.compose import LAYERS, compose, fill_fluid
+from deeptwin.compose import LAYERS, check_context, compose, fill_fluid
 from deeptwin.errors import (
     FakeAnswerRequiredError,
     InvalidContextError,
@@ -21,8 +21,9 @@ from deeptwin.llm import ClaudeCLIProvider, FakeProvider, Provider
 from deeptwin.llm.calls import CallRecorder
 from deeptwin.models import Context, Task
 from deeptwin.runs import CALLS_FILE, record_run, write_skill_copy
+from deeptwin.store.guard import problem_lines, sealed_changed
 from deeptwin.store.ledger import ledger_broken
-from deeptwin.store.project import DATA_DIR, LEDGER_FILE, DeepTwin
+from deeptwin.store.project import DATA_DIR, LEDGER_FILE, DeepTwin, read_task_file
 
 app = typer.Typer(
     name="deeptwin",
@@ -31,6 +32,12 @@ app = typer.Typer(
     add_completion=False,
     pretty_exceptions_show_locals=False,
 )
+task_app = typer.Typer(
+    name="task",
+    help="과제를 학습(train), 봉인(sealed), 예비(spare) 가운데 하나로 등록한다.",
+    no_args_is_help=True,
+)
+app.add_typer(task_app, name="task")
 
 JsonOption = Annotated[
     bool,
@@ -134,10 +141,11 @@ def run(
 
     def action() -> Reply:
         deeptwin = DeepTwin.open(Path.cwd())
-        llm = make_provider(provider, ProviderOptions(fake_answer=fake_answer))
         skill = deeptwin.skill(skill_id)
         task = deeptwin.task(task_id)
         _ensure_task_of_skill(task, skill_id, doing="실행한")
+        # 과제를 본 뒤에 공급자를 만든다. 봉인 과제면 claude --version도 부르지 않는다
+        llm = make_provider(provider, ProviderOptions(fake_answer=fake_answer))
         composed = compose(skill, task, deeptwin, context=task.context or {})
         skill_copy = fill_fluid(skill.skill_md.read_text(encoding="utf-8"), composed.guide)
         run_id = deeptwin.new_run()
@@ -265,21 +273,84 @@ def _ensure_task_of_skill(task: Task, skill_id: str, *, doing: str) -> None:
 
 @app.command()
 def verify(as_json: JsonOption = False) -> None:
-    """원장(.deeptwin/ledger.jsonl)의 해시 체인을 처음부터 다시 계산해 손상된 줄을 찾는다."""
+    """원장(.deeptwin/ledger.jsonl)의 해시 체인과 봉인 과제의 기준 해시를 검사한다."""
 
     def action() -> Reply:
         deeptwin = DeepTwin.open(Path.cwd())
-        check = deeptwin.verify_ledger()
+        # 체인과 봉인을 같은 잠금 안에서 본다. 그 사이에 과제가 등록되지 않는다
+        with deeptwin.lock():
+            check = deeptwin.verify_ledger()
+            sealed = deeptwin.verify_sealed()
         if check.damages:
-            raise ledger_broken(deeptwin.path / LEDGER_FILE, deeptwin.root, check.damages)
+            raise ledger_broken(
+                deeptwin.path / LEDGER_FILE,
+                deeptwin.root,
+                check.damages,
+                note="\n".join(problem_lines(sealed.problems)),
+            )
+        if sealed.problems:
+            raise sealed_changed(sealed.problems)
         shown = f"{DATA_DIR}/{LEDGER_FILE}"
+        lines = [
+            f"원장 {shown}의 {check.lines}줄이 모두 해시로 이어져 있습니다."
+            if check.lines
+            else f"원장 {shown}에 아직 줄이 없습니다."
+        ]
+        if sealed.checked:
+            lines.append(f"봉인 과제 {sealed.checked}개의 기준이 등록 때와 같습니다.")
         return Reply(
-            result={"lines": check.lines, "head": check.head},
-            text=(
-                f"원장 {shown}의 {check.lines}줄이 모두 해시로 이어져 있습니다."
-                if check.lines
-                else f"원장 {shown}에 아직 줄이 없습니다."
-            ),
+            result={"lines": check.lines, "head": check.head, "sealed": sealed.checked},
+            text="\n".join(lines),
         )
 
     respond("verify", action, as_json=as_json)
+
+
+@task_app.command("add")
+def task_add(
+    task_file: Annotated[
+        Path,
+        typer.Argument(
+            metavar="FILE",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            help="등록할 과제 파일(YAML). split에 train, sealed, spare 가운데 하나를 적는다.",
+            show_default=False,
+        ),
+    ],
+    as_json: JsonOption = False,
+) -> None:
+    """과제 파일 하나를 등록한다: 원장에 task 줄을 남기고 .deeptwin/tasks/<split>/<id>.yaml에 쓴다.
+
+    같은 ID는 다시 등록할 수 없어 분할은 바뀌지 않는다.
+    봉인(sealed) 과제는 기준(reference)이 있어야 하고, 원장에 기준의 해시가 남는다.
+    기준의 내용은 출력하지 않는다.
+    """
+
+    def action() -> Reply:
+        deeptwin = DeepTwin.open(Path.cwd())
+        task = read_task_file(task_file, root=deeptwin.root)
+        skill = deeptwin.skill(task.skill)
+        check_context(skill, task.context or {})
+        added = deeptwin.add_task(task)
+        entry = added.entry
+        path = added.path.relative_to(deeptwin.path).as_posix()
+        lines = [
+            f"과제 {entry.id}을 {entry.split} 분할에 등록했습니다.",
+            f"과제 파일: {DATA_DIR}/{path}",
+        ]
+        if entry.reference_hash is not None:
+            lines.append(f"기준 해시: {entry.reference_hash}")
+        return Reply(
+            result={
+                "task": entry.id,
+                "split": entry.split,
+                "skill": entry.skill,
+                "path": path,
+                "reference_hash": entry.reference_hash,
+            },
+            text="\n".join(lines),
+        )
+
+    respond("task add", action, as_json=as_json)

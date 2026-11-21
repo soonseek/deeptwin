@@ -117,3 +117,34 @@ class StoreLockedError(DeeptwinError):
 
     def __init__(self, message: str) -> None:
         super().__init__("store_locked", message)
+
+
+class SealedAccessError(DeeptwinError):
+    """봉인 토큰 없이 봉인 과제를 읽으려 했다. 메시지에는 과제의 내용을 쓰지 않는다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("sealed_access", message)
+
+
+class TaskExistsError(DeeptwinError):
+    """같은 ID의 과제가 이미 있다(분할 폴더의 파일이나 원장의 `task` 줄). 분할은 바꿀 수 없다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("task_exists", message)
+
+
+class ReferenceRequiredError(DeeptwinError):
+    """봉인 과제를 기준(`reference`) 없이 등록하려 했다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("reference_required", message)
+
+
+class SealedChangedError(DeeptwinError):
+    """봉인 과제의 파일이 없거나, 기준이 등록 때와 다르거나, 원장에 등록되지 않았다.
+
+    메시지는 문제마다 `.deeptwin/tasks/sealed/<id>.yaml: <이유>`이고 기준의 내용은 쓰지 않는다.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__("sealed_changed", message)

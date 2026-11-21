@@ -55,10 +55,13 @@ def read_model(
     *,
     root: Path,
     update: Mapping[str, Any] | None = None,
+    show_values: bool = True,
 ) -> M:
     """YAML 파일 하나를 모델 하나로 읽는다. 빈 파일은 빈 매핑으로 본다.
 
     `update`의 값은 파일의 값 위에 얹어 함께 검사한다. 메시지의 경로는 `root` 기준이다.
+    `show_values`가 거짓이면 형식 오류의 메시지에 받은 값(`(받은 값: …)`)을 쓰지 않는다.
+    봉인 과제가 될 파일처럼 내용을 내보이면 안 되는 파일에 쓴다.
     """
     text, data = _load(path, root)
     if data is None:
@@ -68,7 +71,8 @@ def read_model(
     try:
         return model.model_validate(data)
     except ValidationError as error:
-        raise invalid_file(path, root, _problems(error, list_file=False), text=text) from None
+        problems = _problems(error, list_file=False, show_values=show_values)
+        raise invalid_file(path, root, problems, text=text) from None
 
 
 def read_models(path: Path, model: type[M], *, root: Path) -> list[M]:
@@ -179,6 +183,13 @@ def _load(path: Path, root: Path) -> tuple[str, Any]:
         return text, yaml.safe_load(text)
     except yaml.YAMLError as error:
         raise InvalidFileError(f"{_display(path, root)}:{_yaml_error(error)}") from None
+    except ValueError:
+        # PyYAML은 없는 날짜·시각(예: 2026-02-30)을 YAMLError가 아닌 ValueError로 낸다.
+        # 위치를 알려 주지 않으므로 1번째 줄로 쓰고, 받은 값은 쓰지 않는다
+        raise InvalidFileError(
+            f"{_display(path, root)}:1: YAML 문법이 틀렸습니다: "
+            "값으로 읽을 수 없는 날짜나 시각이 있습니다"
+        ) from None
 
 
 def _yaml_error(error: yaml.YAMLError) -> str:
@@ -236,12 +247,15 @@ def _line_of(lines: Mapping[Loc, int], loc: Loc) -> int:
     return 1
 
 
-def _problems(error: ValidationError, *, list_file: bool) -> list[Problem]:
+def _problems(
+    error: ValidationError, *, list_file: bool, show_values: bool = True
+) -> list[Problem]:
     problems = []
     for detail in error.errors():
         loc: Loc = tuple(detail["loc"])
         field_loc = loc[1:] if list_file and loc and isinstance(loc[0], int) else loc
-        problems.append(Problem(loc=loc, text=_describe(detail), field=_field_name(field_loc)))
+        text = _describe(detail, show_values=show_values)
+        problems.append(Problem(loc=loc, text=text, field=_field_name(field_loc)))
     return problems
 
 
@@ -269,19 +283,23 @@ _SHOWN_CHARS = 60
 """메시지에 보이는 받은 값의 최대 글자 수."""
 
 
-def _describe(detail: ErrorDetails) -> str:
-    """pydantic 오류 하나를 한국어로 옮긴다. 옮길 줄 모르는 오류는 원문을 쓴다."""
+def _describe(detail: ErrorDetails, *, show_values: bool = True) -> str:
+    """pydantic 오류 하나를 한국어로 옮긴다. 옮길 줄 모르는 오류는 원문을 쓴다.
+
+    `show_values`가 거짓이면 `(받은 값: …)`을 붙이지 않는다.
+    """
     kind = detail["type"]
     ctx = detail.get("ctx") or {}
+    received = f"(받은 값: {_shown(detail['input'])})" if show_values else ""
     if kind == "missing":
         return "꼭 있어야 하는 필드가 없습니다"
     if kind == "literal_error":
         allowed = ", ".join(re.split(r", | or ", str(ctx.get("expected", ""))))
-        return f"쓸 수 있는 값은 {allowed}입니다(받은 값: {_shown(detail['input'])})"
+        return f"쓸 수 있는 값은 {allowed}입니다{received}"
     if kind in ("value_error", "assertion_error") and "error" in ctx:
         return str(ctx["error"])
     if kind in _TYPE_TEXT:
-        return f"{_TYPE_TEXT[kind]}(받은 값: {_shown(detail['input'])})"
+        return f"{_TYPE_TEXT[kind]}{received}"
     return detail["msg"]
 
 

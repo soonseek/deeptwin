@@ -305,6 +305,20 @@ class Run(BaseModel):
     output: str
 
 
+class TaskEntry(BaseModel):
+    """과제 등록 하나의 기록. 원장의 `task` 줄과 같은 모양이다(design-deltas.md 2026-11-21).
+
+    `reference_hash`는 봉인 과제면 기준의 해시(`store.guard.reference_hash`)이고 아니면 `None`이다.
+    """
+
+    id: str
+    type: Literal["task"] = "task"
+    ts: str
+    skill: str
+    split: Split
+    reference_hash: str | None
+
+
 class Call(BaseModel):
     """모델 호출 하나의 기록. 실행 폴더의 `calls.jsonl` 한 줄과 같은 모양이다(설계서 9.6)."""
 
