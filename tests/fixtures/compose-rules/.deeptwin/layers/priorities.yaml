@@ -1,0 +1,3 @@
+# 가상 인물의 우선순위. 위에 있을수록 먼저다. 테스트용으로 지어낸 것이다.
+- {schema: 1, id: pri-01, rule: 정확함이 재미보다 먼저다, scope: [], status: active, approval: human}
+- {schema: 1, id: pri-02, rule: 빠짐없음이 짧음보다 먼저다, scope: [], status: active, approval: human}

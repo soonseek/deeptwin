@@ -11,6 +11,7 @@ deeptwin_design_v0.1.md
 
 # 테스트 fixture의 가상 데이터는 올린다
 !tests/fixtures/minimal/.deeptwin/
+!tests/fixtures/compose-rules/.deeptwin/
 
 # Python
 __pycache__/

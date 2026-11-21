@@ -13,11 +13,13 @@ from deeptwin.cli.output import Reply, respond
 from deeptwin.compose import compose, fill_fluid
 from deeptwin.errors import (
     FakeAnswerRequiredError,
+    InvalidContextError,
     TaskSkillMismatchError,
     UnknownProviderError,
 )
 from deeptwin.llm import ClaudeCLIProvider, FakeProvider, Provider
 from deeptwin.llm.calls import CallRecorder
+from deeptwin.models import Context, Task
 from deeptwin.runs import CALLS_FILE, record_run, write_skill_copy
 from deeptwin.store.ledger import ledger_broken
 from deeptwin.store.project import DATA_DIR, LEDGER_FILE, DeepTwin
@@ -33,6 +35,12 @@ app = typer.Typer(
 JsonOption = Annotated[
     bool,
     typer.Option("--json", help="결과를 JSON 객체 하나로 stdout에 쓴다. 에이전트가 읽는 용도다."),
+]
+SkillArgument = Annotated[
+    str, typer.Argument(metavar="SKILL", help="skills/ 아래의 스킬 ID", show_default=False)
+]
+TaskArgument = Annotated[
+    str, typer.Argument(metavar="TASK", help="과제 ID(예: task-0001)", show_default=False)
 ]
 
 
@@ -98,12 +106,8 @@ def init(as_json: JsonOption = False) -> None:
 
 @app.command()
 def run(
-    skill_id: Annotated[
-        str, typer.Argument(metavar="SKILL", help="skills/ 아래의 스킬 ID", show_default=False)
-    ],
-    task_id: Annotated[
-        str, typer.Argument(metavar="TASK", help="과제 ID(예: task-0001)", show_default=False)
-    ],
+    skill_id: SkillArgument,
+    task_id: TaskArgument,
     provider: Annotated[
         str,
         typer.Option(
@@ -133,11 +137,7 @@ def run(
         llm = make_provider(provider, ProviderOptions(fake_answer=fake_answer))
         skill = deeptwin.skill(skill_id)
         task = deeptwin.task(task_id)
-        if task.skill != skill_id:
-            raise TaskSkillMismatchError(
-                f"과제와 스킬이 맞지 않습니다. 과제 {task.id}의 skill: {task.skill}, "
-                f"실행한 스킬: {skill_id}"
-            )
+        _ensure_task_of_skill(task, skill_id, doing="실행한")
         composed = compose(skill, task, deeptwin, context=task.context or {})
         skill_copy = fill_fluid(skill.skill_md.read_text(encoding="utf-8"), composed.guide)
         run_id = deeptwin.new_run()
@@ -163,6 +163,89 @@ def run(
         )
 
     respond("run", action, as_json=as_json)
+
+
+@app.command("compose")
+def compose_guide(
+    skill_id: SkillArgument,
+    task_id: TaskArgument,
+    context_options: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--context",
+            metavar="축=값",
+            help=(
+                "맥락 축 하나의 값. 과제 파일의 context 위에 축마다 덮어쓴다. 여러 번 줄 수 있다."
+            ),
+            show_default=False,
+        ),
+    ] = None,
+    as_json: JsonOption = False,
+) -> None:
+    """조립한 지침만 출력한다. 모델을 부르지 않고, 실행 폴더와 원장에도 쓰지 않는다."""
+
+    def action() -> Reply:
+        deeptwin = DeepTwin.open(Path.cwd())
+        overrides = parse_context_options(context_options or [])
+        skill = deeptwin.skill(skill_id)
+        task = deeptwin.task(task_id)
+        _ensure_task_of_skill(task, skill_id, doing="조립한")
+        context = {**(task.context or {}), **overrides}
+        composed = compose(skill, task, deeptwin, context=context)
+        rejected = ", ".join(f"{r.id}({r.reason})" for r in composed.rejected)
+        return Reply(
+            result={
+                "guide": composed.guide,
+                "injected": composed.injected,
+                "rejected": [r.model_dump(mode="json") for r in composed.rejected],
+                "no_hit": composed.no_hit,
+                "conflicts": composed.conflicts,
+                "guide_hash": composed.guide_hash,
+                "context": context,
+            },
+            text="\n".join(
+                [
+                    composed.guide.removesuffix("\n") or "넣을 기준이 없습니다.",
+                    "",
+                    f"넣은 항목: {', '.join(composed.injected) or '없음'}",
+                    f"뺀 항목: {rejected or '없음'}",
+                    f"맞는 카드가 없던 판단 지점: {', '.join(composed.no_hit) or '없음'}",
+                    f"guide_hash: {composed.guide_hash}",
+                ]
+            ),
+        )
+
+    respond("compose", action, as_json=as_json)
+
+
+def parse_context_options(options: list[str]) -> Context:
+    """`--context 축=값`들을 맥락으로 바꾼다. 값에 든 `=`는 값의 일부다.
+
+    `=`가 없거나, 축 이름이 비었거나, 같은 축을 두 번 주면 `invalid_context`다.
+    축과 값이 스킬에 있는지는 `compose`가 본다.
+    """
+    context: Context = {}
+    for option in options:
+        axis, sep, value = option.partition("=")
+        if not sep:
+            raise InvalidContextError(f"--context는 축=값 모양이어야 합니다(받은 값: {option}).")
+        if not axis.strip():
+            raise InvalidContextError(f"--context의 축 이름이 비었습니다(받은 값: {option}).")
+        if axis in context:
+            raise InvalidContextError(
+                f"--context에 같은 축을 두 번 줬습니다: {axis}. 축마다 한 번만 주세요."
+            )
+        context[axis] = value
+    return context
+
+
+def _ensure_task_of_skill(task: Task, skill_id: str, *, doing: str) -> None:
+    """과제 파일의 `skill`이 명령에 준 스킬과 같은지 본다. `doing`은 메시지의 동사다."""
+    if task.skill != skill_id:
+        raise TaskSkillMismatchError(
+            f"과제와 스킬이 맞지 않습니다. 과제 {task.id}의 skill: {task.skill}, "
+            f"{doing} 스킬: {skill_id}"
+        )
 
 
 @app.command()

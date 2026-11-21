@@ -1,0 +1,13 @@
+# 가상 인물의 판단 카드. 테스트용으로 지어낸 것이다.
+schema: 1
+id: card-0001
+layer: tendency
+skill: class-notice
+decision_point: opening
+status: active
+approval: human
+when:
+  purpose: [모집]
+choose: 첫 문장에 다음 기수 시작일을 쓴다
+because: 모집 글을 여는 사람은 날짜부터 찾는다고 본다
+stats: {injected: 4, agreed: 3, last_used: 2026-11-10}

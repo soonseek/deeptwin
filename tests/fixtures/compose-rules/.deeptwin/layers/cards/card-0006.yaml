@@ -1,0 +1,12 @@
+# 가상 인물의 판단 카드. 휴강 공지에만 맞아 모집 과제에서는 일정 안내에 맞는 카드가 없다.
+# 테스트용으로 지어낸 것이다.
+schema: 1
+id: card-0006
+layer: tendency
+skill: class-notice
+decision_point: schedule
+status: active
+approval: human
+when:
+  purpose: [휴강]
+choose: 보강 날짜를 휴강 날짜 바로 뒤에 쓴다

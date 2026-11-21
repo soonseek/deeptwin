@@ -1,0 +1,11 @@
+# 가상 인물의 판단 카드. weight가 가장 낮은 판단 지점이라 전체 상한에서 빠진다.
+# 테스트용으로 지어낸 것이다.
+schema: 1
+id: card-0007
+layer: tendency
+skill: class-notice
+decision_point: closing
+status: active
+approval: human
+choose: 마지막 줄에 문의할 곳을 한 번 쓴다
+stats: {injected: 2, agreed: 2, last_used: 2026-11-12}

@@ -1,0 +1,10 @@
+# 가상 인물의 판단 카드. card-0004와 부딪친다. 테스트용으로 지어낸 것이다.
+schema: 1
+id: card-0005
+layer: tendency
+skill: class-notice
+decision_point: tone
+status: active
+approval: human
+choose: 문장을 길게 이어 정중하게 쓴다
+because: 공지는 격식을 갖춰야 믿음이 간다고 본다

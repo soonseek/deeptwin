@@ -35,6 +35,20 @@ class TaskSkillMismatchError(DeeptwinError):
         super().__init__("task_skill_mismatch", message)
 
 
+class InvalidContextError(DeeptwinError):
+    """맥락의 축이나 값이 스킬의 `context_axes`에 없거나, `--context`의 모양이 틀렸다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("invalid_context", message)
+
+
+class OverBudgetError(DeeptwinError):
+    """범위가 맞는 원칙이나 우선순위가 상한보다 많다. 자르지 않고 합치라고 안내한다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("over_budget", message)
+
+
 class FluidMarkerMissingError(DeeptwinError):
     def __init__(self, message: str) -> None:
         super().__init__("fluid_marker_missing", message)

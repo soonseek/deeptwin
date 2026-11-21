@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import hashlib
 import json
 import shutil
 import sys
@@ -16,6 +17,7 @@ from typer.testing import CliRunner, Result
 import claude_stub
 from deeptwin.cli import main
 from deeptwin.compose import FLUID_CLOSE, FLUID_OPEN
+from deeptwin.errors import DeeptwinError
 from deeptwin.llm import ClaudeCLIProvider, FakeProvider
 from deeptwin.store.ledger import line_hash
 
@@ -30,6 +32,9 @@ LEDGER_KEYS = [
     "task",
     "split",
     "injected",
+    "rejected",
+    "no_hit",
+    "conflicts",
     "guide_hash",
     "output",
     "prev_hash",
@@ -154,6 +159,9 @@ def test_tracer(in_minimal: Path) -> None:
     assert entry["task"] == "task-0001"
     assert entry["split"] == "train"
     assert entry["injected"] == ["prin-01"]
+    assert entry["rejected"] == []
+    assert entry["no_hit"] == ["opening", "tone"]  # minimal에는 카드가 없다
+    assert entry["conflicts"] == []
     assert entry["guide_hash"] == body["guide_hash"]
     assert entry["output"] == "runs/run-0001/output.md"
     assert entry["prev_hash"] == "sha256:" + "0" * 64
@@ -468,6 +476,7 @@ def test_help_lists_commands() -> None:
     assert result.exit_code == 0
     assert "init" in result.stdout
     assert "run" in result.stdout
+    assert "compose" in result.stdout
     assert "verify" in result.stdout
 
 
@@ -655,3 +664,279 @@ def test_run_does_not_append_after_a_broken_last_line(in_minimal: Path) -> None:
     assert message.splitlines()[0] == ".deeptwin/ledger.jsonl:3: JSON으로 읽을 수 없는 줄입니다"
     assert "deeptwin verify" in message
     assert path.read_bytes() == before
+
+
+# compose
+
+
+COMPOSE = ("compose", "class-notice", "task-0001")
+
+RULES_GUIDE = """\
+## 이번 작업의 개인 기준
+
+반드시 지킬 것
+- 수치를 부풀리지 않는다
+- 수업 날짜와 시간은 숫자로 쓴다
+
+부딪칠 때의 순서
+1. 정확함이 재미보다 먼저다
+2. 빠짐없음이 짧음보다 먼저다
+
+판단 지점별 기준
+- [첫 문장] 첫 문장은 질문이 아니라 숫자가 든 단정문으로 쓴다.
+  이유: 질문형 첫 문장은 넘겨 읽힌다고 본다. 예외: 마감이 사흘 안이면 마감일로 시작한다.
+- [첫 문장] 첫 문장에 다음 기수 시작일을 쓴다.
+  이유: 모집 글을 여는 사람은 날짜부터 찾는다고 본다.
+- [말투] 존댓말로 쓰되 문장을 짧게 끊는다.
+"""
+
+RULES_INJECTED = ["prin-01", "prin-02", "pri-01", "pri-02", "card-0002", "card-0001", "card-0004"]
+RULES_REJECTED = [
+    {"id": "card-0008", "reason": "lower_layer"},
+    {"id": "card-0005", "reason": "conflict"},
+    {"id": "card-0007", "reason": "budget"},
+    {"id": "card-0003", "reason": "budget"},
+]
+
+
+def data_files(root: Path) -> list[str]:
+    return sorted(p.relative_to(root).as_posix() for p in (root / ".deeptwin").rglob("*"))
+
+
+@pytest.mark.acceptance
+def test_compose_json_twice_is_byte_identical(in_rules: Path) -> None:
+    """설계서 8.11 수용 테스트 1: 같은 입력으로 `deeptwin compose --json`을 두 번 돌리면 같다."""
+    before = data_files(in_rules)
+
+    first = invoke(*COMPOSE, "--json")
+    second = invoke(*COMPOSE, "--json")
+
+    assert first.stdout_bytes == second.stdout_bytes
+    body = ok_json(first, "compose")
+    assert list(body) == [
+        "guide",
+        "injected",
+        "rejected",
+        "no_hit",
+        "conflicts",
+        "guide_hash",
+        "context",
+    ]
+    assert body["guide"] == RULES_GUIDE
+    assert body["injected"] == RULES_INJECTED
+    assert body["rejected"] == RULES_REJECTED
+    assert body["no_hit"] == ["schedule"]
+    assert body["conflicts"] == []
+    assert body["guide_hash"] == "sha256:" + hashlib.sha256(RULES_GUIDE.encode()).hexdigest()
+    assert body["context"] == {"purpose": "모집", "channel": "instagram"}
+    assert data_files(in_rules) == before
+    assert not (in_rules / ".deeptwin" / "ledger.jsonl").exists()
+    assert not (in_rules / ".deeptwin" / "runs").exists()
+
+
+def test_compose_text_mode(in_rules: Path) -> None:
+    result = invoke(*COMPOSE)
+
+    assert result.exit_code == 0, result.output
+    guide_hash = "sha256:" + hashlib.sha256(RULES_GUIDE.encode()).hexdigest()
+    assert result.stdout == (
+        RULES_GUIDE + "\n"
+        "넣은 항목: prin-01, prin-02, pri-01, pri-02, card-0002, card-0001, card-0004\n"
+        "뺀 항목: card-0008(lower_layer), card-0005(conflict), card-0007(budget), "
+        "card-0003(budget)\n"
+        "맞는 카드가 없던 판단 지점: schedule\n"
+        f"guide_hash: {guide_hash}\n"
+    )
+    assert result.stderr == ""
+
+
+def test_compose_with_nothing_to_put_in(in_rules: Path) -> None:
+    layers = in_rules / ".deeptwin" / "layers"
+    shutil.rmtree(layers)
+    layers.mkdir()
+
+    result = invoke(*COMPOSE)
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == (
+        "넣을 기준이 없습니다.\n\n"
+        "넣은 항목: 없음\n"
+        "뺀 항목: 없음\n"
+        "맞는 카드가 없던 판단 지점: opening, schedule, tone, closing\n"
+        f"guide_hash: sha256:{hashlib.sha256(b'').hexdigest()}\n"
+    )
+
+
+def test_compose_context_option_overrides_task_context(in_rules: Path) -> None:
+    body = ok_json(invoke(*COMPOSE, "--context", "purpose=휴강", "--json"), "compose")
+
+    assert body["context"] == {"purpose": "휴강", "channel": "instagram"}
+    # 모집 카드(card-0001, card-0002)는 맞지 않고, 휴강 카드(card-0006)가 일정 안내에 들어간다
+    assert [i for i in body["injected"] if i.startswith("card-")] == [
+        "card-0003",
+        "card-0006",
+        "card-0004",
+    ]
+    assert body["no_hit"] == []
+    assert "- [일정 안내] 보강 날짜를 휴강 날짜 바로 뒤에 쓴다.\n" in body["guide"]
+
+
+def test_compose_context_option_adds_an_axis_the_task_lacks(in_rules: Path) -> None:
+    task = in_rules / ".deeptwin" / "tasks" / "train" / "task-0001.yaml"
+    text = task.read_text("utf-8")
+    task.write_text(text.replace("  channel: instagram\n", ""), encoding="utf-8")
+    assert "channel" not in task.read_text("utf-8")
+
+    body = ok_json(invoke(*COMPOSE, "--context", "channel=email", "--json"), "compose")
+
+    assert body["context"] == {"purpose": "모집", "channel": "email"}
+    # instagram 카드(card-0002, card-0004)는 맞지 않는다. 마무리(card-0007)는 전체 상한으로 빠진다
+    assert [i for i in body["injected"] if i.startswith("card-")] == [
+        "card-0001",
+        "card-0003",
+        "card-0005",
+    ]
+
+
+def test_parse_context_options_keeps_equals_in_the_value() -> None:
+    assert main.parse_context_options(["purpose=a=b"]) == {"purpose": "a=b"}
+
+
+def test_parse_context_options_rejects_whitespace_only_axis() -> None:
+    with pytest.raises(DeeptwinError) as info:
+        main.parse_context_options(["  =x"])
+
+    assert info.value.code == "invalid_context"
+    assert info.value.message == "--context의 축 이름이 비었습니다(받은 값:   =x)."
+
+
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        (
+            ["--context", "audience=입문자"],
+            "맥락 축이 스킬 class-notice의 context_axes에 없습니다: audience=입문자. "
+            "쓸 수 있는 축: purpose, channel",
+        ),
+        (
+            ["--context", "purpose=없는값"],
+            "맥락 값이 스킬 class-notice의 context_axes에 없습니다: purpose=없는값. "
+            "purpose에 쓸 수 있는 값: 모집, 알림, 휴강",
+        ),
+        (
+            ["--context", "purpose"],
+            "--context는 축=값 모양이어야 합니다(받은 값: purpose).",
+        ),
+        (
+            ["--context", "=모집"],
+            "--context의 축 이름이 비었습니다(받은 값: =모집).",
+        ),
+        (
+            ["--context", "purpose=모집", "--context", "purpose=알림"],
+            "--context에 같은 축을 두 번 줬습니다: purpose. 축마다 한 번만 주세요.",
+        ),
+    ],
+    ids=["unknown-axis", "unknown-value", "no-equals", "empty-axis", "same-axis-twice"],
+)
+def test_compose_rejects_invalid_context(in_rules: Path, options: list[str], message: str) -> None:
+    assert error_json(invoke(*COMPOSE, *options, "--json"), "compose", "invalid_context") == message
+
+    text = invoke(*COMPOSE, *options)
+
+    assert text.exit_code == 1
+    assert text.stdout == ""
+    assert text.stderr == f"오류: {message}\n"
+
+
+def test_compose_rejects_invalid_task_context(in_rules: Path) -> None:
+    task = in_rules / ".deeptwin" / "tasks" / "train" / "task-0001.yaml"
+    task.write_text(
+        task.read_text("utf-8").replace("channel: instagram", "channel: threads"), encoding="utf-8"
+    )
+
+    message = error_json(invoke(*COMPOSE, "--json"), "compose", "invalid_context")
+    fixed = ok_json(invoke(*COMPOSE, "--context", "channel=email", "--json"), "compose")
+
+    assert "channel=threads" in message
+    assert fixed["context"] == {"purpose": "모집", "channel": "email"}
+
+
+def test_compose_over_budget(in_rules: Path) -> None:
+    config = in_rules / "skills" / "class-notice" / "skill.yaml"
+    config.write_text(
+        config.read_text("utf-8").replace("principles_max: 10", "principles_max: 1"),
+        encoding="utf-8",
+    )
+
+    message = error_json(invoke(*COMPOSE, "--json"), "compose", "over_budget")
+
+    assert message == (
+        "원칙 상한을 넘었습니다: 스킬 class-notice에 맞는 active 원칙 2개, principles_max 1개. "
+        "지침을 자르지 않으니 .deeptwin/layers/principles.yaml의 원칙 항목을 합쳐 1개 이하로 "
+        "줄이세요."
+    )
+
+
+def test_compose_task_of_another_skill(in_rules: Path) -> None:
+    other = in_rules / "skills" / "other"
+    shutil.copytree(in_rules / "skills" / "class-notice", other)
+    config = other / "skill.yaml"
+    config.write_text(
+        config.read_text("utf-8").replace("id: class-notice", "id: other"), encoding="utf-8"
+    )
+
+    message = error_json(
+        invoke("compose", "other", "task-0001", "--json"), "compose", "task_skill_mismatch"
+    )
+
+    assert message == (
+        "과제와 스킬이 맞지 않습니다. 과제 task-0001의 skill: class-notice, 조립한 스킬: other"
+    )
+
+
+def test_compose_makes_no_provider(in_rules: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def no_provider(*args: object) -> None:
+        raise AssertionError("compose가 공급자를 만들었다")
+
+    monkeypatch.setattr(main, "make_provider", no_provider)
+    monkeypatch.setenv("PATH", "")
+
+    assert ok_json(invoke(*COMPOSE, "--json"), "compose")["injected"] == RULES_INJECTED
+
+
+def test_compose_before_init(rules_copy: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    shutil.rmtree(rules_copy / ".deeptwin")
+    monkeypatch.chdir(rules_copy)
+
+    error_json(invoke(*COMPOSE, "--json"), "compose", "not_initialized")
+
+    assert not (rules_copy / ".deeptwin").exists()
+
+
+def test_run_ledger_line_matches_compose(in_rules: Path) -> None:
+    (in_rules / "answer.txt").write_text("가짜 공지\n", encoding="utf-8")
+    composed = ok_json(invoke(*COMPOSE, "--json"), "compose")
+
+    body = ok_json(
+        invoke(
+            "run",
+            "class-notice",
+            "task-0001",
+            "--provider",
+            "fake",
+            "--fake-answer",
+            "answer.txt",
+            "--json",
+        ),
+        "run",
+    )
+
+    [entry] = ledger(in_rules)
+    assert list(entry) == LEDGER_KEYS
+    assert entry["injected"] == composed["injected"] == body["injected"]
+    assert entry["rejected"] == composed["rejected"] == RULES_REJECTED
+    assert entry["no_hit"] == composed["no_hit"] == ["schedule"]
+    assert entry["conflicts"] == composed["conflicts"] == []
+    assert entry["guide_hash"] == composed["guide_hash"]
+    copy = (in_rules / ".deeptwin" / "runs" / "run-0001" / "SKILL.md").read_text("utf-8")
+    assert f"{FLUID_OPEN}\n{RULES_GUIDE}{FLUID_CLOSE}" in copy

@@ -45,6 +45,9 @@ def record_run(
         task=task.id,
         split=task.split,
         injected=list(composed.injected),
+        rejected=list(composed.rejected),
+        no_hit=list(composed.no_hit),
+        conflicts=[list(pair) for pair in composed.conflicts],
         guide_hash=composed.guide_hash,
         output=f"runs/{run_id}/{OUTPUT_FILE}",
     )

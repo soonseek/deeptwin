@@ -1,0 +1,11 @@
+# 가상의 수업 공지 요청. 테스트용으로 지어낸 것이다.
+schema: 1
+id: task-0001
+skill: class-notice
+split: train
+input: |
+  다음 기수 모집 글을 인스타그램에 올리려고 합니다.
+  12월 6일 토요일에 시작하고, 정원은 12명입니다.
+context:
+  purpose: 모집
+  channel: instagram

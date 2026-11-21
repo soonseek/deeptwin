@@ -286,7 +286,10 @@ class Composed(BaseModel):
 
 
 class Run(BaseModel):
-    """실행 하나의 기록. 원장의 `run` 줄과 같은 모양이다."""
+    """실행 하나의 기록. 원장의 `run` 줄과 같은 모양이다.
+
+    필드 순서는 설계서 8.4를 따른다. `context`와 `prompt_version`은 아직 쓰지 않는다.
+    """
 
     id: str
     type: Literal["run"] = "run"
@@ -295,6 +298,9 @@ class Run(BaseModel):
     task: str
     split: Split
     injected: list[str]
+    rejected: list[Rejected] = Field(default_factory=list)
+    no_hit: list[str] = Field(default_factory=list)
+    conflicts: list[list[str]] = Field(default_factory=list)
     guide_hash: str
     output: str
 

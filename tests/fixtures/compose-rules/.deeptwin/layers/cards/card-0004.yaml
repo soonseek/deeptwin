@@ -1,0 +1,12 @@
+# 가상 인물의 판단 카드. card-0005와 부딪치고 점수가 더 높다. 테스트용으로 지어낸 것이다.
+schema: 1
+id: card-0004
+layer: tendency
+skill: class-notice
+decision_point: tone
+status: active
+approval: human
+when:
+  channel: [instagram]
+choose: 존댓말로 쓰되 문장을 짧게 끊는다
+conflicts_with: [card-0005]

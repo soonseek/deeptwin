@@ -1,0 +1,10 @@
+# 가상 인물의 판단 카드. 원칙 prin-01과 부딪친다. 테스트용으로 지어낸 것이다.
+schema: 1
+id: card-0008
+layer: tendency
+skill: class-notice
+decision_point: tone
+status: active
+approval: human
+choose: 할인 폭을 크게 보이게 쓴다
+conflicts_with: [prin-01]

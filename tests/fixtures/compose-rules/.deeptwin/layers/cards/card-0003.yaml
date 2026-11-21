@@ -1,0 +1,9 @@
+# 가상 인물의 판단 카드. 맞는 카드가 셋인 판단 지점의 세 번째다. 테스트용으로 지어낸 것이다.
+schema: 1
+id: card-0003
+layer: tendency
+skill: class-notice
+decision_point: opening
+status: active
+approval: human
+choose: 첫 문장에 누구에게 보내는 글인지 쓴다

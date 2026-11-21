@@ -1,0 +1,14 @@
+# 가상 인물의 판단 카드. 테스트용으로 지어낸 것이다.
+schema: 1
+id: card-0002
+layer: tendency
+skill: class-notice
+decision_point: opening
+status: active
+approval: human
+when:
+  purpose: [모집]
+  channel: [instagram]
+choose: 첫 문장은 질문이 아니라 숫자가 든 단정문으로 쓴다
+because: 질문형 첫 문장은 넘겨 읽힌다고 본다
+except: 마감이 사흘 안이면 마감일로 시작한다

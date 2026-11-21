@@ -1,0 +1,20 @@
+# 가상의 코딩 강의 "주말 파이썬 교실" 강사가 쓰는 수업 공지 스킬. 테스트용으로 지어낸 것이다.
+schema: 1
+id: class-notice
+version: 1
+decision_points:
+  - {id: opening, name: 첫 문장, weight: 4}
+  - {id: schedule, name: 일정 안내, weight: 3}
+  - {id: tone, name: 말투, weight: 2}
+  - {id: closing, name: 마무리, weight: 1}
+context_axes:
+  purpose: [모집, 알림, 휴강]
+  channel: [instagram, email]
+budget:
+  examples: 3
+  cards_per_point: 2
+  cards_total: 3
+  principles_max: 10
+  priorities_max: 5
+example_policy: random_signature
+checks: null
