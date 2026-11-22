@@ -1,7 +1,8 @@
-"""터미널 판정 화면: 남은 쌍을 하나씩 보여 주고 stdin에서 1이나 2를 읽어 바로 기록한다.
+"""터미널 판정 화면: 이번 몫의 쌍을 하나씩 보여 주고 stdin에서 1이나 2를 읽어 바로 기록한다.
 
-판정 화면의 글은 모두 여기에 둔다. 화면에는 쌍의 번호, 과제의 입력, 두 결과물, 물음만 쓰고
-조건을 되짚을 값(조건 ID와 이름, 실행 ID, 결과물 경로)은 쓰지 않는다.
+시작과 끝(남은 쌍, 한 번 몫과 하루 몫, 상한 문장, 요약)은 웹과 같이 `session`이 맡는다. 화면에는
+쌍의 번호, 과제의 입력, 두 결과물, 물음만 쓰고 조건을 되짚을 값(조건 ID와 이름, 실행 ID, 결과물
+경로)은 쓰지 않는다.
 
 - `1`은 왼쪽(`left`), `2`는 오른쪽(`right`)이다. 다른 입력은 다시 묻는다. 비기기와 건너뛰기는 없다.
 - 걸린 초는 쌍을 보여 준 때부터 고른 때까지다.
@@ -14,32 +15,31 @@ from __future__ import annotations
 
 import sys
 import time
-from dataclasses import dataclass
 
 import typer
 
-from deeptwin.eval import pending_pairs, record_choice
+from deeptwin.cli.session import ASK, INPUT_LABEL, Judged, finish_judging, start_judging
+from deeptwin.eval import record_choice
 from deeptwin.models import Side
 from deeptwin.store.project import DeepTwin
 
-QUESTION = "어느 쪽이 더 나답고 그대로 보낼 만한가요? 1 또는 2를 입력하세요: "
+__all__ = [
+    "ANSWERS",
+    "QUESTION",
+    "RETRY",
+    "TYPE_ONE_OR_TWO",
+    "judge_in_terminal",
+    "read_line",
+    "screen",
+    "typed_on_screen",
+]
+
+TYPE_ONE_OR_TWO = "1 또는 2를 입력하세요: "
+QUESTION = f"{ASK} {TYPE_ONE_OR_TWO}"
 RETRY = "1 또는 2만 받습니다. 다시 입력하세요: "
-NOTHING_LEFT = "고를 쌍이 남지 않았습니다."
-INPUT_LABEL = "문의:"
 
 ANSWERS: dict[str, Side] = {"1": "left", "2": "right"}
 """입력 -> 고른 쪽."""
-
-
-@dataclass(frozen=True)
-class Judged:
-    """터미널 판정 한 번의 결과."""
-
-    eval: str
-    chosen: int
-    """이번에 고른 쌍의 수."""
-    remaining: int
-    """아직 고르지 않은 쌍의 수."""
 
 
 def read_line() -> str:
@@ -57,14 +57,18 @@ def typed_on_screen() -> bool:
         return False
 
 
-def judge_in_terminal(deeptwin: DeepTwin, eval_id: str, *, err: bool) -> Judged:
-    """남은 쌍을 쌍 목록 순서로 하나씩 보여 주고 고를 때마다 바로 기록한다."""
-    judging = pending_pairs(deeptwin, eval_id)
-    if not judging.pending:
-        typer.echo(NOTHING_LEFT, err=err)
-        return Judged(eval=judging.eval, chosen=0, remaining=0)
+def judge_in_terminal(
+    deeptwin: DeepTwin,
+    eval_id: str,
+    *,
+    limit: int | None = None,
+    daily_limit: int | None = None,
+    err: bool,
+) -> Judged:
+    """이번 몫의 쌍을 쌍 목록 순서로 하나씩 보여 주고 고를 때마다 바로 기록한다."""
+    judging = start_judging(deeptwin, eval_id, limit=limit, daily_limit=daily_limit, err=err)
     chosen = 0
-    for index, item in enumerate(judging.pending):
+    for index, item in enumerate(judging.batch):
         if index:
             typer.echo("", err=err)
         typer.echo(
@@ -79,7 +83,7 @@ def judge_in_terminal(deeptwin: DeepTwin, eval_id: str, *, err: bool) -> Judged:
             deeptwin, judging.eval, item.pair.id, side, seconds=time.perf_counter() - start
         )
         chosen += 1
-    return Judged(eval=judging.eval, chosen=chosen, remaining=len(judging.pending) - chosen)
+    return finish_judging(judging, chosen, err=err)
 
 
 def screen(number: int, total: int, task_input: str, left: str, right: str) -> str:
@@ -98,14 +102,6 @@ def screen(number: int, total: int, task_input: str, left: str, right: str) -> s
             "",
         ]
     )
-
-
-def summary(judged: Judged) -> str:
-    """글 모드의 끝에 쓰는 요약 문장. `--json`의 결과와 같은 내용이다."""
-    line = f"평가 {judged.eval}: 이번에 고른 쌍 {judged.chosen}개, 남은 쌍 {judged.remaining}개."
-    if judged.remaining:
-        return f"{line} deeptwin eval judge {judged.eval}로 남은 쌍부터 이어 고릅니다."
-    return f"{line} deeptwin eval report {judged.eval}로 보고서를 냅니다."
 
 
 def _ask(*, err: bool) -> Side | None:

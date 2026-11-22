@@ -28,6 +28,7 @@ __all__ = [
     "NotInitializedError",
     "NothingToImportError",
     "OverBudgetError",
+    "PortUnavailableError",
     "ProviderFailedError",
     "ProviderTimeoutError",
     "ReferenceRequiredError",
@@ -291,3 +292,13 @@ class InvalidChoiceError(DeeptwinError):
 
     def __init__(self, message: str) -> None:
         super().__init__("invalid_choice", message)
+
+
+class PortUnavailableError(DeeptwinError):
+    """판정 화면을 `127.0.0.1:<포트>`에 열지 못했다. 다른 프로그램이 그 포트를 쓰거나 권한이 없다.
+
+    서버를 열기 전에 멈추므로 선택은 기록되지 않는다.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__("port_unavailable", message)

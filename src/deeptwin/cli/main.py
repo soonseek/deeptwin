@@ -10,7 +10,9 @@ from typing import Annotated, Self, cast, get_args
 import typer
 
 from deeptwin.cli.output import Reply, respond
-from deeptwin.cli.terminal import judge_in_terminal, summary
+from deeptwin.cli.session import summary
+from deeptwin.cli.terminal import judge_in_terminal
+from deeptwin.cli.web import judge_in_web
 from deeptwin.compose import LAYERS, check_context, compose
 from deeptwin.errors import (
     FakeAnswerRequiredError,
@@ -677,18 +679,82 @@ def eval_pairs(
     respond("eval pairs", action, as_json=as_json)
 
 
-@eval_app.command("judge")
-def eval_judge(eval_id: EvalArgument, as_json: JsonOption = False) -> None:
-    """남은 쌍을 터미널에서 하나씩 보여 주고 1이나 2를 받아 바로 기록한다.
+DEFAULT_LIMIT = 15
+"""`eval judge`가 한 번에 보여 주는 쌍 수의 기본값(설계서 11의 평가 피로)."""
+DEFAULT_DAILY_LIMIT = 30
+"""`eval judge`로 한 평가에서 하루에 고르는 쌍 수의 기본값."""
 
-    고른 쌍은 다시 보여 주지 않고, 다음에는 남은 쌍부터 잇는다. 입력이 끝나면(EOF) 멈춘다.
-    화면에는 어느 쪽이 어느 조건인지 나오지 않는다. --json이면 보여 주는 글과 묻는 글은
-    stderr로 가고, stdout에는 끝난 뒤 결과 하나를 쓴다.
+
+@eval_app.command("judge")
+def eval_judge(
+    eval_id: EvalArgument,
+    web: Annotated[
+        bool,
+        typer.Option(
+            "--web",
+            help=(
+                "터미널 대신 127.0.0.1에만 여는 웹 화면에서 고른다. 알려 주는 주소를 브라우저로 "
+                "연다. 다 고르면 서버가 저절로 닫힌다."
+            ),
+        ),
+    ] = False,
+    port: Annotated[
+        int | None,
+        typer.Option(
+            "--port",
+            min=0,
+            max=65535,
+            metavar="번호",
+            help="--web의 포트(0~65535). 주지 않으면 빈 포트를 쓴다. --web과 함께만 준다.",
+            show_default=False,
+        ),
+    ] = None,
+    limit: Annotated[
+        int,
+        typer.Option(
+            "--limit",
+            min=1,
+            metavar="수",
+            help="한 번에 보여 주는 쌍의 수. 남은 쌍은 다음에 이어 고른다.",
+        ),
+    ] = DEFAULT_LIMIT,
+    daily_limit: Annotated[
+        int,
+        typer.Option(
+            "--daily-limit",
+            min=1,
+            metavar="수",
+            help="이 평가에서 하루에 고르는 쌍의 수. choices.jsonl에서 오늘 고른 줄을 센다.",
+        ),
+    ] = DEFAULT_DAILY_LIMIT,
+    as_json: JsonOption = False,
+) -> None:
+    """남은 쌍을 하나씩 보여 주고 고를 때마다 바로 기록한다. 기본은 터미널, --web이면 웹 화면이다.
+
+    한 번에 --limit쌍, 이 평가에서 하루에 --daily-limit쌍까지 보여 주고, 상한에 닿으면 남은 쌍의
+    수를 알리고 멈춘다. 고른 쌍은 다시 보여 주지 않고 다음에는 남은 쌍부터 잇는다. 터미널은 1이나
+    2를 받고 입력이 끝나면(EOF) 멈춘다. 웹 화면은 127.0.0.1에만 열고 버튼 둘로 고른다. 화면에는
+    어느 쪽이 어느 조건인지 나오지 않는다. --json이면 보여 주는 글은 stderr로 가고, stdout에는
+    끝난 뒤 결과 하나를 쓴다.
     """
+    if port is not None and not web:
+        raise typer.BadParameter("--port는 --web과 함께만 줍니다.", param_hint="'--port'")
 
     def action() -> Reply:
         deeptwin = DeepTwin.open(Path.cwd())
-        judged = judge_in_terminal(deeptwin, eval_id, err=as_json)
+        if web:
+            judged = judge_in_web(
+                deeptwin,
+                eval_id,
+                port=port,
+                limit=limit,
+                daily_limit=daily_limit,
+                err=as_json,
+            )
+        else:
+            judged = judge_in_terminal(
+                deeptwin, eval_id, limit=limit, daily_limit=daily_limit, err=as_json
+            )
         return Reply(
             result={"eval": judged.eval, "chosen": judged.chosen, "remaining": judged.remaining},
             text=summary(judged),

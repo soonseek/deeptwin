@@ -10,19 +10,19 @@ import hashlib
 import json
 import math
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
 from typer.testing import Result
 
 import deeptwin.eval
-from deeptwin.cli import main, terminal
+from deeptwin.cli import main, terminal, web
 from deeptwin.cli.terminal import QUESTION, RETRY
 from deeptwin.compose import fill_fluid
 from deeptwin.errors import DeeptwinError, ProviderFailedError
-from deeptwin.eval import p_value, record_choice
+from deeptwin.eval import p_value, pending_pairs, record_choice
 from deeptwin.eval.pairs import _arrange
 from deeptwin.store.project import DeepTwin
 from test_cli import (
@@ -601,6 +601,216 @@ def test_ctrl_c_while_judging_keeps_the_choices_made(
     assert again == {"eval": EVAL, "chosen": 1, "remaining": 0}
 
 
+# 한 번 몫과 하루 몫
+
+
+def limit_sentence(limit: int, left: int) -> str:
+    return f"한 번에 {limit}쌍까지 보여 줍니다. 남은 쌍 {left}개는 다음에 이어 고릅니다."
+
+
+def daily_sentence(daily_limit: int, left: int) -> str:
+    return (
+        f"오늘은 이 평가에서 {daily_limit}쌍까지 고릅니다. 남은 쌍 {left}개는 내일 이어 고르세요."
+    )
+
+
+def set_choice_ts(root: Path, line: int, ts: str) -> None:
+    """`choices.jsonl`의 `line`번째 줄(1부터)의 `ts`를 바꾼다."""
+    path = eval_dir(root) / "choices.jsonl"
+    rows = jsonl(path)
+    rows[line - 1]["ts"] = ts
+    text = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
+    path.write_text(text, encoding="utf-8", newline="\n")
+
+
+@pytest.fixture
+def no_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    """웹 판정이 서버를 열어 기다리면 멈춰 서지 않고 바로 실패한다."""
+
+    def wait(done: object) -> NoReturn:
+        raise AssertionError("서버를 열지 않아야 합니다")
+
+    monkeypatch.setattr(web, "wait_until_done", wait)
+
+
+def test_terminal_limit_asks_once_and_says_the_rest_comes_next_time(in_example: Path) -> None:
+    make_eval()
+
+    result = judge(EVAL, "--limit", "1", input="1\n2\n")
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.count(QUESTION) == 1
+    assert len(choice_lines(in_example)) == 1
+    assert limit_sentence(1, 1) in result.stdout
+    assert "이번에 고른 쌍 1개, 남은 쌍 1개" in result.stdout
+    assert result.stdout.index(limit_sentence(1, 1)) < result.stdout.index("이번에 고른 쌍")
+
+
+def test_daily_limit_counts_todays_lines_and_lets_tomorrow_continue(
+    in_example: Path, no_server: None
+) -> None:
+    make_eval()
+
+    first = judge(EVAL, "--daily-limit", "1", input="1\n2\n")
+    again = judge(EVAL, "--daily-limit", "1", input="1\n")
+    on_web = runner.invoke(
+        main.app, ["eval", "judge", EVAL, "--web", "--daily-limit", "1", "--json"]
+    )
+
+    assert first.exit_code == 0, first.output
+    assert len(choice_lines(in_example)) == 1
+    assert first.stdout.count(QUESTION) == 1
+    assert daily_sentence(1, 1) in first.stdout
+    assert "이번에 고른 쌍 1개, 남은 쌍 1개" in first.stdout
+    assert again.exit_code == 0, again.output
+    assert QUESTION not in again.stdout
+    assert "쌍 2/2" not in again.stdout
+    assert "고를 쌍이 남지 않았습니다." not in again.stdout
+    assert daily_sentence(1, 1) in again.stdout
+    assert "이번에 고른 쌍 0개, 남은 쌍 1개" in again.stdout
+    assert ok_json(on_web, "eval judge") == {"eval": EVAL, "chosen": 0, "remaining": 1}
+    assert daily_sentence(1, 1) in on_web.stderr
+    assert "http://" not in on_web.stderr
+    assert len(choice_lines(in_example)) == 1
+
+    yesterday = datetime.now().astimezone() - timedelta(days=1)
+    set_choice_ts(in_example, 1, yesterday.isoformat(timespec="seconds"))
+    tomorrow = judge(EVAL, "--daily-limit", "1", "--json", input="2\n")
+
+    assert ok_json(tomorrow, "eval judge") == {"eval": EVAL, "chosen": 1, "remaining": 0}
+    assert tomorrow.stderr.count(QUESTION) == 1
+    assert "쌍 2/2" in tomorrow.stderr
+    assert "내일" not in tomorrow.stderr
+    assert [c["chosen"] for c in choice_lines(in_example)] == ["left", "right"]
+
+
+def test_both_limits_at_once_give_the_daily_sentence(in_example: Path) -> None:
+    make_eval()
+
+    result = judge(EVAL, "--limit", "1", "--daily-limit", "1", input="1\n2\n")
+
+    assert result.exit_code == 0, result.output
+    assert daily_sentence(1, 1) in result.stdout
+    assert "한 번에" not in result.stdout
+    assert len(choice_lines(in_example)) == 1
+
+
+def test_help_shows_the_default_limits() -> None:
+    result = runner.invoke(main.app, ["eval", "judge", "--help"])
+
+    assert result.exit_code == 0, result.output
+    for option in ("--web", "--port", "--limit", "--daily-limit"):
+        assert option in result.stdout
+    assert "15" in result.stdout
+    assert "30" in result.stdout
+    assert (main.DEFAULT_LIMIT, main.DEFAULT_DAILY_LIMIT) == (15, 30)
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("--limit", "0"),
+        ("--daily-limit", "0"),
+        ("--web", "--port", "70000"),
+        ("--web", "--port", "-1"),
+        ("--port", "8000"),
+    ],
+    ids=["limit-0", "daily-limit-0", "port-70000", "port-negative", "port-without-web"],
+)
+def test_wrong_judge_options_exit_2_before_reading_anything(
+    in_example: Path, monkeypatch: pytest.MonkeyPatch, no_server: None, args: tuple[str, ...]
+) -> None:
+    make_eval()
+    before = tree(in_example)
+
+    def no_project(*args: object) -> NoReturn:
+        raise AssertionError("프로젝트를 열지 않아야 합니다")
+
+    monkeypatch.setattr(DeepTwin, "open", no_project)
+
+    result = judge(EVAL, *args, "--json", input="1\n2\n")
+
+    assert result.exit_code == 2, result.output
+    assert result.stdout == ""
+    assert not (eval_dir(in_example) / "choices.jsonl").exists()
+    assert tree(in_example) == before
+
+
+def test_pending_pairs_without_limits_gives_every_pending_pair(in_example: Path) -> None:
+    make_eval()
+    deeptwin = DeepTwin.open(in_example)
+    # 판정은 대응표를 읽지 않는다
+    (eval_dir(in_example) / "key.json").rename(in_example / "key.json")
+
+    judging = pending_pairs(deeptwin, EVAL)
+
+    assert judging.batch == judging.pending
+    assert [item.pair.id for item in judging.pending] == ["pair-0001", "pair-0002"]
+    assert (judging.limit, judging.daily_limit, judging.stop) == (None, None, None)
+    assert judging.chosen_today == 0
+
+
+def test_pending_pairs_with_limits_cuts_the_batch_and_says_why(in_example: Path) -> None:
+    make_eval()
+    deeptwin = DeepTwin.open(in_example)
+
+    once = pending_pairs(deeptwin, EVAL, limit=1)
+    record_choice(deeptwin, EVAL, "pair-0001", "left", seconds=1.0)
+    today = pending_pairs(deeptwin, EVAL, daily_limit=1)
+
+    assert [item.pair.id for item in once.batch] == ["pair-0001"]
+    assert len(once.pending) == 2
+    assert (once.limit, once.stop) == (1, "limit")
+    assert today.batch == ()
+    assert [item.pair.id for item in today.pending] == ["pair-0002"]
+    assert (today.chosen_today, today.daily_limit, today.stop) == (1, 1, "daily_limit")
+
+
+@pytest.mark.parametrize(
+    ("limit", "daily_limit", "size", "stop"),
+    [
+        (None, None, 2, None),
+        (1, None, 1, "limit"),
+        (None, 1, 1, "daily_limit"),
+        (1, 1, 1, "daily_limit"),
+        (2, 1, 1, "daily_limit"),
+        (1, 5, 1, "limit"),
+        (2, 2, 2, None),
+        (5, 5, 2, None),
+    ],
+)
+def test_stop_names_the_limit_that_cut_the_batch(
+    in_example: Path, limit: int | None, daily_limit: int | None, size: int, stop: str | None
+) -> None:
+    make_eval()
+
+    judging = pending_pairs(DeepTwin.open(in_example), EVAL, limit=limit, daily_limit=daily_limit)
+
+    assert len(judging.batch) == size
+    assert judging.batch == judging.pending[:size]
+    assert judging.stop == stop
+
+
+@pytest.mark.parametrize("limits", [{"limit": 0}, {"daily_limit": 0}, {"limit": -1}])
+def test_pending_pairs_refuses_a_limit_below_one(in_example: Path, limits: dict[str, int]) -> None:
+    make_eval()
+
+    with pytest.raises(ValueError):
+        pending_pairs(DeepTwin.open(in_example), EVAL, **limits)
+
+
+@pytest.mark.parametrize("ts", ["어제", "9999-12-31T23:59:59-12:00"], ids=["word", "out-of-range"])
+def test_unreadable_choice_time_is_reported_with_file_and_line(in_example: Path, ts: str) -> None:
+    make_eval()
+    judge(EVAL, input="1\n")
+    set_choice_ts(in_example, 1, ts)
+
+    message = error_json(judge(EVAL, "--json", input="2\n"), "eval judge", "invalid_file")
+
+    assert message.startswith(".deeptwin/eval/eval-0001/choices.jsonl:1:")
+    assert "ts" in message
+
+
 # 보고서
 
 
@@ -740,13 +950,14 @@ def test_acceptance_13_twenty_wins_of_thirty_pairs_give_p_0_0494(in_example: Pat
     body = make_eval()
     assert body["pairs"] == 30
     assert len(body["tasks"]) == 30
-    judged = ok_json(
-        judge(EVAL, "--json", input=answers_for(in_example, [n < 20 for n in range(30)])),
-        "eval judge",
-    )
+    # 한 번에 15쌍까지 보여 주므로 두 번에 나눠 고른다
+    answers = answers_for(in_example, [n < 20 for n in range(30)]).splitlines(keepends=True)
+    first = ok_json(judge(EVAL, "--json", input="".join(answers[:15])), "eval judge")
+    judged = ok_json(judge(EVAL, "--json", input="".join(answers[15:])), "eval judge")
     report = ok_json(invoke("eval", "report", EVAL, "--json"), "eval report")
 
-    assert judged == {"eval": EVAL, "chosen": 30, "remaining": 0}
+    assert first == {"eval": EVAL, "chosen": 15, "remaining": 15}
+    assert judged == {"eval": EVAL, "chosen": 15, "remaining": 0}
     [comparison] = report["comparisons"]
     assert (comparison["against"], comparison["pairs"], comparison["wins"]) == ("base", 30, 20)
     assert comparison["selection_rate"] == 20 / 30

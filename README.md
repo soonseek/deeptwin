@@ -301,7 +301,7 @@ deeptwin verify
 
 ```sh
 deeptwin eval pairs <스킬 ID> --split <분할> [--seed 글] [--provider 이름] [--fake-answer 파일]
-deeptwin eval judge <평가 ID>
+deeptwin eval judge <평가 ID> [--web] [--port 번호] [--limit 수] [--daily-limit 수]
 deeptwin eval report <평가 ID>
 ```
 
@@ -309,7 +309,7 @@ deeptwin eval report <평가 ID>
 
 ```sh
 deeptwin eval pairs inquiry-reply --split spare --provider fake --fake-answer answers/keeps-principles.md
-deeptwin eval judge eval-0001
+deeptwin eval judge eval-0001        # 브라우저로 고르려면 deeptwin eval judge eval-0001 --web
 deeptwin eval report eval-0001
 ```
 
@@ -336,7 +336,7 @@ deeptwin eval report eval-0001
 
 `pairs.jsonl`은 마지막에 씁니다. 생성이 중간에 실패하면 그때까지의 실행과 결과물은 남지만 `key.json`과 `pairs.jsonl`은 생기지 않고, 그 평가로 고르거나 보고서를 내면 `eval_incomplete`입니다. 그때는 새 평가를 만듭니다.
 
-`deeptwin eval judge`는 남은 쌍(`choices.jsonl`에 없는 쌍)을 `pairs.jsonl` 순서로 하나씩 보여 줍니다. 화면에는 몇 번째 쌍인지, 과제의 입력, `[1]`과 `[2]`의 두 글, 물음만 나옵니다.
+`deeptwin eval judge`는 남은 쌍(`choices.jsonl`에 없는 쌍)을 `pairs.jsonl` 순서로 하나씩 보여 줍니다. 기본은 터미널이고, `--web`이면 브라우저로 여는 웹 화면입니다(아래). 터미널 화면에는 몇 번째 쌍인지, 과제의 입력, `[1]`과 `[2]`의 두 글, 물음만 나옵니다.
 
 ```text
 쌍 1/2
@@ -355,7 +355,29 @@ deeptwin eval report eval-0001
 - 블라인드: 쌍 목록과 판정 화면에는 조건 ID와 이름, 실행 ID, 결과물 경로가 나오지 않습니다. 판정은 `key.json`을 읽지 않고, 대응표는 보고서를 낼 때 처음 합칩니다.
 - `1`은 왼쪽(`left`), `2`는 오른쪽(`right`)이고 다른 입력은 다시 묻습니다. 비기기와 건너뛰기는 없습니다. 고를 때마다 바로 `choices.jsonl`에 남고, `seconds`는 쌍을 보여 준 때부터 고른 때까지의 초입니다.
 - 이어 고르기: 입력이 끝나면(EOF) 멈추고 종료 코드는 0, Ctrl-C면 130입니다. 어느 쪽이든 그때까지 고른 것은 남고, 다음 `deeptwin eval judge`는 남은 쌍부터 잇습니다. 남은 쌍이 없으면 `고를 쌍이 남지 않았습니다.`를 씁니다.
-- `--json`이면 보여 주는 글과 묻는 글은 stderr로 가고, stdout에는 끝난 뒤 결과 하나(`eval`, `chosen`(이번에 고른 수), `remaining`)를 씁니다. 글 모드는 모두 stdout이고 끝에 같은 내용의 요약 문장이 붙습니다.
+- 한 번 몫과 하루 몫: 고르는 피로가 쌓이지 않게 한 번에 `--limit`쌍(기본 15), 한 평가에서 하루에 `--daily-limit`쌍(기본 30)까지만 보여 줍니다. 둘 다 1 이상이고 터미널과 웹에 똑같이 걸립니다. 하루 몫은 그 평가의 `choices.jsonl`에서 `ts`를 이 컴퓨터의 시간대로 바꾼 날짜가 오늘인 줄을 셉니다. 이번 몫을 다 골랐는데 상한 때문에 쌍이 남았으면 아래 두 문장 가운데 하나를 쓰고 멈춥니다(종료 코드 0). 두 상한에 함께 걸리면(하루에 남은 몫이 `--limit` 이하이면) 하루 문장입니다. 오늘 몫을 이미 다 골랐으면 묻지 않고(웹이면 서버도 열지 않고) 하루 문장만 씁니다.
+
+  ```text
+  한 번에 15쌍까지 보여 줍니다. 남은 쌍 15개는 다음에 이어 고릅니다.
+  오늘은 이 평가에서 30쌍까지 고릅니다. 남은 쌍 2개는 내일 이어 고르세요.
+  ```
+
+- `--json`이면 보여 주는 글과 묻는 글(웹이면 주소와 안내 문장)은 stderr로 가고, stdout에는 끝난 뒤 결과 하나(`eval`, `chosen`(이번에 고른 수), `remaining`)를 씁니다. 글 모드는 모두 stdout이고 끝에 같은 내용의 요약 문장이 붙습니다.
+
+`--web`이면 표준 라이브러리 `http.server`로 이 컴퓨터 안(`127.0.0.1`)에만 판정 화면을 열고 주소를 알려 줍니다. 브라우저는 스스로 열지 않으니 그 주소를 직접 엽니다.
+
+```text
+판정 화면을 열었습니다: http://127.0.0.1:53817/
+브라우저로 열어 고르세요. 다 고르면 저절로 닫히고, 멈추려면 Ctrl-C를 누르세요.
+```
+
+- 쌍마다 HTML 한 장입니다. `쌍 1/2`, `문의:`와 과제의 입력, 나란히 놓인 `왼쪽`과 `오른쪽` 두 글, 물음, 버튼 둘(`왼쪽을 고릅니다`, `오른쪽을 고릅니다`)뿐이고, 쌍 ID를 담은 숨은 입력 하나 말고는 다른 입력이나 링크가 없습니다. 스크립트, 바깥 CSS·글꼴·이미지, 텔레메트리도 없고, 글은 모두 HTML 이스케이프해 넣습니다.
+- 블라인드 규칙은 터미널과 같습니다. 화면, 응답 헤더, 주소 어디에도 조건 ID와 이름, 실행 ID, 결과물 경로가 나오지 않습니다.
+- 버튼을 누르면 바로 `choices.jsonl`에 남고 다음 쌍으로 넘어갑니다. `seconds`는 서버가 그 쌍의 화면을 처음 보낸 때부터 버튼을 누른 때까지이고, 새로 고쳐도 다시 재지 않습니다.
+- 이번 몫을 다 고르면 끝 화면(`다 골랐습니다.`, 요약 문장, 상한 문장이 있으면 그 문장, `이 창은 닫아도 됩니다.`)을 보여 주고 서버가 저절로 닫힙니다. 남은 쌍이 없거나 오늘 몫을 다 골랐으면 서버를 열지 않고 바로 끝납니다.
+- Ctrl-C면 서버를 닫고 종료 코드 130으로 멈춥니다. 그때까지 고른 것은 남고, 다음에는 남은 쌍부터 잇습니다.
+- `--port`로 포트(0~65535)를 정합니다. 주지 않으면 빈 포트를 쓰고, `--web` 없이 주면 인자 오류(종료 코드 2)입니다. 포트에 묶지 못하면(다른 프로그램이 쓰는 중 등) 서버를 열지 않고 `port_unavailable`로 멈추며, 메시지에 `127.0.0.1:<포트>`가 나옵니다.
+- 다른 사이트가 이 화면을 읽거나 선택을 남기지 못하게, `Host`가 `127.0.0.1:<포트>`나 `localhost:<포트>`가 아니거나 POST의 `Origin`이 `http://127.0.0.1:<포트>`나 `http://localhost:<포트>`가 아니면 403으로 막습니다. 지금 화면의 쌍이 아닌 선택(이미 고른 쌍, 없는 쌍, 아직 보여 주지 않은 쌍)은 409, 모양이 틀린 선택(필드가 없거나, `side`가 `left`나 `right`가 아니거나, 본문이 4096바이트를 넘음)은 400, 다른 경로는 404입니다. 어느 쪽이든 기록하지 않고 서버는 계속 돕니다.
 
 `deeptwin eval report`는 모든 쌍을 골랐을 때만 보고서를 씁니다. 남은 쌍이 있으면 그 수를 알리고 `judging_unfinished`로 멈추며 보고서 파일을 쓰지 않습니다.
 
@@ -378,7 +400,7 @@ p값은 한쪽 꼬리 이항 검정의 값입니다. 두 결과물을 반반으�
 
 p값은 한쪽 꼬리 이항 검정 P(X ≥ `wins`)입니다. 고르는 사람이 두 결과물을 동전 던지듯 반반으로 고른다고 할 때, 바탕+딥트윈이 `pairs`쌍 가운데 `wins`번 이상 이길 확률입니다. 값이 작을수록 반반으로 골랐다고 보기 어렵습니다. 표준 라이브러리 `math.comb`로 정확히 셉니다(예: 30쌍 중 20번이면 0.0494).
 
-평가 ID가 `eval-<숫자>`가 아니거나 그 폴더나 `eval.json`이 없으면 `eval_not_found`이고 아무 파일도 만들지 않습니다. `choices.jsonl`이나 `pairs.jsonl`에 읽을 수 없는 줄이 있으면 `invalid_file`이고, 메시지는 `.deeptwin/eval/eval-0001/choices.jsonl:2: …`처럼 파일과 줄로 시작합니다. Python에서는 `deeptwin.eval`의 `prepare_pairs`, `build_pairs`, `pending_pairs`, `record_choice`, `report`, `p_value`가 같은 일을 합니다. `record_choice`에 쌍 목록에 없는 쌍이나 이미 고른 쌍을 주면 `invalid_choice`입니다.
+평가 ID가 `eval-<숫자>`가 아니거나 그 폴더나 `eval.json`이 없으면 `eval_not_found`이고 아무 파일도 만들지 않습니다. `choices.jsonl`이나 `pairs.jsonl`에 읽을 수 없는 줄이 있으면(`ts`가 ISO 8601 시각으로 읽히지 않는 줄도) `invalid_file`이고, 메시지는 `.deeptwin/eval/eval-0001/choices.jsonl:2: …`처럼 파일과 줄로 시작합니다. 웹 판정에서는 이런 오류가 서버를 열기 전에 납니다. Python에서는 `deeptwin.eval`의 `prepare_pairs`, `build_pairs`, `pending_pairs`, `record_choice`, `report`, `p_value`가 같은 일을 합니다. `pending_pairs(deeptwin, eval_id, *, limit=None, daily_limit=None)`는 남은 쌍(`pending`), 이번에 보여 줄 쌍(`batch`), 오늘 고른 수(`chosen_today`), `batch`가 짧아진 까닭(`stop`: `"limit"`, `"daily_limit"`, 짧지 않으면 `None`)을 돌려주고 아무것도 쓰지 않습니다. 상한을 주지 않으면 걸지 않고, 1보다 작으면 `ValueError`입니다. `record_choice`에 쌍 목록에 없는 쌍이나 이미 고른 쌍을 주면 `invalid_choice`입니다.
 
 해시 체인이 생기기 전 버전(PyPI의 0.0.1)이 쓴 원장 줄에는 `prev_hash`와 `hash`가 없습니다. 그 원장이 있으면 `deeptwin verify`는 손상으로 알리고, `deeptwin run`은 실행 폴더를 만들거나 모델을 부르기 전에 `ledger_broken`으로 멈춥니다. 그 `.deeptwin/ledger.jsonl`을 다른 이름으로 옮겨 두면(예: `ledger-old.jsonl`) 다음 실행부터 새 체인이 시작됩니다.
 

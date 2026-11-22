@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
@@ -456,6 +456,17 @@ class Choice(BaseModel):
     seconds: float
     """쌍을 보여 준 때부터 고른 때까지의 초(소수 셋째 자리까지)."""
     ts: str
+    """고른 시각. ISO 8601(`datetime.fromisoformat`으로 읽히는 글)이다. 하루 몫을 셀 때 읽는다."""
+
+    @field_validator("ts")
+    @classmethod
+    def _iso_time(cls, value: str) -> str:
+        try:
+            # 하루 몫을 셀 때처럼 이 컴퓨터의 시간대로 바꿔 본다. 바꿀 수 없는 시각도 막는다
+            datetime.fromisoformat(value).astimezone()
+        except (ValueError, OverflowError, OSError):
+            raise ValueError(f"ISO 8601 시각이어야 합니다(받은 값: {value!r})") from None
+        return value
 
 
 class Comparison(BaseModel):
