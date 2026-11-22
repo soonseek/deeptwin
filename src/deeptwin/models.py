@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
@@ -25,19 +25,30 @@ __all__ = [
     "Call",
     "Candidate",
     "Card",
+    "Choice",
+    "Comparison",
     "Composed",
+    "Condition",
+    "ConditionCost",
     "Context",
+    "EvalInfo",
+    "EvalKey",
+    "EvalReport",
     "Example",
     "FLUID_CLOSE",
     "FLUID_OPEN",
     "Grade",
     "Item",
     "Layer",
+    "Pair",
+    "PairKey",
     "Principle",
     "Priority",
     "Reference",
     "Rejected",
     "Run",
+    "SealOpen",
+    "Side",
     "Skill",
     "Split",
     "Status",
@@ -76,6 +87,12 @@ Cause: TypeAlias = Literal[
 
 Context: TypeAlias = dict[str, str]
 """이번 작업의 맥락. 맥락 축 이름 -> 값(예: `{"purpose": "문의"}`)."""
+Condition: TypeAlias = Literal["base", "examples", "full"]
+"""평가의 조건 ID. `base`는 바탕만(네 층을 모두 뺀 조립), `examples`는 바탕+예시(본능 층만 남기고
+가져온 대표작 3개를 넣은 조립), `full`은 바탕+딥트윈(네 층을 다 넣은 조립)이다. 조건 ID는
+대응표(`key.json`)와 보고서에만 쓰고 쌍 목록과 판정 화면에는 쓰지 않는다."""
+Side: TypeAlias = Literal["left", "right"]
+"""판정에서 고른 쪽. 쌍 목록의 `left`(화면의 [1])나 `right`(화면의 [2])다."""
 
 
 class _FileModel(BaseModel):
@@ -366,6 +383,22 @@ class TaskEntry(BaseModel):
     reference_hash: str | None
 
 
+class SealOpen(BaseModel):
+    """봉인 묶음을 연 기록 하나. 원장의 `seal_open` 줄과 같은 모양이다.
+
+    평가 하나에 한 줄이다. `tasks`는 그 평가의 과제 ID, `reused`는 그 가운데 원장에서 이 줄보다
+    앞선 다른 평가의 `seal_open` 줄에 든 과제 ID다(이 평가의 과제 순서).
+    """
+
+    id: str
+    type: Literal["seal_open"] = "seal_open"
+    ts: str
+    eval: str
+    skill: str
+    tasks: list[str]
+    reused: list[str]
+
+
 class Call(BaseModel):
     """모델 호출 하나의 기록. 실행 폴더의 `calls.jsonl` 한 줄과 같은 모양이다(설계서 9.6)."""
 
@@ -379,3 +412,168 @@ class Call(BaseModel):
     output_chars: int
     seconds: float
     cached: bool
+
+
+class EvalInfo(_FileModel):
+    """평가 하나의 정보. `.deeptwin/eval/<평가 ID>/eval.json`.
+
+    조건과 이어지지 않는 것만 적는다. 어느 실행이 어느 조건인지는 대응표(`EvalKey`)에 둔다.
+    """
+
+    id: str
+    ts: str
+    skill: str
+    split: Split
+    tasks: list[str]
+    """평가한 과제 ID. 파일 이름순이다."""
+    against: list[Condition]
+    """`full`의 상대 조건. `base`, `examples` 가운데 고른 것이고 이 순서다(예: `["base",
+    "examples"]`). 과제마다 상대 하나에 쌍 하나다."""
+    seed: str
+    """쌍의 순서와 좌우를 정한 씨앗. 주지 않으면 평가 ID다."""
+    skill_hash: str | None = None
+    """평가를 준비할 때 계산한 바탕 스킬의 해시(`DeepTwin.skill_hash`, `sha256:...`). `None`이면(이
+    필드가 없는 예전 파일) 바탕 스킬이 바뀌었는지 보지 않는다."""
+    skill_changed: bool = False
+    """쌍을 만드는 동안 바탕 스킬의 해시가 `skill_hash`와 달라진 것을 봤으면 참이다. 한 번 참이 되면
+    파일을 되돌려도 그대로다."""
+    package_version: str | None = None
+    """평가를 시작할 때의 deeptwin 버전. `None`이면(이 필드가 없는 예전 파일) 보고서가 패키지가
+    바뀌었는지 보지 않는다."""
+    commit: str | None = None
+    """평가를 시작할 때의 deeptwin 커밋 해시. 알 수 없었으면 `None`이다."""
+    seal_open: str | None = None
+    """봉인 평가면 원장의 `seal_open` 줄 ID(`seal-NNNN`). 봉인이 아니거나 아직 열기 전이면
+    `None`이다."""
+    reused: list[str] = Field(default_factory=list)
+    """다른 평가에서 이미 연 봉인 과제의 ID. 원장에서 계산한 값이다. 봉인이 아니면 늘 비었다."""
+
+
+class PairKey(BaseModel):
+    """쌍 하나의 대응: 과제와, 왼쪽과 오른쪽 글을 만든 조건."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    task: str
+    left: Condition
+    right: Condition
+
+
+class EvalKey(_FileModel):
+    """평가 하나의 대응표. `.deeptwin/eval/<평가 ID>/key.json`. 판정이 끝난 뒤에만 합친다."""
+
+    eval: str
+    runs: dict[str, dict[Condition, str]]
+    """과제 ID -> 조건 -> 그 결과물을 만든 실행 ID."""
+    pairs: dict[str, PairKey]
+    """쌍 ID -> 그 쌍의 대응."""
+
+
+class Pair(BaseModel):
+    """쌍 목록(`pairs.jsonl`)의 한 줄. 조건을 되짚을 값(조건, 실행 ID, 결과물 경로)은 없다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    task: str
+    left: str
+    """왼쪽(화면의 [1]) 결과물의 글."""
+    right: str
+    """오른쪽(화면의 [2]) 결과물의 글."""
+
+
+class Choice(BaseModel):
+    """선택 기록(`choices.jsonl`)의 한 줄."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pair: str
+    chosen: Side
+    seconds: float
+    """쌍을 보여 준 때부터 고른 때까지의 초(소수 셋째 자리까지)."""
+    ts: str
+    """고른 시각. ISO 8601(`datetime.fromisoformat`으로 읽히는 글)이다. 하루 몫을 셀 때 읽는다."""
+
+    @field_validator("ts")
+    @classmethod
+    def _iso_time(cls, value: str) -> str:
+        try:
+            # 하루 몫을 셀 때처럼 이 컴퓨터의 시간대로 바꿔 본다. 바꿀 수 없는 시각도 막는다
+            datetime.fromisoformat(value).astimezone()
+        except (ValueError, OverflowError, OSError):
+            raise ValueError(f"ISO 8601 시각이어야 합니다(받은 값: {value!r})") from None
+        return value
+
+
+class Comparison(BaseModel):
+    """보고서의 상대 하나: `full`과 `against`를 견준 쌍들의 결과."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    against: Condition
+    pairs: int
+    """그 상대와 견준 쌍의 수."""
+    judged: int
+    """그 쌍 가운데 선택이 있는 수. 모두 고른 뒤에만 보고서를 내므로 `pairs`와 같다."""
+    wins: int
+    """고른 쪽이 `full`인 쌍의 수."""
+    selection_rate: float
+    """`wins / pairs`."""
+    p_value: float
+    """한쪽 꼬리 이항 검정의 값 P(X >= wins), X ~ B(pairs, 0.5)."""
+    mean_seconds: float | None
+    """그 쌍들을 고르는 데 걸린 초(`Choice.seconds`)의 평균. 소수 셋째 자리까지다. 판정한 쌍이
+    없으면 `None`이다."""
+    median_seconds: float | None
+    """같은 초의 중앙값. 소수 셋째 자리까지다. 판정한 쌍이 없으면 `None`이다."""
+
+
+class ConditionCost(BaseModel):
+    """보고서의 조건 하나의 실행 비용: 그 평가의 그 조건 실행들의 `calls.jsonl`을 더한 값.
+
+    그 조건의 실행 가운데 하나라도 `calls.jsonl`이 없으면 네 값이 모두 `None`이다. 토큰 수는
+    재지 않으므로 두지 않는다.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    condition: Condition
+    calls: int | None
+    """호출 수(`calls.jsonl`의 줄 수의 합)."""
+    seconds: float | None
+    """호출에 걸린 초(`Call.seconds`)의 합. 소수 셋째 자리까지다."""
+    input_chars: int | None
+    """입력 글자 수의 합."""
+    output_chars: int | None
+    """출력 글자 수의 합."""
+
+
+class EvalReport(_FileModel):
+    """판정 보고서. `.deeptwin/eval/<평가 ID>/report.json`."""
+
+    eval: str
+    skill: str
+    split: Split
+    pairs: int
+    """평가의 쌍 수. 모두 고른 뒤에만 보고서를 내므로 고른 쌍 수와 같다."""
+    reused: list[str] = Field(default_factory=list)
+    """다른 평가에서 이미 연 봉인 과제의 ID. 봉인이 아니면 비었다."""
+    reference_changed: list[str] = Field(default_factory=list)
+    """기준이 등록 때와 다른 봉인 과제의 ID. 보고서를 낼 때마다 다시 본다. 봉인이 아니면 비었다."""
+    skill_changed: bool = False
+    """평가를 시작한 뒤 바탕 스킬(`SKILL.md`, `skill.yaml`, `checks.py`)이 바뀌었으면 참이다.
+    `eval.json`의 `skill_changed`이거나 보고서를 낼 때의 해시가 `skill_hash`와 다를 때다."""
+    package_version: str
+    """보고서를 낼 때의 deeptwin 버전."""
+    commit: str | None
+    """보고서를 낼 때의 deeptwin 커밋 해시. 알 수 없으면 `None`이다."""
+    package_changed: bool = False
+    """`eval.json`의 `package_version`이 있고, 그 (버전, 커밋)이 보고서를 낼 때와 다르면 참이다.
+    `package_version`이 없는 예전 평가는 견주지 않고 거짓이다."""
+    prompt_versions: list[str | None]
+    """이 평가의 실행들이 원장의 `run` 줄에 적은 `prompt_version`. 대응표의 `runs` 순서로 처음 나온
+    값만 하나씩 둔다. 원장에서 실행 줄을 하나도 찾지 못하면 비었다."""
+    comparisons: list[Comparison]
+    """상대마다 하나. `eval.json`의 `against` 순서다."""
+    costs: list[ConditionCost]
+    """조건마다 하나. 대응표의 `runs`에 든 조건을 `base`, `examples`, `full` 순서로 둔다."""

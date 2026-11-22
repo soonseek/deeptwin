@@ -37,6 +37,59 @@ deeptwin verify
 
 `env -u ANTHROPIC_API_KEY`는 환경 변수에 키가 있을 때 claude가 구독보다 키를 먼저 쓰지 않게 합니다. 결과물은 명령이 알려 준 실행 ID의 폴더(`.deeptwin/runs/<실행 ID>/output.md`)에 남고, 원본 스킬 파일은 그대로이며, `deeptwin verify`가 통과합니다.
 
+## 평가하는 법
+
+봉인 과제 3개로 바탕만, 바탕+예시, 바탕+딥트윈의 결과물(9개)을 만들고, 어느 쪽인지 가린 6쌍을 골라 보고서를 냅니다. 쌍은 과제마다 바탕+딥트윈 대 바탕만, 바탕+딥트윈 대 바탕+예시의 둘이라 상대마다 3쌍입니다. 위의 `run`을 돌린 복사본은 원장이 그만큼 길어지므로, 새로 복사한 폴더에서 시작합니다.
+
+1. 쌍 만들기. 가짜 모델로 만들면 모델을 부르지 않고 답 파일을 결과물로 씁니다.
+
+   ```sh
+   deeptwin eval pairs inquiry-reply --split sealed --provider fake --fake-answer answers/keeps-principles.md
+   ```
+
+   실제 모델로 만들려면 공급자 옵션을 빼고 돌립니다. 모델을 9번 부릅니다.
+
+   ```sh
+   env -u ANTHROPIC_API_KEY deeptwin eval pairs inquiry-reply --split sealed
+   ```
+
+   새 복사본의 첫 평가라 평가 ID는 `eval-0001`입니다. 아래 명령에는 쌍 만들기가 알려 준 평가 ID를 씁니다.
+
+   생성이 중간에 멈췄을 때만, 고르기 전에 남은 결과물을 이어 만듭니다(그 전에는 고를 수 없습니다). 가짜 모델이면 공급자 옵션을 다시 줍니다.
+
+   ```sh
+   deeptwin eval pairs --resume eval-0001 --provider fake --fake-answer answers/keeps-principles.md
+   ```
+
+   실제 모델이면 이어 만들 때도 `env -u ANTHROPIC_API_KEY`를 붙이고 공급자 옵션 없이 돌립니다.
+
+   ```sh
+   env -u ANTHROPIC_API_KEY deeptwin eval pairs --resume eval-0001
+   ```
+
+2. 고르기. 쌍마다 문의와 두 글 `[1]`, `[2]`가 나오고, 1이나 2를 입력해 고릅니다.
+
+   ```sh
+   deeptwin eval judge eval-0001
+   ```
+
+   브라우저로 고르려면 `deeptwin eval judge eval-0001 --web`을 돌리고, 명령이 알려 주는 127.0.0.1 주소를 엽니다. 이 컴퓨터 안에서만 열리는 화면이고, 다 고르면 저절로 닫힙니다.
+
+3. 이어 가기. 판정은 입력이 끝나거나, Ctrl-C를 누르거나, 상한(`--limit`, `--daily-limit`)에 닿으면 멈춥니다. 고른 것은 남아 있고, `deeptwin eval judge eval-0001`을 다시 부르면 남은 쌍부터 잇습니다.
+
+4. 보고서. 6쌍을 다 고른 뒤에 냅니다. 남은 쌍이 있으면 그 수를 알리고 보고서를 쓰지 않습니다.
+
+   ```sh
+   deeptwin eval report eval-0001
+   deeptwin verify
+   ```
+
+   보고서는 `.deeptwin/eval/eval-0001/report.md`와 `report.json`에 남습니다. `deeptwin verify`는 원장 20줄과 봉인 과제 3개를 확인합니다.
+
+- 가짜 모델은 모든 결과물에 같은 답 파일을 쓰므로 쌍의 두 글이 같습니다. 순서를 익히는 용도입니다.
+- 봉인 묶음을 열면 원장에 `seal_open` 줄이 남습니다. 같은 복사본에서 다시 `--split sealed`로 평가하면 그 과제들이 재사용으로 적히므로, 처음부터 다시 하려면 새 복사본에서 합니다.
+- 쌍 목록과 판정 화면에는 어느 글이 어느 조건인지 나오지 않고, 조건 이름은 보고서에서만 보입니다. 원장은 과제 10줄에 `seal_open` 1줄과 `run` 9줄이 더해져 20줄이 됩니다.
+
 ## 데이터 구성
 
 | 곳 | 든 것 |
@@ -50,8 +103,8 @@ deeptwin verify
 | `.deeptwin/layers/principles.yaml` | 원칙 3개. `prin-01`, `prin-02`는 `checks.py`의 함수를 `check`로 가리키고 `prin-03`은 `check`가 없습니다 |
 | `.deeptwin/tasks/` | 과제 10개(아래 표). 모두 `context`가 있습니다 |
 | `.deeptwin/ledger.jsonl` | 과제 10개를 `deeptwin task add`로 등록해 생긴 `task` 줄 10개뿐입니다. 봉인 과제의 줄에는 기준의 해시가 있습니다 |
-| `answers/keeps-principles.md` | 가짜 모델이 `task-0001`에 돌려주는 답. 모든 원칙을 지킵니다 |
-| `answers/breaks-promise.md` | 가짜 모델이 `task-0001`에 돌려주는 답. 검사 함수가 있는 원칙 `prin-01`을 어깁니다 |
+| `answers/keeps-principles.md` | 가짜 모델이 `task-0001`에 돌려주는 답. 모든 원칙을 지킵니다. `eval pairs`에 주면 모든 생성에 같은 글을 줍니다 |
+| `answers/breaks-promise.md` | 가짜 모델이 `task-0001`에 돌려주는 답. 검사 함수가 있는 원칙 `prin-01`을 어깁니다. `eval pairs`에 주면 모든 생성에 같은 글을 줍니다 |
 
 | 과제 | 분할 | `purpose` | `audience` | 기준(`reference`) |
 |------|------|-----------|------------|------------------|
@@ -66,7 +119,7 @@ deeptwin verify
 | `task-0201` | 예비 | 교육문의 | 입문자 | 없음 |
 | `task-0202` | 예비 | 구독자질문 | 실무자 | `my_version` |
 
-어느 과제로 조립해도 원칙과 우선순위가 상한을 넘지 않습니다(`over_budget`이 나지 않습니다). 승인 대기 후보(`candidates/`)는 아직 없습니다. 평가와 피드백을 맡는 뒤의 기능이 이 데이터를 씁니다.
+어느 과제로 조립해도 원칙과 우선순위가 상한을 넘지 않습니다(`over_budget`이 나지 않습니다). 승인 대기 후보(`candidates/`)는 아직 없습니다. 평가(위의 평가하는 법)는 봉인 과제 3개와 대표작 good 4건(바탕+예시에는 과제마다 그 가운데 3건)을 쓰고, 피드백을 맡는 뒤의 기능도 이 데이터를 씁니다.
 
 `deeptwin status`는 이렇게 나옵니다.
 

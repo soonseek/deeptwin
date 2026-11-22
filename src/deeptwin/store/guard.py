@@ -1,8 +1,8 @@
 """봉인 보호(설계서 9.5): 봉인 과제는 함수마다가 아니라 저장 계층에서 막는다.
 
-- `DeepTwin.tasks("sealed")`와 봉인 과제의 `DeepTwin.task(id)`는 `SealedToken` 없이 부르면
-  `sealed_access`다. 토큰은 평가 모듈의 `open_sealed`가 만든다(epic-blind-eval). 공개 API로는
-  내보내지 않는다.
+- `DeepTwin.tasks("sealed")`, 봉인 과제의 `DeepTwin.task(id)`, `DeepTwin.changed_references`는
+  `SealedToken` 없이 부르면 `sealed_access`다. 토큰은 평가 모듈(`deeptwin.eval.sealing`)만 만들고,
+  밖으로 내주는 것은 `open_sealed` 하나다. 명령줄은 토큰을 다루지 않는다.
 - 봉인 과제의 기준(`reference`)은 등록할 때 `reference_hash`로 원장의 `task` 줄에 남기고,
   `deeptwin verify`가 같은 함수로 다시 계산해 견준다.
 

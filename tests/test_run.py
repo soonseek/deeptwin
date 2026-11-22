@@ -9,7 +9,9 @@ from typing import Any
 
 import pytest
 
+import deeptwin.runs as runs
 from deeptwin import Composed, DeepTwin, DeeptwinError, Task, record_run
+from deeptwin.errors import ProviderFailedError
 from deeptwin.models import Rejected
 from deeptwin.runs import OUTPUT_FILE, discard_run_on_failure
 
@@ -203,3 +205,111 @@ def test_new_run_ignores_ledger_run_ids_longer_than_nine_digits(deeptwin: DeepTw
     assert deeptwin.new_run() == "run-0004"
     deeptwin.append_ledger({"id": "run-" + "9" * 9, "type": "run"})
     assert deeptwin.new_run() == "run-1000000000"
+
+
+# 생성 길: prepare_run, execute_run
+
+
+def tree(folder: Path) -> dict[str, bytes]:
+    """폴더의 파일과 바이트. 잠금 파일(`.lock`)은 잠금을 잡기만 해도 생기므로 뺀다."""
+    return {
+        p.relative_to(folder).as_posix(): p.read_bytes()
+        for p in sorted(folder.rglob("*"))
+        if p.is_file() and p.name != ".lock"
+    }
+
+
+def test_execute_run_gives_the_generator_the_copy_and_a_calls_path_in_the_run_folder(
+    minimal_copy: Path,
+) -> None:
+    deeptwin = DeepTwin.open(minimal_copy)
+    skill = deeptwin.skill("minimal")
+    the_task = deeptwin.task("task-0001")
+    seen: list[tuple[str, str, Path]] = []
+
+    def generate(system: str, user: str, calls: Path) -> str:
+        seen.append((system, user, calls))
+        calls.write_text('{"가짜": "호출 기록"}\n', encoding="utf-8")
+        return "가짜 답장\n"
+
+    prepared = runs.prepare_run(deeptwin, skill, the_task, context={"purpose": "문의"})
+    outcome = runs.execute_run(deeptwin, prepared, generate)
+
+    run_dir = deeptwin.run_dir(outcome.record.id)
+    [(system, user, calls_path)] = seen
+    assert system == (run_dir / "SKILL.md").read_text("utf-8") == prepared.skill_copy
+    assert user == the_task.input
+    assert calls_path == run_dir / runs.CALLS_FILE
+    assert calls_path.parent == run_dir
+    assert outcome.output == "가짜 답장\n"
+    assert (run_dir / OUTPUT_FILE).read_text("utf-8") == "가짜 답장\n"
+    assert outcome.violations == []
+    [entry] = ledger(deeptwin)
+    assert list(entry) == LEDGER_KEYS
+    assert entry["id"] == outcome.record.id == "run-0001"
+    assert entry["context"] == {"purpose": "문의"}
+    assert entry["guide_hash"] == prepared.composed.guide_hash
+
+
+def test_execute_run_with_every_layer_ablated_still_records_the_run(minimal_copy: Path) -> None:
+    deeptwin = DeepTwin.open(minimal_copy)
+    skill = deeptwin.skill("minimal")
+    the_task = deeptwin.task("task-0001")
+    prepared = runs.prepare_run(
+        deeptwin,
+        skill,
+        the_task,
+        context={"purpose": "문의"},
+        ablate=("instinct", "tendency", "priority", "principle"),
+    )
+
+    outcome = runs.execute_run(deeptwin, prepared, lambda system, user, calls: "가짜 답장\n")
+
+    assert prepared.composed.injected == []
+    assert ledger(deeptwin)[0]["injected"] == []
+    assert outcome.record.injected == []
+
+
+@pytest.mark.parametrize(
+    ("damage", "code"),
+    [
+        ("no-context", "context_required"),
+        ("broken-ledger", "ledger_broken"),
+    ],
+)
+def test_prepare_run_that_stops_writes_nothing(minimal_copy: Path, damage: str, code: str) -> None:
+    deeptwin = DeepTwin.open(minimal_copy)
+    skill = deeptwin.skill("minimal")
+    the_task = deeptwin.task("task-0001")
+    context = {"purpose": "문의"}
+    if damage == "no-context":
+        context = {}
+    else:
+        (deeptwin.path / "ledger.jsonl").write_bytes(b'{"id": "run-0001", "type": "run"')
+    before = tree(minimal_copy)
+
+    with pytest.raises(DeeptwinError) as info:
+        runs.prepare_run(deeptwin, skill, the_task, context=context)
+
+    assert info.value.code == code
+    assert tree(minimal_copy) == before
+    assert not (deeptwin.path / "runs").exists() or list((deeptwin.path / "runs").iterdir()) == []
+
+
+def test_failed_generation_leaves_no_run_folder_and_no_ledger_line(minimal_copy: Path) -> None:
+    deeptwin = DeepTwin.open(minimal_copy)
+    prepared = runs.prepare_run(
+        deeptwin,
+        deeptwin.skill("minimal"),
+        deeptwin.task("task-0001"),
+        context={"purpose": "문의"},
+    )
+
+    def generate(system: str, user: str, calls: Path) -> str:
+        raise ProviderFailedError("가짜 공급자가 실패했습니다.")
+
+    with pytest.raises(ProviderFailedError):
+        runs.execute_run(deeptwin, prepared, generate)
+
+    assert list((deeptwin.path / "runs").iterdir()) == []
+    assert not (deeptwin.path / "ledger.jsonl").exists()

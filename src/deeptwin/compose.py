@@ -1,7 +1,8 @@
 """유동 지침 조립: 맥락 검사, 고르기, 점수, 충돌, 상한, 예시, 표기(설계서 8.6).
 
 모델을 부르지 않는다(`deeptwin.llm`을 import하지 않는다). 같은 입력이면 같은 지침과
-같은 `guide_hash`를 낸다. 예시를 뽑는 무작위 순서도 과제 ID로 정해진다.
+같은 `guide_hash`를 낸다. 예시를 뽑는 무작위 순서도 과제 ID로 정해진다. 평가의 바탕+예시는
+6단계만 바꿔(`example_pick="past_work"`) 가져온 대표작 3개를 넣는다.
 """
 
 from __future__ import annotations
@@ -10,11 +11,12 @@ import hashlib
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from fractions import Fraction
-from typing import Literal, TypeVar, get_args
+from typing import Literal, TypeAlias, TypeVar, get_args
 
 from deeptwin.errors import (
     FluidMarkerMissingError,
     InvalidContextError,
+    NotEnoughExamplesError,
     OverBudgetError,
     UnknownLayerError,
     UnsupportedExamplePolicyError,
@@ -41,6 +43,7 @@ __all__ = [
     "FLUID_CLOSE",
     "FLUID_OPEN",
     "LAYERS",
+    "ExamplePick",
     "check_context",
     "compose",
     "fill_fluid",
@@ -62,6 +65,14 @@ GOOD_EXAMPLES_MAX = 2
 AVOID_EXAMPLES_MAX = 1
 """한 지침에 넣는 good, avoid 예시의 최대 수. `budget.examples`가 이보다 커도 늘지 않는다."""
 
+ExamplePick: TypeAlias = Literal["policy", "past_work"]
+"""6단계(예시)를 고르는 방식. `policy`는 스킬의 `example_policy`(`random_signature`)를 따르고,
+`past_work`는 가져온 대표작 good만 `PAST_WORK_EXAMPLES`개 넣는다(평가의 바탕+예시)."""
+_EXAMPLE_PICKS: tuple[str, ...] = get_args(ExamplePick)
+
+PAST_WORK_EXAMPLES = 3
+"""`past_work`로 넣는 예시의 수. 후보가 이보다 적으면 `not_enough_examples`다."""
+
 _SENTENCE_ENDS = (".", "?", "!")
 
 _Ruled = TypeVar("_Ruled", Principle, Priority)
@@ -76,6 +87,7 @@ def compose(
     *,
     context: Context,
     ablate: tuple[str, ...] = (),
+    example_pick: ExamplePick = "policy",
 ) -> Composed:
     """스킬의 유동 영역에 넣을 지침을 조립한다.
 
@@ -95,10 +107,20 @@ def compose(
     맥락의 축과 값이 스킬의 `context_axes`에 없으면 `invalid_context`다.
     예시를 빼지 않았는데 `example_policy`가 `random_signature`가 아니면
     `unsupported_example_policy`다.
+
+    `example_pick`이 `past_work`면 6단계만 바뀐다(`_pick_past_work`). 이 스킬의 `active` 예시
+    가운데 `source: past_work`, `grade: signature`, `kind: good`인 것을 뽑기 순서로 줄 세워 앞의
+    `PAST_WORK_EXAMPLES`개를 "이렇게 쓴다"에 넣고, 남은 후보는 `budget`으로 적는다. avoid는 넣지
+    않고 `budget.examples`와 `example_policy`는 보지 않는다. 후보가 모자라면
+    `not_enough_examples`다. `ablate`에 `instinct`가 있으면 `example_pick`은 쓰지 않는다.
+    `example_pick`이 두 값이 아니면 `ValueError`다.
     """
+    if example_pick not in _EXAMPLE_PICKS:
+        names = ", ".join(_EXAMPLE_PICKS)
+        raise ValueError(f"example_pick은 {names} 가운데 하나입니다(받은 값: {example_pick!r}).")
     _check_ablate(ablate)
     check_context(skill, context)
-    if "instinct" not in ablate:
+    if "instinct" not in ablate and example_pick == "policy":
         _check_example_policy(skill)
     all_principles = deeptwin.principles()
     all_priorities = deeptwin.priorities()
@@ -121,7 +143,10 @@ def compose(
 
     examples = _Examples()
     if "instinct" not in ablate:
-        examples = _pick_examples(skill, task, deeptwin.examples())
+        if example_pick == "past_work":
+            examples = _pick_past_work(skill, task, deeptwin.examples())
+        else:
+            examples = _pick_examples(skill, task, deeptwin.examples())
 
     guide = _render(skill, principles, priorities, cards.injected, examples)
     return Composed(
@@ -449,6 +474,38 @@ def _pick_examples(skill: Skill, task: Task, examples: Iterable[Example]) -> _Ex
         good=good[:good_count],
         avoid=avoid[:avoid_count],
         rejected=_rejected((e.id for e in left), "budget"),
+    )
+
+
+def _pick_past_work(skill: Skill, task: Task, examples: Iterable[Example]) -> _Examples:
+    """`past_work`. 후보는 이 스킬의 `active` 예시 가운데 `source: past_work`, `grade: signature`,
+    `kind: good`인 것이다(가져온 대표작). 학습 중 승인된 예시와 avoid는 후보가 아니고, 후보가 아닌
+    예시는 `rejected`에도 적지 않는다.
+
+    후보를 뽑기 순서(`_draw_order`)로 줄 세워 앞의 `PAST_WORK_EXAMPLES`개를 그 순서로 넣고, 남은
+    후보는 뽑기 순서로 `budget`에 적는다. 후보가 그보다 적으면 `not_enough_examples`다.
+    """
+    candidates = [
+        e
+        for e in examples
+        if e.skill == skill.id
+        and e.status == "active"
+        and e.grade == "signature"
+        and e.kind == "good"
+        and e.source == "past_work"
+    ]
+    if len(candidates) < PAST_WORK_EXAMPLES:
+        raise NotEnoughExamplesError(
+            f"스킬 {skill.id}의 가져온 대표작이 {len(candidates)}개뿐이라 바탕+예시를 만들 수 "
+            f"없습니다. {PAST_WORK_EXAMPLES}개가 필요합니다(active이고 source: past_work, "
+            "grade: signature, kind: good인 예시). "
+            f"deeptwin import <폴더> --skill {skill.id} --signature로 대표작을 더 가져오세요. "
+            "새 평가라면 --against base를 주어 바탕+예시 없이 바탕만과 견줄 수도 있습니다."
+        )
+    drawn = _draw_order(task.id, candidates)
+    return _Examples(
+        good=drawn[:PAST_WORK_EXAMPLES],
+        rejected=_rejected((e.id for e in drawn[PAST_WORK_EXAMPLES:]), "budget"),
     )
 
 

@@ -1,9 +1,10 @@
-"""YAML 읽기·쓰기, 모델 로더, 원자적 저장, JSONL 덧붙이기.
+"""YAML과 JSON 읽기·쓰기, 모델 로더, 원자적 저장, JSONL 덧붙이기.
 
 쓰기는 같은 폴더의 임시 파일에 쓴 뒤 `os.replace`로 바꾼다. 쓰다 죽어도 반쯤 쓴 파일이
 남지 않는다. YAML은 키 순서를 지키고 한글을 그대로 쓰며, 여러 줄 글은 `|` 블록으로 쓴다.
 
-모델 로더(`read_model`, `read_models`)는 형식이 틀린 파일을 `InvalidFileError`로 거부한다.
+모델 로더(`read_model`, `read_models`, `read_json_model`, `read_jsonl_models`)는 형식이 틀린
+파일을 `InvalidFileError`로 거부한다.
 메시지는 오류마다 한 줄씩, 줄 번호 순서로 `<프로젝트 기준 POSIX 경로>:<줄>: <설명>`이다.
 """
 
@@ -32,9 +33,13 @@ __all__ = [
     "display_path",
     "dump_yaml",
     "invalid_file",
+    "read_json_model",
+    "read_jsonl_models",
     "read_model",
     "read_models",
     "read_utf8",
+    "write_json_model",
+    "write_jsonl_models",
     "write_model",
     "write_models",
     "write_text",
@@ -160,6 +165,83 @@ def write_bytes(path: Path, data: bytes) -> None:
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+def write_json_model(path: Path, model: BaseModel) -> None:
+    """모델 하나를 JSON 파일 하나로 원자적으로 쓴다. 들여쓰기 2칸, 한글은 그대로, 끝에 줄바꿈 하나.
+
+    필드 이름은 파일의 이름(alias)이다. 같은 모델이면 같은 바이트다.
+    """
+    data = model.model_dump(mode="json", by_alias=True)
+    write_text(path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+
+
+def write_jsonl_models(path: Path, models: Iterable[BaseModel]) -> None:
+    """모델 목록을 JSONL 파일 하나로 원자적으로 쓴다. 한 줄에 하나씩, 받은 순서대로다."""
+    write_text(
+        path,
+        "".join(
+            json.dumps(model.model_dump(mode="json", by_alias=True), ensure_ascii=False) + "\n"
+            for model in models
+        ),
+    )
+
+
+def read_json_model(path: Path, model: type[M], *, root: Path) -> M:
+    """JSON 파일 하나를 모델 하나로 읽는다. 메시지의 경로는 `root` 기준이다.
+
+    UTF-8이 아니거나, JSON으로 읽을 수 없거나, 형식이 틀리면 `InvalidFileError`다.
+    """
+    text = read_utf8(path, root=root)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as error:
+        raise InvalidFileError(
+            f"{display_path(path, root)}:{error.lineno}: JSON으로 읽을 수 없습니다"
+        ) from None
+    except (ValueError, RecursionError):
+        raise InvalidFileError(f"{display_path(path, root)}:1: JSON으로 읽을 수 없습니다") from None
+    try:
+        return model.model_validate(data)
+    except ValidationError as error:
+        raise invalid_file(path, root, _problems(error, list_file=False), text=text) from None
+
+
+def read_jsonl_models(path: Path, model: type[M], *, root: Path) -> list[M]:
+    """JSONL 파일 하나를 줄마다 모델 하나로 읽는다. 파일에 적힌 순서를 지킨다.
+
+    파일 끝의 줄바꿈 하나는 줄이 아니다. 빈 줄, JSON 객체로 읽을 수 없는 줄, 형식이 틀린 줄이
+    있으면 `InvalidFileError`다. 메시지는 틀린 곳마다 `<root 기준 경로>:<줄>: <설명>`이다.
+    """
+    text = read_utf8(path, root=root)
+    lines = text.split("\n")
+    if text.endswith("\n") or not text:
+        lines.pop()
+    shown = display_path(path, root)
+    items: list[M] = []
+    found: list[str] = []
+    for number, line in enumerate(lines, start=1):
+        if not line.strip():
+            found.append(f"{shown}:{number}: 빈 줄입니다")
+            continue
+        try:
+            data = json.loads(line)
+        except (ValueError, RecursionError):
+            found.append(f"{shown}:{number}: JSON으로 읽을 수 없는 줄입니다")
+            continue
+        if not isinstance(data, dict):
+            found.append(f"{shown}:{number}: JSON 객체가 아닙니다")
+            continue
+        try:
+            items.append(model.model_validate(data))
+        except ValidationError as error:
+            found += [
+                f"{shown}:{number}: {f'{p.field}: ' if p.field else ''}{p.text}"
+                for p in _problems(error, list_file=False)
+            ]
+    if found:
+        raise InvalidFileError("\n".join(found))
+    return items
 
 
 def append_jsonl(path: Path, entry: dict[str, Any]) -> None:

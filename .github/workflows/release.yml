@@ -45,6 +45,39 @@ jobs:
           echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"
       - name: 빌드
         run: uv build
+      - name: 빌드에 커밋이 들어갔는지 확인
+        # 빌드 훅(hatch_build.py)이 sdist의 src/deeptwin/_commit.py와 wheel의 deeptwin/_commit.py에
+        # 지금 커밋의 해시를 넣었는지 본다. 없으면 아무 데도 올리지 않는다
+        run: |
+          uv run --no-project python - "$(git rev-parse HEAD)" <<'EOF'
+          import glob
+          import sys
+          import tarfile
+          import zipfile
+
+          head = sys.argv[1]
+          sdists = glob.glob("dist/*.tar.gz")
+          wheels = glob.glob("dist/*.whl")
+          if len(sdists) != 1 or len(wheels) != 1:
+              print(f"::error::dist/에 sdist와 wheel이 하나씩 있어야 합니다: {sdists + wheels}")
+              sys.exit(1)
+          problems = []
+          with tarfile.open(sdists[0]) as sdist:
+              found = [n for n in sdist.getnames() if n.endswith("/src/deeptwin/_commit.py")]
+              member = sdist.extractfile(found[0]) if len(found) == 1 else None
+              if member is None or head not in member.read().decode("utf-8"):
+                  problems.append(f"sdist의 src/deeptwin/_commit.py({found})")
+          with zipfile.ZipFile(wheels[0]) as wheel:
+              names = wheel.namelist()
+              if "deeptwin/_commit.py" not in names or head not in wheel.read(
+                  "deeptwin/_commit.py"
+              ).decode("utf-8"):
+                  problems.append("wheel의 deeptwin/_commit.py")
+          if problems:
+              print(f"::error::빌드 결과물에 커밋 {head}이 없습니다: {', '.join(problems)}")
+              sys.exit(1)
+          print(f"sdist와 wheel에 커밋 {head}이 들어 있습니다.")
+          EOF
       - uses: actions/upload-artifact@v7
         with:
           name: dist

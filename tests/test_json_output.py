@@ -3,6 +3,7 @@
 stdout은 JSON 객체 하나이고, `ok`, `command`, 그리고 성공이면 `result`, 오류면
 `error.code`와 `error.message`가 있다. 종료 코드는 성공 0, 오류 1이다.
 `init`은 빈 폴더에서, 나머지는 예제(`examples/inquiry-reply`)의 복사본에서 돈다.
+평가 명령은 앞서 다른 명령으로 평가를 만들어 두고 돌리고, 판정은 stdin으로 고른다.
 """
 
 from __future__ import annotations
@@ -16,15 +17,34 @@ import pytest
 import typer
 
 from deeptwin.cli import main
-from test_cli import invoke, parsed
+from test_cli import invoke, ok_json, parsed, runner
 
 SKILL = "inquiry-reply"
 FAKE = ("--provider", "fake", "--fake-answer", "answers/keeps-principles.md")
 ADD = ("task", "add", "new-task.yaml")
+EVAL = "eval-0001"
+PAIRS = ("eval", "pairs", SKILL, "--against", "base", "--split", "spare")
 
 
 def _nothing(root: Path) -> None:
     pass
+
+
+def _no_step() -> None:
+    pass
+
+
+def _made_eval() -> None:
+    """예비 과제 둘로 평가 eval-0001을 만든다(쌍 2개)."""
+    ok_json(invoke(*PAIRS, *FAKE, "--json"), "eval pairs")
+
+
+def _judged_eval() -> None:
+    """평가 eval-0001을 만들고 두 쌍을 모두 고른다."""
+    _made_eval()
+    ok_json(
+        runner.invoke(main.app, ["eval", "judge", EVAL, "--json"], input="1\n2\n"), "eval judge"
+    )
 
 
 def _block_data_folder(root: Path) -> None:
@@ -61,6 +81,14 @@ def _tamper_ledger(root: Path) -> None:
     path.write_bytes(b"".join(lines))
 
 
+def _retire_two_signature_examples(root: Path) -> None:
+    """가져온 대표작 넷 가운데 둘을 `retired`로 바꾼다. 바탕+예시에 넣을 대표작이 둘만 남는다."""
+    for example_id in ("ex-0003", "ex-0004"):
+        path = root / ".deeptwin" / "layers" / "examples" / f"{example_id}.yaml"
+        text = path.read_text(encoding="utf-8")
+        path.write_text(text.replace("status: active", "status: retired"), encoding="utf-8")
+
+
 def _break_principles(root: Path) -> None:
     (root / ".deeptwin" / "layers" / "principles.yaml").write_text(
         "- {schema: 1, id: prin-01, rule: 가상의 원칙, kind: nevr, status: active, "
@@ -81,6 +109,12 @@ class Case:
     """돌리기 전에 프로젝트 폴더를 바꾸는 함수."""
     in_example: bool = True
     """예제 복사본에서 돌리는지. 아니면 빈 폴더다."""
+    before: Callable[[], None] = _no_step
+    """프로젝트 폴더로 옮긴 뒤, 돌리기 전에 부르는 명령들."""
+    input: str | None = None
+    """stdin에 줄 입력."""
+    env: tuple[tuple[str, str], ...] = ()
+    """돌리기 바로 전에 거는 환경 변수(이름, 값)."""
 
     @property
     def id(self) -> str:
@@ -104,6 +138,26 @@ CASES = [
     Case("verify", ("verify",), "ledger_broken", _tamper_ledger),
     Case("status", ("status",)),
     Case("status", ("status",), "invalid_file", _break_principles),
+    Case("eval pairs", (*PAIRS, *FAKE)),
+    Case("eval pairs", (*PAIRS, "--provider", "fake"), "fake_answer_required"),
+    Case("eval pairs", ("eval", "pairs", SKILL, "--split", "sealed", *FAKE)),
+    Case(
+        "eval pairs",
+        ("eval", "pairs", SKILL, "--split", "spare", *FAKE),
+        "not_enough_examples",
+        _retire_two_signature_examples,
+    ),
+    Case("eval pairs", ("eval", "pairs", "--resume", "eval-0099", *FAKE), "eval_not_found"),
+    Case(
+        "eval pairs",
+        ("eval", "pairs", SKILL, "--split", "sealed"),
+        "claude_not_found",
+        env=(("PATH", ""),),
+    ),
+    Case("eval judge", ("eval", "judge", EVAL), before=_made_eval, input="1\n2\n"),
+    Case("eval judge", ("eval", "judge", "eval-0099"), "eval_not_found"),
+    Case("eval report", ("eval", "report", EVAL), before=_judged_eval),
+    Case("eval report", ("eval", "report", EVAL), "judging_unfinished", before=_made_eval),
 ]
 
 
@@ -115,8 +169,11 @@ def test_json_output_is_one_object(
     root.mkdir(exist_ok=True)
     case.prepare(root)
     monkeypatch.chdir(root)
+    case.before()
+    for name, value in case.env:
+        monkeypatch.setenv(name, value)
 
-    result = invoke(*case.args, "--json")
+    result = runner.invoke(main.app, [*case.args, "--json"], input=case.input)
 
     payload = parsed(result)
     assert payload["command"] == case.command

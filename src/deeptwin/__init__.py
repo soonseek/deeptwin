@@ -3,8 +3,6 @@
 공개 API만 내보낸다.
 """
 
-from importlib.metadata import PackageNotFoundError, version
-
 from deeptwin.checks import check
 from deeptwin.compose import compose, fill_fluid
 from deeptwin.errors import DeeptwinError
@@ -23,14 +21,13 @@ from deeptwin.models import (
     Task,
     Violation,
 )
+from deeptwin.provenance import package_version
 from deeptwin.runs import record_run
 from deeptwin.status import project_status
 from deeptwin.store.project import DeepTwin
 
-try:
-    __version__ = version("deeptwin")
-except PackageNotFoundError:  # pragma: no cover - 설치하지 않고 소스에서 바로 쓸 때
-    __version__ = "0+unknown"
+__version__ = package_version()
+"""설치된 패키지의 버전. 설치하지 않고 소스에서 바로 쓰면 `"0+unknown"`이다."""
 
 __all__ = [
     "Candidate",

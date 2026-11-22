@@ -1,5 +1,20 @@
 # 변경 기록
 
+## 다음 버전(아직 배포하지 않음)
+
+0.1.0a1 뒤에 더했고 아직 배포하지 않은 변경입니다.
+
+- 평가: `deeptwin eval pairs`, `deeptwin eval judge`, `deeptwin eval report` 세 명령으로 같은 바탕 스킬의 세 조건(`base` 바탕만, `examples` 바탕+예시, `full` 바탕+딥트윈)을 견줍니다. 쌍 목록과 판정 화면에는 조건 이름이 나오지 않고, 대응표는 보고서를 낼 때 처음 합칩니다. 쌍의 순서와 좌우는 씨앗(`--seed`, 기본은 평가 ID)으로 정하므로 같은 씨앗이면 같습니다.
+- 바탕+예시는 가져온 대표작 good 3개만 넣고, 모자라면 모델을 부르기 전에 `not_enough_examples`로 멈춥니다. 견줄 상대(`base`, `examples`)는 `--against`로 고릅니다.
+- 판정: 터미널에서 1이나 2로 고르거나, `--web`이면 127.0.0.1에만 여는 웹 화면에서 고릅니다. 한 번에 `--limit`(기본 15)쌍, 한 평가에서 하루에 `--daily-limit`(기본 30)쌍까지 보여 주고, 멈춘 뒤 다시 부르면 남은 쌍부터 이어 고릅니다.
+- 봉인 평가: `--split sealed`는 생성 바로 앞에서 묶음을 열고 원장에 `seal_open` 줄을 남깁니다. 다른 평가에서 이미 연 과제는 재사용으로 적고, 기준이 등록 때와 다르면 판정과 보고서에서 알립니다. `--task`로 과제를 좁히고, 생성이 멈추면 `deeptwin eval pairs --resume <평가 ID>`로 남은 것만 만듭니다.
+- 바탕 스킬 해시: 평가를 시작할 때 바탕 스킬의 세 파일(SKILL.md, skill.yaml, checks.py)의 해시를 `eval.json`에 남기고, 평가 중에 바뀌면 막지 않고 알린 뒤 보고서에 표시합니다.
+- 보고서: 상대마다 바탕+딥트윈이 이긴 횟수, 선택률, 한쪽 꼬리 이항 검정의 p값(30쌍 중 20번이면 0.0494), 고르는 데 걸린 초의 평균과 중앙값을 `report.json`과 `report.md`에 씁니다. 조건마다 호출 수, 호출에 걸린 초, 입출력 글자 수를 적고, 보고서 전체에는 패키지 버전, 커밋, 프롬프트 버전을 적습니다. 평가를 시작할 때와 패키지가 다르면 `package_changed`로 표시합니다.
+- 빌드: 빌드 훅(`hatch_build.py`)이 sdist와 wheel 안의 `deeptwin/_commit.py`에 커밋 해시를 넣고, 배포(`release.yml`)는 올리기 전에 그 커밋이 들어 있는지 확인합니다.
+- 라이브러리: `deeptwin.runs`의 `prepare_run`과 `execute_run`, 평가 모듈 `deeptwin.eval`, 패키지 버전과 커밋을 돌려주는 `deeptwin.provenance`.
+- 새 오류 코드: `no_tasks`, `not_enough_examples`, `eval_not_found`, `eval_incomplete`, `judging_unfinished`, `invalid_choice`, `port_unavailable`.
+- 예제: `examples/inquiry-reply`의 README에 봉인 과제 3개로 평가하는 법(쌍 만들기, 고르기, 이어 가기, 보고서)을 더했습니다.
+
 ## 0.1.0a1
 
 TestPyPI에만 올린 첫 알파입니다. 함수 서명과 명령은 0.x 동안 바뀔 수 있습니다.
