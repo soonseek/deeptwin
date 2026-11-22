@@ -312,6 +312,13 @@ deeptwin eval judge <평가 ID> [--web] [--port 번호] [--limit 수] [--daily-l
 deeptwin eval report <평가 ID>
 ```
 
+평가는 이 순서로 합니다.
+
+1. 쌍 만들기: `deeptwin eval pairs`로 과제마다 바탕+딥트윈과 고른 상대(기본은 바탕만과 바탕+예시 둘 다라 세 조건 모두)의 결과물을 만들고, 어느 쪽인지 가린 쌍 목록을 씁니다(아래 `deeptwin eval pairs` 문단, 봉인 과제면 봉인 평가). 생성이 멈췄을 때만, 고르기 전에 `deeptwin eval pairs --resume <평가 ID>`로 남은 결과물을 이어 만듭니다(아래 `pairs.jsonl` 문단).
+2. 고르기: `deeptwin eval judge`로 터미널에서 고르거나, `--web`으로 브라우저에서 고릅니다(아래 `deeptwin eval judge` 문단과 `--web` 문단).
+3. 이어 가기: 판정이 멈췄으면 `deeptwin eval judge`를 다시 불러 남은 쌍부터 고릅니다(아래 이어 고르기).
+4. 보고서: 모든 쌍을 고른 뒤 `deeptwin eval report`로 보고서를 냅니다(아래 `deeptwin eval report` 문단).
+
 예제 복사본에서는 가짜 모델로 끝까지 돌려 볼 수 있습니다.
 
 ```sh
@@ -530,6 +537,18 @@ deeptwin status
 
 두 번째 실행은 원칙 `prin-01`을 어긴 답이라 `violations`에 그 원칙이 나옵니다. 어느 실행에서도 `skills/inquiry-reply/`의 파일은 바뀌지 않고 `deeptwin verify`가 통과합니다. 데이터 구성은 예제의 README에 있습니다.
 
+봉인 과제 3개로 평가도 돌려 볼 수 있습니다. 새로 복사한 폴더에서 세 조건의 결과물 9개와 가린 쌍 6개를 만들고, 고르고, 보고서를 냅니다.
+
+```sh
+deeptwin eval pairs inquiry-reply --split sealed --provider fake --fake-answer answers/keeps-principles.md
+deeptwin eval pairs --resume eval-0001 --provider fake --fake-answer answers/keeps-principles.md    # 생성이 멈췄을 때만
+deeptwin eval judge eval-0001        # 브라우저로 고르려면 --web을 붙인다
+deeptwin eval report eval-0001
+deeptwin verify
+```
+
+자세한 순서는 [예제 README](examples/inquiry-reply/README.md)의 평가하는 법에 있습니다.
+
 ## 폴더
 
 ```text
@@ -579,7 +598,7 @@ uv run pytest
 
 명령줄(`src/deeptwin/cli/`)은 공개 API만 씁니다. 다른 deeptwin 모듈에서 `from deeptwin.<모듈> import <이름>`으로 가져오는 이름은 그 모듈의 `__all__`에 있어야 하고 `_`로 시작하지 않습니다. 쓰는 이름을 검사할 수 없으므로 `import deeptwin.<모듈>`로 모듈을 통째로 가져오지 않습니다(`tests/test_public_api.py`가 검사합니다).
 
-테스트는 네트워크와 모델 없이 돌고, 가상 인물의 데이터만 씁니다. claude 공급자는 가짜 `claude` 스크립트로 확인합니다. 실제 모델을 부르는 테스트(예제를 실제 모델로 한 번 돌리는 것 포함)에는 `live` 표식을 달고 기본 실행에서 뺍니다. 로그인된 `claude`가 있으면 `uv run pytest -m live`로 따로 돌립니다.
+테스트는 네트워크와 모델 없이 돌고, 가상 인물의 데이터만 씁니다. claude 공급자는 가짜 `claude` 스크립트로 확인합니다. 실제 모델을 부르는 테스트(예제를 실제 모델로 한 번 돌리는 것과, 예제의 봉인 평가를 실제 모델로 끝까지 도는 것 포함)에는 `live` 표식을 달고 기본 실행에서 뺍니다. 로그인된 `claude`가 있으면 `uv run pytest -m live`로 따로 돌립니다.
 
 빌드할 때는 저장소 최상위의 빌드 훅 `hatch_build.py`(hatchling의 `custom` 훅, `[tool.hatch.build.hooks.custom]`)가 sdist와 wheel 안의 `src/deeptwin/_commit.py`에만 지금 커밋(`git rev-parse HEAD`)을 넣습니다. 저장소의 `src/deeptwin/_commit.py`는 늘 `COMMIT: str | None = None`이고 진짜 해시로 커밋하지 않습니다(그 줄이 정확히 한 번 있지 않으면 빌드가 멈춥니다). 훅은 넣을 파일을 저장소 밖 임시 폴더에 만들므로 빌드해도 `git status`는 그대로입니다. editable 설치(`uv sync`, `uv run`), 풀어 둔 sdist(최상위에 `PKG-INFO`가 있는 폴더. git 저장소로 만들어 꾸려도 sdist에 든 `_commit.py`를 그대로 씁니다), git 저장소가 아닌 곳에서는 아무것도 하지 않습니다. 빌드 의존성은 `hatchling` 하나이고, 배포(`release.yml`)는 빌드한 sdist와 wheel에 그 커밋이 들어 있는지 확인한 뒤에 올립니다.
 

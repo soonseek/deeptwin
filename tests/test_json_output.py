@@ -113,6 +113,8 @@ class Case:
     """프로젝트 폴더로 옮긴 뒤, 돌리기 전에 부르는 명령들."""
     input: str | None = None
     """stdin에 줄 입력."""
+    env: tuple[tuple[str, str], ...] = ()
+    """돌리기 바로 전에 거는 환경 변수(이름, 값)."""
 
     @property
     def id(self) -> str:
@@ -146,6 +148,12 @@ CASES = [
         _retire_two_signature_examples,
     ),
     Case("eval pairs", ("eval", "pairs", "--resume", "eval-0099", *FAKE), "eval_not_found"),
+    Case(
+        "eval pairs",
+        ("eval", "pairs", SKILL, "--split", "sealed"),
+        "claude_not_found",
+        env=(("PATH", ""),),
+    ),
     Case("eval judge", ("eval", "judge", EVAL), before=_made_eval, input="1\n2\n"),
     Case("eval judge", ("eval", "judge", "eval-0099"), "eval_not_found"),
     Case("eval report", ("eval", "report", EVAL), before=_judged_eval),
@@ -162,6 +170,8 @@ def test_json_output_is_one_object(
     case.prepare(root)
     monkeypatch.chdir(root)
     case.before()
+    for name, value in case.env:
+        monkeypatch.setenv(name, value)
 
     result = runner.invoke(main.app, [*case.args, "--json"], input=case.input)
 
