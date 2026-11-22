@@ -43,16 +43,25 @@ KEEPS = "answers/keeps-principles.md"
 BREAKS = "answers/breaks-promise.md"
 """원칙 prin-01을 어기는 가짜 모델의 답."""
 FAKE = ("--provider", "fake", "--fake-answer", KEEPS)
-PAIRS = ("eval", "pairs", SKILL, "--split", "spare")
+PAIRS = ("eval", "pairs", SKILL, "--against", "base", "--split", "spare")
 EVAL = "eval-0001"
 SPARE = ["task-0201", "task-0202"]
 """예제의 예비 과제. 파일 이름순이다."""
 ALL_LAYERS = ("instinct", "tendency", "priority", "principle")
-HIDDEN = ("base", "full", "바탕만", "딥트윈")
+HIDDEN = ("base", "full", "examples", "바탕만", "딥트윈", "바탕+예시")
 """쌍 목록과 판정 화면에 나오면 안 되는 조건 ID와 이름."""
 PAIR_KEYS = ["id", "task", "left", "right"]
 CHOICE_LINE_KEYS = ["pair", "chosen", "seconds", "ts"]
-PAIRS_RESULT_KEYS = ["eval", "skill", "split", "tasks", "pairs", "seed", "reused"]
+PAIRS_RESULT_KEYS = [
+    "eval",
+    "skill",
+    "split",
+    "tasks",
+    "pairs",
+    "seed",
+    "reused",
+    "skill_changed",
+]
 REPORT_RESULT_KEYS = [
     "eval",
     "skill",
@@ -60,6 +69,7 @@ REPORT_RESULT_KEYS = [
     "pairs",
     "reused",
     "reference_changed",
+    "skill_changed",
     "comparisons",
     "files",
 ]
@@ -181,6 +191,7 @@ def test_pairs_makes_the_eval_folder_runs_and_ledger_lines(in_example: Path) -> 
         "pairs": 2,
         "seed": EVAL,
         "reused": [],
+        "skill_changed": False,
     }
     assert "run-" not in result.stdout
     folder = eval_dir(in_example)
@@ -203,6 +214,8 @@ def test_pairs_makes_the_eval_folder_runs_and_ledger_lines(in_example: Path) -> 
         "tasks",
         "against",
         "seed",
+        "skill_hash",
+        "skill_changed",
         "seal_open",
         "reused",
     ]
@@ -892,6 +905,7 @@ def test_report_counts_wins_from_the_key_and_the_choices(in_example: Path, wins:
         "pairs",
         "reused",
         "reference_changed",
+        "skill_changed",
         "comparisons",
     ]
     assert saved == {"schema": 1, **{k: v for k, v in body.items() if k != "files"}}

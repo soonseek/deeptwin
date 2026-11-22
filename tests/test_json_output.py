@@ -23,7 +23,7 @@ SKILL = "inquiry-reply"
 FAKE = ("--provider", "fake", "--fake-answer", "answers/keeps-principles.md")
 ADD = ("task", "add", "new-task.yaml")
 EVAL = "eval-0001"
-PAIRS = ("eval", "pairs", SKILL, "--split", "spare")
+PAIRS = ("eval", "pairs", SKILL, "--against", "base", "--split", "spare")
 
 
 def _nothing(root: Path) -> None:
@@ -81,6 +81,14 @@ def _tamper_ledger(root: Path) -> None:
     path.write_bytes(b"".join(lines))
 
 
+def _retire_two_signature_examples(root: Path) -> None:
+    """가져온 대표작 넷 가운데 둘을 `retired`로 바꾼다. 바탕+예시에 넣을 대표작이 둘만 남는다."""
+    for example_id in ("ex-0003", "ex-0004"):
+        path = root / ".deeptwin" / "layers" / "examples" / f"{example_id}.yaml"
+        text = path.read_text(encoding="utf-8")
+        path.write_text(text.replace("status: active", "status: retired"), encoding="utf-8")
+
+
 def _break_principles(root: Path) -> None:
     (root / ".deeptwin" / "layers" / "principles.yaml").write_text(
         "- {schema: 1, id: prin-01, rule: 가상의 원칙, kind: nevr, status: active, "
@@ -131,6 +139,12 @@ CASES = [
     Case("eval pairs", (*PAIRS, *FAKE)),
     Case("eval pairs", (*PAIRS, "--provider", "fake"), "fake_answer_required"),
     Case("eval pairs", ("eval", "pairs", SKILL, "--split", "sealed", *FAKE)),
+    Case(
+        "eval pairs",
+        ("eval", "pairs", SKILL, "--split", "spare", *FAKE),
+        "not_enough_examples",
+        _retire_two_signature_examples,
+    ),
     Case("eval pairs", ("eval", "pairs", "--resume", "eval-0099", *FAKE), "eval_not_found"),
     Case("eval judge", ("eval", "judge", EVAL), before=_made_eval, input="1\n2\n"),
     Case("eval judge", ("eval", "judge", "eval-0099"), "eval_not_found"),

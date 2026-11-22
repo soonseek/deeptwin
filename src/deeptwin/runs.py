@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import TypeAlias
 
 from deeptwin.checks import PreparedChecks, prepare_checks
-from deeptwin.compose import compose, fill_fluid
+from deeptwin.compose import ExamplePick, compose, fill_fluid
 from deeptwin.errors import CheckFailedAfterRunError, CheckFailedError, ContextRequiredError
 from deeptwin.models import Composed, Context, Run, Skill, Task, Violation
 from deeptwin.store.files import write_text
@@ -81,19 +81,23 @@ def prepare_run(
     *,
     context: Context,
     ablate: tuple[str, ...] = (),
+    example_pick: ExamplePick = "policy",
 ) -> PreparedRun:
     """모델을 부르기 전에 알 수 있는 것을 이 순서로 본다. 아무것도 쓰지 않는다.
 
     1. 맥락: 스킬에 맥락 축이 있는데 `context`가 비었으면 `context_required`
-    2. 조립(`compose`)과 스킬 사본(`fill_fluid`): `invalid_context`, `unknown_layer`,
-       `over_budget`, `fluid_marker_missing` 등
+    2. 조립(`compose`, `ablate`와 `example_pick`을 그대로 넘긴다)과 스킬 사본(`fill_fluid`):
+       `invalid_context`, `unknown_layer`, `over_budget`, `not_enough_examples`,
+       `fluid_marker_missing` 등
     3. 원장의 끝 줄: 이어 쓸 `hash`를 얻지 못하면 `ledger_broken`
     4. 원칙의 검사 함수: `check_not_found`, `check_failed`
 
     `task`는 이미 읽은 과제다. 봉인 과제를 읽는 일(토큰)은 부르는 쪽의 몫이다.
     """
     _require_context(skill, task, context)
-    composed = compose(skill, task, deeptwin, context=context, ablate=ablate)
+    composed = compose(
+        skill, task, deeptwin, context=context, ablate=ablate, example_pick=example_pick
+    )
     skill_copy = fill_fluid(skill.skill_md.read_text(encoding="utf-8"), composed.guide)
     # 원장에 남길 수 없는 실행은 돌리지 않는다
     deeptwin.ledger_tail_hash()

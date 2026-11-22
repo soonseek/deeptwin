@@ -25,6 +25,7 @@ __all__ = [
     "JudgingUnfinishedError",
     "LedgerBrokenError",
     "NoTasksError",
+    "NotEnoughExamplesError",
     "NotInitializedError",
     "NothingToImportError",
     "OverBudgetError",
@@ -264,6 +265,17 @@ class NoTasksError(DeeptwinError):
 
     def __init__(self, message: str) -> None:
         super().__init__("no_tasks", message)
+
+
+class NotEnoughExamplesError(DeeptwinError):
+    """바탕+예시에 넣을 가져온 대표작이 모자란다.
+
+    이 스킬의 `active` 예시 가운데 `source: past_work`, `grade: signature`, `kind: good`인 것이
+    정한 수(3개)보다 적다.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__("not_enough_examples", message)
 
 
 class EvalNotFoundError(DeeptwinError):

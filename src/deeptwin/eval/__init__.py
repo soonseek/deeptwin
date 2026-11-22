@@ -1,4 +1,7 @@
-"""평가: 두 조건의 결과물을 만들어 조건 이름 없이 둘씩 고르고 보고서를 낸다.
+"""평가: 세 조건의 결과물을 만들어 조건 이름 없이 둘씩 고르고 보고서를 낸다.
+
+조건은 바탕만(`base`), 바탕+예시(`examples`), 바탕+딥트윈(`full`)이다(`CONDITIONS`). `full`과
+견줄 상대는 `AGAINST`에서 고르고, 쌍은 과제마다 상대 하나에 하나다.
 
 - `prepare_pairs`, `prepare_resume`, `build_pairs`: 조건별 결과물과 쌍 목록, 대응표(`eval pairs`).
   `prepare_resume`는 생성이 멈춘 평가의 남은 생성만 준비한다(`eval pairs --resume`).
@@ -12,12 +15,13 @@
 """
 
 from deeptwin.eval.judging import pending_pairs, record_choice
-from deeptwin.eval.pairs import CONDITIONS, build_pairs, prepare_pairs, prepare_resume
+from deeptwin.eval.pairs import AGAINST, CONDITIONS, build_pairs, prepare_pairs, prepare_resume
 from deeptwin.eval.reporting import report
 from deeptwin.eval.sealing import open_sealed
 from deeptwin.eval.stats import p_value
 
 __all__ = [
+    "AGAINST",
     "CONDITIONS",
     "build_pairs",
     "open_sealed",

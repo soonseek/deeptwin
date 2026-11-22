@@ -2,7 +2,7 @@
 
 개인의 판단 기준을 층별 파일로 쌓고, 작업마다 맞는 기준만 모델 없이 조립해 스킬의 유동 영역에 넣는 Python 라이브러리입니다.
 
-> 아직 초기 단계입니다(0.1.0a1, 시험용 저장소 TestPyPI에만 있습니다). 지금은 스킬 뼈대를 만들고, 과거 작업물을 예시로 가져오고, 과제를 등록하고, 원칙, 우선순위, 판단 카드, 예시를 조립해 스킬을 한 번 돌리고, 결과물이 어긴 원칙을 알려 주고, 쌓인 상태를 보고, 바탕만과 바탕+딥트윈의 결과물을 가린 채 골라 보고서를 내는 길까지 있습니다. 함수 서명과 명령은 0.x 동안 바뀔 수 있습니다.
+> 아직 초기 단계입니다(0.1.0a1, 시험용 저장소 TestPyPI에만 있습니다). 지금은 스킬 뼈대를 만들고, 과거 작업물을 예시로 가져오고, 과제를 등록하고, 원칙, 우선순위, 판단 카드, 예시를 조립해 스킬을 한 번 돌리고, 결과물이 어긴 원칙을 알려 주고, 쌓인 상태를 보고, 바탕만, 바탕+예시, 바탕+딥트윈의 결과물을 가린 채 골라 보고서를 내는 길까지 있습니다. 함수 서명과 명령은 0.x 동안 바뀔 수 있습니다.
 
 ## 설치
 
@@ -297,10 +297,16 @@ deeptwin verify
 오류: .deeptwin/tasks/sealed/task-0101.yaml: 기준(reference)이 등록 때와 다릅니다
 ```
 
-평가. 같은 스킬로 바탕만(`base`, 네 층을 모두 빼고 조립)과 바탕+딥트윈(`full`, 네 층을 다 넣고 조립)의 결과물을 과제마다 만들고, 어느 쪽인지 가린 채 둘씩 골라 보고서를 냅니다. 명령은 셋입니다.
+평가. 같은 바탕 스킬로 세 조건의 결과물을 과제마다 만들고, 어느 쪽인지 가린 채 바탕+딥트윈과 상대를 둘씩 골라 보고서를 냅니다.
+
+- 바탕만(`base`): 네 층을 모두 빼고 조립합니다.
+- 바탕+예시(`examples`): 판단 카드, 우선순위, 원칙을 빼고 예시만 넣습니다. 넣는 예시는 이 스킬의 `active` 예시 가운데 가져온 대표작(`source: past_work`, `grade: signature`, `kind: good`) 3개입니다. 후보를 조립의 6단계와 같은 뽑기 순서(`sha256(과제 ID + "\n" + 예시 ID)`의 16진 글 순)로 줄 세워 앞의 3개를 그 순서로 "이렇게 쓴다"에 넣고, 남은 후보는 `rejected`에 `budget`으로 적습니다. avoid와 학습 중 승인된 예시(`source`가 `past_work`가 아닌 것)는 넣지 않고, `budget.examples`와 `example_policy`는 보지 않습니다. 학습 중 승인된 예시는 바탕+딥트윈에만 들어갑니다.
+- 바탕+딥트윈(`full`): 네 층을 다 넣고 조립합니다(`deeptwin run`과 같은 조립).
+
+명령은 셋입니다.
 
 ```sh
-deeptwin eval pairs <스킬 ID> --split <분할> [--task 과제 ID]... [--seed 글] [--provider 이름] [--fake-answer 파일]
+deeptwin eval pairs <스킬 ID> --split <분할> [--task 과제 ID]... [--against 상대]... [--seed 글] [--provider 이름] [--fake-answer 파일]
 deeptwin eval pairs --resume <평가 ID> [--provider 이름] [--fake-answer 파일]
 deeptwin eval judge <평가 ID> [--web] [--port 번호] [--limit 수] [--daily-limit 수]
 deeptwin eval report <평가 ID>
@@ -314,23 +320,25 @@ deeptwin eval judge eval-0001        # 브라우저로 고르려면 deeptwin eva
 deeptwin eval report eval-0001
 ```
 
-`deeptwin eval pairs`는 분할에서 이 스킬의 과제를 파일 이름순으로 모아 과제마다 두 조건의 결과물을 만듭니다. `--resume`이 없으면 스킬 ID와 `--split`을 꼭 주고, `--split`은 `train`, `sealed`, `spare` 가운데 하나입니다. 맥락은 과제 파일의 `context`입니다.
+`deeptwin eval pairs`는 분할에서 이 스킬의 과제를 파일 이름순으로 모아 과제마다 바탕+딥트윈과 상대 조건의 결과물을 만듭니다. `--resume`이 없으면 스킬 ID와 `--split`을 꼭 주고, `--split`은 `train`, `sealed`, `spare` 가운데 하나입니다. 맥락은 과제 파일의 `context`입니다.
 
+- `--against 상대`는 바탕+딥트윈과 견줄 상대를 고릅니다. `base`(바탕만)와 `examples`(바탕+예시)를 받고 여러 번 줄 수 있으며, 주지 않으면 둘 다입니다. 겹친 값은 하나로 치고 순서는 늘 `base`, `examples`입니다. 다른 값이거나 `--resume`과 함께 주면 인자 오류(종료 코드 2)이고 아무것도 읽거나 쓰지 않습니다. 과제마다 바탕+딥트윈과 고른 상대의 결과물만 만듭니다(예: `--against base`면 `outputs/examples/`가 생기지 않습니다).
+- 바탕+예시를 견주는데 그 스킬의 가져온 대표작이 3개보다 적으면, 모델을 부르기 전에 `not_enough_examples`로 멈춥니다. 메시지는 지금 개수와 필요한 수를 말하고, 먼저 `deeptwin import <폴더> --skill <스킬 ID> --signature`로 대표작을 더 가져오라고 안내한 뒤, 새 평가라면 `--against base`로 바탕만과만 견줄 수도 있다고 덧붙입니다(`--resume`에는 `--against`를 줄 수 없습니다). 평가 폴더, 실행 폴더, 원장 줄(`seal_open` 줄 포함)은 생기지 않습니다.
 - 결과물은 `deeptwin run`과 같은 길로 만듭니다. 생성마다 실행 폴더(`SKILL.md` 사본, `output.md`, `calls.jsonl`)와 원장의 `run` 줄이 남고 원칙도 검사합니다. 원칙을 어긴 결과물도 그대로 쌍에 들고, 위반은 출력하지 않습니다.
-- 모든 과제와 두 조건의 준비(맥락, 조립, 원장의 끝 줄, 검사 함수)를 모델 없이 마친 뒤에 공급자와 평가 폴더를 만듭니다. 그래서 그 전에 멈추면(`no_tasks`, `context_required`, `ledger_broken`, `check_not_found`, `fake_answer_required` 등) 평가 폴더, 실행 폴더, 원장 줄, 모델 호출이 생기지 않습니다.
+- 모든 과제와 조건의 준비(맥락, 조립, 원장의 끝 줄, 검사 함수)를 모델 없이 마친 뒤에 공급자와 평가 폴더를 만듭니다. 그래서 그 전에 멈추면(`no_tasks`, `context_required`, `not_enough_examples`, `ledger_broken`, `check_not_found`, `fake_answer_required` 등) 평가 폴더, 실행 폴더, 원장 줄, 모델 호출이 생기지 않습니다.
 - `--task 과제 ID`(여러 번 줄 수 있습니다)는 분할과 상관없이 과제를 좁힙니다. 순서는 그래도 파일 이름순이고, 겹친 ID는 하나로 칩니다. 그 분할에 이 스킬의 과제로 없는 ID가 하나라도 있으면 아무것도 쓰지 않고 `task_not_found`이며, 메시지에는 ID만 씁니다.
 - 봉인 분할(`--split sealed`)은 생성 바로 앞에서 봉인 묶음을 열고 원장에 `seal_open` 줄을 남깁니다(아래 봉인 평가).
 - `--provider fake --fake-answer 파일`이면 모든 생성에 그 파일을 답으로 줍니다.
 - 평가 ID는 `eval-NNNN`이고, `.deeptwin/eval/`의 평가 폴더 번호 최댓값 + 1입니다.
-- `--json` 결과는 `eval`, `skill`, `split`, `tasks`, `pairs`(쌍 수), `seed`, `reused`(다른 평가에서 이미 연 봉인 과제, 봉인이 아니면 `[]`)입니다. 어느 실행이 어느 조건인지는 출력하지 않습니다.
-- 쌍은 과제마다 하나(바탕+딥트윈 대 바탕만)입니다. 쌍의 순서는 `sha256(씨앗 + "\n" + 과제 ID + "\n" + 상대 조건)`의 16진 글 순이고, 같은 글 뒤에 `"\nside"`를 붙인 해시의 첫 바이트가 짝수면 왼쪽이 바탕+딥트윈입니다. 쌍 ID(`pair-NNNN`)는 섞은 순서로 매깁니다. 씨앗의 기본은 평가 ID이고 `--seed`로 바꿉니다. 같은 씨앗이면 운영체제와 Python 버전에 상관없이 같은 순서, 같은 좌우입니다.
+- `--json` 결과는 `eval`, `skill`, `split`, `tasks`, `pairs`(쌍 수), `seed`, `reused`(다른 평가에서 이미 연 봉인 과제, 봉인이 아니면 `[]`), `skill_changed`(쌍을 만드는 동안 바탕 스킬이 바뀌었거나 지금 바탕 스킬이 평가를 시작할 때의 해시와 다르면 `true`, 아래 바탕 스킬 해시)입니다. 어느 실행이 어느 조건인지와 상대(`against`)는 출력하지 않습니다. 글 모드는 `skill_changed`가 참이면 마지막 줄 앞에 바탕 스킬 알림을 씁니다.
+- 쌍은 과제마다 상대 하나에 하나(바탕+딥트윈 대 바탕만, 바탕+딥트윈 대 바탕+예시)입니다. 기본이면 과제당 생성 3개(바탕만, 바탕+예시, 바탕+딥트윈 순)에 쌍 2개입니다. 쌍의 순서는 `sha256(씨앗 + "\n" + 과제 ID + "\n" + 상대 조건)`의 16진 글 순이고, 같은 글 뒤에 `"\nside"`를 붙인 해시의 첫 바이트가 짝수면 왼쪽이 바탕+딥트윈입니다. 쌍 ID(`pair-NNNN`)는 섞은 순서로 매깁니다. 씨앗의 기본은 평가 ID이고 `--seed`로 바꿉니다. 같은 씨앗이면 운영체제와 Python 버전에 상관없이 같은 순서, 같은 좌우입니다.
 
 평가 폴더 `.deeptwin/eval/<평가 ID>/`에는 아래 파일이 이 순서로 생깁니다. JSON은 한글을 그대로 쓰고 원자적으로 씁니다.
 
 | 파일 | 내용 |
 |------|------|
-| `eval.json` | `schema`, `id`, `ts`, `skill`, `split`, `tasks`, `against`(지금은 `["base"]`), `seed`, `seal_open`(봉인 평가의 원장 `seal_open` 줄 ID, 아니면 `null`), `reused`(재사용한 봉인 과제, 아니면 `[]`). 두 필드가 없는 예전 파일도 읽는다 |
-| `outputs/<조건>/<과제 ID>.md` | 조건별 결과물. 그 실행의 `output.md`와 바이트까지 같다 |
+| `eval.json` | `schema`, `id`, `ts`, `skill`, `split`, `tasks`, `against`(견준 상대. 기본은 `["base", "examples"]`), `seed`, `skill_hash`(평가를 준비할 때의 바탕 스킬 해시), `skill_changed`(쌍을 만드는 동안 바탕 스킬이 바뀌었으면 `true`), `seal_open`(봉인 평가의 원장 `seal_open` 줄 ID, 아니면 `null`), `reused`(재사용한 봉인 과제, 아니면 `[]`). `skill_hash`, `skill_changed`, `seal_open`, `reused`가 없는 예전 파일도 읽는다 |
+| `outputs/<조건>/<과제 ID>.md` | 조건별 결과물(`base`, `examples`, `full` 가운데 만든 것). 그 실행의 `output.md`와 바이트까지 같다 |
 | `key.json` | 대응표. `schema`, `eval`, `runs`(과제 ID -> 조건 -> 실행 ID), `pairs`(쌍 ID -> `task`, `left`, `right`의 조건). 생성마다 그때까지의 `runs`와 빈 `pairs`로 다시 쓰고, 다 만든 뒤 `pairs`를 채운다 |
 | `pairs.jsonl` | 쌍 목록. 한 줄에 `id`, `task`, `left`, `right`(두 결과물의 글)뿐이다 |
 | `choices.jsonl` | 선택 기록. 한 줄에 `pair`, `chosen`(`left`나 `right`), `seconds`(소수 셋째 자리), `ts` |
@@ -338,15 +346,15 @@ deeptwin eval report eval-0001
 
 `pairs.jsonl`은 마지막에 씁니다. 생성이 중간에 실패하면 그때까지의 실행, 결과물, `key.json`(그때까지의 `runs`)은 남지만 `pairs.jsonl`은 생기지 않고, 그 평가로 고르거나 보고서를 내면 `eval_incomplete`입니다. 그때는 `deeptwin eval pairs --resume <평가 ID>`로 남은 것만 만듭니다.
 
-- 이어 가기는 `eval.json`의 스킬, 분할, 과제, 씨앗을 그대로 쓰므로 스킬 ID, `--split`, `--task`, `--seed`를 함께 주면 인자 오류(종료 코드 2)이고 아무것도 읽거나 쓰지 않습니다. `--provider`와 `--fake-answer`는 줍니다. 없는 평가면 `eval_not_found`입니다.
-- 끝난 생성은 `key.json`의 `runs`에 있고 `outputs/<조건>/<과제 ID>.md`도 있는 것입니다. 나머지만 새 평가와 같은 순서로 준비하고 만들며(`fake` 공급자는 남은 생성 수만큼 답을 줍니다), 쌍은 이전 결과물과 새 결과물을 합쳐 같은 씨앗, 같은 규칙으로 만듭니다. 검사 함수가 멈춘 생성은 `runs`에 넣지 않으므로 이어 갈 때 다시 만듭니다.
+- 이어 가기는 `eval.json`의 스킬, 분할, 과제, 상대(`against`), 씨앗, 바탕 스킬 해시를 그대로 쓰므로 스킬 ID, `--split`, `--task`, `--against`, `--seed`를 함께 주면 인자 오류(종료 코드 2)이고 아무것도 읽거나 쓰지 않습니다. `against`가 `["base"]`인 예전 평가도 그대로 잇습니다. `--provider`와 `--fake-answer`는 줍니다. 없는 평가면 `eval_not_found`입니다.
+- 끝난 생성은 `key.json`의 `runs`에 있고 `outputs/<조건>/<과제 ID>.md`도 있는 것입니다. 나머지만 새 평가와 같은 순서로 준비하고 만들며(`fake` 공급자는 남은 생성 수만큼 답을 줍니다. 남은 생성에 바탕+예시가 있는데 대표작이 모자라면 `not_enough_examples`로 아무것도 쓰지 않고 멈춥니다), 쌍은 이전 결과물과 새 결과물을 합쳐 같은 씨앗, 같은 규칙으로 만듭니다. 검사 함수가 멈춘 생성은 `runs`에 넣지 않으므로 이어 갈 때 다시 만듭니다.
 - `pairs.jsonl`이 이미 있으면 아무것도 만들거나 쓰지 않고 같은 결과를 냅니다.
-- 글 모드는 `평가 eval-0001을 이어 만들었습니다. 이번에 만든 결과물 5개, 쌍 3개.`처럼 씁니다.
+- 글 모드는 `평가 eval-0001을 이어 만들었습니다. 이번에 만든 결과물 5개, 쌍 4개.`처럼 씁니다.
 
 `deeptwin eval judge`는 남은 쌍(`choices.jsonl`에 없는 쌍)을 `pairs.jsonl` 순서로 하나씩 보여 줍니다. 기본은 터미널이고, `--web`이면 브라우저로 여는 웹 화면입니다(아래). 터미널 화면에는 몇 번째 쌍인지, 과제의 입력, `[1]`과 `[2]`의 두 글, 물음만 나옵니다.
 
 ```text
-쌍 1/2
+쌍 1/4
 문의:
 수강료를 두 번에 나눠 낼 수 있을까요?
 
@@ -378,7 +386,7 @@ deeptwin eval report eval-0001
 브라우저로 열어 고르세요. 다 고르면 저절로 닫히고, 멈추려면 Ctrl-C를 누르세요.
 ```
 
-- 쌍마다 HTML 한 장입니다. `쌍 1/2`, `문의:`와 과제의 입력, 나란히 놓인 `왼쪽`과 `오른쪽` 두 글, 물음, 버튼 둘(`왼쪽을 고릅니다`, `오른쪽을 고릅니다`)뿐이고, 쌍 ID를 담은 숨은 입력 하나 말고는 다른 입력이나 링크가 없습니다. 스크립트, 바깥 CSS·글꼴·이미지, 텔레메트리도 없고, 글은 모두 HTML 이스케이프해 넣습니다.
+- 쌍마다 HTML 한 장입니다. `쌍 1/4`, `문의:`와 과제의 입력, 나란히 놓인 `왼쪽`과 `오른쪽` 두 글, 물음, 버튼 둘(`왼쪽을 고릅니다`, `오른쪽을 고릅니다`)뿐이고, 쌍 ID를 담은 숨은 입력 하나 말고는 다른 입력이나 링크가 없습니다. 스크립트, 바깥 CSS·글꼴·이미지, 텔레메트리도 없고, 글은 모두 HTML 이스케이프해 넣습니다.
 - 블라인드 규칙은 터미널과 같습니다. 화면, 응답 헤더, 주소 어디에도 조건 ID와 이름, 실행 ID, 결과물 경로가 나오지 않습니다.
 - 버튼을 누르면 바로 `choices.jsonl`에 남고 다음 쌍으로 넘어갑니다. `seconds`는 서버가 그 쌍의 화면을 처음 보낸 때부터 버튼을 누른 때까지이고, 새로 고쳐도 다시 재지 않습니다.
 - 이번 몫을 다 고르면 끝 화면(`다 골랐습니다.`, 요약 문장, 상한 문장이 있으면 그 문장, `이 창은 닫아도 됩니다.`)을 보여 주고 서버가 저절로 닫힙니다. 남은 쌍이 없거나 오늘 몫을 다 골랐으면 서버를 열지 않고 바로 끝납니다.
@@ -388,19 +396,20 @@ deeptwin eval report eval-0001
 
 `deeptwin eval report`는 모든 쌍을 골랐을 때만 보고서를 씁니다. 남은 쌍이 있으면 그 수를 알리고 `judging_unfinished`로 멈추며 보고서 파일을 쓰지 않습니다.
 
-- 상대마다 `against`, `pairs`, `wins`(고른 쪽이 바탕+딥트윈인 수), `selection_rate`(`wins / pairs`), `p_value`를 냅니다.
-- `report.json`은 `schema`, `eval`, `skill`, `split`, `pairs`, `reused`, `reference_changed`, `comparisons`이고, `report.md`는 같은 값을 한국어 표로 씁니다(선택률은 %, p값은 소수 넷째 자리). 시각을 적지 않으므로 다시 내도 바이트까지 같습니다. `reused`와 `reference_changed`는 봉인 평가에만 값이 있고(아래 봉인 평가), 봉인이 아니면 `[]`입니다.
+- `comparisons`는 `eval.json`의 `against` 순서로 상대마다 하나이고, 상대마다 `against`, `pairs`(그 상대와 견준 쌍 수), `wins`(고른 쪽이 바탕+딥트윈인 수), `selection_rate`(`wins / pairs`), `p_value`를 냅니다. 머리의 `pairs`는 모든 쌍의 수입니다.
+- `report.json`은 `schema`, `eval`, `skill`, `split`, `pairs`, `reused`, `reference_changed`, `skill_changed`, `comparisons`이고, `report.md`는 같은 값을 한국어 표로 씁니다(선택률은 %, p값은 소수 넷째 자리). 시각을 적지 않으므로 다시 내도 바이트까지 같습니다. `reused`와 `reference_changed`는 봉인 평가에만 값이 있고(아래 봉인 평가), 봉인이 아니면 `[]`입니다. `skill_changed`는 평가를 시작한 뒤 바탕 스킬이 바뀌었으면 `true`이고(아래 바탕 스킬 해시), 그때만 `report.md`의 머리 줄 아래(기준 줄이 있으면 그다음)에 `- 바탕 스킬이 평가를 시작한 뒤 바뀌었습니다(SKILL.md, skill.yaml, checks.py).`를 씁니다.
 - `--json` 결과는 `report.json`에서 `schema`를 뺀 값과 `files`(`.deeptwin/` 기준 두 경로)입니다.
 - 보고서는 잰 값만 적고, 어느 쪽이 낫다는 판정 문장은 쓰지 않습니다.
 
 ```markdown
 # 판정 보고서 eval-0001
 
-- 스킬: inquiry-reply, 분할: spare, 쌍: 2개(모두 골랐습니다)
+- 스킬: inquiry-reply, 분할: spare, 쌍: 4개(모두 골랐습니다)
 
 | 비교 | 쌍 | 바탕+딥트윈이 이긴 횟수 | 선택률 | p값 |
 |------|----|----|----|----|
 | 바탕+딥트윈 대 바탕만 | 2 | 1 | 50.0% | 0.7500 |
+| 바탕+딥트윈 대 바탕+예시 | 2 | 2 | 100.0% | 0.2500 |
 
 p값은 한쪽 꼬리 이항 검정의 값입니다. 두 결과물을 반반으로 고른다고 할 때 이만큼 이상 이길 확률입니다.
 ```
@@ -415,7 +424,7 @@ deeptwin eval judge eval-0001
 deeptwin eval report eval-0001
 ```
 
-- 순서: 봉인 과제를 읽어 과제마다 두 조건을 준비하고(맥락, 조립, 원장의 끝 줄, 검사 함수) → 공급자를 만들고 → 평가 폴더와 `eval.json`(`seal_open: null`)을 쓰고 → 묶음을 열어 원장에 `seal_open` 줄을 남긴 뒤 `eval.json`에 그 줄 ID와 재사용을 적고 → 생성합니다. 그래서 공급자까지 어디서 멈춰도(`context_required`, `ledger_broken`, `no_tasks`, `fake_answer_required` 등) 평가 폴더, 실행 폴더, `seal_open` 줄, 모델 호출이 없습니다. 실행의 `run` 줄은 `split: sealed`로 남습니다.
+- 순서: 봉인 과제를 읽어 과제마다 조건을 준비하고(맥락, 조립, 원장의 끝 줄, 검사 함수, 대표작 수) → 공급자를 만들고 → 평가 폴더와 `eval.json`(`seal_open: null`)을 쓰고 → 묶음을 열어 원장에 `seal_open` 줄을 남긴 뒤 `eval.json`에 그 줄 ID와 재사용을 적고 → 생성합니다. 그래서 공급자까지 어디서 멈춰도(`context_required`, `not_enough_examples`, `ledger_broken`, `no_tasks`, `fake_answer_required` 등) 평가 폴더, 실행 폴더, `seal_open` 줄, 모델 호출이 없습니다. 실행의 `run` 줄은 `split: sealed`로 남습니다.
 - `seal_open` 줄은 평가 하나에 한 줄이고 키는 `id`(`seal-NNNN`, 원장 `seal_open` 줄 번호의 최댓값 + 1), `type`, `ts`, `eval`, `skill`, `tasks`, `reused` 순입니다. 같은 평가를 이어 가거나 판정하거나 보고서를 낼 때는 줄을 더 남기지 않습니다.
 
   ```json
@@ -434,14 +443,28 @@ deeptwin eval report eval-0001
   ```markdown
   # 판정 보고서 eval-0002
 
-  - 스킬: inquiry-reply, 분할: sealed, 쌍: 3개(모두 골랐습니다)
+  - 스킬: inquiry-reply, 분할: sealed, 쌍: 6개(모두 골랐습니다)
   - 재사용: 다른 평가에서 이미 연 봉인 과제가 들어 있습니다(task-0101, task-0102, task-0103).
   - 기준이 등록 때와 다른 봉인 과제: task-0101
   ```
 
 - 판정 화면에는 봉인 과제의 입력(문의)이 나옵니다. 기준(`reference`)과 입력은 그 밖의 출력, 오류, 알림에 쓰지 않습니다. 봉인 평가를 몇 번 해도 `deeptwin run`과 `deeptwin compose`는 봉인 과제를 계속 `sealed_access`로 막습니다.
 
-평가 ID가 `eval-<숫자>`가 아니거나 그 폴더나 `eval.json`이 없으면 `eval_not_found`이고 아무 파일도 만들지 않습니다. `choices.jsonl`이나 `pairs.jsonl`에 읽을 수 없는 줄이 있으면(`ts`가 ISO 8601 시각으로 읽히지 않는 줄도) `invalid_file`이고, 메시지는 `.deeptwin/eval/eval-0001/choices.jsonl:2: …`처럼 파일과 줄로 시작합니다. 웹 판정에서는 이런 오류가 서버를 열기 전에 납니다. Python에서는 `deeptwin.eval`의 `prepare_pairs`, `prepare_resume`, `build_pairs`, `open_sealed`, `pending_pairs`, `record_choice`, `report`, `p_value`가 같은 일을 합니다. `prepare_pairs(deeptwin, skill_id, *, split, tasks=None)`는 새 평가를, `prepare_resume(deeptwin, eval_id)`는 멈춘 평가의 남은 생성을 모델 없이 준비하고, `build_pairs(deeptwin, plan, generate, *, seed=None)`가 만듭니다. `open_sealed(deeptwin, eval_id)`는 봉인 평가의 묶음을 열어 `eval`(평가 정보), `line`(`seal_open` 줄 ID), `reused`, `token`을 돌려줍니다. 그 평가에서 처음 부를 때만 원장에 줄을 남기고, 봉인 평가가 아니면 `ValueError`입니다. 토큰을 받는 `DeepTwin.changed_references(task_ids, *, token)`는 기준이 등록 때와 다른 과제의 ID만 돌려줍니다. `pending_pairs(deeptwin, eval_id, *, limit=None, daily_limit=None)`는 남은 쌍(`pending`), 이번에 보여 줄 쌍(`batch`), 오늘 고른 수(`chosen_today`), `batch`가 짧아진 까닭(`stop`: `"limit"`, `"daily_limit"`, 짧지 않으면 `None`)을 돌려주고 아무것도 쓰지 않습니다. 상한을 주지 않으면 걸지 않고, 1보다 작으면 `ValueError`입니다. `record_choice`에 쌍 목록에 없는 쌍이나 이미 고른 쌍을 주면 `invalid_choice`입니다.
+바탕 스킬 해시. 평가 중에 바탕 스킬이 바뀌면 세 조건이 같은 바탕에서 나왔다고 보기 어려우므로, 바뀐 것을 알리고 보고서에 적습니다. 막지는 않습니다.
+
+- 보는 파일은 `skills/<스킬 ID>/`의 `SKILL.md`, `skill.yaml`, `checks.py` 셋입니다. `skill.yaml`의 `checks`가 다른 파일을 가리켜도 보는 것은 `checks.py`이고, 스킬 폴더의 다른 파일은 보지 않습니다.
+- 계산: 세 파일의 원래 바이트를 따로 SHA-256으로 해시하고(없는 파일은 `null`), 파일 이름 -> 16진 해시의 사전을 키 순으로 정렬한 JSON(구분자 `,`와 `:`, 공백 없음)으로 다시 해시해 `sha256:<16진 64자>`로 씁니다. 줄바꿈을 바꾸지 않으므로 CRLF로 바꾸는 것도 바뀜입니다.
+- 다시 보는 때: `deeptwin eval pairs`가 준비할 때(스킬을 읽은 직후) 계산해 `eval.json`의 `skill_hash`에 적고 `skill_changed: false`로 시작합니다. 생성마다 그 바로 앞에서, 그리고 `key.json`과 `pairs.jsonl`을 쓰기 바로 앞에서 다시 계산해 처음 다르면 `eval.json`의 `skill_changed`만 `true`로 바꿉니다. 판정을 시작할 때와 보고서를 낼 때마다는 `eval.json`의 `skill_changed`가 `true`이거나 지금 해시가 `skill_hash`와 다르면 바뀐 것으로 칩니다. 그래서 쌍을 만드는 동안 고쳤다가 되돌려도 표시는 남습니다. 판정과 보고서는 `eval.json`을 쓰지 않습니다.
+- 생성에 쓰는 `SKILL.md` 사본과 검사 함수는 준비할 때 이미 만들었으므로, 생성 중에 파일을 고쳐도 그 명령의 결과물은 달라지지 않습니다.
+- 알림: `deeptwin eval pairs`는 `--json` 결과의 `skill_changed`가 `true`가 되고, 글 모드는 마지막 줄 앞에 아래 문장을 씁니다. 판정은 시작할 때 봉인 과제의 기준 알림 다음, `고를 쌍이 남지 않았습니다.` 앞에 같은 문장을 화면 쪽 스트림(`--json`이면 stderr)에 쓰고 그대로 고릅니다. 웹 판정에서도 화면(HTML)에는 넣지 않고 터미널에만 씁니다. 판정의 `--json` 결과 모양은 그대로입니다. 보고서는 `skill_changed`와 위의 한 줄입니다.
+
+  ```text
+  평가를 시작한 뒤 스킬 inquiry-reply의 파일(SKILL.md, skill.yaml, checks.py)이 바뀌었습니다. 막지 않고 보고서에 표시합니다.
+  ```
+
+- `skill_hash`가 없는 예전 평가는 바뀌었는지 보지 않습니다.
+
+평가 ID가 `eval-<숫자>`가 아니거나 그 폴더나 `eval.json`이 없으면 `eval_not_found`이고 아무 파일도 만들지 않습니다. `choices.jsonl`이나 `pairs.jsonl`에 읽을 수 없는 줄이 있으면(`ts`가 ISO 8601 시각으로 읽히지 않는 줄도) `invalid_file`이고, 메시지는 `.deeptwin/eval/eval-0001/choices.jsonl:2: …`처럼 파일과 줄로 시작합니다. 웹 판정에서는 이런 오류가 서버를 열기 전에 납니다. Python에서는 `deeptwin.eval`의 `prepare_pairs`, `prepare_resume`, `build_pairs`, `open_sealed`, `pending_pairs`, `record_choice`, `report`, `p_value`가 같은 일을 하고, `CONDITIONS`(조건 ID -> 뺄 층과 예시 고르는 법)와 `AGAINST`(`("base", "examples")`)가 조건과 상대입니다. `prepare_pairs(deeptwin, skill_id, *, split, tasks=None, against=None)`는 새 평가를(`against`가 `None`이면 `AGAINST` 전부, 비었거나 `AGAINST`에 없는 값이면 `ValueError`), `prepare_resume(deeptwin, eval_id)`는 멈춘 평가의 남은 생성을 모델 없이 준비하고, `build_pairs(deeptwin, plan, generate, *, seed=None)`가 만듭니다. `open_sealed(deeptwin, eval_id)`는 봉인 평가의 묶음을 열어 `eval`(평가 정보), `line`(`seal_open` 줄 ID), `reused`, `token`을 돌려줍니다. 그 평가에서 처음 부를 때만 원장에 줄을 남기고, 봉인 평가가 아니면 `ValueError`입니다. 토큰을 받는 `DeepTwin.changed_references(task_ids, *, token)`는 기준이 등록 때와 다른 과제의 ID만 돌려줍니다. `DeepTwin.skill_hash(skill_id)`는 위의 바탕 스킬 해시를 돌려주고 읽기만 합니다(ID가 ID 규칙에 맞지 않으면 `skill_not_found`). 조립 `compose(skill, task, deeptwin, *, context, ablate=(), example_pick="policy")`의 `example_pick="past_work"`가 바탕+예시의 6단계입니다. 기본값 `"policy"`는 `example_policy`를 따르는 지금 조립 그대로이고, 두 값이 아니면 `ValueError`입니다. `ablate`에 `instinct`가 있으면 `example_pick`은 쓰지 않습니다. `pending_pairs(deeptwin, eval_id, *, limit=None, daily_limit=None)`는 남은 쌍(`pending`), 이번에 보여 줄 쌍(`batch`), 오늘 고른 수(`chosen_today`), `batch`가 짧아진 까닭(`stop`: `"limit"`, `"daily_limit"`, 짧지 않으면 `None`)을 돌려주고 아무것도 쓰지 않습니다. 상한을 주지 않으면 걸지 않고, 1보다 작으면 `ValueError`입니다. `record_choice`에 쌍 목록에 없는 쌍이나 이미 고른 쌍을 주면 `invalid_choice`입니다.
 
 해시 체인이 생기기 전 버전(PyPI의 0.0.1)이 쓴 원장 줄에는 `prev_hash`와 `hash`가 없습니다. 그 원장이 있으면 `deeptwin verify`는 손상으로 알리고, `deeptwin run`은 실행 폴더를 만들거나 모델을 부르기 전에 `ledger_broken`으로 멈춥니다. 그 `.deeptwin/ledger.jsonl`을 다른 이름으로 옮겨 두면(예: `ledger-old.jsonl`) 다음 실행부터 새 체인이 시작됩니다.
 
@@ -486,7 +509,7 @@ deeptwin status
   candidates/<ID>.yaml      # 승인 전 후보. 하나가 파일 하나
   tasks/<분할>/<ID>.yaml    # 과제. 분할은 train, sealed, spare. sealed는 토큰 없이 읽지 않는다
   runs/                     # 실행마다 SKILL.md 사본, 결과물, 호출 기록(calls.jsonl)
-  eval/<평가 ID>/           # 평가마다 eval.json, 조건별 결과물(outputs/), 대응표(key.json), 쌍 목록(pairs.jsonl), 선택(choices.jsonl), 보고서
+  eval/<평가 ID>/           # 평가마다 eval.json, 조건별 결과물(outputs/base|examples|full/), 대응표(key.json), 쌍 목록(pairs.jsonl), 선택(choices.jsonl), 보고서
   ledger.jsonl              # 원장. 추가만 하고 줄마다 해시로 잇는다
 skills/<스킬 ID>/           # deeptwin skill new가 아래 세 파일을 만든다
   SKILL.md                  # 고정 영역과 유동 영역 표시

@@ -46,7 +46,7 @@ from test_eval import (
 
 SEALED = ["task-0101", "task-0102", "task-0103"]
 """예제의 봉인 과제. 파일 이름순이다."""
-SEALED_PAIRS = ("eval", "pairs", SKILL, "--split", "sealed")
+SEALED_PAIRS = ("eval", "pairs", SKILL, "--against", "base", "--split", "sealed")
 FIRST, SECOND = "eval-0001", "eval-0002"
 REFERENCE_WORDS = ("수료하시려면", "13번 이상", "12번 이상", "노트북 사양은", "SUM이나 COUNT")
 """예제 봉인 과제의 기준에만 있는 글. 출력, 오류, 알림, 판정 화면에 나오면 안 된다."""
@@ -144,6 +144,7 @@ def test_first_sealed_eval_leaves_one_seal_open_line_before_its_runs(in_example:
         "pairs": 3,
         "seed": FIRST,
         "reused": [],
+        "skill_changed": False,
     }
     entries = ledger(in_example)
     assert [e["type"] for e in entries] == ["task"] * 10 + ["seal_open"] + ["run"] * 6
@@ -345,6 +346,7 @@ def test_resume_after_a_failure_makes_only_the_rest_and_opens_no_new_line(
         "pairs": 3,
         "seed": FIRST,
         "reused": [],
+        "skill_changed": False,
     }
     runs = run_lines(in_example)
     assert len(runs) == 6
@@ -588,6 +590,7 @@ def test_report_names_reused_tasks_and_the_changed_reference(in_example: Path) -
         "pairs",
         "reused",
         "reference_changed",
+        "skill_changed",
         "comparisons",
     ]
     assert (report["reused"], report["reference_changed"]) == (SEALED, ["task-0101"])
@@ -805,7 +808,10 @@ def test_prepared_runs_carry_no_sealed_reference(
     use_provider(monkeypatch, _FailsOnTheSecondCall())
     error_json(invoke(*SEALED_PAIRS, *FAKE, "--json"), "eval pairs", "provider_failed")
 
-    plans = [prepare_pairs(deeptwin, SKILL, split="sealed"), prepare_resume(deeptwin, FIRST)]
+    plans = [
+        prepare_pairs(deeptwin, SKILL, split="sealed", against=["base"]),
+        prepare_resume(deeptwin, FIRST),
+    ]
 
     assert [len(plan.runs) for plan in plans] == [6, 5]
     for plan in plans:

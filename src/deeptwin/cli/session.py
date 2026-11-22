@@ -2,7 +2,8 @@
 
 - 시작(`start_judging`)은 남은 쌍과 이번 몫을 정한다. 판정 명령에서 `pending_pairs`를 부르는 곳은
   여기 하나뿐이다. 봉인 과제의 기준이 등록 때와 다르면 가장 먼저 그 과제 ID를 알리고
-  (`REFERENCE_CHANGED`), 남은 쌍이 없으면 `고를 쌍이 남지 않았습니다.`를 쓴다.
+  (`REFERENCE_CHANGED`), 평가를 시작한 뒤 스킬 파일이 바뀌었으면 그다음에 알리고
+  (`SKILL_CHANGED`), 남은 쌍이 없으면 `고를 쌍이 남지 않았습니다.`를 쓴다.
 - 끝(`finish_judging`)은 판정 한 번의 결과(`Judged`)를 돌려준다. 이번 몫을 다 지났는데(처음부터
   0개였을 때도) 상한에 걸려 쌍이 남았으면 상한 문장을 쓴다.
 - 화면 쪽 스트림은 `err`가 참이면(`--json`) stderr, 아니면 stdout이다.
@@ -28,6 +29,7 @@ __all__ = [
     "LIMIT_REACHED",
     "NOTHING_LEFT",
     "REFERENCE_CHANGED",
+    "SKILL_CHANGED",
     "end_of",
     "finish_judging",
     "start_judging",
@@ -43,6 +45,13 @@ REFERENCE_CHANGED = (
     "봉인 과제의 기준이 등록 때와 다릅니다: {tasks}. 판정은 그대로 하고 보고서에 표시합니다."
 )
 """봉인 과제의 기준이 등록 뒤 바뀌었을 때의 알림. `{tasks}`는 과제 ID를 `, `로 이은 것이다."""
+SKILL_CHANGED = (
+    "평가를 시작한 뒤 스킬 {skill}의 파일(SKILL.md, skill.yaml, checks.py)이 바뀌었습니다. "
+    "막지 않고 보고서에 표시합니다."
+)
+"""평가를 시작한 뒤 바탕 스킬의 세 파일이 바뀌었을 때의 알림. `{skill}`은 스킬 ID다.
+
+판정 화면에도 나오므로 조건의 이름(`바탕` 등)을 쓰지 않는다. `eval pairs`의 글 모드도 쓴다."""
 LIMIT_REACHED = "한 번에 {limit}쌍까지 보여 줍니다. 남은 쌍 {n}개는 다음에 이어 고릅니다."
 """한 번 몫에 걸렸을 때의 문장."""
 DAILY_LIMIT_REACHED = (
@@ -75,7 +84,10 @@ def start_judging(
     """남은 쌍과 이번 몫을 정한다. 화면 쪽 스트림에 이 순서로 쓴다.
 
     1. 봉인 과제의 기준이 등록 때와 다르면 그 과제 ID의 알림(`REFERENCE_CHANGED`). 막지 않는다.
-    2. 남은 쌍이 없으면 `NOTHING_LEFT`.
+    2. 평가를 시작한 뒤 바탕 스킬이 바뀌었으면 그 알림(`SKILL_CHANGED`). 막지 않는다.
+    3. 남은 쌍이 없으면 `NOTHING_LEFT`.
+
+    알림은 화면 쪽 스트림에만 쓰고 웹의 HTML에는 넣지 않는다.
 
     평가가 없으면 `eval_not_found`, 쌍 목록이 없으면 `eval_incomplete`, 쌍 목록이나 선택 기록의
     형식이 틀렸으면 `invalid_file`이다(`pending_pairs`).
@@ -84,6 +96,8 @@ def start_judging(
     if judging.reference_changed:
         tasks = ", ".join(judging.reference_changed)
         typer.echo(REFERENCE_CHANGED.format(tasks=tasks), err=err)
+    if judging.skill_changed:
+        typer.echo(SKILL_CHANGED.format(skill=judging.info.skill), err=err)
     if not judging.pending:
         typer.echo(NOTHING_LEFT, err=err)
     return judging

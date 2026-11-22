@@ -2,7 +2,8 @@
 
 대응표(`key.json`)는 판정이 끝난 뒤에만 합친다. 남은 쌍이 있으면 보고서를 쓰지 않는다.
 보고서에는 측정한 값만 쓰고 어느 쪽이 낫다는 판정 문장은 쓰지 않는다. 봉인 평가면 재사용한 과제와
-기준이 등록 때와 다른 과제도 적는다(막지 않는다).
+기준이 등록 때와 다른 과제도 적는다. 평가를 시작한 뒤 바탕 스킬이 바뀌었으면 그것도 적는다(둘 다
+막지 않는다).
 파일에는 저장 계층(`store.evals`, `DeepTwin`)으로만 닿는다.
 """
 
@@ -11,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from deeptwin.errors import EvalIncompleteError, JudgingUnfinishedError
+from deeptwin.eval.pairs import base_skill_changed
 from deeptwin.eval.sealing import open_sealed
 from deeptwin.eval.stats import p_value
 from deeptwin.models import Choice, Comparison, Condition, EvalReport, Pair, PairKey
@@ -25,6 +27,7 @@ __all__ = [
 
 CONDITION_NAMES: dict[Condition, str] = {
     "base": "바탕만",
+    "examples": "바탕+예시",
     "full": "바탕+딥트윈",
 }
 """보고서에만 쓰는 조건의 한국어 이름. 쌍 목록과 판정 화면에는 쓰지 않는다."""
@@ -51,6 +54,9 @@ def report(deeptwin: DeepTwin, eval_id: str) -> Report:
     - 봉인 평가면 `reused`는 `open_sealed`가 원장에서 계산한 값이고(같은 평가라 원장에는 쓰지
       않는다), `reference_changed`는 낼 때마다 그 평가의 모든 과제의 기준을 등록 때 해시와 다시
       견준 값이다. 봉인이 아니면 둘 다 비었다.
+    - `skill_changed`는 낼 때마다 `base_skill_changed`로 정한다(`eval.json`의 `skill_changed`이거나
+      지금 바탕 스킬의 해시가 `skill_hash`와 다르다).
+    - `comparisons`는 `eval.json`의 `against` 순서로 상대마다 하나다.
     """
     folder = open_eval(deeptwin, eval_id)
     info = folder.info()
@@ -94,6 +100,7 @@ def report(deeptwin: DeepTwin, eval_id: str) -> Report:
         pairs=len(pairs),
         reused=list(reused),
         reference_changed=list(changed),
+        skill_changed=base_skill_changed(deeptwin, info),
         comparisons=comparisons,
     )
     markdown = render_markdown(made)
@@ -103,7 +110,8 @@ def report(deeptwin: DeepTwin, eval_id: str) -> Report:
 def render_markdown(made: EvalReport) -> str:
     """보고서의 Markdown. `report.json`과 같은 값을 한국어 표로 쓴다.
 
-    재사용한 과제와 기준이 바뀐 과제는 비어 있지 않을 때만 머리 줄 아래에 한 줄씩 쓴다.
+    재사용한 과제와 기준이 바뀐 과제는 비어 있지 않을 때만, 바탕 스킬이 바뀐 것은 `skill_changed`가
+    참일 때만 머리 줄 아래에 이 순서로 한 줄씩 쓴다.
     """
     target = CONDITION_NAMES[_TARGET]
     lines = [
@@ -117,6 +125,10 @@ def render_markdown(made: EvalReport) -> str:
         )
     if made.reference_changed:
         lines.append(f"- 기준이 등록 때와 다른 봉인 과제: {', '.join(made.reference_changed)}")
+    if made.skill_changed:
+        lines.append(
+            "- 바탕 스킬이 평가를 시작한 뒤 바뀌었습니다(SKILL.md, skill.yaml, checks.py)."
+        )
     lines += [
         "",
         f"| 비교 | 쌍 | {target}이 이긴 횟수 | 선택률 | p값 |",

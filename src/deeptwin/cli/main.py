@@ -10,7 +10,7 @@ from typing import Annotated, Self, cast, get_args
 import typer
 
 from deeptwin.cli.output import Reply, respond
-from deeptwin.cli.session import summary
+from deeptwin.cli.session import SKILL_CHANGED, summary
 from deeptwin.cli.terminal import judge_in_terminal
 from deeptwin.cli.web import judge_in_web
 from deeptwin.compose import LAYERS, check_context, compose
@@ -20,11 +20,11 @@ from deeptwin.errors import (
     TaskSkillMismatchError,
     UnknownProviderError,
 )
-from deeptwin.eval import build_pairs, prepare_pairs, prepare_resume, report
+from deeptwin.eval import AGAINST, build_pairs, prepare_pairs, prepare_resume, report
 from deeptwin.importing import TEXT_SUFFIXES, import_folder
 from deeptwin.llm import ClaudeCLIProvider, FakeProvider, Provider
 from deeptwin.llm.calls import CallRecorder
-from deeptwin.models import Composed, Context, Run, Split, Task, Violation
+from deeptwin.models import Composed, Condition, Context, Run, Split, Task, Violation
 from deeptwin.runs import Generate, execute_run, prepare_run
 from deeptwin.status import STATUSES, project_status
 from deeptwin.store.files import display_path
@@ -54,8 +54,8 @@ app.add_typer(skill_app, name="skill")
 eval_app = typer.Typer(
     name="eval",
     help=(
-        "바탕만과 바탕+딥트윈의 결과물을 과제마다 만들어, 어느 쪽인지 가린 채 둘씩 고르고 "
-        "보고서를 낸다."
+        "바탕만, 바탕+예시, 바탕+딥트윈의 결과물을 과제마다 만들어, 어느 쪽인지 가린 채 둘씩 "
+        "고르고 보고서를 낸다."
     ),
     no_args_is_help=True,
 )
@@ -619,6 +619,22 @@ def _split_choice(value: str | None) -> str | None:
     return value
 
 
+def _against_choice(values: list[str] | None) -> list[str] | None:
+    """`--against`를 `AGAINST`(base, examples)의 값으로만 받는다.
+
+    다른 값이면 Click의 인자 오류(종료 2)다. 주지 않았으면 `None`이다(그러면 상대 전부다).
+    `_split_choice`와 같은 꼴로 `str`로 받아 여기서 본다.
+    """
+    if not values:
+        return None
+    for value in values:
+        if value not in AGAINST:
+            raise typer.BadParameter(
+                f"쓸 수 있는 값은 {', '.join(AGAINST)}입니다(받은 값: {value!r})."
+            )
+    return values
+
+
 @eval_app.command("pairs")
 def eval_pairs(
     skill_id: Annotated[
@@ -653,6 +669,19 @@ def eval_pairs(
             show_default=False,
         ),
     ] = None,
+    against_options: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--against",
+            metavar="상대",
+            callback=_against_choice,
+            help=(
+                "바탕+딥트윈과 견줄 상대: base(바탕만), examples(바탕+예시). 여러 번 줄 수 있다. "
+                "주지 않으면 둘 다다. 과제마다 상대 하나에 쌍 하나를 만든다."
+            ),
+            show_default=False,
+        ),
+    ] = None,
     seed: Annotated[
         str | None,
         typer.Option(
@@ -669,7 +698,7 @@ def eval_pairs(
             metavar="EVAL",
             help=(
                 "생성이 멈춘 평가를 이어 간다. 남은 결과물만 만들고 쌍 목록을 쓴다. "
-                "SKILL, --split, --task, --seed와 함께 주지 않는다."
+                "SKILL, --split, --task, --against, --seed와 함께 주지 않는다."
             ),
             show_default=False,
         ),
@@ -678,15 +707,19 @@ def eval_pairs(
     fake_answer: FakeAnswerOption = None,
     as_json: JsonOption = False,
 ) -> None:
-    """분할의 과제마다 바탕만과 바탕+딥트윈의 결과물을 만들고, 어느 쪽인지 가린 쌍 목록을 쓴다.
+    """분할의 과제마다 바탕+딥트윈과 상대(바탕만, 바탕+예시)의 결과물을 만들고, 어느 쪽인지 가린
+    쌍 목록을 쓴다.
 
-    결과물은 deeptwin run과 같은 길로 만들어 실행마다 원장에 남는다. 모든 과제와 조건을 모델
-    없이 준비한 뒤에 공급자와 평가 폴더(.deeptwin/eval/<평가 ID>/)를 만들므로, 생성 전에 멈추면
-    평가 폴더, 실행 폴더, 원장 줄, 모델 호출이 생기지 않는다. 봉인 분할은 생성 바로 앞에서 묶음을
-    열어 원장에 seal_open 줄을 남기고, 다른 평가에서 이미 연 과제는 재사용으로 적는다. 생성이
-    중간에 멈추면 --resume <평가 ID>로 남은 것만 만든다.
+    쌍은 과제마다 상대 하나에 하나다. 바탕+예시는 가져온 대표작 3개만 넣고, 3개가 안 되면
+    not_enough_examples로 멈춘다. 결과물은 deeptwin run과 같은 길로 만들어 실행마다 원장에 남는다.
+    모든 과제와 조건을 모델 없이 준비한 뒤에 공급자와 평가 폴더(.deeptwin/eval/<평가 ID>/)를
+    만들므로, 생성 전에 멈추면 평가 폴더, 실행 폴더, 원장 줄, 모델 호출이 생기지 않는다. 봉인
+    분할은 생성 바로 앞에서 묶음을 열어 원장에 seal_open 줄을 남기고, 다른 평가에서 이미 연 과제는
+    재사용으로 적는다. 바탕 스킬의 파일이 평가 중에 바뀌면 알리고 보고서에 표시한다(막지 않는다).
+    생성이 중간에 멈추면 --resume <평가 ID>로 남은 것만 만든다.
     """
     tasks = task_options or None
+    against = cast(list[Condition] | None, against_options or None)
     if resume is None:
         if skill_id is None:
             raise typer.BadParameter("--resume이 없으면 스킬 ID를 줍니다.", param_hint="'SKILL'")
@@ -700,25 +733,28 @@ def eval_pairs(
                 ("'--split'", split),
                 ("'--task'", tasks),
                 ("'--seed'", seed),
+                ("'--against'", against),
             )
             if value is not None
         ]
         if given:
             raise typer.BadParameter(
                 "--resume에는 줄 수 없습니다. 이어 가는 평가의 eval.json에 적힌 스킬, 분할, 과제, "
-                "씨앗을 씁니다.",
+                "상대, 씨앗을 씁니다.",
                 param_hint=given[0],
             )
 
     def action() -> Reply:
         # 1. 프로젝트, 스킬, 과제(no_tasks, task_not_found). 봉인 분할도 준비에서는 원장에
         #    쓰지 않는다
-        # 2. 만들 생성마다의 준비(맥락, 조립, 원장의 끝 줄, 검사 함수). 아무것도 쓰지 않는다.
-        #    이어 가기는 eval.json의 스킬, 분할, 과제, 씨앗으로 남은 생성만 준비한다
+        # 2. 만들 생성마다의 준비(맥락, 조립, 원장의 끝 줄, 검사 함수, 대표작 수). 아무것도 쓰지
+        #    않는다. 이어 가기는 eval.json의 스킬, 분할, 과제, 상대, 씨앗으로 남은 생성만 준비한다
         deeptwin = DeepTwin.open(Path.cwd())
         if resume is None:
             assert skill_id is not None and split is not None
-            plan = prepare_pairs(deeptwin, skill_id, split=cast(Split, split), tasks=tasks)
+            plan = prepare_pairs(
+                deeptwin, skill_id, split=cast(Split, split), tasks=tasks, against=against
+            )
         else:
             plan = prepare_resume(deeptwin, resume)
         # 3. 공급자. fake는 만들 생성 수만큼 같은 답을 준다
@@ -739,6 +775,8 @@ def eval_pairs(
                 f"다른 평가에서 이미 연 봉인 과제가 들어 있습니다: {', '.join(built.reused)}. "
                 "보고서에 재사용으로 적습니다."
             )
+        if built.skill_changed:
+            lines.append(SKILL_CHANGED.format(skill=built.skill))
         lines.append(f"deeptwin eval judge {built.eval}로 고르세요.")
         return Reply(
             result={
@@ -749,6 +787,7 @@ def eval_pairs(
                 "pairs": built.pairs,
                 "seed": built.seed,
                 "reused": list(built.reused),
+                "skill_changed": built.skill_changed,
             },
             text="\n".join(lines),
         )

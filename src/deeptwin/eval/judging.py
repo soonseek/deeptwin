@@ -2,7 +2,8 @@
 
 판정은 대응표(`key.json`)를 읽지 않는다. 어느 쪽이 어느 조건인지 모르는 채로 고른다.
 봉인 평가면 `open_sealed`의 토큰으로 과제의 입력을 읽고, 봉인 과제의 기준이 등록 뒤 바뀌었는지
-본다(막지 않는다). 파일에는 저장 계층(`store.evals`, `DeepTwin`)으로만 닿는다.
+본다(막지 않는다). 바탕 스킬이 평가를 시작한 뒤 바뀌었는지도 본다(`base_skill_changed`, 막지 않고
+`eval.json`에도 쓰지 않는다). 파일에는 저장 계층(`store.evals`, `DeepTwin`)으로만 닿는다.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from datetime import datetime
 from typing import Literal, TypeAlias
 
 from deeptwin.errors import InvalidChoiceError
+from deeptwin.eval.pairs import base_skill_changed
 from deeptwin.eval.sealing import open_sealed
 from deeptwin.models import Choice, EvalInfo, Pair, Side
 from deeptwin.store.evals import open_eval
@@ -66,6 +68,9 @@ class Judging:
     reference_changed: tuple[str, ...] = ()
     """기준이 등록 때와 다른 봉인 과제의 ID. 그 평가의 모든 과제를 본다. 봉인 평가가 아니면
     비었다."""
+    skill_changed: bool = False
+    """평가를 시작한 뒤 바탕 스킬(`SKILL.md`, `skill.yaml`, `checks.py`)이 바뀌었는지
+    (`base_skill_changed`)."""
 
 
 def pending_pairs(
@@ -86,6 +91,8 @@ def pending_pairs(
     - 봉인 평가면 `open_sealed`로 묶음을 열어(같은 평가라 원장에는 쓰지 않는다) 그 토큰으로 과제의
       입력을 읽고, 그 평가의 모든 과제의 기준을 등록 때 해시와 견준 결과를 `reference_changed`에
       담는다(`DeepTwin.changed_references`).
+    - `skill_changed`는 `base_skill_changed`다: `eval.json`의 `skill_changed`이거나 지금 바탕 스킬의
+      해시가 `skill_hash`와 다르면 참이다. `eval.json`에는 쓰지 않는다.
 
     1보다 작은 상한은 `ValueError`다. 평가가 없으면 `eval_not_found`, 쌍 목록이 없으면
     `eval_incomplete`, 쌍 목록이나 선택 기록의 형식이 틀렸으면 `invalid_file`이다. 과제의 입력은
@@ -138,6 +145,7 @@ def pending_pairs(
         daily_limit=daily_limit,
         stop=stop,
         reference_changed=changed,
+        skill_changed=base_skill_changed(deeptwin, info),
     )
 
 

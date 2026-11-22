@@ -86,9 +86,10 @@ Cause: TypeAlias = Literal[
 
 Context: TypeAlias = dict[str, str]
 """이번 작업의 맥락. 맥락 축 이름 -> 값(예: `{"purpose": "문의"}`)."""
-Condition: TypeAlias = Literal["base", "full"]
-"""평가의 조건 ID. `base`는 바탕만(네 층을 모두 뺀 조립), `full`은 바탕+딥트윈(네 층을 다 넣은
-조립)이다. 조건 ID는 대응표(`key.json`)와 보고서에만 쓰고 쌍 목록과 판정 화면에는 쓰지 않는다."""
+Condition: TypeAlias = Literal["base", "examples", "full"]
+"""평가의 조건 ID. `base`는 바탕만(네 층을 모두 뺀 조립), `examples`는 바탕+예시(본능 층만 남기고
+가져온 대표작 3개를 넣은 조립), `full`은 바탕+딥트윈(네 층을 다 넣은 조립)이다. 조건 ID는
+대응표(`key.json`)와 보고서에만 쓰고 쌍 목록과 판정 화면에는 쓰지 않는다."""
 Side: TypeAlias = Literal["left", "right"]
 """판정에서 고른 쪽. 쌍 목록의 `left`(화면의 [1])나 `right`(화면의 [2])다."""
 
@@ -425,9 +426,16 @@ class EvalInfo(_FileModel):
     tasks: list[str]
     """평가한 과제 ID. 파일 이름순이다."""
     against: list[Condition]
-    """`full`의 상대 조건. 지금은 `["base"]`뿐이다."""
+    """`full`의 상대 조건. `base`, `examples` 가운데 고른 것이고 이 순서다(예: `["base",
+    "examples"]`). 과제마다 상대 하나에 쌍 하나다."""
     seed: str
     """쌍의 순서와 좌우를 정한 씨앗. 주지 않으면 평가 ID다."""
+    skill_hash: str | None = None
+    """평가를 준비할 때 계산한 바탕 스킬의 해시(`DeepTwin.skill_hash`, `sha256:...`). `None`이면(이
+    필드가 없는 예전 파일) 바탕 스킬이 바뀌었는지 보지 않는다."""
+    skill_changed: bool = False
+    """쌍을 만드는 동안 바탕 스킬의 해시가 `skill_hash`와 달라진 것을 봤으면 참이다. 한 번 참이 되면
+    파일을 되돌려도 그대로다."""
     seal_open: str | None = None
     """봉인 평가면 원장의 `seal_open` 줄 ID(`seal-NNNN`). 봉인이 아니거나 아직 열기 전이면
     `None`이다."""
@@ -518,4 +526,8 @@ class EvalReport(_FileModel):
     """다른 평가에서 이미 연 봉인 과제의 ID. 봉인이 아니면 비었다."""
     reference_changed: list[str] = Field(default_factory=list)
     """기준이 등록 때와 다른 봉인 과제의 ID. 보고서를 낼 때마다 다시 본다. 봉인이 아니면 비었다."""
+    skill_changed: bool = False
+    """평가를 시작한 뒤 바탕 스킬(`SKILL.md`, `skill.yaml`, `checks.py`)이 바뀌었으면 참이다.
+    `eval.json`의 `skill_changed`이거나 보고서를 낼 때의 해시가 `skill_hash`와 다를 때다."""
     comparisons: list[Comparison]
+    """상대마다 하나. `eval.json`의 `against` 순서다."""

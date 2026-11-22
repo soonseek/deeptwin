@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import shutil
 from collections.abc import Iterator, Sequence
@@ -312,10 +314,7 @@ class DeepTwin:
         folder = self.root / "skills" / skill_id
         config, skill_md = folder / "skill.yaml", folder / "SKILL.md"
         if not (_SAFE_ID.fullmatch(skill_id) and config.is_file() and skill_md.is_file()):
-            raise SkillNotFoundError(
-                f"스킬을 찾지 못했습니다: {skill_id}. "
-                f"찾아본 곳: skills/{skill_id}/skill.yaml, skills/{skill_id}/SKILL.md"
-            )
+            raise _skill_not_found(skill_id)
         skill = read_model(config, Skill, root=self.root, update={"skill_md": skill_md})
         if skill.id != skill_id:
             raise SkillNotFoundError(
@@ -323,6 +322,29 @@ class DeepTwin:
                 f"skills/{skill_id}/skill.yaml의 id: {skill.id}, 찾은 스킬 ID: {skill_id}"
             )
         return skill
+
+    def skill_hash(self, skill_id: str) -> str:
+        """바탕 스킬의 해시. `skills/<skill_id>/`의 `SKILL.md`, `skill.yaml`, `checks.py`를 본다.
+
+        세 파일의 원래 바이트를 따로 SHA-256으로 해시하고(없는 파일은 `null`), 파일 이름 -> 16진
+        해시의 사전을 키 순으로 정렬한 JSON(`separators=(",", ":")`)으로 다시 해시해
+        `sha256:<16진 64자>`로 돌려준다. 줄바꿈을 바꾸지 않으므로 CRLF로 바꾸는 것도 바뀜이다.
+        `skill.yaml`의 `checks`가 다른 파일을 가리켜도 보는 것은 `checks.py`이고, 스킬 폴더의 다른
+        파일은 보지 않는다. 읽기만 한다.
+
+        ID가 ID 규칙에 맞지 않으면 경로를 만들지 않고 `skill()`과 같은 `skill_not_found`다.
+        """
+        if not _SAFE_ID.fullmatch(skill_id):
+            raise _skill_not_found(skill_id)
+        folder = self.root / SKILLS_DIR / skill_id
+        digests = {
+            name: hashlib.sha256(path.read_bytes()).hexdigest()
+            if (path := folder / name).is_file()
+            else None
+            for name in (SKILL_MD_FILE, SKILL_CONFIG_FILE, CHECKS_FILE)
+        }
+        text = json.dumps(digests, sort_keys=True, separators=(",", ":"))
+        return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
     def task_counts(self) -> dict[Split, int]:
         """분할마다 `tasks/<split>/`의 과제 파일 수. 분할 순서는 `SPLITS`(train, sealed, spare)다.
@@ -843,6 +865,15 @@ def _yaml_files(folder: Path) -> Iterator[Path]:
         p
         for p in folder.iterdir()
         if p.suffix == ".yaml" and not p.name.startswith(".") and p.is_file()
+    )
+
+
+def _skill_not_found(skill_id: str) -> SkillNotFoundError:
+    """`skills/<skill_id>/`에 스킬이 없거나 ID가 ID 규칙에 맞지 않을 때의 오류."""
+    return SkillNotFoundError(
+        f"스킬을 찾지 못했습니다: {skill_id}. "
+        f"찾아본 곳: {SKILLS_DIR}/{skill_id}/{SKILL_CONFIG_FILE}, "
+        f"{SKILLS_DIR}/{skill_id}/{SKILL_MD_FILE}"
     )
 
 
