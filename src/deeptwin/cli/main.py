@@ -20,7 +20,7 @@ from deeptwin.errors import (
     TaskSkillMismatchError,
     UnknownProviderError,
 )
-from deeptwin.eval import build_pairs, prepare_pairs, report
+from deeptwin.eval import build_pairs, prepare_pairs, prepare_resume, report
 from deeptwin.importing import TEXT_SUFFIXES, import_folder
 from deeptwin.llm import ClaudeCLIProvider, FakeProvider, Provider
 from deeptwin.llm.calls import CallRecorder
@@ -151,7 +151,8 @@ class ProviderOptions:
 
     fake_answer: Path | None = None
     fake_repeat: int = 1
-    """fake 공급자가 답 파일을 몇 번 돌려줄지. 생성 수만큼 준다(`eval pairs`)."""
+    """fake 공급자가 답 파일을 몇 번 돌려줄지. 만들 생성 수만큼 준다(`eval pairs`, 이어 가기면
+    남은 생성 수)."""
 
 
 def _fake_provider(options: ProviderOptions) -> Provider:
@@ -602,12 +603,15 @@ SPLIT_CHOICES: tuple[str, ...] = get_args(Split)
 """`--split`에 줄 수 있는 값. 세 분할(train, sealed, spare)이다."""
 
 
-def _split_choice(value: str) -> str:
+def _split_choice(value: str | None) -> str | None:
     """`--split`을 세 분할 가운데 하나로 받는다. 아니면 Click의 인자 오류(종료 2)다.
 
-    `Literal` 인자를 받지 못하는 typer에서도 돌도록 `str`로 받아 여기서 본다. typer 0.29는 click을
-    안에 품고 `click_type`을 받지 않으므로 click을 직접 import하지 않고 `typer.BadParameter`를 낸다.
+    주지 않았으면 `None`이다(`--resume`이면 주지 않는다). `Literal` 인자를 받지 못하는 typer에서도
+    돌도록 `str`로 받아 여기서 본다. typer 0.29는 click을 안에 품고 `click_type`을 받지 않으므로
+    click을 직접 import하지 않고 `typer.BadParameter`를 낸다.
     """
+    if value is None:
+        return None
     if value not in SPLIT_CHOICES:
         raise typer.BadParameter(
             f"쓸 수 있는 값은 {', '.join(SPLIT_CHOICES)}입니다(받은 값: {value!r})."
@@ -617,23 +621,56 @@ def _split_choice(value: str) -> str:
 
 @eval_app.command("pairs")
 def eval_pairs(
-    skill_id: SkillArgument,
+    skill_id: Annotated[
+        str | None,
+        typer.Argument(
+            metavar="SKILL",
+            help="skills/ 아래의 스킬 ID. --resume이 없으면 꼭 준다.",
+            show_default=False,
+        ),
+    ] = None,
     split: Annotated[
-        str,
+        str | None,
         typer.Option(
             "--split",
             metavar="train|sealed|spare",
             callback=_split_choice,
-            help="평가할 과제의 분할: train, sealed, spare. 봉인(sealed)은 아직 열 수 없다.",
+            help=(
+                "평가할 과제의 분할: train, sealed, spare. --resume이 없으면 꼭 준다. 봉인"
+                "(sealed)은 평가를 시작할 때 묶음을 열고 원장에 seal_open 줄을 남긴다."
+            ),
             show_default=False,
         ),
-    ],
+    ] = None,
+    task_options: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--task",
+            metavar="과제 ID",
+            help=(
+                "평가할 과제를 이 ID로 좁힌다. 여러 번 줄 수 있다. 순서는 그래도 파일 이름순이다."
+            ),
+            show_default=False,
+        ),
+    ] = None,
     seed: Annotated[
         str | None,
         typer.Option(
             "--seed",
             metavar="글",
             help="쌍의 순서와 좌우를 정하는 씨앗. 주지 않으면 평가 ID다.",
+            show_default=False,
+        ),
+    ] = None,
+    resume: Annotated[
+        str | None,
+        typer.Option(
+            "--resume",
+            metavar="EVAL",
+            help=(
+                "생성이 멈춘 평가를 이어 간다. 남은 결과물만 만들고 쌍 목록을 쓴다. "
+                "SKILL, --split, --task, --seed와 함께 주지 않는다."
+            ),
             show_default=False,
         ),
     ] = None,
@@ -645,19 +682,64 @@ def eval_pairs(
 
     결과물은 deeptwin run과 같은 길로 만들어 실행마다 원장에 남는다. 모든 과제와 조건을 모델
     없이 준비한 뒤에 공급자와 평가 폴더(.deeptwin/eval/<평가 ID>/)를 만들므로, 생성 전에 멈추면
-    평가 폴더, 실행 폴더, 원장 줄, 모델 호출이 생기지 않는다.
+    평가 폴더, 실행 폴더, 원장 줄, 모델 호출이 생기지 않는다. 봉인 분할은 생성 바로 앞에서 묶음을
+    열어 원장에 seal_open 줄을 남기고, 다른 평가에서 이미 연 과제는 재사용으로 적는다. 생성이
+    중간에 멈추면 --resume <평가 ID>로 남은 것만 만든다.
     """
+    tasks = task_options or None
+    if resume is None:
+        if skill_id is None:
+            raise typer.BadParameter("--resume이 없으면 스킬 ID를 줍니다.", param_hint="'SKILL'")
+        if split is None:
+            raise typer.BadParameter("--resume이 없으면 --split을 줍니다.", param_hint="'--split'")
+    else:
+        given = [
+            hint
+            for hint, value in (
+                ("'SKILL'", skill_id),
+                ("'--split'", split),
+                ("'--task'", tasks),
+                ("'--seed'", seed),
+            )
+            if value is not None
+        ]
+        if given:
+            raise typer.BadParameter(
+                "--resume에는 줄 수 없습니다. 이어 가는 평가의 eval.json에 적힌 스킬, 분할, 과제, "
+                "씨앗을 씁니다.",
+                param_hint=given[0],
+            )
 
     def action() -> Reply:
-        # 1. 프로젝트, 스킬, 과제(no_tasks, 봉인 분할이면 sealed_access)
-        # 2. 과제마다 두 조건의 준비(맥락, 조립, 원장의 끝 줄, 검사 함수). 아무것도 쓰지 않는다
+        # 1. 프로젝트, 스킬, 과제(no_tasks, task_not_found). 봉인 분할도 준비에서는 원장에
+        #    쓰지 않는다
+        # 2. 만들 생성마다의 준비(맥락, 조립, 원장의 끝 줄, 검사 함수). 아무것도 쓰지 않는다.
+        #    이어 가기는 eval.json의 스킬, 분할, 과제, 씨앗으로 남은 생성만 준비한다
         deeptwin = DeepTwin.open(Path.cwd())
-        plan = prepare_pairs(deeptwin, skill_id, split=cast(Split, split))
-        # 3. 공급자. fake는 생성 수만큼 같은 답을 준다
+        if resume is None:
+            assert skill_id is not None and split is not None
+            plan = prepare_pairs(deeptwin, skill_id, split=cast(Split, split), tasks=tasks)
+        else:
+            plan = prepare_resume(deeptwin, resume)
+        # 3. 공급자. fake는 만들 생성 수만큼 같은 답을 준다
         options = ProviderOptions(fake_answer=fake_answer, fake_repeat=plan.generations)
         llm = make_provider(provider, options)
-        # 4. 평가 폴더와 생성. 어느 실행이 어느 조건인지는 key.json에만 남고 출력하지 않는다
+        # 4. 평가 폴더, 봉인이면 묶음 열기(seal_open 줄), 생성. 어느 실행이 어느 조건인지는
+        #    key.json에만 남고 출력하지 않는다
         built = build_pairs(deeptwin, plan, _recorded(llm), seed=seed)
+        lines = [
+            f"평가 {built.eval}을 만들었습니다. 스킬 {built.skill}, 분할 {built.split}, "
+            f"과제 {len(built.tasks)}개, 쌍 {built.pairs}개, 씨앗 {built.seed}."
+            if resume is None
+            else f"평가 {built.eval}을 이어 만들었습니다. "
+            f"이번에 만든 결과물 {built.made}개, 쌍 {built.pairs}개."
+        ]
+        if built.reused:
+            lines.append(
+                f"다른 평가에서 이미 연 봉인 과제가 들어 있습니다: {', '.join(built.reused)}. "
+                "보고서에 재사용으로 적습니다."
+            )
+        lines.append(f"deeptwin eval judge {built.eval}로 고르세요.")
         return Reply(
             result={
                 "eval": built.eval,
@@ -666,14 +748,9 @@ def eval_pairs(
                 "tasks": list(built.tasks),
                 "pairs": built.pairs,
                 "seed": built.seed,
+                "reused": list(built.reused),
             },
-            text="\n".join(
-                [
-                    f"평가 {built.eval}을 만들었습니다. 스킬 {built.skill}, 분할 {built.split}, "
-                    f"과제 {len(built.tasks)}개, 쌍 {built.pairs}개, 씨앗 {built.seed}.",
-                    f"deeptwin eval judge {built.eval}로 고르세요.",
-                ]
-            ),
+            text="\n".join(lines),
         )
 
     respond("eval pairs", action, as_json=as_json)

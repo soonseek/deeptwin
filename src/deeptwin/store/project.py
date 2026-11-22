@@ -7,8 +7,9 @@
 원자적으로 한다. 목록은 정해진 순서로 돌려준다: 폴더의 파일은 파일 이름순,
 `priorities.yaml`과 `principles.yaml`은 파일에 적힌 순서다.
 
-봉인 과제는 여기서 막는다(`store.guard`). `tasks("sealed")`와 봉인 과제의 `task(id)`는
-`SealedToken` 없이 부르면 `sealed_access`다. 과제의 분할은 등록한 뒤 바꿀 수 없다.
+봉인 과제는 여기서 막는다(`store.guard`). `tasks("sealed")`, 봉인 과제의 `task(id)`, 봉인 기준을
+견주는 `changed_references`는 `SealedToken` 없이 부르면 `sealed_access`다. 과제의 분할은 등록한 뒤
+바꿀 수 없다.
 과제 파일 수를 세는 `task_counts`는 파일 이름만 보므로 봉인 과제도 토큰 없이 센다.
 """
 
@@ -265,7 +266,8 @@ class DeepTwin:
     def task(self, task_id: str, *, token: SealedToken | None = None) -> Task:
         """세 분할(`sealed`, `train`, `spare` 순)에서 `task_id`를 찾는다.
 
-        봉인 과제면 `token`이 없을 때 파일을 읽지 않고 `sealed_access`다.
+        봉인 과제면 `token`이 없을 때 파일을 읽지 않고 `sealed_access`다. 봉인 과제의 형식 오류
+        메시지에는 받은 값을 쓰지 않는다(`input`, `reference`를 내보이지 않는다).
         파일의 `split`이 과제가 든 폴더와 다르면 `invalid_file`이다.
         """
         if _SAFE_ID.fullmatch(task_id):
@@ -274,7 +276,7 @@ class DeepTwin:
                 if path.is_file():
                     if split == "sealed":
                         require_token(token, f"과제 {task_id}은")
-                    task = read_model(path, Task, root=self.root)
+                    task = read_model(path, Task, root=self.root, show_values=split != "sealed")
                     if task.id != task_id:
                         raise TaskNotFoundError(
                             f"과제 파일의 id가 찾은 과제 ID와 다릅니다: "
@@ -291,7 +293,8 @@ class DeepTwin:
     def tasks(self, split: Split, *, token: SealedToken | None = None) -> list[Task]:
         """`tasks/<split>/`의 과제. 파일 이름순이다. 폴더가 없으면 빈 목록이다.
 
-        `split`이 `sealed`면 `token`이 없을 때 파일을 읽지 않고 `sealed_access`다.
+        `split`이 `sealed`면 `token`이 없을 때 파일을 읽지 않고 `sealed_access`다. 봉인 과제의 형식
+        오류 메시지에는 받은 값을 쓰지 않는다.
         파일 이름과 `id`가 다르거나 `split`이 폴더와 다르면 `invalid_file`이다.
         """
         if split not in SPLITS:
@@ -299,7 +302,7 @@ class DeepTwin:
             raise ValueError(f"알 수 없는 분할입니다: {split!r}. 쓸 수 있는 값: {names}")
         if split == "sealed":
             require_token(token, f"{DATA_DIR}/{TASKS_DIR}/sealed/의 과제는")
-        tasks = self._read_folder(f"{TASKS_DIR}/{split}", Task)
+        tasks = self._read_folder(f"{TASKS_DIR}/{split}", Task, show_values=split != "sealed")
         for task in tasks:
             self._check_task_split(self._task_path(split, task.id), task, split)
         return tasks
@@ -554,22 +557,7 @@ class DeepTwin:
         문제가 있어도 예외를 내지 않는다.
         """
         with self.lock():
-            ledger_path = self.path / LEDGER_FILE
-            registered: dict[str, Any] = {}
-            problems: list[SealedProblem] = []
-            for number, obj in ledger.entries(ledger_path):
-                if obj.get("type") != "task" or obj.get("split") != "sealed":
-                    continue
-                task_id = obj.get("id")
-                if not (isinstance(task_id, str) and _SAFE_ID.fullmatch(task_id)):
-                    problems.append(
-                        SealedProblem(
-                            f"{DATA_DIR}/{LEDGER_FILE}:{number}",
-                            "봉인 과제로 등록한 task 줄의 id를 과제 ID로 읽을 수 없습니다",
-                        )
-                    )
-                    continue
-                registered.setdefault(task_id, obj.get("reference_hash"))
+            registered, problems = self._registered_sealed()
             for task_id, stored in registered.items():
                 reason = self._sealed_problem(task_id, stored)
                 if reason is not None:
@@ -586,7 +574,51 @@ class DeepTwin:
                         )
             return SealedCheck(checked=len(registered), problems=tuple(problems))
 
+    def changed_references(
+        self, task_ids: Sequence[str], *, token: SealedToken | None = None
+    ) -> tuple[str, ...]:
+        """잠금 안에서 봉인 과제마다 기준이 원장에 등록한 해시와 같은지 보고, 다른 과제의 ID를 낸다.
+
+        `verify_sealed`와 같은 검사다: 원장에서 그 ID의 첫 봉인 `task` 줄의 `reference_hash`와
+        견주고, 파일이 없거나 읽을 수 없거나 등록한 줄이 없어도 문제로 친다. 문제가 있는 과제의
+        ID만 받은 순서로 돌려준다(겹친 ID는 하나). 내용과 이유는 돌려주지 않는다. ID 규칙에 맞지
+        않는 ID는 경로를 만들지 않고 문제로 친다.
+        `token`이 없으면 파일을 읽지 않고 `sealed_access`다.
+        """
+        require_token(token, "기준을 견줄 과제는")
+        with self.lock():
+            registered, _ = self._registered_sealed()
+            return tuple(
+                task_id
+                for task_id in dict.fromkeys(task_ids)
+                if not _SAFE_ID.fullmatch(task_id)
+                or self._sealed_problem(task_id, registered.get(task_id)) is not None
+            )
+
     # 내부
+
+    def _registered_sealed(self) -> tuple[dict[str, Any], list[SealedProblem]]:
+        """원장에서 봉인 과제로 등록한 `task` 줄. 과제 ID -> 그 ID의 첫 줄의 `reference_hash`.
+
+        `id`를 과제 ID로 읽을 수 없는 줄은 사전에 넣지 않고 문제(원장의 줄)로 모은다. 잠금은 부르는
+        쪽이 잡는다.
+        """
+        registered: dict[str, Any] = {}
+        problems: list[SealedProblem] = []
+        for number, obj in ledger.entries(self.path / LEDGER_FILE):
+            if obj.get("type") != "task" or obj.get("split") != "sealed":
+                continue
+            task_id = obj.get("id")
+            if not (isinstance(task_id, str) and _SAFE_ID.fullmatch(task_id)):
+                problems.append(
+                    SealedProblem(
+                        f"{DATA_DIR}/{LEDGER_FILE}:{number}",
+                        "봉인 과제로 등록한 task 줄의 id를 과제 ID로 읽을 수 없습니다",
+                    )
+                )
+                continue
+            registered.setdefault(task_id, obj.get("reference_hash"))
+        return registered, problems
 
     def _task_path(self, split: str, task_id: str) -> Path:
         return self.path / TASKS_DIR / split / f"{task_id}.yaml"
@@ -672,11 +704,14 @@ class DeepTwin:
             return []
         return read_models(path, model, root=self.root)
 
-    def _read_folder(self, rel: str, model: type[_FolderItem]) -> list[_FolderItem]:
+    def _read_folder(
+        self, rel: str, model: type[_FolderItem], *, show_values: bool = True
+    ) -> list[_FolderItem]:
         """폴더의 `.yaml` 파일을 파일 이름순으로 읽는다. 점으로 시작하는 파일은 건너뛴다.
 
         확장자는 대소문자까지 `.yaml`이어야 한다. 운영체제마다 읽는 파일이 같게 하려는 것이다.
-        파일 이름(확장자 뺀 것)과 `id`가 다르면 `invalid_file`이다.
+        파일 이름(확장자 뺀 것)과 `id`가 다르면 `invalid_file`이다. `show_values`가 거짓이면 형식
+        오류의 메시지에 받은 값을 쓰지 않는다(`read_model`).
         """
         folder = self.path / rel
         if not folder.is_dir():
@@ -684,7 +719,7 @@ class DeepTwin:
         paths = sorted(_yaml_files(folder), key=lambda p: p.name)
         items: list[_FolderItem] = []
         for path in paths:
-            item = read_model(path, model, root=self.root)
+            item = read_model(path, model, root=self.root, show_values=show_values)
             if item.id != path.stem:
                 raise invalid_file(
                     path,

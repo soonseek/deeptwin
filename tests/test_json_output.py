@@ -130,6 +130,8 @@ CASES = [
     Case("status", ("status",), "invalid_file", _break_principles),
     Case("eval pairs", (*PAIRS, *FAKE)),
     Case("eval pairs", (*PAIRS, "--provider", "fake"), "fake_answer_required"),
+    Case("eval pairs", ("eval", "pairs", SKILL, "--split", "sealed", *FAKE)),
+    Case("eval pairs", ("eval", "pairs", "--resume", "eval-0099", *FAKE), "eval_not_found"),
     Case("eval judge", ("eval", "judge", EVAL), before=_made_eval, input="1\n2\n"),
     Case("eval judge", ("eval", "judge", "eval-0099"), "eval_not_found"),
     Case("eval report", ("eval", "report", EVAL), before=_judged_eval),

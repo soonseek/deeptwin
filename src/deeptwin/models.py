@@ -46,6 +46,7 @@ __all__ = [
     "Reference",
     "Rejected",
     "Run",
+    "SealOpen",
     "Side",
     "Skill",
     "Split",
@@ -380,6 +381,22 @@ class TaskEntry(BaseModel):
     reference_hash: str | None
 
 
+class SealOpen(BaseModel):
+    """봉인 묶음을 연 기록 하나. 원장의 `seal_open` 줄과 같은 모양이다.
+
+    평가 하나에 한 줄이다. `tasks`는 그 평가의 과제 ID, `reused`는 그 가운데 원장에서 이 줄보다
+    앞선 다른 평가의 `seal_open` 줄에 든 과제 ID다(이 평가의 과제 순서).
+    """
+
+    id: str
+    type: Literal["seal_open"] = "seal_open"
+    ts: str
+    eval: str
+    skill: str
+    tasks: list[str]
+    reused: list[str]
+
+
 class Call(BaseModel):
     """모델 호출 하나의 기록. 실행 폴더의 `calls.jsonl` 한 줄과 같은 모양이다(설계서 9.6)."""
 
@@ -411,6 +428,11 @@ class EvalInfo(_FileModel):
     """`full`의 상대 조건. 지금은 `["base"]`뿐이다."""
     seed: str
     """쌍의 순서와 좌우를 정한 씨앗. 주지 않으면 평가 ID다."""
+    seal_open: str | None = None
+    """봉인 평가면 원장의 `seal_open` 줄 ID(`seal-NNNN`). 봉인이 아니거나 아직 열기 전이면
+    `None`이다."""
+    reused: list[str] = Field(default_factory=list)
+    """다른 평가에서 이미 연 봉인 과제의 ID. 원장에서 계산한 값이다. 봉인이 아니면 늘 비었다."""
 
 
 class PairKey(BaseModel):
@@ -492,4 +514,8 @@ class EvalReport(_FileModel):
     split: Split
     pairs: int
     """평가의 쌍 수. 모두 고른 뒤에만 보고서를 내므로 고른 쌍 수와 같다."""
+    reused: list[str] = Field(default_factory=list)
+    """다른 평가에서 이미 연 봉인 과제의 ID. 봉인이 아니면 비었다."""
+    reference_changed: list[str] = Field(default_factory=list)
+    """기준이 등록 때와 다른 봉인 과제의 ID. 보고서를 낼 때마다 다시 본다. 봉인이 아니면 비었다."""
     comparisons: list[Comparison]

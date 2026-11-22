@@ -1,7 +1,8 @@
 """판정: 남은 쌍과 이번 몫을 꺼내고 선택을 기록한다. 화면(터미널, 웹)은 부르는 쪽이 맡는다.
 
 판정은 대응표(`key.json`)를 읽지 않는다. 어느 쪽이 어느 조건인지 모르는 채로 고른다.
-파일에는 저장 계층(`store.evals`)으로만 닿는다.
+봉인 평가면 `open_sealed`의 토큰으로 과제의 입력을 읽고, 봉인 과제의 기준이 등록 뒤 바뀌었는지
+본다(막지 않는다). 파일에는 저장 계층(`store.evals`, `DeepTwin`)으로만 닿는다.
 """
 
 from __future__ import annotations
@@ -11,8 +12,10 @@ from datetime import datetime
 from typing import Literal, TypeAlias
 
 from deeptwin.errors import InvalidChoiceError
+from deeptwin.eval.sealing import open_sealed
 from deeptwin.models import Choice, EvalInfo, Pair, Side
 from deeptwin.store.evals import open_eval
+from deeptwin.store.guard import SealedToken
 from deeptwin.store.project import DeepTwin
 
 __all__ = [
@@ -60,6 +63,9 @@ class Judging:
     """하루 몫. `None`이면 걸지 않는다."""
     stop: Stop | None
     """`batch`가 `pending`보다 짧을 때 그 까닭. 짧지 않으면 `None`이다."""
+    reference_changed: tuple[str, ...] = ()
+    """기준이 등록 때와 다른 봉인 과제의 ID. 그 평가의 모든 과제를 본다. 봉인 평가가 아니면
+    비었다."""
 
 
 def pending_pairs(
@@ -77,6 +83,9 @@ def pending_pairs(
       오늘은 부를 때 한 번만 정한다.
     - `stop`은 `batch`가 `pending`보다 짧을 때만 정해진다. 하루 남은 몫이 `limit` 이하이면
       `daily_limit`, 아니면 `limit`이다.
+    - 봉인 평가면 `open_sealed`로 묶음을 열어(같은 평가라 원장에는 쓰지 않는다) 그 토큰으로 과제의
+      입력을 읽고, 그 평가의 모든 과제의 기준을 등록 때 해시와 견준 결과를 `reference_changed`에
+      담는다(`DeepTwin.changed_references`).
 
     1보다 작은 상한은 `ValueError`다. 평가가 없으면 `eval_not_found`, 쌍 목록이 없으면
     `eval_incomplete`, 쌍 목록이나 선택 기록의 형식이 틀렸으면 `invalid_file`이다. 과제의 입력은
@@ -89,6 +98,12 @@ def pending_pairs(
     info = folder.info()
     pairs = folder.pairs()
     choices = folder.choices()
+    token: SealedToken | None = None
+    changed: tuple[str, ...] = ()
+    if info.split == "sealed":
+        opening = open_sealed(deeptwin, folder.id)
+        info, token = opening.eval, opening.token
+        changed = deeptwin.changed_references(info.tasks, token=token)
     today = datetime.now().astimezone().date()
     chosen_today = sum(
         1 for choice in choices if datetime.fromisoformat(choice.ts).astimezone().date() == today
@@ -100,7 +115,7 @@ def pending_pairs(
         if pair.id in chosen:
             continue
         if pair.task not in inputs:
-            inputs[pair.task] = deeptwin.task(pair.task).input
+            inputs[pair.task] = deeptwin.task(pair.task, token=token).input
         pending.append(PendingPair(number=number, pair=pair, input=inputs[pair.task]))
     room = len(pending)
     if limit is not None:
@@ -122,6 +137,7 @@ def pending_pairs(
         limit=limit,
         daily_limit=daily_limit,
         stop=stop,
+        reference_changed=changed,
     )
 
 

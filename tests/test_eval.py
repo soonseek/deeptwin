@@ -52,8 +52,17 @@ HIDDEN = ("base", "full", "바탕만", "딥트윈")
 """쌍 목록과 판정 화면에 나오면 안 되는 조건 ID와 이름."""
 PAIR_KEYS = ["id", "task", "left", "right"]
 CHOICE_LINE_KEYS = ["pair", "chosen", "seconds", "ts"]
-PAIRS_RESULT_KEYS = ["eval", "skill", "split", "tasks", "pairs", "seed"]
-REPORT_RESULT_KEYS = ["eval", "skill", "split", "pairs", "comparisons", "files"]
+PAIRS_RESULT_KEYS = ["eval", "skill", "split", "tasks", "pairs", "seed", "reused"]
+REPORT_RESULT_KEYS = [
+    "eval",
+    "skill",
+    "split",
+    "pairs",
+    "reused",
+    "reference_changed",
+    "comparisons",
+    "files",
+]
 
 SPARE_TASK = """\
 # 가상의 문의. 예비 과제다. 테스트용으로 지어낸 것이다.
@@ -71,6 +80,17 @@ id: task-0203
 skill: inquiry-reply
 split: spare
 input: 주말반도 있나요?
+"""
+NO_CONTEXT_SEALED_TASK = """\
+# 가상의 문의와 기준. 맥락이 없는 봉인 과제다. 테스트용으로 지어낸 것이다.
+schema: 1
+id: task-0104
+skill: inquiry-reply
+split: sealed
+input: 평일 오전반도 있나요?
+reference:
+  kind: my_version
+  text: 가상의 기준 답장입니다.
 """
 
 
@@ -160,6 +180,7 @@ def test_pairs_makes_the_eval_folder_runs_and_ledger_lines(in_example: Path) -> 
         "tasks": SPARE,
         "pairs": 2,
         "seed": EVAL,
+        "reused": [],
     }
     assert "run-" not in result.stdout
     folder = eval_dir(in_example)
@@ -173,7 +194,18 @@ def test_pairs_makes_the_eval_folder_runs_and_ledger_lines(in_example: Path) -> 
         "pairs.jsonl",
     ]
     info = read_json(folder / "eval.json")
-    assert list(info) == ["schema", "id", "ts", "skill", "split", "tasks", "against", "seed"]
+    assert list(info) == [
+        "schema",
+        "id",
+        "ts",
+        "skill",
+        "split",
+        "tasks",
+        "against",
+        "seed",
+        "seal_open",
+        "reused",
+    ]
     assert info["schema"] == 1
     assert info["id"] == EVAL
     assert datetime.fromisoformat(info["ts"]).utcoffset() is not None
@@ -365,6 +397,11 @@ def _cut_the_last_ledger_line(root: Path) -> None:
     path.write_bytes(b"".join(lines[:-1]) + lines[-1][: len(lines[-1]) // 2])
 
 
+def _add_sealed_task_without_context(root: Path) -> None:
+    (root / "no-context.yaml").write_text(NO_CONTEXT_SEALED_TASK, encoding="utf-8")
+    ok_json(invoke("task", "add", "no-context.yaml", "--json"), "task add")
+
+
 def _skill_without_tasks(root: Path) -> None:
     ok_json(invoke("skill", "new", "notice", "--json"), "skill new")
 
@@ -385,7 +422,12 @@ def _leave_alone(root: Path) -> None:
             "no_tasks",
             True,
         ),
-        (_leave_alone, ("eval", "pairs", SKILL, "--split", "sealed", *FAKE), "sealed_access", True),
+        (
+            _add_sealed_task_without_context,
+            ("eval", "pairs", SKILL, "--split", "sealed", *FAKE),
+            "context_required",
+            True,
+        ),
     ],
     ids=["no-context", "no-fake-answer", "broken-ledger", "no-tasks", "sealed"],
 )
@@ -450,7 +492,11 @@ def test_failure_while_generating_keeps_the_first_run_and_no_pairs(
     runs = [e for e in ledger(in_example) if e["type"] == "run"]
     assert [e["id"] for e in runs] == ["run-0001"]
     assert [p.name for p in (in_example / ".deeptwin" / "runs").iterdir()] == ["run-0001"]
-    assert files_in(eval_dir(in_example)) == ["eval.json", "outputs/base/task-0201.md"]
+    assert files_in(eval_dir(in_example)) == [
+        "eval.json",
+        "key.json",
+        "outputs/base/task-0201.md",
+    ]
     ok_json(invoke("verify", "--json"), "verify")
     error_json(judge(EVAL, "--json", input="1\n"), "eval judge", "eval_incomplete")
     error_json(invoke("eval", "report", EVAL, "--json"), "eval report", "eval_incomplete")
@@ -838,7 +884,16 @@ def test_report_counts_wins_from_the_key_and_the_choices(in_example: Path, wins:
     assert body["files"] == ["eval/eval-0001/report.json", "eval/eval-0001/report.md"]
     folder = eval_dir(in_example)
     saved = read_json(folder / "report.json")
-    assert list(saved) == ["schema", "eval", "skill", "split", "pairs", "comparisons"]
+    assert list(saved) == [
+        "schema",
+        "eval",
+        "skill",
+        "split",
+        "pairs",
+        "reused",
+        "reference_changed",
+        "comparisons",
+    ]
     assert saved == {"schema": 1, **{k: v for k, v in body.items() if k != "files"}}
     markdown = (folder / "report.md").read_text("utf-8")
     assert "| 바탕+딥트윈 대 바탕만 | 2 |" in markdown
@@ -1046,6 +1101,7 @@ def test_eval_package_reaches_files_only_through_the_store() -> None:
         "judging.py",
         "pairs.py",
         "reporting.py",
+        "sealing.py",
         "stats.py",
     }
 
