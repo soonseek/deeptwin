@@ -45,9 +45,9 @@ EXAMPLE = Path(__file__).parent.parent / "examples" / "inquiry-reply"
 """저장소의 예제 폴더. 테스트는 복사본에서만 돌고 이 폴더를 고치지 않는다."""
 
 
-EXAMPLE_LEFT_OUT = ("runs", ".lock", ".DS_Store", "Thumbs.db", "__pycache__")
+EXAMPLE_LEFT_OUT = ("runs", "eval", ".lock", ".DS_Store", "Thumbs.db", "__pycache__")
 """예제를 복사할 때 옮기지 않는 이름. git에 오르지 않는 것들이다: 예제를 저장소 안에서 돌려 생긴
-실행 폴더와 잠금 파일, 운영체제와 Python이 남기는 파일."""
+실행 폴더, 평가 폴더, 잠금 파일, 운영체제와 Python이 남기는 파일."""
 
 
 def copy_example(dest: Path, source: Path = EXAMPLE) -> Path:

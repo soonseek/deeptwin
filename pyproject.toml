@@ -89,7 +89,7 @@ warn_required_dynamic_aliases = true
 root_package = "deeptwin"
 
 [[tool.importlinter.contracts]]
-name = "검사·조립·모델·저장·가져오기·상태는 모델 호출 계층(llm)을 import하지 않는다"
+name = "검사·조립·모델·저장·가져오기·상태·실행·평가는 모델 호출 계층(llm)을 import하지 않는다"
 type = "forbidden"
 source_modules = [
     "deeptwin.checks",
@@ -98,6 +98,8 @@ source_modules = [
     "deeptwin.store",
     "deeptwin.importing",
     "deeptwin.status",
+    "deeptwin.runs",
+    "deeptwin.eval",
 ]
 forbidden_modules = ["deeptwin.llm"]
 

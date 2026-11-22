@@ -6,19 +6,25 @@
 from __future__ import annotations
 
 __all__ = [
+    "CheckFailedAfterRunError",
     "CheckFailedError",
     "CheckNotFoundError",
     "ClaudeNotFoundError",
     "ContextRequiredError",
     "DeeptwinError",
+    "EvalIncompleteError",
+    "EvalNotFoundError",
     "FakeAnswerRequiredError",
     "FakeAnswersExhaustedError",
     "FluidMarkerMissingError",
     "InitBlockedError",
+    "InvalidChoiceError",
     "InvalidContextError",
     "InvalidFileError",
     "InvalidIdError",
+    "JudgingUnfinishedError",
     "LedgerBrokenError",
+    "NoTasksError",
     "NotInitializedError",
     "NothingToImportError",
     "OverBudgetError",
@@ -136,6 +142,19 @@ class CheckFailedError(DeeptwinError):
         super().__init__("check_failed", message)
 
 
+class CheckFailedAfterRunError(CheckFailedError):
+    """실행을 원장에 남긴 뒤 검사 함수가 실패했다. 코드는 `check_failed` 그대로다.
+
+    `detail`은 실행 ID를 붙이기 전의 메시지(원칙과 검사 함수의 문제), `output`은 그 실행의
+    결과물이다. 실행 ID를 내보이면 안 되는 곳(평가)이 `detail`만으로 다시 알린다.
+    """
+
+    def __init__(self, message: str, *, detail: str, output: str) -> None:
+        super().__init__(message)
+        self.detail = detail
+        self.output = output
+
+
 class UnknownProviderError(DeeptwinError):
     def __init__(self, message: str) -> None:
         super().__init__("unknown_provider", message)
@@ -237,3 +256,38 @@ class SealedChangedError(DeeptwinError):
 
     def __init__(self, message: str) -> None:
         super().__init__("sealed_changed", message)
+
+
+class NoTasksError(DeeptwinError):
+    """평가에 쓸 과제가 없다. 그 분할에 `skill`이 그 스킬인 과제 파일이 하나도 없다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("no_tasks", message)
+
+
+class EvalNotFoundError(DeeptwinError):
+    """평가를 찾지 못했다. ID가 `eval-<숫자>`가 아니거나, 그 폴더나 `eval.json`이 없다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("eval_not_found", message)
+
+
+class EvalIncompleteError(DeeptwinError):
+    """평가 폴더에 쌍 목록(`pairs.jsonl`)이나 대응표(`key.json`)가 없다. 쌍을 다 만들지 못했다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("eval_incomplete", message)
+
+
+class JudgingUnfinishedError(DeeptwinError):
+    """고르지 않은 쌍이 남아 보고서를 내지 않았다. 대응표는 모든 쌍을 고른 뒤에만 합친다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("judging_unfinished", message)
+
+
+class InvalidChoiceError(DeeptwinError):
+    """선택을 기록할 수 없다. 쌍 목록에 없는 쌍이거나, 이미 고른 쌍이거나, 고른 쪽이 틀렸다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("invalid_choice", message)

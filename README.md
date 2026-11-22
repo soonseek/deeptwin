@@ -2,7 +2,7 @@
 
 개인의 판단 기준을 층별 파일로 쌓고, 작업마다 맞는 기준만 모델 없이 조립해 스킬의 유동 영역에 넣는 Python 라이브러리입니다.
 
-> 아직 초기 단계입니다(0.1.0a1, 시험용 저장소 TestPyPI에만 있습니다). 지금은 스킬 뼈대를 만들고, 과거 작업물을 예시로 가져오고, 과제를 등록하고, 원칙, 우선순위, 판단 카드, 예시를 조립해 스킬을 한 번 돌리고, 결과물이 어긴 원칙을 알려 주고, 쌓인 상태를 보는 길까지 있습니다. 함수 서명과 명령은 0.x 동안 바뀔 수 있습니다.
+> 아직 초기 단계입니다(0.1.0a1, 시험용 저장소 TestPyPI에만 있습니다). 지금은 스킬 뼈대를 만들고, 과거 작업물을 예시로 가져오고, 과제를 등록하고, 원칙, 우선순위, 판단 카드, 예시를 조립해 스킬을 한 번 돌리고, 결과물이 어긴 원칙을 알려 주고, 쌓인 상태를 보고, 바탕만과 바탕+딥트윈의 결과물을 가린 채 골라 보고서를 내는 길까지 있습니다. 함수 서명과 명령은 0.x 동안 바뀔 수 있습니다.
 
 ## 설치
 
@@ -297,6 +297,89 @@ deeptwin verify
 오류: .deeptwin/tasks/sealed/task-0101.yaml: 기준(reference)이 등록 때와 다릅니다
 ```
 
+평가. 같은 스킬로 바탕만(`base`, 네 층을 모두 빼고 조립)과 바탕+딥트윈(`full`, 네 층을 다 넣고 조립)의 결과물을 과제마다 만들고, 어느 쪽인지 가린 채 둘씩 골라 보고서를 냅니다. 명령은 셋입니다.
+
+```sh
+deeptwin eval pairs <스킬 ID> --split <분할> [--seed 글] [--provider 이름] [--fake-answer 파일]
+deeptwin eval judge <평가 ID>
+deeptwin eval report <평가 ID>
+```
+
+예제 복사본에서는 가짜 모델로 끝까지 돌려 볼 수 있습니다.
+
+```sh
+deeptwin eval pairs inquiry-reply --split spare --provider fake --fake-answer answers/keeps-principles.md
+deeptwin eval judge eval-0001
+deeptwin eval report eval-0001
+```
+
+`deeptwin eval pairs`는 분할에서 이 스킬의 과제를 파일 이름순으로 모아 과제마다 두 조건의 결과물을 만듭니다. `--split`은 꼭 주고 `train`, `sealed`, `spare` 가운데 하나입니다. 맥락은 과제 파일의 `context`입니다.
+
+- 결과물은 `deeptwin run`과 같은 길로 만듭니다. 생성마다 실행 폴더(`SKILL.md` 사본, `output.md`, `calls.jsonl`)와 원장의 `run` 줄이 남고 원칙도 검사합니다. 원칙을 어긴 결과물도 그대로 쌍에 들고, 위반은 출력하지 않습니다.
+- 모든 과제와 두 조건의 준비(맥락, 조립, 원장의 끝 줄, 검사 함수)를 모델 없이 마친 뒤에 공급자와 평가 폴더를 만듭니다. 그래서 그 전에 멈추면(`no_tasks`, `context_required`, `ledger_broken`, `check_not_found`, `fake_answer_required` 등) 평가 폴더, 실행 폴더, 원장 줄, 모델 호출이 생기지 않습니다.
+- 봉인 분할(`--split sealed`)은 아직 열 수 없어 `sealed_access`로 멈춥니다.
+- `--provider fake --fake-answer 파일`이면 모든 생성에 그 파일을 답으로 줍니다.
+- 평가 ID는 `eval-NNNN`이고, `.deeptwin/eval/`의 평가 폴더 번호 최댓값 + 1입니다.
+- `--json` 결과는 `eval`, `skill`, `split`, `tasks`, `pairs`(쌍 수), `seed`입니다. 어느 실행이 어느 조건인지는 출력하지 않습니다.
+- 쌍은 과제마다 하나(바탕+딥트윈 대 바탕만)입니다. 쌍의 순서는 `sha256(씨앗 + "\n" + 과제 ID + "\n" + 상대 조건)`의 16진 글 순이고, 같은 글 뒤에 `"\nside"`를 붙인 해시의 첫 바이트가 짝수면 왼쪽이 바탕+딥트윈입니다. 쌍 ID(`pair-NNNN`)는 섞은 순서로 매깁니다. 씨앗의 기본은 평가 ID이고 `--seed`로 바꿉니다. 같은 씨앗이면 운영체제와 Python 버전에 상관없이 같은 순서, 같은 좌우입니다.
+
+평가 폴더 `.deeptwin/eval/<평가 ID>/`에는 아래 파일이 이 순서로 생깁니다. JSON은 한글을 그대로 쓰고 원자적으로 씁니다.
+
+| 파일 | 내용 |
+|------|------|
+| `eval.json` | `schema`, `id`, `ts`, `skill`, `split`, `tasks`, `against`(지금은 `["base"]`), `seed` |
+| `outputs/<조건>/<과제 ID>.md` | 조건별 결과물. 그 실행의 `output.md`와 바이트까지 같다 |
+| `key.json` | 대응표. `schema`, `eval`, `runs`(과제 ID -> 조건 -> 실행 ID), `pairs`(쌍 ID -> `task`, `left`, `right`의 조건) |
+| `pairs.jsonl` | 쌍 목록. 한 줄에 `id`, `task`, `left`, `right`(두 결과물의 글)뿐이다 |
+| `choices.jsonl` | 선택 기록. 한 줄에 `pair`, `chosen`(`left`나 `right`), `seconds`(소수 셋째 자리), `ts` |
+| `report.json`, `report.md` | 보고서. 모두 고른 뒤에만 생긴다 |
+
+`pairs.jsonl`은 마지막에 씁니다. 생성이 중간에 실패하면 그때까지의 실행과 결과물은 남지만 `key.json`과 `pairs.jsonl`은 생기지 않고, 그 평가로 고르거나 보고서를 내면 `eval_incomplete`입니다. 그때는 새 평가를 만듭니다.
+
+`deeptwin eval judge`는 남은 쌍(`choices.jsonl`에 없는 쌍)을 `pairs.jsonl` 순서로 하나씩 보여 줍니다. 화면에는 몇 번째 쌍인지, 과제의 입력, `[1]`과 `[2]`의 두 글, 물음만 나옵니다.
+
+```text
+쌍 1/2
+문의:
+수강료를 두 번에 나눠 낼 수 있을까요?
+
+[1]
+(왼쪽 글)
+
+[2]
+(오른쪽 글)
+
+어느 쪽이 더 나답고 그대로 보낼 만한가요? 1 또는 2를 입력하세요:
+```
+
+- 블라인드: 쌍 목록과 판정 화면에는 조건 ID와 이름, 실행 ID, 결과물 경로가 나오지 않습니다. 판정은 `key.json`을 읽지 않고, 대응표는 보고서를 낼 때 처음 합칩니다.
+- `1`은 왼쪽(`left`), `2`는 오른쪽(`right`)이고 다른 입력은 다시 묻습니다. 비기기와 건너뛰기는 없습니다. 고를 때마다 바로 `choices.jsonl`에 남고, `seconds`는 쌍을 보여 준 때부터 고른 때까지의 초입니다.
+- 이어 고르기: 입력이 끝나면(EOF) 멈추고 종료 코드는 0, Ctrl-C면 130입니다. 어느 쪽이든 그때까지 고른 것은 남고, 다음 `deeptwin eval judge`는 남은 쌍부터 잇습니다. 남은 쌍이 없으면 `고를 쌍이 남지 않았습니다.`를 씁니다.
+- `--json`이면 보여 주는 글과 묻는 글은 stderr로 가고, stdout에는 끝난 뒤 결과 하나(`eval`, `chosen`(이번에 고른 수), `remaining`)를 씁니다. 글 모드는 모두 stdout이고 끝에 같은 내용의 요약 문장이 붙습니다.
+
+`deeptwin eval report`는 모든 쌍을 골랐을 때만 보고서를 씁니다. 남은 쌍이 있으면 그 수를 알리고 `judging_unfinished`로 멈추며 보고서 파일을 쓰지 않습니다.
+
+- 상대마다 `against`, `pairs`, `wins`(고른 쪽이 바탕+딥트윈인 수), `selection_rate`(`wins / pairs`), `p_value`를 냅니다.
+- `report.json`은 `schema`, `eval`, `skill`, `split`, `pairs`, `comparisons`이고, `report.md`는 같은 값을 한국어 표로 씁니다(선택률은 %, p값은 소수 넷째 자리). 시각을 적지 않으므로 다시 내도 바이트까지 같습니다.
+- `--json` 결과는 `report.json`에서 `schema`를 뺀 값과 `files`(`.deeptwin/` 기준 두 경로)입니다.
+- 보고서는 잰 값만 적고, 어느 쪽이 낫다는 판정 문장은 쓰지 않습니다.
+
+```markdown
+# 판정 보고서 eval-0001
+
+- 스킬: inquiry-reply, 분할: spare, 쌍: 2개(모두 골랐습니다)
+
+| 비교 | 쌍 | 바탕+딥트윈이 이긴 횟수 | 선택률 | p값 |
+|------|----|----|----|----|
+| 바탕+딥트윈 대 바탕만 | 2 | 1 | 50.0% | 0.7500 |
+
+p값은 한쪽 꼬리 이항 검정의 값입니다. 두 결과물을 반반으로 고른다고 할 때 이만큼 이상 이길 확률입니다.
+```
+
+p값은 한쪽 꼬리 이항 검정 P(X ≥ `wins`)입니다. 고르는 사람이 두 결과물을 동전 던지듯 반반으로 고른다고 할 때, 바탕+딥트윈이 `pairs`쌍 가운데 `wins`번 이상 이길 확률입니다. 값이 작을수록 반반으로 골랐다고 보기 어렵습니다. 표준 라이브러리 `math.comb`로 정확히 셉니다(예: 30쌍 중 20번이면 0.0494).
+
+평가 ID가 `eval-<숫자>`가 아니거나 그 폴더나 `eval.json`이 없으면 `eval_not_found`이고 아무 파일도 만들지 않습니다. `choices.jsonl`이나 `pairs.jsonl`에 읽을 수 없는 줄이 있으면 `invalid_file`이고, 메시지는 `.deeptwin/eval/eval-0001/choices.jsonl:2: …`처럼 파일과 줄로 시작합니다. Python에서는 `deeptwin.eval`의 `prepare_pairs`, `build_pairs`, `pending_pairs`, `record_choice`, `report`, `p_value`가 같은 일을 합니다. `record_choice`에 쌍 목록에 없는 쌍이나 이미 고른 쌍을 주면 `invalid_choice`입니다.
+
 해시 체인이 생기기 전 버전(PyPI의 0.0.1)이 쓴 원장 줄에는 `prev_hash`와 `hash`가 없습니다. 그 원장이 있으면 `deeptwin verify`는 손상으로 알리고, `deeptwin run`은 실행 폴더를 만들거나 모델을 부르기 전에 `ledger_broken`으로 멈춥니다. 그 `.deeptwin/ledger.jsonl`을 다른 이름으로 옮겨 두면(예: `ledger-old.jsonl`) 다음 실행부터 새 체인이 시작됩니다.
 
 모든 명령은 `--json`을 받습니다. 켜면 stdout에 JSON 객체 하나만 씁니다. 성공하면 종료 코드 0, deeptwin이 알려 주는 오류면 1입니다. 인자가 틀리면 Click 기본 동작대로 종료 코드 2와 글로 된 안내를 내고, JSON은 쓰지 않습니다.
@@ -340,6 +423,7 @@ deeptwin status
   candidates/<ID>.yaml      # 승인 전 후보. 하나가 파일 하나
   tasks/<분할>/<ID>.yaml    # 과제. 분할은 train, sealed, spare. sealed는 토큰 없이 읽지 않는다
   runs/                     # 실행마다 SKILL.md 사본, 결과물, 호출 기록(calls.jsonl)
+  eval/<평가 ID>/           # 평가마다 eval.json, 조건별 결과물(outputs/), 대응표(key.json), 쌍 목록(pairs.jsonl), 선택(choices.jsonl), 보고서
   ledger.jsonl              # 원장. 추가만 하고 줄마다 해시로 잇는다
 skills/<스킬 ID>/           # deeptwin skill new가 아래 세 파일을 만든다
   SKILL.md                  # 고정 영역과 유동 영역 표시
@@ -371,6 +455,8 @@ uv sync
 uv run ruff check && uv run ruff format --check && uv run mypy && uv run lint-imports
 uv run pytest
 ```
+
+검사, 조립, 모델, 저장, 가져오기, 상태, 실행(`deeptwin.runs`), 평가(`deeptwin.eval`)는 모델 호출 계층(`deeptwin.llm`)을 직접이든 거쳐서든(`llm`을 import하는 `deeptwin` 최상위 패키지 포함) import하지 않습니다(`uv run lint-imports`가 검사합니다). 공급자와 호출 기록기를 생성 함수로 묶어 넘기는 것은 명령줄입니다. 평가 모듈은 파일에 저장 계층으로만 닿습니다(`tests/test_eval.py`가 검사합니다).
 
 명령줄(`src/deeptwin/cli/`)은 공개 API만 씁니다. 다른 deeptwin 모듈에서 `from deeptwin.<모듈> import <이름>`으로 가져오는 이름은 그 모듈의 `__all__`에 있어야 하고 `_`로 시작하지 않습니다. 쓰는 이름을 검사할 수 없으므로 `import deeptwin.<모듈>`로 모듈을 통째로 가져오지 않습니다(`tests/test_public_api.py`가 검사합니다).
 

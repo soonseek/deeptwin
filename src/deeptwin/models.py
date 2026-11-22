@@ -25,19 +25,28 @@ __all__ = [
     "Call",
     "Candidate",
     "Card",
+    "Choice",
+    "Comparison",
     "Composed",
+    "Condition",
     "Context",
+    "EvalInfo",
+    "EvalKey",
+    "EvalReport",
     "Example",
     "FLUID_CLOSE",
     "FLUID_OPEN",
     "Grade",
     "Item",
     "Layer",
+    "Pair",
+    "PairKey",
     "Principle",
     "Priority",
     "Reference",
     "Rejected",
     "Run",
+    "Side",
     "Skill",
     "Split",
     "Status",
@@ -76,6 +85,11 @@ Cause: TypeAlias = Literal[
 
 Context: TypeAlias = dict[str, str]
 """이번 작업의 맥락. 맥락 축 이름 -> 값(예: `{"purpose": "문의"}`)."""
+Condition: TypeAlias = Literal["base", "full"]
+"""평가의 조건 ID. `base`는 바탕만(네 층을 모두 뺀 조립), `full`은 바탕+딥트윈(네 층을 다 넣은
+조립)이다. 조건 ID는 대응표(`key.json`)와 보고서에만 쓰고 쌍 목록과 판정 화면에는 쓰지 않는다."""
+Side: TypeAlias = Literal["left", "right"]
+"""판정에서 고른 쪽. 쌍 목록의 `left`(화면의 [1])나 `right`(화면의 [2])다."""
 
 
 class _FileModel(BaseModel):
@@ -379,3 +393,92 @@ class Call(BaseModel):
     output_chars: int
     seconds: float
     cached: bool
+
+
+class EvalInfo(_FileModel):
+    """평가 하나의 정보. `.deeptwin/eval/<평가 ID>/eval.json`.
+
+    조건과 이어지지 않는 것만 적는다. 어느 실행이 어느 조건인지는 대응표(`EvalKey`)에 둔다.
+    """
+
+    id: str
+    ts: str
+    skill: str
+    split: Split
+    tasks: list[str]
+    """평가한 과제 ID. 파일 이름순이다."""
+    against: list[Condition]
+    """`full`의 상대 조건. 지금은 `["base"]`뿐이다."""
+    seed: str
+    """쌍의 순서와 좌우를 정한 씨앗. 주지 않으면 평가 ID다."""
+
+
+class PairKey(BaseModel):
+    """쌍 하나의 대응: 과제와, 왼쪽과 오른쪽 글을 만든 조건."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    task: str
+    left: Condition
+    right: Condition
+
+
+class EvalKey(_FileModel):
+    """평가 하나의 대응표. `.deeptwin/eval/<평가 ID>/key.json`. 판정이 끝난 뒤에만 합친다."""
+
+    eval: str
+    runs: dict[str, dict[Condition, str]]
+    """과제 ID -> 조건 -> 그 결과물을 만든 실행 ID."""
+    pairs: dict[str, PairKey]
+    """쌍 ID -> 그 쌍의 대응."""
+
+
+class Pair(BaseModel):
+    """쌍 목록(`pairs.jsonl`)의 한 줄. 조건을 되짚을 값(조건, 실행 ID, 결과물 경로)은 없다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    task: str
+    left: str
+    """왼쪽(화면의 [1]) 결과물의 글."""
+    right: str
+    """오른쪽(화면의 [2]) 결과물의 글."""
+
+
+class Choice(BaseModel):
+    """선택 기록(`choices.jsonl`)의 한 줄."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pair: str
+    chosen: Side
+    seconds: float
+    """쌍을 보여 준 때부터 고른 때까지의 초(소수 셋째 자리까지)."""
+    ts: str
+
+
+class Comparison(BaseModel):
+    """보고서의 상대 하나: `full`과 `against`를 견준 쌍들의 결과."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    against: Condition
+    pairs: int
+    wins: int
+    """고른 쪽이 `full`인 쌍의 수."""
+    selection_rate: float
+    """`wins / pairs`."""
+    p_value: float
+    """한쪽 꼬리 이항 검정의 값 P(X >= wins), X ~ B(pairs, 0.5)."""
+
+
+class EvalReport(_FileModel):
+    """판정 보고서. `.deeptwin/eval/<평가 ID>/report.json`."""
+
+    eval: str
+    skill: str
+    split: Split
+    pairs: int
+    """평가의 쌍 수. 모두 고른 뒤에만 보고서를 내므로 고른 쌍 수와 같다."""
+    comparisons: list[Comparison]

@@ -5,26 +5,25 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Self
+from typing import Annotated, Self, cast, get_args
 
 import typer
 
-from deeptwin.checks import PreparedChecks, prepare_checks
 from deeptwin.cli.output import Reply, respond
-from deeptwin.compose import LAYERS, check_context, compose, fill_fluid
+from deeptwin.cli.terminal import judge_in_terminal, summary
+from deeptwin.compose import LAYERS, check_context, compose
 from deeptwin.errors import (
-    CheckFailedError,
-    ContextRequiredError,
     FakeAnswerRequiredError,
     InvalidContextError,
     TaskSkillMismatchError,
     UnknownProviderError,
 )
+from deeptwin.eval import build_pairs, prepare_pairs, report
 from deeptwin.importing import TEXT_SUFFIXES, import_folder
 from deeptwin.llm import ClaudeCLIProvider, FakeProvider, Provider
 from deeptwin.llm.calls import CallRecorder
-from deeptwin.models import Composed, Context, Run, Skill, Task, Violation
-from deeptwin.runs import CALLS_FILE, discard_run_on_failure, record_run, write_skill_copy
+from deeptwin.models import Composed, Context, Run, Split, Task, Violation
+from deeptwin.runs import Generate, execute_run, prepare_run
 from deeptwin.status import STATUSES, project_status
 from deeptwin.store.files import display_path
 from deeptwin.store.guard import problem_lines, sealed_changed
@@ -50,6 +49,15 @@ skill_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(skill_app, name="skill")
+eval_app = typer.Typer(
+    name="eval",
+    help=(
+        "바탕만과 바탕+딥트윈의 결과물을 과제마다 만들어, 어느 쪽인지 가린 채 둘씩 고르고 "
+        "보고서를 낸다."
+    ),
+    no_args_is_help=True,
+)
+app.add_typer(eval_app, name="eval")
 
 JsonOption = Annotated[
     bool,
@@ -83,6 +91,30 @@ AblateOption = Annotated[
     ),
 ]
 """`--context`와 `--ablate`는 `compose`와 `run`이 같은 정의를 쓴다. 푸는 것은 `ComposeOptions`다."""
+ProviderOption = Annotated[
+    str,
+    typer.Option(
+        "--provider",
+        help=(
+            "모델 공급자 이름. 기본값 claude는 claude CLI를 Claude Code의 구독 로그인으로 "
+            "부른다. fake는 테스트와 예제 확인용이다."
+        ),
+    ),
+]
+FakeAnswerOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--fake-answer",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="fake 공급자가 돌려줄 답 파일. 테스트와 예제 확인용이다.",
+    ),
+]
+"""`--provider`와 `--fake-answer`는 `run`과 `eval pairs`가 같은 정의를 쓴다."""
+EvalArgument = Annotated[
+    str, typer.Argument(metavar="EVAL", help="평가 ID(예: eval-0001)", show_default=False)
+]
 
 
 @dataclass(frozen=True)
@@ -116,13 +148,16 @@ class ProviderOptions:
     """공급자를 만들 때 명령줄에서 넘겨받는 값."""
 
     fake_answer: Path | None = None
+    fake_repeat: int = 1
+    """fake 공급자가 답 파일을 몇 번 돌려줄지. 생성 수만큼 준다(`eval pairs`)."""
 
 
 def _fake_provider(options: ProviderOptions) -> Provider:
     if options.fake_answer is None:
         raise FakeAnswerRequiredError("--provider fake에는 --fake-answer <파일>이 필요합니다.")
     # 줄바꿈을 바꾸지 않고 읽는다. 결과물 output.md가 답 파일과 바이트까지 같다
-    return FakeProvider([options.fake_answer.read_bytes().decode("utf-8")])
+    answer = options.fake_answer.read_bytes().decode("utf-8")
+    return FakeProvider([answer] * options.fake_repeat)
 
 
 def _claude_provider(options: ProviderOptions) -> Provider:
@@ -145,6 +180,15 @@ def make_provider(name: str, options: ProviderOptions) -> Provider:
         names = ", ".join(sorted(PROVIDERS))
         raise UnknownProviderError(f"알 수 없는 공급자입니다: {name}. 쓸 수 있는 이름: {names}")
     return factory(options)
+
+
+def _recorded(llm: Provider) -> Generate:
+    """공급자를 생성 함수로 묶는다. 성공한 호출마다 받은 `calls.jsonl`에 한 줄을 남긴다."""
+
+    def generate(system: str, user: str, calls: Path) -> str:
+        return CallRecorder(llm, calls).complete(system, user)
+
+    return generate
 
 
 @app.command()
@@ -177,26 +221,8 @@ def run(
     task_id: TaskArgument,
     context_options: ContextOption = None,
     ablate_options: AblateOption = None,
-    provider: Annotated[
-        str,
-        typer.Option(
-            "--provider",
-            help=(
-                "모델 공급자 이름. 기본값 claude는 claude CLI를 Claude Code의 구독 로그인으로 "
-                "부른다. fake는 테스트와 예제 확인용이다."
-            ),
-        ),
-    ] = DEFAULT_PROVIDER,
-    fake_answer: Annotated[
-        Path | None,
-        typer.Option(
-            "--fake-answer",
-            exists=True,
-            dir_okay=False,
-            readable=True,
-            help="fake 공급자가 돌려줄 답 파일. 테스트와 예제 확인용이다.",
-        ),
-    ] = None,
+    provider: ProviderOption = DEFAULT_PROVIDER,
+    fake_answer: FakeAnswerOption = None,
     as_json: JsonOption = False,
 ) -> None:
     """스킬을 과제 하나로 돌린다: 조립, 실행 폴더에 SKILL.md 사본 쓰기, 생성, 실행 기록, 원칙 검사.
@@ -215,27 +241,16 @@ def run(
         _ensure_task_of_skill(task, skill_id, doing="실행한")
         # 2. 맥락과 뺄 층. compose와 같은 길로 정한다
         options = ComposeOptions.parse(context_options, ablate_options)
-        context = options.context_for(task)
-        _require_context(skill, task, context)
-        # 3. 조립
-        composed = compose(skill, task, deeptwin, context=context, ablate=options.ablate)
-        skill_copy = fill_fluid(skill.skill_md.read_text(encoding="utf-8"), composed.guide)
-        # 4. 원장에 이어 쓸 수 있는지. 원장에 남길 수 없는 실행은 돌리지 않는다
-        deeptwin.ledger_tail_hash()
-        # 5. 원칙의 검사 함수. 함수 이름이 틀렸으면 생성 비용을 내기 전에 알린다
-        checks = prepare_checks(skill, deeptwin)
-        # 6. 공급자. claude가 없거나 fake에 답 파일이 없으면 여기서 멈춘다
+        # 3. 맥락(context_required), 조립, 원장의 끝 줄, 원칙의 검사 함수. 아무것도 쓰지 않는다
+        prepared = prepare_run(
+            deeptwin, skill, task, context=options.context_for(task), ablate=options.ablate
+        )
+        # 4. 공급자. claude가 없거나 fake에 답 파일이 없으면 여기서 멈춘다
         llm = make_provider(provider, ProviderOptions(fake_answer=fake_answer))
-        # 7. 실행 폴더. 사본 쓰기나 생성이 실패하면(Ctrl-C도) 이 폴더를 지운다
-        run_id = deeptwin.new_run()
-        with discard_run_on_failure(deeptwin, run_id):
-            write_skill_copy(deeptwin, run_id, skill_copy)
-            recorder = CallRecorder(llm, deeptwin.run_dir(run_id) / CALLS_FILE)
-            output = recorder.complete(skill_copy, task.input)
-        # 생성 뒤의 실패(결과물 쓰기, 원장 덧붙이기)에는 폴더를 남긴다. 이미 비용을 낸 호출이다
-        record = record_run(composed, task, output, deeptwin, run_id=run_id, context=context)
-        # 8. 원칙 검사. 실행은 이미 원장에 남았고, 위반이 있어도 실행과 원장 줄은 그대로다
-        violations = _check_output(checks, output, record)
+        # 5. 실행 폴더, 생성, 원장 줄, 원칙 검사. 생성이 실패하면(Ctrl-C도) 실행 폴더를 지운다.
+        # 위반이 있어도 실행과 원장 줄은 그대로다
+        outcome = execute_run(deeptwin, prepared, _recorded(llm))
+        record, violations = outcome.record, outcome.violations
         return Reply(
             result={
                 "run": record.id,
@@ -320,39 +335,11 @@ def _choice_lines(made: Composed | Run) -> list[str]:
     ]
 
 
-def _check_output(checks: PreparedChecks, output: str, record: Run) -> list[Violation]:
-    """기록한 실행의 결과물에 검사 함수를 돌린다. 함수가 실패하면 오류 다음 줄에 실행 ID를 쓴다."""
-    try:
-        return checks.run(output)
-    except CheckFailedError as error:
-        raise CheckFailedError(
-            f"{error.message}\n실행 {record.id}은 원장에 남았고 "
-            f"결과물은 {DATA_DIR}/{record.output}에 있습니다."
-        ) from error
-
-
 def _violation_lines(violations: list[Violation]) -> list[str]:
     """어긴 원칙마다 한 줄. 없으면 `어긴 원칙이 없습니다.` 한 줄이다."""
     if not violations:
         return ["어긴 원칙이 없습니다."]
     return [f"어긴 원칙: {v.principle} {v.rule}" for v in violations]
-
-
-def _require_context(skill: Skill, task: Task, context: Context) -> None:
-    """스킬의 `context_axes`에 축이 있는데 맥락이 비었으면 `context_required`다.
-
-    스킬에 축이 없으면 줄 맥락이 없으므로 빈 맥락으로 돈다. `run`만 본다.
-    """
-    if not skill.context_axes or context:
-        return
-    axes = ", ".join(
-        f"{axis}({', '.join(values) or '없음'})" for axis, values in skill.context_axes.items()
-    )
-    raise ContextRequiredError(
-        f"과제 {task.id}에 맥락이 없습니다. "
-        "과제 파일의 context에 적거나 --context 축=값으로 주세요. "
-        f"스킬 {skill.id}의 축: {axes}"
-    )
 
 
 def parse_context_options(options: list[str]) -> Context:
@@ -607,3 +594,129 @@ def status(as_json: JsonOption = False) -> None:
         )
 
     respond("status", action, as_json=as_json)
+
+
+SPLIT_CHOICES: tuple[str, ...] = get_args(Split)
+"""`--split`에 줄 수 있는 값. 세 분할(train, sealed, spare)이다."""
+
+
+def _split_choice(value: str) -> str:
+    """`--split`을 세 분할 가운데 하나로 받는다. 아니면 Click의 인자 오류(종료 2)다.
+
+    `Literal` 인자를 받지 못하는 typer에서도 돌도록 `str`로 받아 여기서 본다. typer 0.29는 click을
+    안에 품고 `click_type`을 받지 않으므로 click을 직접 import하지 않고 `typer.BadParameter`를 낸다.
+    """
+    if value not in SPLIT_CHOICES:
+        raise typer.BadParameter(
+            f"쓸 수 있는 값은 {', '.join(SPLIT_CHOICES)}입니다(받은 값: {value!r})."
+        )
+    return value
+
+
+@eval_app.command("pairs")
+def eval_pairs(
+    skill_id: SkillArgument,
+    split: Annotated[
+        str,
+        typer.Option(
+            "--split",
+            metavar="train|sealed|spare",
+            callback=_split_choice,
+            help="평가할 과제의 분할: train, sealed, spare. 봉인(sealed)은 아직 열 수 없다.",
+            show_default=False,
+        ),
+    ],
+    seed: Annotated[
+        str | None,
+        typer.Option(
+            "--seed",
+            metavar="글",
+            help="쌍의 순서와 좌우를 정하는 씨앗. 주지 않으면 평가 ID다.",
+            show_default=False,
+        ),
+    ] = None,
+    provider: ProviderOption = DEFAULT_PROVIDER,
+    fake_answer: FakeAnswerOption = None,
+    as_json: JsonOption = False,
+) -> None:
+    """분할의 과제마다 바탕만과 바탕+딥트윈의 결과물을 만들고, 어느 쪽인지 가린 쌍 목록을 쓴다.
+
+    결과물은 deeptwin run과 같은 길로 만들어 실행마다 원장에 남는다. 모든 과제와 조건을 모델
+    없이 준비한 뒤에 공급자와 평가 폴더(.deeptwin/eval/<평가 ID>/)를 만들므로, 생성 전에 멈추면
+    평가 폴더, 실행 폴더, 원장 줄, 모델 호출이 생기지 않는다.
+    """
+
+    def action() -> Reply:
+        # 1. 프로젝트, 스킬, 과제(no_tasks, 봉인 분할이면 sealed_access)
+        # 2. 과제마다 두 조건의 준비(맥락, 조립, 원장의 끝 줄, 검사 함수). 아무것도 쓰지 않는다
+        deeptwin = DeepTwin.open(Path.cwd())
+        plan = prepare_pairs(deeptwin, skill_id, split=cast(Split, split))
+        # 3. 공급자. fake는 생성 수만큼 같은 답을 준다
+        options = ProviderOptions(fake_answer=fake_answer, fake_repeat=plan.generations)
+        llm = make_provider(provider, options)
+        # 4. 평가 폴더와 생성. 어느 실행이 어느 조건인지는 key.json에만 남고 출력하지 않는다
+        built = build_pairs(deeptwin, plan, _recorded(llm), seed=seed)
+        return Reply(
+            result={
+                "eval": built.eval,
+                "skill": built.skill,
+                "split": built.split,
+                "tasks": list(built.tasks),
+                "pairs": built.pairs,
+                "seed": built.seed,
+            },
+            text="\n".join(
+                [
+                    f"평가 {built.eval}을 만들었습니다. 스킬 {built.skill}, 분할 {built.split}, "
+                    f"과제 {len(built.tasks)}개, 쌍 {built.pairs}개, 씨앗 {built.seed}.",
+                    f"deeptwin eval judge {built.eval}로 고르세요.",
+                ]
+            ),
+        )
+
+    respond("eval pairs", action, as_json=as_json)
+
+
+@eval_app.command("judge")
+def eval_judge(eval_id: EvalArgument, as_json: JsonOption = False) -> None:
+    """남은 쌍을 터미널에서 하나씩 보여 주고 1이나 2를 받아 바로 기록한다.
+
+    고른 쌍은 다시 보여 주지 않고, 다음에는 남은 쌍부터 잇는다. 입력이 끝나면(EOF) 멈춘다.
+    화면에는 어느 쪽이 어느 조건인지 나오지 않는다. --json이면 보여 주는 글과 묻는 글은
+    stderr로 가고, stdout에는 끝난 뒤 결과 하나를 쓴다.
+    """
+
+    def action() -> Reply:
+        deeptwin = DeepTwin.open(Path.cwd())
+        judged = judge_in_terminal(deeptwin, eval_id, err=as_json)
+        return Reply(
+            result={"eval": judged.eval, "chosen": judged.chosen, "remaining": judged.remaining},
+            text=summary(judged),
+        )
+
+    respond("eval judge", action, as_json=as_json)
+
+
+@eval_app.command("report")
+def eval_report(eval_id: EvalArgument, as_json: JsonOption = False) -> None:
+    """모든 쌍을 골랐으면 대응표를 합쳐 이긴 횟수, 선택률, p값을 report.json과 report.md로 쓴다.
+
+    남은 쌍이 있으면 그 수를 알리고 보고서를 쓰지 않는다. 다시 내면 같은 바이트다.
+    """
+
+    def action() -> Reply:
+        deeptwin = DeepTwin.open(Path.cwd())
+        made = report(deeptwin, eval_id)
+        files = list(made.files)
+        return Reply(
+            result={**made.report.model_dump(mode="json", exclude={"schema_"}), "files": files},
+            text="\n".join(
+                [
+                    made.markdown.rstrip("\n"),
+                    "",
+                    f"보고서 파일: {', '.join(f'{DATA_DIR}/{f}' for f in files)}",
+                ]
+            ),
+        )
+
+    respond("eval report", action, as_json=as_json)
