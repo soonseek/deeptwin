@@ -2,7 +2,7 @@
 
 개인의 판단 기준을 층별 파일로 쌓고, 작업마다 맞는 기준만 모델 없이 조립해 스킬의 유동 영역에 넣는 Python 라이브러리입니다.
 
-> 아직 초기 단계입니다(0.0.1). 지금은 과제를 등록하고, 원칙, 우선순위, 판단 카드, 예시를 조립해 스킬을 한 번 돌리는 길까지 있습니다. 함수 서명과 명령은 0.x 동안 바뀔 수 있습니다.
+> 아직 초기 단계입니다(0.0.1). 지금은 과제를 등록하고, 원칙, 우선순위, 판단 카드, 예시를 조립해 스킬을 한 번 돌리고, 결과물이 어긴 원칙을 알려 주는 길까지 있습니다. 함수 서명과 명령은 0.x 동안 바뀔 수 있습니다.
 
 ## 설치
 
@@ -72,11 +72,49 @@ deeptwin run <스킬 ID> <과제 ID> [--context 축=값]... [--ablate 층]...
 2. 맥락: `--context`의 모양, `context_required`
 3. 조립: `invalid_context`, `unknown_layer`, `over_budget` 등
 4. 원장의 끝 줄: 이어 쓸 `hash`를 얻지 못하면 `ledger_broken`
-5. 공급자: `claude_not_found`, `fake_answer_required`
+5. 원칙의 검사 함수: `check_not_found`, 불러오다 실패하면 `check_failed`(아래 원칙 검사 참고)
+6. 공급자: `claude_not_found`, `fake_answer_required`
 
 실행 폴더를 만든 뒤 사본 쓰기나 생성이 실패하면(공급자 오류, 시간 초과, Ctrl-C) 방금 만든 그 실행 폴더를 지우고 원래 오류를 그대로 냅니다. 생성이 끝난 뒤의 실패(결과물 쓰기, 원장 덧붙이기)에는 실행 폴더를 남깁니다. 이미 비용을 낸 호출의 기록이 들어 있기 때문입니다.
 
-`--json` 결과는 `run`, `task`, `split`, `context`, `ablate`, `injected`, `rejected`, `no_hit`, `conflicts`, `guide_hash`, `output`(`.deeptwin/` 기준) 순입니다. 글 모드는 마친 실행, 넣은 항목, 뺀 항목, 맞는 카드가 없던 판단 지점, 결과물을 차례로 씁니다.
+`--json` 결과는 `run`, `task`, `split`, `context`, `ablate`, `injected`, `rejected`, `no_hit`, `conflicts`, `guide_hash`, `output`(`.deeptwin/` 기준), `violations` 순입니다. 글 모드는 마친 실행, 넣은 항목, 뺀 항목, 맞는 카드가 없던 판단 지점, 어긴 원칙, 결과물을 차례로 씁니다.
+
+원칙 검사. 생성하고 원장에 기록한 뒤, 결과물을 원칙의 검사 함수로 봅니다. 원칙의 `check`에 함수 이름을 적고, 그 함수를 스킬 폴더의 `checks.py`에 둡니다. `skill.yaml`의 `checks`에는 그 파일의 경로를 스킬 폴더(`skill.yaml`이 든 폴더) 기준으로 적습니다(`checks: checks.py`). 스킬 폴더 밖(`..`, 절대 경로)은 가리킬 수 없습니다.
+
+```yaml
+# .deeptwin/layers/principles.yaml
+- id: prin-01
+  rule: 수치를 부풀리지 않는다
+  kind: never
+  check: no_inflated_numbers   # checks.py의 함수 이름. 없으면 null
+  scope: []
+  status: active
+  approval: human
+```
+
+```python
+# skills/<스킬 ID>/checks.py
+import re
+
+
+def no_inflated_numbers(output: str) -> bool:
+    return not re.search(r"역대급|최고의|100%", output)
+```
+
+- 검사 함수는 `checks.py`의 모듈 수준 함수 `fn(output: str) -> bool`입니다. 결과물 글을 받아 지켰으면 `True`, 어겼으면 `False`를 돌려줍니다.
+- 검사하는 원칙은 조립과 같은 범위입니다. `status: active`이고 `scope`가 비었거나 이 스킬을 담은 원칙을 `principles.yaml` 순서대로 봅니다. `check: null`인 원칙은 건너뜁니다. `--ablate`와 상관없이 모두 검사합니다.
+- 어긴 원칙은 `--json` 결과의 `violations`에 `{"principle": "prin-01", "rule": "수치를 부풀리지 않는다", "check": "no_inflated_numbers"}` 꼴로 남고, 글 모드에는 한 줄씩 `어긴 원칙: prin-01 수치를 부풀리지 않는다`로 나옵니다. 없으면 `violations`는 `[]`이고 글 모드는 `어긴 원칙이 없습니다.`입니다. 검사할 원칙이 하나도 없을 때도 같습니다.
+- 위반은 오류가 아닙니다. 종료 코드는 0이고, 실행 폴더와 원장 `run` 줄은 그대로 남습니다. 위반을 원장에 쓰지는 않습니다.
+- 함수는 모델을 부르기 전에 찾아 둡니다. 검사할 원칙이 있는데 `skill.yaml`에 `checks`가 없거나, 파일이 없거나 스킬 폴더 밖이거나, 함수가 없거나 부를 수 없으면 `check_not_found`입니다. 파일을 불러오다 예외가 나면(문법 오류 등) `check_failed`입니다. 둘 다 실행 폴더, 원장 줄, 모델 호출 없이 멈춥니다. 검사할 원칙이 없으면 `checks.py`를 읽지 않습니다.
+- 함수가 예외를 내거나 `bool`이 아닌 것을 돌려주면 `check_failed`입니다. 그때는 실행이 이미 원장에 남았으므로, 메시지 끝에 그 실행 ID와 결과물 경로가 나옵니다.
+- `checks.py`는 파일 경로로 불러오고 `sys.modules`에 넣지 않으며 `sys.path`도 바꾸지 않습니다. 그래서 다른 스킬의 `checks.py`에 같은 이름의 함수가 있어도 섞이지 않습니다. 표준 라이브러리와 설치한 패키지는 import할 수 있지만, 같은 폴더의 다른 파일은 import할 수 없습니다. `__pycache__`를 남기지 않고, 고친 파일은 다음 실행에서 바로 읽힙니다.
+- `checks.py`는 deeptwin이 그대로 실행하는 코드입니다. 남이 만든 스킬이면 `checks.py`를 먼저 읽어 보세요.
+
+```text
+오류: skills/minimal/checks.py에 원칙 prin-01의 검사 함수가 없습니다: no_inflated_numbers
+```
+
+Python에서는 `deeptwin.check(skill, output, deeptwin)`이 같은 검사를 하고 `Violation` 목록을 돌려줍니다(설계서 8.5).
 
 기본 공급자는 `claude`입니다. Claude Code의 `claude` 명령을 헤드리스(`claude -p`)로 부릅니다. Claude Code를 설치하고 한 번 로그인해 두기만 하면 되고, API 키는 필요 없습니다. 다만 `claude -p`는 환경 변수 `ANTHROPIC_API_KEY`가 있으면 구독보다 그 키를 먼저 씁니다. 구독으로 돌리려면 그 변수 없이 실행하세요(예: `env -u ANTHROPIC_API_KEY deeptwin run ...`). 부를 때는 도구를 끄고(`--tools ""`) 사용자의 CLAUDE.md, 플러그인, 훅을 빼며(`--safe-mode`) 세션을 저장하지 않습니다. `claude`가 없으면 `claude_not_found` 오류로 멈춥니다.
 
@@ -232,7 +270,8 @@ deeptwin verify
   ledger.jsonl              # 원장. 추가만 하고 줄마다 해시로 잇는다
 skills/<스킬 ID>/
   SKILL.md                  # 고정 영역과 유동 영역 표시
-  skill.yaml                # 판단 지점, 맥락 축, 상한
+  skill.yaml                # 판단 지점, 맥락 축, 상한, 검사 파일(checks)
+  checks.py                 # 원칙의 검사 함수. fn(output: str) -> bool, 이름이 원칙의 check
 ```
 
 모든 파일과 목록 파일의 항목마다 `schema: 1`을 둡니다. 없으면 1로 읽고, 더 큰 값이면 읽지 않습니다. 폴더에 든 파일은 파일 이름이 `id`와 같아야 하고, 과제 파일의 `split`은 든 폴더와 같아야 합니다. 모르는 필드(`x_` 확장 필드 등)는 버리지 않습니다.

@@ -9,9 +9,11 @@ from typing import Annotated, Self
 
 import typer
 
+from deeptwin.checks import PreparedChecks, prepare_checks
 from deeptwin.cli.output import Reply, respond
 from deeptwin.compose import LAYERS, check_context, compose, fill_fluid
 from deeptwin.errors import (
+    CheckFailedError,
     ContextRequiredError,
     FakeAnswerRequiredError,
     InvalidContextError,
@@ -20,7 +22,7 @@ from deeptwin.errors import (
 )
 from deeptwin.llm import ClaudeCLIProvider, FakeProvider, Provider
 from deeptwin.llm.calls import CallRecorder
-from deeptwin.models import Composed, Context, Run, Skill, Task
+from deeptwin.models import Composed, Context, Run, Skill, Task, Violation
 from deeptwin.runs import CALLS_FILE, discard_run_on_failure, record_run, write_skill_copy
 from deeptwin.store.guard import problem_lines, sealed_changed
 from deeptwin.store.ledger import ledger_broken
@@ -188,10 +190,11 @@ def run(
     ] = None,
     as_json: JsonOption = False,
 ) -> None:
-    """스킬을 과제 하나로 돌린다: 조립, 실행 폴더에 SKILL.md 사본 쓰기, 생성, 실행 기록.
+    """스킬을 과제 하나로 돌린다: 조립, 실행 폴더에 SKILL.md 사본 쓰기, 생성, 실행 기록, 원칙 검사.
 
     맥락과 뺄 층은 compose와 같다. 스킬에 맥락 축이 있는데 맥락이 없거나, 원장에 이어 쓸 수
-    없으면 모델을 부르기 전에 멈춘다. 생성이 실패하면 만든 실행 폴더를 지운다.
+    없거나, 원칙의 검사 함수를 찾지 못하면 모델을 부르기 전에 멈춘다. 생성이 실패하면 만든 실행
+    폴더를 지운다. 결과물이 어긴 원칙은 결과에 보여 줄 뿐 오류가 아니다.
     """
 
     def action() -> Reply:
@@ -210,9 +213,11 @@ def run(
         skill_copy = fill_fluid(skill.skill_md.read_text(encoding="utf-8"), composed.guide)
         # 4. 원장에 이어 쓸 수 있는지. 원장에 남길 수 없는 실행은 돌리지 않는다
         deeptwin.ledger_tail_hash()
-        # 5. 공급자. claude가 없거나 fake에 답 파일이 없으면 여기서 멈춘다
+        # 5. 원칙의 검사 함수. 함수 이름이 틀렸으면 생성 비용을 내기 전에 알린다
+        checks = prepare_checks(skill, deeptwin)
+        # 6. 공급자. claude가 없거나 fake에 답 파일이 없으면 여기서 멈춘다
         llm = make_provider(provider, ProviderOptions(fake_answer=fake_answer))
-        # 6. 실행 폴더. 사본 쓰기나 생성이 실패하면(Ctrl-C도) 이 폴더를 지운다
+        # 7. 실행 폴더. 사본 쓰기나 생성이 실패하면(Ctrl-C도) 이 폴더를 지운다
         run_id = deeptwin.new_run()
         with discard_run_on_failure(deeptwin, run_id):
             write_skill_copy(deeptwin, run_id, skill_copy)
@@ -220,6 +225,8 @@ def run(
             output = recorder.complete(skill_copy, task.input)
         # 생성 뒤의 실패(결과물 쓰기, 원장 덧붙이기)에는 폴더를 남긴다. 이미 비용을 낸 호출이다
         record = record_run(composed, task, output, deeptwin, run_id=run_id, context=context)
+        # 8. 원칙 검사. 실행은 이미 원장에 남았고, 위반이 있어도 실행과 원장 줄은 그대로다
+        violations = _check_output(checks, output, record)
         return Reply(
             result={
                 "run": record.id,
@@ -233,11 +240,13 @@ def run(
                 "conflicts": record.conflicts,
                 "guide_hash": record.guide_hash,
                 "output": record.output,
+                "violations": [v.model_dump(mode="json") for v in violations],
             },
             text="\n".join(
                 [
                     f"{record.id} 실행을 마쳤습니다.",
                     *_choice_lines(record),
+                    *_violation_lines(violations),
                     f"결과물: {DATA_DIR}/{record.output}",
                 ]
             ),
@@ -300,6 +309,24 @@ def _choice_lines(made: Composed | Run) -> list[str]:
         f"뺀 항목: {rejected or '없음'}",
         f"맞는 카드가 없던 판단 지점: {', '.join(made.no_hit) or '없음'}",
     ]
+
+
+def _check_output(checks: PreparedChecks, output: str, record: Run) -> list[Violation]:
+    """기록한 실행의 결과물에 검사 함수를 돌린다. 함수가 실패하면 오류 다음 줄에 실행 ID를 쓴다."""
+    try:
+        return checks.run(output)
+    except CheckFailedError as error:
+        raise CheckFailedError(
+            f"{error.message}\n실행 {record.id}은 원장에 남았고 "
+            f"결과물은 {DATA_DIR}/{record.output}에 있습니다."
+        ) from error
+
+
+def _violation_lines(violations: list[Violation]) -> list[str]:
+    """어긴 원칙마다 한 줄. 없으면 `어긴 원칙이 없습니다.` 한 줄이다."""
+    if not violations:
+        return ["어긴 원칙이 없습니다."]
+    return [f"어긴 원칙: {v.principle} {v.rule}" for v in violations]
 
 
 def _require_context(skill: Skill, task: Task, context: Context) -> None:

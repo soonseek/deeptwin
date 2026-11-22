@@ -58,6 +58,7 @@ RUN_KEYS = [
     "conflicts",
     "guide_hash",
     "output",
+    "violations",
 ]
 """`deeptwin run --json`의 `result` 키와 순서."""
 CHOICE_KEYS = ["injected", "rejected", "no_hit", "conflicts", "guide_hash", "context"]
@@ -173,6 +174,7 @@ def test_tracer(in_minimal: Path) -> None:
     assert body["conflicts"] == []
     assert body["output"] == "runs/run-0001/output.md"
     assert body["guide_hash"].startswith("sha256:")
+    assert body["violations"] == []  # minimal의 원칙에는 check가 없다
 
     run_dir = in_minimal / ".deeptwin" / "runs" / "run-0001"
     assert "- 수치를 부풀리지 않는다" in fluid_part((run_dir / "SKILL.md").read_text("utf-8"))
@@ -418,6 +420,7 @@ def test_text_mode_success(in_minimal: Path) -> None:
         "넣은 항목: prin-01\n"
         "뺀 항목: 없음\n"
         "맞는 카드가 없던 판단 지점: opening, tone\n"
+        "어긴 원칙이 없습니다.\n"
         "결과물: .deeptwin/runs/run-0001/output.md\n"
     )
     assert result.stderr == ""
@@ -1326,6 +1329,7 @@ def test_run_text_mode_uses_the_compose_wording(in_rules: Path) -> None:
     assert result.stdout.splitlines() == [
         "run-0001 실행을 마쳤습니다.",
         *choice_lines,
+        "어긴 원칙이 없습니다.",
         "결과물: .deeptwin/runs/run-0001/output.md",
     ]
     assert result.stderr == ""
@@ -1449,3 +1453,182 @@ def test_skill_without_axes_runs_with_an_empty_context(in_minimal: Path) -> None
 
     [entry] = ledger(in_minimal)
     assert body["context"] == entry["context"] == {}
+
+
+# run: 원칙 검사
+
+
+CHECKS_SOURCE = """\
+import re
+
+
+def no_inflated_numbers(output: str) -> bool:
+    return not re.search(r"역대급|최고의|100%", output)
+"""
+"""가상 인물의 검사 함수(설계서 8.4의 `no_inflated_numbers`)."""
+RUN_BAD = ("run", "minimal", "task-0001", "--provider", "fake", "--fake-answer", "bad.txt")
+PRIN_01_VIOLATION = {
+    "principle": "prin-01",
+    "rule": "수치를 부풀리지 않는다",
+    "check": "no_inflated_numbers",
+}
+
+
+def use_checks(
+    root: Path,
+    source: str | None = CHECKS_SOURCE,
+    *,
+    check: str = "no_inflated_numbers",
+    checks: str | None = "checks.py",
+) -> None:
+    """`minimal` 복사본의 `prin-01`에 `check`를 달고 스킬에 `checks.py`를 둔다.
+
+    원본 fixture는 고치지 않는다. 위반을 잡는 답 파일 `bad.txt`도 쓴다.
+    """
+    skill_dir = root / "skills" / "minimal"
+    if source is not None:
+        (skill_dir / "checks.py").write_text(source, encoding="utf-8")
+    config = skill_dir / "skill.yaml"
+    text = config.read_text("utf-8")
+    assert "checks: null\n" in text
+    config.write_text(text.replace("checks: null\n", f"checks: {checks or 'null'}\n"), "utf-8")
+    principles = root / ".deeptwin" / "layers" / "principles.yaml"
+    text = principles.read_text("utf-8")
+    assert "  check: null\n" in text
+    principles.write_text(text.replace("  check: null\n", f"  check: {check}\n"), "utf-8")
+    (root / "bad.txt").write_text("역대급 혜택! 지금 신청하세요.\n", encoding="utf-8")
+
+
+def test_run_reports_the_principle_the_output_breaks(in_minimal: Path) -> None:
+    invoke("init")
+    use_checks(in_minimal)
+
+    body = ok_json(invoke(*RUN_BAD, "--json"), "run")
+
+    assert list(body) == RUN_KEYS
+    assert body["violations"] == [PRIN_01_VIOLATION]
+    # 위반은 오류가 아니다. 실행과 결과물은 그대로 남고 원장 줄의 모양도 그대로다
+    [entry] = ledger(in_minimal)
+    assert list(entry) == LEDGER_KEYS
+    assert entry["id"] == body["run"] == "run-0001"
+    output = in_minimal / ".deeptwin" / "runs" / "run-0001" / "output.md"
+    assert output.read_bytes() == (in_minimal / "bad.txt").read_bytes()
+    assert ok_json(invoke("verify", "--json"), "verify")["lines"] == 1
+
+
+def test_run_with_an_answer_that_keeps_the_principles_has_no_violation(in_minimal: Path) -> None:
+    invoke("init")
+    use_checks(in_minimal)
+
+    body = ok_json(invoke(*RUN_FAKE, "--json"), "run")
+
+    assert body["violations"] == []
+
+
+def test_run_text_mode_lists_the_broken_principles(in_minimal: Path) -> None:
+    invoke("init")
+    use_checks(in_minimal)
+
+    bad = invoke(*RUN_BAD)
+    good = invoke(*RUN_FAKE)
+
+    assert bad.exit_code == good.exit_code == 0, bad.output + good.output
+    assert bad.stdout.splitlines()[-2:] == [
+        "어긴 원칙: prin-01 수치를 부풀리지 않는다",
+        "결과물: .deeptwin/runs/run-0001/output.md",
+    ]
+    assert good.stdout.splitlines()[-2:] == [
+        "어긴 원칙이 없습니다.",
+        "결과물: .deeptwin/runs/run-0002/output.md",
+    ]
+
+
+def test_run_checks_principles_even_when_the_layer_is_ablated(in_minimal: Path) -> None:
+    """`check`의 인자에 `ablate`가 없다. 원칙 층을 빼고 조립해도 원칙은 검사한다."""
+    invoke("init")
+    use_checks(in_minimal)
+
+    body = ok_json(invoke(*RUN_BAD, "--ablate", "principle", "--json"), "run")
+
+    assert body["injected"] == []
+    assert body["violations"] == [PRIN_01_VIOLATION]
+
+
+@pytest.mark.parametrize(
+    ("source", "checks", "check", "code", "shown"),
+    [
+        (CHECKS_SOURCE, "checks.py", "no_such_check", "check_not_found", "no_such_check"),
+        (None, None, "no_inflated_numbers", "check_not_found", "skills/minimal/skill.yaml"),
+        (None, "checks.py", "no_inflated_numbers", "check_not_found", "skills/minimal/checks.py"),
+        ("def oops(:\n", "checks.py", "no_inflated_numbers", "check_failed", "SyntaxError"),
+    ],
+    ids=["missing-function", "checks-null", "missing-file", "fails-to-load"],
+)
+def test_run_stops_before_the_model_when_a_check_cannot_be_found(
+    in_minimal: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source: str | None,
+    checks: str | None,
+    check: str,
+    code: str,
+    shown: str,
+) -> None:
+    invoke("init")
+    use_checks(in_minimal, source, check=check, checks=checks)
+    forbid_provider(monkeypatch)
+
+    message = error_json(invoke(*RUN_BAD, "--json"), "run", code)
+
+    assert shown in message
+    # 실행 폴더가 없으니 calls.jsonl도 없다
+    assert list((in_minimal / ".deeptwin" / "runs").iterdir()) == []
+    assert not (in_minimal / ".deeptwin" / "ledger.jsonl").exists()
+
+
+@pytest.mark.parametrize(
+    ("body", "shown"),
+    [
+        ("raise ValueError('가짜 실패')", "에서 오류가 났습니다: ValueError: 가짜 실패"),
+        (
+            "return 'no'",
+            "의 반환값이 bool이 아닙니다: 'no'. 지켰으면 True, 어겼으면 False를 돌려주세요.",
+        ),
+    ],
+    ids=["raises", "returns-str"],
+)
+def test_run_keeps_the_recorded_run_when_a_check_fails(
+    in_minimal: Path, body: str, shown: str
+) -> None:
+    invoke("init")
+    use_checks(in_minimal, f"def no_inflated_numbers(output):\n    {body}\n")
+
+    message = error_json(invoke(*RUN_BAD, "--json"), "run", "check_failed")
+
+    # 검사 오류와 실행 안내는 따로 한 줄씩이다
+    assert message.splitlines() == [
+        f"원칙 prin-01의 검사 함수 no_inflated_numbers(skills/minimal/checks.py){shown}",
+        "실행 run-0001은 원장에 남았고 결과물은 .deeptwin/runs/run-0001/output.md에 있습니다.",
+    ]
+    [entry] = ledger(in_minimal)
+    assert list(entry) == LEDGER_KEYS
+    assert entry["id"] == "run-0001"
+    run_dir = in_minimal / ".deeptwin" / "runs" / "run-0001"
+    assert (run_dir / "output.md").read_bytes() == (in_minimal / "bad.txt").read_bytes()
+    assert len(calls(in_minimal)) == 1
+
+
+def test_run_json_stays_one_object_when_checks_py_prints(in_minimal: Path) -> None:
+    """`checks.py`가 불러올 때와 검사할 때 쓰는 글은 stderr로 간다."""
+    invoke("init")
+    source = (
+        "print('불러옴')\n\n\n"
+        "def no_inflated_numbers(output):\n"
+        "    print('검사함')\n"
+        "    return '역대급' not in output\n"
+    )
+    use_checks(in_minimal, source)
+
+    result = invoke(*RUN_BAD, "--json")
+
+    assert ok_json(result, "run")["violations"] == [PRIN_01_VIOLATION]
+    assert result.stderr == "불러옴\n검사함\n"

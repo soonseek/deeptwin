@@ -75,6 +75,24 @@ class FluidMarkerMissingError(DeeptwinError):
         super().__init__("fluid_marker_missing", message)
 
 
+class CheckNotFoundError(DeeptwinError):
+    """원칙의 `check`가 가리키는 검사 함수를 찾지 못했다.
+
+    스킬에 `checks`가 없거나, 검사 파일이 없거나 스킬 폴더 밖이거나, 그 파일에 함수가 없거나
+    부를 수 없는 경우다.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__("check_not_found", message)
+
+
+class CheckFailedError(DeeptwinError):
+    """검사 파일을 불러오다 예외가 났거나, 검사 함수가 예외를 냈거나 `bool`이 아닌 것을 돌려줬다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("check_failed", message)
+
+
 class UnknownProviderError(DeeptwinError):
     def __init__(self, message: str) -> None:
         super().__init__("unknown_provider", message)

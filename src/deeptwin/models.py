@@ -285,6 +285,17 @@ class Composed(BaseModel):
     guide_hash: str
 
 
+class Violation(BaseModel):
+    """결과물이 어긴 원칙 하나. 원칙 검사(`checks.check`)의 반환 항목이다(설계서 8.5).
+
+    `principle`은 원칙 ID, `rule`은 그 원칙의 글, `check`는 `False`를 돌려준 검사 함수 이름이다.
+    """
+
+    principle: str
+    rule: str
+    check: str
+
+
 class Run(BaseModel):
     """실행 하나의 기록. 원장의 `run` 줄과 같은 모양이다.
 
