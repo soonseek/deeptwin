@@ -455,14 +455,16 @@ def test_wrong_against_exits_2_before_reading_anything(
 
 
 def test_help_names_both_opponents_and_the_default() -> None:
-    result = runner.invoke(main.app, ["eval", "pairs", "--help"])
+    # 좁은 화면에서는 도움말이 말줄임으로 잘리므로 넓이를 정해 둔다
+    result = runner.invoke(main.app, ["eval", "pairs", "--help"], env={"COLUMNS": "200"})
 
     assert result.exit_code == 0, result.output
-    # 도움말은 틀 안에서 줄을 바꾸므로 틀 글자와 줄바꿈을 지우고 본다
-    shown = " ".join(re.sub("[│╭╮╰╯─]", " ", result.stdout).split())
+    # 도움말은 틀 안에서 줄을 바꾸고 줄을 바꾸는 곳과 틀 글자가 운영체제마다 다르므로
+    # 틀 글자(U+2500~U+257F)와 공백을 모두 지우고 본다
+    shown = re.sub(r"[\u2500-\u257f\s]", "", result.stdout)
     assert "--against" in shown
-    assert "base(바탕만), examples(바탕+예시)" in shown
-    assert "주지 않으면 둘 다다" in shown
+    assert "base(바탕만),examples(바탕+예시)" in shown
+    assert "주지않으면둘다다" in shown
 
 
 # 블라인드
