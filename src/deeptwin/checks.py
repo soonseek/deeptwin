@@ -33,6 +33,12 @@ from deeptwin.errors import CheckFailedError, CheckNotFoundError
 from deeptwin.models import Principle, Skill, Violation
 from deeptwin.store.project import DeepTwin
 
+__all__ = [
+    "PreparedChecks",
+    "check",
+    "prepare_checks",
+]
+
 _MODULE_PREFIX = "deeptwin_checks_"
 """불러온 `checks.py` 모듈의 내부 이름 앞부분. 뒤에 스킬 ID를 붙여 스킬마다 다른 이름을 준다."""
 

@@ -20,6 +20,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
+from itertools import chain
 from pathlib import Path
 from typing import Any, Literal, TypeVar, get_args
 
@@ -70,6 +71,15 @@ from deeptwin.store.guard import (
     require_token,
 )
 
+__all__ = [
+    "DATA_DIR",
+    "DeepTwin",
+    "LEDGER_FILE",
+    "PRINCIPLES_FILE",
+    "PRIORITIES_FILE",
+    "read_task_file",
+]
+
 DATA_DIR = ".deeptwin"
 """개인 데이터 폴더 이름. 프로젝트 루트에 둔다."""
 
@@ -117,6 +127,8 @@ _TASK_SPLITS: tuple[Split, ...] = ("sealed", "train", "spare")
 봉인 과제로 친다."""
 
 _RUN_DIR = re.compile(r"run-(\d+)")
+_LEDGER_RUN_DIGITS = 9
+"""`new_run`이 세는 원장 실행 ID 번호의 최대 자릿수."""
 _EXAMPLE_NUMBER = re.compile(re.escape(EXAMPLE_ID_PREFIX) + r"([0-9]+)")
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _ID_RULE = "영문자, 숫자, '.', '_', '-'만 쓰고 영문자나 숫자로 시작하세요."
@@ -479,17 +491,21 @@ class DeepTwin:
         return self.path / "runs" / run_id
 
     def new_run(self) -> str:
-        """`runs/run-NNNN/`을 만들고 그 ID를 돌려준다. 번호는 지금 있는 최댓값 + 1이다."""
+        """`runs/run-NNNN/`을 만들고 그 ID를 돌려준다.
+
+        번호는 `runs/`의 `run-NNNN` 폴더 번호와 원장 `run` 줄의 `id` 번호 가운데 최댓값 + 1이다.
+        원장도 보므로 최근 실행 폴더를 지워도 원장에 남은 실행 ID를 다시 쓰지 않는다. 원장에서
+        읽을 수 없는 줄은 건너뛴다(손상은 `verify_ledger`와 `ledger_tail_hash`가 본다).
+        그 번호의 폴더가 이미 있으면 다음 번호로 넘어간다.
+        """
         runs = self.path / "runs"
         runs.mkdir(exist_ok=True)
-        number = 1 + max(
-            (
-                int(m.group(1))
-                for child in runs.iterdir()
-                if child.is_dir() and (m := _RUN_DIR.fullmatch(child.name))
-            ),
-            default=0,
+        folders = (
+            int(m.group(1))
+            for child in runs.iterdir()
+            if child.is_dir() and (m := _RUN_DIR.fullmatch(child.name))
         )
+        number = 1 + max(chain(folders, self._ledger_run_numbers()), default=0)
         while True:
             run_id = f"run-{number:04d}"
             try:
@@ -611,6 +627,22 @@ class DeepTwin:
             for number, obj in ledger.entries(self.path / LEDGER_FILE)
             if obj.get("type") == "task" and obj.get("id") == task_id
         ]
+
+    def _ledger_run_numbers(self) -> Iterator[int]:
+        """원장에서 읽을 수 있는 `run` 줄 가운데 `id`가 `run-NNNN`인 줄의 번호.
+
+        번호가 `_LEDGER_RUN_DIGITS`자리를 넘는 `id`는 세지 않는다. 사람이 고친 줄 하나로
+        `int()`가 실패하거나 폴더 이름이 너무 길어져 다음 실행마다 멈추지 않게 하려는 것이다.
+        """
+        for _, obj in ledger.entries(self.path / LEDGER_FILE):
+            run_id = obj.get("id")
+            if (
+                obj.get("type") == "run"
+                and isinstance(run_id, str)
+                and (m := _RUN_DIR.fullmatch(run_id))
+                and len(m.group(1)) <= _LEDGER_RUN_DIGITS
+            ):
+                yield int(m.group(1))
 
     def _sealed_problem(self, task_id: str, stored: Any) -> str | None:
         """등록한 봉인 과제 하나의 문제. 없으면 `None`이다. 이유에 내용을 쓰지 않는다."""

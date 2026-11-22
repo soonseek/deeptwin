@@ -102,6 +102,8 @@ deeptwin status
 
 스킬을 과제 하나로 돌립니다. 조립한 지침을 넣은 `SKILL.md` 사본과 결과물은 `.deeptwin/runs/<실행 ID>/`에 남습니다. 원본 `SKILL.md`와 층 파일(`layers/`)은 바뀌지 않고, 카드의 `stats`도 고치지 않습니다. 실행은 원장(`.deeptwin/ledger.jsonl`)에 한 줄로 남습니다.
 
+실행 ID는 `run-NNNN`입니다. 번호는 `runs/`의 실행 폴더 번호와 원장 `run` 줄의 ID 번호 가운데 큰 것 + 1이라, 실행 폴더를 지워도 원장에 남은 실행 ID는 다시 쓰지 않습니다. 원장에서 읽을 수 없는 줄은 번호를 매길 때 건너뜁니다(원장이 깨졌는지는 아래 4단계와 `deeptwin verify`가 봅니다).
+
 ```sh
 deeptwin run <스킬 ID> <과제 ID> [--context 축=값]... [--ablate 층]...
 ```
@@ -123,7 +125,7 @@ deeptwin run <스킬 ID> <과제 ID> [--context 축=값]... [--ablate 층]...
 5. 원칙의 검사 함수: `check_not_found`, 불러오다 실패하면 `check_failed`(아래 원칙 검사 참고)
 6. 공급자: `claude_not_found`, `fake_answer_required`
 
-실행 폴더를 만든 뒤 사본 쓰기나 생성이 실패하면(공급자 오류, 시간 초과, Ctrl-C) 방금 만든 그 실행 폴더를 지우고 원래 오류를 그대로 냅니다. 생성이 끝난 뒤의 실패(결과물 쓰기, 원장 덧붙이기)에는 실행 폴더를 남깁니다. 이미 비용을 낸 호출의 기록이 들어 있기 때문입니다.
+실행 폴더를 만든 뒤 사본 쓰기나 생성이 실패하면(공급자 오류, 시간 초과, Ctrl-C) 방금 만든 그 실행 폴더를 지우고 원래 오류를 그대로 냅니다. Ctrl-C면 `interrupted`입니다(아래 출력 규칙 참고). 생성이 끝난 뒤의 실패(결과물 쓰기, 원장 덧붙이기)에는 실행 폴더를 남깁니다. 이미 비용을 낸 호출의 기록이 들어 있기 때문입니다.
 
 `--json` 결과는 `run`, `task`, `split`, `context`, `ablate`, `injected`, `rejected`, `no_hit`, `conflicts`, `guide_hash`, `output`(`.deeptwin/` 기준), `violations` 순입니다. 글 모드는 마친 실행, 넣은 항목, 뺀 항목, 맞는 카드가 없던 판단 지점, 어긴 원칙, 결과물을 차례로 씁니다.
 
@@ -303,6 +305,12 @@ deeptwin verify
 {"ok": false, "command": "run", "error": {"code": "not_initialized", "message": "먼저 deeptwin init을 실행하세요."}}
 ```
 
+명령 도중 Ctrl-C로 멈추면 종료 코드는 130입니다. `--json`이면 stdout에 오류 코드 `interrupted`의 JSON 하나를 쓰고, 끄면 stderr에 `오류: Ctrl-C로 멈췄습니다.`를 씁니다.
+
+```json
+{"ok": false, "command": "run", "error": {"code": "interrupted", "message": "Ctrl-C로 멈췄습니다."}}
+```
+
 ## 예제
 
 [`examples/inquiry-reply`](examples/inquiry-reply/README.md)는 가상의 강사가 교육 문의에 답장을 쓰는 예제입니다. 사람, 강의, 문의는 모두 지어낸 것입니다. 스킬과 검사 함수, 네 층의 항목, 세 분할의 과제 10개, 과제를 등록해 만든 원장, 가짜 모델의 답 파일이 들어 있어 폴더를 그대로 프로젝트 루트로 씁니다.
@@ -363,6 +371,8 @@ uv sync
 uv run ruff check && uv run ruff format --check && uv run mypy && uv run lint-imports
 uv run pytest
 ```
+
+명령줄(`src/deeptwin/cli/`)은 공개 API만 씁니다. 다른 deeptwin 모듈에서 `from deeptwin.<모듈> import <이름>`으로 가져오는 이름은 그 모듈의 `__all__`에 있어야 하고 `_`로 시작하지 않습니다. 쓰는 이름을 검사할 수 없으므로 `import deeptwin.<모듈>`로 모듈을 통째로 가져오지 않습니다(`tests/test_public_api.py`가 검사합니다).
 
 테스트는 네트워크와 모델 없이 돌고, 가상 인물의 데이터만 씁니다. claude 공급자는 가짜 `claude` 스크립트로 확인합니다. 실제 모델을 부르는 테스트(예제를 실제 모델로 한 번 돌리는 것 포함)에는 `live` 표식을 달고 기본 실행에서 뺍니다. 로그인된 `claude`가 있으면 `uv run pytest -m live`로 따로 돌립니다.
 

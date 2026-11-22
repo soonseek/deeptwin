@@ -12,6 +12,10 @@ from deeptwin.llm.base import Provider
 from deeptwin.models import Call
 from deeptwin.store.files import append_jsonl
 
+__all__ = [
+    "CallRecorder",
+]
+
 
 class CallRecorder:
     """`provider`를 감싼 `Provider`. 호출이 성공하면 `path`에 `Call` 한 줄을 덧붙인다.

@@ -219,6 +219,19 @@ def test_second_run_is_run_0002(in_minimal: Path) -> None:
     assert original.read_bytes() == original_bytes
 
 
+def test_deleting_the_latest_run_folder_does_not_reuse_its_id(in_minimal: Path) -> None:
+    invoke("init")
+    ok_json(invoke(*RUN_FAKE, "--json"), "run")
+    ok_json(invoke(*RUN_FAKE, "--json"), "run")
+    shutil.rmtree(in_minimal / ".deeptwin" / "runs" / "run-0002")
+
+    body = ok_json(invoke(*RUN_FAKE, "--json"), "run")
+
+    assert body["run"] == "run-0003"
+    assert [e["id"] for e in ledger(in_minimal)] == ["run-0001", "run-0002", "run-0003"]
+    ok_json(invoke("verify", "--json"), "verify")
+
+
 def test_provider_gets_skill_copy_as_system_and_task_input_as_user(
     in_minimal: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -355,6 +368,19 @@ class _Interrupted:
         raise KeyboardInterrupt
 
 
+INTERRUPTED_MESSAGE = "Ctrl-C로 멈췄습니다."
+
+
+def interrupted_json(result: Result, command: str) -> None:
+    """Ctrl-C로 멈춘 명령: 종료 코드 130, stdout에는 `interrupted` 오류의 JSON 하나."""
+    assert result.exit_code == 130, result.output
+    assert parsed(result) == {
+        "ok": False,
+        "command": command,
+        "error": {"code": "interrupted", "message": INTERRUPTED_MESSAGE},
+    }
+
+
 def test_interrupted_generation_removes_the_run_folder(
     in_minimal: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -362,12 +388,40 @@ def test_interrupted_generation_removes_the_run_folder(
     interrupted = _Interrupted(in_minimal / ".deeptwin" / "runs")
     monkeypatch.setitem(main.PROVIDERS, "fake", lambda options: interrupted)
 
-    result = invoke(*RUN_FAKE, "--json")
+    interrupted_json(invoke(*RUN_FAKE, "--json"), "run")
 
-    assert result.exit_code != 0
     assert interrupted.seen == ["run-0001"]
     assert list((in_minimal / ".deeptwin" / "runs").iterdir()) == []
     assert not (in_minimal / ".deeptwin" / "ledger.jsonl").exists()
+
+
+def test_interrupted_generation_in_text_mode_goes_to_stderr(
+    in_minimal: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    invoke("init")
+    interrupted = _Interrupted(in_minimal / ".deeptwin" / "runs")
+    monkeypatch.setitem(main.PROVIDERS, "fake", lambda options: interrupted)
+
+    result = invoke(*RUN_FAKE)
+
+    assert result.exit_code == 130
+    assert result.stdout == ""
+    assert result.stderr == f"오류: {INTERRUPTED_MESSAGE}\n"
+    assert interrupted.seen == ["run-0001"]
+    assert list((in_minimal / ".deeptwin" / "runs").iterdir()) == []
+
+
+def test_interrupted_status_is_reported_as_status(
+    in_minimal: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    invoke("init")
+
+    def interrupt(deeptwin: DeepTwin) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(main, "project_status", interrupt)
+
+    interrupted_json(invoke("status", "--json"), "status")
 
 
 @pytest.mark.skipif(
