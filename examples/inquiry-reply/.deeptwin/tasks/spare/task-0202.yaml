@@ -1,0 +1,22 @@
+# 가상의 문의. 예비 과제다. 예제로 지어낸 것이다.
+schema: 1
+id: task-0202
+skill: inquiry-reply
+split: spare
+input: |
+  영상에서 쓰신 예제 파일을 받아 볼 수 있을까요? 회사 데이터 대신 연습해 보고 싶습니다.
+context:
+  purpose: 구독자질문
+  audience: 실무자
+reference:
+  kind: my_version
+  grade: usual
+  text: |
+    질문 고맙게 읽었습니다.
+    영상의 예제 파일은 정리해서 다음 영상 설명란에 올려 두겠습니다.
+
+    그 전까지는 가계부처럼 직접 만든 표로 같은 순서를 따라 해 보세요.
+
+    서도윤 드림
+  picked: null
+  rejected: null

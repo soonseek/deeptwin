@@ -1,0 +1,23 @@
+# 가상의 문의와 강사 서도윤의 기준. 봉인 과제다. 예제로 지어낸 것이다.
+schema: 1
+id: task-0101
+skill: inquiry-reply
+split: sealed
+input: |
+  야근이 잦아서 저녁 8시 수업에 못 들어갈 때가 많을 것 같습니다.
+  녹화본만 보고도 수료할 수 있나요?
+context:
+  purpose: 교육문의
+  audience: 실무자
+reference:
+  kind: my_version
+  grade: usual
+  text: |
+    출석은 실시간 수업으로만 세어서, 녹화본만 보시면 수료 기준을 채우기 어렵습니다.
+    수료하시려면 16번 수업 가운데 13번 이상 실시간으로 들으시고, 과제 6개 가운데 5개 이상을 내셔야 합니다.
+
+    수료증이 꼭 필요하지 않으시면 녹화본으로 들으셔도 수업 내용은 모두 보실 수 있습니다.
+
+    서도윤 드림
+  picked: null
+  rejected: null

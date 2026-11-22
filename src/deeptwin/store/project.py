@@ -26,6 +26,7 @@ from typing import Any, Literal, TypeVar, get_args
 from filelock import FileLock, Timeout
 
 from deeptwin.errors import (
+    InitBlockedError,
     InvalidFileError,
     InvalidIdError,
     NotInitializedError,
@@ -52,6 +53,7 @@ from deeptwin.models import (
 from deeptwin.store import ledger
 from deeptwin.store.files import (
     Problem,
+    display_path,
     dump_yaml,
     invalid_file,
     read_model,
@@ -178,8 +180,11 @@ class DeepTwin:
         """`.deeptwin/`의 폴더를 만들고 `.gitignore`에 `.deeptwin/`을 더한다.
 
         이미 있는 폴더와 파일은 건드리지 않는다. 여러 번 불러도 결과가 같다.
+        만들 폴더 자리에 폴더가 아닌 것이, `.gitignore` 자리에 파일이 아닌 것이 있으면
+        아무것도 만들거나 바꾸지 않고 `init_blocked`다.
         """
         deeptwin = cls(root)
+        _check_init_places(root, deeptwin.path)
         created: list[str] = []
         for rel in LAYOUT:
             folder = deeptwin.path / rel
@@ -789,6 +794,41 @@ def _task_exists(task_id: str, places: Sequence[tuple[str | None, str]]) -> Task
     )
     where = ", ".join(place for _, place in places)
     return TaskExistsError(f"{head} 분할은 바꿀 수 없습니다. 있는 곳: {where}")
+
+
+def _check_init_places(root: Path, data: Path) -> None:
+    """`init`이 쓸 자리를 아무것도 만들기 전에 본다. 막힌 곳이 있으면 `init_blocked`다.
+
+    `.deeptwin/`과 `LAYOUT`의 폴더(중간 폴더 포함)는 없거나 폴더여야 하고, `.gitignore`는 없거나
+    파일이어야 한다. 폴더 자리에 파일이 있으면 그 아래는 없는 것으로 보이므로, 막힌 맨 위 자리만
+    알린다.
+    """
+    folders: dict[Path, None] = {data: None}
+    for rel in LAYOUT:
+        folder = data
+        for part in rel.split("/"):
+            folder = folder / part
+            folders[folder] = None
+    # 깨진 심볼릭 링크는 exists()가 거짓이지만 자리를 막는다. 폴더를 가리키는 링크는 괜찮다
+    blocked = [p for p in folders if (p.is_symlink() or p.exists()) and not p.is_dir()]
+    gitignore = root / ".gitignore"
+    lines: list[str] = []
+    if blocked:
+        shown = ", ".join(display_path(p, root) for p in blocked)
+        lines.append(f"폴더를 만들 자리에 폴더가 아닌 것이 있습니다: {shown}")
+    if gitignore.exists() and not gitignore.is_file():
+        lines.append(
+            f".gitignore에 {GITIGNORE_LINE} 줄을 더해야 하는데 .gitignore가 파일이 아닙니다."
+        )
+    if lines:
+        raise InitBlockedError(
+            "\n".join(
+                [
+                    *lines,
+                    "그것을 옮기거나 지운 뒤 다시 실행하세요. 아무것도 만들거나 바꾸지 않았습니다.",
+                ]
+            )
+        )
 
 
 def _ensure_gitignore(path: Path) -> Literal["added", "present"]:

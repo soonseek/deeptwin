@@ -1,0 +1,20 @@
+# 가상의 강사 서도윤의 대표작(good). 예제로 지어낸 것이다.
+schema: 1
+id: ex-0001
+layer: instinct
+skill: inquiry-reply
+kind: good
+grade: signature
+text: |
+  네, 엑셀로 합계를 내 보신 정도면 따라오실 수 있습니다.
+  첫 2주는 표 정리와 정렬, 필터(원하는 줄만 골라 보는 기능)부터 다시 짚고 갑니다.
+
+  다음 기수는 1월 6일 화요일에 시작합니다.
+  신청하시려면 이 메일에 성함만 적어 답장해 주세요.
+
+  고맙습니다.
+  서도윤 드림
+tags: {purpose: 교육문의, audience: 입문자}
+source: past_work
+status: active
+approval: human

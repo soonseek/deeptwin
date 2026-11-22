@@ -1,0 +1,25 @@
+# 가상의 강사 서도윤의 원칙. 예제로 지어낸 것이다.
+- schema: 1
+  id: prin-01
+  rule: 취업이나 성과를 보장한다고 쓰지 않는다
+  kind: never
+  check: no_outcome_promise
+  scope: []
+  status: active
+  approval: human
+- schema: 1
+  id: prin-02
+  rule: 답장에 링크, 메일 주소, 전화번호를 적지 않는다
+  kind: never
+  check: no_contact_details
+  scope: [inquiry-reply]
+  status: active
+  approval: human
+- schema: 1
+  id: prin-03
+  rule: 모르는 것은 모른다고 쓰고 확인해 알려 드리겠다고 한다
+  kind: must
+  check: null
+  scope: []
+  status: active
+  approval: human

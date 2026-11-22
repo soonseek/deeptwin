@@ -1,0 +1,13 @@
+# 가상의 강사 서도윤의 보통 글(usual). 대표작이 아니라 예시 후보가 아니다. 예제로 지어낸 것이다.
+schema: 1
+id: ex-0006
+layer: instinct
+skill: inquiry-reply
+kind: good
+grade: usual
+text: |
+  문의 고맙습니다. 수업은 8주 과정이고 녹화본도 드립니다. 더 궁금한 점은 다시 메일 주세요.
+tags: {purpose: 교육문의, audience: 입문자}
+source: past_work
+status: active
+approval: human

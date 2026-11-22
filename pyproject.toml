@@ -49,6 +49,8 @@ packages = ["src/deeptwin"]
 include = [
     "src/deeptwin",
     "tests",
+    # 예제 테스트(tests/test_example.py)가 이 폴더를 복사해서 돈다
+    "examples",
     "README.md",
     "LICENSE",
     "pyproject.toml",

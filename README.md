@@ -20,6 +20,8 @@ Python 3.11 이상이 필요합니다.
 deeptwin init
 ```
 
+`.deeptwin/`이나 그 안에 만들 폴더의 자리에 파일이 있거나, `.gitignore`가 파일이 아니면(폴더 등) 아무것도 만들거나 바꾸지 않고 `init_blocked` 오류로 멈춥니다.
+
 스킬 뼈대를 만듭니다. `skills/<스킬 ID>/`에 `skill.yaml`, 유동 영역 표시가 든 `SKILL.md`, 주석만 든 `checks.py`가 생기고, 만든 직후 그대로 `compose`가 돕니다. `run`은 이 스킬에 걸리는 원칙이 `check`에 적은 검사 함수가 `checks.py`에 있어야 돕니다(없으면 `check_not_found`). `SKILL.md`에 고정 지침을, `skill.yaml`에 판단 지점(`decision_points`)과 맥락 축(`context_axes`)을 채워 씁니다.
 
 ```sh
@@ -301,6 +303,23 @@ deeptwin verify
 {"ok": false, "command": "run", "error": {"code": "not_initialized", "message": "먼저 deeptwin init을 실행하세요."}}
 ```
 
+## 예제
+
+[`examples/inquiry-reply`](examples/inquiry-reply/README.md)는 가상의 강사가 교육 문의에 답장을 쓰는 예제입니다. 사람, 강의, 문의는 모두 지어낸 것입니다. 스킬과 검사 함수, 네 층의 항목, 세 분할의 과제 10개, 과제를 등록해 만든 원장, 가짜 모델의 답 파일이 들어 있어 폴더를 그대로 프로젝트 루트로 씁니다.
+
+저장소 안의 예제 폴더는 고치지 말고 새로 만든 빈 폴더에 내용을 복사해서 돌립니다(테스트가 그 데이터에 기댑니다).
+
+```sh
+D=$(mktemp -d) && cp -R examples/inquiry-reply/. "$D" && cd "$D"
+deeptwin run inquiry-reply task-0001 --provider fake --fake-answer answers/keeps-principles.md
+deeptwin run inquiry-reply task-0001 --provider fake --fake-answer answers/breaks-promise.md
+env -u ANTHROPIC_API_KEY deeptwin run inquiry-reply task-0001    # 실제 모델(claude CLI 구독)
+deeptwin verify
+deeptwin status
+```
+
+두 번째 실행은 원칙 `prin-01`을 어긴 답이라 `violations`에 그 원칙이 나옵니다. 어느 실행에서도 `skills/inquiry-reply/`의 파일은 바뀌지 않고 `deeptwin verify`가 통과합니다. 데이터 구성은 예제의 README에 있습니다.
+
 ## 폴더
 
 ```text
@@ -345,7 +364,13 @@ uv run ruff check && uv run ruff format --check && uv run mypy && uv run lint-im
 uv run pytest
 ```
 
-테스트는 네트워크와 모델 없이 돌고, 가상 인물의 데이터만 씁니다. claude 공급자는 가짜 `claude` 스크립트로 확인합니다. 실제 모델을 부르는 테스트에는 `live` 표식을 달고 기본 실행에서 뺍니다. 로그인된 `claude`가 있으면 `uv run pytest -m live`로 따로 돌립니다.
+테스트는 네트워크와 모델 없이 돌고, 가상 인물의 데이터만 씁니다. claude 공급자는 가짜 `claude` 스크립트로 확인합니다. 실제 모델을 부르는 테스트(예제를 실제 모델로 한 번 돌리는 것 포함)에는 `live` 표식을 달고 기본 실행에서 뺍니다. 로그인된 `claude`가 있으면 `uv run pytest -m live`로 따로 돌립니다.
+
+예제 테스트는 `examples/inquiry-reply`를 임시 폴더에 복사해서 돌고, 예제의 두 학습 과제를 조립한 결과(`compose --json`)를 골든 파일(`tests/golden/inquiry-reply/`)과 견줍니다. 조립 규칙이나 예제 데이터를 일부러 바꿨다면 골든 파일을 다시 만들고, 바뀐 곳을 `git diff`로 읽은 뒤 함께 올립니다.
+
+```sh
+DEEPTWIN_UPDATE_GOLDEN=1 uv run pytest tests/test_example.py -k golden
+```
 
 텔레메트리는 없습니다.
 

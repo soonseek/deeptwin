@@ -1,0 +1,14 @@
+# 가상의 강사 서도윤의 판단 카드. 예제로 지어낸 것이다.
+schema: 1
+id: card-0001
+layer: tendency
+skill: inquiry-reply
+decision_point: opening
+status: active
+approval: human
+when:
+  purpose: [교육문의]
+choose: 첫 문장에 물은 것의 답을 바로 쓴다
+because: 문의한 사람은 인사보다 답을 먼저 찾는다고 본다
+except: 물은 것이 셋 이상이면 첫 문장에 몇 가지를 답하는지 쓴다
+stats: {injected: 6, agreed: 5, last_used: 2026-11-18}

@@ -1,0 +1,11 @@
+# 가상의 강사 서도윤의 판단 카드. 맥락과 상관없이 맞고 card-0009와 부딪친다.
+# 예제로 지어낸 것이다.
+schema: 1
+id: card-0010
+layer: tendency
+skill: inquiry-reply
+decision_point: tone
+status: active
+approval: human
+choose: 한 문단을 한 흐름으로 이어 정중하게 쓴다
+because: 짧게 끊은 답장은 차갑게 읽힌다고 본다

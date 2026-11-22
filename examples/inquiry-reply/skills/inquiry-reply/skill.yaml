@@ -1,0 +1,21 @@
+# 가상의 강사 서도윤이 교육 문의에 답장을 쓰는 스킬의 설정. 예제로 지어낸 것이다.
+schema: 1
+id: inquiry-reply
+version: 1
+decision_points:
+  - {id: opening, name: 첫 문장, weight: 4}
+  - {id: core, name: 답의 핵심, weight: 5}
+  - {id: next_step, name: 다음 할 일, weight: 3}
+  - {id: tone, name: 말투, weight: 2}
+  - {id: closing, name: 맺음, weight: 1}
+context_axes:
+  purpose: [교육문의, 수강상담, 구독자질문]
+  audience: [입문자, 실무자]
+budget:
+  examples: 3
+  cards_per_point: 2
+  cards_total: 6
+  principles_max: 5
+  priorities_max: 3
+example_policy: random_signature
+checks: checks.py

@@ -1,0 +1,12 @@
+# 가상의 강사 서도윤의 판단 카드. 예제로 지어낸 것이다.
+schema: 1
+id: card-0008
+layer: tendency
+skill: inquiry-reply
+decision_point: next_step
+status: active
+approval: human
+when:
+  purpose: [구독자질문]
+choose: 혼자 따라 해 볼 작은 연습 하나를 알려 준다
+because: 구독자는 강의 안내보다 바로 해 볼 거리를 먼저 원한다고 본다

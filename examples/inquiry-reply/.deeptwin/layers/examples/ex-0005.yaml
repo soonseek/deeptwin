@@ -1,0 +1,15 @@
+# 가상의 강사 서도윤이 피하는 글(avoid). 예제로 지어낸 것이다.
+schema: 1
+id: ex-0005
+layer: instinct
+skill: inquiry-reply
+kind: avoid
+grade: signature
+text: |
+  안녕하세요!! 문의 정말 감사드려요~~
+  저희 과정만 들으시면 누구나 데이터 분석가가 될 수 있어요!
+  지금 신청하시면 특별 혜택도 있으니 서두르세요!!!
+tags: {purpose: 수강상담, audience: 입문자}
+source: past_work
+status: active
+approval: human

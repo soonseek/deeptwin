@@ -1,0 +1,12 @@
+# 가상의 강사 서도윤의 판단 카드. 예제로 지어낸 것이다.
+schema: 1
+id: card-0005
+layer: tendency
+skill: inquiry-reply
+decision_point: core
+status: active
+approval: human
+when:
+  audience: [실무자]
+choose: 답의 핵심을 기간, 횟수, 조건처럼 셀 수 있는 말로 쓴다
+because: 실무자는 회사에 설명할 근거를 찾는다고 본다

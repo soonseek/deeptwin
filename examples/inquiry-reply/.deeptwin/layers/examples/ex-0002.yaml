@@ -1,0 +1,19 @@
+# 가상의 강사 서도윤의 대표작(good). 예제로 지어낸 것이다.
+schema: 1
+id: ex-0002
+layer: instinct
+skill: inquiry-reply
+kind: good
+grade: signature
+text: |
+  매주 같은 보고서를 손으로 만드신다고 하셨지요.
+  그 일에 바로 닿는 것은 6주 차의 피벗 테이블과 7주 차의 SQL 조회입니다.
+  다만 8주 만에 보고서를 모두 자동으로 만들 수 있을지는 보고서를 보기 전에는 말씀드리기 어렵습니다.
+
+  개인 정보를 지운 보고서 한 장을 이 메일로 보내 주시면, 어느 주차가 맞는지 알려 드리겠습니다.
+
+  서도윤 드림
+tags: {purpose: 수강상담, audience: 실무자}
+source: past_work
+status: active
+approval: human

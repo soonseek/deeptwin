@@ -1,0 +1,18 @@
+# 가상의 강사 서도윤의 대표작(good). 예제로 지어낸 것이다.
+schema: 1
+id: ex-0004
+layer: instinct
+skill: inquiry-reply
+kind: good
+grade: signature
+text: |
+  수료증은 실시간 수업 출석 80% 이상, 과제 6개 가운데 5개 이상을 내시면 PDF로 드립니다.
+  회사 교육비 지원에 이 수료증을 쓸 수 있는지는 회사마다 기준이 달라 제가 말씀드리기 어렵습니다.
+
+  인사 담당자께 보여 드릴 주차별 수업 내용은 정리해 이 메일로 보내 드리겠습니다.
+
+  서도윤 드림
+tags: {purpose: 교육문의, audience: 실무자}
+source: past_work
+status: active
+approval: human

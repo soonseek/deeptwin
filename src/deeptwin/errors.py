@@ -20,6 +20,16 @@ class NotInitializedError(DeeptwinError):
         super().__init__("not_initialized", message)
 
 
+class InitBlockedError(DeeptwinError):
+    """`deeptwin init`이 쓸 자리가 막혔다. 아무것도 만들거나 바꾸지 않았다.
+
+    만들 폴더 자리에 폴더가 아닌 것이 있거나, `.gitignore` 자리에 파일이 아닌 것이 있다.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__("init_blocked", message)
+
+
 class TaskNotFoundError(DeeptwinError):
     def __init__(self, message: str) -> None:
         super().__init__("task_not_found", message)

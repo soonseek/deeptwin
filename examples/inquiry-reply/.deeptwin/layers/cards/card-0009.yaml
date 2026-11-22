@@ -1,0 +1,13 @@
+# 가상의 강사 서도윤의 판단 카드. card-0010과 부딪친다. 예제로 지어낸 것이다.
+schema: 1
+id: card-0009
+layer: tendency
+skill: inquiry-reply
+decision_point: tone
+status: active
+approval: human
+when:
+  audience: [입문자]
+choose: 문장을 짧게 끊고 한 문장에 한 가지만 쓴다
+because: 처음 배우는 사람은 긴 문장에서 무엇이 답인지 놓친다고 본다
+conflicts_with: [card-0010]

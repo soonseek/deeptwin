@@ -39,3 +39,31 @@ def in_rules(rules_copy: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """`compose-rules` 복사본으로 옮겨 간 상태."""
     monkeypatch.chdir(rules_copy)
     return rules_copy
+
+
+EXAMPLE = Path(__file__).parent.parent / "examples" / "inquiry-reply"
+"""저장소의 예제 폴더. 테스트는 복사본에서만 돌고 이 폴더를 고치지 않는다."""
+
+
+EXAMPLE_LEFT_OUT = ("runs", ".lock", ".DS_Store", "Thumbs.db", "__pycache__")
+"""예제를 복사할 때 옮기지 않는 이름. git에 오르지 않는 것들이다: 예제를 저장소 안에서 돌려 생긴
+실행 폴더와 잠금 파일, 운영체제와 Python이 남기는 파일."""
+
+
+def copy_example(dest: Path, source: Path = EXAMPLE) -> Path:
+    """예제 폴더 `source`를 `dest`에 복사한다. `EXAMPLE_LEFT_OUT`의 이름은 옮기지 않는다."""
+    shutil.copytree(source, dest, ignore=shutil.ignore_patterns(*EXAMPLE_LEFT_OUT))
+    return dest
+
+
+@pytest.fixture
+def example_copy(tmp_path: Path) -> Path:
+    """`examples/inquiry-reply`의 복사본. 가상의 강사 서도윤의 문의 답변 예제다."""
+    return copy_example(tmp_path / "inquiry-reply")
+
+
+@pytest.fixture
+def in_example(example_copy: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """예제 복사본으로 옮겨 간 상태."""
+    monkeypatch.chdir(example_copy)
+    return example_copy

@@ -1,0 +1,13 @@
+# 가상의 강사 서도윤의 판단 카드. 예제로 지어낸 것이다.
+schema: 1
+id: card-0002
+layer: tendency
+skill: inquiry-reply
+decision_point: opening
+status: active
+approval: human
+when:
+  purpose: [수강상담]
+choose: 첫 문장에서 상대가 적은 사정을 한 번 되짚는다
+because: 상담을 청한 사람은 내 사정을 알아들었는지부터 알고 싶어 한다고 본다
+stats: {injected: 3, agreed: 3, last_used: 2026-11-12}
