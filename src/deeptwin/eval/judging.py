@@ -23,7 +23,6 @@ from deeptwin.store.project import DeepTwin
 __all__ = [
     "Judging",
     "PendingPair",
-    "Stop",
     "pending_pairs",
     "record_choice",
 ]

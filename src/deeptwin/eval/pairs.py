@@ -50,11 +50,8 @@ from deeptwin.store.project import DeepTwin
 
 __all__ = [
     "AGAINST",
-    "BuiltPairs",
     "CONDITIONS",
-    "PairPlan",
-    "PlannedRun",
-    "Recipe",
+    "TARGET",
     "base_skill_changed",
     "build_pairs",
     "prepare_pairs",
@@ -88,7 +85,8 @@ CONDITIONS: dict[Condition, Recipe] = {
 AGAINST: tuple[Condition, ...] = ("base", "examples")
 """`full`과 견줄 수 있는 상대. 고르지 않으면 모두다. 과제마다 상대 하나에 쌍 하나다."""
 
-_TARGET: Condition = "full"
+TARGET: Condition = "full"
+"""다른 조건과 견주는 조건(바탕+딥트윈). 쌍마다 한쪽은 이 조건이다."""
 
 
 @dataclass(frozen=True)
@@ -112,8 +110,6 @@ class PairPlan:
     """만들 생성. 과제마다 `CONDITIONS` 순서다. 이어 가기면 남은 생성뿐이다."""
     eval: str | None = None
     """이어 갈 평가 ID. 새 평가면 `None`이다."""
-    seed: str | None = None
-    """이어 갈 평가의 씨앗(`eval.json`). 새 평가면 `None`이고 `build_pairs`의 `seed`를 쓴다."""
     against: tuple[Condition, ...] = AGAINST
     """`full`과 견줄 상대. `AGAINST` 순서다. 이어 가기면 `eval.json`의 `against`다."""
     skill_hash: str | None = None
@@ -196,7 +192,7 @@ def prepare_pairs(
 def prepare_resume(deeptwin: DeepTwin, eval_id: str) -> PairPlan:
     """멈춘 평가 `eval_id`의 남은 생성만 준비한다. 아무것도 쓰지 않는다.
 
-    - 스킬, 분할, 과제, 상대, 씨앗, 바탕 스킬의 해시는 `eval.json`의 값이다(`against`가 `["base"]`인
+    - 스킬, 분할, 과제, 상대, 바탕 스킬의 해시는 `eval.json`의 값이다(`against`가 `["base"]`인
       예전 평가도 그대로 잇는다). 봉인 평가면 과제를 `sealing.read_sealed`로 읽는다. 평가가 없으면
       `eval_not_found`, 과제 파일이 사라졌으면 `task_not_found`다.
     - 끝난 생성은 대응표(`key.json`)의 `runs`에 있고 `outputs/<조건>/<과제 ID>.md`도 있는 것이다.
@@ -212,7 +208,6 @@ def prepare_resume(deeptwin: DeepTwin, eval_id: str) -> PairPlan:
         tasks=tuple(info.tasks),
         runs=(),
         eval=folder.id,
-        seed=info.seed,
         against=against,
         skill_hash=info.skill_hash,
     )
@@ -309,12 +304,9 @@ def build_pairs(
 
     outputs: dict[tuple[str, Condition], str] = {}
     runs: dict[str, dict[Condition, str]] = {}
-    for task, saved in folder.saved_runs().items():
-        for condition, run_id in saved.items():
-            output = folder.output(condition, task)
-            if output is not None:
-                outputs[(task, condition)] = output
-                runs.setdefault(task, {})[condition] = run_id
+    for (task, condition), (run_id, output) in _finished(folder).items():
+        outputs[(task, condition)] = output
+        runs.setdefault(task, {})[condition] = run_id
     made = 0
     for planned in plan.runs:
         changed = changed or _mark_skill_changed(deeptwin, folder, info)
@@ -413,7 +405,7 @@ def _planned(
     done: set[tuple[str, Condition]],
 ) -> tuple[PlannedRun, ...]:
     """과제마다 `full`과 `against`의 조건을 `CONDITIONS` 순서로, `done`에 없는 생성을 준비한다."""
-    wanted = {_TARGET, *against}
+    wanted = {TARGET, *against}
     return tuple(
         PlannedRun(
             task=task.id,
@@ -433,14 +425,18 @@ def _planned(
     )
 
 
-def _finished(folder: EvalFolder) -> list[tuple[str, Condition]]:
-    """끝난 생성: 대응표의 `runs`에 있고 결과물 파일도 있는 (과제, 조건)."""
-    return [
-        (task, condition)
-        for task, saved in folder.saved_runs().items()
-        for condition in saved
-        if folder.output(condition, task) is not None
-    ]
+def _finished(folder: EvalFolder) -> dict[tuple[str, Condition], tuple[str, str]]:
+    """끝난 생성: 대응표의 `runs`에 있고 결과물 파일도 있는 (과제, 조건)에서 (실행 ID, 결과물)로.
+
+    대응표의 순서다.
+    """
+    finished: dict[tuple[str, Condition], tuple[str, str]] = {}
+    for task, saved in folder.saved_runs().items():
+        for condition, run_id in saved.items():
+            output = folder.output(condition, task)
+            if output is not None:
+                finished[(task, condition)] = (run_id, output)
+    return finished
 
 
 def _ordered(
@@ -474,7 +470,7 @@ def _arrange(seed: str, tasks: tuple[str, ...], against: tuple[Condition, ...]) 
             base = f"{seed}\n{task}\n{other}"
             order = hashlib.sha256(base.encode("utf-8")).hexdigest()
             side = hashlib.sha256(f"{base}\nside".encode()).digest()[0]
-            left, right = (_TARGET, other) if side % 2 == 0 else (other, _TARGET)
+            left, right = (TARGET, other) if side % 2 == 0 else (other, TARGET)
             ranked.append((order, PairKey(task=task, left=left, right=right)))
     ranked.sort(key=lambda item: (item[0], item[1].task, item[1].left, item[1].right))
     return [key for _, key in ranked]

@@ -43,7 +43,6 @@ __all__ = [
     "FLUID_CLOSE",
     "FLUID_OPEN",
     "LAYERS",
-    "PAST_WORK_EXAMPLES",
     "ExamplePick",
     "check_context",
     "compose",

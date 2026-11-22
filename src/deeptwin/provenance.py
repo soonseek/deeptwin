@@ -18,8 +18,6 @@ from pathlib import Path
 import deeptwin._commit as _commit
 
 __all__ = [
-    "GIT",
-    "git_commit",
     "package_commit",
     "package_version",
 ]

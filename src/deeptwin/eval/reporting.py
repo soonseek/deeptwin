@@ -16,7 +16,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from deeptwin.errors import EvalIncompleteError, JudgingUnfinishedError
-from deeptwin.eval.pairs import CONDITIONS, base_skill_changed
+from deeptwin.eval.pairs import CONDITIONS, TARGET, base_skill_changed
 from deeptwin.eval.sealing import open_sealed
 from deeptwin.eval.stats import p_value
 from deeptwin.models import (
@@ -35,8 +35,6 @@ from deeptwin.store.evals import KEY_FILE, open_eval, run_calls, run_entries
 from deeptwin.store.project import DeepTwin
 
 __all__ = [
-    "CONDITION_NAMES",
-    "Report",
     "report",
 ]
 
@@ -47,7 +45,6 @@ CONDITION_NAMES: dict[Condition, str] = {
 }
 """보고서에만 쓰는 조건의 한국어 이름. 쌍 목록과 판정 화면에는 쓰지 않는다."""
 
-_TARGET: Condition = "full"
 _UNKNOWN = "알 수 없음"
 """알 수 없는 커밋과 프롬프트 버전을 `report.md`에 쓰는 말."""
 _NO_TIME = "-"
@@ -113,7 +110,7 @@ def report(deeptwin: DeepTwin, eval_id: str) -> Report:
         for choice in judged:
             side = key.pairs[choice.pair]
             winner = side.left if choice.chosen == "left" else side.right
-            wins += winner == _TARGET
+            wins += winner == TARGET
         seconds = [choice.seconds for choice in judged]
         comparisons.append(
             Comparison(
@@ -171,7 +168,7 @@ def render_markdown(made: EvalReport, info: EvalInfo) -> str:
     붙인다. 초는 소수 셋째 자리, 글자 수는 정수이고, 값이 없으면 시간 칸은 `-`, 비용 칸은
     `기록 없음`, 커밋은 `알 수 없음`이다.
     """
-    target = CONDITION_NAMES[_TARGET]
+    target = CONDITION_NAMES[TARGET]
     lines = [
         f"# 판정 보고서 {made.eval}",
         "",
@@ -308,6 +305,6 @@ def _pairs_against(
         key = keys.get(pair.id)
         if key is None:
             raise EvalIncompleteError(f"{shown}에 쌍 {pair.id}의 대응이 없습니다.")
-        if {key.left, key.right} == {_TARGET, against}:
+        if {key.left, key.right} == {TARGET, against}:
             found.append(pair)
     return found

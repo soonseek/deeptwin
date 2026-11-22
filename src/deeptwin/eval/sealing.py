@@ -20,7 +20,6 @@ from deeptwin.store.guard import SealedToken
 from deeptwin.store.project import DeepTwin
 
 __all__ = [
-    "SealedOpening",
     "open_sealed",
 ]
 

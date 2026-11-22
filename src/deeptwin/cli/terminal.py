@@ -24,14 +24,7 @@ from deeptwin.models import Side
 from deeptwin.store.project import DeepTwin
 
 __all__ = [
-    "ANSWERS",
-    "QUESTION",
-    "RETRY",
-    "TYPE_ONE_OR_TWO",
     "judge_in_terminal",
-    "read_line",
-    "screen",
-    "typed_on_screen",
 ]
 
 TYPE_ONE_OR_TWO = "1 또는 2를 입력하세요: "

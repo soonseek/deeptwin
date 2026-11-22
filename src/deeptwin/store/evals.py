@@ -55,16 +55,8 @@ from deeptwin.store.files import (
 from deeptwin.store.project import CALLS_FILE, DATA_DIR, LEDGER_FILE, DeepTwin
 
 __all__ = [
-    "CHOICES_FILE",
-    "EVAL_DIR",
-    "EVAL_FILE",
     "EvalFolder",
     "KEY_FILE",
-    "OUTPUTS_DIR",
-    "PAIRS_FILE",
-    "REPORT_JSON_FILE",
-    "REPORT_MD_FILE",
-    "SealLine",
     "new_eval",
     "open_eval",
     "run_calls",
@@ -269,8 +261,6 @@ class SealLine:
     """줄 ID(`seal-NNNN`)."""
     reused: tuple[str, ...]
     """그 평가의 과제 가운데 원장에서 이 줄보다 앞선 다른 평가의 `seal_open` 줄에 든 과제."""
-    added: bool
-    """이번에 덧붙인 줄이면 참, 이미 있던 줄이면 거짓이다."""
 
 
 def seal_open_line(deeptwin: DeepTwin, info: EvalInfo) -> SealLine:
@@ -305,7 +295,7 @@ def seal_open_line(deeptwin: DeepTwin, info: EvalInfo) -> SealLine:
         if own is not None:
             number, obj = own
             earlier = [o for n, o in lines if n < number and o.get("eval") != info.id]
-            return SealLine(id=obj["id"], reused=_reused(info.tasks, earlier), added=False)
+            return SealLine(id=obj["id"], reused=_reused(info.tasks, earlier))
         reused = _reused(info.tasks, [o for _, o in lines if o.get("eval") != info.id])
         entry = SealOpen(
             id=f"seal-{1 + max(_seal_numbers(entries), default=0):04d}",
@@ -316,7 +306,7 @@ def seal_open_line(deeptwin: DeepTwin, info: EvalInfo) -> SealLine:
             reused=list(reused),
         )
         deeptwin.append_ledger(entry.model_dump(mode="json"))
-        return SealLine(id=entry.id, reused=reused, added=True)
+        return SealLine(id=entry.id, reused=reused)
 
 
 def run_calls(deeptwin: DeepTwin, run_id: str) -> list[Call] | None:
