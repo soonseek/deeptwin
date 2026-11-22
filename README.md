@@ -2,7 +2,7 @@
 
 개인의 판단 기준을 층별 파일로 쌓고, 작업마다 맞는 기준만 모델 없이 조립해 스킬의 유동 영역에 넣는 Python 라이브러리입니다.
 
-> 아직 초기 단계입니다(0.0.1). 지금은 과제를 등록하고, 원칙, 우선순위, 판단 카드, 예시를 조립해 스킬을 한 번 돌리고, 결과물이 어긴 원칙을 알려 주는 길까지 있습니다. 함수 서명과 명령은 0.x 동안 바뀔 수 있습니다.
+> 아직 초기 단계입니다(0.0.1). 지금은 스킬 뼈대를 만들고, 과거 작업물을 예시로 가져오고, 과제를 등록하고, 원칙, 우선순위, 판단 카드, 예시를 조립해 스킬을 한 번 돌리고, 결과물이 어긴 원칙을 알려 주고, 쌓인 상태를 보는 길까지 있습니다. 함수 서명과 명령은 0.x 동안 바뀔 수 있습니다.
 
 ## 설치
 
@@ -18,6 +18,33 @@ Python 3.11 이상이 필요합니다.
 
 ```sh
 deeptwin init
+```
+
+스킬 뼈대를 만듭니다. `skills/<스킬 ID>/`에 `skill.yaml`, 유동 영역 표시가 든 `SKILL.md`, 주석만 든 `checks.py`가 생기고, 만든 직후 그대로 `compose`가 돕니다. `run`은 이 스킬에 걸리는 원칙이 `check`에 적은 검사 함수가 `checks.py`에 있어야 돕니다(없으면 `check_not_found`). `SKILL.md`에 고정 지침을, `skill.yaml`에 판단 지점(`decision_points`)과 맥락 축(`context_axes`)을 채워 씁니다.
+
+```sh
+deeptwin skill new <스킬 ID>
+```
+
+- `skill.yaml`은 `schema: 1`, `id`, `version: 1`, 빈 `decision_points`와 `context_axes`, 기본 `budget`, `example_policy: random_signature`, `checks: checks.py`로 시작합니다. `checks.py`에는 함수 없이 검사 함수의 규약을 적은 주석만 있습니다(아래 원칙 검사 참고).
+- 그 폴더가 이미 있으면(비어 있어도) `skill_exists` 오류로 멈추고 아무 파일도 바꾸지 않습니다. ID가 ID 규칙(영문자, 숫자, `.`, `_`, `-`만 쓰고 영문자나 숫자로 시작)에 맞지 않으면 `invalid_id`입니다.
+- `--json` 결과는 `skill`, `files`(프로젝트 루트 기준, `skill.yaml`, `SKILL.md`, `checks.py` 순)입니다.
+
+과거 작업물을 예시로 가져옵니다. 폴더 바로 아래의 글 파일 하나가 본능 층의 예시 하나(`.deeptwin/layers/examples/ex-NNNN.yaml`)가 됩니다. `--signature`를 주면 대표작(`grade: signature`)으로 표시하고, 주지 않으면 `grade: usual`입니다. 조립은 대표작만 예시로 넣습니다(아래 조립의 6단계).
+
+```sh
+deeptwin import <폴더> --skill <스킬 ID> [--signature]
+```
+
+- 확장자가 `.txt`, `.md`인 파일(대소문자 무관)을 파일 이름순으로 가져옵니다. 점으로 시작하는 파일과 하위 폴더는 보지 않습니다.
+- 글은 UTF-8(BOM 허용)로 읽어 줄바꿈을 `\n`으로 바꾸고 앞뒤 공백을 뗀 것입니다. 예시는 `kind: good`, `tags: {}`, `source: past_work`, `status: active`, `approval: human`(사람이 직접 가져왔다)으로 씁니다.
+- ID는 지금 있는 `ex-` 번호의 최댓값 + 1부터 4자리로 매깁니다(`ex-0004`).
+- 같은 스킬에 글이 같은 예시가 이미 있거나 이번에 앞서 가져온 파일과 같으면 만들지 않고 `skipped`에 적습니다. 글은 앞뒤 공백을 떼고 견줍니다. 그래서 같은 폴더를 다시 가져와도 예시가 늘지 않습니다.
+- 전부 아니면 전무입니다. 모든 파일을 먼저 읽고 검사한 뒤 한 잠금 안에서 번호를 정하고 씁니다. 비었거나(공백뿐이어도) UTF-8이 아닌 파일이 하나라도 있으면 아무것도 쓰지 않고, `invalid_file` 오류로 그런 파일마다 한 줄씩 경로, 줄, 이유를 알립니다. 글 파일이 없으면 `nothing_to_import`, 스킬이 없으면 `skill_not_found`입니다.
+- `--json` 결과는 `skill`, `imported`, `skipped`입니다. 새로 쓴 예시만 `imported`에 들고 `--signature`의 등급을 받습니다. 건너뛴 파일은 예시를 만들지 않으므로, `same_as`가 가리키는 예시의 등급은 바뀌지 않습니다. `imported`는 `[{"id": "ex-0001", "file": "past/p1.txt"}, ...]`, `skipped`는 `[{"file": "past/p1.txt", "same_as": "ex-0001"}, ...]`이고 `same_as`는 글이 같은 예시의 ID입니다. `file`은 프로젝트 루트 기준 경로입니다(루트 밖이면 받은 경로 그대로).
+
+```text
+오류: past/p3.txt:1: 글이 비었습니다(공백뿐인 파일도 빈 글로 봅니다)
 ```
 
 과제를 등록합니다. 과제 파일 하나가 과제 하나이고, 등록하면 `.deeptwin/tasks/<분할>/<ID>.yaml`에 쓰이고 원장(`.deeptwin/ledger.jsonl`)에 `task` 줄이 남습니다.
@@ -51,6 +78,25 @@ reference:               # 선택. 봉인 과제에는 꼭 있어야 한다
 ```text
 오류: 과제 task-0101은 봉인 과제라 읽을 수 없습니다. 봉인 과제는 평가에서만 씁니다.
 ```
+
+쌓인 상태를 한 번에 봅니다. 아무 파일도 쓰지 않습니다.
+
+```sh
+deeptwin status
+```
+
+```text
+층별 항목(active/전체): 예시 5/5(대표작 5), 판단 카드 0/0, 우선순위 0/0, 원칙 2/2
+승인 대기 후보 1개. 과제: 학습 1, 봉인 0, 예비 0
+```
+
+- `--json` 결과는 `layers`, `candidates`, `tasks`입니다.
+  - `layers`는 네 층(`instinct`, `tendency`, `priority`, `principle`)마다 `total`과 상태별 수(`active`, `candidate`, `dormant`, `retired`)입니다. `instinct`에는 대표작(`grade: signature`) 수 `signature`도 있고, 상태와 상관없이 셉니다.
+  - `candidates.pending`은 후보 파일(`.deeptwin/candidates/`) 가운데 `status: pending`인 수입니다.
+  - `tasks`는 분할(`train`, `sealed`, `spare`)마다의 과제 파일 수입니다.
+- 과제는 파일 이름만 셉니다. 봉인 과제도 내용을 읽지 않습니다. 층과 후보 파일은 읽어서 세므로, 형식이 틀린 파일이 있으면 `invalid_file`입니다.
+
+`deeptwin skill new`, `deeptwin import`, `deeptwin status`는 원장에 줄을 쓰지 않습니다. 원장에 남는 줄은 `task`(과제 등록)와 `run`(실행)뿐입니다.
 
 스킬을 과제 하나로 돌립니다. 조립한 지침을 넣은 `SKILL.md` 사본과 결과물은 `.deeptwin/runs/<실행 ID>/`에 남습니다. 원본 `SKILL.md`와 층 파일(`layers/`)은 바뀌지 않고, 카드의 `stats`도 고치지 않습니다. 실행은 원장(`.deeptwin/ledger.jsonl`)에 한 줄로 남습니다.
 
@@ -268,7 +314,7 @@ deeptwin verify
   tasks/<분할>/<ID>.yaml    # 과제. 분할은 train, sealed, spare. sealed는 토큰 없이 읽지 않는다
   runs/                     # 실행마다 SKILL.md 사본, 결과물, 호출 기록(calls.jsonl)
   ledger.jsonl              # 원장. 추가만 하고 줄마다 해시로 잇는다
-skills/<스킬 ID>/
+skills/<스킬 ID>/           # deeptwin skill new가 아래 세 파일을 만든다
   SKILL.md                  # 고정 영역과 유동 영역 표시
   skill.yaml                # 판단 지점, 맥락 축, 상한, 검사 파일(checks)
   checks.py                 # 원칙의 검사 함수. fn(output: str) -> bool, 이름이 원칙의 check

@@ -20,10 +20,13 @@ from deeptwin.errors import (
     TaskSkillMismatchError,
     UnknownProviderError,
 )
+from deeptwin.importing import TEXT_SUFFIXES, import_folder
 from deeptwin.llm import ClaudeCLIProvider, FakeProvider, Provider
 from deeptwin.llm.calls import CallRecorder
 from deeptwin.models import Composed, Context, Run, Skill, Task, Violation
 from deeptwin.runs import CALLS_FILE, discard_run_on_failure, record_run, write_skill_copy
+from deeptwin.status import STATUSES, project_status
+from deeptwin.store.files import display_path
 from deeptwin.store.guard import problem_lines, sealed_changed
 from deeptwin.store.ledger import ledger_broken
 from deeptwin.store.project import DATA_DIR, LEDGER_FILE, DeepTwin, read_task_file
@@ -41,6 +44,12 @@ task_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(task_app, name="task")
+skill_app = typer.Typer(
+    name="skill",
+    help="스킬 폴더(skills/<id>/)를 만든다.",
+    no_args_is_help=True,
+)
+app.add_typer(skill_app, name="skill")
 
 JsonOption = Annotated[
     bool,
@@ -459,3 +468,142 @@ def task_add(
         )
 
     respond("task add", action, as_json=as_json)
+
+
+@skill_app.command("new")
+def skill_new(
+    skill_id: Annotated[
+        str,
+        typer.Argument(
+            metavar="ID",
+            help="새 스킬 ID. 영문자, 숫자, '.', '_', '-'만 쓰고 영문자나 숫자로 시작한다.",
+            show_default=False,
+        ),
+    ],
+    as_json: JsonOption = False,
+) -> None:
+    """skills/<id>/에 스킬 뼈대를 만든다: skill.yaml, 유동 영역이 표시된 SKILL.md, 빈 checks.py.
+
+    그 폴더가 이미 있으면 아무 파일도 바꾸지 않고 멈춘다.
+    """
+
+    def action() -> Reply:
+        deeptwin = DeepTwin.open(Path.cwd())
+        made = deeptwin.new_skill(skill_id)
+        files = [display_path(path, deeptwin.root) for path in made.files]
+        return Reply(
+            result={"skill": made.skill.id, "files": files},
+            text="\n".join(
+                [
+                    f"스킬 {made.skill.id}의 뼈대를 만들었습니다: {', '.join(files)}",
+                    "SKILL.md에 고정 지침을, skill.yaml에 판단 지점과 맥락 축을 채우세요.",
+                ]
+            ),
+        )
+
+    respond("skill new", action, as_json=as_json)
+
+
+@app.command("import")
+def import_examples(
+    folder: Annotated[
+        Path,
+        typer.Argument(
+            metavar="FOLDER",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            readable=True,
+            help=(
+                f"과거 작업물 폴더. 바로 아래의 {', '.join(TEXT_SUFFIXES)} 파일 하나가 예시 "
+                "하나가 된다."
+            ),
+            show_default=False,
+        ),
+    ],
+    skill_id: Annotated[
+        str,
+        typer.Option("--skill", metavar="ID", help="예시를 넣을 스킬 ID", show_default=False),
+    ],
+    signature: Annotated[
+        bool,
+        typer.Option("--signature", help="대표작(grade: signature)으로 표시한다."),
+    ] = False,
+    as_json: JsonOption = False,
+) -> None:
+    """과거 작업물을 본능 층의 예시로 가져온다. 글 파일 하나가 예시 하나다.
+
+    파일 이름순으로 ex-NNNN 번호를 매긴다. 같은 스킬에 글이 같은 예시가 있으면 건너뛰어,
+    같은 폴더를 다시 가져와도 늘지 않는다. 비었거나 UTF-8이 아닌 파일이 있으면 아무것도
+    쓰지 않는다.
+    """
+
+    def action() -> Reply:
+        deeptwin = DeepTwin.open(Path.cwd())
+        done = import_folder(deeptwin, folder, skill=skill_id, signature=signature)
+        grade = "signature" if signature else "usual"
+        root = deeptwin.root
+        imported = [{"id": i.example.id, "file": display_path(i.file, root)} for i in done.imported]
+        skipped = [{"file": display_path(s.file, root), "same_as": s.same_as} for s in done.skipped]
+        lines = [
+            f"스킬 {skill_id}에 예시 {len(imported)}건을 가져왔습니다(grade: {grade})."
+            if imported
+            else f"스킬 {skill_id}에 새로 가져온 예시가 없습니다."
+        ]
+        if skipped:
+            shown = ", ".join(f"{s['file']}(같은 예시: {s['same_as']})" for s in skipped)
+            lines.append(f"같은 글이 있어 건너뛴 파일 {len(skipped)}개: {shown}")
+        return Reply(
+            result={"skill": skill_id, "imported": imported, "skipped": skipped},
+            text="\n".join(lines),
+        )
+
+    respond("import", action, as_json=as_json)
+
+
+LAYER_NAMES = {
+    "instinct": "예시",
+    "tendency": "판단 카드",
+    "priority": "우선순위",
+    "principle": "원칙",
+}
+"""`status`의 글 모드에 쓰는 층 이름."""
+SPLIT_NAMES = {"train": "학습", "sealed": "봉인", "spare": "예비"}
+
+
+@app.command()
+def status(as_json: JsonOption = False) -> None:
+    """쌓인 상태를 한 번에 본다: 층별 항목 수, 승인 대기 후보 수, 분할별 과제 수.
+
+    봉인 과제는 파일 수만 세고 내용을 읽지 않는다.
+    """
+
+    def action() -> Reply:
+        deeptwin = DeepTwin.open(Path.cwd())
+        counts = project_status(deeptwin)
+        layers: dict[str, dict[str, int]] = {}
+        for layer, count in counts.layers.items():
+            layers[layer] = {"total": count.total, **{s: count.by_status[s] for s in STATUSES}}
+            if count.signature is not None:
+                layers[layer]["signature"] = count.signature
+        layer_text = ", ".join(
+            f"{LAYER_NAMES[layer]} {count.by_status['active']}/{count.total}"
+            + (f"(대표작 {count.signature})" if count.signature is not None else "")
+            for layer, count in counts.layers.items()
+        )
+        task_text = ", ".join(f"{SPLIT_NAMES[split]} {n}" for split, n in counts.tasks.items())
+        return Reply(
+            result={
+                "layers": layers,
+                "candidates": {"pending": counts.pending_candidates},
+                "tasks": dict(counts.tasks),
+            },
+            text="\n".join(
+                [
+                    f"층별 항목(active/전체): {layer_text}",
+                    f"승인 대기 후보 {counts.pending_candidates}개. 과제: {task_text}",
+                ]
+            ),
+        )
+
+    respond("status", action, as_json=as_json)

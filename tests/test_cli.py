@@ -11,16 +11,18 @@ import sys
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
+import yaml
 from typer.testing import CliRunner, Result
 
 import claude_stub
 from deeptwin.cli import main
-from deeptwin.compose import FLUID_CLOSE, FLUID_OPEN, fill_fluid
+from deeptwin.compose import FLUID_CLOSE, FLUID_OPEN, GOOD_EXAMPLES_HEADING, fill_fluid
 from deeptwin.errors import DeeptwinError, ProviderFailedError
 from deeptwin.llm import ClaudeCLIProvider, FakeProvider
+from deeptwin.models import Budget, Candidate, Card, Principle
 from deeptwin.store.ledger import line_hash
 from deeptwin.store.project import DeepTwin
 
@@ -602,6 +604,9 @@ def test_help_lists_commands() -> None:
     assert "compose" in result.stdout
     assert "verify" in result.stdout
     assert "task" in result.stdout
+    assert "skill" in result.stdout
+    assert "import" in result.stdout
+    assert "status" in result.stdout
 
 
 # 형식이 틀린 파일
@@ -1632,3 +1637,387 @@ def test_run_json_stays_one_object_when_checks_py_prints(in_minimal: Path) -> No
 
     assert ok_json(result, "run")["violations"] == [PRIN_01_VIOLATION]
     assert result.stderr == "불러옴\n검사함\n"
+
+
+# 스킬 뼈대, 가져오기, 상태 보기
+
+SKELETON_FILES = ["skills/notice/skill.yaml", "skills/notice/SKILL.md", "skills/notice/checks.py"]
+PAST_NOTICES = [f"{n}번째 지난 공지입니다. 다음 수업은 {n + 10}일입니다." for n in range(1, 6)]
+"""가상 강의의 지난 공지 다섯 편. 테스트용으로 지어낸 것이다."""
+NOTICE_TASK = """\
+# 가상의 공지 요청. 테스트용으로 지어낸 것이다.
+schema: 1
+id: task-0001
+skill: notice
+split: train
+input: 다음 주 토요일 휴강을 알리는 공지를 써 주세요.
+"""
+
+
+@pytest.fixture
+def in_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """`deeptwin init`만 마친 빈 프로젝트로 옮겨 간 상태."""
+    root = tmp_path / "project"
+    root.mkdir()
+    monkeypatch.chdir(root)
+    ok_json(invoke("init", "--json"), "init")
+    return root
+
+
+def write_past(root: Path) -> Path:
+    """`past/p1.txt`~`p5.txt`에 지난 공지를 하나씩 쓴다."""
+    folder = root / "past"
+    folder.mkdir()
+    for n, text in enumerate(PAST_NOTICES, start=1):
+        (folder / f"p{n}.txt").write_text(text + "\n", encoding="utf-8")
+    return folder
+
+
+def files_under(folder: Path) -> dict[str, bytes]:
+    return {
+        p.relative_to(folder).as_posix(): p.read_bytes() for p in folder.rglob("*") if p.is_file()
+    }
+
+
+def paths_under(folder: Path) -> list[str]:
+    return sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*"))
+
+
+def example_texts(root: Path) -> list[str]:
+    folder = root / ".deeptwin" / "layers" / "examples"
+    return [p.read_text("utf-8") for p in sorted(folder.glob("*.yaml"))]
+
+
+def test_skill_new_makes_a_skeleton_that_composes(in_project: Path) -> None:
+    body = ok_json(invoke("skill", "new", "notice", "--json"), "skill new")
+
+    assert body == {"skill": "notice", "files": SKELETON_FILES}
+    config = yaml.safe_load((in_project / SKELETON_FILES[0]).read_text("utf-8"))
+    assert config == {
+        "schema": 1,
+        "id": "notice",
+        "version": 1,
+        "decision_points": [],
+        "context_axes": {},
+        "budget": Budget().model_dump(),
+        "example_policy": "random_signature",
+        "checks": "checks.py",
+    }
+    skill_md = (in_project / SKELETON_FILES[1]).read_text("utf-8")
+    assert skill_md.count(FLUID_OPEN) == 1
+    assert skill_md.count(FLUID_CLOSE) == 1
+    assert skill_md.index(FLUID_OPEN) < skill_md.index(FLUID_CLOSE)
+    checks_py = (in_project / SKELETON_FILES[2]).read_text("utf-8")
+    assert checks_py.strip()
+    assert all(line.startswith("#") for line in checks_py.splitlines() if line.strip())
+    skill = DeepTwin.open(in_project).skill("notice")
+    assert skill.skill_md == in_project / SKELETON_FILES[1]
+
+    (in_project / "task.yaml").write_text(NOTICE_TASK, encoding="utf-8")
+    ok_json(invoke("task", "add", "task.yaml", "--json"), "task add")
+    composed = ok_json(invoke("compose", "notice", "task-0001", "--json"), "compose")
+
+    assert composed["guide"] == ""
+    assert composed["injected"] == []
+
+
+def test_skill_new_text_mode(in_project: Path) -> None:
+    result = invoke("skill", "new", "notice")
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == (
+        f"스킬 notice의 뼈대를 만들었습니다: {', '.join(SKELETON_FILES)}\n"
+        "SKILL.md에 고정 지침을, skill.yaml에 판단 지점과 맥락 축을 채우세요.\n"
+    )
+
+
+@pytest.mark.parametrize("existing", ["skill.yaml", None], ids=["with-files", "empty"])
+def test_skill_new_leaves_an_existing_skill_folder_alone(
+    in_project: Path, existing: str | None
+) -> None:
+    folder = in_project / "skills" / "notice"
+    folder.mkdir(parents=True)
+    if existing is not None:
+        (folder / existing).write_bytes(b"# mine\nid: notice\n")
+    before = paths_under(in_project / "skills"), files_under(in_project / "skills")
+
+    message = error_json(invoke("skill", "new", "notice", "--json"), "skill new", "skill_exists")
+
+    assert "skills/notice/" in message
+    assert (paths_under(in_project / "skills"), files_under(in_project / "skills")) == before
+    assert sorted(p.name for p in folder.iterdir()) == ([existing] if existing else [])
+
+
+@pytest.mark.parametrize("bad_id", ["../x", "a/b", ".hidden", "_x", "공지"])
+def test_skill_new_rejects_an_invalid_id(in_project: Path, bad_id: str) -> None:
+    before = paths_under(in_project.parent)
+
+    message = error_json(invoke("skill", "new", bad_id, "--json"), "skill new", "invalid_id")
+
+    assert message == (
+        f"쓸 수 없는 스킬 ID입니다: {bad_id!r}. "
+        "영문자, 숫자, '.', '_', '-'만 쓰고 영문자나 숫자로 시작하세요."
+    )
+    assert paths_under(in_project.parent) == before
+
+
+def test_import_signature_examples_from_a_folder(in_project: Path) -> None:
+    ok_json(invoke("skill", "new", "notice", "--json"), "skill new")
+    write_past(in_project)
+
+    body = ok_json(invoke("import", "past", "--skill", "notice", "--signature", "--json"), "import")
+
+    assert body == {
+        "skill": "notice",
+        "imported": [{"id": f"ex-000{n}", "file": f"past/p{n}.txt"} for n in range(1, 6)],
+        "skipped": [],
+    }
+    texts = example_texts(in_project)
+    assert len(texts) == 5
+    assert all("grade: signature\n" in text for text in texts)
+
+
+def test_import_again_skips_every_file(in_project: Path) -> None:
+    ok_json(invoke("skill", "new", "notice", "--json"), "skill new")
+    write_past(in_project)
+    invoke("import", "past", "--skill", "notice", "--json")
+    before = files_under(in_project / ".deeptwin")
+
+    body = ok_json(invoke("import", "past", "--skill", "notice", "--json"), "import")
+    text = invoke("import", "past", "--skill", "notice")
+
+    assert body["imported"] == []
+    assert body["skipped"] == [
+        {"file": f"past/p{n}.txt", "same_as": f"ex-000{n}"} for n in range(1, 6)
+    ]
+    assert files_under(in_project / ".deeptwin") == before
+    assert text.exit_code == 0
+    assert text.stdout.splitlines() == [
+        "스킬 notice에 새로 가져온 예시가 없습니다.",
+        "같은 글이 있어 건너뛴 파일 5개: "
+        + ", ".join(f"past/p{n}.txt(같은 예시: ex-000{n})" for n in range(1, 6)),
+    ]
+
+
+def test_import_text_mode(in_project: Path) -> None:
+    ok_json(invoke("skill", "new", "notice", "--json"), "skill new")
+    write_past(in_project)
+
+    result = invoke("import", "past", "--skill", "notice", "--signature")
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "스킬 notice에 예시 5건을 가져왔습니다(grade: signature).\n"
+
+
+def test_import_continues_the_ex_numbers(in_project: Path) -> None:
+    ok_json(invoke("skill", "new", "notice", "--json"), "skill new")
+    write_past(in_project)
+    first = in_project / "first"
+    first.mkdir()
+    for n in range(1, 4):
+        (first / f"f{n}.md").write_text(f"먼저 가져온 공지 {n}", encoding="utf-8")
+    ok_json(invoke("import", "first", "--skill", "notice", "--json"), "import")
+
+    body = ok_json(invoke("import", "past", "--skill", "notice", "--json"), "import")
+
+    assert [i["id"] for i in body["imported"]] == [f"ex-000{n}" for n in range(4, 9)]
+
+
+@pytest.mark.parametrize(
+    ("raw", "reason"),
+    [
+        (b"", "past/p3.txt:1: 글이 비었습니다(공백뿐인 파일도 빈 글로 봅니다)"),
+        (b"\xff", "past/p3.txt:1: UTF-8 글로 읽을 수 없습니다"),
+    ],
+    ids=["empty", "not-utf8"],
+)
+def test_import_with_a_bad_file_imports_nothing(in_project: Path, raw: bytes, reason: str) -> None:
+    ok_json(invoke("skill", "new", "notice", "--json"), "skill new")
+    (write_past(in_project) / "p3.txt").write_bytes(raw)
+
+    message = error_json(
+        invoke("import", "past", "--skill", "notice", "--signature", "--json"),
+        "import",
+        "invalid_file",
+    )
+
+    assert message == reason
+    assert example_texts(in_project) == []
+
+
+def test_import_a_folder_without_text_files(in_project: Path) -> None:
+    ok_json(invoke("skill", "new", "notice", "--json"), "skill new")
+    (in_project / "empty").mkdir()
+
+    message = error_json(
+        invoke("import", "empty", "--skill", "notice", "--json"), "import", "nothing_to_import"
+    )
+
+    assert message.startswith("가져올 글 파일이 없습니다: empty. ")
+    assert example_texts(in_project) == []
+
+
+def test_import_into_an_unknown_skill(in_project: Path) -> None:
+    write_past(in_project)
+
+    error_json(invoke("import", "past", "--skill", "nope", "--json"), "import", "skill_not_found")
+
+    assert example_texts(in_project) == []
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("import", "past", "--json"),
+        ("import", "missing", "--skill", "notice", "--json"),
+        ("import", "past/p1.txt", "--skill", "notice", "--json"),
+    ],
+    ids=["no-skill", "no-folder", "a-file"],
+)
+def test_import_argument_errors(in_project: Path, args: tuple[str, ...]) -> None:
+    ok_json(invoke("skill", "new", "notice", "--json"), "skill new")
+    write_past(in_project)
+
+    result = invoke(*args)
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert example_texts(in_project) == []
+
+
+def test_imported_signature_examples_go_into_compose(in_project: Path) -> None:
+    ok_json(invoke("skill", "new", "notice", "--json"), "skill new")
+    write_past(in_project)
+    imported = ok_json(
+        invoke("import", "past", "--skill", "notice", "--signature", "--json"), "import"
+    )["imported"]
+    (in_project / "task.yaml").write_text(NOTICE_TASK, encoding="utf-8")
+    ok_json(invoke("task", "add", "task.yaml", "--json"), "task add")
+
+    body = ok_json(invoke("compose", "notice", "task-0001", "--json"), "compose")
+
+    examples_part = body["guide"].split(GOOD_EXAMPLES_HEADING + "\n", 1)[1]
+    by_id = {i["id"]: (in_project / i["file"]).read_text("utf-8").strip() for i in imported}
+    injected = [item for item in body["injected"] if item in by_id]
+    # 기본 상한으로 good 예시 둘이 들어간다
+    assert len(injected) == 2
+    assert injected == body["injected"]
+    for item in injected:
+        assert by_id[item] in examples_part
+
+
+def write_status_fixture(root: Path) -> None:
+    """예시 5(대표작 5), 원칙 2, 대기 후보 1(승인한 후보 1은 세지 않는다), 학습 과제 1."""
+    ok_json(invoke("skill", "new", "notice", "--json"), "skill new")
+    write_past(root)
+    ok_json(invoke("import", "past", "--skill", "notice", "--signature", "--json"), "import")
+    deeptwin = DeepTwin.open(root)
+    deeptwin.write_principles(
+        [
+            Principle(id=f"prin-0{n}", rule=rule, kind="never", status="active", approval="human")
+            for n, rule in enumerate(["수치를 부풀리지 않는다", "모르는 날짜를 짓지 않는다"], 1)
+        ]
+    )
+    card = Card(
+        id="card-0001",
+        skill="notice",
+        decision_point="opening",
+        choose="첫 문장에 날짜를 쓴다",
+        status="candidate",
+        approval="human",
+    )
+    statuses: list[Literal["pending", "approved"]] = ["pending", "approved"]
+    for n, status in enumerate(statuses, start=1):
+        deeptwin.write_candidate(
+            Candidate(
+                id=f"cand-000{n}",
+                action="add",
+                layer="tendency",
+                item=card,
+                cause="missing_card",
+                status=status,
+            )
+        )
+    (root / "task.yaml").write_text(NOTICE_TASK, encoding="utf-8")
+    ok_json(invoke("task", "add", "task.yaml", "--json"), "task add")
+
+
+def test_status_counts_layers_candidates_and_tasks(in_project: Path) -> None:
+    write_status_fixture(in_project)
+
+    body = ok_json(invoke("status", "--json"), "status")
+
+    empty = {"total": 0, "active": 0, "candidate": 0, "dormant": 0, "retired": 0}
+    assert body == {
+        "layers": {
+            "instinct": {
+                "total": 5,
+                "active": 5,
+                "candidate": 0,
+                "dormant": 0,
+                "retired": 0,
+                "signature": 5,
+            },
+            "tendency": empty,
+            "priority": empty,
+            "principle": {**empty, "total": 2, "active": 2},
+        },
+        "candidates": {"pending": 1},
+        "tasks": {"train": 1, "sealed": 0, "spare": 0},
+    }
+
+
+def test_status_text_mode(in_project: Path) -> None:
+    write_status_fixture(in_project)
+
+    result = invoke("status")
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == [
+        "층별 항목(active/전체): 예시 5/5(대표작 5), 판단 카드 0/0, 우선순위 0/0, 원칙 2/2",
+        "승인 대기 후보 1개. 과제: 학습 1, 봉인 0, 예비 0",
+    ]
+
+
+def test_status_counts_sealed_tasks_without_reading_them(in_project: Path) -> None:
+    sealed = in_project / ".deeptwin" / "tasks" / "sealed"
+    (sealed / "task-0101.yaml").write_text("reference: [닫히지 않은\n", encoding="utf-8")
+
+    body = ok_json(invoke("status", "--json"), "status")
+
+    assert body["tasks"] == {"train": 0, "sealed": 1, "spare": 0}
+    assert "닫히지" not in invoke("status").stdout
+
+
+@pytest.mark.parametrize(
+    ("command", "args"),
+    [
+        ("skill new", ("skill", "new", "notice", "--json")),
+        ("import", ("import", "past", "--skill", "notice", "--json")),
+        ("status", ("status", "--json")),
+    ],
+    ids=["skill-new", "import", "status"],
+)
+def test_new_commands_need_init(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str, args: tuple[str, ...]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "past").mkdir()
+    (tmp_path / "past" / "p1.txt").write_text("지난 공지", encoding="utf-8")
+
+    message = error_json(invoke(*args), command, "not_initialized")
+
+    assert message == "먼저 deeptwin init을 실행하세요."
+    assert not (tmp_path / ".deeptwin").exists()
+    assert not (tmp_path / "skills").exists()
+
+
+def test_new_commands_write_no_ledger_line(in_project: Path) -> None:
+    ok_json(invoke("skill", "new", "notice", "--json"), "skill new")
+    write_past(in_project)
+    ok_json(invoke("import", "past", "--skill", "notice", "--signature", "--json"), "import")
+    ok_json(invoke("import", "past", "--skill", "notice", "--json"), "import")
+    ok_json(invoke("status", "--json"), "status")
+    invoke("status")
+
+    assert not (in_project / ".deeptwin" / "ledger.jsonl").exists()

@@ -9,11 +9,13 @@
 
 봉인 과제는 여기서 막는다(`store.guard`). `tasks("sealed")`와 봉인 과제의 `task(id)`는
 `SealedToken` 없이 부르면 `sealed_access`다. 과제의 분할은 등록한 뒤 바꿀 수 없다.
+과제 파일 수를 세는 `task_counts`는 파일 이름만 보므로 봉인 과제도 토큰 없이 센다.
 """
 
 from __future__ import annotations
 
 import re
+import shutil
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -25,14 +27,18 @@ from filelock import FileLock, Timeout
 
 from deeptwin.errors import (
     InvalidFileError,
+    InvalidIdError,
     NotInitializedError,
     ReferenceRequiredError,
+    SkillExistsError,
     SkillNotFoundError,
     StoreLockedError,
     TaskExistsError,
     TaskNotFoundError,
 )
 from deeptwin.models import (
+    FLUID_CLOSE,
+    FLUID_OPEN,
     Candidate,
     Card,
     Example,
@@ -46,6 +52,7 @@ from deeptwin.models import (
 from deeptwin.store import ledger
 from deeptwin.store.files import (
     Problem,
+    dump_yaml,
     invalid_file,
     read_model,
     read_models,
@@ -89,6 +96,16 @@ LOCK_TIMEOUT = 30.0
 GITIGNORE_LINE = ".deeptwin/"
 _GITIGNORE_SAME = frozenset({".deeptwin/", ".deeptwin", "/.deeptwin/", "/.deeptwin"})
 
+SKILLS_DIR = "skills"
+"""스킬 폴더들을 두는 곳. 프로젝트 루트 기준이다(`skills/<id>/`)."""
+SKILL_CONFIG_FILE = "skill.yaml"
+SKILL_MD_FILE = "SKILL.md"
+CHECKS_FILE = "checks.py"
+"""스킬 폴더의 세 파일: 설정, 고정 지침과 유동 영역 표시, 원칙의 검사 함수."""
+
+EXAMPLE_ID_PREFIX = "ex-"
+"""`add_examples`가 매기는 예시 ID의 앞부분. 뒤에 4자리 번호가 붙는다(`ex-0001`)."""
+
 TASKS_DIR = "tasks"
 SPLITS: tuple[Split, ...] = get_args(Split)
 """과제의 세 분할: 학습(`train`), 봉인(`sealed`), 예비(`spare`). 폴더 이름과 같다."""
@@ -98,6 +115,7 @@ _TASK_SPLITS: tuple[Split, ...] = ("sealed", "train", "spare")
 봉인 과제로 친다."""
 
 _RUN_DIR = re.compile(r"run-(\d+)")
+_EXAMPLE_NUMBER = re.compile(re.escape(EXAMPLE_ID_PREFIX) + r"([0-9]+)")
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _ID_RULE = "영문자, 숫자, '.', '_', '-'만 쓰고 영문자나 숫자로 시작하세요."
 
@@ -112,6 +130,26 @@ class InitResult:
     """새로 만든 폴더. `.deeptwin/` 기준 POSIX 경로."""
     gitignore: Literal["added", "present"]
     """`.gitignore`에 `.deeptwin/` 줄을 더했으면 `added`, 이미 있었으면 `present`."""
+
+
+@dataclass(frozen=True)
+class NewSkill:
+    """`DeepTwin.new_skill`의 결과."""
+
+    skill: Skill
+    """만든 `skill.yaml`을 `DeepTwin.skill`로 다시 읽은 것."""
+    files: tuple[Path, ...]
+    """만든 파일: `skill.yaml`, `SKILL.md`, `checks.py` 순이다."""
+
+
+@dataclass(frozen=True)
+class AddedExample:
+    """`DeepTwin.add_examples`가 받은 예시 하나의 결과."""
+
+    example: Example | None
+    """새 ID를 매겨 쓴 예시. 건너뛰었으면 `None`이다."""
+    same_as: str | None = None
+    """건너뛴 까닭이 된 예시의 ID. `text`가 같은, 이미 있던 예시나 이번에 앞서 쓴 예시다."""
 
 
 @dataclass(frozen=True)
@@ -266,11 +304,107 @@ class DeepTwin:
             )
         return skill
 
+    def task_counts(self) -> dict[Split, int]:
+        """분할마다 `tasks/<split>/`의 과제 파일 수. 분할 순서는 `SPLITS`(train, sealed, spare)다.
+
+        파일을 열지 않고 이름만 센다(`.yaml` 파일, 점으로 시작하는 파일은 뺀다). 그래서 봉인
+        과제도 토큰 없이 세고, 형식이 틀린 파일도 하나로 센다. 폴더가 없으면 0이다.
+        """
+        counts: dict[Split, int] = {}
+        for split in SPLITS:
+            folder = self.path / TASKS_DIR / split
+            counts[split] = sum(1 for _ in _yaml_files(folder)) if folder.is_dir() else 0
+        return counts
+
     # 쓰기: 모두 잠금 안에서 원자적으로 쓴다. 쓴 파일의 경로를 돌려준다
 
     def write_example(self, example: Example) -> Path:
         """`layers/examples/<id>.yaml`에 쓴다."""
         return self._write_one(self.path / EXAMPLES_DIR, example)
+
+    def add_examples(self, drafts: Sequence[Example]) -> list[AddedExample]:
+        """예시 여러 건에 한 잠금 안에서 새 ID를 매겨 쓴다. 받은 순서대로 결과를 돌려준다.
+
+        - ID는 `ex-NNNN`이다. 지금 있는 `ex-` 번호의 최댓값 + 1부터 받은 순서로 매긴다.
+          받은 예시의 `id`는 쓰지 않는다(아무 값이나 두면 된다).
+        - 같은 스킬에 `text`가 같은 예시가 이미 있거나, 이번에 앞서 받은 예시와 같으면 쓰지 않고
+          건너뛴다. `text`는 앞뒤 공백을 떼고 견준다. `text`가 없는 예시(`pair`)는 견주지 않는다.
+        - 쓰다가 실패하면 이번에 쓴 파일을 지우고 그 오류를 그대로 낸다.
+
+        지금 있는 예시를 먼저 모두 읽으므로, 형식이 틀린 예시 파일이 있으면 아무것도 쓰지 않고
+        `invalid_file`이다. 스킬이 있는지는 부르는 쪽이 먼저 본다.
+        """
+        folder = self.path / EXAMPLES_DIR
+        with self.lock():
+            existing = self.examples()
+            known: dict[tuple[str, str], str] = {}
+            for example in existing:
+                if example.text is not None:
+                    known.setdefault((example.skill, example.text.strip()), example.id)
+            number = 1 + max(
+                (int(m.group(1)) for e in existing if (m := _EXAMPLE_NUMBER.fullmatch(e.id))),
+                default=0,
+            )
+            results: list[AddedExample] = []
+            written: list[Path] = []
+            try:
+                for draft in drafts:
+                    key = (draft.skill, draft.text.strip()) if draft.text is not None else None
+                    if key is not None and key in known:
+                        results.append(AddedExample(example=None, same_as=known[key]))
+                        continue
+                    # 읽지 않는 이름의 파일(예: 대소문자만 다른 확장자)도 덮어쓰지 않는다
+                    while (folder / f"{EXAMPLE_ID_PREFIX}{number:04d}.yaml").exists():
+                        number += 1
+                    example = draft.model_copy(update={"id": f"{EXAMPLE_ID_PREFIX}{number:04d}"})
+                    number += 1
+                    written.append(self.write_example(example))
+                    if key is not None:
+                        known[key] = example.id
+                    results.append(AddedExample(example=example))
+            except BaseException:
+                for path in written:
+                    path.unlink(missing_ok=True)
+                raise
+        return results
+
+    def new_skill(self, skill_id: str) -> NewSkill:
+        """프로젝트 루트의 `skills/<skill_id>/`에 스킬 뼈대를 만든다.
+
+        - `skill.yaml`: `schema: 1`, `id`, `version: 1`, 빈 `decision_points`와 `context_axes`,
+          기본 `budget`, `example_policy: random_signature`, `checks: checks.py`.
+        - `SKILL.md`: 고정 지침을 적을 자리와 유동 영역 표시 쌍 한 번.
+        - `checks.py`: 함수 없이 검사 함수 규약을 적은 주석만.
+
+        ID가 ID 규칙에 맞지 않으면 `invalid_id`, 그 폴더가 이미 있으면(비었어도) `skill_exists`다.
+        어느 쪽이든 아무 파일도 만들거나 바꾸지 않는다. 쓰다가 실패하면 만든 폴더를 지운다.
+        만든 뒤 `skill(skill_id)`로 다시 읽어 돌려준다.
+        """
+        if not _SAFE_ID.fullmatch(skill_id):
+            raise InvalidIdError(f"쓸 수 없는 스킬 ID입니다: {skill_id!r}. {_ID_RULE}")
+        skills = self.root / SKILLS_DIR
+        folder = skills / skill_id
+        contents = {
+            SKILL_CONFIG_FILE: _skill_yaml(skill_id),
+            SKILL_MD_FILE: _skill_md(skill_id),
+            CHECKS_FILE: _checks_py(skill_id),
+        }
+        with self.lock():
+            skills.mkdir(parents=True, exist_ok=True)
+            try:
+                folder.mkdir()
+            except FileExistsError:
+                raise SkillExistsError(
+                    f"스킬 폴더가 이미 있습니다: {SKILLS_DIR}/{skill_id}/. "
+                    "그 안의 파일은 바꾸지 않았습니다. 다른 ID를 쓰거나 그 폴더의 파일을 고치세요."
+                ) from None
+            try:
+                for name, text in contents.items():
+                    write_text(folder / name, text)
+            except BaseException:
+                shutil.rmtree(folder, ignore_errors=True)
+                raise
+        return NewSkill(skill=self.skill(skill_id), files=tuple(folder / name for name in contents))
 
     def write_card(self, card: Card) -> Path:
         """`layers/cards/<id>.yaml`에 쓴다."""
@@ -564,6 +698,62 @@ def read_task_file(path: Path, *, root: Path) -> Task:
             ],
         )
     return task
+
+
+def _skill_yaml(skill_id: str) -> str:
+    """새 스킬의 `skill.yaml` 글. 값은 `Skill`의 기본값이라 다시 읽으면 같은 설정이다.
+
+    `dump_yaml`이 쓰므로 `123`, `true` 같은 ID도 글로 따옴표를 쳐서 쓴다.
+    """
+    skill = Skill(id=skill_id, checks=CHECKS_FILE, skill_md=Path(SKILL_MD_FILE))
+    head = (
+        f"# 스킬 {skill_id}의 설정. 판단 지점(decision_points)과 맥락 축(context_axes)을 채운다.\n"
+        "# 예:\n"
+        "#   decision_points:\n"
+        "#     - {id: opening, name: 첫 문장, weight: 2}\n"
+        "#   context_axes:\n"
+        "#     purpose: [문의, 상담, 기타]\n"
+    )
+    return head + dump_yaml(skill.model_dump(by_alias=True))
+
+
+def _skill_md(skill_id: str) -> str:
+    """새 스킬의 `SKILL.md` 글. 유동 영역 표시 쌍이 정확히 한 번 든다."""
+    return (
+        "---\n"
+        f"name: {skill_id}\n"
+        "description: 이 스킬이 하는 일을 한 문장으로 적는다.\n"
+        "---\n"
+        "\n"
+        f"# {skill_id}\n"
+        "\n"
+        "이 스킬의 고정 지침(하는 일, 절차, 형식)을 여기에 적는다.\n"
+        "deeptwin은 아래 표시 쌍 사이에 이번 작업의 개인 기준을 넣는다. 표시 쌍은 한 번만 둔다.\n"
+        "\n"
+        f"{FLUID_OPEN}\n"
+        f"{FLUID_CLOSE}\n"
+    )
+
+
+def _checks_py(skill_id: str) -> str:
+    """새 스킬의 `checks.py` 글. 함수 없이 검사 함수 규약을 적은 주석만 든다."""
+    return (
+        f"# 스킬 {skill_id}의 원칙 검사 함수.\n"
+        "#\n"
+        "# 원칙(.deeptwin/layers/principles.yaml)의 check에 함수 이름을 적고, 그 이름의 함수를\n"
+        "# 이 파일의 모듈 수준에 둔다. 함수는 결과물 글을 받아 원칙을 지켰으면 True,\n"
+        "# 어겼으면 False를 돌려준다: fn(output: str) -> bool\n"
+        "# 표준 라이브러리와 설치한 패키지는 import할 수 있고,\n"
+        "# 같은 폴더의 다른 파일은 import할 수 없다.\n"
+        "#\n"
+        "# 예:\n"
+        "#\n"
+        "# import re\n"
+        "#\n"
+        "#\n"
+        "# def no_inflated_numbers(output: str) -> bool:\n"
+        '#     return not re.search(r"역대급|최고의|100%", output)\n'
+    )
 
 
 def _check_id(item_id: str) -> None:

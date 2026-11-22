@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import codecs
 import json
 import os
 import re
@@ -93,7 +94,7 @@ def invalid_file(
     if text is None:
         text = path.read_bytes().decode("utf-8-sig", "replace")
     lines = _line_map(text)
-    shown = _display(path, root)
+    shown = display_path(path, root)
     located = sorted(((_line_of(lines, p.loc), p) for p in problems), key=lambda pair: pair[0])
     return InvalidFileError(
         "\n".join(
@@ -169,25 +170,36 @@ def _represent_str(dumper: yaml.SafeDumper, data: str) -> yaml.ScalarNode:
 _Dumper.add_representer(str, _represent_str)
 
 
+def read_utf8(path: Path, *, root: Path) -> str:
+    """파일을 UTF-8 글로 읽는다. 맨 앞의 BOM은 뗀다. 줄바꿈은 바꾸지 않는다.
+
+    UTF-8이 아니면 `InvalidFileError`다. 메시지는 `<root 기준 경로>:<줄>: …`이고, 줄은
+    처음으로 읽지 못한 바이트가 든 줄이다.
+    """
+    raw = path.read_bytes()
+    data = raw.removeprefix(codecs.BOM_UTF8)
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        # 위치는 BOM을 뗀 바이트 기준이다. 줄도 같은 바이트에서 센다
+        line = data.count(b"\n", 0, error.start) + 1
+        raise InvalidFileError(
+            f"{display_path(path, root)}:{line}: UTF-8 글로 읽을 수 없습니다"
+        ) from None
+
+
 def _load(path: Path, root: Path) -> tuple[str, Any]:
     """파일을 UTF-8 글로 읽고 YAML로 푼다. 어느 쪽이든 실패하면 `InvalidFileError`다."""
-    raw = path.read_bytes()
-    try:
-        text = raw.decode("utf-8-sig")
-    except UnicodeDecodeError as error:
-        line = raw.count(b"\n", 0, error.start) + 1
-        raise InvalidFileError(
-            f"{_display(path, root)}:{line}: UTF-8 글로 읽을 수 없습니다"
-        ) from None
+    text = read_utf8(path, root=root)
     try:
         return text, yaml.safe_load(text)
     except yaml.YAMLError as error:
-        raise InvalidFileError(f"{_display(path, root)}:{_yaml_error(error)}") from None
+        raise InvalidFileError(f"{display_path(path, root)}:{_yaml_error(error)}") from None
     except ValueError:
         # PyYAML은 없는 날짜·시각(예: 2026-02-30)을 YAMLError가 아닌 ValueError로 낸다.
         # 위치를 알려 주지 않으므로 1번째 줄로 쓰고, 받은 값은 쓰지 않는다
         raise InvalidFileError(
-            f"{_display(path, root)}:1: YAML 문법이 틀렸습니다: "
+            f"{display_path(path, root)}:1: YAML 문법이 틀렸습니다: "
             "값으로 읽을 수 없는 날짜나 시각이 있습니다"
         ) from None
 
@@ -204,8 +216,8 @@ def _yaml_error(error: yaml.YAMLError) -> str:
     return text
 
 
-def _display(path: Path, root: Path) -> str:
-    """메시지에 쓰는 경로: `root` 기준 POSIX 경로. `root` 밖이면 받은 경로 그대로다."""
+def display_path(path: Path, root: Path) -> str:
+    """메시지와 결과에 쓰는 경로: `root` 기준 POSIX 경로. `root` 밖이면 받은 경로 그대로다."""
     try:
         return path.relative_to(root).as_posix()
     except ValueError:

@@ -24,6 +24,13 @@ from pydantic import (
 SCHEMA_VERSION = 1
 """이 deeptwin이 읽고 쓰는 파일 형식의 버전."""
 
+FLUID_OPEN = "<!-- deeptwin:fluid -->"
+FLUID_CLOSE = "<!-- /deeptwin:fluid -->"
+"""`SKILL.md`의 유동 영역 표시 쌍. 조립한 지침이 이 둘 사이에 들어간다(`compose.fill_fluid`).
+
+조립(`compose`)과 스킬 뼈대 만들기(`DeepTwin.new_skill`)가 같은 표시를 쓰도록 여기에 둔다.
+"""
+
 Status: TypeAlias = Literal["candidate", "active", "dormant", "retired"]
 Approval: TypeAlias = Literal["auto", "human"]
 Split: TypeAlias = Literal["train", "sealed", "spare"]

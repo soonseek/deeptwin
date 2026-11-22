@@ -165,6 +165,27 @@ class ReferenceRequiredError(DeeptwinError):
         super().__init__("reference_required", message)
 
 
+class InvalidIdError(DeeptwinError):
+    """새로 만들 항목의 ID가 ID 규칙(영문자, 숫자, `.`, `_`, `-`)에 맞지 않는다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("invalid_id", message)
+
+
+class SkillExistsError(DeeptwinError):
+    """만들려는 스킬 폴더(`skills/<id>/`)가 이미 있다. 그 안의 파일은 건드리지 않는다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("skill_exists", message)
+
+
+class NothingToImportError(DeeptwinError):
+    """가져오기에 준 폴더 바로 아래에 글 파일(`.txt`, `.md`)이 없다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("nothing_to_import", message)
+
+
 class SealedChangedError(DeeptwinError):
     """봉인 과제의 파일이 없거나, 기준이 등록 때와 다르거나, 원장에 등록되지 않았다.
 
