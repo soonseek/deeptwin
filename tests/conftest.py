@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -7,6 +8,10 @@ from pathlib import Path
 import pytest
 
 import deeptwin._commit
+
+# GitHub Actions(GITHUB_ACTIONS)에서는 typer가 도움말과 인자 오류를 색 있는 터미널 글로 내서
+# 옵션 이름이 이스케이프 코드로 갈라진다. typer를 import하기 전에 꺼 둔다
+os.environ.setdefault("_TYPER_FORCE_DISABLE_TERMINAL", "1")
 
 MINIMAL = Path(__file__).parent / "fixtures" / "minimal"
 
