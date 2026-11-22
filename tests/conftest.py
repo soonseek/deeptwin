@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
+
+import deeptwin._commit
 
 MINIMAL = Path(__file__).parent / "fixtures" / "minimal"
 
@@ -67,3 +70,44 @@ def in_example(example_copy: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """예제 복사본으로 옮겨 간 상태."""
     monkeypatch.chdir(example_copy)
     return example_copy
+
+
+REPO = Path(__file__).resolve().parent.parent
+"""저장소(또는 sdist를 푼 폴더)의 최상위."""
+
+
+def source_head() -> str | None:
+    """이 패키지가 저장소의 `src/deeptwin`에서 돌면 그 저장소의 `git rev-parse HEAD`다.
+
+    저장소 밖(예: sdist를 푼 폴더)이거나 git이 없으면 `None`이다.
+    """
+    package = Path(deeptwin._commit.__file__).parent
+    source = REPO / "src" / "deeptwin"
+    if shutil.which("git") is None or not (source.is_dir() and source.samefile(package)):
+        return None
+    found: list[str] = []
+    for args in (("rev-parse", "--show-toplevel"), ("rev-parse", "HEAD")):
+        done = subprocess.run(
+            ["git", *args],
+            cwd=REPO,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+        if done.returncode != 0:
+            return None
+        found.append(done.stdout.strip())
+    top, head = found
+    return head if Path(top).samefile(REPO) else None
+
+
+@pytest.fixture
+def from_source(monkeypatch: pytest.MonkeyPatch) -> str | None:
+    """빌드 훅이 넣은 커밋 없이 소스의 git에서 커밋을 읽게 한다. 기대하는 커밋을 돌려준다.
+
+    sdist를 풀어 돌릴 때는 그 안의 `_commit.py`에 해시가 있으므로 값을 `None`으로 바꿔 둔다.
+    """
+    monkeypatch.setattr(deeptwin._commit, "COMMIT", None)
+    return source_head()

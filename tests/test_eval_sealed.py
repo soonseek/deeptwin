@@ -591,7 +591,12 @@ def test_report_names_reused_tasks_and_the_changed_reference(in_example: Path) -
         "reused",
         "reference_changed",
         "skill_changed",
+        "package_version",
+        "commit",
+        "package_changed",
+        "prompt_versions",
         "comparisons",
+        "costs",
     ]
     assert (report["reused"], report["reference_changed"]) == (SEALED, ["task-0101"])
     markdown = (folder / "report.md").read_text("utf-8")
@@ -649,19 +654,39 @@ def test_spare_eval_keeps_empty_seal_fields_and_the_same_report_text(in_example:
     assert (info["seal_open"], info["reused"]) == (None, [])
     assert (reported["reused"], reported["reference_changed"]) == ([], [])
     [c] = reported["comparisons"]
+    base, full = reported["costs"]
+    commit = reported["commit"] or "알 수 없음"
     markdown = (eval_dir(in_example) / "report.md").read_text("utf-8")
     assert markdown == (
         f"# 판정 보고서 {FIRST}\n"
         "\n"
         f"- 스킬: {SKILL}, 분할: spare, 쌍: 2개(모두 골랐습니다)\n"
         "\n"
-        "| 비교 | 쌍 | 바탕+딥트윈이 이긴 횟수 | 선택률 | p값 |\n"
-        "|------|----|----|----|----|\n"
-        f"| 바탕+딥트윈 대 바탕만 | 2 | {c['wins']} | {c['selection_rate'] * 100:.1f}% | "
-        f"{c['p_value']:.4f} |\n"
+        "| 비교 | 판정한 쌍 | 전체 쌍 | 바탕+딥트윈이 이긴 횟수 | 선택률 | p값 | "
+        "고르는 데 걸린 초(평균) | 고르는 데 걸린 초(중앙값) |\n"
+        "|------|----|----|----|----|----|----|----|\n"
+        f"| 바탕+딥트윈 대 바탕만 | 2 | 2 | {c['wins']} | {c['selection_rate'] * 100:.1f}% | "
+        f"{c['p_value']:.4f} | {c['mean_seconds']:.3f} | {c['median_seconds']:.3f} |\n"
         "\n"
         "p값은 한쪽 꼬리 이항 검정의 값입니다. "
         "두 결과물을 반반으로 고른다고 할 때 이만큼 이상 이길 확률입니다.\n"
+        "\n"
+        "## 실행 비용\n"
+        "\n"
+        "| 조건 | 호출 수 | 호출에 걸린 초 | 입력 글자 수 | 출력 글자 수 |\n"
+        "|------|----|----|----|----|\n"
+        f"| 바탕만 | 2 | {base['seconds']:.3f} | {base['input_chars']} | {base['output_chars']} |\n"
+        f"| 바탕+딥트윈 | 2 | {full['seconds']:.3f} | {full['input_chars']} | "
+        f"{full['output_chars']} |\n"
+        "\n"
+        "조건마다 이 평가의 실행 폴더에 남은 calls.jsonl의 줄 수와 합입니다. "
+        "토큰 수는 재지 않으므로 적지 않습니다.\n"
+        "\n"
+        "## 패키지와 프롬프트\n"
+        "\n"
+        f"- 패키지: deeptwin {reported['package_version']}\n"
+        f"- 커밋: {commit}\n"
+        "- 프롬프트 버전: 없음(이 평가의 실행은 프롬프트 자산을 쓰지 않았습니다)\n"
     )
     assert seal_lines(in_example) == []
 

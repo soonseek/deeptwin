@@ -29,6 +29,7 @@ __all__ = [
     "Comparison",
     "Composed",
     "Condition",
+    "ConditionCost",
     "Context",
     "EvalInfo",
     "EvalKey",
@@ -436,6 +437,11 @@ class EvalInfo(_FileModel):
     skill_changed: bool = False
     """쌍을 만드는 동안 바탕 스킬의 해시가 `skill_hash`와 달라진 것을 봤으면 참이다. 한 번 참이 되면
     파일을 되돌려도 그대로다."""
+    package_version: str | None = None
+    """평가를 시작할 때의 deeptwin 버전. `None`이면(이 필드가 없는 예전 파일) 보고서가 패키지가
+    바뀌었는지 보지 않는다."""
+    commit: str | None = None
+    """평가를 시작할 때의 deeptwin 커밋 해시. 알 수 없었으면 `None`이다."""
     seal_open: str | None = None
     """봉인 평가면 원장의 `seal_open` 줄 ID(`seal-NNNN`). 봉인이 아니거나 아직 열기 전이면
     `None`이다."""
@@ -506,12 +512,40 @@ class Comparison(BaseModel):
 
     against: Condition
     pairs: int
+    """그 상대와 견준 쌍의 수."""
+    judged: int
+    """그 쌍 가운데 선택이 있는 수. 모두 고른 뒤에만 보고서를 내므로 `pairs`와 같다."""
     wins: int
     """고른 쪽이 `full`인 쌍의 수."""
     selection_rate: float
     """`wins / pairs`."""
     p_value: float
     """한쪽 꼬리 이항 검정의 값 P(X >= wins), X ~ B(pairs, 0.5)."""
+    mean_seconds: float | None
+    """그 쌍들을 고르는 데 걸린 초(`Choice.seconds`)의 평균. 소수 셋째 자리까지다. 판정한 쌍이
+    없으면 `None`이다."""
+    median_seconds: float | None
+    """같은 초의 중앙값. 소수 셋째 자리까지다. 판정한 쌍이 없으면 `None`이다."""
+
+
+class ConditionCost(BaseModel):
+    """보고서의 조건 하나의 실행 비용: 그 평가의 그 조건 실행들의 `calls.jsonl`을 더한 값.
+
+    그 조건의 실행 가운데 하나라도 `calls.jsonl`이 없으면 네 값이 모두 `None`이다. 토큰 수는
+    재지 않으므로 두지 않는다.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    condition: Condition
+    calls: int | None
+    """호출 수(`calls.jsonl`의 줄 수의 합)."""
+    seconds: float | None
+    """호출에 걸린 초(`Call.seconds`)의 합. 소수 셋째 자리까지다."""
+    input_chars: int | None
+    """입력 글자 수의 합."""
+    output_chars: int | None
+    """출력 글자 수의 합."""
 
 
 class EvalReport(_FileModel):
@@ -529,5 +563,17 @@ class EvalReport(_FileModel):
     skill_changed: bool = False
     """평가를 시작한 뒤 바탕 스킬(`SKILL.md`, `skill.yaml`, `checks.py`)이 바뀌었으면 참이다.
     `eval.json`의 `skill_changed`이거나 보고서를 낼 때의 해시가 `skill_hash`와 다를 때다."""
+    package_version: str
+    """보고서를 낼 때의 deeptwin 버전."""
+    commit: str | None
+    """보고서를 낼 때의 deeptwin 커밋 해시. 알 수 없으면 `None`이다."""
+    package_changed: bool = False
+    """`eval.json`의 `package_version`이 있고, 그 (버전, 커밋)이 보고서를 낼 때와 다르면 참이다.
+    `package_version`이 없는 예전 평가는 견주지 않고 거짓이다."""
+    prompt_versions: list[str | None]
+    """이 평가의 실행들이 원장의 `run` 줄에 적은 `prompt_version`. 대응표의 `runs` 순서로 처음 나온
+    값만 하나씩 둔다. 원장에서 실행 줄을 하나도 찾지 못하면 비었다."""
     comparisons: list[Comparison]
     """상대마다 하나. `eval.json`의 `against` 순서다."""
+    costs: list[ConditionCost]
+    """조건마다 하나. 대응표의 `runs`에 든 조건을 `base`, `examples`, `full` 순서로 둔다."""

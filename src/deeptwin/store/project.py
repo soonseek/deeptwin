@@ -75,6 +75,7 @@ from deeptwin.store.guard import (
 )
 
 __all__ = [
+    "CALLS_FILE",
     "DATA_DIR",
     "DeepTwin",
     "LEDGER_FILE",
@@ -104,6 +105,8 @@ PRIORITIES_FILE = "layers/priorities.yaml"
 PRINCIPLES_FILE = "layers/principles.yaml"
 LEDGER_FILE = "ledger.jsonl"
 LOCK_FILE = ".lock"
+CALLS_FILE = "calls.jsonl"
+"""실행 폴더(`runs/<실행 ID>/`)에 모델 호출마다 한 줄씩 남기는 기록. 필드는 `models.Call`이다."""
 
 LOCK_TIMEOUT = 30.0
 """쓰기 잠금을 기다리는 최대 초. 넘으면 `store_locked`다."""

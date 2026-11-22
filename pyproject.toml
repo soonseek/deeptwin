@@ -55,7 +55,12 @@ include = [
     "CHANGELOG.md",
     "LICENSE",
     "pyproject.toml",
+    # sdist로 wheel을 만들 때도 빌드 훅을 읽는다. 없으면 그 빌드가 실패한다
+    "hatch_build.py",
 ]
+
+# 빌드 훅(hatch_build.py): sdist와 wheel 안의 src/deeptwin/_commit.py에만 빌드한 커밋 해시를 넣는다
+[tool.hatch.build.hooks.custom]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

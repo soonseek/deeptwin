@@ -68,6 +68,8 @@ EVAL_KEYS = [
     "seed",
     "skill_hash",
     "skill_changed",
+    "package_version",
+    "commit",
     "seal_open",
     "reused",
 ]
@@ -80,7 +82,12 @@ REPORT_KEYS = [
     "reused",
     "reference_changed",
     "skill_changed",
+    "package_version",
+    "commit",
+    "package_changed",
+    "prompt_versions",
     "comparisons",
+    "costs",
 ]
 LEARNED_EXAMPLE = """\
 # 가상의 강사 서도윤이 학습 중에 고쳐 승인한 대표작(good). 테스트용으로 지어낸 것이다.

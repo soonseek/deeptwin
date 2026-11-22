@@ -337,7 +337,7 @@ deeptwin eval report eval-0001
 
 | 파일 | 내용 |
 |------|------|
-| `eval.json` | `schema`, `id`, `ts`, `skill`, `split`, `tasks`, `against`(견준 상대. 기본은 `["base", "examples"]`), `seed`, `skill_hash`(평가를 준비할 때의 바탕 스킬 해시), `skill_changed`(쌍을 만드는 동안 바탕 스킬이 바뀌었으면 `true`), `seal_open`(봉인 평가의 원장 `seal_open` 줄 ID, 아니면 `null`), `reused`(재사용한 봉인 과제, 아니면 `[]`). `skill_hash`, `skill_changed`, `seal_open`, `reused`가 없는 예전 파일도 읽는다 |
+| `eval.json` | `schema`, `id`, `ts`, `skill`, `split`, `tasks`, `against`(견준 상대. 기본은 `["base", "examples"]`), `seed`, `skill_hash`(평가를 준비할 때의 바탕 스킬 해시), `skill_changed`(쌍을 만드는 동안 바탕 스킬이 바뀌었으면 `true`), `package_version`(평가를 시작할 때의 deeptwin 버전), `commit`(평가를 시작할 때의 커밋 해시, 알 수 없으면 `null`), `seal_open`(봉인 평가의 원장 `seal_open` 줄 ID, 아니면 `null`), `reused`(재사용한 봉인 과제, 아니면 `[]`). `skill_hash`, `skill_changed`, `package_version`, `commit`, `seal_open`, `reused`가 없는 예전 파일도 읽는다. 이어 가기, 봉인 열기, `skill_changed` 표시는 `package_version`과 `commit`을 바꾸지 않는다 |
 | `outputs/<조건>/<과제 ID>.md` | 조건별 결과물(`base`, `examples`, `full` 가운데 만든 것). 그 실행의 `output.md`와 바이트까지 같다 |
 | `key.json` | 대응표. `schema`, `eval`, `runs`(과제 ID -> 조건 -> 실행 ID), `pairs`(쌍 ID -> `task`, `left`, `right`의 조건). 생성마다 그때까지의 `runs`와 빈 `pairs`로 다시 쓰고, 다 만든 뒤 `pairs`를 채운다 |
 | `pairs.jsonl` | 쌍 목록. 한 줄에 `id`, `task`, `left`, `right`(두 결과물의 글)뿐이다 |
@@ -396,23 +396,56 @@ deeptwin eval report eval-0001
 
 `deeptwin eval report`는 모든 쌍을 골랐을 때만 보고서를 씁니다. 남은 쌍이 있으면 그 수를 알리고 `judging_unfinished`로 멈추며 보고서 파일을 쓰지 않습니다.
 
-- `comparisons`는 `eval.json`의 `against` 순서로 상대마다 하나이고, 상대마다 `against`, `pairs`(그 상대와 견준 쌍 수), `wins`(고른 쪽이 바탕+딥트윈인 수), `selection_rate`(`wins / pairs`), `p_value`를 냅니다. 머리의 `pairs`는 모든 쌍의 수입니다.
-- `report.json`은 `schema`, `eval`, `skill`, `split`, `pairs`, `reused`, `reference_changed`, `skill_changed`, `comparisons`이고, `report.md`는 같은 값을 한국어 표로 씁니다(선택률은 %, p값은 소수 넷째 자리). 시각을 적지 않으므로 다시 내도 바이트까지 같습니다. `reused`와 `reference_changed`는 봉인 평가에만 값이 있고(아래 봉인 평가), 봉인이 아니면 `[]`입니다. `skill_changed`는 평가를 시작한 뒤 바탕 스킬이 바뀌었으면 `true`이고(아래 바탕 스킬 해시), 그때만 `report.md`의 머리 줄 아래(기준 줄이 있으면 그다음)에 `- 바탕 스킬이 평가를 시작한 뒤 바뀌었습니다(SKILL.md, skill.yaml, checks.py).`를 씁니다.
+- `comparisons`는 `eval.json`의 `against` 순서로 상대마다 하나이고, 상대마다 `against`, `pairs`(그 상대와 견준 쌍 수), `judged`(그 가운데 판정한 쌍 수. 모두 고른 뒤에만 보고서를 내므로 `pairs`와 같습니다), `wins`(고른 쪽이 바탕+딥트윈인 수), `selection_rate`(`wins / pairs`), `p_value`, `mean_seconds`와 `median_seconds`(그 상대의 쌍들을 고르는 데 걸린 초의 평균과 중앙값)를 냅니다. 머리의 `pairs`는 모든 쌍의 수입니다.
+- 고르는 데 걸린 초는 `choices.jsonl`의 `seconds`(쌍을 보여 준 때부터 고른 때까지)입니다. 상대마다 그 상대의 쌍만 세고, 소수 셋째 자리로 반올림합니다. 판정한 쌍이 없으면 `null`입니다.
+- `costs`(실행 비용)는 `key.json`의 `runs`에 든 조건마다 하나이고 `base`, `examples`, `full` 순입니다. 조건마다 `condition`, `calls`(호출 수), `seconds`(호출에 걸린 초의 합, 소수 셋째 자리), `input_chars`, `output_chars`(입력과 출력 글자 수의 합)이고, 그 조건의 실행마다 `.deeptwin/runs/<실행 ID>/calls.jsonl`의 줄을 더한 값입니다. 그 조건의 실행 가운데 하나라도 `calls.jsonl`이 없으면 네 값이 모두 `null`이고(`report.md`에는 `기록 없음`), 읽을 수 없는 줄이 있으면 `invalid_file`(메시지는 `.deeptwin/runs/run-0003/calls.jsonl:1: …`처럼 시작합니다)로 멈추며 보고서 파일을 쓰지 않습니다. 토큰 수와 금액은 재지 않으므로 적지 않습니다.
+- `package_version`과 `commit`은 보고서를 낼 때의 deeptwin 버전과 커밋 해시입니다(아래 커밋 해시). `package_changed`는 `eval.json`의 `package_version`이 있고, 그 `package_version`과 `commit`이 보고서를 낼 때와 다르면 `true`입니다(둘 다 `null`인 커밋은 같다고 봅니다). 봉인 평가 중에는 코드, 조립 규칙, 프롬프트를 바꾸지 않기로 했으므로 이것으로 확인합니다. 막지 않고 `report.md`의 머리 줄 아래에 시작할 때와 지금의 버전과 커밋을 적습니다. `package_version`이 없는 예전 평가는 견주지 않고 `false`입니다.
+- `prompt_versions`는 이 평가의 실행들이 원장의 `run` 줄에 적은 `prompt_version`입니다. `key.json`의 `runs` 순서(과제 순, 과제마다 `base`, `examples`, `full` 순)로 실행마다 원장에서 같은 `id`인 첫 `run` 줄을 보고, 처음 나온 값만 하나씩 둡니다. 원장에 줄이 없는 실행은 건너뜁니다. 생성이 아직 프롬프트 자산을 쓰지 않으므로 지금은 `[null]`이고, `report.md`에는 `없음(이 평가의 실행은 프롬프트 자산을 쓰지 않았습니다)`이라고 씁니다. 실행 줄을 하나도 찾지 못하면 `[]`이고 `알 수 없음(원장에서 이 평가의 실행 줄을 찾지 못했습니다)`, 그 밖에는 값을 `, `로 잇고 `null`은 `없음`으로 씁니다.
+- `report.json`은 `schema`, `eval`, `skill`, `split`, `pairs`, `reused`, `reference_changed`, `skill_changed`, `package_version`, `commit`, `package_changed`, `prompt_versions`, `comparisons`, `costs`이고, `report.md`는 같은 값을 한국어 표로 씁니다(선택률은 %, p값은 소수 넷째 자리, 초는 소수 셋째 자리, 글자 수는 정수, 값이 없으면 시간 칸은 `-`, 커밋은 `알 수 없음`). 시각을 적지 않으므로 다시 내도 바이트까지 같습니다. `reused`와 `reference_changed`는 봉인 평가에만 값이 있고(아래 봉인 평가), 봉인이 아니면 `[]`입니다. `skill_changed`는 평가를 시작한 뒤 바탕 스킬이 바뀌었으면 `true`이고(아래 바탕 스킬 해시), 그때만 `report.md`의 머리 줄 아래(기준 줄이 있으면 그다음)에 `- 바탕 스킬이 평가를 시작한 뒤 바뀌었습니다(SKILL.md, skill.yaml, checks.py).`를 씁니다. 머리 줄 아래의 알림은 재사용, 기준, 바탕 스킬, 패키지 순입니다.
 - `--json` 결과는 `report.json`에서 `schema`를 뺀 값과 `files`(`.deeptwin/` 기준 두 경로)입니다.
-- 보고서는 잰 값만 적고, 어느 쪽이 낫다는 판정 문장은 쓰지 않습니다.
+- 보고서는 잰 값만 적고, 어느 쪽이 낫다는 판정 문장은 쓰지 않습니다. 쌍 목록, 판정 화면, `eval pairs`와 `eval judge`의 출력에는 버전, 커밋, 비용이 나오지 않습니다.
 
 ```markdown
 # 판정 보고서 eval-0001
 
 - 스킬: inquiry-reply, 분할: spare, 쌍: 4개(모두 골랐습니다)
 
-| 비교 | 쌍 | 바탕+딥트윈이 이긴 횟수 | 선택률 | p값 |
-|------|----|----|----|----|
-| 바탕+딥트윈 대 바탕만 | 2 | 1 | 50.0% | 0.7500 |
-| 바탕+딥트윈 대 바탕+예시 | 2 | 2 | 100.0% | 0.2500 |
+| 비교 | 판정한 쌍 | 전체 쌍 | 바탕+딥트윈이 이긴 횟수 | 선택률 | p값 | 고르는 데 걸린 초(평균) | 고르는 데 걸린 초(중앙값) |
+|------|----|----|----|----|----|----|----|
+| 바탕+딥트윈 대 바탕만 | 2 | 2 | 1 | 50.0% | 0.7500 | 3.250 | 3.250 |
+| 바탕+딥트윈 대 바탕+예시 | 2 | 2 | 2 | 100.0% | 0.2500 | 5.120 | 5.120 |
 
 p값은 한쪽 꼬리 이항 검정의 값입니다. 두 결과물을 반반으로 고른다고 할 때 이만큼 이상 이길 확률입니다.
+
+## 실행 비용
+
+| 조건 | 호출 수 | 호출에 걸린 초 | 입력 글자 수 | 출력 글자 수 |
+|------|----|----|----|----|
+| 바탕만 | 2 | 0.002 | 1722 | 704 |
+| 바탕+예시 | 2 | 0.002 | 2714 | 704 |
+| 바탕+딥트윈 | 2 | 0.002 | 3810 | 704 |
+
+조건마다 이 평가의 실행 폴더에 남은 calls.jsonl의 줄 수와 합입니다. 토큰 수는 재지 않으므로 적지 않습니다.
+
+## 패키지와 프롬프트
+
+- 패키지: deeptwin 0.1.0a1
+- 커밋: 0c181361c452e6b54e772092f1eae5a0a8e1e295
+- 프롬프트 버전: 없음(이 평가의 실행은 프롬프트 자산을 쓰지 않았습니다)
 ```
+
+평가를 시작할 때와 패키지가 다르면 머리 줄 아래에 이런 줄이 붙습니다.
+
+```markdown
+- 평가를 시작할 때와 패키지가 다릅니다(시작할 때 deeptwin 0.1.0a1, 커밋 0c181361c452e6b54e772092f1eae5a0a8e1e295. 지금 deeptwin 0.1.0a1, 커밋 알 수 없음).
+```
+
+커밋 해시. 보고서와 `eval.json`의 `commit`은 그 deeptwin이 어느 커밋에서 왔는지입니다.
+
+- 설치한 패키지(PyPI, TestPyPI, `uv build`로 만든 wheel)는 빌드할 때의 커밋입니다. 빌드 훅(`hatch_build.py`)이 sdist와 wheel 안의 `deeptwin/_commit.py`에 넣으므로, sdist에서 wheel을 만들어도 남습니다.
+- 소스에서 돌면(`uv run`처럼 저장소를 설치한 상태) git의 `HEAD`입니다. 그 저장소의 `src/deeptwin`에서 도는 패키지일 때만 읽으므로, 다른 git 저장소 안의 가상 환경에 설치한 패키지가 그 저장소의 해시를 내지는 않습니다. 커밋하지 않은 변경이 있어도 `HEAD` 그대로이고, 그 변경은 드러나지 않습니다.
+- 둘 다 없으면(git이 없음, 저장소 밖 등) `null`이고 `report.md`에는 `알 수 없음`이라고 씁니다.
+- Python에서는 `deeptwin.provenance`의 `package_version()`(설치되지 않았으면 `"0+unknown"`)과 `package_commit()`이 이 값을 돌려줍니다.
 
 p값은 한쪽 꼬리 이항 검정 P(X ≥ `wins`)입니다. 고르는 사람이 두 결과물을 동전 던지듯 반반으로 고른다고 할 때, 바탕+딥트윈이 `pairs`쌍 가운데 `wins`번 이상 이길 확률입니다. 값이 작을수록 반반으로 골랐다고 보기 어렵습니다. 표준 라이브러리 `math.comb`로 정확히 셉니다(예: 30쌍 중 20번이면 0.0494).
 
@@ -547,6 +580,8 @@ uv run pytest
 명령줄(`src/deeptwin/cli/`)은 공개 API만 씁니다. 다른 deeptwin 모듈에서 `from deeptwin.<모듈> import <이름>`으로 가져오는 이름은 그 모듈의 `__all__`에 있어야 하고 `_`로 시작하지 않습니다. 쓰는 이름을 검사할 수 없으므로 `import deeptwin.<모듈>`로 모듈을 통째로 가져오지 않습니다(`tests/test_public_api.py`가 검사합니다).
 
 테스트는 네트워크와 모델 없이 돌고, 가상 인물의 데이터만 씁니다. claude 공급자는 가짜 `claude` 스크립트로 확인합니다. 실제 모델을 부르는 테스트(예제를 실제 모델로 한 번 돌리는 것 포함)에는 `live` 표식을 달고 기본 실행에서 뺍니다. 로그인된 `claude`가 있으면 `uv run pytest -m live`로 따로 돌립니다.
+
+빌드할 때는 저장소 최상위의 빌드 훅 `hatch_build.py`(hatchling의 `custom` 훅, `[tool.hatch.build.hooks.custom]`)가 sdist와 wheel 안의 `src/deeptwin/_commit.py`에만 지금 커밋(`git rev-parse HEAD`)을 넣습니다. 저장소의 `src/deeptwin/_commit.py`는 늘 `COMMIT: str | None = None`이고 진짜 해시로 커밋하지 않습니다(그 줄이 정확히 한 번 있지 않으면 빌드가 멈춥니다). 훅은 넣을 파일을 저장소 밖 임시 폴더에 만들므로 빌드해도 `git status`는 그대로입니다. editable 설치(`uv sync`, `uv run`), 풀어 둔 sdist(최상위에 `PKG-INFO`가 있는 폴더. git 저장소로 만들어 꾸려도 sdist에 든 `_commit.py`를 그대로 씁니다), git 저장소가 아닌 곳에서는 아무것도 하지 않습니다. 빌드 의존성은 `hatchling` 하나이고, 배포(`release.yml`)는 빌드한 sdist와 wheel에 그 커밋이 들어 있는지 확인한 뒤에 올립니다.
 
 예제 테스트는 `examples/inquiry-reply`를 임시 폴더에 복사해서 돌고, 예제의 두 학습 과제를 조립한 결과(`compose --json`)를 골든 파일(`tests/golden/inquiry-reply/`)과 견줍니다. 조립 규칙이나 예제 데이터를 일부러 바꿨다면 골든 파일을 다시 만들고, 바뀐 곳을 `git diff`로 읽은 뒤 함께 올립니다.
 

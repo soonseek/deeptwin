@@ -24,7 +24,7 @@ from deeptwin.compose import ExamplePick, compose, fill_fluid
 from deeptwin.errors import CheckFailedAfterRunError, CheckFailedError, ContextRequiredError
 from deeptwin.models import Composed, Context, Run, Skill, Task, Violation
 from deeptwin.store.files import write_text
-from deeptwin.store.project import DATA_DIR, DeepTwin
+from deeptwin.store.project import CALLS_FILE, DATA_DIR, DeepTwin
 
 __all__ = [
     "CALLS_FILE",
@@ -40,8 +40,6 @@ __all__ = [
 
 OUTPUT_FILE = "output.md"
 SKILL_COPY_FILE = "SKILL.md"
-CALLS_FILE = "calls.jsonl"
-"""모델 호출마다 한 줄씩 남기는 기록. 필드는 `models.Call`이다."""
 
 Generate: TypeAlias = Callable[[str, str, Path], str]
 """생성 함수: (system, user, `calls.jsonl` 경로) -> 결과물.

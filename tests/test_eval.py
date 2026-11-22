@@ -9,6 +9,7 @@ import ast
 import hashlib
 import json
 import math
+import statistics
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -70,7 +71,12 @@ REPORT_RESULT_KEYS = [
     "reused",
     "reference_changed",
     "skill_changed",
+    "package_version",
+    "commit",
+    "package_changed",
+    "prompt_versions",
     "comparisons",
+    "costs",
     "files",
 ]
 
@@ -216,6 +222,8 @@ def test_pairs_makes_the_eval_folder_runs_and_ledger_lines(in_example: Path) -> 
         "seed",
         "skill_hash",
         "skill_changed",
+        "package_version",
+        "commit",
         "seal_open",
         "reused",
     ]
@@ -885,29 +893,23 @@ def test_report_counts_wins_from_the_key_and_the_choices(in_example: Path, wins:
     assert counted == wins
     assert list(body) == REPORT_RESULT_KEYS
     assert (body["eval"], body["skill"], body["split"], body["pairs"]) == (EVAL, SKILL, "spare", 2)
+    seconds = [c["seconds"] for c in choice_lines(in_example)]
     assert body["comparisons"] == [
         {
             "against": "base",
             "pairs": 2,
+            "judged": 2,
             "wins": wins,
             "selection_rate": wins / 2,
             "p_value": [1.0, 0.75, 0.25][wins],
+            "mean_seconds": round(statistics.fmean(seconds), 3),
+            "median_seconds": round(statistics.median(seconds), 3),
         }
     ]
     assert body["files"] == ["eval/eval-0001/report.json", "eval/eval-0001/report.md"]
     folder = eval_dir(in_example)
     saved = read_json(folder / "report.json")
-    assert list(saved) == [
-        "schema",
-        "eval",
-        "skill",
-        "split",
-        "pairs",
-        "reused",
-        "reference_changed",
-        "skill_changed",
-        "comparisons",
-    ]
+    assert list(saved) == ["schema", *REPORT_RESULT_KEYS[:-1]]
     assert saved == {"schema": 1, **{k: v for k, v in body.items() if k != "files"}}
     markdown = (folder / "report.md").read_text("utf-8")
     assert "| 바탕+딥트윈 대 바탕만 | 2 |" in markdown

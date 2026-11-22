@@ -16,6 +16,9 @@
 봉인 분할은 준비할 때 `sealing.read_sealed`로 과제를 읽고, `build_pairs`가 생성 바로 앞에서
 `sealing.open_sealed`로 묶음을 연다(원장의 `seal_open` 줄).
 
+새 평가의 `eval.json`에는 시작할 때의 패키지 버전과 커밋(`provenance`)도 적는다. 보고서가 그
+값과 보고서를 낼 때의 값을 견준다. 이어 가기와 봉인 열기는 이 두 값을 바꾸지 않는다.
+
 바탕 스킬의 해시(`DeepTwin.skill_hash`)는 준비할 때 계산해 `eval.json`에 적고, 생성마다 그 앞과
 쌍을 쓰기 앞에 다시 계산한다. 다르면 `eval.json`의 `skill_changed`를 참으로 적을 뿐 막지 않는다.
 생성에 쓰는 스킬 사본과 검사 함수는 준비 때 이미 만들었으므로 그 명령의 결과물은 달라지지 않는다.
@@ -40,6 +43,7 @@ from deeptwin.errors import (
 )
 from deeptwin.eval.sealing import open_sealed, read_sealed
 from deeptwin.models import Condition, EvalInfo, EvalKey, Pair, PairKey, Skill, Split, Task
+from deeptwin.provenance import package_commit, package_version
 from deeptwin.runs import Generate, PreparedRun, execute_run, prepare_run
 from deeptwin.store.evals import EvalFolder, new_eval, open_eval
 from deeptwin.store.project import DeepTwin
@@ -233,9 +237,10 @@ def build_pairs(
     """평가 폴더에 준비한 생성을 차례로 돌린 뒤 대응표와 쌍 목록을 쓴다.
 
     - 새 평가(`plan.eval`이 `None`)면 평가 폴더를 만들고 `eval.json`(`against`는 `plan.against`,
-      `skill_hash`는 `plan.skill_hash`, `skill_changed: false`, `seal_open: null`, `reused: []`)을
-      쓴다. 이어 가기면 그 평가 폴더에 이어 쓴다. 그때 `seed`는 줄 수 없다(`ValueError`). 씨앗과
-      상대는 `eval.json`의 값이다.
+      `skill_hash`는 `plan.skill_hash`, `skill_changed: false`, `package_version`과 `commit`은
+      지금의 `package_version()`과 `package_commit()`, `seal_open: null`, `reused: []`)을 쓴다.
+      이어 가기면 그 평가 폴더에 이어 쓴다. 그때 `seed`는 줄 수 없다(`ValueError`). 씨앗과 상대,
+      시작할 때의 버전과 커밋은 `eval.json`의 값이다.
     - 봉인 평가면 생성 전에 `open_sealed`로 묶음을 연다. 처음이면 원장에 `seal_open` 줄이 생기고
       `eval.json`에 그 줄 ID와 재사용이 적힌다. 이어 가기에서는 줄이 이미 있어 생기지 않는다.
     - 생성마다 `outputs/<조건>/<과제 ID>.md`를 쓰고, 그때까지의 `runs`와 빈 `pairs`로 `key.json`을
@@ -267,6 +272,8 @@ def build_pairs(
             seed=folder.id if seed is None else seed,
             skill_hash=plan.skill_hash,
             skill_changed=False,
+            package_version=package_version(),
+            commit=package_commit(),
         )
         folder.save_info(info)
     else:

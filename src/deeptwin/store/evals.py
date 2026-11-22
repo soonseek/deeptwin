@@ -16,19 +16,32 @@ JSON은 `ensure_ascii=False`로 원자적으로 쓴다. 형식이 틀린 파일�
 `DeepTwin`(`store.project`)은 이 모듈을 import하지 않는다.
 
 봉인 평가가 원장에 남기는 `seal_open` 줄(`SealOpen`)도 여기서 찾고 덧붙인다(`seal_open_line`).
+보고서가 쓰는 실행의 호출 기록(`run_calls`)과 원장의 `run` 줄(`run_entries`)도 여기서 읽는다.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from deeptwin.errors import EvalIncompleteError, EvalNotFoundError, InvalidChoiceError
-from deeptwin.models import Choice, Condition, EvalInfo, EvalKey, EvalReport, Pair, SealOpen
+from deeptwin.models import (
+    Call,
+    Choice,
+    Condition,
+    EvalInfo,
+    EvalKey,
+    EvalReport,
+    Pair,
+    Run,
+    SealOpen,
+)
 from deeptwin.store import ledger
 from deeptwin.store.files import (
     append_jsonl,
@@ -39,7 +52,7 @@ from deeptwin.store.files import (
     write_jsonl_models,
     write_text,
 )
-from deeptwin.store.project import DATA_DIR, LEDGER_FILE, DeepTwin
+from deeptwin.store.project import CALLS_FILE, DATA_DIR, LEDGER_FILE, DeepTwin
 
 __all__ = [
     "CHOICES_FILE",
@@ -54,6 +67,8 @@ __all__ = [
     "SealLine",
     "new_eval",
     "open_eval",
+    "run_calls",
+    "run_entries",
     "seal_open_line",
 ]
 
@@ -73,6 +88,8 @@ _SEAL_ID = re.compile(r"seal-([0-9]+)")
 """원장 `seal_open` 줄 ID의 모양. 숫자는 ASCII 숫자만 받는다."""
 _SEAL_DIGITS = 9
 """`seal_open_line`이 세는 `seal_open` 줄 번호의 최대 자릿수. 넘는 ID는 세지 않는다."""
+_RUN_ID = re.compile(r"run-[0-9]+")
+"""실행 ID의 모양. 숫자는 ASCII 숫자만 받는다."""
 
 
 @dataclass(frozen=True)
@@ -300,6 +317,42 @@ def seal_open_line(deeptwin: DeepTwin, info: EvalInfo) -> SealLine:
         )
         deeptwin.append_ledger(entry.model_dump(mode="json"))
         return SealLine(id=entry.id, reused=reused, added=True)
+
+
+def run_calls(deeptwin: DeepTwin, run_id: str) -> list[Call] | None:
+    """실행 폴더 `runs/<실행 ID>/calls.jsonl`의 호출 기록. 파일에 적힌 순서다. 쓰지 않는다.
+
+    경로를 만들기 전에 ID가 `run-<ASCII 숫자>`인지 본다. 아니거나 그 파일이 없으면 `None`이다.
+    읽을 수 없는 줄이 있으면 `invalid_file`이다. 메시지는 틀린 곳마다
+    `.deeptwin/runs/<실행 ID>/calls.jsonl:<줄>: <설명>`이다(`read_jsonl_models`).
+    """
+    if not _RUN_ID.fullmatch(run_id):
+        return None
+    path = deeptwin.run_dir(run_id) / CALLS_FILE
+    if not path.is_file():
+        return None
+    return read_jsonl_models(path, Call, root=deeptwin.root)
+
+
+def run_entries(deeptwin: DeepTwin, run_ids: Iterable[str]) -> dict[str, Run]:
+    """원장에서 `run_ids`의 실행마다 `id`가 같은 첫 `run` 줄(`Run`으로 읽히는 것). 읽기만 한다.
+
+    원장에 줄이 없는 실행은 결과에 없다. 원장에서 읽을 수 없는 줄과 `Run`으로 읽히지 않는 줄은
+    건너뛴다(손상은 `deeptwin verify`가 본다). 사전의 순서는 원장에서 찾은 순서다.
+    """
+    wanted = set(run_ids)
+    found: dict[str, Run] = {}
+    for _, obj in ledger.entries(deeptwin.path / LEDGER_FILE):
+        line_id = obj.get("id")
+        if obj.get("type") != "run" or not isinstance(line_id, str):
+            continue
+        if line_id not in wanted or line_id in found:
+            continue
+        try:
+            found[line_id] = Run.model_validate(obj)
+        except ValidationError:
+            continue
+    return found
 
 
 def _str_list(value: Any) -> bool:
