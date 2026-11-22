@@ -106,6 +106,64 @@ def test_repeating_init_changes_nothing(tmp_path: Path) -> None:
     assert snapshot(tmp_path) == first
 
 
+@pytest.mark.parametrize(
+    ("blocked", "shown"),
+    [
+        (".deeptwin", ".deeptwin"),
+        (".deeptwin/layers", ".deeptwin/layers"),
+        (".deeptwin/runs", ".deeptwin/runs"),
+    ],
+)
+def test_a_file_where_a_folder_goes_blocks_init(tmp_path: Path, blocked: str, shown: str) -> None:
+    # 예제의 JSON 출력 테스트가 드러냈다: 전에는 트레이스백으로 끝나 --json에 JSON이 없었다
+    path = tmp_path / blocked
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("폴더가 아닌 파일\n", encoding="utf-8")
+    before = snapshot(tmp_path)
+
+    with pytest.raises(DeeptwinError) as info:
+        DeepTwin.init(tmp_path)
+
+    assert info.value.code == "init_blocked"
+    assert info.value.message.splitlines() == [
+        f"폴더를 만들 자리에 폴더가 아닌 것이 있습니다: {shown}",
+        "그것을 옮기거나 지운 뒤 다시 실행하세요. 아무것도 만들거나 바꾸지 않았습니다.",
+    ]
+    assert snapshot(tmp_path) == before
+
+
+def test_a_broken_symlink_where_the_data_folder_goes_blocks_init(tmp_path: Path) -> None:
+    link = tmp_path / ".deeptwin"
+    try:
+        link.symlink_to(tmp_path / "없는 폴더", target_is_directory=True)
+    except OSError:  # Windows에서는 심볼릭 링크를 만드는 데 권한이 필요할 수 있다
+        pytest.skip("심볼릭 링크를 만들 수 없다")
+
+    with pytest.raises(DeeptwinError) as info:
+        DeepTwin.init(tmp_path)
+
+    assert info.value.code == "init_blocked"
+    assert info.value.message.splitlines()[0] == (
+        "폴더를 만들 자리에 폴더가 아닌 것이 있습니다: .deeptwin"
+    )
+    assert link.is_symlink()
+    assert not (tmp_path / "없는 폴더").exists()
+    assert not (tmp_path / ".gitignore").exists()
+
+
+def test_a_gitignore_that_is_not_a_file_blocks_init(tmp_path: Path) -> None:
+    (tmp_path / ".gitignore").mkdir()
+
+    with pytest.raises(DeeptwinError) as info:
+        DeepTwin.init(tmp_path)
+
+    assert info.value.code == "init_blocked"
+    assert info.value.message.splitlines()[0] == (
+        ".gitignore에 .deeptwin/ 줄을 더해야 하는데 .gitignore가 파일이 아닙니다."
+    )
+    assert not (tmp_path / ".deeptwin").exists()
+
+
 def test_open_needs_init(tmp_path: Path) -> None:
     with pytest.raises(DeeptwinError) as info:
         DeepTwin.open(tmp_path)

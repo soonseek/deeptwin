@@ -1,0 +1,17 @@
+# 가상의 강사 서도윤의 대표작(good). 예제로 지어낸 것이다.
+schema: 1
+id: ex-0003
+layer: instinct
+skill: inquiry-reply
+kind: good
+grade: signature
+text: |
+  질문 고맙게 읽었습니다.
+  VLOOKUP(다른 표에서 값을 찾아오는 함수)이 자꾸 #N/A를 낸다면, 찾는 값 앞뒤에 빈칸이 붙은 경우가 가장 많습니다.
+  TRIM으로 빈칸을 지운 열을 하나 만들고 그 열로 찾아보세요.
+
+  서도윤 드림
+tags: {purpose: 구독자질문, audience: 입문자}
+source: past_work
+status: active
+approval: human

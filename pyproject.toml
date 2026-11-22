@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "deeptwin"
-version = "0.0.1"
+version = "0.1.0a1"
 description = "개인의 판단 기준을 층별 파일로 쌓고, 모델 없이 조립해 스킬의 유동 영역에 넣는 라이브러리"
 readme = "README.md"
 license = "Apache-2.0"
@@ -17,7 +17,7 @@ dependencies = [
     "typer>=0.15",
 ]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -49,7 +49,10 @@ packages = ["src/deeptwin"]
 include = [
     "src/deeptwin",
     "tests",
+    # 예제 테스트(tests/test_example.py)가 이 폴더를 복사해서 돈다
+    "examples",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE",
     "pyproject.toml",
 ]
@@ -86,9 +89,16 @@ warn_required_dynamic_aliases = true
 root_package = "deeptwin"
 
 [[tool.importlinter.contracts]]
-name = "조립·모델·저장은 모델 호출 계층(llm)을 import하지 않는다"
+name = "검사·조립·모델·저장·가져오기·상태는 모델 호출 계층(llm)을 import하지 않는다"
 type = "forbidden"
-source_modules = ["deeptwin.compose", "deeptwin.models", "deeptwin.store"]
+source_modules = [
+    "deeptwin.checks",
+    "deeptwin.compose",
+    "deeptwin.models",
+    "deeptwin.store",
+    "deeptwin.importing",
+    "deeptwin.status",
+]
 forbidden_modules = ["deeptwin.llm"]
 
 [[tool.importlinter.contracts]]

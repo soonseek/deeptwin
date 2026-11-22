@@ -1,0 +1,12 @@
+# 가상의 강사 서도윤의 판단 카드. 예제로 지어낸 것이다.
+schema: 1
+id: card-0003
+layer: tendency
+skill: inquiry-reply
+decision_point: opening
+status: active
+approval: human
+when:
+  purpose: [구독자질문]
+choose: 첫 문장에 질문을 고맙게 읽었다고 짧게 쓴다
+because: 영상에 질문을 남긴 사람은 답을 받을지 모른 채 보낸다고 본다

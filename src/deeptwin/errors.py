@@ -5,6 +5,39 @@
 
 from __future__ import annotations
 
+__all__ = [
+    "CheckFailedError",
+    "CheckNotFoundError",
+    "ClaudeNotFoundError",
+    "ContextRequiredError",
+    "DeeptwinError",
+    "FakeAnswerRequiredError",
+    "FakeAnswersExhaustedError",
+    "FluidMarkerMissingError",
+    "InitBlockedError",
+    "InvalidContextError",
+    "InvalidFileError",
+    "InvalidIdError",
+    "LedgerBrokenError",
+    "NotInitializedError",
+    "NothingToImportError",
+    "OverBudgetError",
+    "ProviderFailedError",
+    "ProviderTimeoutError",
+    "ReferenceRequiredError",
+    "SealedAccessError",
+    "SealedChangedError",
+    "SkillExistsError",
+    "SkillNotFoundError",
+    "StoreLockedError",
+    "TaskExistsError",
+    "TaskNotFoundError",
+    "TaskSkillMismatchError",
+    "UnknownLayerError",
+    "UnknownProviderError",
+    "UnsupportedExamplePolicyError",
+]
+
 
 class DeeptwinError(Exception):
     """deeptwin이 알고 내는 오류. CLI는 이 오류를 종료 코드 1로 바꾼다."""
@@ -18,6 +51,16 @@ class DeeptwinError(Exception):
 class NotInitializedError(DeeptwinError):
     def __init__(self, message: str) -> None:
         super().__init__("not_initialized", message)
+
+
+class InitBlockedError(DeeptwinError):
+    """`deeptwin init`이 쓸 자리가 막혔다. 아무것도 만들거나 바꾸지 않았다.
+
+    만들 폴더 자리에 폴더가 아닌 것이 있거나, `.gitignore` 자리에 파일이 아닌 것이 있다.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__("init_blocked", message)
 
 
 class TaskNotFoundError(DeeptwinError):
@@ -73,6 +116,24 @@ class UnsupportedExamplePolicyError(DeeptwinError):
 class FluidMarkerMissingError(DeeptwinError):
     def __init__(self, message: str) -> None:
         super().__init__("fluid_marker_missing", message)
+
+
+class CheckNotFoundError(DeeptwinError):
+    """원칙의 `check`가 가리키는 검사 함수를 찾지 못했다.
+
+    스킬에 `checks`가 없거나, 검사 파일이 없거나 스킬 폴더 밖이거나, 그 파일에 함수가 없거나
+    부를 수 없는 경우다.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__("check_not_found", message)
+
+
+class CheckFailedError(DeeptwinError):
+    """검사 파일을 불러오다 예외가 났거나, 검사 함수가 예외를 냈거나 `bool`이 아닌 것을 돌려줬다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("check_failed", message)
 
 
 class UnknownProviderError(DeeptwinError):
@@ -145,6 +206,27 @@ class ReferenceRequiredError(DeeptwinError):
 
     def __init__(self, message: str) -> None:
         super().__init__("reference_required", message)
+
+
+class InvalidIdError(DeeptwinError):
+    """새로 만들 항목의 ID가 ID 규칙(영문자, 숫자, `.`, `_`, `-`)에 맞지 않는다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("invalid_id", message)
+
+
+class SkillExistsError(DeeptwinError):
+    """만들려는 스킬 폴더(`skills/<id>/`)가 이미 있다. 그 안의 파일은 건드리지 않는다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("skill_exists", message)
+
+
+class NothingToImportError(DeeptwinError):
+    """가져오기에 준 폴더 바로 아래에 글 파일(`.txt`, `.md`)이 없다."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("nothing_to_import", message)
 
 
 class SealedChangedError(DeeptwinError):

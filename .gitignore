@@ -13,6 +13,11 @@ deeptwin_design_v0.1.md
 !tests/fixtures/minimal/.deeptwin/
 !tests/fixtures/compose-rules/.deeptwin/
 
+# 예제의 가상 데이터는 올린다. 예제를 돌려 생긴 실행 폴더와 잠금 파일은 올리지 않는다
+!examples/inquiry-reply/.deeptwin/
+examples/inquiry-reply/.deeptwin/runs/
+examples/inquiry-reply/.deeptwin/.lock
+
 # Python
 __pycache__/
 *.py[cod]

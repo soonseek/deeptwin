@@ -21,8 +21,40 @@ from pydantic import (
     model_validator,
 )
 
+__all__ = [
+    "Call",
+    "Candidate",
+    "Card",
+    "Composed",
+    "Context",
+    "Example",
+    "FLUID_CLOSE",
+    "FLUID_OPEN",
+    "Grade",
+    "Item",
+    "Layer",
+    "Principle",
+    "Priority",
+    "Reference",
+    "Rejected",
+    "Run",
+    "Skill",
+    "Split",
+    "Status",
+    "Task",
+    "TaskEntry",
+    "Violation",
+]
+
 SCHEMA_VERSION = 1
 """이 deeptwin이 읽고 쓰는 파일 형식의 버전."""
+
+FLUID_OPEN = "<!-- deeptwin:fluid -->"
+FLUID_CLOSE = "<!-- /deeptwin:fluid -->"
+"""`SKILL.md`의 유동 영역 표시 쌍. 조립한 지침이 이 둘 사이에 들어간다(`compose.fill_fluid`).
+
+조립(`compose`)과 스킬 뼈대 만들기(`DeepTwin.new_skill`)가 같은 표시를 쓰도록 여기에 둔다.
+"""
 
 Status: TypeAlias = Literal["candidate", "active", "dormant", "retired"]
 Approval: TypeAlias = Literal["auto", "human"]
@@ -283,6 +315,17 @@ class Composed(BaseModel):
     no_hit: list[str] = Field(default_factory=list)
     conflicts: list[list[str]] = Field(default_factory=list)
     guide_hash: str
+
+
+class Violation(BaseModel):
+    """결과물이 어긴 원칙 하나. 원칙 검사(`checks.check`)의 반환 항목이다(설계서 8.5).
+
+    `principle`은 원칙 ID, `rule`은 그 원칙의 글, `check`는 `False`를 돌려준 검사 함수 이름이다.
+    """
+
+    principle: str
+    rule: str
+    check: str
 
 
 class Run(BaseModel):

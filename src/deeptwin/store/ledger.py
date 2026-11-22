@@ -26,6 +26,11 @@ from typing import Any
 from deeptwin.errors import LedgerBrokenError
 from deeptwin.store.files import append_jsonl
 
+__all__ = [
+    "LedgerCheck",
+    "ledger_broken",
+]
+
 GENESIS = "sha256:" + "0" * 64
 """첫 줄의 `prev_hash`."""
 

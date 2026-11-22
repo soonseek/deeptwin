@@ -1,0 +1,13 @@
+# 가상의 강사 서도윤의 판단 카드. 예제로 지어낸 것이다.
+schema: 1
+id: card-0007
+layer: tendency
+skill: inquiry-reply
+decision_point: next_step
+status: active
+approval: human
+when:
+  purpose: [교육문의, 수강상담]
+choose: 다음에 할 일을 하나만 골라 마지막 문단에 쓴다
+because: 할 일이 둘 이상이면 아무것도 하지 않게 된다고 본다
+stats: {injected: 4, agreed: 3, last_used: 2026-11-15}

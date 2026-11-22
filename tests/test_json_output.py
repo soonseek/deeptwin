@@ -1,0 +1,156 @@
+"""모든 명령의 `--json` 출력(R23). 명령마다 성공 한 번과 알려 주는 오류 한 번을 돌린다.
+
+stdout은 JSON 객체 하나이고, `ok`, `command`, 그리고 성공이면 `result`, 오류면
+`error.code`와 `error.message`가 있다. 종료 코드는 성공 0, 오류 1이다.
+`init`은 빈 폴더에서, 나머지는 예제(`examples/inquiry-reply`)의 복사본에서 돈다.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import pytest
+import typer
+
+from deeptwin.cli import main
+from test_cli import invoke, parsed
+
+SKILL = "inquiry-reply"
+FAKE = ("--provider", "fake", "--fake-answer", "answers/keeps-principles.md")
+ADD = ("task", "add", "new-task.yaml")
+
+
+def _nothing(root: Path) -> None:
+    pass
+
+
+def _block_data_folder(root: Path) -> None:
+    (root / ".deeptwin").write_text("폴더가 아닌 파일\n", encoding="utf-8")
+
+
+def _past_work(root: Path) -> None:
+    (root / "past").mkdir()
+    (root / "past" / "p1.txt").write_text("가상의 지난 답장입니다.\n", encoding="utf-8")
+
+
+def _empty_past_folder(root: Path) -> None:
+    (root / "past").mkdir()
+
+
+def _task_file(task_id: str, split: str) -> Callable[[Path], None]:
+    def write(root: Path) -> None:
+        (root / "new-task.yaml").write_text(
+            "# 가상의 문의. 테스트용으로 지어낸 것이다.\n"
+            f"schema: 1\nid: {task_id}\nskill: {SKILL}\nsplit: {split}\n"
+            "input: 수업 시간을 알려 주세요.\n"
+            "context: {purpose: 교육문의, audience: 입문자}\n",
+            encoding="utf-8",
+        )
+
+    return write
+
+
+def _tamper_ledger(root: Path) -> None:
+    # 가운데 줄 하나의 값을 바꾼다. 줄바꿈은 그대로 둔다
+    path = root / ".deeptwin" / "ledger.jsonl"
+    lines = path.read_bytes().splitlines(keepends=True)
+    lines[1] = lines[1].replace(b'"split": "train"', b'"split": "spare"')
+    path.write_bytes(b"".join(lines))
+
+
+def _break_principles(root: Path) -> None:
+    (root / ".deeptwin" / "layers" / "principles.yaml").write_text(
+        "- {schema: 1, id: prin-01, rule: 가상의 원칙, kind: nevr, status: active, "
+        "approval: human}\n",
+        encoding="utf-8",
+    )
+
+
+@dataclass(frozen=True)
+class Case:
+    command: str
+    """`--json` 출력의 `command`."""
+    args: tuple[str, ...]
+    """`--json`을 뺀 인자."""
+    code: str | None = None
+    """오류 코드. 성공하는 경우면 `None`이다."""
+    prepare: Callable[[Path], None] = _nothing
+    """돌리기 전에 프로젝트 폴더를 바꾸는 함수."""
+    in_example: bool = True
+    """예제 복사본에서 돌리는지. 아니면 빈 폴더다."""
+
+    @property
+    def id(self) -> str:
+        return f"{self.command.replace(' ', '-')}-{self.code or 'ok'}"
+
+
+CASES = [
+    Case("init", ("init",), in_example=False),
+    Case("init", ("init",), "init_blocked", _block_data_folder, in_example=False),
+    Case("skill new", ("skill", "new", "notice")),
+    Case("skill new", ("skill", "new", SKILL), "skill_exists"),
+    Case("import", ("import", "past", "--skill", SKILL), prepare=_past_work),
+    Case("import", ("import", "past", "--skill", SKILL), "nothing_to_import", _empty_past_folder),
+    Case("task add", ADD, prepare=_task_file("task-0301", "spare")),
+    Case("task add", ADD, "task_exists", _task_file("task-0001", "train")),
+    Case("compose", ("compose", SKILL, "task-0001")),
+    Case("compose", ("compose", SKILL, "task-0101"), "sealed_access"),
+    Case("run", ("run", SKILL, "task-0001", *FAKE)),
+    Case("run", ("run", SKILL, "task-0101", *FAKE), "sealed_access"),
+    Case("verify", ("verify",)),
+    Case("verify", ("verify",), "ledger_broken", _tamper_ledger),
+    Case("status", ("status",)),
+    Case("status", ("status",), "invalid_file", _break_principles),
+]
+
+
+@pytest.mark.parametrize("case", CASES, ids=[case.id for case in CASES])
+def test_json_output_is_one_object(
+    case: Case, example_copy: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = example_copy if case.in_example else tmp_path / "empty"
+    root.mkdir(exist_ok=True)
+    case.prepare(root)
+    monkeypatch.chdir(root)
+
+    result = invoke(*case.args, "--json")
+
+    payload = parsed(result)
+    assert payload["command"] == case.command
+    if case.code is None:
+        assert result.exit_code == 0, result.output
+        assert list(payload) == ["ok", "command", "result"]
+        assert payload["ok"] is True
+        assert isinstance(payload["result"], dict)
+    else:
+        assert result.exit_code == 1, result.output
+        assert list(payload) == ["ok", "command", "error"]
+        assert payload["ok"] is False
+        assert list(payload["error"]) == ["code", "message"]
+        assert payload["error"]["code"] == case.code
+        assert isinstance(payload["error"]["message"], str)
+        assert payload["error"]["message"].strip()
+
+
+def test_every_command_has_a_success_and_an_error_case() -> None:
+    succeeding = {case.command for case in CASES if case.code is None}
+    failing = {case.command for case in CASES if case.code is not None}
+
+    assert succeeding == failing == set(_cli_commands())
+
+
+def _cli_commands() -> Iterator[str]:
+    """명령줄의 모든 명령 이름. 하위 명령은 `task add`처럼 띄어 쓴다."""
+
+    def walk(group: Any, prefix: str) -> Iterator[str]:
+        # 하위 명령을 가진 것(그룹)에만 `commands`가 있다
+        for name, command in group.commands.items():
+            if isinstance(getattr(command, "commands", None), dict):
+                yield from walk(command, f"{prefix}{name} ")
+            else:
+                yield f"{prefix}{name}"
+
+    return walk(typer.main.get_command(main.app), "")

@@ -2,15 +2,15 @@
 
 개인의 판단 기준을 층별 파일로 쌓고, 작업마다 맞는 기준만 모델 없이 조립해 스킬의 유동 영역에 넣는 Python 라이브러리입니다.
 
-> 아직 초기 단계입니다(0.0.1). 지금은 과제를 등록하고, 원칙, 우선순위, 판단 카드, 예시를 조립해 스킬을 한 번 돌리는 길까지 있습니다. 함수 서명과 명령은 0.x 동안 바뀔 수 있습니다.
+> 아직 초기 단계입니다(0.1.0a1, 시험용 저장소 TestPyPI에만 있습니다). 지금은 스킬 뼈대를 만들고, 과거 작업물을 예시로 가져오고, 과제를 등록하고, 원칙, 우선순위, 판단 카드, 예시를 조립해 스킬을 한 번 돌리고, 결과물이 어긴 원칙을 알려 주고, 쌓인 상태를 보는 길까지 있습니다. 함수 서명과 명령은 0.x 동안 바뀔 수 있습니다.
 
 ## 설치
 
 ```sh
-pip install deeptwin
+pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple deeptwin==0.1.0a1
 ```
 
-Python 3.11 이상이 필요합니다.
+Python 3.11 이상이 필요합니다. 알파 버전은 TestPyPI에만 올립니다. `--extra-index-url`은 TestPyPI에 없는 의존성(pydantic, pyyaml, filelock, typer 등)을 PyPI에서도 찾게 합니다. pip은 두 저장소를 같은 무게로 보므로, TestPyPI에 같은 이름의 패키지가 있으면 그쪽을 받을 수도 있습니다. PyPI의 `pip install deeptwin`은 아직 뼈대만 든 0.0.1입니다. 바뀐 것은 [CHANGELOG.md](https://github.com/soonseek/deeptwin/blob/main/CHANGELOG.md)에 적습니다.
 
 ## 쓰는 법
 
@@ -18,6 +18,35 @@ Python 3.11 이상이 필요합니다.
 
 ```sh
 deeptwin init
+```
+
+`.deeptwin/`이나 그 안에 만들 폴더의 자리에 파일이 있거나, `.gitignore`가 파일이 아니면(폴더 등) 아무것도 만들거나 바꾸지 않고 `init_blocked` 오류로 멈춥니다.
+
+스킬 뼈대를 만듭니다. `skills/<스킬 ID>/`에 `skill.yaml`, 유동 영역 표시가 든 `SKILL.md`, 주석만 든 `checks.py`가 생기고, 만든 직후 그대로 `compose`가 돕니다. `run`은 이 스킬에 걸리는 원칙이 `check`에 적은 검사 함수가 `checks.py`에 있어야 돕니다(없으면 `check_not_found`). `SKILL.md`에 고정 지침을, `skill.yaml`에 판단 지점(`decision_points`)과 맥락 축(`context_axes`)을 채워 씁니다.
+
+```sh
+deeptwin skill new <스킬 ID>
+```
+
+- `skill.yaml`은 `schema: 1`, `id`, `version: 1`, 빈 `decision_points`와 `context_axes`, 기본 `budget`, `example_policy: random_signature`, `checks: checks.py`로 시작합니다. `checks.py`에는 함수 없이 검사 함수의 규약을 적은 주석만 있습니다(아래 원칙 검사 참고).
+- 그 폴더가 이미 있으면(비어 있어도) `skill_exists` 오류로 멈추고 아무 파일도 바꾸지 않습니다. ID가 ID 규칙(영문자, 숫자, `.`, `_`, `-`만 쓰고 영문자나 숫자로 시작)에 맞지 않으면 `invalid_id`입니다.
+- `--json` 결과는 `skill`, `files`(프로젝트 루트 기준, `skill.yaml`, `SKILL.md`, `checks.py` 순)입니다.
+
+과거 작업물을 예시로 가져옵니다. 폴더 바로 아래의 글 파일 하나가 본능 층의 예시 하나(`.deeptwin/layers/examples/ex-NNNN.yaml`)가 됩니다. `--signature`를 주면 대표작(`grade: signature`)으로 표시하고, 주지 않으면 `grade: usual`입니다. 조립은 대표작만 예시로 넣습니다(아래 조립의 6단계).
+
+```sh
+deeptwin import <폴더> --skill <스킬 ID> [--signature]
+```
+
+- 확장자가 `.txt`, `.md`인 파일(대소문자 무관)을 파일 이름순으로 가져옵니다. 점으로 시작하는 파일과 하위 폴더는 보지 않습니다.
+- 글은 UTF-8(BOM 허용)로 읽어 줄바꿈을 `\n`으로 바꾸고 앞뒤 공백을 뗀 것입니다. 예시는 `kind: good`, `tags: {}`, `source: past_work`, `status: active`, `approval: human`(사람이 직접 가져왔다)으로 씁니다.
+- ID는 지금 있는 `ex-` 번호의 최댓값 + 1부터 4자리로 매깁니다(`ex-0004`).
+- 같은 스킬에 글이 같은 예시가 이미 있거나 이번에 앞서 가져온 파일과 같으면 만들지 않고 `skipped`에 적습니다. 글은 앞뒤 공백을 떼고 견줍니다. 그래서 같은 폴더를 다시 가져와도 예시가 늘지 않습니다.
+- 전부 아니면 전무입니다. 모든 파일을 먼저 읽고 검사한 뒤 한 잠금 안에서 번호를 정하고 씁니다. 비었거나(공백뿐이어도) UTF-8이 아닌 파일이 하나라도 있으면 아무것도 쓰지 않고, `invalid_file` 오류로 그런 파일마다 한 줄씩 경로, 줄, 이유를 알립니다. 글 파일이 없으면 `nothing_to_import`, 스킬이 없으면 `skill_not_found`입니다.
+- `--json` 결과는 `skill`, `imported`, `skipped`입니다. 새로 쓴 예시만 `imported`에 들고 `--signature`의 등급을 받습니다. 건너뛴 파일은 예시를 만들지 않으므로, `same_as`가 가리키는 예시의 등급은 바뀌지 않습니다. `imported`는 `[{"id": "ex-0001", "file": "past/p1.txt"}, ...]`, `skipped`는 `[{"file": "past/p1.txt", "same_as": "ex-0001"}, ...]`이고 `same_as`는 글이 같은 예시의 ID입니다. `file`은 프로젝트 루트 기준 경로입니다(루트 밖이면 받은 경로 그대로).
+
+```text
+오류: past/p3.txt:1: 글이 비었습니다(공백뿐인 파일도 빈 글로 봅니다)
 ```
 
 과제를 등록합니다. 과제 파일 하나가 과제 하나이고, 등록하면 `.deeptwin/tasks/<분할>/<ID>.yaml`에 쓰이고 원장(`.deeptwin/ledger.jsonl`)에 `task` 줄이 남습니다.
@@ -52,7 +81,28 @@ reference:               # 선택. 봉인 과제에는 꼭 있어야 한다
 오류: 과제 task-0101은 봉인 과제라 읽을 수 없습니다. 봉인 과제는 평가에서만 씁니다.
 ```
 
+쌓인 상태를 한 번에 봅니다. 아무 파일도 쓰지 않습니다.
+
+```sh
+deeptwin status
+```
+
+```text
+층별 항목(active/전체): 예시 5/5(대표작 5), 판단 카드 0/0, 우선순위 0/0, 원칙 2/2
+승인 대기 후보 1개. 과제: 학습 1, 봉인 0, 예비 0
+```
+
+- `--json` 결과는 `layers`, `candidates`, `tasks`입니다.
+  - `layers`는 네 층(`instinct`, `tendency`, `priority`, `principle`)마다 `total`과 상태별 수(`active`, `candidate`, `dormant`, `retired`)입니다. `instinct`에는 대표작(`grade: signature`) 수 `signature`도 있고, 상태와 상관없이 셉니다.
+  - `candidates.pending`은 후보 파일(`.deeptwin/candidates/`) 가운데 `status: pending`인 수입니다.
+  - `tasks`는 분할(`train`, `sealed`, `spare`)마다의 과제 파일 수입니다.
+- 과제는 파일 이름만 셉니다. 봉인 과제도 내용을 읽지 않습니다. 층과 후보 파일은 읽어서 세므로, 형식이 틀린 파일이 있으면 `invalid_file`입니다.
+
+`deeptwin skill new`, `deeptwin import`, `deeptwin status`는 원장에 줄을 쓰지 않습니다. 원장에 남는 줄은 `task`(과제 등록)와 `run`(실행)뿐입니다.
+
 스킬을 과제 하나로 돌립니다. 조립한 지침을 넣은 `SKILL.md` 사본과 결과물은 `.deeptwin/runs/<실행 ID>/`에 남습니다. 원본 `SKILL.md`와 층 파일(`layers/`)은 바뀌지 않고, 카드의 `stats`도 고치지 않습니다. 실행은 원장(`.deeptwin/ledger.jsonl`)에 한 줄로 남습니다.
+
+실행 ID는 `run-NNNN`입니다. 번호는 `runs/`의 실행 폴더 번호와 원장 `run` 줄의 ID 번호 가운데 큰 것 + 1이라, 실행 폴더를 지워도 원장에 남은 실행 ID는 다시 쓰지 않습니다. 원장에서 읽을 수 없는 줄은 번호를 매길 때 건너뜁니다(원장이 깨졌는지는 아래 4단계와 `deeptwin verify`가 봅니다).
 
 ```sh
 deeptwin run <스킬 ID> <과제 ID> [--context 축=값]... [--ablate 층]...
@@ -72,11 +122,49 @@ deeptwin run <스킬 ID> <과제 ID> [--context 축=값]... [--ablate 층]...
 2. 맥락: `--context`의 모양, `context_required`
 3. 조립: `invalid_context`, `unknown_layer`, `over_budget` 등
 4. 원장의 끝 줄: 이어 쓸 `hash`를 얻지 못하면 `ledger_broken`
-5. 공급자: `claude_not_found`, `fake_answer_required`
+5. 원칙의 검사 함수: `check_not_found`, 불러오다 실패하면 `check_failed`(아래 원칙 검사 참고)
+6. 공급자: `claude_not_found`, `fake_answer_required`
 
-실행 폴더를 만든 뒤 사본 쓰기나 생성이 실패하면(공급자 오류, 시간 초과, Ctrl-C) 방금 만든 그 실행 폴더를 지우고 원래 오류를 그대로 냅니다. 생성이 끝난 뒤의 실패(결과물 쓰기, 원장 덧붙이기)에는 실행 폴더를 남깁니다. 이미 비용을 낸 호출의 기록이 들어 있기 때문입니다.
+실행 폴더를 만든 뒤 사본 쓰기나 생성이 실패하면(공급자 오류, 시간 초과, Ctrl-C) 방금 만든 그 실행 폴더를 지우고 원래 오류를 그대로 냅니다. Ctrl-C면 `interrupted`입니다(아래 출력 규칙 참고). 생성이 끝난 뒤의 실패(결과물 쓰기, 원장 덧붙이기)에는 실행 폴더를 남깁니다. 이미 비용을 낸 호출의 기록이 들어 있기 때문입니다.
 
-`--json` 결과는 `run`, `task`, `split`, `context`, `ablate`, `injected`, `rejected`, `no_hit`, `conflicts`, `guide_hash`, `output`(`.deeptwin/` 기준) 순입니다. 글 모드는 마친 실행, 넣은 항목, 뺀 항목, 맞는 카드가 없던 판단 지점, 결과물을 차례로 씁니다.
+`--json` 결과는 `run`, `task`, `split`, `context`, `ablate`, `injected`, `rejected`, `no_hit`, `conflicts`, `guide_hash`, `output`(`.deeptwin/` 기준), `violations` 순입니다. 글 모드는 마친 실행, 넣은 항목, 뺀 항목, 맞는 카드가 없던 판단 지점, 어긴 원칙, 결과물을 차례로 씁니다.
+
+원칙 검사. 생성하고 원장에 기록한 뒤, 결과물을 원칙의 검사 함수로 봅니다. 원칙의 `check`에 함수 이름을 적고, 그 함수를 스킬 폴더의 `checks.py`에 둡니다. `skill.yaml`의 `checks`에는 그 파일의 경로를 스킬 폴더(`skill.yaml`이 든 폴더) 기준으로 적습니다(`checks: checks.py`). 스킬 폴더 밖(`..`, 절대 경로)은 가리킬 수 없습니다.
+
+```yaml
+# .deeptwin/layers/principles.yaml
+- id: prin-01
+  rule: 수치를 부풀리지 않는다
+  kind: never
+  check: no_inflated_numbers   # checks.py의 함수 이름. 없으면 null
+  scope: []
+  status: active
+  approval: human
+```
+
+```python
+# skills/<스킬 ID>/checks.py
+import re
+
+
+def no_inflated_numbers(output: str) -> bool:
+    return not re.search(r"역대급|최고의|100%", output)
+```
+
+- 검사 함수는 `checks.py`의 모듈 수준 함수 `fn(output: str) -> bool`입니다. 결과물 글을 받아 지켰으면 `True`, 어겼으면 `False`를 돌려줍니다.
+- 검사하는 원칙은 조립과 같은 범위입니다. `status: active`이고 `scope`가 비었거나 이 스킬을 담은 원칙을 `principles.yaml` 순서대로 봅니다. `check: null`인 원칙은 건너뜁니다. `--ablate`와 상관없이 모두 검사합니다.
+- 어긴 원칙은 `--json` 결과의 `violations`에 `{"principle": "prin-01", "rule": "수치를 부풀리지 않는다", "check": "no_inflated_numbers"}` 꼴로 남고, 글 모드에는 한 줄씩 `어긴 원칙: prin-01 수치를 부풀리지 않는다`로 나옵니다. 없으면 `violations`는 `[]`이고 글 모드는 `어긴 원칙이 없습니다.`입니다. 검사할 원칙이 하나도 없을 때도 같습니다.
+- 위반은 오류가 아닙니다. 종료 코드는 0이고, 실행 폴더와 원장 `run` 줄은 그대로 남습니다. 위반을 원장에 쓰지는 않습니다.
+- 함수는 모델을 부르기 전에 찾아 둡니다. 검사할 원칙이 있는데 `skill.yaml`에 `checks`가 없거나, 파일이 없거나 스킬 폴더 밖이거나, 함수가 없거나 부를 수 없으면 `check_not_found`입니다. 파일을 불러오다 예외가 나면(문법 오류 등) `check_failed`입니다. 둘 다 실행 폴더, 원장 줄, 모델 호출 없이 멈춥니다. 검사할 원칙이 없으면 `checks.py`를 읽지 않습니다.
+- 함수가 예외를 내거나 `bool`이 아닌 것을 돌려주면 `check_failed`입니다. 그때는 실행이 이미 원장에 남았으므로, 메시지 끝에 그 실행 ID와 결과물 경로가 나옵니다.
+- `checks.py`는 파일 경로로 불러오고 `sys.modules`에 넣지 않으며 `sys.path`도 바꾸지 않습니다. 그래서 다른 스킬의 `checks.py`에 같은 이름의 함수가 있어도 섞이지 않습니다. 표준 라이브러리와 설치한 패키지는 import할 수 있지만, 같은 폴더의 다른 파일은 import할 수 없습니다. `__pycache__`를 남기지 않고, 고친 파일은 다음 실행에서 바로 읽힙니다.
+- `checks.py`는 deeptwin이 그대로 실행하는 코드입니다. 남이 만든 스킬이면 `checks.py`를 먼저 읽어 보세요.
+
+```text
+오류: skills/minimal/checks.py에 원칙 prin-01의 검사 함수가 없습니다: no_inflated_numbers
+```
+
+Python에서는 `deeptwin.check(skill, output, deeptwin)`이 같은 검사를 하고 `Violation` 목록을 돌려줍니다(설계서 8.5).
 
 기본 공급자는 `claude`입니다. Claude Code의 `claude` 명령을 헤드리스(`claude -p`)로 부릅니다. Claude Code를 설치하고 한 번 로그인해 두기만 하면 되고, API 키는 필요 없습니다. 다만 `claude -p`는 환경 변수 `ANTHROPIC_API_KEY`가 있으면 구독보다 그 키를 먼저 씁니다. 구독으로 돌리려면 그 변수 없이 실행하세요(예: `env -u ANTHROPIC_API_KEY deeptwin run ...`). 부를 때는 도구를 끄고(`--tools ""`) 사용자의 CLAUDE.md, 플러그인, 훅을 빼며(`--safe-mode`) 세션을 저장하지 않습니다. `claude`가 없으면 `claude_not_found` 오류로 멈춥니다.
 
@@ -217,6 +305,29 @@ deeptwin verify
 {"ok": false, "command": "run", "error": {"code": "not_initialized", "message": "먼저 deeptwin init을 실행하세요."}}
 ```
 
+명령 도중 Ctrl-C로 멈추면 종료 코드는 130입니다. `--json`이면 stdout에 오류 코드 `interrupted`의 JSON 하나를 쓰고, 끄면 stderr에 `오류: Ctrl-C로 멈췄습니다.`를 씁니다.
+
+```json
+{"ok": false, "command": "run", "error": {"code": "interrupted", "message": "Ctrl-C로 멈췄습니다."}}
+```
+
+## 예제
+
+[`examples/inquiry-reply`](examples/inquiry-reply/README.md)는 가상의 강사가 교육 문의에 답장을 쓰는 예제입니다. 사람, 강의, 문의는 모두 지어낸 것입니다. 스킬과 검사 함수, 네 층의 항목, 세 분할의 과제 10개, 과제를 등록해 만든 원장, 가짜 모델의 답 파일이 들어 있어 폴더를 그대로 프로젝트 루트로 씁니다.
+
+저장소 안의 예제 폴더는 고치지 말고 새로 만든 빈 폴더에 내용을 복사해서 돌립니다(테스트가 그 데이터에 기댑니다).
+
+```sh
+D=$(mktemp -d) && cp -R examples/inquiry-reply/. "$D" && cd "$D"
+deeptwin run inquiry-reply task-0001 --provider fake --fake-answer answers/keeps-principles.md
+deeptwin run inquiry-reply task-0001 --provider fake --fake-answer answers/breaks-promise.md
+env -u ANTHROPIC_API_KEY deeptwin run inquiry-reply task-0001    # 실제 모델(claude CLI 구독)
+deeptwin verify
+deeptwin status
+```
+
+두 번째 실행은 원칙 `prin-01`을 어긴 답이라 `violations`에 그 원칙이 나옵니다. 어느 실행에서도 `skills/inquiry-reply/`의 파일은 바뀌지 않고 `deeptwin verify`가 통과합니다. 데이터 구성은 예제의 README에 있습니다.
+
 ## 폴더
 
 ```text
@@ -230,9 +341,10 @@ deeptwin verify
   tasks/<분할>/<ID>.yaml    # 과제. 분할은 train, sealed, spare. sealed는 토큰 없이 읽지 않는다
   runs/                     # 실행마다 SKILL.md 사본, 결과물, 호출 기록(calls.jsonl)
   ledger.jsonl              # 원장. 추가만 하고 줄마다 해시로 잇는다
-skills/<스킬 ID>/
+skills/<스킬 ID>/           # deeptwin skill new가 아래 세 파일을 만든다
   SKILL.md                  # 고정 영역과 유동 영역 표시
-  skill.yaml                # 판단 지점, 맥락 축, 상한
+  skill.yaml                # 판단 지점, 맥락 축, 상한, 검사 파일(checks)
+  checks.py                 # 원칙의 검사 함수. fn(output: str) -> bool, 이름이 원칙의 check
 ```
 
 모든 파일과 목록 파일의 항목마다 `schema: 1`을 둡니다. 없으면 1로 읽고, 더 큰 값이면 읽지 않습니다. 폴더에 든 파일은 파일 이름이 `id`와 같아야 하고, 과제 파일의 `split`은 든 폴더와 같아야 합니다. 모르는 필드(`x_` 확장 필드 등)는 버리지 않습니다.
@@ -260,7 +372,15 @@ uv run ruff check && uv run ruff format --check && uv run mypy && uv run lint-im
 uv run pytest
 ```
 
-테스트는 네트워크와 모델 없이 돌고, 가상 인물의 데이터만 씁니다. claude 공급자는 가짜 `claude` 스크립트로 확인합니다. 실제 모델을 부르는 테스트에는 `live` 표식을 달고 기본 실행에서 뺍니다. 로그인된 `claude`가 있으면 `uv run pytest -m live`로 따로 돌립니다.
+명령줄(`src/deeptwin/cli/`)은 공개 API만 씁니다. 다른 deeptwin 모듈에서 `from deeptwin.<모듈> import <이름>`으로 가져오는 이름은 그 모듈의 `__all__`에 있어야 하고 `_`로 시작하지 않습니다. 쓰는 이름을 검사할 수 없으므로 `import deeptwin.<모듈>`로 모듈을 통째로 가져오지 않습니다(`tests/test_public_api.py`가 검사합니다).
+
+테스트는 네트워크와 모델 없이 돌고, 가상 인물의 데이터만 씁니다. claude 공급자는 가짜 `claude` 스크립트로 확인합니다. 실제 모델을 부르는 테스트(예제를 실제 모델로 한 번 돌리는 것 포함)에는 `live` 표식을 달고 기본 실행에서 뺍니다. 로그인된 `claude`가 있으면 `uv run pytest -m live`로 따로 돌립니다.
+
+예제 테스트는 `examples/inquiry-reply`를 임시 폴더에 복사해서 돌고, 예제의 두 학습 과제를 조립한 결과(`compose --json`)를 골든 파일(`tests/golden/inquiry-reply/`)과 견줍니다. 조립 규칙이나 예제 데이터를 일부러 바꿨다면 골든 파일을 다시 만들고, 바뀐 곳을 `git diff`로 읽은 뒤 함께 올립니다.
+
+```sh
+DEEPTWIN_UPDATE_GOLDEN=1 uv run pytest tests/test_example.py -k golden
+```
 
 텔레메트리는 없습니다.
 

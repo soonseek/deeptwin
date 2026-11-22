@@ -1,0 +1,22 @@
+# 가상의 문의와 강사 서도윤의 기준. 봉인 과제다. 예제로 지어낸 것이다.
+schema: 1
+id: task-0102
+skill: inquiry-reply
+split: sealed
+input: |
+  엑셀을 거의 써 본 적이 없습니다. 집에 있는 노트북이 오래됐는데 수업을 들을 수 있을까요?
+context:
+  purpose: 수강상담
+  audience: 입문자
+reference:
+  kind: edit
+  grade: usual
+  text: |
+    엑셀을 거의 안 써 보셨어도 괜찮습니다. 첫 2주에 표 정리부터 차근차근 짚고 갑니다.
+    노트북 사양은 제가 따로 정해 둔 기준이 없어, 수업에 쓰는 프로그램이 돌아가는지 확인해 보고 다시 알려 드리겠습니다.
+
+    쓰시는 노트북의 운영체제와 엑셀 버전을 이 메일에 적어 주세요.
+
+    서도윤 드림
+  picked: null
+  rejected: null

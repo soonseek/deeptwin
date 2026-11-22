@@ -1,0 +1,14 @@
+# 가상의 강사 서도윤의 판단 카드. 우선순위 pri-03과 부딪쳐 조립에서 빠진다.
+# 예제로 지어낸 것이다.
+schema: 1
+id: card-0012
+layer: tendency
+skill: inquiry-reply
+decision_point: core
+status: active
+approval: human
+when:
+  purpose: [수강상담]
+choose: 망설이는 사람에게는 정원이 곧 찬다고 먼저 알린다
+because: 마감을 알면 결정이 빨라진다고 본다
+conflicts_with: [pri-03]

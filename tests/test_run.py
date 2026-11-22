@@ -1,14 +1,15 @@
-"""실행 기록의 공개 함수 `record_run`과 실행 폴더 지우기. 데이터는 모두 가상이다."""
+"""실행 기록의 공개 함수 `record_run`, 실행 폴더 지우기, 실행 ID 매기기. 데이터는 모두 가상이다."""
 
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from deeptwin import Composed, DeepTwin, Task, record_run
+from deeptwin import Composed, DeepTwin, DeeptwinError, Task, record_run
 from deeptwin.models import Rejected
 from deeptwin.runs import OUTPUT_FILE, discard_run_on_failure
 
@@ -136,3 +137,69 @@ def test_finished_block_keeps_the_run_folder(deeptwin: DeepTwin) -> None:
         (deeptwin.run_dir(run_id) / "SKILL.md").write_text("사본\n", encoding="utf-8")
 
     assert (deeptwin.run_dir(run_id) / "SKILL.md").is_file()
+
+
+# 실행 ID
+
+
+def test_record_run_after_deleting_the_latest_run_folder_takes_a_new_id(deeptwin: DeepTwin) -> None:
+    record_run(COMPOSED, task(None), "첫 답장\n", deeptwin)
+    record_run(COMPOSED, task(None), "둘째 답장\n", deeptwin)
+    shutil.rmtree(deeptwin.run_dir("run-0002"))
+
+    run = record_run(COMPOSED, task(None), "셋째 답장\n", deeptwin)
+
+    assert run.id == "run-0003"
+    assert [entry["id"] for entry in ledger(deeptwin)] == ["run-0001", "run-0002", "run-0003"]
+
+
+def test_new_run_counts_run_lines_of_the_ledger_without_run_folders(deeptwin: DeepTwin) -> None:
+    deeptwin.append_ledger({"id": "run-0005", "type": "run"})
+    # 실행 줄이 아니면 ID가 run-NNNN 모양이어도 세지 않는다
+    deeptwin.append_ledger({"id": "run-0009", "type": "task"})
+    assert list((deeptwin.path / "runs").iterdir()) == []
+
+    assert deeptwin.new_run() == "run-0006"
+    assert deeptwin.run_dir("run-0006").is_dir()
+
+
+def test_new_run_takes_the_larger_of_folders_and_ledger(deeptwin: DeepTwin) -> None:
+    deeptwin.append_ledger({"id": "run-0002", "type": "run"})
+    (deeptwin.path / "runs" / "run-0004").mkdir()
+
+    assert deeptwin.new_run() == "run-0005"
+    deeptwin.append_ledger({"id": "run-0009", "type": "run"})
+    assert deeptwin.new_run() == "run-0010"
+
+
+def test_new_run_skips_ledger_lines_it_cannot_read(deeptwin: DeepTwin) -> None:
+    deeptwin.append_ledger({"id": "run-0002", "type": "run"})
+    path = deeptwin.path / "ledger.jsonl"
+    unreadable = [
+        b"{not json",
+        b"[1]",
+        b"",
+        b"\xff\xfe",
+        b'{"type": "run", "id": "run-0007"',  # 반쯤 잘린 줄
+        b'{"type": "run", "id": 8}',
+        b'{"type": "run", "id": "run-x9"}',
+        b'{"type": "run"}',
+    ]
+    path.write_bytes(path.read_bytes() + b"\n".join(unreadable) + b"\n")
+
+    # 원장이 깨졌는지는 번호 매기기가 보지 않는다. 그것은 verify와 ledger_tail_hash의 몫이다
+    assert deeptwin.new_run() == "run-0003"
+    with pytest.raises(DeeptwinError) as info:
+        deeptwin.ledger_tail_hash()
+    assert info.value.code == "ledger_broken"
+
+
+def test_new_run_ignores_ledger_run_ids_longer_than_nine_digits(deeptwin: DeepTwin) -> None:
+    deeptwin.append_ledger({"id": "run-0003", "type": "run"})
+    # int()가 거부하는 길이(4300자리 넘음)와, 한 자리 넘는 것
+    deeptwin.append_ledger({"id": "run-" + "9" * 5000, "type": "run"})
+    deeptwin.append_ledger({"id": "run-" + "1" * 10, "type": "run"})
+
+    assert deeptwin.new_run() == "run-0004"
+    deeptwin.append_ledger({"id": "run-" + "9" * 9, "type": "run"})
+    assert deeptwin.new_run() == "run-1000000000"

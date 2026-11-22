@@ -1,0 +1,4 @@
+# 가상의 강사 서도윤의 우선순위. 위에 있을수록 먼저다. 예제로 지어낸 것이다.
+- {schema: 1, id: pri-01, rule: 정확함이 친절함보다 먼저다, scope: [], status: active, approval: human}
+- {schema: 1, id: pri-02, rule: 물은 것에 답하는 것이 강의를 알리는 것보다 먼저다, scope: [], status: active, approval: human}
+- {schema: 1, id: pri-03, rule: 솔직함이 수강을 권하는 것보다 먼저다, scope: [], status: active, approval: human}

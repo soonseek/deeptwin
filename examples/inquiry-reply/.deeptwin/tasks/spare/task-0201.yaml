@@ -1,0 +1,11 @@
+# 가상의 문의. 예비 과제다. 예제로 지어낸 것이다.
+schema: 1
+id: task-0201
+skill: inquiry-reply
+split: spare
+input: |
+  수강료를 두 번에 나눠 낼 수 있을까요?
+context:
+  purpose: 교육문의
+  audience: 입문자
+reference: null

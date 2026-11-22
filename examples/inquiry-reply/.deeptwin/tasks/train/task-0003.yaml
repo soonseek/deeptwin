@@ -1,0 +1,25 @@
+# 가상의 문의와 강사 서도윤의 기준. 학습 과제다. 예제로 지어낸 것이다.
+schema: 1
+id: task-0003
+skill: inquiry-reply
+split: train
+input: |
+  영상 잘 보고 있습니다.
+  피벗 테이블부터 배워야 할지 함수부터 배워야 할지 모르겠어요. 뭐부터 하면 좋을까요?
+context:
+  purpose: 구독자질문
+  audience: 입문자
+reference:
+  kind: pick
+  grade: usual
+  text: null
+  picked: |
+    질문 고맙게 읽었습니다.
+    함수 몇 개(SUM, COUNTIF)를 먼저 익히고 피벗 테이블로 넘어가시길 권합니다.
+    함수로 한 번 손수 세어 보면, 피벗 테이블이 대신 해 주는 일이 눈에 들어옵니다.
+
+    가계부 한 달 치에 COUNTIF를 써서 항목마다 몇 번 썼는지 세어 보세요.
+
+    서도윤 드림
+  rejected: |
+    둘 다 중요합니다! 저희 강의를 들으시면 둘 다 한 번에 배우실 수 있어요. 지금 신청하세요!

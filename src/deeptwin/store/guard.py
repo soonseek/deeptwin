@@ -18,6 +18,16 @@ from dataclasses import dataclass
 from deeptwin.errors import SealedAccessError, SealedChangedError
 from deeptwin.models import Reference
 
+__all__ = [
+    "SealedCheck",
+    "SealedProblem",
+    "SealedToken",
+    "problem_lines",
+    "reference_hash",
+    "require_token",
+    "sealed_changed",
+]
+
 SEALED_PURPOSE = "봉인 과제는 평가에서만 씁니다."
 """봉인 과제를 막을 때 메시지 끝에 붙이는 문장."""
 

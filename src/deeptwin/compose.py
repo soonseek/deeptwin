@@ -19,6 +19,10 @@ from deeptwin.errors import (
     UnknownLayerError,
     UnsupportedExamplePolicyError,
 )
+
+# 유동 영역 표시는 저장 계층(스킬 뼈대)도 쓰므로 `models`에 두고 여기서 다시 내보낸다
+from deeptwin.models import FLUID_CLOSE as FLUID_CLOSE
+from deeptwin.models import FLUID_OPEN as FLUID_OPEN
 from deeptwin.models import (
     Card,
     Composed,
@@ -33,8 +37,14 @@ from deeptwin.models import (
 )
 from deeptwin.store.project import DATA_DIR, PRINCIPLES_FILE, PRIORITIES_FILE, DeepTwin
 
-FLUID_OPEN = "<!-- deeptwin:fluid -->"
-FLUID_CLOSE = "<!-- /deeptwin:fluid -->"
+__all__ = [
+    "FLUID_CLOSE",
+    "FLUID_OPEN",
+    "LAYERS",
+    "check_context",
+    "compose",
+    "fill_fluid",
+]
 
 GUIDE_TITLE = "## 이번 작업의 개인 기준"
 PRINCIPLES_HEADING = "반드시 지킬 것"

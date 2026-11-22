@@ -5,8 +5,10 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
+from deeptwin.checks import check
 from deeptwin.compose import compose, fill_fluid
 from deeptwin.errors import DeeptwinError
+from deeptwin.importing import import_folder
 from deeptwin.llm import ClaudeCLIProvider, FakeProvider, Provider
 from deeptwin.models import (
     Candidate,
@@ -19,8 +21,10 @@ from deeptwin.models import (
     Run,
     Skill,
     Task,
+    Violation,
 )
 from deeptwin.runs import record_run
+from deeptwin.status import project_status
 from deeptwin.store.project import DeepTwin
 
 try:
@@ -44,8 +48,12 @@ __all__ = [
     "Run",
     "Skill",
     "Task",
+    "Violation",
     "__version__",
+    "check",
     "compose",
     "fill_fluid",
+    "import_folder",
+    "project_status",
     "record_run",
 ]

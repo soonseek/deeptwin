@@ -1,0 +1,16 @@
+# 가상의 강사 서도윤이 고친 글(pair). pair라 예시 후보가 아니다. 예제로 지어낸 것이다.
+schema: 1
+id: ex-0007
+layer: instinct
+skill: inquiry-reply
+kind: pair
+grade: usual
+before: |
+  수강하시면 실무에서 바로 쓰실 수 있을 거예요!
+after: |
+  8주 동안 배우는 것은 엑셀 표 정리, 함수, 피벗 테이블, SQL 기초 조회입니다.
+  회사 일에 어디까지 쓰실 수 있을지는 하시는 일을 들어 보고 말씀드리겠습니다.
+tags: {purpose: 수강상담, audience: 실무자}
+source: edit
+status: active
+approval: human

@@ -1,0 +1,13 @@
+# 가상의 강사 서도윤의 판단 카드. 예제로 지어낸 것이다.
+schema: 1
+id: card-0004
+layer: tendency
+skill: inquiry-reply
+decision_point: core
+status: active
+approval: human
+when:
+  audience: [입문자]
+choose: 용어를 처음 쓰면 바로 뒤 괄호에 쉬운 말로 푼다
+except: 상대가 먼저 쓴 용어는 풀지 않는다
+stats: {injected: 5, agreed: 4, last_used: 2026-11-18}
