@@ -108,7 +108,7 @@ wheels = [
 
 [[package]]
 name = "deeptwin"
-version = "0.0.1"
+version = "0.1.0a1"
 source = { editable = "." }
 dependencies = [
     { name = "filelock" },

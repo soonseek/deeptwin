@@ -2,15 +2,15 @@
 
 개인의 판단 기준을 층별 파일로 쌓고, 작업마다 맞는 기준만 모델 없이 조립해 스킬의 유동 영역에 넣는 Python 라이브러리입니다.
 
-> 아직 초기 단계입니다(0.0.1). 지금은 스킬 뼈대를 만들고, 과거 작업물을 예시로 가져오고, 과제를 등록하고, 원칙, 우선순위, 판단 카드, 예시를 조립해 스킬을 한 번 돌리고, 결과물이 어긴 원칙을 알려 주고, 쌓인 상태를 보는 길까지 있습니다. 함수 서명과 명령은 0.x 동안 바뀔 수 있습니다.
+> 아직 초기 단계입니다(0.1.0a1, 시험용 저장소 TestPyPI에만 있습니다). 지금은 스킬 뼈대를 만들고, 과거 작업물을 예시로 가져오고, 과제를 등록하고, 원칙, 우선순위, 판단 카드, 예시를 조립해 스킬을 한 번 돌리고, 결과물이 어긴 원칙을 알려 주고, 쌓인 상태를 보는 길까지 있습니다. 함수 서명과 명령은 0.x 동안 바뀔 수 있습니다.
 
 ## 설치
 
 ```sh
-pip install deeptwin
+pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple deeptwin==0.1.0a1
 ```
 
-Python 3.11 이상이 필요합니다.
+Python 3.11 이상이 필요합니다. 알파 버전은 TestPyPI에만 올립니다. `--extra-index-url`은 TestPyPI에 없는 의존성(pydantic, pyyaml, filelock, typer 등)을 PyPI에서도 찾게 합니다. pip은 두 저장소를 같은 무게로 보므로, TestPyPI에 같은 이름의 패키지가 있으면 그쪽을 받을 수도 있습니다. PyPI의 `pip install deeptwin`은 아직 뼈대만 든 0.0.1입니다. 바뀐 것은 [CHANGELOG.md](https://github.com/soonseek/deeptwin/blob/main/CHANGELOG.md)에 적습니다.
 
 ## 쓰는 법
 
